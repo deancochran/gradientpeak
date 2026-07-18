@@ -1,8 +1,13 @@
 #!/usr/bin/env node
 
 import { execFile, spawn } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { changedDiffArguments } from "./changed.mjs";
+import {
+  changedDiffArguments,
+  parseNulSeparatedPaths,
+  untrackedFilesArguments,
+} from "./changed.mjs";
 import { createPlan, formatPlan } from "./planner.mjs";
 import { checkStructure, formatStructureResult, writeStructureBaseline } from "./structure.mjs";
 
@@ -23,6 +28,7 @@ Options:
   --verify             Execute tests, then package type and artifact checks
   --plan               Plan only (the default)
   --runtime            Include live-db, Playwright, and Maestro commands
+  --strict             Fail changed execution when owned changes have no tests or verification
   --check-structure    Validate UI test structure against the debt baseline
   --write-structure-baseline
                        Replace the deterministic UI structure debt baseline
@@ -42,6 +48,7 @@ export function parseArguments(argv) {
     else if (argument === "--verify") options.verify = true;
     else if (argument === "--plan") options.run = false;
     else if (argument === "--runtime") options.runtime = true;
+    else if (argument === "--strict") options.strict = true;
     else if (argument === "--changed") options.changed = true;
     else if (argument === "--all") options.all = true;
     else if (argument === "--check-structure") options.checkStructure = true;
@@ -66,19 +73,22 @@ export function parseArguments(argv) {
     throw new Error("Choose exactly one selector: --path, --feature, --changed, or --all.");
   }
   if (options.base && !options.changed) throw new Error("--base can only be used with --changed.");
+  if (options.strict && (!options.changed || (!options.run && !options.verify))) {
+    throw new Error("--strict requires --changed with --run or --verify.");
+  }
   return options;
 }
 
-async function gitLines(root, args) {
-  const { stdout } = await execFileAsync("git", args, { cwd: root, encoding: "utf8" });
-  return stdout.split("\n").filter(Boolean);
+async function gitPaths(root, args) {
+  const { stdout } = await execFileAsync("git", args, { cwd: root, encoding: null });
+  return parseNulSeparatedPaths(stdout);
 }
 
 export async function getChangedFiles(root, base) {
   const groups = [];
-  if (base) groups.push(await gitLines(root, changedDiffArguments(base)));
-  groups.push(await gitLines(root, changedDiffArguments()));
-  groups.push(await gitLines(root, ["ls-files", "--others", "--exclude-standard"]));
+  if (base) groups.push(await gitPaths(root, changedDiffArguments(base)));
+  groups.push(await gitPaths(root, changedDiffArguments()));
+  groups.push(await gitPaths(root, untrackedFilesArguments()));
   return [...new Set(groups.flat())].sort();
 }
 
@@ -135,6 +145,7 @@ async function main() {
     runtime: options.runtime,
     verify: options.verify,
     requireTests: options.run || options.verify,
+    strict: options.strict,
   });
   process.stdout.write(options.json ? `${JSON.stringify(plan, null, 2)}\n` : formatPlan(plan));
 
@@ -143,7 +154,9 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  process.stderr.write(`test planner: ${error.message}\n`);
-  process.exitCode = 1;
-});
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  main().catch((error) => {
+    process.stderr.write(`test planner: ${error.message}\n`);
+    process.exitCode = 1;
+  });
+}

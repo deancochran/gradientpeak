@@ -69,6 +69,7 @@
     "test:feature": "node tooling/testing/cli.mjs --run --feature",
     "test:changed": "node tooling/testing/cli.mjs --run --changed",
     "verify:feature": "node tooling/testing/cli.mjs --verify --feature",
+    "verify:changed": "node tooling/testing/cli.mjs --verify --changed",
     "check:test-structure": "node tooling/testing/cli.mjs --check-structure",
     "check:test-structure:baseline": "node tooling/testing/cli.mjs --write-structure-baseline",
     "test:workspaces": "turbo run test",

@@ -277,6 +277,7 @@
         "**/*.webmanifest",
         "**/*.txt",
         "**/*.fixture",
+        "**/.feature-id",
         "**/CODEOWNERS",
         "**/.gitkeep"
       ],

@@ -3,12 +3,18 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, test } from "node:test";
-import { changedDiffArguments } from "./changed.mjs";
+import {
+  changedDiffArguments,
+  parseNulSeparatedPaths,
+  untrackedFilesArguments,
+} from "./changed.mjs";
+import { parseArguments } from "./cli.mjs";
 import {
   classifyTest,
   commandsForTests,
   createPlan,
   formatPlan,
+  selectionNeedsFeatureMarkers,
   verificationCommandsForTests,
 } from "./planner.mjs";
 
@@ -177,6 +183,16 @@ test("feature selection joins canonical roots and defers runtime tests", async (
   ]);
 });
 
+test("feature ids require lowercase kebab segments", async () => {
+  const root = await fixture([]);
+  for (const feature of ["-profile", "profile-", "profile--settings"]) {
+    await assert.rejects(
+      createPlan({ root, selector: { feature } }),
+      /use lowercase letters and numbers separated by single hyphens/,
+    );
+  }
+});
+
 test("changed-file input is pure and expands a canonical feature", async () => {
   const root = await fixture([
     "packages/core/src/features/profile/model.ts",
@@ -213,9 +229,25 @@ test("deleted canonical feature paths still expand remaining feature tests", asy
   assert.deepEqual(changedDiffArguments("origin/main"), [
     "diff",
     "--name-only",
+    "-z",
     "--diff-filter=ACMRD",
     "origin/main...HEAD",
   ]);
+});
+
+test("changed Git arguments and parsing preserve paths containing newlines", () => {
+  assert.deepEqual(changedDiffArguments(), [
+    "diff",
+    "--name-only",
+    "-z",
+    "--diff-filter=ACMRD",
+    "HEAD",
+  ]);
+  assert.deepEqual(untrackedFilesArguments(), ["ls-files", "--others", "--exclude-standard", "-z"]);
+  assert.deepEqual(
+    parseNulSeparatedPaths(Buffer.from("packages/core/normal.ts\0apps/web/src/line\nbreak.ts\0")),
+    ["packages/core/normal.ts", "apps/web/src/line\nbreak.ts"],
+  );
 });
 
 test("human output is deterministic regardless of changed-file order", async () => {
@@ -323,6 +355,29 @@ test("architecture and testing mjs tests use node:test while tooling fixtures ar
   ]);
 });
 
+test("all selection walks root tests and maps parity files through the parity runner", async () => {
+  const root = await fixture([
+    "packages/core/src/a.test.ts",
+    "tests/parity/web-mobile-parity.test.ts",
+  ]);
+  const plan = await createPlan({ root, selector: { all: true } });
+
+  assert.equal(
+    plan.tests.some((entry) => entry.path === "tests/parity/web-mobile-parity.test.ts"),
+    true,
+  );
+  assert.deepEqual(
+    plan.commands.find((command) =>
+      command.tests.includes("tests/parity/web-mobile-parity.test.ts"),
+    ),
+    {
+      command: "pnpm",
+      args: ["test:parity", "tests/parity/web-mobile-parity.test.ts"],
+      tests: ["tests/parity/web-mobile-parity.test.ts"],
+    },
+  );
+});
+
 test("only supported top-level Maestro scenarios are runnable", () => {
   assert.equal(classifyTest("apps/mobile/.maestro/features/profile.yaml"), "maestro");
   assert.equal(classifyTest("apps/mobile/.maestro/flows/smoke/auth/login.yaml"), "maestro");
@@ -377,7 +432,7 @@ test("canonical feature traversal rejects an escaping intermediate symlink", asy
 
   await assert.rejects(
     createPlan({ root, selector: { feature: "profile" } }),
-    /Traversal escapes repository root: packages\/core\/src\/features\/profile resolves outside/,
+    /escapes repository root: packages\/core\/src/,
   );
 });
 
@@ -392,7 +447,7 @@ test("feature E2E candidates reject escaping intermediate symlinks", async () =>
 
   await assert.rejects(
     createPlan({ root, selector: { feature: "profile" } }),
-    /File escapes repository root: apps\/web\/e2e\/features\/profile\.spec\.ts resolves outside/,
+    /escapes repository root: apps\/web\/e2e\/features/,
   );
 });
 
@@ -422,6 +477,284 @@ test("verification adds package checks after tests and UI artifact validation", 
   const root = await fixture(["packages/core/src/a.test.ts"]);
   const plan = await createPlan({ root, selector: { path: "packages/core/src" }, verify: true });
   assert.equal(plan.commands.at(-1).verification, "check-types");
+});
+
+test("verification derives owners from feature source files as well as selected tests", async () => {
+  const root = await fixture([
+    "apps/web/src/features/profile/view.tsx",
+    "packages/core/src/features/profile/model.test.ts",
+  ]);
+  const plan = await createPlan({
+    root,
+    selector: { feature: "profile" },
+    verify: true,
+  });
+
+  assert.deepEqual(plan.verificationCommands, [
+    {
+      command: "pnpm",
+      args: ["--filter", "@repo/core", "check-types"],
+      verification: "check-types",
+    },
+    {
+      command: "pnpm",
+      args: ["--filter", "web", "check-types"],
+      verification: "check-types",
+    },
+  ]);
+});
+
+test("feature markers group noncanonical directories and select deleted descendants", async () => {
+  const root = await fixture([
+    "packages/core/activity-plan/.feature-id",
+    "packages/core/activity-plan/model.test.ts",
+    "apps/mobile/components/activity-plan/.feature-id",
+    "apps/mobile/components/activity-plan/view.native.test.tsx",
+    "apps/web/src/features/activity-plan/view.tsx",
+  ]);
+  await writeFile(path.join(root, "packages/core/activity-plan/.feature-id"), "activity-plan\n");
+  await writeFile(
+    path.join(root, "apps/mobile/components/activity-plan/.feature-id"),
+    "activity-plan\n",
+  );
+
+  const featurePlan = await createPlan({ root, selector: { feature: "activity-plan" } });
+  assert.deepEqual(
+    featurePlan.tests.map((entry) => entry.path),
+    [
+      "apps/mobile/components/activity-plan/view.native.test.tsx",
+      "packages/core/activity-plan/model.test.ts",
+    ],
+  );
+  assert.deepEqual(featurePlan.featureIds, ["activity-plan"]);
+  assert.equal(featurePlan.files.includes("apps/web/src/features/activity-plan/view.tsx"), true);
+
+  const changedPlan = await createPlan({
+    root,
+    selector: { changed: true },
+    changedFiles: ["apps/mobile/components/activity-plan/deleted/nested.tsx"],
+  });
+  assert.deepEqual(
+    changedPlan.tests.map((entry) => entry.path),
+    featurePlan.tests.map((entry) => entry.path),
+  );
+});
+
+test("path selection uses the nearest feature marker ancestor", async () => {
+  const root = await fixture([
+    "packages/core/domain-profile/.feature-id",
+    "packages/core/domain-profile/source.ts",
+    "apps/web/src/features/domain-profile/view.web.test.tsx",
+  ]);
+  await writeFile(path.join(root, "packages/core/domain-profile/.feature-id"), "domain-profile\n");
+
+  const plan = await createPlan({
+    root,
+    selector: { path: "packages/core/domain-profile/source.ts" },
+  });
+  assert.deepEqual(plan.featureIds, ["domain-profile"]);
+  assert.deepEqual(
+    plan.tests.map((entry) => entry.path),
+    ["apps/web/src/features/domain-profile/view.web.test.tsx"],
+  );
+});
+
+test("feature markers reject malformed text and nested duplicate or conflicting declarations", async () => {
+  const malformedRoot = await fixture(["packages/core/domain/.feature-id"]);
+  await writeFile(path.join(malformedRoot, "packages/core/domain/.feature-id"), "Not Kebab\n");
+  await assert.rejects(
+    createPlan({ root: malformedRoot, selector: { feature: "probe" } }),
+    /Malformed feature marker/,
+  );
+
+  const repeatedHyphenRoot = await fixture(["packages/core/profile--settings/.feature-id"]);
+  await writeFile(
+    path.join(repeatedHyphenRoot, "packages/core/profile--settings/.feature-id"),
+    "profile--settings\n",
+  );
+  await assert.rejects(
+    createPlan({ root: repeatedHyphenRoot, selector: { feature: "probe" } }),
+    /Malformed feature marker/,
+  );
+
+  for (const [nestedDirectory, nestedId, expected] of [
+    ["profile", "profile", /Duplicate nested feature marker/],
+    ["account", "account", /Conflicting nested feature marker/],
+  ]) {
+    const root = await fixture([
+      "packages/core/profile/.feature-id",
+      `packages/core/profile/${nestedDirectory}/.feature-id`,
+    ]);
+    await writeFile(path.join(root, "packages/core/profile/.feature-id"), "profile\n");
+    await writeFile(
+      path.join(root, `packages/core/profile/${nestedDirectory}/.feature-id`),
+      `${nestedId}\n`,
+    );
+    await assert.rejects(createPlan({ root, selector: { feature: "probe" } }), expected);
+  }
+});
+
+test("feature markers reject non-UTF-8 bytes", async () => {
+  const invalidUtf8Root = await fixture(["packages/core/domain/.feature-id"]);
+  await writeFile(
+    path.join(invalidUtf8Root, "packages/core/domain/.feature-id"),
+    Buffer.from([0xc3, 0x28]),
+  );
+  await assert.rejects(
+    createPlan({ root: invalidUtf8Root, selector: { feature: "probe" } }),
+    /valid UTF-8 text/,
+  );
+});
+
+test("feature markers reject broad, canonical, and basename-mismatched placement", async () => {
+  const cases = [
+    ["apps/.feature-id", "apps", /at or above canonical feature root/],
+    ["packages/core/src/.feature-id", "src", /at or above canonical feature root/],
+    ["apps/web/src/features/.feature-id", "features", /at or above canonical feature root/],
+    [
+      "packages/core/src/features/profile/nested/.feature-id",
+      "nested",
+      /inside canonical feature instance "profile"/,
+    ],
+    [
+      "packages/core/src/features/profile/.feature-id",
+      "profile",
+      /inside canonical feature instance "profile"/,
+    ],
+    ["packages/core/domain/.feature-id", "profile", /directory basename is "domain"/],
+  ];
+
+  for (const [markerPath, featureId, expected] of cases) {
+    const root = await fixture([markerPath]);
+    await writeFile(path.join(root, markerPath), `${featureId}\n`);
+    await assert.rejects(createPlan({ root, selector: { feature: "probe" } }), expected);
+  }
+});
+
+test("feature markers reject symlink marker files without following them", async () => {
+  const root = await fixture(["outside-marker"]);
+  await mkdir(path.join(root, "packages/core/domain"), { recursive: true });
+  await symlink(
+    path.join(root, "outside-marker"),
+    path.join(root, "packages/core/domain/.feature-id"),
+  );
+
+  await assert.rejects(
+    createPlan({ root, selector: { feature: "probe" } }),
+    /Feature marker must be a regular file, not a symlink/,
+  );
+});
+
+test("feature marker discovery rejects escaping symlink directories", async () => {
+  const root = await fixture([]);
+  const outside = await mkdtemp(path.join(os.tmpdir(), "feature-marker-outside-"));
+  fixtures.push(outside);
+  await mkdir(path.join(root, "packages/core/domain"), { recursive: true });
+  await writeFile(path.join(outside, ".feature-id"), "profile\n");
+  await symlink(outside, path.join(root, "packages/core/domain/escaped"), "dir");
+
+  await assert.rejects(
+    createPlan({ root, selector: { feature: "probe" } }),
+    /Feature marker traversal escapes repository root: packages\/core\/domain\/escaped/,
+  );
+});
+
+test("marker discovery is skipped for all and root-only selections", async () => {
+  assert.equal(selectionNeedsFeatureMarkers("/repo", { all: true }), false);
+  assert.equal(selectionNeedsFeatureMarkers("/repo", { path: "package.json" }), false);
+  assert.equal(
+    selectionNeedsFeatureMarkers("/repo", { changed: true }, ["package.json", "README.md"]),
+    false,
+  );
+  assert.equal(selectionNeedsFeatureMarkers("/repo", { path: "packages/core/domain.ts" }), true);
+  assert.equal(selectionNeedsFeatureMarkers("/repo", { feature: "profile" }), true);
+
+  const root = await fixture([
+    "apps/.feature-id",
+    "package.json",
+    "tooling/testing/planner.test.mjs",
+  ]);
+  await writeFile(path.join(root, "apps/.feature-id"), "apps\n");
+  const allPlan = await createPlan({ root, selector: { all: true } });
+  assert.equal(allPlan.tests.length, 1);
+  const rootPlan = await createPlan({ root, selector: { path: "package.json" } });
+  assert.equal(rootPlan.tests.length, 1);
+});
+
+test("strict changed execution fails uncovered owned changes but ignores docs-only changes", async () => {
+  const root = await fixture(["apps/web/src/orphan.ts", "docs/notes.md", "pnpm-lock.yaml"]);
+
+  const nonStrictPlan = await createPlan({
+    root,
+    selector: { changed: true },
+    changedFiles: ["apps/web/src/orphan.ts"],
+    requireTests: true,
+  });
+  assert.deepEqual(nonStrictPlan.commands, []);
+
+  await assert.rejects(
+    createPlan({
+      root,
+      selector: { changed: true },
+      changedFiles: ["apps/web/src/orphan.ts"],
+      requireTests: true,
+      strict: true,
+    }),
+    /Strict changed execution found production or configuration changes/,
+  );
+  await assert.rejects(
+    createPlan({
+      root,
+      selector: { changed: true },
+      changedFiles: ["pnpm-lock.yaml"],
+      requireTests: true,
+      strict: true,
+    }),
+    /Strict changed execution found production or configuration changes/,
+  );
+  const docsPlan = await createPlan({
+    root,
+    selector: { changed: true },
+    changedFiles: ["docs/notes.md"],
+    requireTests: true,
+    strict: true,
+  });
+  assert.deepEqual(docsPlan.commands, []);
+});
+
+test("strict changed verification accepts an owner typecheck when no tests exist", async () => {
+  const root = await fixture(["apps/web/src/orphan.ts"]);
+  const plan = await createPlan({
+    root,
+    selector: { changed: true },
+    changedFiles: ["apps/web/src/orphan.ts"],
+    requireTests: true,
+    verify: true,
+    strict: true,
+  });
+
+  assert.deepEqual(plan.verificationCommands, [
+    {
+      command: "pnpm",
+      args: ["--filter", "web", "check-types"],
+      verification: "check-types",
+    },
+  ]);
+});
+
+test("strict CLI mode is limited to changed execution", () => {
+  assert.deepEqual(parseArguments(["--changed", "--run", "--strict"]), {
+    json: false,
+    run: true,
+    runtime: false,
+    changed: true,
+    strict: true,
+  });
+  assert.throws(() => parseArguments(["--changed", "--strict"]), /requires --changed with --run/);
+  assert.throws(
+    () => parseArguments(["--feature", "profile", "--run", "--strict"]),
+    /requires --changed with --run/,
+  );
 });
 
 test("execution requests reject empty feature and path selections", async () => {

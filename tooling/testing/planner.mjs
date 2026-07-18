@@ -1,5 +1,6 @@
-import { lstat, readdir, realpath } from "node:fs/promises";
+import { lstat, readdir, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
+import { TextDecoder } from "node:util";
 
 export const FEATURE_ROOTS = [
   "packages/core/src/features",
@@ -7,6 +8,10 @@ export const FEATURE_ROOTS = [
   "apps/web/src/features",
   "apps/mobile/features",
 ];
+
+export const FEATURE_MARKER = ".feature-id";
+const FEATURE_MARKER_ROOTS = ["apps", "packages"];
+const FEATURE_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 const RUNTIME_KINDS = new Set(["live-db", "playwright", "maestro"]);
 const IGNORED_DIRECTORIES = new Set([".git", ".turbo", "coverage", "dist", "node_modules"]);
@@ -16,6 +21,16 @@ const ROOT_VERIFICATION_CAPSULES = {
   "pnpm-workspace.yaml": ["tooling/architecture", "tooling/testing", "tests/parity"],
   "turbo.json": ["tooling/architecture", "tooling/testing"],
   "vitest.parity.config.ts": ["tests/parity"],
+};
+const ROOT_CONFIG_FILES = new Set([...Object.keys(ROOT_VERIFICATION_CAPSULES), "pnpm-lock.yaml"]);
+const OWNERS = {
+  "apps/mobile": { directory: "apps/mobile", filter: "mobile" },
+  "apps/web": { directory: "apps/web", filter: "web" },
+  "packages/api": { directory: "packages/api", filter: "@repo/api" },
+  "packages/auth": { directory: "packages/auth", filter: "@repo/auth" },
+  "packages/core": { directory: "packages/core", filter: "@repo/core" },
+  "packages/db": { directory: "packages/db", filter: "@repo/db" },
+  "packages/ui": { directory: "packages/ui", filter: "@repo/ui" },
 };
 
 function toPosix(value) {
@@ -61,6 +76,47 @@ async function walkFiles(root, relativeDirectory, resolvedRoot) {
   return files;
 }
 
+async function walkFeatureMarkerPaths(root, relativeDirectory, resolvedRoot) {
+  const absoluteDirectory = path.join(root, relativeDirectory);
+  const kind = await pathKind(absoluteDirectory);
+  if (kind === "missing") return [];
+  if (kind === "symlink") return [];
+  if (kind !== "directory") return [];
+  const repositoryRoot = resolvedRoot ?? (await realpath(root));
+  const resolvedDirectory = await realpath(absoluteDirectory);
+  if (!isInsideRoot(repositoryRoot, resolvedDirectory)) {
+    throw new Error(
+      `Feature marker traversal escapes repository root: ${toPosix(relativeDirectory)} resolves outside the repository.`,
+    );
+  }
+
+  const markers = [];
+  const entries = await readdir(absoluteDirectory, { withFileTypes: true });
+  entries.sort((left, right) => left.name.localeCompare(right.name));
+  for (const entry of entries) {
+    if (IGNORED_DIRECTORIES.has(entry.name)) continue;
+    const relativePath = path.posix.join(toPosix(relativeDirectory), entry.name);
+    if (entry.isSymbolicLink()) {
+      if (entry.name === FEATURE_MARKER) {
+        throw new Error(`Feature marker must be a regular file, not a symlink: ${relativePath}`);
+      }
+      const resolvedTarget = await realpath(path.join(root, relativePath));
+      if (!isInsideRoot(repositoryRoot, resolvedTarget)) {
+        throw new Error(
+          `Feature marker traversal escapes repository root: ${relativePath} resolves outside the repository.`,
+        );
+      }
+      continue;
+    }
+    if (entry.isDirectory()) {
+      markers.push(...(await walkFeatureMarkerPaths(root, relativePath, repositoryRoot)));
+    } else if (entry.isFile() && entry.name === FEATURE_MARKER) {
+      markers.push(relativePath);
+    }
+  }
+  return markers;
+}
+
 async function isContainedFile(root, relativePath, resolvedRoot) {
   const absolutePath = path.join(root, relativePath);
   if ((await pathKind(absolutePath)) !== "file") return false;
@@ -104,7 +160,7 @@ export function classifyTest(relativePath) {
   return null;
 }
 
-function featureIdFromPath(relativePath) {
+function canonicalFeatureIdFromPath(relativePath) {
   const normalized = toPosix(relativePath);
   for (const root of FEATURE_ROOTS) {
     if (!normalized.startsWith(`${root}/`)) continue;
@@ -119,19 +175,134 @@ function featureIdFromPath(relativePath) {
 }
 
 function validateFeatureId(featureId) {
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(featureId)) {
+  if (!FEATURE_ID_PATTERN.test(featureId)) {
     throw new Error(
-      `Invalid feature id "${featureId}"; use lowercase letters, numbers, and hyphens.`,
+      `Invalid feature id "${featureId}"; use lowercase letters and numbers separated by single hyphens.`,
     );
   }
 }
 
-async function discoverFeature(root, featureId) {
+async function readFeatureMarker(root, markerPath, resolvedRoot) {
+  if (!(await isContainedFile(root, markerPath, resolvedRoot))) {
+    throw new Error(`Feature marker must be a regular file: ${markerPath}`);
+  }
+  let contents;
+  try {
+    contents = new TextDecoder("utf-8", { fatal: true }).decode(
+      await readFile(path.join(root, markerPath)),
+    );
+  } catch {
+    throw new Error(`Feature marker must contain valid UTF-8 text: ${markerPath}`);
+  }
+  const featureId = contents.endsWith("\n") ? contents.slice(0, -1) : contents;
+  if (!FEATURE_ID_PATTERN.test(featureId)) {
+    throw new Error(
+      `Malformed feature marker ${markerPath}; expected one lowercase kebab feature id and an optional trailing newline.`,
+    );
+  }
+  return featureId;
+}
+
+function isSameOrAncestor(directory, candidate) {
+  const relative = path.posix.relative(directory, candidate);
+  return relative === "" || (!relative.startsWith("..") && !path.posix.isAbsolute(relative));
+}
+
+export async function discoverFeatureMarkers(root) {
+  const resolvedRoot = await realpath(root);
+  const markerPaths = [];
+  for (const markerRoot of FEATURE_MARKER_ROOTS) {
+    markerPaths.push(...(await walkFeatureMarkerPaths(root, markerRoot, resolvedRoot)));
+  }
+
+  const directories = new Map();
+  const byId = new Map();
+  for (const markerPath of markerPaths.sort()) {
+    const directory = path.posix.dirname(markerPath);
+    const featureId = await readFeatureMarker(root, markerPath, resolvedRoot);
+    validateFeatureId(featureId);
+    if (path.posix.basename(directory) !== featureId) {
+      throw new Error(
+        `Feature marker ${markerPath} declares "${featureId}" but its directory basename is "${path.posix.basename(directory)}"; they must match exactly.`,
+      );
+    }
+    const canonicalId = canonicalFeatureIdFromPath(directory);
+    if (canonicalId) {
+      throw new Error(
+        `Feature marker ${markerPath} is inside canonical feature instance "${canonicalId}"; canonical feature directories must not contain markers.`,
+      );
+    }
+    const shadowedRoot = FEATURE_ROOTS.find((featureRoot) =>
+      isSameOrAncestor(directory, featureRoot),
+    );
+    if (shadowedRoot) {
+      throw new Error(
+        `Feature marker ${markerPath} is at or above canonical feature root ${shadowedRoot}; broad markers are not allowed.`,
+      );
+    }
+
+    let ancestor = path.posix.dirname(directory);
+    while (ancestor !== ".") {
+      const ancestorId = directories.get(ancestor);
+      if (ancestorId) {
+        const relationship = ancestorId === featureId ? "Duplicate" : "Conflicting";
+        throw new Error(
+          `${relationship} nested feature marker ${markerPath}; ancestor ${ancestor}/${FEATURE_MARKER} declares "${ancestorId}".`,
+        );
+      }
+      ancestor = path.posix.dirname(ancestor);
+    }
+    directories.set(directory, featureId);
+    const featureDirectories = byId.get(featureId) ?? [];
+    featureDirectories.push(directory);
+    byId.set(featureId, featureDirectories);
+  }
+
+  return { byDirectory: directories, byId };
+}
+
+function markerFeatureIdFromPath(relativePath, markers) {
+  let candidate = toPosix(relativePath).replace(/\/$/, "");
+  if (path.posix.basename(candidate) === FEATURE_MARKER) candidate = path.posix.dirname(candidate);
+  while (candidate !== ".") {
+    const featureId = markers.byDirectory.get(candidate);
+    if (featureId) return featureId;
+    candidate = path.posix.dirname(candidate);
+  }
+  return null;
+}
+
+function featureIdFromPath(relativePath, markers) {
+  return markerFeatureIdFromPath(relativePath, markers) ?? canonicalFeatureIdFromPath(relativePath);
+}
+
+function emptyFeatureMarkers() {
+  return { byDirectory: new Map(), byId: new Map() };
+}
+
+function isRootOnlyPath(root, requestedPath) {
+  const relative = toPosix(path.relative(path.resolve(root), path.resolve(root, requestedPath)));
+  return relative === "." || path.posix.dirname(relative) === ".";
+}
+
+export function selectionNeedsFeatureMarkers(root, selector, changedFiles = []) {
+  if (selector.feature) return true;
+  if (selector.all) return false;
+  if (selector.path) return !isRootOnlyPath(root, selector.path);
+  if (selector.changed)
+    return changedFiles.some((file) => path.posix.dirname(toPosix(file)) !== ".");
+  return false;
+}
+
+async function discoverFeature(root, featureId, markers) {
   validateFeatureId(featureId);
   const resolvedRoot = await realpath(root);
   const candidates = [];
   for (const featureRoot of FEATURE_ROOTS) {
     candidates.push(...(await walkFiles(root, `${featureRoot}/${featureId}`, resolvedRoot)));
+  }
+  for (const directory of markers.byId.get(featureId) ?? []) {
+    candidates.push(...(await walkFiles(root, directory, resolvedRoot)));
   }
   candidates.push(`apps/web/e2e/features/${featureId}.spec.ts`);
   candidates.push(`apps/mobile/.maestro/features/${featureId}.yaml`);
@@ -150,7 +321,7 @@ async function discoverRootVerificationCapsule(root, relativePath) {
   return files;
 }
 
-async function discoverPath(root, requestedPath) {
+async function discoverPath(root, requestedPath, markers) {
   const absolute = path.resolve(root, requestedPath);
   if (!isInsideRoot(root, absolute))
     throw new Error(`Path must be inside the repository: ${requestedPath}`);
@@ -163,8 +334,9 @@ async function discoverPath(root, requestedPath) {
   if (!isInsideRoot(resolvedRoot, resolvedTarget)) {
     throw new Error(`Resolved path must be inside the repository: ${requestedPath}`);
   }
-  const featureId = featureIdFromPath(relative);
-  if (featureId) return { files: await discoverFeature(root, featureId), featureIds: [featureId] };
+  const featureId = featureIdFromPath(relative, markers);
+  if (featureId)
+    return { files: await discoverFeature(root, featureId, markers), featureIds: [featureId] };
 
   if (kind === "directory") return { files: await walkFiles(root, relative), featureIds: [] };
   if (classifyTest(relative) || relative.endsWith("/feature.contract.ts")) {
@@ -184,16 +356,7 @@ async function discoverPath(root, requestedPath) {
 function ownerFor(relativePath) {
   const [group, name] = relativePath.split("/");
   const key = `${group}/${name}`;
-  const owners = {
-    "apps/mobile": { directory: "apps/mobile", filter: "mobile" },
-    "apps/web": { directory: "apps/web", filter: "web" },
-    "packages/api": { directory: "packages/api", filter: "@repo/api" },
-    "packages/auth": { directory: "packages/auth", filter: "@repo/auth" },
-    "packages/core": { directory: "packages/core", filter: "@repo/core" },
-    "packages/db": { directory: "packages/db", filter: "@repo/db" },
-    "packages/ui": { directory: "packages/ui", filter: "@repo/ui" },
-  };
-  return owners[key] ?? { directory: ".", filter: null };
+  return OWNERS[key] ?? { directory: ".", filter: null };
 }
 
 function commandIdentity(test) {
@@ -289,10 +452,10 @@ export function commandsForTests(tests, { runtime = false } = {}) {
     });
 }
 
-export function verificationCommandsForTests(tests) {
+export function verificationCommandsForFiles(files) {
   const owners = new Map();
-  for (const test of tests) {
-    const owner = ownerFor(test.path);
+  for (const file of files) {
+    const owner = ownerFor(typeof file === "string" ? file : file.path);
     if (owner.filter) owners.set(owner.filter, owner);
   }
 
@@ -314,6 +477,21 @@ export function verificationCommandsForTests(tests) {
   return commands;
 }
 
+export const verificationCommandsForTests = verificationCommandsForFiles;
+
+function isStrictlyRelevantChangedFile(relativePath) {
+  const normalized = toPosix(relativePath);
+  if (classifyTest(normalized) || /(?:^|\/)__tests__\//.test(normalized)) return false;
+  if (/\.(?:md|mdx)$/.test(normalized) || /\.(?:stories|story)\.[cm]?[jt]sx?$/.test(normalized)) {
+    return false;
+  }
+  if (/^tooling\/.*\/fixtures\//.test(normalized)) return false;
+  if (ROOT_CONFIG_FILES.has(normalized)) return true;
+  const owner = ownerFor(normalized);
+  if (owner.filter) return true;
+  return normalized.startsWith("tooling/");
+}
+
 export async function createPlan({
   root,
   selector,
@@ -321,24 +499,28 @@ export async function createPlan({
   runtime = false,
   verify = false,
   requireTests = false,
+  strict = false,
 }) {
   const resolvedRoot = path.resolve(root);
   let discovered = [];
   const featureIds = new Set();
+  const markers = selectionNeedsFeatureMarkers(resolvedRoot, selector, changedFiles)
+    ? await discoverFeatureMarkers(resolvedRoot)
+    : emptyFeatureMarkers();
 
   if (selector.feature) {
     featureIds.add(selector.feature);
-    discovered = await discoverFeature(resolvedRoot, selector.feature);
+    discovered = await discoverFeature(resolvedRoot, selector.feature, markers);
   } else if (selector.path) {
-    const result = await discoverPath(resolvedRoot, selector.path);
+    const result = await discoverPath(resolvedRoot, selector.path, markers);
     discovered = result.files;
     for (const id of result.featureIds) featureIds.add(id);
   } else if (selector.changed) {
     for (const changedFile of [...new Set(changedFiles)].sort()) {
-      const featureId = featureIdFromPath(changedFile);
+      const featureId = featureIdFromPath(changedFile, markers);
       if (featureId) {
         featureIds.add(featureId);
-        discovered.push(...(await discoverFeature(resolvedRoot, featureId)));
+        discovered.push(...(await discoverFeature(resolvedRoot, featureId, markers)));
         continue;
       }
       if (classifyTest(changedFile)) {
@@ -347,7 +529,7 @@ export async function createPlan({
         continue;
       }
       if ((await pathKind(path.join(resolvedRoot, changedFile))) === "file") {
-        discovered.push(...(await discoverPath(resolvedRoot, changedFile)).files);
+        discovered.push(...(await discoverPath(resolvedRoot, changedFile, markers)).files);
       }
     }
   } else if (selector.all) {
@@ -355,6 +537,7 @@ export async function createPlan({
       ...(await walkFiles(resolvedRoot, "packages")),
       ...(await walkFiles(resolvedRoot, "apps")),
       ...(await walkFiles(resolvedRoot, "tooling")),
+      ...(await walkFiles(resolvedRoot, "tests")),
     ];
   } else {
     throw new Error("Choose one selector: --path, --feature, --changed, or --all.");
@@ -363,7 +546,11 @@ export async function createPlan({
   const files = [...new Set(discovered)].sort();
   const intentFiles = files.filter((file) => file.endsWith("/feature.contract.ts"));
   const tests = files
-    .map((file) => ({ kind: classifyTest(file), path: file, featureId: featureIdFromPath(file) }))
+    .map((file) => ({
+      kind: classifyTest(file),
+      path: file,
+      featureId: featureIdFromPath(file, markers),
+    }))
     .filter((test) => test.kind)
     .sort((left, right) => left.path.localeCompare(right.path));
   const deferred = tests.filter((test) => !runtime && RUNTIME_KINDS.has(test.kind));
@@ -379,12 +566,24 @@ export async function createPlan({
     );
   }
   const testCommands = commandsForTests(tests, { runtime });
-  const verificationCommands = verify ? verificationCommandsForTests(tests) : [];
+  const verificationCommands = verify ? verificationCommandsForFiles(files) : [];
+  if (
+    strict &&
+    selector.changed &&
+    changedFiles.some(isStrictlyRelevantChangedFile) &&
+    tests.length === 0 &&
+    verificationCommands.length === 0
+  ) {
+    throw new Error(
+      "Strict changed execution found production or configuration changes but no tests or verification commands.",
+    );
+  }
 
   return {
     selector,
     featureIds: [...featureIds].sort(),
     intentFiles,
+    files,
     tests,
     commands: [...testCommands, ...verificationCommands],
     verificationCommands,

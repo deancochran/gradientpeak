@@ -22,13 +22,15 @@ pnpm test:file packages/core/activity-plan-calculations.test.ts
 pnpm test:feature activity-plan
 pnpm test:changed
 pnpm verify:feature activity-plan
+pnpm verify:changed
 ```
 
-`test:file`, `test:feature`, and `test:changed` pass `--run` to the planner. `verify:feature` passes
-`--verify`: it runs selected tests first, then `check-types` for each selected package and
-`check:testing-artifacts` when `@repo/ui` is selected. The planner spawns argument arrays directly;
-it does not build shell command strings. Runtime tests are shown but deferred unless `--runtime`
-is explicit:
+`test:file`, `test:feature`, and `test:changed` pass `--run` to the planner. `verify:feature` and
+`verify:changed` pass `--verify`: they run selected tests first, then `check-types` for every
+workspace owner represented by any discovered source or test file and `check:testing-artifacts`
+when `@repo/ui` is represented. For example, a feature with web source and only Core tests runs
+both the web and Core typechecks. The planner spawns argument arrays directly; it does not build
+shell command strings. Runtime tests are shown but deferred unless `--runtime` is explicit:
 
 ```sh
 pnpm test:scope -- --feature activity-plan --run --runtime
@@ -37,13 +39,20 @@ pnpm test:scope -- --feature activity-plan --run --runtime
 `--plan` may be passed explicitly, but plan-only is the CLI default. An empty path or feature is
 allowed while planning so a feature can adopt the convention incrementally. The same empty
 selection fails clearly with `--run` or `--verify` rather than reporting a misleading success.
-Changed execution is different: when no changed file selects a test, it prints `No tests selected`
-and exits successfully. Any execution selection containing tests but only deferred runtime tests
-fails and asks for explicit `--runtime`; verification checks cannot substitute for test execution.
+Changed execution is different: by default, when no changed file selects a test or verification
+command, it prints `No tests selected` and exits successfully. `--strict` may be combined only with
+`--changed --run` or `--changed --verify`; it fails if changed production/configuration files under
+a known app, package, tooling tree, or recognized root configuration yield neither tests nor
+verification commands. Changed tests, stories, `tooling/**/fixtures`, and Markdown are not treated
+as uncovered production/configuration. Thus an irrelevant docs-only change remains a successful
+empty strict plan. Any execution selection containing tests but only deferred runtime tests fails
+and asks for explicit `--runtime`; verification checks cannot substitute for test execution.
 
 ## Canonical feature layout
 
-A feature id is a lowercase kebab-case directory repeated at any applicable layer:
+A feature id is lowercase kebab case with nonempty letter/number segments separated by single
+hyphens (for example, `activity-plan`, not `activity--plan`) and is repeated at any applicable
+layer:
 
 ```text
 packages/core/src/features/<id>/
@@ -63,6 +72,19 @@ files never use the repository itself as a capsule. Test-infrastructure files (`
 `turbo.json`, `pnpm-workspace.yaml`, `biome.json`, and `vitest.parity.config.ts`) select finite
 testing/architecture Node-test and parity capsules as appropriate. Arbitrary root files select no
 tests.
+
+Features may also adopt the convention incrementally by placing `.feature-id` in an applicable
+noncanonical directory below `apps/` or `packages/`. The directory basename must exactly equal the
+declared id. Markers are forbidden at or above a canonical feature root and anywhere inside an
+existing canonical feature instance, which already gets feature grouping from its path. The marker
+is inert UTF-8 text: its entire contents must be one valid lowercase kebab feature id with at most
+one trailing newline. It is never imported or executed. All marked directories and canonical roots
+with the same id are grouped by `--feature`. Path and changed selection use the nearest ancestor
+marker, including for a deleted descendant while its ancestor marker remains. Nested marker
+declarations (duplicate or conflicting), basename mismatches, malformed/non-UTF-8 markers, and
+symlink markers are rejected. Discovery does not follow symlink directories and retains the
+repository real-path containment checks. `--all` and direct root-file selections skip the marker
+inventory because those selectors cannot use marker grouping.
 
 ## Filename classification
 
@@ -120,6 +142,11 @@ node tooling/testing/cli.mjs --write-structure-baseline
 ```
 
 The structure check runs once through root `check`/`check:ci`, and therefore once in `quality:agent`.
+The package native Jest configuration likewise collects both `*.native.test.ts` and
+`*.native.test.tsx`. Web and native story-surface guards recognize both `index.<platform>.ts` and
+`index.<platform>.tsx`, matching the structure checker. UI ownership guards recursively inventory
+production `.ts`/`.tsx` files and exclude tests, stories, and generated files before comparing the
+current approved app-owned lists.
 
 ## Migration and limitations
 
@@ -127,10 +154,11 @@ The structure check runs once through root `check`/`check:ci`, and therefore onc
   colocated files; cross-layer feature expansion begins when files adopt canonical feature roots.
 - Renaming a test to a specific suffix changes its runner classification. Prefer the narrowest
   truthful suffix instead of configuration entries.
-- Changed selection uses `git diff` plus untracked files. With `--base`, it also includes commits
-  in `<base>...HEAD`. Deleted paths are retained so deleting one canonical feature file still
-  expands and tests the remaining files for that feature; deleted non-feature files cannot
-  contribute sibling discovery.
+- Changed selection uses NUL-delimited `git diff --name-only -z` plus NUL-delimited untracked-file
+  discovery, so repository paths containing newlines remain one path. With `--base`, it also
+  includes commits in `<base>...HEAD`. Deleted paths are retained so deleting one canonical feature
+  file still expands and tests the remaining files for that feature; deleted non-feature files
+  cannot contribute sibling discovery.
 - The planner maps known workspace owners (`core`, `api`, `auth`, `db`, `ui`, `web`, and `mobile`).
   Auth uses its Vitest script. Self-running `packages/db/scripts/*.test.ts` files each use
   `pnpm --filter @repo/db exec tsx`; focused DB tests never call the aggregate DB `test` script.
@@ -139,6 +167,8 @@ The structure check runs once through root `check`/`check:ci`, and therefore onc
   `tooling/testing/*.test.mjs` use `node --test`.
 - Files under `tooling/**/fixtures` are never classified as executable tests during capsule or
   `--all` discovery.
+- `--all` scans `packages/`, `apps/`, `tooling/`, and the root `tests/` tree; parity files under
+  `tests/parity` retain the root parity runner mapping.
 - Direct symlink selections are rejected, real paths must remain inside the repository, and
   recursive discovery never follows symlink directories.
 - Runtime commands assume their application, database, device, and credentials are already
