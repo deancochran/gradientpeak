@@ -2,6 +2,7 @@ import type { ErrorEvent } from "@sentry/react-native";
 import { describe, expect, it } from "vitest";
 import {
   createRuntimeSentryConfig,
+  isExpectedMobileSentryError,
   prepareMobileSentryEvent,
   sanitizeMobileSentryContext,
 } from "./sentry-config";
@@ -95,5 +96,31 @@ describe("mobile Sentry configuration", () => {
       type: undefined,
       extra: { accessToken: "[Redacted]", operation: "sync" },
     });
+  });
+
+  it("suppresses only explicitly identifiable API request timeouts", () => {
+    expect(
+      isExpectedMobileSentryError(
+        Object.assign(new Error("API request timed out after 30000ms"), {
+          name: "ApiRequestTimeoutError",
+          code: "API_REQUEST_TIMEOUT",
+        }),
+      ),
+    ).toBe(true);
+    expect(isExpectedMobileSentryError(new TypeError("Network request timed out"))).toBe(true);
+    expect(isExpectedMobileSentryError(new DOMException("aborted", "AbortError"))).toBe(false);
+    expect(
+      isExpectedMobileSentryError(
+        new Error("unexpected", { cause: new TypeError("Network request timed out") }),
+      ),
+    ).toBe(false);
+    expect(isExpectedMobileSentryError(new Error("unexpected"))).toBe(false);
+
+    const options = createRuntimeSentryConfig({}, "development");
+    expect(
+      options.beforeSend(errorEvent({}), {
+        originalException: new TypeError("Network request timed out"),
+      }),
+    ).toBeNull();
   });
 });

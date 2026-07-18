@@ -25,6 +25,10 @@ export class ApiRequestTimeoutError extends Error {
   }
 }
 
+function isNativeNetworkTimeoutError(error: unknown): error is TypeError {
+  return error instanceof TypeError && error.message === "Network request timed out";
+}
+
 function getActionName(input: RequestInfo | URL) {
   const rawUrl =
     typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
@@ -56,12 +60,14 @@ export const fetchWithTimeout: typeof fetch = async (input, init) => {
   const action = getActionName(input);
   const method = init?.method ?? "GET";
 
-  const upstreamSignal = init?.signal;
+  const requestSignal =
+    typeof Request !== "undefined" && input instanceof Request ? input.signal : undefined;
+  const upstreamSignal = init?.signal ?? requestSignal;
   const abortFromUpstream = () => {
     if (abortSource !== null) return;
     abortSource = "upstream_abort";
     clearTimeout(timeoutId);
-    controller.abort();
+    controller.abort(upstreamSignal?.reason);
   };
 
   if (upstreamSignal) {
@@ -90,15 +96,20 @@ export const fetchWithTimeout: typeof fetch = async (input, init) => {
     return response;
   } catch (error) {
     const elapsedMs = Math.max(0, Date.now() - startedAt);
+    const nativeNetworkTimeout = abortSource === null && isNativeNetworkTimeoutError(error);
     logMobileAction(action, "failure", {
       channel: "api",
       method,
-      classification: abortSource ?? "transport_failure",
+      classification: nativeNetworkTimeout
+        ? "native_timeout"
+        : (abortSource ?? "transport_failure"),
       elapsedMs,
       errorName: error instanceof Error ? error.name : "UnknownError",
       timeoutMs: API_REQUEST_TIMEOUT_MS,
     });
-    if (abortSource === "local_timeout") throw new ApiRequestTimeoutError(API_REQUEST_TIMEOUT_MS);
+    if (abortSource === "local_timeout" || nativeNetworkTimeout) {
+      throw new ApiRequestTimeoutError(API_REQUEST_TIMEOUT_MS);
+    }
     throw error;
   } finally {
     clearTimeout(timeoutId);

@@ -12,6 +12,25 @@ const MAX_CONTEXT_STRING_LENGTH = 500;
 const SENSITIVE_CONTEXT_KEY =
   /(?:authorization|cookie|password|passcode|secret|token|api[-_]?key|email|phone|username|user[-_]?id|session|credential)/i;
 
+type MobileSentryHint = { originalException?: unknown };
+
+function readErrorField(error: object, field: string): unknown {
+  return field in error ? (error as Record<string, unknown>)[field] : undefined;
+}
+
+export function isExpectedMobileSentryError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+
+  const name = readErrorField(error, "name");
+  const code = readErrorField(error, "code");
+  const message = readErrorField(error, "message");
+  return (
+    name === "ApiRequestTimeoutError" ||
+    code === "API_REQUEST_TIMEOUT" ||
+    (name === "TypeError" && message === "Network request timed out")
+  );
+}
+
 export function sanitizeMobileSentryContext(value: unknown): unknown {
   const seen = new WeakSet<object>();
   const sanitize = (current: unknown, depth: number): unknown => {
@@ -52,7 +71,13 @@ export function sanitizeMobileSentryContext(value: unknown): unknown {
   return sanitize(value, 0);
 }
 
-export function prepareMobileSentryEvent(event: ErrorEvent, _environment: string): ErrorEvent {
+export function prepareMobileSentryEvent(
+  event: ErrorEvent,
+  _environment: string,
+  hint?: MobileSentryHint,
+): ErrorEvent | null {
+  if (isExpectedMobileSentryError(hint?.originalException)) return null;
+
   delete event.request;
   delete event.user;
   if (event.extra) {
@@ -80,7 +105,8 @@ export function prepareMobileSentryEvent(event: ErrorEvent, _environment: string
 export function createRuntimeSentryConfig(env: MobileSentryEnvironment, environment: string) {
   return {
     ...createMobileSentryOptions(env, environment),
-    beforeSend: (event: ErrorEvent) => prepareMobileSentryEvent(event, environment),
+    beforeSend: (event: ErrorEvent, hint?: MobileSentryHint) =>
+      prepareMobileSentryEvent(event, environment, hint),
   };
 }
 

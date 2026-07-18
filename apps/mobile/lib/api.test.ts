@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { logMobileAction } from "@/lib/logging/mobile-action-log";
 import { ApiRequestTimeoutError, fetchWithTimeout } from "./api";
 
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
@@ -52,6 +53,24 @@ describe("fetchWithTimeout", () => {
     await vi.advanceTimersByTimeAsync(30_000);
 
     await rejection;
+    expect(logMobileAction).toHaveBeenLastCalledWith(
+      "activities.listPaginated",
+      "failure",
+      expect.objectContaining({ classification: "local_timeout" }),
+    );
+  });
+
+  it("normalizes the native fetch timeout and records its source", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new TypeError("Network request timed out"));
+
+    await expect(
+      fetchWithTimeout("https://example.test/api/trpc/activities.listPaginated"),
+    ).rejects.toBeInstanceOf(ApiRequestTimeoutError);
+    expect(logMobileAction).toHaveBeenLastCalledWith(
+      "activities.listPaginated",
+      "failure",
+      expect.objectContaining({ classification: "native_timeout", errorName: "TypeError" }),
+    );
   });
 
   it("preserves an upstream abort instead of relabeling it as a timeout", async () => {
@@ -64,6 +83,36 @@ describe("fetchWithTimeout", () => {
     upstream.abort();
 
     await expect(request).rejects.toMatchObject({ name: "AbortError" });
+    expect(logMobileAction).toHaveBeenLastCalledWith(
+      "profiles.get",
+      "failure",
+      expect.objectContaining({ classification: "upstream_abort" }),
+    );
+  });
+
+  it("honors a Request signal and preserves its abort reason", async () => {
+    const reason = new Error("navigation changed");
+    const upstream = new AbortController();
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      (_input, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), {
+            once: true,
+          });
+        }),
+    );
+    const request = fetchWithTimeout(
+      new Request("https://example.test/api/trpc/profiles.get", { signal: upstream.signal }),
+    );
+
+    upstream.abort(reason);
+
+    await expect(request).rejects.toBe(reason);
+    expect(logMobileAction).toHaveBeenLastCalledWith(
+      "profiles.get",
+      "failure",
+      expect.objectContaining({ classification: "upstream_abort" }),
+    );
   });
 
   it("does not relabel a delayed upstream abort after the timeout deadline", async () => {
@@ -79,6 +128,11 @@ describe("fetchWithTimeout", () => {
     await vi.advanceTimersByTimeAsync(35_000);
 
     await rejection;
+    expect(logMobileAction).toHaveBeenLastCalledWith(
+      "profiles.get",
+      "failure",
+      expect.objectContaining({ classification: "upstream_abort" }),
+    );
   });
 
   it("does not relabel a delayed local timeout after an upstream abort arrives", async () => {
@@ -95,5 +149,10 @@ describe("fetchWithTimeout", () => {
     await vi.advanceTimersByTimeAsync(1_000);
 
     await rejection;
+    expect(logMobileAction).toHaveBeenLastCalledWith(
+      "profiles.get",
+      "failure",
+      expect.objectContaining({ classification: "local_timeout" }),
+    );
   });
 });
