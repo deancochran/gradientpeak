@@ -48,7 +48,7 @@ subscribeServerConfig(() => {
     unsubscribe();
     unsubscribe = null;
   }
-  void emitCurrentSession();
+  emitCurrentSessionDetached();
 });
 
 function normalizeSession(session: AuthSessionLike | null | undefined) {
@@ -57,8 +57,22 @@ function normalizeSession(session: AuthSessionLike | null | undefined) {
 
 async function emitCurrentSession() {
   const session = await getMobileAuthSession();
+  notifySessionListeners(session);
+}
+
+function emitCurrentSessionDetached() {
+  void emitCurrentSession().catch((error) => {
+    console.error("[MobileAuthClient] Failed to emit the current session", error);
+  });
+}
+
+function notifySessionListeners(session: AuthSession | null) {
   listeners.forEach((listener) => {
-    listener(session);
+    try {
+      listener(session);
+    } catch (error) {
+      console.error("[MobileAuthClient] Session listener failed", error);
+    }
   });
 }
 
@@ -69,7 +83,7 @@ function ensureSubscription() {
     ?.$sessionSignal;
   if (sessionAtom?.listen) {
     unsubscribe = sessionAtom.listen(() => {
-      void emitCurrentSession();
+      emitCurrentSessionDetached();
     });
   }
 }
@@ -126,9 +140,7 @@ export async function getMobileAuthSession() {
 
 export async function refreshMobileAuthSession() {
   const session = await getMobileAuthSession();
-  listeners.forEach((listener) => {
-    listener(session);
-  });
+  notifySessionListeners(session);
   return session;
 }
 

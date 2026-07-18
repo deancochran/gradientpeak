@@ -211,7 +211,7 @@ export class SensorsManager {
     this.initialize();
     this.startConnectionMonitoring();
     // Load persisted sensors and attempt auto-reconnection
-    this.knownSensorRegistry.load();
+    void this.knownSensorRegistry.load();
   }
 
   private toHex(bytes: Uint8Array): string {
@@ -273,7 +273,7 @@ export class SensorsManager {
           console.log(
             `[SensorsManager] BLE powered on, attempting to reconnect ${this.knownSensorRegistry.size} persisted sensors`,
           );
-          this.reconnectPersistedSensors();
+          void this.reconnectPersistedSensors();
         }
       }
       if (state === "PoweredOff" || state === "Unauthorized") {
@@ -297,7 +297,7 @@ export class SensorsManager {
           });
         }
         console.log(`[SensorsManager] BLE ${state}, disconnecting all sensors`);
-        this.disconnectAll();
+        void this.disconnectAll();
       }
     }, true);
   }
@@ -621,7 +621,7 @@ export class SensorsManager {
     }
 
     this.connectionMonitorTimer = setInterval(() => {
-      this.checkSensorHealth();
+      void this.checkSensorHealth();
     }, this.HEALTH_CHECK_INTERVAL_MS);
   }
 
@@ -789,7 +789,7 @@ export class SensorsManager {
 
     const timer = setTimeout(() => {
       this.reconnectionTimers.delete(sensorId);
-      this.attemptReconnection(sensorId, nextAttempt);
+      void this.attemptReconnection(sensorId, nextAttempt);
     }, delayMs);
 
     this.reconnectionTimers.set(sensorId, timer);

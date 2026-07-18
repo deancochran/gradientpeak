@@ -165,7 +165,9 @@ export function StepEditorDialog({
       notes: result.data.notes,
     };
 
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch((error) => {
+      console.warn("Haptic feedback failed:", error);
+    });
     onSave(savedStep);
     onOpenChange(false);
   };
@@ -180,7 +182,9 @@ export function StepEditorDialog({
     });
 
     form.setValue("targets", [...targets, defaultTarget]);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch((error) => {
+      console.warn("Haptic feedback failed:", error);
+    });
   };
 
   const handleRemoveTarget = (index: number) => {
@@ -190,7 +194,9 @@ export function StepEditorDialog({
       "targets",
       targets.filter((_, i) => i !== index),
     );
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch((error) => {
+      console.warn("Haptic feedback failed:", error);
+    });
   };
 
   if (!open) {

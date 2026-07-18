@@ -137,7 +137,7 @@ export class LocationManager {
 
   constructor() {
     // Load any existing buffered locations on startup
-    this.loadBufferedLocations();
+    void this.loadBufferedLocations();
   }
 
   private async handleLocationUpdate(location: Location.LocationObject) {
@@ -369,8 +369,8 @@ export class LocationManager {
     if (this.healthCheckInterval !== null) return;
 
     this.healthCheckInterval = setInterval(() => {
-      this.performHealthCheck();
-    }, this.HEALTH_CHECK_INTERVAL) as unknown as number;
+      void this.performHealthCheck();
+    }, this.HEALTH_CHECK_INTERVAL);
 
     console.log("Location health monitoring started");
   }

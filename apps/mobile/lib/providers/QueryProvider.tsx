@@ -33,9 +33,16 @@ const handleGlobalError = (error: unknown) => {
 
 export const setupNetworkListener = () => {
   const unsubscribe = onlineManager.setEventListener((setOnline) => {
-    void Network.getNetworkStateAsync().then((state) => {
-      setOnline(Boolean(state.isConnected));
-    });
+    void Network.getNetworkStateAsync()
+      .then((state) => {
+        setOnline(Boolean(state.isConnected));
+      })
+      .catch((error) => {
+        console.warn(
+          "[QueryProvider] Failed to read initial network state; waiting for a network update",
+          error,
+        );
+      });
     const subscription = Network.addNetworkStateListener((state) => {
       setOnline(!!state.isConnected);
     });

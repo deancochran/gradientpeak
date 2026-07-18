@@ -60,7 +60,7 @@ export class RecordingErrorBoundary extends Component<
     };
   }
 
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
+  override componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
     // Log error details for debugging
     console.error(
       `[RecordingErrorBoundary] ${this.props.componentName} crashed:`,
@@ -89,7 +89,7 @@ export class RecordingErrorBoundary extends Component<
     console.log(`[RecordingErrorBoundary] Reloading ${this.props.componentName}`);
   };
 
-  render(): ReactNode {
+  override render(): ReactNode {
     if (this.state.hasError) {
       // Fallback UI when error occurs
       return (

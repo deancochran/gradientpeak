@@ -261,7 +261,9 @@ export function BikeControlUI({ service, controlMode }: BikeControlUIProps) {
           <Button
             onPress={() => {
               console.log(`[BikeControl] Apply Power button pressed`);
-              applyPowerTarget();
+              void applyPowerTarget().catch((error) => {
+                console.error("[BikeControl] Failed to apply power target:", error);
+              });
             }}
             disabled={isDisabled}
             variant={isDisabled ? "ghost" : "default"}
@@ -394,7 +396,9 @@ export function BikeControlUI({ service, controlMode }: BikeControlUIProps) {
           <Button
             onPress={() => {
               console.log(`[BikeControl] Apply Simulation button pressed`);
-              applySimulation();
+              void applySimulation().catch((error) => {
+                console.error("[BikeControl] Failed to apply simulation:", error);
+              });
             }}
             disabled={isDisabled}
             variant={isDisabled ? "ghost" : "default"}
@@ -472,7 +476,9 @@ export function BikeControlUI({ service, controlMode }: BikeControlUIProps) {
           <Button
             onPress={() => {
               console.log(`[BikeControl] Apply Resistance button pressed`);
-              applyResistance();
+              void applyResistance().catch((error) => {
+                console.error("[BikeControl] Failed to apply resistance:", error);
+              });
             }}
             disabled={isDisabled}
             variant={isDisabled ? "ghost" : "default"}

@@ -90,6 +90,6 @@
     "drizzle-kit": "^0.31.10",
     "supabase": "2.109.1",
     "tsx": "^4.20.6",
-    "typescript": "^5.5.2"
+    "typescript": "5.9.3"
   }
 }

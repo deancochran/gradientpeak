@@ -375,8 +375,8 @@ describe("discover screen", () => {
     jest.clearAllMocks();
   });
 
-  afterEach(() => {
-    act(() => {
+  afterEach(async () => {
+    await act(() => {
       jest.runOnlyPendingTimers();
     });
   });
@@ -453,7 +453,7 @@ describe("discover screen", () => {
   it("searches across the mixed list with the same debounced query", async () => {
     renderNative(<DiscoverScreen />);
 
-    act(() => {
+    await act(() => {
       fireEvent.changeText(screen.getByPlaceholderText("Search activity plans"), "river");
       jest.advanceTimersByTime(350);
     });
@@ -490,14 +490,14 @@ describe("discover screen", () => {
     });
   });
 
-  it("keeps the shared search selectors, accessibility, sanitization, and clear debounce", () => {
+  it("keeps the shared search selectors, accessibility, sanitization, and clear debounce", async () => {
     renderNative(<DiscoverScreen />);
 
     const searchInput = screen.getByTestId("discover-search-input");
     expect(screen.getByLabelText("Search activity plans")).toBe(searchInput);
     expect(screen.getByTestId("discover-filter-button")).toBeTruthy();
 
-    act(() => {
+    await act(() => {
       fireEvent.changeText(searchInput, `  ${"r".repeat(100)}`);
     });
     expect(searchInput.props.value).toHaveLength(80);

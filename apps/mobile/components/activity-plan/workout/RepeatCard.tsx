@@ -72,28 +72,36 @@ const RepeatCard = memo(function RepeatCard({
 
   const handlePress = () => {
     if (onPress) {
-      Haptics.selectionAsync();
+      void Haptics.selectionAsync().catch((error) => {
+        console.warn("Haptic feedback failed:", error);
+      });
       onPress();
     }
   };
 
   const handleLongPress = () => {
     if (onLongPress) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch((error) => {
+        console.warn("Haptic feedback failed:", error);
+      });
       onLongPress();
     }
   };
 
   const handleEdit = () => {
     if (onEdit) {
-      Haptics.selectionAsync();
+      void Haptics.selectionAsync().catch((error) => {
+        console.warn("Haptic feedback failed:", error);
+      });
       onEdit();
     }
   };
 
   const handleDelete = () => {
     if (onDelete) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch((error) => {
+        console.warn("Haptic feedback failed:", error);
+      });
       onDelete();
     }
   };

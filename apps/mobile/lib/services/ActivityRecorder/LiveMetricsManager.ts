@@ -209,7 +209,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
     // Start 60-second persistence timer
     this.persistenceTimer = setInterval(() => {
-      this.persistAndCleanup();
+      void this.persistAndCleanup();
     }, RECORDING_CONFIG.PERSISTENCE_INTERVAL);
 
     console.log("[LiveMetricsManager] Started recording");
@@ -284,7 +284,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     }, RECORDING_CONFIG.UPDATE_INTERVAL);
 
     this.persistenceTimer = setInterval(() => {
-      this.persistAndCleanup();
+      void this.persistAndCleanup();
     }, RECORDING_CONFIG.PERSISTENCE_INTERVAL);
 
     console.log("[LiveMetricsManager] Resumed");

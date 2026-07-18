@@ -147,7 +147,9 @@ export function IntervalWizard({
       steps: steps,
     };
 
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch((error) => {
+      console.warn("Haptic feedback failed:", error);
+    });
     onSave(interval);
     onOpenChange(false);
   };

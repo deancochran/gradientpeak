@@ -193,6 +193,10 @@
           "packageJson": "package.json",
           "script": "lint",
           "patterns": ["tooling/typescript/**/*"]
+        },
+        "test": {
+          "script": "test",
+          "patterns": ["tooling/typescript/**/*.test.mjs"]
         }
       }
     },
@@ -255,6 +259,7 @@
       "packages/**/*",
       "tooling/architecture/**/*.test.mjs",
       "tooling/testing/**/*.test.mjs",
+      "tooling/typescript/**/*.test.mjs",
       "tests/parity/**/*.test.ts"
     ],
     "categories": {

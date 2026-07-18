@@ -45,29 +45,39 @@ export const StepCard = memo<StepCardProps>(function StepCard({
   const color = getStepIntensityColor(step);
 
   const handlePress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch((error) => {
+      console.warn("Haptic feedback failed:", error);
+    });
     onPress?.();
   };
 
   const handleLongPress = () => {
     if (isDraggable) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch((error) => {
+        console.warn("Haptic feedback failed:", error);
+      });
       onLongPress?.();
     }
   };
 
   const handleCopy = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch((error) => {
+      console.warn("Haptic feedback failed:", error);
+    });
     onCopy?.();
   };
 
   const handleDelete = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch((error) => {
+      console.warn("Haptic feedback failed:", error);
+    });
     onDelete?.();
   };
 
   const handleEdit = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch((error) => {
+      console.warn("Haptic feedback failed:", error);
+    });
     onEdit?.();
   };
 

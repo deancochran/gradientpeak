@@ -106,7 +106,7 @@ function SensorsScreen() {
       }
     };
 
-    loadPermissions();
+    void loadPermissions();
   }, []);
 
   const refreshPermissions = useCallback(async () => {

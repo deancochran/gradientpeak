@@ -299,13 +299,13 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
 
   // Listen for recording completion event
   useEffect(() => {
-    processRecording();
+    void processRecording();
 
     if (!service) return;
 
     const handleRecordingComplete = () => {
       console.log("[useActivitySubmission] Finalized artifact ready event received");
-      processRecording();
+      void processRecording();
     };
 
     const subscription = service.addListener("artifactReady", handleRecordingComplete);

@@ -344,7 +344,7 @@ describe("ScheduleActivityModal", () => {
     );
   });
 
-  it("submits edits for an existing planned event", () => {
+  it("submits edits for an existing planned event", async () => {
     existingActivityData = {
       id: "event-1",
       scheduled_date: "2026-03-23",
@@ -365,7 +365,7 @@ describe("ScheduleActivityModal", () => {
       (node: ReactTestInstance) => String(node.type) === "Button",
     );
 
-    act(() => {
+    await act(() => {
       buttons[buttons.length - 1].props.onPress();
     });
 

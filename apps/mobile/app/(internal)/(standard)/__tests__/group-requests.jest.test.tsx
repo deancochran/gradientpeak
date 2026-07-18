@@ -140,11 +140,11 @@ describe("group requests invite search", () => {
     searchUsersUseQueryMock.mockReturnValue({ data: { users: [] }, isFetching: false });
   });
 
-  afterEach(() => {
-    act(() => jest.runOnlyPendingTimers());
+  afterEach(async () => {
+    await act(() => jest.runOnlyPendingTimers());
   });
 
-  it("keeps invite enablement and sort while debouncing an accessible clearable search", () => {
+  it("keeps invite enablement and sort while debouncing an accessible clearable search", async () => {
     renderNative(<GroupRequestsScreen />);
 
     expect(searchUsersUseQueryMock).toHaveBeenLastCalledWith(
@@ -168,7 +168,7 @@ describe("group requests invite search", () => {
       { enabled: true },
     );
 
-    act(() => jest.advanceTimersByTime(300));
+    await act(() => jest.advanceTimersByTime(300));
     expect(searchUsersUseQueryMock).toHaveBeenLastCalledWith(
       { query: "rider", limit: 20, sort_by: "username_asc" },
       { enabled: true },

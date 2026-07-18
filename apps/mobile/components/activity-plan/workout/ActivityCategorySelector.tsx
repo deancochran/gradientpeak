@@ -20,7 +20,9 @@ export const ActivityTypeSelector = memo<ActivityTypeSelectorProps>(function Act
   const [open, setOpen] = useState(false);
 
   const handleSelect = (key: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch((error) => {
+      console.warn("Haptic feedback failed:", error);
+    });
     onChange(key);
     setOpen(false);
   };
@@ -146,7 +148,9 @@ export const ActivityCategorySelector = memo<ActivityCategorySelectorProps>(
     const [open, setOpen] = useState(false);
 
     const handleSelect = (key: string) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch((error) => {
+        console.warn("Haptic feedback failed:", error);
+      });
       onChange(key);
       setOpen(false);
     };

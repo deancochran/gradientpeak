@@ -49,6 +49,8 @@ export function DetailPageIntro({
   eyebrow?: string;
   title: string;
 }) {
+  const hasActions = Boolean(actions);
+
   return (
     <div className="flex flex-col gap-4 rounded-3xl border border-border bg-card p-6 lg:flex-row lg:items-start lg:justify-between">
       <div className="space-y-3">
@@ -69,7 +71,7 @@ export function DetailPageIntro({
           </div>
         ) : null}
       </div>
-      {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
+      {hasActions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
     </div>
   );
 }

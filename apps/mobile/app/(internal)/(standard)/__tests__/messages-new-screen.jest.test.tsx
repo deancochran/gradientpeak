@@ -146,7 +146,7 @@ describe("new message screen", () => {
     jest.useRealTimers();
   });
 
-  it("debounces rapid recipient typing, clears immediately, and returns to empty suggestions", () => {
+  it("debounces rapid recipient typing, clears immediately, and returns to empty suggestions", async () => {
     jest.useFakeTimers();
     searchUsersUseInfiniteQueryMock.mockImplementation((input: { query?: string }) => ({
       data: {
@@ -183,7 +183,7 @@ describe("new message screen", () => {
       searchUsersUseInfiniteQueryMock.mock.calls.filter(([input]) => input.query === "coach"),
     ).toHaveLength(0);
 
-    act(() => jest.advanceTimersByTime(300));
+    await act(() => jest.advanceTimersByTime(300));
     expect(searchUsersUseInfiniteQueryMock).toHaveBeenLastCalledWith(
       { query: "coach", limit: 20 },
       expect.objectContaining({ getNextPageParam: expect.any(Function) }),
@@ -198,7 +198,7 @@ describe("new message screen", () => {
 
     fireEvent.press(screen.getByTestId("messages-new-search-clear"));
     expect(screen.getByTestId("messages-new-search-input").props.value).toBe("");
-    act(() => jest.advanceTimersByTime(300));
+    await act(() => jest.advanceTimersByTime(300));
     expect(searchUsersUseInfiniteQueryMock).toHaveBeenLastCalledWith(
       { query: undefined, limit: 20 },
       expect.objectContaining({ getNextPageParam: expect.any(Function) }),

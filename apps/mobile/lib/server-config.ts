@@ -116,7 +116,7 @@ export async function initializeServerConfig() {
     return;
   }
 
-  if (initializePromise) {
+  if (initializePromise !== null) {
     return initializePromise;
   }
 

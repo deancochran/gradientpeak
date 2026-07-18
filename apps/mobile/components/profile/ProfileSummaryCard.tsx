@@ -80,6 +80,7 @@ export function ProfileSummaryCard({
     !!profile.gender ||
     !!profile.preferred_units ||
     !!profile.language;
+  const hasActions = Boolean(actions);
 
   return (
     <Card className="overflow-hidden rounded-3xl border border-border bg-card" testID={testID}>
@@ -161,7 +162,7 @@ export function ProfileSummaryCard({
           </Button>
         ) : null}
 
-        {actions ? <View className="gap-3">{actions}</View> : null}
+        {hasActions ? <View className="gap-3">{actions}</View> : null}
 
         {showMetadata && hasProfileMetadata ? (
           <View className="gap-3 border-t border-border pt-4">

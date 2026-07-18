@@ -299,16 +299,15 @@ export function ActivityCard({
   const routeCoordinates = decodedPolylineCoordinates;
   const ingestionStatusText = getIngestionStatusText(activity);
   const calibrationText = getCalibrationText(activity);
+  const hasCommentAction = Boolean(onCommentPress);
+  const hasFooterAccessory = Boolean(footerAccessory);
+  const hasHeaderAccessory = Boolean(headerAccessory);
 
   return (
     <ResourceCardShell contentClassName="gap-3 px-3" onPress={onPress} testID={testID}>
       <ResourceOwnerActionRow
         actions={
-          onCommentPress ||
-          footerAccessory ||
-          resolvedShowLike ||
-          headerAccessory ||
-          headerAccessory ? (
+          hasCommentAction || hasFooterAccessory || resolvedShowLike || hasHeaderAccessory ? (
             <>
               {onCommentPress ? (
                 <Pressable

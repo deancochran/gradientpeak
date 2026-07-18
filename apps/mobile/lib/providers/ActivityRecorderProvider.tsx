@@ -158,6 +158,28 @@ export function ActivityRecorderProvider({
     if (!service || !recoveryCheckpoint) return;
     if (promptedRecoverySessionRef.current === recoveryCheckpoint.sessionId) return;
     promptedRecoverySessionRef.current = recoveryCheckpoint.sessionId;
+    const recoveryService = service;
+
+    function discardRecovery() {
+      void recoveryService
+        .discardRecoveredRecording()
+        .then(() => {
+          setRecoveryCheckpoint(null);
+          promptedRecoverySessionRef.current = null;
+        })
+        .catch((error) => {
+          promptedRecoverySessionRef.current = null;
+          Alert.alert(
+            "Unable to discard",
+            error instanceof Error ? error.message : "The recovered recording was not discarded",
+            [
+              { text: "Keep", style: "cancel" },
+              { text: "Try again", style: "destructive", onPress: discardRecovery },
+            ],
+          );
+        });
+    }
+
     Alert.alert(
       "Resume recording?",
       "A recording was interrupted. Resume from its last committed segment boundary or discard its local data.",
@@ -174,12 +196,7 @@ export function ActivityRecorderProvider({
                 {
                   text: "Discard",
                   style: "destructive",
-                  onPress: () => {
-                    void service.discardRecoveredRecording().then(() => {
-                      setRecoveryCheckpoint(null);
-                      promptedRecoverySessionRef.current = null;
-                    });
-                  },
+                  onPress: discardRecovery,
                 },
               ],
             );

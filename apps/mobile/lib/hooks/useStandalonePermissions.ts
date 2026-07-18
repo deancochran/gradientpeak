@@ -43,7 +43,7 @@ export function useStandalonePermissions() {
 
   // Initial check
   useEffect(() => {
-    checkPermissions();
+    void checkPermissions();
   }, [checkPermissions]);
 
   // Listen for app state changes (returning from settings)
@@ -52,7 +52,7 @@ export function useStandalonePermissions() {
       if (nextAppState === "active") {
         // Force refresh permissions when app becomes active (user may have changed them in settings)
         console.log("[useStandalonePermissions] App became active, force refreshing permissions");
-        checkPermissions(true);
+        void checkPermissions(true);
       }
     });
 
@@ -153,12 +153,13 @@ export function useAllPermissionsGranted() {
       }
     };
 
-    check();
+    void check();
 
     // Re-check when app becomes active (force refresh to bypass cache)
     const subscription = AppState.addEventListener("change", (nextAppState) => {
       if (nextAppState === "active" && mounted) {
-        check(true);
+        console.log("[useAllPermissionsGranted] App became active, force refreshing");
+        void check(true);
       }
     });
 
