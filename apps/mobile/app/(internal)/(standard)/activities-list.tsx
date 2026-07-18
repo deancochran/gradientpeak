@@ -139,17 +139,53 @@ function ActivitiesScreen() {
         onLoadMore={handleLoadMore}
         onRefresh={handleRefresh}
         refreshing={refreshing}
-        renderItem={(activity) => (
-          <ActivityCard
-            activity={activity}
-            dateMode="absolute"
-            onPress={() => handleActivityPress(activity.id)}
-            owner={activityOwner}
-            showLike
-            testID={`activities-list-item-${activity.id}`}
-            variant="list"
-          />
-        )}
+        renderItem={(activity) => {
+          const { derived, ingestion, ...activityWithoutDerivedOrIngestion } = activity;
+          const { calibration_quality: calibrationQuality, ...derivedWithoutCalibrationQuality } =
+            derived ?? {};
+          const { last_error_message: lastErrorMessage, ...ingestionWithoutLastErrorMessage } =
+            ingestion ?? {};
+
+          return (
+            <ActivityCard
+              activity={{
+                ...activityWithoutDerivedOrIngestion,
+                ...(ingestion === undefined
+                  ? {}
+                  : {
+                      ingestion:
+                        ingestion === null
+                          ? null
+                          : {
+                              ...ingestionWithoutLastErrorMessage,
+                              ...(lastErrorMessage === undefined
+                                ? {}
+                                : { last_error_message: lastErrorMessage }),
+                            },
+                    }),
+                ...(derived === undefined
+                  ? {}
+                  : {
+                      derived:
+                        derived === null
+                          ? null
+                          : {
+                              ...derivedWithoutCalibrationQuality,
+                              ...(calibrationQuality === undefined
+                                ? {}
+                                : { calibration_quality: calibrationQuality }),
+                            },
+                    }),
+              }}
+              dateMode="absolute"
+              onPress={() => handleActivityPress(activity.id)}
+              owner={activityOwner}
+              showLike
+              testID={`activities-list-item-${activity.id}`}
+              variant="list"
+            />
+          );
+        }}
       />
       <IndexFilterSheet
         visible={isFilterSheetOpen}

@@ -19,6 +19,7 @@ import { useZodForm } from "@repo/ui/hooks";
 import * as Haptics from "expo-haptics";
 import { Plus, Trash2 } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
+import { useFieldArray } from "react-hook-form";
 import { View } from "react-native";
 import { z } from "zod";
 import { AppFormModal } from "@/components/shared/AppFormModal";
@@ -104,9 +105,16 @@ export function StepEditorDialog({
       notes: "",
     },
   });
+  const {
+    fields: targetFields,
+    append: appendTarget,
+    remove: removeTarget,
+  } = useFieldArray({
+    control: form.control,
+    name: "targets",
+  });
 
   const _durationType = form.watch("duration");
-  const targets = form.watch("targets") || [];
 
   // Cleanup effect
   useEffect(() => {
@@ -174,14 +182,14 @@ export function StepEditorDialog({
 
   const handleAddTarget = () => {
     if (!isMountedRef.current) return;
-    if (targets.length >= 3) return;
+    if (targetFields.length >= 3) return;
 
     const defaultTarget = getActivityPlanDefaultTarget({
       activityCategory: activityType ?? "other",
       anchors: targetAnchors,
     });
 
-    form.setValue("targets", [...targets, defaultTarget]);
+    appendTarget(defaultTarget);
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch((error) => {
       console.warn("Haptic feedback failed:", error);
     });
@@ -190,10 +198,7 @@ export function StepEditorDialog({
   const handleRemoveTarget = (index: number) => {
     if (!isMountedRef.current) return;
 
-    form.setValue(
-      "targets",
-      targets.filter((_, i) => i !== index),
-    );
+    removeTarget(index);
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch((error) => {
       console.warn("Haptic feedback failed:", error);
     });
@@ -252,7 +257,7 @@ export function StepEditorDialog({
         <View>
           <View className="mb-2 flex-row items-center justify-between">
             <Label>Intensity Targets</Label>
-            {targets.length < 3 && (
+            {targetFields.length < 3 && (
               <Button variant="outline" size="sm" onPress={handleAddTarget} className="h-8">
                 <Plus size={14} className="text-primary" />
                 <Text className="ml-1 text-xs">Add Target</Text>
@@ -260,7 +265,7 @@ export function StepEditorDialog({
             )}
           </View>
 
-          {targets.length === 0 ? (
+          {targetFields.length === 0 ? (
             <View className="rounded-lg border-2 border-dashed border-muted p-4">
               <Text className="text-center text-sm text-muted-foreground">
                 Add at least one target before saving.
@@ -268,8 +273,8 @@ export function StepEditorDialog({
             </View>
           ) : null}
 
-          {targets.map((target, index) => (
-            <View key={JSON.stringify(target)} className="mb-2 rounded-lg border border-border p-3">
+          {targetFields.map((targetField, index) => (
+            <View key={targetField.id} className="mb-2 rounded-lg border border-border p-3">
               <View className="flex-row items-start gap-2">
                 <View className="flex-1">
                   <Label nativeID={`target-type-${index}`} className="mb-1 text-xs">
@@ -318,7 +323,7 @@ export function StepEditorDialog({
             </View>
           ))}
 
-          {targets.length === 3 ? (
+          {targetFields.length === 3 ? (
             <Text className="mt-1 text-xs text-muted-foreground">Maximum 3 targets per step</Text>
           ) : null}
         </View>

@@ -85,13 +85,19 @@ export default function RoutesLibraryScreen() {
         isLoading={isLoading}
         loadingMoreLabel="Loading more routes..."
         onLoadMore={() => void fetchNextPage()}
-        renderItem={(item) => (
-          <RouteCard
-            route={item}
-            variant="list"
-            onPress={() => navigateTo(`/route-detail?id=${item.id}`)}
-          />
-        )}
+        renderItem={(item) => {
+          const { owner, ...routeWithoutOwner } = item;
+          return (
+            <RouteCard
+              route={{
+                ...routeWithoutOwner,
+                ...(owner === undefined ? {} : { owner }),
+              }}
+              variant="list"
+              onPress={() => navigateTo(`/route-detail?id=${item.id}`)}
+            />
+          );
+        }}
       />
       <IndexFilterSheet
         visible={isFilterSheetOpen}

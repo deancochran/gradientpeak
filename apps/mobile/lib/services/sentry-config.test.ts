@@ -74,13 +74,16 @@ describe("mobile Sentry configuration", () => {
     ).toEqual({ type: undefined });
   });
 
-  it("retains an explicitly set production user while removing request data", () => {
+  it("removes explicit production user identifiers and request data", () => {
     expect(
       prepareMobileSentryEvent(
-        errorEvent({ user: { id: "user-1" }, request: { url: "app://private-route" } }),
+        errorEvent({
+          user: { id: "user-1", email: "athlete@example.test", username: "athlete" },
+          request: { url: "app://private-route" },
+        }),
         "production",
       ),
-    ).toEqual({ type: undefined, user: { id: "user-1" } });
+    ).toEqual({ type: undefined });
   });
 
   it("sanitizes event extras through the runtime beforeSend hook", () => {

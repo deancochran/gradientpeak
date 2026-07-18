@@ -457,7 +457,7 @@ function createDbMock(options: {
     };
   });
   const orderBy = vi.fn((...args: unknown[]) => {
-    if (args.length === 2) {
+    if (transactionActivityRows !== undefined && args.length === 2) {
       return {
         limit: tssLimit.mockImplementation((limitValue: number) => {
           const rows = [...(transactionActivityRows ?? options.activityRows ?? [])].sort(
@@ -1212,8 +1212,8 @@ describe("activitiesRouter", () => {
         .map((activity) => ({ activity, tss: tssById.get(activity.id) ?? null }))
         .sort((a, b) => {
           if (a.tss !== b.tss) {
-            if (a.tss === null) return sortOrder === "asc" ? -1 : 1;
-            if (b.tss === null) return sortOrder === "asc" ? 1 : -1;
+            if (a.tss === null) return 1;
+            if (b.tss === null) return -1;
             return sortOrder === "asc" ? a.tss - b.tss : b.tss - a.tss;
           }
           return (

@@ -58,6 +58,29 @@ describe("trainingPathUtils", () => {
     });
   });
 
+  it("discards malformed and impossible source date keys", () => {
+    const model = buildTrainingPathViewModel({
+      timeline: [
+        { date: "not-a-date", recommended_load_tss: 50 },
+        { date: "2026-02-30", recommended_load_tss: 50 },
+      ],
+      fitnessHistory: [{ date: "2026-02-30", ctl: 42 }],
+      goalMarkers: [{ id: "invalid-goal", targetDate: "2026-02-30" }],
+      range: "all",
+      todayKey: "2026-05-20",
+    });
+
+    expect(model.goalMarkers).toEqual([]);
+    expect(model.weeks).toHaveLength(1);
+    expect(model.weeks[0]).toMatchObject({
+      weekStart: "2026-05-18",
+      completedLoad: null,
+      targetLoad: null,
+      fitness: null,
+      scheduledFitness: null,
+    });
+  });
+
   it("keeps weekly target and delta null at a partial projection boundary", () => {
     const model = buildTrainingPathViewModel({
       timeline: Array.from({ length: 6 }, (_, index) => ({

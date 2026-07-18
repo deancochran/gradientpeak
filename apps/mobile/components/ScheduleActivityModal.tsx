@@ -594,7 +594,7 @@ export function ScheduleActivityModal({
       onClose={onClose}
       testID="schedule-modal"
       title={isEditMode ? "Update Schedule" : "Schedule Activity"}
-      description={!isLoading && displayPlan ? displayPlan.name : undefined}
+      {...(!isLoading && displayPlan ? { description: displayPlan.name } : {})}
     >
       <View className="gap-4">
         {/* Loading State */}
@@ -611,7 +611,7 @@ export function ScheduleActivityModal({
               </Text>
               <ActivityPlanCard
                 activityPlan={displayPlan}
-                route={displayRoute}
+                {...(displayRoute === undefined ? {} : { route: displayRoute })}
                 testID="schedule-selected-activity-card"
                 variant="compact"
               />

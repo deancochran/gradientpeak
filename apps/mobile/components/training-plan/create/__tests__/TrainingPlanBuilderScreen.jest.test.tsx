@@ -151,8 +151,8 @@ jest.mock("@/components/shared/ActivityPlanCard", () => ({
     testID?: string;
   }) => {
     activityPlanCardProps.push({
-      activity: props.activity,
-      activityPlan: props.activityPlan,
+      ...(props.activity === undefined ? {} : { activity: props.activity }),
+      ...(props.activityPlan === undefined ? {} : { activityPlan: props.activityPlan }),
     });
     return (
       <Pressable onPress={props.onPress} testID={props.testID ?? "activity-plan-card"}>
@@ -524,6 +524,9 @@ jest.mock("@/lib/hooks/useReliableMutation", () => ({
     const keys = ["create", "update"] as const;
     const key = keys[mockMutationIndex % keys.length];
     mockMutationIndex += 1;
+    if (key === undefined) {
+      throw new Error("Expected a mutation fixture key");
+    }
     return { isPending: false, mutateAsync: mockMutations[key] };
   },
 }));

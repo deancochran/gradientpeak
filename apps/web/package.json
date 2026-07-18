@@ -13,7 +13,7 @@
     "dev:ngrok": "ngrok http --domain=outgoing-ape-repeatedly.ngrok-free.app 3000",
     "dev:scan": "VITE_ENABLE_REACT_SCAN=1 pnpm run dev:app",
     "dev:scan:tunnel": "concurrently \"VITE_ENABLE_REACT_SCAN=1 pnpm run dev:app\" \"pnpm run dev:ngrok\"",
-    "build": "vite build && cp instrument.server.mjs .output/server/instrument.server.mjs",
+    "build": "vite build && cp instrument.server.mjs sentry-config.mjs .output/server/",
     "check-types": "tsc --noEmit",
     "preview": "vite preview",
     "test": "vitest run",

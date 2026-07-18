@@ -158,7 +158,7 @@ export function useAllPermissionsGranted() {
     // Re-check when app becomes active (force refresh to bypass cache)
     const subscription = AppState.addEventListener("change", (nextAppState) => {
       if (nextAppState === "active" && mounted) {
-        console.log("[useAllPermissionsGranted] App became active, force refreshing");
+        console.log("[permissions] Refreshing after app resume");
         void check(true);
       }
     });

@@ -364,9 +364,13 @@ describe("ScheduleActivityModal", () => {
     const buttons = screen.UNSAFE_root.findAll(
       (node: ReactTestInstance) => String(node.type) === "Button",
     );
+    const submitButton = buttons.at(-1);
+    if (!submitButton) {
+      throw new Error("Expected the schedule submit button");
+    }
 
     await act(() => {
-      buttons[buttons.length - 1].props.onPress();
+      submitButton.props.onPress();
     });
 
     expect(updateMutateMock).toHaveBeenCalledWith({

@@ -69,7 +69,12 @@ export function useRecordScreenController() {
     }
 
     try {
-      service.selectPlan(pendingPlanQuery.data as RecordingServiceActivityPlan);
+      const { id: planId, ...planWithoutId } = pendingPlanQuery.data;
+      const pendingPlan: RecordingServiceActivityPlan = {
+        ...planWithoutId,
+        ...(planId === undefined ? {} : { id: planId }),
+      };
+      service.selectPlan(pendingPlan);
       setPendingPlanId(null);
       setResourcePickerScope(null);
     } catch (error) {
@@ -103,10 +108,10 @@ export function useRecordScreenController() {
         threshold_pace,
       });
       service.updateMetrics({
-        ftp: ftp || undefined,
-        thresholdHr: threshold_hr || undefined,
-        weightKg: weight_kg || undefined,
-        thresholdPaceSecondsPerKm: threshold_pace || undefined,
+        ...(ftp ? { ftp } : {}),
+        ...(threshold_hr ? { thresholdHr: threshold_hr } : {}),
+        ...(weight_kg ? { weightKg: weight_kg } : {}),
+        ...(threshold_pace ? { thresholdPaceSecondsPerKm: threshold_pace } : {}),
       });
     }
   }, [service, zones?.profile]);

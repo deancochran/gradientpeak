@@ -47,7 +47,7 @@ const ActivityPreviewMode = memo<{ structure: ActivityPlanStructureV3 }>(
           <Text className="text-sm font-medium mb-3">Activity Steps</Text>
           <View className="gap-3">
             {previewSteps.map((step) => (
-              <StepPreviewCard key={JSON.stringify(step)} step={step} showDuration={true} />
+              <StepPreviewCard key={step.id} step={step} showDuration={true} />
             ))}
           </View>
         </View>

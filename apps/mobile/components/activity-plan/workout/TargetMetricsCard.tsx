@@ -145,6 +145,20 @@ interface TargetMetricsGridProps {
   };
 }
 
+function getTargetRows(targets: ActivityPlanTarget[]) {
+  const typeOccurrences = new Map<ActivityPlanTarget["type"], number>();
+
+  return targets.map((target) => {
+    const occurrence = typeOccurrences.get(target.type) ?? 0;
+    typeOccurrences.set(target.type, occurrence + 1);
+
+    return {
+      key: `${target.type}-${occurrence}`,
+      target,
+    };
+  });
+}
+
 export const TargetMetricsGrid = memo<TargetMetricsGridProps>(function TargetMetricsGrid({
   targets,
   currentMetrics,
@@ -177,12 +191,8 @@ export const TargetMetricsGrid = memo<TargetMetricsGridProps>(function TargetMet
 
   return (
     <View className="gap-3">
-      {targets.map((target) => (
-        <TargetMetricsCard
-          key={JSON.stringify(target)}
-          target={target}
-          current={getCurrentValue(target.type)}
-        />
+      {getTargetRows(targets).map(({ key, target }) => (
+        <TargetMetricsCard key={key} target={target} current={getCurrentValue(target.type)} />
       ))}
     </View>
   );

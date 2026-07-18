@@ -21,12 +21,16 @@ describe("handleRecordingObjectAction", () => {
       name: "Tempo",
       activity_category: "bike",
     } as unknown as RecordingServiceActivityPlan;
+    const { id: planId, ...planWithoutId } = plan;
 
     await handleRecordingObjectAction({
       candidate: {
         objectKind: "activity_plan",
         objectId: "plan-1",
-        plan,
+        plan: {
+          ...planWithoutId,
+          ...(planId === undefined ? {} : { id: planId }),
+        },
       },
       command: "attach_plan",
       navigateToRecord,

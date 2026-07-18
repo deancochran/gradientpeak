@@ -11,7 +11,7 @@ import {
   activityPlans,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, count, desc, eq, gte, ilike, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, lt, lte, or, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 import { createActivityAnalysisStore } from "../../infrastructure/repositories";
 import {
@@ -87,8 +87,8 @@ function compareMetricCandidates(
     ? matchedCategorySortValue(b.matchedCategorySummary, sortBy)
     : (b.derived?.tss ?? null);
   if (aValue !== bValue) {
-    if (aValue === null) return sortOrder === "asc" ? -1 : 1;
-    if (bValue === null) return sortOrder === "asc" ? 1 : -1;
+    if (aValue === null) return 1;
+    if (bValue === null) return -1;
     return sortOrder === "asc" ? aValue - bValue : bValue - aValue;
   }
 
@@ -113,8 +113,8 @@ export async function listActivitiesForProfile({
   const conditions = [eq(activities.profile_id, profileId)];
   const compositionCondition = buildActivityCompositionCondition({
     activityId: activities.id,
-    category: input.activity_category,
-    mode: input.composition_mode,
+    ...(input.activity_category === undefined ? {} : { category: input.activity_category }),
+    ...(input.composition_mode === undefined ? {} : { mode: input.composition_mode }),
   });
   if (compositionCondition) conditions.push(compositionCondition);
   if (input.search) {
@@ -223,12 +223,13 @@ export async function listActivitiesForProfile({
           ]);
         }
         for (const candidate of candidates) {
+          const derivedSegments = segmentDerivedByActivityId.get(candidate.activity.id);
           candidate.derived = derivedByActivityId.get(candidate.activity.id) ?? null;
           candidate.matchedCategorySummary = input.activity_category
             ? summarizeMatchedCategory({
                 segments: candidate.activity.segments,
                 category: input.activity_category,
-                derivedSegments: segmentDerivedByActivityId.get(candidate.activity.id),
+                ...(derivedSegments === undefined ? {} : { derivedSegments }),
               })
             : null;
         }
@@ -279,7 +280,9 @@ export async function listActivitiesForProfile({
               ? input.sort_by === "distance"
                 ? distance
                 : duration
-              : desc(input.sort_by === "distance" ? distance : duration),
+              : sql`${input.sort_by === "distance" ? distance : duration} desc nulls last`,
+            desc(activities.started_at),
+            asc(activities.id),
           )
           .limit(input.limit)
           .offset(offset)
@@ -287,7 +290,10 @@ export async function listActivitiesForProfile({
           .select()
           .from(activities)
           .where(whereClause)
-          .orderBy(input.sort_order === "asc" ? activities.started_at : desc(activities.started_at))
+          .orderBy(
+            input.sort_order === "asc" ? activities.started_at : desc(activities.started_at),
+            asc(activities.id),
+          )
           .limit(input.limit)
           .offset(offset);
   const totalRowsPromise = db.select({ total: count() }).from(activities).where(whereClause);
@@ -334,8 +340,9 @@ export async function listActivitiesForProfile({
     entityIds: ids,
     viewerProfileId: profileId,
   });
-  const items = data.map((activity) =>
-    mapActivityToListDerivedResponse({
+  const items = data.map((activity) => {
+    const derivedSegments = segmentDerivedByActivityId.get(activity.id);
+    return mapActivityToListDerivedResponse({
       activity: {
         ...decorateActivity(
           activity,
@@ -343,7 +350,7 @@ export async function listActivitiesForProfile({
             ? summarizeMatchedCategory({
                 segments: activity.segments,
                 category: input.activity_category,
-                derivedSegments: segmentDerivedByActivityId.get(activity.id),
+                ...(derivedSegments === undefined ? {} : { derivedSegments }),
               })
             : null,
         ),
@@ -351,8 +358,8 @@ export async function listActivitiesForProfile({
       },
       has_liked: getLikeStats(likeStats, activity.id).has_liked,
       derived: derived.get(activity.id) ?? null,
-    }),
-  );
+    });
+  });
   return {
     items,
     total,

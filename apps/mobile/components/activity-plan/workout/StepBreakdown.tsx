@@ -25,7 +25,7 @@ export const StepBreakdown = memo<StepBreakdownProps>(function StepBreakdown({
       <Text className="text-sm font-medium mb-3">{title}</Text>
       <View className="gap-3">
         {displaySteps.map((step) => (
-          <StepPreviewCard key={JSON.stringify(step)} step={step} showDuration={true} />
+          <StepPreviewCard key={step.id} step={step} showDuration={true} />
         ))}
       </View>
 

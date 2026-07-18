@@ -126,18 +126,20 @@ export function isExpectedApiError(error: unknown): boolean {
     const code = readErrorField(current, "code");
     const status = readErrorField(current, "status");
     const statusCode = readErrorField(current, "statusCode");
+    const authoritativeStatus =
+      typeof statusCode === "number" ? statusCode : typeof status === "number" ? status : null;
 
+    if (authoritativeStatus !== null) {
+      return authoritativeStatus >= 300 && authoritativeStatus < 500;
+    }
+
+    if (name === "TRPCError" && typeof code === "string") {
+      return EXPECTED_TRPC_CODES.has(code);
+    }
+    if (name === "APIError") {
+      return false;
+    }
     if (name === "AbortError" || (typeof code === "string" && CANCELLATION_CODES.has(code))) {
-      return true;
-    }
-    if (name === "TRPCError" && typeof code === "string" && EXPECTED_TRPC_CODES.has(code)) {
-      return true;
-    }
-    if (
-      name === "APIError" &&
-      ((typeof statusCode === "number" && statusCode >= 400 && statusCode < 500) ||
-        (typeof status === "number" && status >= 400 && status < 500))
-    ) {
       return true;
     }
 

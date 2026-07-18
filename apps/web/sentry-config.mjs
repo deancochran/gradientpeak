@@ -88,8 +88,8 @@ export function isExpectedSentryError(error) {
   for (let depth = 0; depth < 5 && current && !seen.has(current); depth += 1) {
     seen.add(current);
     const status = getErrorStatus(current);
-    if (status !== undefined && status >= 300 && status < 400) {
-      return true;
+    if (status !== undefined) {
+      return status >= 300 && status < 400;
     }
     if (typeof current === "object") {
       current = current.cause;

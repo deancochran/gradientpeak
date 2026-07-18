@@ -175,14 +175,13 @@ export function useCalendarScreenController({
     (event: CalendarEvent) => {
       const route = buildOpenEventRoute({
         id: event.id,
-        event_type:
-          event.event_type === "planned" ||
-          event.event_type === "rest_day" ||
-          event.event_type === "race_target" ||
-          event.event_type === "custom" ||
-          event.event_type === "imported"
-            ? event.event_type
-            : undefined,
+        ...(event.event_type === "planned" ||
+        event.event_type === "rest_day" ||
+        event.event_type === "race_target" ||
+        event.event_type === "custom" ||
+        event.event_type === "imported"
+          ? { event_type: event.event_type }
+          : {}),
       });
       if (!route) {
         Alert.alert("Open Event", "This event type is read-only.");
@@ -249,14 +248,13 @@ export function useCalendarScreenController({
 
       const route = buildEditEventRoute({
         id: event.id,
-        event_type:
-          event.event_type === "planned" ||
-          event.event_type === "rest_day" ||
-          event.event_type === "race_target" ||
-          event.event_type === "custom" ||
-          event.event_type === "imported"
-            ? event.event_type
-            : undefined,
+        ...(event.event_type === "planned" ||
+        event.event_type === "rest_day" ||
+        event.event_type === "race_target" ||
+        event.event_type === "custom" ||
+        event.event_type === "imported"
+          ? { event_type: event.event_type }
+          : {}),
       });
       if (!route) {
         Alert.alert("Edit Event", "This event cannot be edited.");
@@ -332,6 +330,7 @@ export function useCalendarScreenController({
       const fallbackTitle = createType === "race_target" ? "Race target" : "Custom event";
 
       try {
+        const trimmedNotes = notes.trim();
         createEvent({
           event_type: createType,
           title: trimmedTitle || fallbackTitle,
@@ -341,8 +340,8 @@ export function useCalendarScreenController({
           all_day: allDay,
           scheduled_date: scheduledDate,
           timezone,
-          notes: notes.trim() || undefined,
-          recurrence,
+          ...(trimmedNotes ? { notes: trimmedNotes } : {}),
+          ...(recurrence === undefined ? {} : { recurrence }),
           lifecycle: { status: "scheduled" },
           read_only: false,
         });

@@ -112,9 +112,7 @@ export function setUser(user: { id: string; email?: string; username?: string })
   }
 
   Sentry.setUser({
-    email: user.email,
     id: user.id,
-    username: user.username,
   });
 }
 

@@ -5,10 +5,11 @@ const sentryDsn = import.meta.env.VITE_SENTRY_DSN;
 
 if (sentryDsn) {
   const options = createBrowserSentryOptions(import.meta.env);
+  const replayIntegrations = shouldEnableBrowserReplay(import.meta.env)
+    ? [Sentry.replayIntegration()]
+    : undefined;
   Sentry.init({
     ...options,
-    integrations: shouldEnableBrowserReplay(import.meta.env)
-      ? [Sentry.replayIntegration()]
-      : undefined,
+    ...(replayIntegrations === undefined ? {} : { integrations: replayIntegrations }),
   });
 }

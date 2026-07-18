@@ -113,10 +113,18 @@ describe("GoalTargetsSection", () => {
     expect(onAddTargetWithType).toHaveBeenCalledWith("pace_threshold");
 
     const pressables = findMockNodes(rendered, "Pressable");
-    fireEvent.press(pressables[0]);
+    const firstTarget = pressables[0];
+    if (!firstTarget) {
+      throw new Error("Expected the first goal target");
+    }
+    fireEvent.press(firstTarget);
     expect(onEditTarget).toHaveBeenCalledWith("target-race");
 
-    fireEvent.press(rendered.getAllByLabelText("Delete target")[1]);
+    const secondDeleteButton = rendered.getAllByLabelText("Delete target")[1];
+    if (!secondDeleteButton) {
+      throw new Error("Expected the second delete target button");
+    }
+    fireEvent.press(secondDeleteButton);
     expect(onRemoveTarget).toHaveBeenCalledWith("target-power");
   });
 });

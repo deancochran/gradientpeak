@@ -136,15 +136,16 @@ export default function CalendarDayScreen() {
       return null;
     }
   }, [dateKey, planningTimezone]);
-  const planSuggestion = useMemo(
-    () =>
-      formatPlanSuggestion({
-        type: readParam(params.planSuggestionType),
-        tssDelta: readParam(params.planSuggestionTssDelta),
-        description: readParam(params.planSuggestionDescription),
-      }),
-    [params.planSuggestionDescription, params.planSuggestionTssDelta, params.planSuggestionType],
-  );
+  const planSuggestion = useMemo(() => {
+    const type = readParam(params.planSuggestionType);
+    const tssDelta = readParam(params.planSuggestionTssDelta);
+    const description = readParam(params.planSuggestionDescription);
+    return formatPlanSuggestion({
+      ...(type === undefined ? {} : { type }),
+      ...(tssDelta === undefined ? {} : { tssDelta }),
+      ...(description === undefined ? {} : { description }),
+    });
+  }, [params.planSuggestionDescription, params.planSuggestionTssDelta, params.planSuggestionType]);
   const setActiveDate = useCalendarStore((state) => state.setActiveDate);
   const eventsQueryEnabled = useAuthStore(
     (state) => state.ready && !!state.session && hasSessionAuthCredentials(),
@@ -265,7 +266,7 @@ export default function CalendarDayScreen() {
         : undefined;
     const route = buildOpenEventRoute({
       id: event.id,
-      event_type: eventType,
+      ...(eventType === undefined ? {} : { event_type: eventType }),
     });
 
     if (!route) {

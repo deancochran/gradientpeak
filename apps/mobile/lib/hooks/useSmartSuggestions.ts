@@ -40,7 +40,12 @@ export function useSmartSuggestions({
   weeklySummaries,
 }: UseSmartSuggestionsParams): SmartSuggestion | null {
   return useMemo(
-    () => deriveSmartSuggestion({ plan, status, weeklySummaries }),
+    () =>
+      deriveSmartSuggestion({
+        ...(plan === undefined ? {} : { plan }),
+        ...(status === undefined ? {} : { status }),
+        ...(weeklySummaries === undefined ? {} : { weeklySummaries }),
+      }),
     [plan, status, weeklySummaries],
   );
 }
@@ -62,13 +67,14 @@ export function deriveSmartSuggestion({
       recentWeeks.length;
 
     if (avgAdherence < 60) {
+      const adjustedStructure = isQuickAdjustmentPlanStructure(structure)
+        ? reduceIntensity(structure)
+        : undefined;
       return {
         reason: "low_adherence",
         title: "Low Training Adherence Detected",
         description: `Your adherence is ${Math.round(avgAdherence)}%. Consider reducing weekly targets to stay consistent.`,
-        adjustedStructure: isQuickAdjustmentPlanStructure(structure)
-          ? reduceIntensity(structure)
-          : undefined,
+        ...(adjustedStructure === undefined ? {} : { adjustedStructure }),
         severity: "warning",
       };
     }
@@ -111,13 +117,14 @@ export function deriveSmartSuggestion({
 
     // If we're 75%+ through time but less than 50% fitness progress
     if (timeProgress > 75 && fitnessProgress < 50 && targetDate > today) {
+      const adjustedStructure = isQuickAdjustmentPlanStructure(structure)
+        ? extendTimeline(structure)
+        : undefined;
       return {
         reason: "timeline_risk",
         title: "Goal Timeline May Be Unrealistic",
         description: `You're ${Math.round(timeProgress)}% through the timeline but only ${Math.round(fitnessProgress)}% toward your fitness goal. Consider extending the target date.`,
-        adjustedStructure: isQuickAdjustmentPlanStructure(structure)
-          ? extendTimeline(structure)
-          : undefined,
+        ...(adjustedStructure === undefined ? {} : { adjustedStructure }),
         severity: "warning",
       };
     }

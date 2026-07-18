@@ -9,7 +9,7 @@ const occurrencePressMock = jest.fn();
 const rsvpMock = jest.fn();
 const rsvpSeriesMock = jest.fn();
 
-type GroupEventFixture = ComponentProps<typeof GroupEventDetailScreen>["event"];
+type GroupEventFixture = NonNullable<ComponentProps<typeof GroupEventDetailScreen>["event"]>;
 type ActivityPlanFixture = { id: string; name: string };
 function createViewerRsvp(
   status: NonNullable<GroupEventFixture["viewerRsvp"]>["status"],

@@ -49,6 +49,7 @@ export const fetchWithTimeout: typeof fetch = async (input, init) => {
   let abortSource: "local_timeout" | "upstream_abort" | null = null;
   const startedAt = Date.now();
   const timeoutId = setTimeout(() => {
+    if (abortSource !== null) return;
     abortSource = "local_timeout";
     controller.abort();
   }, API_REQUEST_TIMEOUT_MS);
@@ -57,7 +58,9 @@ export const fetchWithTimeout: typeof fetch = async (input, init) => {
 
   const upstreamSignal = init?.signal;
   const abortFromUpstream = () => {
+    if (abortSource !== null) return;
     abortSource = "upstream_abort";
+    clearTimeout(timeoutId);
     controller.abort();
   };
 

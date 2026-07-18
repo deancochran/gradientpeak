@@ -96,6 +96,15 @@ describe("web Sentry configuration", () => {
     expect(isExpectedSentryError(new Error("unknown"))).toBe(false);
   });
 
+  it("retains an authoritative 5xx even when its cause is a redirect", () => {
+    const error = Object.assign(
+      new Error("server failed", { cause: new Response(null, { status: 303 }) }),
+      { status: 500 },
+    );
+
+    expect(isExpectedSentryError(error)).toBe(false);
+  });
+
   it("removes user and request data from events", () => {
     const event = { user: { id: "1" }, request: { headers: { cookie: "secret" } } };
 

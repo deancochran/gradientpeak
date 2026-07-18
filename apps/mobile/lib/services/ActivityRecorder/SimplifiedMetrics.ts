@@ -288,12 +288,27 @@ export function convertToSimplifiedMetrics(
 
   const metrics: SimplifiedMetrics = {
     current: {
-      power: currentReadings.power,
-      heartRate: currentReadings.heartRate,
-      cadence: currentReadings.cadence,
-      speed: currentReadings.speed,
-      temperature: currentReadings.temperature,
-      position: currentReadings.position,
+      ...(currentReadings.power === undefined ? {} : { power: currentReadings.power }),
+      ...(currentReadings.heartRate === undefined ? {} : { heartRate: currentReadings.heartRate }),
+      ...(currentReadings.cadence === undefined ? {} : { cadence: currentReadings.cadence }),
+      ...(currentReadings.speed === undefined ? {} : { speed: currentReadings.speed }),
+      ...(currentReadings.temperature === undefined
+        ? {}
+        : { temperature: currentReadings.temperature }),
+      ...(currentReadings.position === undefined
+        ? {}
+        : {
+            position: {
+              lat: currentReadings.position.lat,
+              lng: currentReadings.position.lng,
+              ...(currentReadings.position.altitude === undefined
+                ? {}
+                : { alt: currentReadings.position.altitude }),
+              ...(currentReadings.position.heading === undefined
+                ? {}
+                : { heading: currentReadings.position.heading }),
+            },
+          }),
     },
     display: speedDisplay,
     totals: {

@@ -495,12 +495,17 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   public getCurrentReadings(): CurrentReadings & {
     lastUpdated: NonNullable<CurrentReadings["lastUpdated"]>;
   } {
+    const heartRate = this.buffer.getLatest("heartrate");
+    const power = this.buffer.getLatest("power");
+    const cadence = this.buffer.getLatest("cadence");
+    const speed = this.calculateCurrentSpeed();
+    const temperature = this.buffer.getLatest("temperature");
     const readings: CurrentReadings = {
-      heartRate: this.buffer.getLatest("heartrate"),
-      power: this.buffer.getLatest("power"),
-      cadence: this.buffer.getLatest("cadence"),
-      speed: this.calculateCurrentSpeed(),
-      temperature: this.buffer.getLatest("temperature"),
+      ...(heartRate === undefined ? {} : { heartRate }),
+      ...(power === undefined ? {} : { power }),
+      ...(cadence === undefined ? {} : { cadence }),
+      ...(speed === undefined ? {} : { speed }),
+      ...(temperature === undefined ? {} : { temperature }),
     };
 
     // Add position if available
@@ -508,8 +513,10 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       readings.position = {
         lat: this.lastLocation.latitude,
         lng: this.lastLocation.longitude,
-        altitude: this.lastLocation.altitude,
-        heading: this.lastLocation.heading,
+        ...(this.lastLocation.altitude === undefined
+          ? {}
+          : { altitude: this.lastLocation.altitude }),
+        ...(this.lastLocation.heading === undefined ? {} : { heading: this.lastLocation.heading }),
       };
     }
 
@@ -559,7 +566,9 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       avgPower: this.metrics.avgPower,
       avgSpeed: this.metrics.avgSpeed,
       avgCadence: this.metrics.avgCadence,
-      avgTemperature: this.metrics.avgTemperature,
+      ...(this.metrics.avgTemperature === undefined
+        ? {}
+        : { avgTemperature: this.metrics.avgTemperature }),
 
       // Maximums
       maxHeartRate: this.maxHeartRate,
@@ -1610,11 +1619,12 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     },
   ): ProfileMetrics {
     return {
-      ftp: metrics?.ftp ?? undefined,
-      threshold_hr: metrics?.thresholdHr ?? undefined,
-      weight: metrics?.weightKg ?? undefined,
-      threshold_pace_seconds_per_km: metrics?.thresholdPaceSecondsPerKm ?? undefined,
-      age: undefined, // Age calculation from DOB would go here if needed
+      ...(metrics?.ftp === undefined ? {} : { ftp: metrics.ftp }),
+      ...(metrics?.thresholdHr === undefined ? {} : { threshold_hr: metrics.thresholdHr }),
+      ...(metrics?.weightKg === undefined ? {} : { weight: metrics.weightKg }),
+      ...(metrics?.thresholdPaceSecondsPerKm === undefined
+        ? {}
+        : { threshold_pace_seconds_per_km: metrics.thresholdPaceSecondsPerKm }),
     };
   }
 

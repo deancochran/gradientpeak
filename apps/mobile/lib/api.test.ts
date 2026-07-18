@@ -26,6 +26,22 @@ function abortingFetch() {
   });
 }
 
+function delayedAbortingFetch(delayMs: number) {
+  return vi.spyOn(globalThis, "fetch").mockImplementation((_input, init) => {
+    return new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener(
+        "abort",
+        () =>
+          setTimeout(
+            () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
+            delayMs,
+          ),
+        { once: true },
+      );
+    });
+  });
+}
+
 describe("fetchWithTimeout", () => {
   it("distinguishes the local request timeout", async () => {
     vi.useFakeTimers();
@@ -48,5 +64,36 @@ describe("fetchWithTimeout", () => {
     upstream.abort();
 
     await expect(request).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("does not relabel a delayed upstream abort after the timeout deadline", async () => {
+    vi.useFakeTimers();
+    delayedAbortingFetch(35_000);
+    const upstream = new AbortController();
+    const request = fetchWithTimeout("https://example.test/api/trpc/profiles.get", {
+      signal: upstream.signal,
+    });
+    const rejection = expect(request).rejects.toMatchObject({ name: "AbortError" });
+
+    upstream.abort();
+    await vi.advanceTimersByTimeAsync(35_000);
+
+    await rejection;
+  });
+
+  it("does not relabel a delayed local timeout after an upstream abort arrives", async () => {
+    vi.useFakeTimers();
+    delayedAbortingFetch(1_000);
+    const upstream = new AbortController();
+    const request = fetchWithTimeout("https://example.test/api/trpc/profiles.get", {
+      signal: upstream.signal,
+    });
+    const rejection = expect(request).rejects.toBeInstanceOf(ApiRequestTimeoutError);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    upstream.abort();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    await rejection;
   });
 });

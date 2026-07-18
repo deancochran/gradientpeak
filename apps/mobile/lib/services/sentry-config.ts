@@ -52,21 +52,27 @@ export function sanitizeMobileSentryContext(value: unknown): unknown {
   return sanitize(value, 0);
 }
 
-export function prepareMobileSentryEvent(event: ErrorEvent, environment: string): ErrorEvent {
+export function prepareMobileSentryEvent(event: ErrorEvent, _environment: string): ErrorEvent {
   delete event.request;
-  if (environment === "development") {
-    delete event.user;
-  }
+  delete event.user;
   if (event.extra) {
-    event.extra = sanitizeMobileSentryContext(event.extra) as Record<string, unknown>;
+    const sanitizedExtra = sanitizeMobileSentryContext(event.extra);
+    event.extra =
+      sanitizedExtra && typeof sanitizedExtra === "object" && !Array.isArray(sanitizedExtra)
+        ? Object.fromEntries(Object.entries(sanitizedExtra))
+        : {};
   }
   if (event.breadcrumbs) {
-    event.breadcrumbs = event.breadcrumbs.map((breadcrumb) => ({
-      ...breadcrumb,
-      data: breadcrumb.data
-        ? (sanitizeMobileSentryContext(breadcrumb.data) as Record<string, unknown>)
-        : breadcrumb.data,
-    }));
+    event.breadcrumbs = event.breadcrumbs.map((breadcrumb) => {
+      if (!breadcrumb.data) return breadcrumb;
+      const sanitizedData = sanitizeMobileSentryContext(breadcrumb.data);
+      return {
+        ...breadcrumb,
+        ...(sanitizedData && typeof sanitizedData === "object" && !Array.isArray(sanitizedData)
+          ? { data: Object.fromEntries(Object.entries(sanitizedData)) }
+          : {}),
+      };
+    });
   }
   return event;
 }

@@ -54,6 +54,30 @@ describe("API telemetry", () => {
     expect(captureException).toHaveBeenCalledOnce();
   });
 
+  it("retains authoritative 5xx wrappers with expected-looking causes", async () => {
+    const { isExpectedApiError } = await import("./telemetry");
+    const cancellation = new DOMException("cancelled", "AbortError");
+
+    expect(
+      isExpectedApiError(new TRPCError({ code: "INTERNAL_SERVER_ERROR", cause: cancellation })),
+    ).toBe(false);
+    expect(
+      isExpectedApiError(
+        Object.assign(new Error("auth unavailable", { cause: cancellation }), {
+          name: "APIError",
+          statusCode: 503,
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isExpectedApiError(
+        Object.assign(new Error("server failed", { cause: cancellation }), {
+          status: 503,
+        }),
+      ),
+    ).toBe(false);
+  });
+
   it("redacts and bounds explicit error context", async () => {
     const { sanitizeTelemetryContext } = await import("./telemetry");
     const circular: Record<string, unknown> = { token: "secret" };

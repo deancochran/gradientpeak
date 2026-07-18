@@ -44,6 +44,7 @@ export default function WorkoutsReorder() {
   });
   type PlannedActivity = NonNullable<typeof plannedActivitiesData>["items"][number] & {
     activity_plan_id: string;
+    scheduled_date: string;
   };
 
   // Local state for reordering
@@ -64,6 +65,7 @@ export default function WorkoutsReorder() {
       const upcomingActivities = plannedActivitiesData.items.filter(
         (item): item is PlannedActivity =>
           typeof item.activity_plan_id === "string" &&
+          typeof item.scheduled_date === "string" &&
           (!("completed_activity_id" in item) || !item.completed_activity_id),
       );
       setActivities(upcomingActivities);
@@ -99,11 +101,12 @@ export default function WorkoutsReorder() {
 
     if (targetIndex < 0 || targetIndex >= newActivities.length) return;
 
-    // Swap
-    [newActivities[currentIndex], newActivities[targetIndex]] = [
-      newActivities[targetIndex],
-      newActivities[currentIndex],
-    ];
+    const currentActivity = newActivities[currentIndex];
+    const targetActivity = newActivities[targetIndex];
+    if (!currentActivity || !targetActivity) return;
+
+    newActivities[currentIndex] = targetActivity;
+    newActivities[targetIndex] = currentActivity;
 
     setActivities(newActivities);
     setHasChanges(true);
@@ -117,9 +120,11 @@ export default function WorkoutsReorder() {
     const currentDate = new Date(activity.scheduled_date);
     const newDate = new Date(currentDate);
     newDate.setDate(currentDate.getDate() + daysToAdd);
+    const newScheduledDate = newDate.toISOString().split("T")[0];
+    if (!newScheduledDate) return;
 
     const newActivities = activities.map((a) =>
-      a.id === activityId ? { ...a, scheduled_date: newDate.toISOString().split("T")[0] } : a,
+      a.id === activityId ? { ...a, scheduled_date: newScheduledDate } : a,
     );
 
     setActivities(newActivities);
@@ -249,55 +254,58 @@ export default function WorkoutsReorder() {
 
                 {/* Activities for this date */}
                 <View className="gap-2 mb-4">
-                  {dayActivities.map((activity, _index) => (
-                    <View
-                      key={activity.id}
-                      className="bg-card border border-border rounded-lg overflow-hidden"
-                    >
-                      {/* Activity Card */}
-                      <View className="flex-row items-center">
-                        <View className="p-3 border-r border-border">
-                          <Icon as={GripVertical} size={20} className="text-muted-foreground" />
+                  {dayActivities.map((activity, _index) => {
+                    const { activity_plan: activityPlan, ...plannedActivity } = activity;
+                    return (
+                      <View
+                        key={activity.id}
+                        className="bg-card border border-border rounded-lg overflow-hidden"
+                      >
+                        {/* Activity Card */}
+                        <View className="flex-row items-center">
+                          <View className="p-3 border-r border-border">
+                            <Icon as={GripVertical} size={20} className="text-muted-foreground" />
+                          </View>
+                          <View className="flex-1">
+                            <ActivityPlanCard
+                              plannedActivity={{
+                                ...plannedActivity,
+                                ...(activityPlan ? { activity_plan: activityPlan } : {}),
+                              }}
+                              onPress={() => {}}
+                              variant="compact"
+                              showScheduleInfo={false}
+                            />
+                            {typeof activity.training_plan_id === "string" ? (
+                              <View className="px-3 pb-3">
+                                <Text className="text-xs text-muted-foreground">
+                                  From training plan
+                                </Text>
+                              </View>
+                            ) : null}
+                          </View>
                         </View>
-                        <View className="flex-1">
-                          <ActivityPlanCard
-                            plannedActivity={{
-                              ...activity,
-                              activity_plan: activity.activity_plan ?? undefined,
-                            }}
-                            onPress={() => {}}
-                            variant="compact"
-                            showScheduleInfo={false}
-                          />
-                          {typeof activity.training_plan_id === "string" ? (
-                            <View className="px-3 pb-3">
-                              <Text className="text-xs text-muted-foreground">
-                                From training plan
-                              </Text>
-                            </View>
-                          ) : null}
-                        </View>
-                      </View>
 
-                      {/* Action Buttons */}
-                      <View className="flex-row border-t border-border">
-                        <TouchableOpacity
-                          onPress={() => handleChangeDateForActivity(activity.id, -1)}
-                          className="flex-1 py-2 items-center border-r border-border"
-                          activeOpacity={0.7}
-                        >
-                          <Text className="text-xs font-medium text-primary">← Previous Day</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={() => handleChangeDateForActivity(activity.id, 1)}
-                          className="flex-1 py-2 items-center"
-                          activeOpacity={0.7}
-                        >
-                          <Text className="text-xs font-medium text-primary">Next Day →</Text>
-                        </TouchableOpacity>
+                        {/* Action Buttons */}
+                        <View className="flex-row border-t border-border">
+                          <TouchableOpacity
+                            onPress={() => handleChangeDateForActivity(activity.id, -1)}
+                            className="flex-1 py-2 items-center border-r border-border"
+                            activeOpacity={0.7}
+                          >
+                            <Text className="text-xs font-medium text-primary">← Previous Day</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => handleChangeDateForActivity(activity.id, 1)}
+                            className="flex-1 py-2 items-center"
+                            activeOpacity={0.7}
+                          >
+                            <Text className="text-xs font-medium text-primary">Next Day →</Text>
+                          </TouchableOpacity>
+                        </View>
                       </View>
-                    </View>
-                  ))}
+                    );
+                  })}
                 </View>
               </View>
             );

@@ -539,6 +539,9 @@ describe("SinglePageForm blocker surfacing", () => {
     );
     expect(resetButtons).toHaveLength(1);
     const reset = resetButtons[0];
+    if (!reset) {
+      throw new Error("Expected the reset behavior controls button");
+    }
 
     fireEvent.press(reset);
 

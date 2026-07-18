@@ -86,7 +86,7 @@ export function TrainingPlanDetailHeaderActionsSection({
 
       <TrainingPlanSummaryHeader
         title={plan.name}
-        description={plan.description || undefined}
+        {...(plan.description ? { description: plan.description } : {})}
         isActive={isCurrentScheduledPlan}
         activeLabel="Current scheduled plan"
         inactiveLabel="Template"

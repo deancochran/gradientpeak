@@ -694,8 +694,10 @@ describe("TrainingPlanOverview deep-link routing", () => {
       findTouchableByText("Finish By").props.onPress();
     });
 
+    const [finishDateField] = getDateFields();
+    if (!finishDateField) throw new Error("Expected the finish-date field");
     act(() => {
-      getDateFields()[0].props.onChange("2026-04-30");
+      finishDateField.props.onChange("2026-04-30");
     });
 
     act(() => {

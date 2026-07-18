@@ -15,13 +15,6 @@ import { getServerConfig, subscribeServerConfig } from "@/lib/server-config";
 import { safeSecureStore } from "@/lib/storage/safe-secure-store";
 
 type SessionListener = (session: AuthSession | null) => void;
-type AuthClientSessionStore = {
-  $store?: {
-    atoms?: {
-      $sessionSignal?: { listen?: (listener: () => void) => () => void };
-    };
-  };
-};
 
 const listeners = new Set<SessionListener>();
 
@@ -76,16 +69,23 @@ function notifySessionListeners(session: AuthSession | null) {
   });
 }
 
+function subscribeToSessionSignal(client: unknown, listener: () => void): (() => void) | null {
+  if (!client || typeof client !== "object") return null;
+  const store = Reflect.get(client, "$store");
+  if (!store || typeof store !== "object") return null;
+  const atoms = Reflect.get(store, "atoms");
+  if (!atoms || typeof atoms !== "object") return null;
+  const sessionSignal = Reflect.get(atoms, "$sessionSignal");
+  if (!sessionSignal || typeof sessionSignal !== "object") return null;
+  const listen = Reflect.get(sessionSignal, "listen");
+  if (typeof listen !== "function") return null;
+  const cleanup = Reflect.apply(listen, sessionSignal, [listener]);
+  return typeof cleanup === "function" ? () => void Reflect.apply(cleanup, undefined, []) : null;
+}
+
 function ensureSubscription() {
   if (unsubscribe) return;
-
-  const sessionAtom = (authClient as unknown as AuthClientSessionStore).$store?.atoms
-    ?.$sessionSignal;
-  if (sessionAtom?.listen) {
-    unsubscribe = sessionAtom.listen(() => {
-      emitCurrentSessionDetached();
-    });
-  }
+  unsubscribe = subscribeToSessionSignal(authClient, emitCurrentSessionDetached);
 }
 
 function getMobileCallbackUrl(intent: AuthCallbackIntent) {

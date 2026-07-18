@@ -58,9 +58,15 @@ type TrainingPathSourceMaps = {
   goalMarkers: TrainingPathGoalMarker[];
 };
 
-export function getWeekStartDateKey(value: string) {
+function isCanonicalDateKey(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const parsed = new Date(`${value}T12:00:00.000Z`);
-  if (Number.isNaN(parsed.getTime())) return value;
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+export function getWeekStartDateKey(value: string) {
+  if (!isCanonicalDateKey(value)) return value;
+  const parsed = new Date(`${value}T12:00:00.000Z`);
   const day = parsed.getUTCDay();
   const daysFromMonday = (day + 6) % 7;
   parsed.setUTCDate(parsed.getUTCDate() - daysFromMonday);
@@ -68,8 +74,8 @@ export function getWeekStartDateKey(value: string) {
 }
 
 export function addDays(value: string, days: number) {
+  if (!isCanonicalDateKey(value)) return value;
   const parsed = new Date(`${value}T12:00:00.000Z`);
-  if (Number.isNaN(parsed.getTime())) return value;
   parsed.setUTCDate(parsed.getUTCDate() + days);
   return parsed.toISOString().split("T")[0] ?? value;
 }
@@ -140,7 +146,7 @@ function freshnessCopy(form: number | null) {
 function aggregateLoadByWeek(timeline: TrainingPathLoadPoint[]) {
   const buckets = new Map<string, WeekBucket>();
   for (const point of timeline) {
-    if (!point.date) continue;
+    if (!point.date || !isCanonicalDateKey(point.date)) continue;
     const weekStart = getWeekStartDateKey(point.date);
     const bucket = buckets.get(weekStart) ?? {
       completedAggregateUnavailable: false,
@@ -189,7 +195,7 @@ function aggregateLoadByWeek(timeline: TrainingPathLoadPoint[]) {
 function latestFitnessByWeek(points: TrainingPathFitnessPoint[]) {
   const byWeek = new Map<string, TrainingPathFitnessPoint>();
   for (const point of points) {
-    if (!point.date || typeof point.ctl !== "number") continue;
+    if (!point.date || !isCanonicalDateKey(point.date) || typeof point.ctl !== "number") continue;
     const weekStart = getWeekStartDateKey(point.date);
     const existing = byWeek.get(weekStart);
     if (!existing || point.date >= existing.date) {
@@ -218,9 +224,13 @@ function actualFitnessByWeek(points: TrainingPathFitnessPoint[], todayKey: strin
 }
 
 function latestFitnessAtOrBefore(points: TrainingPathFitnessPoint[], date: string) {
+  if (!isCanonicalDateKey(date)) return null;
   return (
     points
-      .filter((point) => point.date <= date && typeof point.ctl === "number")
+      .filter(
+        (point) =>
+          isCanonicalDateKey(point.date) && point.date <= date && typeof point.ctl === "number",
+      )
       .sort((left, right) => right.date.localeCompare(left.date))[0] ?? null
   );
 }
@@ -263,23 +273,27 @@ export function buildScheduledFitnessTrend(input: {
   timeline?: TrainingPathLoadPoint[] | null;
   todayKey: string;
 }) {
+  if (!isCanonicalDateKey(input.todayKey)) return [];
   const currentFitness = resolveTodayFitnessState(input.fitnessHistory ?? [], input.todayKey);
   const idealEndDate = (input.idealFitnessCurve ?? [])
     .map((point) => point.date)
-    .filter(Boolean)
+    .filter(isCanonicalDateKey)
     .sort((left, right) => right.localeCompare(left))[0];
 
   const timelineEndDate = (input.timeline ?? [])
     .map((point) => point.date)
-    .filter(Boolean)
+    .filter(isCanonicalDateKey)
     .sort((left, right) => right.localeCompare(left))[0];
-  const projectionEndDate = input.endDate ?? timelineEndDate ?? idealEndDate;
+  const projectionEndDate =
+    (input.endDate && isCanonicalDateKey(input.endDate) ? input.endDate : undefined) ??
+    timelineEndDate ??
+    idealEndDate;
 
   if (!currentFitness || !projectionEndDate || projectionEndDate < input.todayKey) return [];
 
   const scheduledTssByDate = new Map<string, number>();
   for (const point of input.timeline ?? []) {
-    if (!point.date) continue;
+    if (!point.date || !isCanonicalDateKey(point.date)) continue;
     const scheduledLoad =
       getNumericLoad(point.scheduled_load_tss ?? point.scheduled_tss) +
       getNumericLoad(point.tentative_scheduled_load_tss);
@@ -316,7 +330,7 @@ export function buildTrainingPathGoalMarkers(
   goalMarkers: TrainingPathSourceGoalMarker[],
 ): TrainingPathGoalMarker[] {
   return goalMarkers
-    .filter((marker) => marker.id && marker.targetDate)
+    .filter((marker) => marker.id && marker.targetDate && isCanonicalDateKey(marker.targetDate))
     .map((marker) => ({
       id: marker.id,
       label: marker.label ?? "Goal",
@@ -514,8 +528,14 @@ function collectVisibleWeekStarts(
   for (const weekStart of sources.idealFitnessByWeek.keys()) weekStarts.add(weekStart);
   for (const marker of sources.goalMarkers) weekStarts.add(marker.weekStart);
 
+  const requestedWeekWindow =
+    input.weekWindow &&
+    isCanonicalDateKey(input.weekWindow.start) &&
+    isCanonicalDateKey(input.weekWindow.end)
+      ? input.weekWindow
+      : null;
   const rangeBounds =
-    input.weekWindow ?? getRangeBounds(input.range, input.todayKey, sources.goalMarkers);
+    requestedWeekWindow ?? getRangeBounds(input.range, input.todayKey, sources.goalMarkers);
   if (rangeBounds) {
     let cursor = getWeekStartDateKey(rangeBounds.start);
     const end = getWeekStartDateKey(rangeBounds.end);

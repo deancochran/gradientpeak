@@ -239,16 +239,56 @@ export function ActivityListModal({
 
               {/* Activity Cards */}
               <View className="gap-3">
-                {filteredActivities.map((activity) => (
-                  <ActivityCard
-                    key={activity.id}
-                    activity={activity}
-                    dateMode="absolute"
-                    onPress={() => handleActivityPress(activity.id)}
-                    owner={activityOwner}
-                    variant="list"
-                  />
-                ))}
+                {filteredActivities.map((activity) => {
+                  const { derived, ingestion, ...activityWithoutDerivedOrIngestion } = activity;
+                  const {
+                    calibration_quality: calibrationQuality,
+                    ...derivedWithoutCalibrationQuality
+                  } = derived ?? {};
+                  const {
+                    last_error_message: lastErrorMessage,
+                    ...ingestionWithoutLastErrorMessage
+                  } = ingestion ?? {};
+
+                  return (
+                    <ActivityCard
+                      key={activity.id}
+                      activity={{
+                        ...activityWithoutDerivedOrIngestion,
+                        ...(ingestion === undefined
+                          ? {}
+                          : {
+                              ingestion:
+                                ingestion === null
+                                  ? null
+                                  : {
+                                      ...ingestionWithoutLastErrorMessage,
+                                      ...(lastErrorMessage === undefined
+                                        ? {}
+                                        : { last_error_message: lastErrorMessage }),
+                                    },
+                            }),
+                        ...(derived === undefined
+                          ? {}
+                          : {
+                              derived:
+                                derived === null
+                                  ? null
+                                  : {
+                                      ...derivedWithoutCalibrationQuality,
+                                      ...(calibrationQuality === undefined
+                                        ? {}
+                                        : { calibration_quality: calibrationQuality }),
+                                    },
+                            }),
+                      }}
+                      dateMode="absolute"
+                      onPress={() => handleActivityPress(activity.id)}
+                      owner={activityOwner}
+                      variant="list"
+                    />
+                  );
+                })}
               </View>
             </View>
           </ScrollView>

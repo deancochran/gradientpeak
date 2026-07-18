@@ -94,6 +94,9 @@ describe("GoalTargetEditorModal", () => {
     );
 
     const typeSelect = findMockNodes(rendered, "Select")[0];
+    if (!typeSelect) {
+      throw new Error("Expected the goal target type select");
+    }
     fireEvent(typeSelect, "onValueChange", { value: "power_threshold", label: "Power test" });
 
     expect(onUpdateTarget).toHaveBeenCalledWith("goal-1", "target-1", {

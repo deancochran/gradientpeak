@@ -546,6 +546,20 @@ function ActivityDetailScreen() {
     );
   }
 
+  const stress = derived?.stress;
+  const { calibration_quality: calibrationQuality, ...stressWithoutCalibrationQuality } =
+    stress ?? {};
+  const activityCardStress =
+    stress == null
+      ? null
+      : {
+          ...stressWithoutCalibrationQuality,
+          ...(calibrationQuality === undefined ? {} : { calibration_quality: calibrationQuality }),
+        };
+  const { ingestion, ...activityWithoutIngestion } = activity;
+  const { last_error_message: lastErrorMessage, ...ingestionWithoutLastErrorMessage } =
+    ingestion ?? {};
+
   const renderHeaderActions = () => {
     if (!isOwner) {
       return null;
@@ -584,9 +598,22 @@ function ActivityDetailScreen() {
         <View className="p-4 gap-4">
           <ActivityCard
             activity={{
-              ...activity,
+              ...activityWithoutIngestion,
+              ...(ingestion === undefined
+                ? {}
+                : {
+                    ingestion:
+                      ingestion === null
+                        ? null
+                        : {
+                            ...ingestionWithoutLastErrorMessage,
+                            ...(lastErrorMessage === undefined
+                              ? {}
+                              : { last_error_message: lastErrorMessage }),
+                          },
+                  }),
               derived: {
-                stress: derived?.stress ?? null,
+                stress: activityCardStress,
               },
             }}
             headerAccessory={

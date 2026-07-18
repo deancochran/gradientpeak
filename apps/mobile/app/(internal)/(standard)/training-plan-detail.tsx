@@ -366,7 +366,7 @@ export default function TrainingPlanOverview() {
   const normalizedNextStepIntent = normalizeTrainingPlanNextStep(nextStep);
 
   const snapshot = useTrainingPlanSnapshot({
-    planId: isSystemTemplateId ? undefined : id,
+    ...(isSystemTemplateId || id === undefined ? {} : { planId: id }),
     includeStatus: false,
     includeWeeklySummaries: false,
   });
@@ -398,7 +398,7 @@ export default function TrainingPlanOverview() {
 
   const scheduling = useTrainingPlanTemplateSchedulingController({
     handleOpenCalendar,
-    planId: plan?.id,
+    ...(plan?.id === undefined ? {} : { planId: plan.id }),
     queryClient,
     router,
     utils,
@@ -409,7 +409,10 @@ export default function TrainingPlanOverview() {
     router,
     utils,
   });
-  const comments = useEntityCommentsController({ entityId: plan?.id, entityType: "training_plan" });
+  const comments = useEntityCommentsController({
+    ...(plan?.id === undefined ? {} : { entityId: plan.id }),
+    entityType: "training_plan",
+  });
 
   const deletePlanMutation = useReliableMutation(api.trainingPlans.delete, {
     invalidate: [utils.trainingPlans],
@@ -991,9 +994,9 @@ export default function TrainingPlanOverview() {
           ) : null}
 
           <TrainingPlanDetailHeaderActionsSection
-            handleChangeVisibility={
-              isOwnedByUser ? headerActions.handleChangeVisibility : undefined
-            }
+            {...(isOwnedByUser
+              ? { handleChangeVisibility: headerActions.handleChangeVisibility }
+              : {})}
             handleShare={headerActions.handleShare}
             handleToggleLike={headerActions.handleToggleLike}
             isCurrentScheduledPlan={isCurrentScheduledPlan}
