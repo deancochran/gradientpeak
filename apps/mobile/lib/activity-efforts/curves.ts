@@ -4,17 +4,19 @@ import {
   formatEffortDuration,
   getActivityEffortDefinitionId,
   getActivityEffortObservationStatus as getCoreActivityEffortObservationStatus,
+  paceSecondsFromSpeedMetersPerSecond,
 } from "@repo/core/athlete-inputs";
 
 export function formatActivityEffortPresentationValue(record: ActivityEffortCurveRow) {
-  if (
-    record.activity_category === "swim" &&
-    record.effort_type === "speed" &&
-    Number.isFinite(record.value) &&
-    record.value > 0
-  ) {
-    const seconds = Math.round(100 / record.value);
-    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}/100m`;
+  if (record.effort_type === "speed" && Number.isFinite(record.value) && record.value > 0) {
+    const distanceUnitMeters = record.activity_category === "swim" ? 100 : 1_000;
+    const seconds = Math.round(
+      paceSecondsFromSpeedMetersPerSecond({
+        distanceUnitMeters,
+        speedMetersPerSecond: record.value,
+      }) ?? 0,
+    );
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}/${distanceUnitMeters === 100 ? "100m" : "km"}`;
   }
   return formatActivityEffortValue(record);
 }
@@ -112,7 +114,7 @@ export function buildActivityEffortCurves(
     );
     return {
       id: definition.id,
-      title: `${definition.label} curve`,
+      title: `${definition.effortType === "speed" ? `${definition.activityCategory === "swim" ? "Swim" : "Run"} pace` : definition.label} curve`,
       unit: definition.unit,
       records: sorted,
       points: buildBestActivityEffortCurve(sorted),

@@ -50,6 +50,7 @@ import { DetailPageIntro } from "../../../components/protected/activity-route-pr
 import {
   buildObservedDurationCurve,
   formatActivityEffortDisplayValue,
+  getActivityEffortCurveValue,
   getEffortHistoryForDuration,
   getEffortStatus,
 } from "../../../lib/activity-effort-presentation";
@@ -121,6 +122,13 @@ function ActivityEffortsPage() {
   const selectedRows = getEffortHistoryForDuration(definitionRows, activeDuration);
   const observedHistory = selectedRows.filter((row) => getEffortStatus(row) === "observed");
   const durationCurve = buildObservedDurationCurve(definitionRows);
+  const isPaceCurve = activeDefinition.effortType === "speed";
+  const curveLabel = isPaceCurve
+    ? `${activeDefinition.activityCategory === "swim" ? "Swim" : "Run"} pace`
+    : activeDefinition.label;
+  const curveAxisLabel = isPaceCurve
+    ? `Pace (/${activeDefinition.activityCategory === "swim" ? "100m" : "km"})`
+    : `Power (${activeDefinition.unit})`;
 
   const updateMutation = api.activityEfforts.update.useMutation({
     onSuccess: async () => {
@@ -200,23 +208,40 @@ function ActivityEffortsPage() {
 
           <div className="space-y-6">
             <SimpleTrendChart
-              description="Observed best performance by duration. X: duration · Y: performance. Modeled and review data are excluded."
+              axisLabels={{ x: "Duration", y: curveAxisLabel }}
+              description={`Observed best ${isPaceCurve ? "pace" : "performance"} by duration. Modeled and review data are excluded.`}
               emptyMessage="No eligible observed efforts are available for this curve."
+              formatX={formatDuration}
               formatValue={(value) =>
                 formatActivityEffortDisplayValue({
                   activity_category: activeDefinition.activityCategory,
                   effort_type: activeDefinition.effortType,
                   unit: activeDefinition.unit,
-                  value,
+                  value: isPaceCurve
+                    ? (activeDefinition.activityCategory === "swim" ? 100 : 1_000) / value
+                    : value,
                 })
               }
+              invertY={isPaceCurve}
+              lowerIsBetter={isPaceCurve}
               points={durationCurve.map((point) => ({
                 id: point.id,
                 label: point.label,
-                value: point.value,
+                value: getActivityEffortCurveValue(
+                  activeDefinition.activityCategory,
+                  activeDefinition.effortType,
+                  point.value,
+                ),
                 x: point.durationSeconds,
               }))}
-              title={`${activeDefinition.label} observed duration curve`}
+              smooth
+              summaryLabels={{
+                first: "Shortest",
+                latest: "Longest",
+                trend: "Change",
+              }}
+              title={`${curveLabel} observed duration curve`}
+              xScale="log"
             />
             <Card>
               <CardHeader>
@@ -254,13 +279,21 @@ function ActivityEffortsPage() {
                       activity_category: activeDefinition.activityCategory,
                       effort_type: activeDefinition.effortType,
                       unit: activeDefinition.unit,
-                      value,
+                      value: isPaceCurve
+                        ? (activeDefinition.activityCategory === "swim" ? 100 : 1_000) / value
+                        : value,
                     })
                   }
+                  invertY={isPaceCurve}
+                  lowerIsBetter={isPaceCurve}
                   points={[...observedHistory].reverse().map((row) => ({
                     id: row.id,
                     label: formatDateTime(row.recorded_at),
-                    value: row.value,
+                    value: getActivityEffortCurveValue(
+                      activeDefinition.activityCategory,
+                      activeDefinition.effortType,
+                      row.value,
+                    ),
                     x: new Date(row.recorded_at).getTime(),
                   }))}
                   title={`${formatDuration(activeDuration)} history over date`}

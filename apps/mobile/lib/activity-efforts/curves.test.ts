@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   type ActivityEffortCurveRow,
   buildBestActivityEffortCurve,
+  formatActivityEffortPresentationValue,
   getActivityEffortCurveBest,
   getActivityEffortObservationStatus,
 } from "./curves";
@@ -16,10 +17,33 @@ const observedEffort: ActivityEffortCurveRow = {
   value: 300,
   unit: "W",
   source: "manual",
-  provenance: { trusted: true, observation_type: "observed", entered_by: "athlete" },
+  provenance: {
+    trusted: true,
+    observation_type: "observed",
+    entered_by: "athlete",
+  },
 };
 
 describe("activity effort curves", () => {
+  it("presents run and swim speeds as pace", () => {
+    expect(
+      formatActivityEffortPresentationValue({
+        ...observedEffort,
+        activity_category: "run",
+        effort_type: "speed",
+        value: 4,
+      }),
+    ).toBe("4:10/km");
+    expect(
+      formatActivityEffortPresentationValue({
+        ...observedEffort,
+        activity_category: "swim",
+        effort_type: "speed",
+        value: 1.25,
+      }),
+    ).toBe("1:20/100m");
+  });
+
   it("passes activity identity when classifying trusted imported observations", () => {
     const imported = {
       ...observedEffort,

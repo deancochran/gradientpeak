@@ -9,11 +9,16 @@ import { buildUuidInList, parseCountValue } from "../utils/sql";
 import { getLikeStats, type LikeStats } from "./like-stats";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
-const timestampSchema = z.union([z.date(), z.string()]);
+const timestampSchema = z.coerce.date();
 const nullableNumericSchema = z.preprocess((value) => {
   if (value === null || value === undefined || value === "") return null;
   return Number(value);
 }, z.number().nullable());
+const positiveIntegerSchema = z.preprocess((value) => Number(value), z.number().int().positive());
+const nullableNonnegativeIntegerSchema = z.preprocess((value) => {
+  if (value === null || value === undefined || value === "") return null;
+  return Number(value);
+}, z.number().int().nonnegative().nullable());
 
 const feedDerivedSchema = z
   .object({
@@ -37,9 +42,9 @@ const feedActivityRowSchema = z
     profile_id: z.string().uuid(),
     name: z.string(),
     category_composition: z.array(canonicalSportSchema),
-    elapsed_ms: z.number().int().positive(),
-    active_ms: z.number().int().nonnegative().nullable(),
-    moving_ms: z.number().int().nonnegative().nullable(),
+    elapsed_ms: positiveIntegerSchema,
+    active_ms: nullableNonnegativeIntegerSchema,
+    moving_ms: nullableNonnegativeIntegerSchema,
     timing_coverage: z.enum(["complete", "partial", "unavailable"]),
     distance_meters: z.number().int().nonnegative(),
     avg_heart_rate: z.number().int().nullable(),
@@ -49,9 +54,9 @@ const feedActivityRowSchema = z
     calories: z.number().int().nullable(),
     polyline: z.string().nullable(),
     is_private: z.boolean(),
-    started_at: z.date(),
-    finished_at: z.date(),
-    created_at: z.date(),
+    started_at: timestampSchema,
+    finished_at: timestampSchema,
+    created_at: timestampSchema,
     profile_username: z.string().nullable(),
     profile_avatar_url: z.string().nullable(),
     elevation_gain_meters: nullableNumericSchema,
@@ -240,12 +245,18 @@ export async function listFeedActivityRows(
       where activity_id = a.id and profile_id = a.profile_id
       order by updated_at desc limit 1
     ) afi on true
-    where a.content_visibility <> 'private'
-      and (a.profile_id = ${viewerId}::uuid or a.content_visibility = 'public' or exists (
-        select 1 from follows f
-        where f.follower_id = ${viewerId}::uuid
-          and f.following_id = a.profile_id and f.status = 'accepted'
-      ))
+    where (
+      a.profile_id = ${viewerId}::uuid
+      or a.content_visibility = 'public'
+      or (
+        a.content_visibility = 'followers'
+        and exists (
+          select 1 from follows f
+          where f.follower_id = ${viewerId}::uuid
+            and f.following_id = a.profile_id and f.status = 'accepted'
+        )
+      )
+    )
       ${cursorFilter}
     order by a.started_at desc, a.id desc
     limit ${input.limit + 1}

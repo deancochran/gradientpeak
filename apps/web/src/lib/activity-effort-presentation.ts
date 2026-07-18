@@ -4,6 +4,7 @@ import {
   type ActivityEffortType,
   formatEffortDuration,
   getActivityEffortObservationStatus,
+  paceSecondsFromSpeedMetersPerSecond,
 } from "@repo/core/athlete-inputs";
 
 export type ActivityEffortPresentationRow = {
@@ -82,13 +83,33 @@ export function formatActivityEffortDisplayValue(
     "activity_category" | "effort_type" | "unit" | "value"
   >,
 ): string {
-  if (effort.activity_category === "swim" && effort.effort_type === "speed" && effort.value > 0) {
-    const paceSeconds = Math.round(100 / effort.value);
+  if (effort.effort_type === "speed" && effort.value > 0) {
+    const distanceUnitMeters = effort.activity_category === "swim" ? 100 : 1_000;
+    const paceSeconds = Math.round(
+      paceSecondsFromSpeedMetersPerSecond({
+        distanceUnitMeters,
+        speedMetersPerSecond: effort.value,
+      }) ?? 0,
+    );
     const minutes = Math.floor(paceSeconds / 60);
-    return `${minutes}:${String(paceSeconds % 60).padStart(2, "0")} /100m`;
+    return `${minutes}:${String(paceSeconds % 60).padStart(2, "0")} /${distanceUnitMeters === 100 ? "100m" : "km"}`;
   }
 
   const unit = effort.effort_type === "power" ? "W" : "m/s";
   const decimals = effort.effort_type === "power" ? 0 : 2;
   return `${Number(effort.value.toFixed(decimals))} ${unit}`;
+}
+
+export function getActivityEffortCurveValue(
+  activityCategory: ActivityEffortCategory,
+  effortType: ActivityEffortType,
+  value: number,
+): number {
+  if (effortType !== "speed") return value;
+  return (
+    paceSecondsFromSpeedMetersPerSecond({
+      distanceUnitMeters: activityCategory === "swim" ? 100 : 1_000,
+      speedMetersPerSecond: value,
+    }) ?? value
+  );
 }

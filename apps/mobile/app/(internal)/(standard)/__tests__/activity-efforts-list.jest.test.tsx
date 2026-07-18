@@ -22,7 +22,10 @@ function trustedImportedObservation(activityId: string) {
     activity_id: activityId,
     source: "imported",
     method: "activity_file_best_effort",
-    provenance: { derived_from: "activity_file_stream", activity_id: activityId },
+    provenance: {
+      derived_from: "activity_file_stream",
+      activity_id: activityId,
+    },
   };
 }
 
@@ -126,8 +129,14 @@ jest.mock("react-native-svg", () => ({
   Text: mockCreateHost("Text"),
 }));
 
-jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: mockCreateHost("Icon") }));
-jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: mockCreateHost("Text") }));
+jest.mock("@repo/ui/components/icon", () => ({
+  __esModule: true,
+  Icon: mockCreateHost("Icon"),
+}));
+jest.mock("@repo/ui/components/text", () => ({
+  __esModule: true,
+  Text: mockCreateHost("Text"),
+}));
 
 jest.mock("@/components/ErrorBoundary", () => ({
   __esModule: true,
@@ -346,7 +355,7 @@ describe("activity efforts list", () => {
     expect(screen.getByText("846 W")).toBeTruthy();
   });
 
-  it("shows speed on the horizontal axis and duration on the vertical axis", () => {
+  it("shows run pace on the vertical axis and duration on the horizontal axis", () => {
     mockActivityEfforts = [
       {
         id: "run-effort-1",
@@ -383,8 +392,14 @@ describe("activity efforts list", () => {
     renderNative(<ActivityEffortsList />);
     fireEvent.press(screen.getByTestId("activity-effort-curve-run_speed"));
 
-    expect(screen.getByText("Speed (m/s)")).toBeTruthy();
-    expect(screen.getByText("Duration").props.transform).toContain("rotate(-90");
+    expect(screen.getByText("Pace (/km)").props.transform).toContain("rotate(-90");
+    expect(screen.getByText("Duration").props.transform).toBeUndefined();
+    expect(screen.getByText("3:20/km")).toBeTruthy();
+    const chart = screen.getByLabelText(
+      /Run pace curve\. X axis: duration\. Y axis: pace per kilometer/,
+    );
+    expect(chart.props.accessibilityLabel).toContain("First records:");
+    expect(chart.props.accessibilityLabel).toContain("Best so far:");
     expect(screen.getByText("1m 00s")).toBeTruthy();
     expect(screen.getByText("10m 00s")).toBeTruthy();
   });
@@ -394,7 +409,12 @@ describe("activity efforts list", () => {
       { effortId: "fast", label: "1m 00s", duration: 60, value: 5 },
       { effortId: "endurance", label: "10m 00s", duration: 600, value: 3 },
     ];
-    const bounds = { minDuration: 60, maxDuration: 600, minValue: 3, maxValue: 5 };
+    const bounds = {
+      minDuration: 60,
+      maxDuration: 600,
+      minValue: 3,
+      maxValue: 5,
+    };
     const padding = { top: 0, right: 0, bottom: 0, left: 0 };
 
     expect(getEffortChartCoordinates(points, 100, 100, padding, bounds)).toEqual([
@@ -408,8 +428,33 @@ describe("activity efforts list", () => {
       { x: 0, y: 0 },
     ]);
 
+    expect(
+      getEffortChartCoordinates(
+        [
+          { effortId: "fast-pace", label: "", duration: 60, value: 200 },
+          { effortId: "slow-pace", label: "", duration: 600, value: 300 },
+        ],
+        100,
+        100,
+        padding,
+        { minDuration: 60, maxDuration: 600, minValue: 200, maxValue: 300 },
+        "duration-horizontal",
+        true,
+      ),
+    ).toEqual([
+      { x: 0, y: 0 },
+      { x: 100, y: 100 },
+    ]);
+
     const invalidCoordinates = getEffortChartCoordinates(
-      [{ effortId: "invalid", label: "", duration: Number.NaN, value: Number.POSITIVE_INFINITY }],
+      [
+        {
+          effortId: "invalid",
+          label: "",
+          duration: Number.NaN,
+          value: Number.POSITIVE_INFINITY,
+        },
+      ],
       100,
       100,
       padding,

@@ -1,4 +1,7 @@
-import { formatEffortDuration } from "@repo/core/athlete-inputs";
+import {
+  formatEffortDuration,
+  paceSecondsFromSpeedMetersPerSecond,
+} from "@repo/core/athlete-inputs";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { type Href, Stack } from "expo-router";
@@ -51,7 +54,10 @@ function getEffortChartColors(isDark: boolean) {
 }
 
 function formatDate(value: string | Date) {
-  return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return new Date(value).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function formatValue(effort: ActivityEffortRow) {
@@ -63,17 +69,50 @@ function formatDuration(seconds: number) {
 }
 
 function buildPath(points: Array<{ x: number; y: number }>) {
-  return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+  const first = points[0];
+  if (!first) return "";
+
+  return points.slice(1).reduce((path, point, index) => {
+    const previous = points[index];
+    if (!previous) return path;
+    const midpointX = (previous.x + point.x) / 2;
+    return `${path} C ${midpointX} ${previous.y}, ${midpointX} ${point.y}, ${point.x} ${point.y}`;
+  }, `M ${first.x} ${first.y}`);
+}
+
+function getPaceDistanceMeters(curveId: string) {
+  if (curveId === "run_speed") return 1_000;
+  if (curveId === "swim_speed") return 100;
+  return null;
+}
+
+function getCurveDisplayPoints(points: EffortPoint[], curveId: string): EffortPoint[] {
+  const distanceUnitMeters = getPaceDistanceMeters(curveId);
+  if (!distanceUnitMeters) return points;
+
+  return points.map((point) => ({
+    ...point,
+    value:
+      paceSecondsFromSpeedMetersPerSecond({
+        distanceUnitMeters,
+        speedMetersPerSecond: point.value,
+      }) ?? point.value,
+  }));
+}
+
+function formatPaceAxisValue(seconds: number, distanceUnitMeters: number) {
+  const roundedSeconds = Math.round(seconds);
+  return `${Math.floor(roundedSeconds / 60)}:${String(roundedSeconds % 60).padStart(2, "0")}/${distanceUnitMeters === 100 ? "100m" : "km"}`;
 }
 
 function scaleDuration(duration: number, minDuration: number, maxDuration: number) {
   const safeDuration = Math.max(duration, 1);
   const safeMin = Math.max(minDuration, 1);
   const safeMax = Math.max(maxDuration, safeMin + 1);
-  const minLog = Math.log1p(safeMin);
-  const maxLog = Math.log1p(safeMax);
+  const minLog = Math.log(safeMin);
+  const maxLog = Math.log(safeMax);
 
-  return (Math.log1p(safeDuration) - minLog) / (maxLog - minLog || 1);
+  return (Math.log(safeDuration) - minLog) / (maxLog - minLog || 1);
 }
 
 function getDurationTicks(minDuration: number, maxDuration: number) {
@@ -136,6 +175,7 @@ export function getEffortChartCoordinates(
   padding: { top: number; right: number; bottom: number; left: number },
   bounds: EffortChartBounds,
   orientation: EffortChartOrientation = "duration-horizontal",
+  invertValue = false,
 ): ChartPoint[] {
   const chartWidth = Math.max(width - padding.left - padding.right, 0);
   const chartHeight = Math.max(height - padding.top - padding.bottom, 0);
@@ -154,7 +194,7 @@ export function getEffortChartCoordinates(
         }
       : {
           x: padding.left + durationScale * chartWidth,
-          y: padding.top + (1 - valueScale) * chartHeight,
+          y: padding.top + (invertValue ? valueScale : 1 - valueScale) * chartHeight,
         };
   });
 }
@@ -248,21 +288,20 @@ function EffortDetailChart({
   const width = 340;
   const height = 260;
   const colors = getEffortChartColors(useColorScheme() === "dark");
-  const presentPoints = buildBestActivityEffortCurve(records);
-  const earliestPoints = buildEarliestComparableCurve(records);
+  const paceDistanceMeters = getPaceDistanceMeters(curve.id);
+  const presentPoints = getCurveDisplayPoints(buildBestActivityEffortCurve(records), curve.id);
+  const earliestPoints = getCurveDisplayPoints(buildEarliestComparableCurve(records), curve.id);
   const allPoints = [...presentPoints, ...earliestPoints];
   const padding = { top: 20, right: 18, bottom: 44, left: 54 };
   const bounds = getEffortChartBounds(allPoints);
-  const orientation: EffortChartOrientation = curve.id.endsWith("_speed")
-    ? "duration-vertical"
-    : "duration-horizontal";
   const presentCoordinates = getEffortChartCoordinates(
     presentPoints,
     width,
     height,
     padding,
     bounds,
-    orientation,
+    "duration-horizontal",
+    paceDistanceMeters != null,
   );
   const earliestCoordinates = getEffortChartCoordinates(
     earliestPoints,
@@ -270,7 +309,8 @@ function EffortDetailChart({
     height,
     padding,
     bounds,
-    orientation,
+    "duration-horizontal",
+    paceDistanceMeters != null,
   );
   const chartLeft = padding.left;
   const chartRight = width - padding.right;
@@ -283,6 +323,14 @@ function EffortDetailChart({
   ];
   const durationTicks = getDurationTicks(bounds.minDuration, bounds.maxDuration);
   const best = getActivityEffortCurveBest(records);
+  const describePoints = (points: EffortPoint[]) =>
+    points
+      .map(
+        (point) =>
+          `${point.label}: ${paceDistanceMeters ? formatPaceAxisValue(point.value, paceDistanceMeters) : formatAxisValue(point.value, curve.unit)}`,
+      )
+      .join("; ");
+  const chartAccessibilityLabel = `${curve.title}. X axis: duration. Y axis: ${paceDistanceMeters ? `pace per ${paceDistanceMeters === 100 ? "100 meters" : "kilometer"}` : `power in ${curve.unit}`}. First records: ${describePoints(earliestPoints)}. Best so far: ${describePoints(presentPoints)}.`;
 
   return (
     <View className="gap-4">
@@ -308,97 +356,90 @@ function EffortDetailChart({
           </Text>
         </View>
       ) : (
-        <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
-          {(orientation === "duration-vertical" ? durationTicks : valueTicks).map((tick) => {
-            const valueRange = bounds.maxValue - bounds.minValue || 1;
-            const y =
-              orientation === "duration-vertical"
-                ? chartTop +
-                  (1 - scaleDuration(tick, bounds.minDuration, bounds.maxDuration)) *
-                    (chartBottom - chartTop)
-                : chartTop + (1 - (tick - bounds.minValue) / valueRange) * (chartBottom - chartTop);
-            return (
-              <React.Fragment key={`vertical-${tick}`}>
-                <Line
-                  x1={chartLeft}
-                  x2={chartRight}
-                  y1={y}
-                  y2={y}
-                  stroke={colors.grid}
-                  strokeWidth={1}
-                />
-                <SvgText
-                  x={chartLeft - 8}
-                  y={y + 4}
-                  fill={colors.label}
-                  fontSize={10}
-                  textAnchor="end"
-                >
-                  {orientation === "duration-vertical"
-                    ? formatDuration(Math.round(tick))
-                    : formatAxisValue(tick, curve.unit)}
-                </SvgText>
-              </React.Fragment>
-            );
-          })}
-          <Line
-            x1={chartLeft}
-            x2={chartLeft}
-            y1={chartTop}
-            y2={chartBottom}
-            stroke={colors.axis}
-            strokeWidth={1.5}
-          />
-          <Line
-            x1={chartLeft}
-            x2={chartRight}
-            y1={chartBottom}
-            y2={chartBottom}
-            stroke={colors.axis}
-            strokeWidth={1.5}
-          />
-          {(orientation === "duration-vertical" ? valueTicks : durationTicks).map((tick) => {
-            const valueRange = bounds.maxValue - bounds.minValue || 1;
-            const x =
-              chartLeft +
-              (orientation === "duration-vertical"
-                ? (tick - bounds.minValue) / valueRange
-                : scaleDuration(tick, bounds.minDuration, bounds.maxDuration)) *
-                (chartRight - chartLeft);
-            return (
-              <React.Fragment key={`horizontal-${tick}`}>
-                <Line
-                  x1={x}
-                  x2={x}
-                  y1={chartBottom}
-                  y2={chartBottom + 4}
-                  stroke={colors.axis}
-                  strokeWidth={1}
-                />
-                <SvgText
-                  x={x}
-                  y={chartBottom + 18}
-                  fill={colors.label}
-                  fontSize={10}
-                  textAnchor="middle"
-                >
-                  {orientation === "duration-vertical"
-                    ? formatAxisValue(tick, curve.unit)
-                    : formatDuration(Math.round(tick))}
-                </SvgText>
-              </React.Fragment>
-            );
-          })}
-          <SvgText
-            x={(chartLeft + chartRight) / 2}
-            y={height - 4}
-            fill={colors.label}
-            fontSize={11}
-            textAnchor="middle"
-          >
-            {orientation === "duration-vertical" ? `Speed (${curve.unit})` : "Duration"}
-          </SvgText>
-          {orientation === "duration-vertical" ? (
+        <View accessible accessibilityLabel={chartAccessibilityLabel} accessibilityRole="image">
+          <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
+            {valueTicks.map((tick) => {
+              const valueRange = bounds.maxValue - bounds.minValue || 1;
+              const valueScale = (tick - bounds.minValue) / valueRange;
+              const y =
+                chartTop +
+                (paceDistanceMeters ? valueScale : 1 - valueScale) * (chartBottom - chartTop);
+              return (
+                <React.Fragment key={`vertical-${tick}`}>
+                  <Line
+                    x1={chartLeft}
+                    x2={chartRight}
+                    y1={y}
+                    y2={y}
+                    stroke={colors.grid}
+                    strokeWidth={1}
+                  />
+                  <SvgText
+                    x={chartLeft - 8}
+                    y={y + 4}
+                    fill={colors.label}
+                    fontSize={10}
+                    textAnchor="end"
+                  >
+                    {paceDistanceMeters
+                      ? formatPaceAxisValue(tick, paceDistanceMeters)
+                      : formatAxisValue(tick, curve.unit)}
+                  </SvgText>
+                </React.Fragment>
+              );
+            })}
+            <Line
+              x1={chartLeft}
+              x2={chartLeft}
+              y1={chartTop}
+              y2={chartBottom}
+              stroke={colors.axis}
+              strokeWidth={1.5}
+            />
+            <Line
+              x1={chartLeft}
+              x2={chartRight}
+              y1={chartBottom}
+              y2={chartBottom}
+              stroke={colors.axis}
+              strokeWidth={1.5}
+            />
+            {durationTicks.map((tick) => {
+              const x =
+                chartLeft +
+                scaleDuration(tick, bounds.minDuration, bounds.maxDuration) *
+                  (chartRight - chartLeft);
+              return (
+                <React.Fragment key={`horizontal-${tick}`}>
+                  <Line
+                    x1={x}
+                    x2={x}
+                    y1={chartBottom}
+                    y2={chartBottom + 4}
+                    stroke={colors.axis}
+                    strokeWidth={1}
+                  />
+                  <SvgText
+                    x={x}
+                    y={chartBottom + 18}
+                    fill={colors.label}
+                    fontSize={10}
+                    textAnchor="middle"
+                  >
+                    {formatDuration(Math.round(tick))}
+                  </SvgText>
+                </React.Fragment>
+              );
+            })}
+            <SvgText
+              x={(chartLeft + chartRight) / 2}
+              y={height - 4}
+              fill={colors.label}
+              fontSize={11}
+              textAnchor="middle"
+            >
+              Duration
+            </SvgText>
             <SvgText
               x={10}
               y={(chartTop + chartBottom) / 2}
@@ -407,40 +448,42 @@ function EffortDetailChart({
               textAnchor="middle"
               transform={`rotate(-90 10 ${(chartTop + chartBottom) / 2})`}
             >
-              Duration
+              {paceDistanceMeters
+                ? `Pace (/${paceDistanceMeters === 100 ? "100m" : "km"})`
+                : `Power (${curve.unit})`}
             </SvgText>
-          ) : null}
-          <Path
-            d={buildPath(earliestCoordinates)}
-            stroke={colors.previous}
-            strokeWidth={3}
-            fill="none"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <Path
-            d={buildPath(presentCoordinates)}
-            stroke={colors.current}
-            strokeWidth={4}
-            fill="none"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          {presentPoints.map((effortPoint, index) => {
-            const point = presentCoordinates[index];
-            if (!point) return null;
+            <Path
+              d={buildPath(earliestCoordinates)}
+              stroke={colors.previous}
+              strokeWidth={3}
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <Path
+              d={buildPath(presentCoordinates)}
+              stroke={colors.current}
+              strokeWidth={4}
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {presentPoints.map((effortPoint, index) => {
+              const point = presentCoordinates[index];
+              if (!point) return null;
 
-            return (
-              <Circle
-                key={effortPoint.effortId}
-                cx={point.x}
-                cy={point.y}
-                r={3.5}
-                fill={colors.current}
-              />
-            );
-          })}
-        </Svg>
+              return (
+                <Circle
+                  key={effortPoint.effortId}
+                  cx={point.x}
+                  cy={point.y}
+                  r={3.5}
+                  fill={colors.current}
+                />
+              );
+            })}
+          </Svg>
+        </View>
       )}
       <View className="flex-row gap-4">
         <View className="flex-row items-center gap-2">
@@ -591,7 +634,10 @@ function ActivityEffortsList() {
                       ? "No observed efforts yet"
                       : `${observedRecords.length} observed • ${curve.points.length} durations${latestObserved ? ` • ${formatDate(latestObserved.recorded_at)}` : ""}`
                   }
-                  visualPolicy={{ source: policy.source, visualType: policy.visualType }}
+                  visualPolicy={{
+                    source: policy.source,
+                    visualType: policy.visualType,
+                  }}
                   onPress={() => setSelectedCurveId(curve.id)}
                   testID={`activity-effort-curve-${curve.id}`}
                 >

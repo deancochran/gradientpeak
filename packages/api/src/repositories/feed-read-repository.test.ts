@@ -1,7 +1,73 @@
-import { describe, expect, it } from "vitest";
-import { mapFeedActivity } from "./feed-read-repository";
+import { PgDialect } from "drizzle-orm/pg-core";
+import { describe, expect, it, vi } from "vitest";
+import { listFeedActivityRows, mapFeedActivity } from "./feed-read-repository";
+
+const VIEWER_ID = "11111111-1111-4111-8111-111111111111";
 
 describe("feed activity projections", () => {
+  it("includes private activities for their owner without exposing them to followers", async () => {
+    const execute = vi.fn().mockResolvedValue({ rows: [] });
+
+    await listFeedActivityRows({ execute } as never, VIEWER_ID, { limit: 20 });
+
+    const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0] as never);
+    const normalizedSql = query.sql.replace(/\s+/g, " ");
+
+    expect(normalizedSql).toContain(
+      "where ( a.profile_id = $1::uuid or a.content_visibility = 'public' or ( a.content_visibility = 'followers' and exists ( select 1 from follows f where f.follower_id = $2::uuid and f.following_id = a.profile_id and f.status = 'accepted' ) ) ) order by a.started_at desc, a.id desc",
+    );
+    expect(query.params).toEqual([VIEWER_ID, VIEWER_ID, 21]);
+  });
+
+  it("parses node-postgres bigint and timestamp values from feed rows", async () => {
+    const execute = vi.fn().mockResolvedValue({
+      rows: [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          profile_id: VIEWER_ID,
+          name: "Private run",
+          category_composition: ["run"],
+          elapsed_ms: "3600000",
+          active_ms: "3500000",
+          moving_ms: null,
+          timing_coverage: "complete",
+          distance_meters: 10_000,
+          avg_heart_rate: null,
+          max_heart_rate: null,
+          avg_power: null,
+          max_power: null,
+          avg_cadence: null,
+          avg_speed_mps: null,
+          max_speed_mps: null,
+          normalized_power: null,
+          normalized_speed_mps: null,
+          normalized_graded_speed_mps: null,
+          elevation_gain_meters: null,
+          calories: null,
+          polyline: null,
+          is_private: true,
+          content_visibility: "private",
+          started_at: "2026-07-18T10:00:00.000Z",
+          finished_at: "2026-07-18T11:00:00.000Z",
+          created_at: "2026-07-18T11:01:00.000Z",
+          profile_username: "athlete",
+          profile_avatar_url: null,
+          ingestion_status: null,
+          ingestion_last_error_message: null,
+        },
+      ],
+    });
+
+    const [row] = await listFeedActivityRows({ execute } as never, VIEWER_ID, { limit: 20 });
+
+    expect(row).toMatchObject({
+      elapsed_ms: 3_600_000,
+      active_ms: 3_500_000,
+      moving_ms: null,
+      started_at: new Date("2026-07-18T10:00:00.000Z"),
+    });
+  });
+
   it("preserves ordered repeated and multisport category composition with modern timing", () => {
     const result = mapFeedActivity(
       {
