@@ -67,12 +67,12 @@
       "name": "enforce_strict_activity_effort_tombstone_constraint"
     },
     {
-      "version": "20260717200100",
-      "name": "add_organization_authorization_foundation"
-    },
-    {
       "version": "20260717210000",
       "name": "add_activity_plan_structure_category_index"
+    },
+    {
+      "version": "20260717211000",
+      "name": "add_organization_authorization_foundation"
     }
   ]
 }
