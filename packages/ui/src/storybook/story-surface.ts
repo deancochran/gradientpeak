@@ -45,6 +45,7 @@ export const WEB_STORY_COMPONENTS = [
   "table",
   "tabs",
   "textarea",
+  "time-input",
   "toggle",
   "toggle-group",
   "training-preferences-summary-card",

@@ -204,7 +204,11 @@
         "static": { "script": "check", "patterns": ["**/*"] },
         "test": {
           "script": "test",
-          "patterns": ["tests/parity/**/*.test.ts", "tooling/architecture/**/*.test.mjs"]
+          "patterns": [
+            "tests/parity/**/*.test.ts",
+            "tooling/architecture/**/*.test.mjs",
+            "tooling/testing/**/*.test.mjs"
+          ]
         }
       }
     }
@@ -250,6 +254,7 @@
       "apps/**/*",
       "packages/**/*",
       "tooling/architecture/**/*.test.mjs",
+      "tooling/testing/**/*.test.mjs",
       "tests/parity/**/*.test.ts"
     ],
     "categories": {

@@ -13,10 +13,32 @@ describe("UI ownership guardrails", () => {
       .sort();
 
     expect(actualFiles).toEqual([
+      "ActivityCard.tsx",
+      "ActivityPlanAttributionRow.tsx",
       "ActivityPlanCard.tsx",
+      "ActivityPlanSummary.tsx",
+      "AppBottomSheet.tsx",
+      "AppFormModal.tsx",
       "AppHeader.tsx",
+      "AppSelectionModal.tsx",
+      "ClearFieldAction.tsx",
+      "CompactInsightCard.tsx",
       "DetailChartModal.tsx",
+      "EntityOwnerRow.tsx",
+      "HeaderAction.tsx",
       "HeaderButtons.tsx",
+      "IndexFilterSheet.tsx",
+      "IndexSearchBar.tsx",
+      "LayoutPrimitives.tsx",
+      "ResourceCardPrimitives.tsx",
+      "ResourceList.tsx",
+      "RouteCard.tsx",
+      "ScreenState.tsx",
+      "SearchField.tsx",
+      "SearchableBottomSheetList.tsx",
+      "StaticRouteMapPreview.tsx",
+      "TrainingPlanCard.tsx",
+      "TrainingPlanPeriodizationPreview.tsx",
       "index.ts",
     ]);
   });
@@ -28,18 +50,12 @@ describe("UI ownership guardrails", () => {
       .sort();
 
     expect(actualFiles).toEqual([
-      "auth-guard.tsx",
-      "current-user-avatar.tsx",
-      "dashboard-header.tsx",
+      "auth-card-shell.tsx",
       "forgot-password-form.tsx",
-      "like-button.tsx",
       "login-form.tsx",
-      "messages-button.tsx",
-      "nav-bar.tsx",
-      "notifications-button.tsx",
+      "route-flash-toast.tsx",
       "sign-up-form.tsx",
       "update-password-form.tsx",
-      "user-nav.tsx",
     ]);
   });
 
