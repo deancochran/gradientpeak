@@ -31,6 +31,7 @@ export type DailyTssObservationsResponse = {
   end_date: string;
   observations: readonly TrainingTimelineDailyTssObservation[];
   start_date: string;
+  timezone: string;
 };
 
 function eachDate(startDate: string, endDate: string) {
@@ -82,14 +83,50 @@ export type CompletedTssObservationMerge = {
   >;
 };
 
+function normalizeCompletedLoadTimeline(
+  points: readonly TrainingPathDailyLoadInput[],
+): CompletedTssObservationMerge["timeline"] {
+  return points
+    .map((point) => ({
+      ...point,
+      completed_load_tss:
+        typeof point.completed_load_tss === "number" && Number.isFinite(point.completed_load_tss)
+          ? point.completed_load_tss
+          : 0,
+      recommended_load_tss:
+        typeof point.recommended_load_tss === "number" &&
+        Number.isFinite(point.recommended_load_tss)
+          ? point.recommended_load_tss
+          : 0,
+      scheduled_load_tss:
+        typeof point.scheduled_load_tss === "number" && Number.isFinite(point.scheduled_load_tss)
+          ? point.scheduled_load_tss
+          : 0,
+      tentative_scheduled_load_tss:
+        typeof point.tentative_scheduled_load_tss === "number" &&
+        Number.isFinite(point.tentative_scheduled_load_tss)
+          ? point.tentative_scheduled_load_tss
+          : undefined,
+    }))
+    .sort((left, right) => left.date.localeCompare(right.date));
+}
+
 /** Applies authoritative API local-day observations without collapsing unavailable load to zero. */
 export function mergeCompletedTssObservations(input: {
-  requestedRange: { end_date: string; start_date: string };
+  requestedRange?: { end_date: string; start_date: string; timezone: string } | null;
   response?: DailyTssObservationsResponse | null;
   timeline?: readonly TrainingPathDailyLoadInput[] | null;
 }): CompletedTssObservationMerge {
   const timelineByDate = new Map((input.timeline ?? []).map((point) => [point.date, { ...point }]));
   const completedObservationsByDate = new Map<string, CompletedObservationMetadata>();
+  if (!input.requestedRange) {
+    return {
+      completedObservationsByDate,
+      completedActivityDatesWithoutLoad: [],
+      timeline: normalizeCompletedLoadTimeline([...timelineByDate.values()]),
+    };
+  }
+
   for (const date of eachDate(input.requestedRange.start_date, input.requestedRange.end_date)) {
     completedObservationsByDate.set(date, {
       hasUnavailableCompletedActivity: false,
@@ -102,8 +139,10 @@ export function mergeCompletedTssObservations(input: {
     }
   }
 
-  if (input.response) {
-    for (const date of eachDate(input.response.start_date, input.response.end_date)) {
+  const compatibleResponse =
+    input.response?.timezone === input.requestedRange.timezone ? input.response : null;
+  if (compatibleResponse) {
+    for (const date of eachDate(compatibleResponse.start_date, compatibleResponse.end_date)) {
       if (date < input.requestedRange.start_date || date > input.requestedRange.end_date) continue;
       completedObservationsByDate.set(date, {
         hasUnavailableCompletedActivity: false,
@@ -116,7 +155,7 @@ export function mergeCompletedTssObservations(input: {
       }
     }
 
-    for (const observation of input.response.observations) {
+    for (const observation of compatibleResponse.observations) {
       if (
         observation.date < input.requestedRange.start_date ||
         observation.date > input.requestedRange.end_date
@@ -163,29 +202,7 @@ export function mergeCompletedTssObservations(input: {
       .filter(([, metadata]) => metadata.hasUnavailableCompletedActivity)
       .map(([date]) => date)
       .sort((left, right) => left.localeCompare(right)),
-    timeline: [...timelineByDate.values()]
-      .map((point) => ({
-        ...point,
-        completed_load_tss:
-          typeof point.completed_load_tss === "number" && Number.isFinite(point.completed_load_tss)
-            ? point.completed_load_tss
-            : 0,
-        recommended_load_tss:
-          typeof point.recommended_load_tss === "number" &&
-          Number.isFinite(point.recommended_load_tss)
-            ? point.recommended_load_tss
-            : 0,
-        scheduled_load_tss:
-          typeof point.scheduled_load_tss === "number" && Number.isFinite(point.scheduled_load_tss)
-            ? point.scheduled_load_tss
-            : 0,
-        tentative_scheduled_load_tss:
-          typeof point.tentative_scheduled_load_tss === "number" &&
-          Number.isFinite(point.tentative_scheduled_load_tss)
-            ? point.tentative_scheduled_load_tss
-            : undefined,
-      }))
-      .sort((left, right) => left.date.localeCompare(right.date)),
+    timeline: normalizeCompletedLoadTimeline([...timelineByDate.values()]),
   };
 }
 

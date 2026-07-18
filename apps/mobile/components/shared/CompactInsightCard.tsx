@@ -42,17 +42,19 @@ function getAccessibilityLabel({
   hasData,
   summary,
   visualPolicy,
+  accessibilityDetail,
 }: {
   title: string;
   value: string;
   hasData: boolean;
   summary?: string;
   visualPolicy?: { source: InsightSource; visualType: InsightVisualType };
+  accessibilityDetail?: string;
 }) {
   const details = hasData ? (summary ?? value) : "No data";
   const visualHint = getVisualPolicyHint(visualPolicy);
 
-  return [title, details, visualHint].filter(Boolean).join(". ");
+  return [title, details, visualHint, accessibilityDetail].filter(Boolean).join(". ");
 }
 
 function CompactInsightFooter({
@@ -92,6 +94,7 @@ function CompactInsightFooter({
 }
 
 export function CompactInsightCard({
+  accessibilityDetail,
   title,
   value,
   icon,
@@ -103,6 +106,7 @@ export function CompactInsightCard({
   onPress,
   testID,
 }: {
+  accessibilityDetail?: string;
   title: string;
   value: string;
   icon: React.ComponentProps<typeof Icon>["as"];
@@ -117,7 +121,14 @@ export function CompactInsightCard({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={getAccessibilityLabel({ title, value, hasData, summary, visualPolicy })}
+      accessibilityLabel={getAccessibilityLabel({
+        title,
+        value,
+        hasData,
+        summary,
+        visualPolicy,
+        accessibilityDetail,
+      })}
       accessibilityHint="Opens insight details."
       onPress={onPress}
       style={{ width: COMPACT_INSIGHT_CARD_SIZE, height: COMPACT_INSIGHT_CARD_SIZE }}

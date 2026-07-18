@@ -1,5 +1,5 @@
-import { toDateKeyInTimeZone, toPlanningDayStartIso } from "@/lib/calendar/dateMath";
-import { addDays } from "./trainingPathUtils";
+import { toDateKeyInTimeZone } from "@/lib/calendar/dateMath";
+import { resolvePlanningDayQueryRange } from "@/lib/calendar/planningQueryRange";
 
 const MINUTE_MS = 60_000;
 
@@ -20,17 +20,12 @@ export function getTrainingPathPlanningDayRange(
   dateKey: string,
   planningTimezone: string | null | undefined,
 ) {
-  if (!planningTimezone?.trim()) return null;
-
-  try {
-    return {
-      startsAfter: toPlanningDayStartIso(dateKey, planningTimezone),
-      startsBefore: toPlanningDayStartIso(addDays(dateKey, 1), planningTimezone),
-    };
-  } catch {
-    // A planning zone with no unambiguous midnight cannot safely define this day.
-    return null;
-  }
+  const readiness = resolvePlanningDayQueryRange({ dateKey, timezone: planningTimezone });
+  if (readiness.status === "unavailable") return null;
+  return {
+    startsAfter: readiness.value.startsAfter,
+    startsBefore: readiness.value.startsBefore,
+  };
 }
 
 export function getTrainingPathDateKey(

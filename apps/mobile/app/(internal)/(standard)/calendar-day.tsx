@@ -13,18 +13,14 @@ import { GroupEventCard } from "@/components/groups/GroupEventCards";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
-import {
-  addDaysToDateKey,
-  parseDateKey,
-  toDateKeyInTimeZone,
-  toPlanningDayStartIso,
-} from "@/lib/calendar/dateMath";
+import { parseDateKey, toDateKeyInTimeZone } from "@/lib/calendar/dateMath";
 import { buildOpenEventRoute } from "@/lib/calendar/eventRouting";
 import {
   attachSelectedGroupEventActivityPlans,
   getSelectedGroupEventActivityPlanIds,
 } from "@/lib/calendar/groupEventPlans";
 import { buildEventsByDate, type CalendarEvent } from "@/lib/calendar/normalizeEvents";
+import { resolvePlanningDayQueryRange } from "@/lib/calendar/planningQueryRange";
 import { buildTimelineEvents, buildTimelineEventsByDate } from "@/lib/calendar/timelineEvents";
 import { ROUTES } from "@/lib/constants/routes";
 import { markEstimated } from "@/lib/estimatedMetrics";
@@ -34,6 +30,8 @@ import { useAuthStore } from "@/lib/stores/auth-store";
 import { useCalendarStore } from "@/lib/stores/calendar-store";
 
 const CALENDAR_DAY_QUERY_LIMIT = 100;
+const DORMANT_DATE_KEY = "1970-01-01";
+const DORMANT_INSTANT = "1970-01-01T00:00:00.000Z";
 
 function formatCalendarDayTitle(dateKey: string, todayKey: string) {
   const date = parseDateKey(dateKey);
@@ -124,18 +122,23 @@ export default function CalendarDayScreen() {
       return null;
     }
   }, [planningTimezone]);
-  const dateKey = typeof params.date === "string" ? params.date : todayKey;
-  const planningDayRange = useMemo(() => {
-    if (!dateKey || !planningTimezone) return null;
-    try {
-      return {
-        startsAfter: toPlanningDayStartIso(dateKey, planningTimezone),
-        startsBefore: toPlanningDayStartIso(addDaysToDateKey(dateKey, 1), planningTimezone),
-      };
-    } catch {
-      return null;
-    }
-  }, [dateKey, planningTimezone]);
+  const requestedDateKey = typeof params.date === "string" ? params.date : todayKey;
+  const planningDayReadiness = useMemo(
+    () =>
+      resolvePlanningDayQueryRange({
+        dateKey: requestedDateKey,
+        timezone: planningTimezone,
+      }),
+    [planningTimezone, requestedDateKey],
+  );
+  const planningDayRange =
+    planningDayReadiness.status === "ready" ? planningDayReadiness.value : null;
+  const dateKey = planningDayRange?.dateKey ?? null;
+  const unavailableMessage =
+    planningDayReadiness.status === "unavailable" &&
+    planningDayReadiness.reason === "date_unavailable"
+      ? "Choose a valid calendar date to view this day."
+      : "Set a valid planning timezone in your profile to view calendar days.";
   const planSuggestion = useMemo(() => {
     const type = readParam(params.planSuggestionType);
     const tssDelta = readParam(params.planSuggestionTssDelta);
@@ -150,6 +153,7 @@ export default function CalendarDayScreen() {
   const eventsQueryEnabled = useAuthStore(
     (state) => state.ready && !!state.session && hasSessionAuthCredentials(),
   );
+  const dayQueriesEnabled = eventsQueryEnabled && planningDayReadiness.status === "ready";
 
   useEffect(() => {
     if (dateKey) setActiveDate(dateKey);
@@ -157,14 +161,14 @@ export default function CalendarDayScreen() {
 
   const { data, isLoading, error, refetch } = api.events.list.useQuery(
     {
-      date_from: dateKey ?? "",
-      date_to: dateKey ?? "",
+      date_from: dateKey ?? DORMANT_DATE_KEY,
+      date_to: dateKey ?? DORMANT_DATE_KEY,
       include_adhoc: true,
       limit: CALENDAR_DAY_QUERY_LIMIT,
     },
     {
       ...scheduleAwareReadQueryOptions,
-      enabled: eventsQueryEnabled && Boolean(planningDayRange),
+      enabled: dayQueriesEnabled,
       placeholderData: keepPreviousData,
     },
   );
@@ -173,14 +177,13 @@ export default function CalendarDayScreen() {
   const groupEventsQuery = api.groups.events.myCalendarGroupEvents.useQuery(
     {
       includeCancelled: false,
-      startsAfter: planningDayRange?.startsAfter ?? "",
-      startsBefore: planningDayRange?.startsBefore ?? "",
+      startsAfter: planningDayRange?.startsAfter ?? DORMANT_INSTANT,
+      startsBefore: planningDayRange?.endsAtInclusive ?? DORMANT_INSTANT,
       limit: CALENDAR_DAY_QUERY_LIMIT,
     },
     {
       ...scheduleAwareReadQueryOptions,
-      enabled: eventsQueryEnabled && Boolean(planningDayRange),
-      placeholderData: keepPreviousData,
+      enabled: dayQueriesEnabled,
     },
   );
   const groupEvents = useMemo(
@@ -195,7 +198,7 @@ export default function CalendarDayScreen() {
     { ids: selectedGroupActivityPlanIds },
     {
       ...scheduleAwareReadQueryOptions,
-      enabled: eventsQueryEnabled && selectedGroupActivityPlanIds.length > 0,
+      enabled: dayQueriesEnabled && selectedGroupActivityPlanIds.length > 0,
       placeholderData: keepPreviousData,
     },
   );
@@ -278,6 +281,7 @@ export default function CalendarDayScreen() {
   };
 
   const handleCreateEvent = () => {
+    if (!dateKey) return;
     navigateTo({
       pathname: "/(internal)/(standard)/agenda-create",
       params: {
@@ -316,24 +320,23 @@ export default function CalendarDayScreen() {
       <Stack.Screen
         options={{
           title,
-          headerRight: () => (
-            <TouchableOpacity
-              onPress={handleCreateEvent}
-              className="mr-2 rounded-full px-2 py-1"
-              activeOpacity={0.85}
-              testID="calendar-day-create-event-button"
-            >
-              <Text className="text-sm font-medium text-primary">Create</Text>
-            </TouchableOpacity>
-          ),
+          headerRight: () =>
+            dateKey ? (
+              <TouchableOpacity
+                onPress={handleCreateEvent}
+                className="mr-2 rounded-full px-2 py-1"
+                activeOpacity={0.85}
+                testID="calendar-day-create-event-button"
+              >
+                <Text className="text-sm font-medium text-primary">Create</Text>
+              </TouchableOpacity>
+            ) : null,
         }}
       />
 
       {!planningDayRange ? (
         <View className="flex-1 items-center justify-center px-6">
-          <Text className="text-center text-sm text-muted-foreground">
-            Set a valid planning timezone in your profile to view calendar days.
-          </Text>
+          <Text className="text-center text-sm text-muted-foreground">{unavailableMessage}</Text>
         </View>
       ) : (isLoading || groupEventsQuery.isLoading) && !data && !groupEventsQuery.data ? (
         <View className="flex-1 items-center justify-center px-6">
@@ -346,7 +349,11 @@ export default function CalendarDayScreen() {
           </Text>
           <Text
             className="text-sm font-medium text-foreground"
-            onPress={() => void Promise.all([refetch(), groupEventsQuery.refetch()])}
+            onPress={() =>
+              void (dayQueriesEnabled
+                ? Promise.all([refetch(), groupEventsQuery.refetch()])
+                : Promise.resolve())
+            }
           >
             Retry
           </Text>

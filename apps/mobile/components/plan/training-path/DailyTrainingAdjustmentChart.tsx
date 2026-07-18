@@ -1,6 +1,11 @@
 import type { ActivityTssIdentity } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
-import { DashPathEffect, Circle as SkiaCircle, Rect as SkiaRect } from "@shopify/react-native-skia";
+import {
+  DashPathEffect,
+  Line as SkiaLine,
+  Rect as SkiaRect,
+  vec,
+} from "@shopify/react-native-skia";
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AccessibilityActionEvent, LayoutChangeEvent } from "react-native";
 import { View } from "react-native";
@@ -10,6 +15,7 @@ import { useTheme } from "@/lib/stores/theme-store";
 import type { CompletedObservationState } from "@/lib/training-path/completedTssObservation";
 import { DailyTrainingAdjustmentTray } from "./DailyTrainingAdjustmentTray";
 import {
+  buildDailyTrainingAdjustmentAccessibilityValue,
   type DailyTrainingAdjustmentChartDatum,
   dailyTrainingAdjustmentChartYKeys,
   dailyTrainingAdjustmentFitnessYKeys,
@@ -281,9 +287,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
     [selectRelative],
   );
 
-  const accessibilityValue = selectedPoint
-    ? `Selected date ${selectedPoint.date}`
-    : "No date selected";
+  const accessibilityValue = buildDailyTrainingAdjustmentAccessibilityValue(selectedPoint);
 
   if (visiblePoints.length === 0) {
     return (
@@ -460,14 +464,20 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                                   />
                                 ) : null}
                                 {showCompletedActivityMarker ? (
-                                  <SkiaCircle
-                                    cx={geometry.center}
-                                    cy={chartBounds.bottom - 5}
-                                    r={4}
-                                    color={colors.completed}
-                                    style="stroke"
-                                    strokeWidth={2}
-                                  />
+                                  <>
+                                    <SkiaLine
+                                      p1={vec(geometry.center - 4, chartBounds.bottom - 7)}
+                                      p2={vec(geometry.center - 1, chartBounds.bottom - 4)}
+                                      color={colors.completed}
+                                      strokeWidth={2}
+                                    />
+                                    <SkiaLine
+                                      p1={vec(geometry.center - 1, chartBounds.bottom - 4)}
+                                      p2={vec(geometry.center + 5, chartBounds.bottom - 11)}
+                                      color={colors.completed}
+                                      strokeWidth={2}
+                                    />
+                                  </>
                                 ) : null}
                               </Fragment>
                             );

@@ -23,6 +23,7 @@ type TrainingPathSectionProps = {
   selectedWeekCompletedActivities: TrainingPathCompletedActivity[];
   selectedWeekLoading?: boolean;
   chartLoading?: boolean;
+  chartUnavailable?: boolean;
   chartHeight?: number;
   onScrollNearEnd?: () => void;
   onScrollNearStart?: () => void;
@@ -48,6 +49,7 @@ export function TrainingPathSection({
   selectedWeekCompletedActivities,
   selectedWeekLoading = false,
   chartLoading = false,
+  chartUnavailable = false,
   chartHeight = 300,
   onScrollNearEnd,
   onScrollNearStart,
@@ -105,6 +107,15 @@ export function TrainingPathSection({
         dailyPoints={dailyPoints}
         dailyDensity="standard"
         chartHeight={chartHeight}
+        emptyState={
+          chartUnavailable
+            ? {
+                body: "Check your connection and try again.",
+                title: "Error loading plan information",
+                tone: "unavailable",
+              }
+            : undefined
+        }
         loading={chartLoading}
         model={model}
         onCreateGoal={onCreateGoal}

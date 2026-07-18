@@ -9,7 +9,7 @@ type TrainingPathLoadMetricPoint = {
 };
 
 export type TrainingPathLoadMetric = {
-  label: "Completed" | "Planned" | "Recommended" | "Tentative";
+  label: "Completed" | "Planned" | "Target" | "Tentative";
   value: string;
 };
 
@@ -31,7 +31,7 @@ export function buildTrainingPathLoadMetrics(
     typeof point?.targetLoadTss === "number" &&
     Number.isFinite(point.targetLoadTss)
   ) {
-    metrics.push({ label: "Recommended", value: formatTss(point.targetLoadTss) });
+    metrics.push({ label: "Target", value: formatTss(point.targetLoadTss) });
   }
   metrics.push({ label: "Planned", value: formatTss(finiteValue(point?.plannedLoadTss)) });
   const tentative = finiteValue(point?.tentativePlannedLoadTss);

@@ -3,11 +3,13 @@ import { startTransition, useCallback, useEffect, useMemo, useRef, useState } fr
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
+import { addDaysToDateKey, isCanonicalDateKey } from "@/lib/calendar/dateMath";
 import {
   attachSelectedGroupEventActivityPlans,
   getSelectedGroupEventActivityPlanIds,
   toGroupEventScheduledActivityPlanEvent,
 } from "@/lib/calendar/groupEventPlans";
+import { resolveBoundedPlanningDateRange } from "@/lib/calendar/planningQueryRange";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useProfileSettings } from "@/lib/hooks/useProfileSettings";
@@ -49,18 +51,41 @@ function isPresent<T>(value: T | null | undefined): value is T {
   return value != null;
 }
 
+const DORMANT_DATE_KEY = "1970-01-01";
+const DORMANT_INSTANT = "1970-01-01T00:00:00.000Z";
+const SCHEDULE_QUERY_DAY_RADIUS = 365;
+const MAX_AUTOMATIC_QUERY_PAGE_COUNT = 20;
+
 function useTrainingPathTodayKey(planningTimezone: string | null) {
-  const [todayKey, setTodayKey] = useState<string | null>(null);
+  const [todayState, setTodayState] = useState(() => ({
+    planningTimezone,
+    todayKey: planningTimezone ? getTrainingPathTodayKey(new Date(), planningTimezone) : null,
+  }));
+  const todayStateRef = useRef(todayState);
+  todayStateRef.current = todayState;
+  const todayKey =
+    todayState.planningTimezone === planningTimezone
+      ? todayState.todayKey
+      : planningTimezone
+        ? getTrainingPathTodayKey(new Date(), planningTimezone)
+        : null;
 
   useEffect(() => {
     if (!planningTimezone) {
-      setTodayKey(null);
+      const nextState = { planningTimezone, todayKey: null };
+      todayStateRef.current = nextState;
+      setTodayState(nextState);
       return;
     }
 
     const refreshToday = () => {
       const nextTodayKey = getTrainingPathTodayKey(new Date(), planningTimezone);
-      setTodayKey((current) => (current === nextTodayKey ? current : nextTodayKey));
+      const current = todayStateRef.current;
+      if (current.planningTimezone !== planningTimezone || current.todayKey !== nextTodayKey) {
+        const nextState = { planningTimezone, todayKey: nextTodayKey };
+        todayStateRef.current = nextState;
+        setTodayState(nextState);
+      }
       return nextTodayKey != null;
     };
 
@@ -73,7 +98,14 @@ function useTrainingPathTodayKey(planningTimezone: string | null) {
       }, delay);
     };
 
-    if (refreshToday()) scheduleRefresh();
+    if (
+      todayStateRef.current.planningTimezone === planningTimezone &&
+      todayStateRef.current.todayKey != null
+    ) {
+      scheduleRefresh();
+    } else if (refreshToday()) {
+      scheduleRefresh();
+    }
     return () => {
       if (timeout) clearTimeout(timeout);
     };
@@ -89,8 +121,21 @@ function toInclusiveQueryEnd(range: { startsBefore: string } | null) {
   return new Date(end.getTime() - 1).toISOString();
 }
 
+function pageItems<T>(pages: readonly { items?: readonly T[] | null }[] | undefined): T[] {
+  if (!Array.isArray(pages)) return [];
+  return pages.flatMap((page) => {
+    if (!page || typeof page !== "object") return [];
+    const items = (page as { items?: unknown }).items;
+    return Array.isArray(items) ? (items as T[]) : [];
+  });
+}
+
+function mergeUniqueById<T extends { id: string }>(...collections: readonly T[][]): T[] {
+  return Array.from(new Map(collections.flat().map((item) => [item.id, item] as const)).values());
+}
+
 export function usePlanTrainingPathData() {
-  const { profile, user } = useAuth();
+  const { profile, profileLoading, refreshProfile, user } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const [selectedWeekStart, setSelectedWeekStart] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -98,7 +143,11 @@ export function usePlanTrainingPathData() {
   const lastProjectionRefreshKeyRef = useRef<string | null>(null);
   const planningTimezone = profile?.planning_timezone ?? null;
   const planningTodayKey = useTrainingPathTodayKey(planningTimezone);
-  const planningTimezoneState = planningTodayKey ? "ready" : "unavailable";
+  const planningTimezoneState = profileLoading
+    ? "loading"
+    : planningTodayKey
+      ? "ready"
+      : "unavailable";
   const todayKey = planningTodayKey ?? "";
   const eventsQueryEnabled = useAuthStore(
     (state) => state.ready && !!state.session && hasSessionAuthCredentials() && !!planningTodayKey,
@@ -128,70 +177,113 @@ export function usePlanTrainingPathData() {
   });
   const scheduledWindowStart = trainingPathWindow.resolvedWeekWindow.start;
   const scheduledWindowEnd = trainingPathWindow.resolvedWeekWindow.end;
+  const earliestScheduleQueryKey = planningTodayKey
+    ? addDaysToDateKey(planningTodayKey, -SCHEDULE_QUERY_DAY_RADIUS)
+    : DORMANT_DATE_KEY;
+  const latestScheduleQueryKey = planningTodayKey
+    ? addDaysToDateKey(planningTodayKey, SCHEDULE_QUERY_DAY_RADIUS)
+    : DORMANT_DATE_KEY;
+  const hasCanonicalScheduledWindow =
+    isCanonicalDateKey(scheduledWindowStart) &&
+    isCanonicalDateKey(scheduledWindowEnd) &&
+    scheduledWindowStart <= scheduledWindowEnd;
+  const boundedScheduledWindowStart =
+    planningTodayKey && hasCanonicalScheduledWindow
+      ? scheduledWindowStart < earliestScheduleQueryKey
+        ? earliestScheduleQueryKey
+        : scheduledWindowStart > planningTodayKey
+          ? planningTodayKey
+          : scheduledWindowStart
+      : DORMANT_DATE_KEY;
+  const boundedScheduledWindowEnd =
+    planningTodayKey && hasCanonicalScheduledWindow
+      ? scheduledWindowEnd > latestScheduleQueryKey
+        ? latestScheduleQueryKey
+        : scheduledWindowEnd < planningTodayKey
+          ? planningTodayKey
+          : scheduledWindowEnd
+      : DORMANT_DATE_KEY;
   const scheduledWindowRange = useMemo(
-    () => getTrainingPathPlanningDayRange(scheduledWindowStart, planningTimezone),
-    [planningTimezone, scheduledWindowStart],
+    () => getTrainingPathPlanningDayRange(boundedScheduledWindowStart, planningTimezone),
+    [boundedScheduledWindowStart, planningTimezone],
   );
   const scheduledWindowEndRange = useMemo(
-    () => getTrainingPathPlanningDayRange(scheduledWindowEnd, planningTimezone),
-    [planningTimezone, scheduledWindowEnd],
+    () => getTrainingPathPlanningDayRange(boundedScheduledWindowEnd, planningTimezone),
+    [boundedScheduledWindowEnd, planningTimezone],
   );
   const todayRange = useMemo(
     () => getTrainingPathPlanningDayRange(todayKey, planningTimezone),
     [planningTimezone, todayKey],
   );
+  const scheduleQueriesEnabled =
+    eventsQueryEnabled &&
+    isCanonicalDateKey(boundedScheduledWindowStart) &&
+    isCanonicalDateKey(boundedScheduledWindowEnd) &&
+    earliestScheduleQueryKey <= boundedScheduledWindowStart &&
+    boundedScheduledWindowStart <= todayKey &&
+    todayKey <= boundedScheduledWindowEnd &&
+    boundedScheduledWindowEnd <= latestScheduleQueryKey &&
+    boundedScheduledWindowStart <= boundedScheduledWindowEnd &&
+    scheduledWindowRange != null &&
+    scheduledWindowEndRange != null &&
+    todayRange != null;
 
   const upcomingPlannedEventsQuery = api.events.list.useInfiniteQuery(
     {
       include_adhoc: true,
-      date_from: todayKey,
-      date_to: toInclusiveQueryEnd(scheduledWindowEndRange),
+      date_from: planningTodayKey ?? DORMANT_DATE_KEY,
+      date_to: toInclusiveQueryEnd(scheduledWindowEndRange) || DORMANT_INSTANT,
       limit: 500,
     },
     {
       ...scheduleAwareReadQueryOptions,
-      enabled: eventsQueryEnabled,
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
+      enabled: scheduleQueriesEnabled,
+      getNextPageParam: (lastPage, allPages) =>
+        (allPages?.length ?? 0) >= MAX_AUTOMATIC_QUERY_PAGE_COUNT
+          ? undefined
+          : lastPage?.nextCursor,
     },
   );
   const recentPlannedEventsQuery = api.events.list.useInfiniteQuery(
     {
       include_adhoc: true,
-      date_from: scheduledWindowStart,
-      date_to: toInclusiveQueryEnd(todayRange),
+      date_from: isCanonicalDateKey(boundedScheduledWindowStart)
+        ? boundedScheduledWindowStart
+        : DORMANT_DATE_KEY,
+      date_to: toInclusiveQueryEnd(todayRange) || DORMANT_INSTANT,
       limit: 500,
     },
     {
       ...scheduleAwareReadQueryOptions,
-      enabled: eventsQueryEnabled,
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
+      enabled: scheduleQueriesEnabled,
+      getNextPageParam: (lastPage, allPages) =>
+        (allPages?.length ?? 0) >= MAX_AUTOMATIC_QUERY_PAGE_COUNT
+          ? undefined
+          : lastPage?.nextCursor,
     },
   );
   const groupCalendarEventsQuery = api.groups.events.myUpcomingGroupEvents.useInfiniteQuery(
     {
       includeCancelled: false,
-      startsAfter: scheduledWindowRange?.startsAfter ?? "",
-      startsBefore: toInclusiveQueryEnd(scheduledWindowEndRange),
+      startsAfter: scheduledWindowRange?.startsAfter ?? DORMANT_INSTANT,
+      startsBefore: toInclusiveQueryEnd(scheduledWindowEndRange) || DORMANT_INSTANT,
       limit: 100,
     },
     {
       ...scheduleAwareReadQueryOptions,
-      enabled: eventsQueryEnabled,
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
+      enabled: scheduleQueriesEnabled,
+      getNextPageParam: (lastPage, allPages) =>
+        (allPages?.length ?? 0) >= MAX_AUTOMATIC_QUERY_PAGE_COUNT
+          ? undefined
+          : lastPage?.nextCursor,
     },
   );
   const upcomingPlannedEvents = useMemo(
-    () =>
-      planningTodayKey
-        ? (upcomingPlannedEventsQuery.data?.pages.flatMap((page) => page.items) ?? [])
-        : [],
+    () => (planningTodayKey ? pageItems(upcomingPlannedEventsQuery.data?.pages) : []),
     [planningTodayKey, upcomingPlannedEventsQuery.data?.pages],
   );
   const recentPlannedEvents = useMemo(
-    () =>
-      planningTodayKey
-        ? (recentPlannedEventsQuery.data?.pages.flatMap((page) => page.items) ?? [])
-        : [],
+    () => (planningTodayKey ? pageItems(recentPlannedEventsQuery.data?.pages) : []),
     [planningTodayKey, recentPlannedEventsQuery.data?.pages],
   );
   const planningUpcomingPlannedEvents = useMemo(
@@ -216,11 +308,12 @@ export function usePlanTrainingPathData() {
       })),
     [planningTimezone, recentPlannedEvents],
   );
+  const planningPlannedEvents = useMemo(
+    () => mergeUniqueById(planningRecentPlannedEvents, planningUpcomingPlannedEvents),
+    [planningRecentPlannedEvents, planningUpcomingPlannedEvents],
+  );
   const groupCalendarEvents = useMemo(
-    () =>
-      planningTodayKey
-        ? (groupCalendarEventsQuery.data?.pages.flatMap((page) => page.items) ?? [])
-        : [],
+    () => (planningTodayKey ? pageItems(groupCalendarEventsQuery.data?.pages) : []),
     [planningTodayKey, groupCalendarEventsQuery.data?.pages],
   );
   const selectedGroupActivityPlanIds = useMemo(
@@ -231,7 +324,7 @@ export function usePlanTrainingPathData() {
     { ids: selectedGroupActivityPlanIds },
     {
       ...scheduleAwareReadQueryOptions,
-      enabled: eventsQueryEnabled && selectedGroupActivityPlanIds.length > 0,
+      enabled: scheduleQueriesEnabled && selectedGroupActivityPlanIds.length > 0,
     },
   );
   const groupCalendarEventsWithActivityPlans = useMemo(
@@ -261,26 +354,26 @@ export function usePlanTrainingPathData() {
   );
   const completedActivitiesQuery = api.activities.listPaginated.useInfiniteQuery(
     {
-      date_from: scheduledWindowRange?.startsAfter ?? "",
-      date_to: toInclusiveQueryEnd(todayRange),
+      date_from: scheduledWindowRange?.startsAfter ?? DORMANT_INSTANT,
+      date_to: toInclusiveQueryEnd(todayRange) || DORMANT_INSTANT,
       limit: 50,
     },
     {
       ...scheduleAwareReadQueryOptions,
-      enabled: eventsQueryEnabled,
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
+      enabled: scheduleQueriesEnabled,
+      getNextPageParam: (lastPage, allPages) =>
+        (allPages?.length ?? 0) >= MAX_AUTOMATIC_QUERY_PAGE_COUNT
+          ? undefined
+          : lastPage?.nextCursor,
     },
   );
   const completedActivities = useMemo(
-    () =>
-      planningTodayKey
-        ? (completedActivitiesQuery.data?.pages.flatMap((page) => page.items) ?? [])
-        : [],
+    () => (planningTodayKey ? pageItems(completedActivitiesQuery.data?.pages) : []),
     [planningTodayKey, completedActivitiesQuery.data?.pages],
   );
 
   useEffect(() => {
-    if (!eventsQueryEnabled) return;
+    if (!scheduleQueriesEnabled) return;
 
     const paginatedQueries = [
       upcomingPlannedEventsQuery,
@@ -289,13 +382,18 @@ export function usePlanTrainingPathData() {
       completedActivitiesQuery,
     ];
     for (const query of paginatedQueries) {
-      if (query.hasNextPage && !query.isFetchingNextPage) {
+      const loadedPageCount = query.data?.pages.length ?? 0;
+      if (
+        loadedPageCount < MAX_AUTOMATIC_QUERY_PAGE_COUNT &&
+        query.hasNextPage &&
+        !query.isFetchingNextPage
+      ) {
         void query.fetchNextPage();
       }
     }
   }, [
     completedActivitiesQuery,
-    eventsQueryEnabled,
+    scheduleQueriesEnabled,
     groupCalendarEventsQuery,
     recentPlannedEventsQuery,
     upcomingPlannedEventsQuery,
@@ -319,24 +417,30 @@ export function usePlanTrainingPathData() {
     recentPlannedEvents: planningRecentPlannedEvents,
     today,
   });
-  const observationWindowEnd = planningTodayKey
-    ? scheduledWindowEnd < todayKey
-      ? scheduledWindowEnd
-      : todayKey
-    : "";
-  const observationWindowStart = planningTodayKey ? scheduledWindowStart : "";
-  const dailyTssObservationsQuery = api.activities.dailyTssObservations.useQuery(
-    {
-      start_date: observationWindowStart,
-      end_date: observationWindowEnd,
-      timezone: planningTimezone ?? "",
-    },
-    {
-      ...scheduleAwareReadQueryOptions,
-      enabled: eventsQueryEnabled,
-      placeholderData: (previousData) => previousData,
-    },
-  );
+  const dailyTssReadiness = resolveBoundedPlanningDateRange({
+    startDate: scheduleQueriesEnabled ? boundedScheduledWindowStart : null,
+    endDate: scheduleQueriesEnabled ? todayKey : null,
+    maxInclusiveDays: 365,
+    timezone: planningTimezone,
+  });
+  const dailyTssInput =
+    dailyTssReadiness.status === "ready"
+      ? {
+          start_date: dailyTssReadiness.value.startDate,
+          end_date: dailyTssReadiness.value.endDate,
+          timezone: dailyTssReadiness.value.timezone,
+        }
+      : {
+          start_date: DORMANT_DATE_KEY,
+          end_date: DORMANT_DATE_KEY,
+          timezone: "UTC",
+        };
+  const dailyTssQueryEnabled = scheduleQueriesEnabled && dailyTssReadiness.status === "ready";
+  const dailyTssObservationsQuery = api.activities.dailyTssObservations.useQuery(dailyTssInput, {
+    ...scheduleAwareReadQueryOptions,
+    enabled: dailyTssQueryEnabled,
+    placeholderData: (previousData) => previousData,
+  });
   const localProjectionPreview = useMemo(
     () =>
       buildTrainingPreferencesProjectionPreview({
@@ -351,22 +455,17 @@ export function usePlanTrainingPathData() {
       buildTrainingPreferencesLoadTimeline({
         projectionChart: localProjectionPreview.projectionChart,
         snapshot,
-        scheduledEvents: [
-          ...planningRecentPlannedEvents,
-          ...planningUpcomingPlannedEvents,
-          ...planningGroupScheduledActivityPlanEvents,
-        ],
+        scheduledEvents: [...planningPlannedEvents, ...planningGroupScheduledActivityPlanEvents],
         scheduledWindowStart,
         scheduledWindowEnd,
       }),
     [
       localProjectionPreview.projectionChart,
       planningGroupScheduledActivityPlanEvents,
-      planningRecentPlannedEvents,
+      planningPlannedEvents,
       scheduledWindowEnd,
       scheduledWindowStart,
       snapshot,
-      planningUpcomingPlannedEvents,
     ],
   );
   const targetLoadDates = useMemo(
@@ -384,19 +483,18 @@ export function usePlanTrainingPathData() {
   const completedObservationMerge = useMemo(
     () =>
       mergeCompletedTssObservations({
-        requestedRange: {
-          start_date: observationWindowStart,
-          end_date: observationWindowEnd,
-        },
+        requestedRange:
+          dailyTssReadiness.status === "ready"
+            ? {
+                start_date: dailyTssReadiness.value.startDate,
+                end_date: dailyTssReadiness.value.endDate,
+                timezone: dailyTssReadiness.value.timezone,
+              }
+            : null,
         response: dailyTssObservationsQuery.data,
         timeline: projectedLoadTimelinePoints,
       }),
-    [
-      dailyTssObservationsQuery.data,
-      observationWindowEnd,
-      observationWindowStart,
-      projectedLoadTimelinePoints,
-    ],
+    [dailyTssObservationsQuery.data, dailyTssReadiness, projectedLoadTimelinePoints],
   );
   const effectiveCompletedObservationsByDate = useMemo(
     () =>
@@ -500,11 +598,11 @@ export function usePlanTrainingPathData() {
   );
   const eventReviewItems = useMemo<TrainingPathScheduledItem[]>(() => {
     return buildTrainingPathEventReviewItems({
-      events: [...planningRecentPlannedEvents, ...planningUpcomingPlannedEvents],
+      events: planningPlannedEvents,
       owner: activityOwner,
       planningTimezone,
     });
-  }, [activityOwner, planningRecentPlannedEvents, planningTimezone, planningUpcomingPlannedEvents]);
+  }, [activityOwner, planningPlannedEvents, planningTimezone]);
   const groupEventReviewItems = useMemo<TrainingPathScheduledItem[]>(() => {
     return buildTrainingPathGroupEventReviewItems({
       groupEvents: groupCalendarEventsWithActivityPlans,
@@ -560,10 +658,29 @@ export function usePlanTrainingPathData() {
     );
   }, [completedReviewActivities, selectedWeekRangeEnd, selectedWeekRangeStart]);
   const selectedWeekLoading =
-    !!pendingSelectedWeekStart &&
-    pendingSelectedWeekStart !== trainingPath.selectedWeekSummary?.weekStart;
+    (!!pendingSelectedWeekStart &&
+      pendingSelectedWeekStart !== trainingPath.selectedWeekSummary?.weekStart) ||
+    upcomingPlannedEventsQuery.isLoading ||
+    upcomingPlannedEventsQuery.isFetchingNextPage ||
+    (upcomingPlannedEventsQuery.hasNextPage &&
+      (upcomingPlannedEventsQuery.data?.pages.length ?? 0) < MAX_AUTOMATIC_QUERY_PAGE_COUNT) ||
+    recentPlannedEventsQuery.isLoading ||
+    recentPlannedEventsQuery.isFetchingNextPage ||
+    (recentPlannedEventsQuery.hasNextPage &&
+      (recentPlannedEventsQuery.data?.pages.length ?? 0) < MAX_AUTOMATIC_QUERY_PAGE_COUNT) ||
+    groupCalendarEventsQuery.isLoading ||
+    groupCalendarEventsQuery.isFetchingNextPage ||
+    (groupCalendarEventsQuery.hasNextPage &&
+      (groupCalendarEventsQuery.data?.pages.length ?? 0) < MAX_AUTOMATIC_QUERY_PAGE_COUNT) ||
+    selectedGroupActivityPlansQuery.isLoading ||
+    selectedGroupActivityPlansQuery.isFetching ||
+    completedActivitiesQuery.isLoading ||
+    completedActivitiesQuery.isFetchingNextPage ||
+    (completedActivitiesQuery.hasNextPage &&
+      (completedActivitiesQuery.data?.pages.length ?? 0) < MAX_AUTOMATIC_QUERY_PAGE_COUNT);
   const chartLoading =
-    !eventsQueryEnabled ||
+    profileLoading ||
+    (planningTimezoneState === "ready" && !eventsQueryEnabled) ||
     activePlanQuery.isLoading ||
     upcomingPlannedEventsQuery.isLoading ||
     recentPlannedEventsQuery.isLoading ||
@@ -673,18 +790,21 @@ export function usePlanTrainingPathData() {
     try {
       await Promise.all([
         refreshPlanTabData({
-          refetchActivePlan,
-          refetchSnapshot: snapshot.refetchAll,
+          refetchActivePlan: () => (eventsQueryEnabled ? refetchActivePlan() : undefined),
+          refetchSnapshot: () => (eventsQueryEnabled ? snapshot.refetchAll() : undefined),
           refetchGoals: goals.refetch,
-          refetchUpcomingEvents: upcomingPlannedEventsQuery.refetch,
-          refetchRecentEvents: recentPlannedEventsQuery.refetch,
+          refetchUpcomingEvents: () =>
+            scheduleQueriesEnabled ? upcomingPlannedEventsQuery.refetch() : undefined,
+          refetchRecentEvents: () =>
+            scheduleQueriesEnabled ? recentPlannedEventsQuery.refetch() : undefined,
         }),
-        groupCalendarEventsQuery.refetch(),
-        selectedGroupActivityPlanIds.length > 0
+        scheduleQueriesEnabled ? groupCalendarEventsQuery.refetch() : Promise.resolve(null),
+        scheduleQueriesEnabled && selectedGroupActivityPlanIds.length > 0
           ? selectedGroupActivityPlansQuery.refetch()
           : Promise.resolve(null),
-        completedActivitiesQuery.refetch(),
-        dailyTssObservationsQuery.refetch(),
+        scheduleQueriesEnabled ? completedActivitiesQuery.refetch() : Promise.resolve(null),
+        dailyTssQueryEnabled ? dailyTssObservationsQuery.refetch() : Promise.resolve(null),
+        refreshProfile(),
         profileSettings.refetch(),
       ]);
     } finally {
@@ -693,11 +813,15 @@ export function usePlanTrainingPathData() {
   }, [
     completedActivitiesQuery.refetch,
     dailyTssObservationsQuery.refetch,
+    dailyTssQueryEnabled,
+    eventsQueryEnabled,
     goals.refetch,
     groupCalendarEventsQuery.refetch,
     recentPlannedEventsQuery.refetch,
     refetchActivePlan,
+    refreshProfile,
     resetTrainingPathChart,
+    scheduleQueriesEnabled,
     selectedGroupActivityPlanIds.length,
     selectedGroupActivityPlansQuery.refetch,
     snapshot.refetchAll,
@@ -710,7 +834,10 @@ export function usePlanTrainingPathData() {
     handleRefresh,
     trainingPath,
     dailyTrainingPathPoints: planningTimezoneState === "ready" ? dailyTrainingPathPoints : [],
-    chartLoading: planningTimezoneState === "unavailable" || chartLoading,
+    chartLoading: profileLoading || (planningTimezoneState === "ready" && chartLoading),
+    chartUnavailable:
+      planningTimezoneState === "unavailable" ||
+      (!chartLoading && queryFailureCount > 0 && !hasUsableData),
     planningTimezoneState,
     selectedDate: selectedDate ?? todayKey,
     selectedWeekGoals,

@@ -2,6 +2,25 @@ import { act, renderHook } from "@testing-library/react-native";
 import { useScrollableTrainingPathWindow } from "./useScrollableTrainingPathWindow";
 
 describe("useScrollableTrainingPathWindow", () => {
+  it("does not retain an empty startup window when the planning date becomes available", () => {
+    let todayKey = "";
+    const { result, rerender } = renderHook(() =>
+      useScrollableTrainingPathWindow({
+        todayKey,
+      }),
+    );
+
+    expect(result.current.resolvedWeekWindow).toEqual({ start: "", end: "" });
+
+    todayKey = "2026-07-18";
+    rerender({});
+
+    expect(result.current.resolvedWeekWindow).toEqual({
+      start: "2026-04-20",
+      end: "2027-07-12",
+    });
+  });
+
   it("expands an initialized window when goal markers arrive without discarding an edge extension", () => {
     let goalMarkers: Array<{ id: string; targetDate: string }> = [];
     const { result, rerender } = renderHook(() =>

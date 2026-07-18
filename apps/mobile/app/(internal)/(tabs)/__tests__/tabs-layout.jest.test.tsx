@@ -166,6 +166,7 @@ describe("tabs layout", () => {
     expect(screen.getByText("Calendar")).toBeTruthy();
     expect(screen.getByText("Profile")).toBeTruthy();
     expect(screen.queryByText("Groups")).toBeNull();
+    expect(screen.queryByTestId("tab-config-trends")).toBeNull();
   });
 
   it("routes the record tab through the navigation guard", () => {

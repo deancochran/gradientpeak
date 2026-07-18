@@ -32,7 +32,7 @@ function UserDetailScreen() {
 
   useEffect(() => {
     if (isOwnProfile) {
-      router.replace(ROUTES.PROFILE_SETTINGS);
+      router.replace(ROUTES.PROFILE_TAB);
     }
   }, [isOwnProfile, router]);
 

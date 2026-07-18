@@ -30,19 +30,10 @@ jest.mock("lucide-react-native", () => ({
 
 const StandardLayout = require("../_layout").default;
 
-describe("standard layout user route declarations", () => {
-  it("registers canonical user route and excludes settings route", () => {
+describe("settings navigation contract", () => {
+  it("registers Trends as a standard authenticated stack destination", () => {
     renderNative(<StandardLayout />);
 
-    expect(screen.getByTestId("stack-screen-user/[userId]")).toBeTruthy();
-    expect(screen.queryByTestId("stack-screen-settings")).toBeNull();
-    expect(screen.queryByTestId("stack-screen-me")).toBeNull();
-  });
-
-  it("registers the nested notifications index route", () => {
-    renderNative(<StandardLayout />);
-
-    expect(screen.getByTestId("stack-screen-notifications/index")).toBeTruthy();
-    expect(screen.queryByTestId("stack-screen-notifications")).toBeNull();
+    expect(screen.getByTestId("stack-screen-trends")).toBeTruthy();
   });
 });

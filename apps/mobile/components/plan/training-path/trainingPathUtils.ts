@@ -1,5 +1,6 @@
 import type { ActivityTssIdentity } from "@repo/core";
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core";
+import { isCanonicalDateKey } from "@/lib/calendar/dateMath";
 import { sameTssIdentity } from "@/lib/training-path/completedTssObservation";
 import type {
   TrainingPathEmptyState,
@@ -57,12 +58,6 @@ type TrainingPathSourceMaps = {
   idealFitnessByWeek: Map<string, TrainingPathFitnessPoint>;
   goalMarkers: TrainingPathGoalMarker[];
 };
-
-function isCanonicalDateKey(value: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const parsed = new Date(`${value}T12:00:00.000Z`);
-  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
-}
 
 export function getWeekStartDateKey(value: string) {
   if (!isCanonicalDateKey(value)) return value;

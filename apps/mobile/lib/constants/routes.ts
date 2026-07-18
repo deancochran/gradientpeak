@@ -77,7 +77,8 @@ export const ROUTES = {
   CALENDAR: "/(internal)/(tabs)/calendar" as const,
 
   // Profile
-  PROFILE_SETTINGS: "/(internal)/(tabs)/profile" as const,
+  PROFILE_TAB: "/(internal)/(tabs)/profile" as const,
+  TRENDS: "/trends" as const,
   USER_DETAIL: (userId: string) => `/user/${userId}` as const,
   PROFILE_EDIT: "/profile-edit" as const,
   INTEGRATIONS: "/integrations" as const,

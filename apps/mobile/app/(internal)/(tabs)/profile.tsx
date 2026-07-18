@@ -214,7 +214,7 @@ export default function ProfileTabScreen() {
           onEdit={() => navigateTo(ROUTES.PROFILE_EDIT)}
           onFollowersPress={user?.id ? () => navigateTo(`/followers?userId=${user.id}`) : undefined}
           onFollowingPress={user?.id ? () => navigateTo(`/following?userId=${user.id}`) : undefined}
-          onProfilePress={() => navigateTo(ROUTES.PROFILE_SETTINGS)}
+          onProfilePress={() => navigateTo(ROUTES.PROFILE_TAB)}
           profile={{
             ...profile,
             followers_count: publicProfile?.followers_count,
@@ -238,7 +238,7 @@ export default function ProfileTabScreen() {
             description="Training load, consistency, volume, and performance insight cards."
             buttonLabel="Open"
             variant="outline"
-            onPress={() => navigateTo("/(internal)/(tabs)/trends")}
+            onPress={() => navigateTo(ROUTES.TRENDS)}
             testID="profile-tab-trends"
           />
           <SettingItem

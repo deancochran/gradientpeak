@@ -19,6 +19,7 @@ import {
   useState,
 } from "react";
 import {
+  type AccessibilityActionEvent,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -120,6 +121,11 @@ const chartPadding = { left: 8, right: 8, top: 20, bottom: 26 };
 const fixedAxisWidth = 34;
 const scrollWeekWidth = 38;
 const scrollBarWidth = 28;
+
+const formatAccessibleMetric = (label: string, value: number | null, unit = "") =>
+  typeof value === "number" && Number.isFinite(value)
+    ? `${label} ${Math.round(value)}${unit}`
+    : `${label} unavailable`;
 
 const getAxisFontSource = (): Parameters<typeof useFont>[0] => {
   try {
@@ -706,6 +712,39 @@ export function TrainingPathChart({
       settleScrollInteraction,
     ],
   );
+  const accessibilityIndex =
+    selectedIndex >= 0
+      ? selectedIndex
+      : Math.max(
+          0,
+          model.weeks.findIndex((week) => week.isCurrent),
+        );
+  const accessibilityWeek = model.weeks[accessibilityIndex] ?? model.weeks[0];
+  const accessibilityValue = accessibilityWeek
+    ? [
+        `Selected week ${accessibilityWeek.label}, ${accessibilityWeek.weekStart} to ${accessibilityWeek.weekEnd}`,
+        formatAccessibleMetric("Completed load", accessibilityWeek.completedLoad, " TSS"),
+        accessibilityWeek.completedLoadUnavailable ? "Completed activity load unavailable" : null,
+        formatAccessibleMetric("Planned load", accessibilityWeek.plannedLoad, " TSS"),
+        formatAccessibleMetric("Target load", accessibilityWeek.targetLoad, " TSS"),
+        formatAccessibleMetric("Actual fitness", accessibilityWeek.fitness),
+        formatAccessibleMetric("Projected fitness", accessibilityWeek.scheduledFitness),
+        formatAccessibleMetric("Target fitness", accessibilityWeek.targetFitness),
+      ]
+        .filter((value): value is string => value !== null)
+        .join(". ")
+    : "No week selected";
+  const handleAccessibilityAction = useCallback(
+    (event: AccessibilityActionEvent) => {
+      if (event.nativeEvent.actionName === "increment") {
+        selectWeekAtIndex(accessibilityIndex + 1);
+      }
+      if (event.nativeEvent.actionName === "decrement") {
+        selectWeekAtIndex(accessibilityIndex - 1);
+      }
+    },
+    [accessibilityIndex, selectWeekAtIndex],
+  );
 
   useAnimatedReaction(
     () => {
@@ -1100,6 +1139,23 @@ export function TrainingPathChart({
         <Text className="text-[10px] font-medium text-muted-foreground">Load (TSS)</Text>
         <Text className="text-[10px] font-medium text-muted-foreground">Fitness</Text>
       </View>
+      {reviewWeeks && onSelectedWeekChange ? (
+        <View
+          accessible
+          accessibilityActions={[
+            { name: "increment", label: "Select next week" },
+            { name: "decrement", label: "Select previous week" },
+          ]}
+          accessibilityHint="Adjust to select the next or previous week"
+          accessibilityLabel="Weekly training path chart"
+          accessibilityRole="adjustable"
+          accessibilityValue={{ text: accessibilityValue }}
+          className="absolute inset-0"
+          onAccessibilityAction={handleAccessibilityAction}
+          pointerEvents="none"
+          testID="training-path-chart-accessibility"
+        />
+      ) : null}
       {scrollX ? (
         <View className="flex-1 flex-row">
           <FixedYAxisLabels domain={effectiveLoadDomain} />

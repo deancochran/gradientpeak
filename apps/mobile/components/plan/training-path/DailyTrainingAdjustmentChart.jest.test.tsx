@@ -177,7 +177,7 @@ describe("DailyTrainingAdjustmentChart", () => {
       />,
     );
 
-    expect(screen.queryByText("Recommended")).toBeNull();
+    expect(screen.queryByText("Target")).toBeNull();
     expect(screen.queryByText("On target")).toBeNull();
   });
 
@@ -431,7 +431,9 @@ describe("DailyTrainingAdjustmentChart", () => {
 
     const adjustable = screen.getByLabelText("Daily training adjustment chart");
     expect(adjustable.props.accessibilityRole).toBe("adjustable");
-    expect(adjustable.props.accessibilityValue).toEqual({ text: "Selected date 2026-06-02" });
+    expect(adjustable.props.accessibilityValue).toEqual({
+      text: "Selected date 2026-06-02. Target load 50 TSS",
+    });
     expect(adjustable.props.accessibilityHint).toBe("Adjust to select the next or previous date");
 
     fireEvent(adjustable, "accessibilityAction", {
@@ -439,6 +441,41 @@ describe("DailyTrainingAdjustmentChart", () => {
     });
     expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-03");
     expect(screen.getByText("2026-06-03")).toBeTruthy();
+  });
+
+  it("announces available selected load, fitness, and unavailable completed-load state", () => {
+    render(
+      <DailyTrainingAdjustmentChart
+        points={[
+          {
+            date: "2026-06-02",
+            hasCompletedActivityWithoutLoad: true,
+            plannedLoadTss: 40,
+            tentativePlannedLoadTss: 5,
+            targetLoadTss: 50,
+            fitnessCtl: 31.4,
+            scheduledFitnessCtl: 33.2,
+            targetFitnessCtl: 35.1,
+          },
+        ]}
+        selectedDate="2026-06-02"
+      />,
+    );
+
+    expect(
+      screen.getByLabelText("Daily training adjustment chart").props.accessibilityValue,
+    ).toEqual({
+      text: [
+        "Selected date 2026-06-02",
+        "Completed activity, load unavailable",
+        "Planned load 40 TSS",
+        "Tentative planned load 5 TSS",
+        "Target load 50 TSS",
+        "Actual fitness 31",
+        "Projected fitness 33",
+        "Target fitness 35",
+      ].join(". "),
+    });
   });
 
   it("uses one collision-safe width and center for every daily load layer", () => {

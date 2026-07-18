@@ -63,6 +63,7 @@ import { TouchableOpacity } from "react-native";
  * - user/[userId] - Universal user profile
  *
  * SETTINGS:
+ * - trends - Analytics and performance insights
  * - integrations - Connected services
  * - notifications - Notification preferences
  * - profile-edit - Edit user profile
@@ -83,7 +84,13 @@ export default function StandardLayout() {
         gestureDirection: "horizontal",
         presentation: "card",
         headerLeft: () => (
-          <TouchableOpacity onPress={() => router.back()} className="ml-2 p-2 -ml-2">
+          <TouchableOpacity
+            accessibilityLabel="Go back"
+            accessibilityRole="button"
+            onPress={() => router.back()}
+            className="ml-2 p-2 -ml-2"
+            testID="standard-header-back"
+          >
             <Icon as={ChevronLeft} size={24} className="text-foreground" />
           </TouchableOpacity>
         ),
@@ -331,6 +338,12 @@ export default function StandardLayout() {
 
       {/* SETTINGS */}
       <Stack.Screen
+        name="trends"
+        options={{
+          title: "Trends",
+        }}
+      />
+      <Stack.Screen
         name="search"
         options={{
           title: "Search",
@@ -353,7 +366,7 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
-        name="notifications"
+        name="notifications/index"
         options={{
           title: "Notifications",
         }}

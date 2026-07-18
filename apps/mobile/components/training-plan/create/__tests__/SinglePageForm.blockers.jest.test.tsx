@@ -153,6 +153,7 @@ jest.mock("lucide-react-native", () => {
     Plus: icon,
     ShieldAlert: icon,
     Trash2: icon,
+    X: icon,
   };
 });
 
@@ -499,7 +500,7 @@ describe("SinglePageForm blocker surfacing", () => {
     });
   });
 
-  it("shows behavior controls inline without mode switching", () => {
+  it("shows behavior controls in a separate custom surface without mode switching", () => {
     const rendered = renderSinglePageForm({
       formData: baseFormData,
       onFormDataChange: jest.fn(),
@@ -508,6 +509,7 @@ describe("SinglePageForm blocker surfacing", () => {
     });
 
     fireEvent.press(rendered.getByLabelText("Tuning tab"));
+    fireEvent.press(rendered.getByText("Custom tuning"));
 
     const sliderNodes = findMockNodes(rendered, "PercentSliderInput");
     expect(
@@ -532,6 +534,7 @@ describe("SinglePageForm blocker surfacing", () => {
     });
 
     fireEvent.press(rendered.getByLabelText("Tuning tab"));
+    fireEvent.press(rendered.getByText("Custom tuning"));
 
     const buttons = findMockNodes(rendered, "Button");
     const resetButtons = buttons.filter(
@@ -847,6 +850,7 @@ describe("SinglePageForm blocker surfacing", () => {
     });
 
     fireEvent.press(rendered.getByLabelText("Tuning tab"));
+    fireEvent.press(rendered.getByText("Custom tuning"));
 
     const sliderNodes = findMockNodes(rendered, "NumberSliderInput");
     const byId = (id: string) =>
@@ -886,6 +890,7 @@ describe("SinglePageForm blocker surfacing", () => {
     });
 
     fireEvent.press(rendered.getByLabelText("Tuning tab"));
+    fireEvent.press(rendered.getByText("Custom tuning"));
 
     const aggressivenessSlider = findMockNodes(rendered, "PercentSliderInput").find(
       (node: ReactTestInstance) => node.props.id === "behavior-aggressiveness",
@@ -914,6 +919,7 @@ describe("SinglePageForm blocker surfacing", () => {
         onChange={onChange}
       />,
     );
+    fireEvent.press(rendered.getByText("Custom tuning"));
 
     const aggressivenessSlider = findMockNodes(rendered, "PercentSliderInput").find(
       (node: ReactTestInstance) => node.props.id === "behavior-aggressiveness",

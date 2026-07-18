@@ -9,6 +9,7 @@ const setActiveDateMock = jest.fn();
 const fixedNow = new Date("2026-03-23T12:00:00.000Z");
 const [today] = fixedNow.toISOString().split("T");
 const tomorrow = "2026-03-24";
+let planningTimezone: string | null = "America/New_York";
 let paramsState: {
   date?: string;
   trainingPlanId?: string;
@@ -38,7 +39,7 @@ type CalendarStoreState = {
 };
 
 type AuthStoreState = {
-  profile: { planning_timezone: string };
+  profile: { planning_timezone: string | null };
   ready: boolean;
   session: { user: { id: string } };
 };
@@ -62,6 +63,20 @@ type UnsafeTypeQuery = {
 
 let eventItems: CalendarEvent[] = [];
 let groupEventItems: CalendarEvent[] = [];
+const mockEventRefetch = jest.fn(async () => undefined);
+const mockGroupEventRefetch = jest.fn(async () => undefined);
+const mockEventsUseQuery = jest.fn((_input?: unknown, _options?: unknown) => ({
+  data: { items: eventItems },
+  isLoading: false,
+  error: null,
+  refetch: mockEventRefetch,
+}));
+const mockGroupEventsUseQuery = jest.fn((_input?: unknown, _options?: unknown) => ({
+  data: { items: groupEventItems },
+  isLoading: false,
+  error: null,
+  refetch: mockGroupEventRefetch,
+}));
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -111,7 +126,7 @@ jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
   useAuthStore: <T,>(selector: (state: AuthStoreState) => T) =>
     selector({
-      profile: { planning_timezone: "America/New_York" },
+      profile: { planning_timezone: planningTimezone },
       ready: true,
       session: { user: { id: "profile-1" } },
     }),
@@ -183,14 +198,7 @@ jest.mock("@/lib/api", () => ({
     },
     events: {
       list: {
-        useQuery: () => ({
-          data: {
-            items: eventItems,
-          },
-          isLoading: false,
-          error: null,
-          refetch: jest.fn(async () => undefined),
-        }),
+        useQuery: (input: unknown, options: unknown) => mockEventsUseQuery(input, options),
       },
     },
     activityPlans: {
@@ -205,12 +213,7 @@ jest.mock("@/lib/api", () => ({
     groups: {
       events: {
         myCalendarGroupEvents: {
-          useQuery: () => ({
-            data: { items: groupEventItems },
-            isLoading: false,
-            error: null,
-            refetch: jest.fn(async () => undefined),
-          }),
+          useQuery: (input: unknown, options: unknown) => mockGroupEventsUseQuery(input, options),
         },
       },
     },
@@ -233,6 +236,7 @@ describe("calendar day screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     paramsState = { date: today };
+    planningTimezone = "America/New_York";
     eventItems = [
       {
         id: "event-1",
@@ -271,6 +275,10 @@ describe("calendar day screen", () => {
     ];
     groupEventItems = [];
     pushMock.mockReset();
+    mockEventsUseQuery.mockClear();
+    mockGroupEventsUseQuery.mockClear();
+    mockEventRefetch.mockClear();
+    mockGroupEventRefetch.mockClear();
   });
 
   beforeAll(() => {
@@ -288,6 +296,44 @@ describe("calendar day screen", () => {
     expect(setActiveDateMock).toHaveBeenCalledWith(today);
     const stackScreen = (rendered as unknown as UnsafeTypeQuery).UNSAFE_getByType("StackScreen");
     expect(stackScreen.props.options.title).toBe("Today, March 23");
+  });
+
+  it("only enables day queries with validated date and planning-timezone boundaries", () => {
+    renderNative(<CalendarDayScreen />);
+
+    expect(mockEventsUseQuery).toHaveBeenCalledWith(
+      expect.objectContaining({ date_from: today, date_to: today }),
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(mockGroupEventsUseQuery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startsAfter: "2026-03-23T04:00:00.000Z",
+        startsBefore: "2026-03-24T03:59:59.999Z",
+      }),
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(mockGroupEventsUseQuery.mock.calls.at(-1)?.[1]).toEqual({ enabled: true });
+  });
+
+  it("uses valid dormant inputs without executing queries for an invalid route date", () => {
+    paramsState = { date: "not-a-date" };
+
+    renderNative(<CalendarDayScreen />);
+
+    expect(mockEventsUseQuery).toHaveBeenCalledWith(
+      expect.objectContaining({ date_from: "1970-01-01", date_to: "1970-01-01" }),
+      expect.objectContaining({ enabled: false }),
+    );
+    expect(mockGroupEventsUseQuery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startsAfter: "1970-01-01T00:00:00.000Z",
+        startsBefore: "1970-01-01T00:00:00.000Z",
+      }),
+      expect.objectContaining({ enabled: false }),
+    );
+    expect(screen.getByText("Choose a valid calendar date to view this day.")).toBeTruthy();
+    expect(screen.queryByTestId("calendar-day-create-event-button")).toBeNull();
+    expect(setActiveDateMock).not.toHaveBeenCalledWith("not-a-date");
   });
 
   it("opens agenda creation with the selected day prefilled", () => {

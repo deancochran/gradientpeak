@@ -49,17 +49,17 @@ export function ProjectionChartLegends<YKey extends string>({
                   : `${isActive ? "Hide" : "Show"} this series`
               }
               hitSlop={8}
-              className={`flex-row items-center gap-1 rounded-full border px-1.5 py-0.5 ${isActive ? "border-border bg-muted/40" : "border-border/70 bg-background/70"}`}
+              className={`min-h-11 flex-row items-center gap-2 rounded-full border px-3 py-2 ${isActive ? "border-border bg-muted/40" : "border-border/70 bg-background/70"}`}
             >
               <View
-                className="h-0.5 w-3 rounded-full"
+                className="h-1 w-4 rounded-full"
                 style={{
                   backgroundColor: line.color,
                   opacity: isActive ? 1 : 0.35,
                 }}
               />
               <Text
-                className={`text-[9px] ${isActive ? "text-foreground" : "text-muted-foreground"}`}
+                className={`text-xs font-medium ${isActive ? "text-foreground" : "text-muted-foreground"}`}
               >
                 {line.label}
               </Text>
@@ -73,11 +73,11 @@ export function ProjectionChartLegends<YKey extends string>({
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ alignItems: "center", gap: 8 }}
         >
-          <Text className="text-[9px] text-muted-foreground">Phase colors:</Text>
+          <Text className="text-xs font-medium text-muted-foreground">Phase colors:</Text>
           {phaseLegendItems.map((phase) => (
             <View key={`phase-legend-${phase.label}`} className="flex-row items-center gap-1">
               <View className="h-1 w-3 rounded-full" style={{ backgroundColor: phase.color }} />
-              <Text className="text-[9px] text-muted-foreground">{phase.label}</Text>
+              <Text className="text-xs text-muted-foreground">{phase.label}</Text>
             </View>
           ))}
         </ScrollView>

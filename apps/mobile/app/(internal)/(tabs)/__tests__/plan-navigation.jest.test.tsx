@@ -725,6 +725,7 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
+  ...jest.requireActual<typeof import("@repo/core")>("@repo/core"),
   buildGoalCreatePayload: jest.fn(),
   buildGoalDraftFromGoal: jest.fn(),
   buildGoalUpdatePayload: jest.fn(),
@@ -994,7 +995,7 @@ describe("plan dashboard navigation", () => {
     );
   });
 
-  it("waits for the chart to resolve a selected week before showing goal review items", () => {
+  it("shows initial-week goal review items after synchronous planning-date resolution", () => {
     jest.useFakeTimers();
     jest.setSystemTime(fixedNow);
     try {
@@ -1002,7 +1003,9 @@ describe("plan dashboard navigation", () => {
 
       renderNative(<PlanScreenWithErrorBoundary />);
 
-      expect(mockTrainingPathSectionProps.mock.calls.at(-1)?.[0].selectedWeekGoals).toEqual([]);
+      expect(mockTrainingPathSectionProps.mock.calls.at(-1)?.[0].selectedWeekGoals).toEqual([
+        expect.objectContaining({ id: "goal-1", targetDate: "2026-04-05" }),
+      ]);
     } finally {
       jest.useRealTimers();
     }

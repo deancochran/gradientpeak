@@ -200,6 +200,29 @@ describe("TrainingPathChart interactions", () => {
     expect(screen.queryByTestId("training-path-week-2026-04-13")).toBeNull();
   });
 
+  it("exposes selected weekly load and fitness through an adjustable control", () => {
+    const onSelectedWeekChange = jest.fn();
+    renderNative(
+      <TrainingPathChart
+        model={model}
+        range="season"
+        reviewWeeks
+        scrollX
+        onSelectedWeekChange={onSelectedWeekChange}
+      />,
+    );
+
+    const adjustable = screen.getByLabelText("Weekly training path chart");
+    expect(adjustable.props.accessibilityRole).toBe("adjustable");
+    expect(adjustable.props.accessibilityValue.text).toContain("Completed load 20 TSS");
+    expect(adjustable.props.accessibilityValue.text).toContain("Projected fitness 42");
+
+    fireEvent(adjustable, "accessibilityAction", {
+      nativeEvent: { actionName: "increment" },
+    });
+    expect(onSelectedWeekChange).toHaveBeenCalledWith("2026-04-13");
+  });
+
   it("does not publish React week changes from continuous scroll ticks", () => {
     const onDisplayedWeekChange = jest.fn();
     const onSelectedWeekChange = jest.fn();
@@ -264,7 +287,7 @@ describe("TrainingPathChart interactions", () => {
     expect(strokedBars).toHaveLength(0);
   });
 
-  it("renders actual and planned CTL solid while keeping ideal CTL dotted in the fallback chart and legend", () => {
+  it("renders actual and projected fitness solid while keeping target fitness dotted in the fallback chart and legend", () => {
     renderNative(
       <>
         <TrainingPathChart model={model} range="season" />
@@ -287,8 +310,12 @@ describe("TrainingPathChart interactions", () => {
     expect(plannedCtlLine.props.children).toBeUndefined();
     expect(idealCtlLine.props.children.type).toEqual(expect.any(Function));
     expect(idealCtlLine.props.children.props.intervals).toEqual([4, 4]);
-    expect(screen.getByText("Actual CTL")).toBeTruthy();
-    expect(screen.getByText("Planned CTL")).toBeTruthy();
+    expect(screen.getByText("Actual fitness")).toBeTruthy();
+    expect(screen.getByText("Projected fitness")).toBeTruthy();
+    expect(screen.getByText("Target fitness")).toBeTruthy();
+    expect(screen.getByText("Target")).toBeTruthy();
+    expect(screen.getByText("Completed, load unavailable")).toBeTruthy();
+    expect(screen.getByText("✓")).toBeTruthy();
     expect(legendDottedSwatch?.props.style).toEqual(
       expect.objectContaining({ borderStyle: "dotted" }),
     );

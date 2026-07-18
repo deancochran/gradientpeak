@@ -89,7 +89,7 @@ const lineConfig: Array<{
 const defaultLineVisibility: Record<ChartYKey, boolean> = {
   loadTss: true,
   fitnessCtl: true,
-  fatigueAtl: true,
+  fatigueAtl: false,
 };
 const defaultChartHeight = 300;
 const minChartHeight = 120;

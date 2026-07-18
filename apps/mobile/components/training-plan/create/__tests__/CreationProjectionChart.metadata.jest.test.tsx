@@ -147,6 +147,43 @@ const baseProjectionDiagnostics: NonNullable<ProjectionChartFixture["projection_
 };
 
 describe("CreationProjectionChart metadata", () => {
+  it("defaults to Load and Fitness with legible, effective legend targets", () => {
+    renderNative(
+      <CreationProjectionChart
+        projectionChart={projectionFixture({
+          start_date: "2026-07-06",
+          end_date: "2026-07-13",
+          points: [
+            {
+              date: "2026-07-06",
+              predicted_load_tss: 420,
+              predicted_fitness_ctl: 55,
+              predicted_fatigue_atl: 62,
+              predicted_form_tsb: -7,
+              readiness_score: 74,
+            },
+          ],
+          goal_markers: [],
+          periodization_phases: [],
+          microcycles: [],
+        })}
+      />,
+    );
+
+    const legendButtons = getHostNodes("Pressable").filter((node: ReactTestInstance) =>
+      ["Load line", "Fitness line", "Fatigue line"].includes(node.props.accessibilityLabel),
+    );
+    const byLabel = (label: string) =>
+      legendButtons.find((node: ReactTestInstance) => node.props.accessibilityLabel === label);
+
+    expect(byLabel("Load line")?.props.accessibilityState.selected).toBe(true);
+    expect(byLabel("Fitness line")?.props.accessibilityState.selected).toBe(true);
+    expect(byLabel("Fatigue line")?.props.accessibilityState.selected).toBe(false);
+    expect(
+      legendButtons.every((node: ReactTestInstance) => node.props.className.includes("min-h-11")),
+    ).toBe(true);
+  });
+
   it("uses canonical display_points series without local synthetic points", () => {
     renderNative(
       <CreationProjectionChart

@@ -2,9 +2,10 @@ import { type CreationBehaviorControlsV1, creationBehaviorControlsV1Schema } fro
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useWatch } from "react-hook-form";
 import { View } from "react-native";
+import { AppFormModal } from "@/components/shared/AppFormModal";
 import {
   ConfigNumberSliderField,
   ConfigPercentSliderField,
@@ -35,7 +36,56 @@ const areValuesEqual = (left: CreationBehaviorControlsV1, right: CreationBehavio
   left.recovery_priority === right.recovery_priority &&
   left.starting_fitness_confidence === right.starting_fitness_confidence;
 
-export function BehaviorControlsConfigSection({
+type TuningPresetKey = "conservative" | "balanced" | "ambitious";
+
+const tuningPresets: Record<
+  TuningPresetKey,
+  { label: string; description: string; values: CreationBehaviorControlsV1 }
+> = {
+  conservative: {
+    label: "Conservative",
+    description: "Steadier progress with more recovery protection.",
+    values: {
+      aggressiveness: 0.35,
+      variability: 0.3,
+      spike_frequency: 0.2,
+      shape_target: -0.2,
+      shape_strength: 0.3,
+      recovery_priority: 0.75,
+      starting_fitness_confidence: 0.5,
+    },
+  },
+  balanced: {
+    label: "Balanced",
+    description: "A moderate progression and recovery mix.",
+    values: {
+      aggressiveness: 0.5,
+      variability: 0.5,
+      spike_frequency: 0.35,
+      shape_target: 0,
+      shape_strength: 0.35,
+      recovery_priority: 0.6,
+      starting_fitness_confidence: 0.6,
+    },
+  },
+  ambitious: {
+    label: "Ambitious",
+    description: "Stronger progression with more load variation.",
+    values: {
+      aggressiveness: 0.7,
+      variability: 0.6,
+      spike_frequency: 0.55,
+      shape_target: 0.2,
+      shape_strength: 0.5,
+      recovery_priority: 0.45,
+      starting_fitness_confidence: 0.75,
+    },
+  },
+};
+
+const presetKeys = Object.keys(tuningPresets) as TuningPresetKey[];
+
+function CustomTuningFields({
   behaviorControls,
   onChange,
   onReset,
@@ -88,9 +138,14 @@ export function BehaviorControlsConfigSection({
   }, [defaultValues, onChange, resolvedValues]);
 
   return (
-    <View className="gap-3 rounded-lg border border-border bg-card p-3">
+    <View className="gap-3">
       <View className="flex-row items-center justify-between">
-        <Text className="font-semibold">Tuning</Text>
+        <View className="flex-1 pr-3">
+          <Text className="font-semibold">Custom values</Text>
+          <Text className="text-xs text-muted-foreground">
+            Changes update the projection immediately.
+          </Text>
+        </View>
         <Button variant="outline" size="sm" onPress={() => onReset?.()}>
           <Text>Reset</Text>
         </Button>
@@ -176,6 +231,81 @@ export function BehaviorControlsConfigSection({
         toSliderValue={(value) => value * 100}
         toFieldValue={(value) => Number((value / 100).toFixed(2))}
       />
+    </View>
+  );
+}
+
+export function BehaviorControlsConfigSection({
+  behaviorControls,
+  onChange,
+  onReset,
+}: BehaviorControlsConfigSectionProps) {
+  const [customOpen, setCustomOpen] = useState(false);
+  const selectedPreset = presetKeys.find((key) =>
+    areValuesEqual(normalizeValues(behaviorControls), tuningPresets[key].values),
+  );
+
+  return (
+    <View className="gap-3 rounded-lg border border-border bg-card p-3">
+      <View className="gap-1">
+        <Text className="font-semibold">Tuning approach</Text>
+        <Text className="text-xs text-muted-foreground">
+          Choose a simple approach, or keep precise control with Custom tuning.
+        </Text>
+      </View>
+
+      <View className="gap-2">
+        {presetKeys.map((key) => {
+          const preset = tuningPresets[key];
+          const isSelected = selectedPreset === key;
+          return (
+            <Button
+              key={key}
+              variant={isSelected ? "default" : "outline"}
+              onPress={() => onChange(preset.values)}
+              accessibilityState={{ selected: isSelected }}
+              accessibilityLabel={`${preset.label} tuning preset`}
+              className="h-auto min-h-14 justify-start px-3 py-2"
+            >
+              <View className="flex-1 items-start">
+                <Text
+                  className={isSelected ? "font-semibold text-primary-foreground" : "font-semibold"}
+                >
+                  {preset.label}
+                </Text>
+                <Text
+                  className={
+                    isSelected
+                      ? "text-xs text-primary-foreground/80"
+                      : "text-xs text-muted-foreground"
+                  }
+                >
+                  {preset.description}
+                </Text>
+              </View>
+            </Button>
+          );
+        })}
+      </View>
+
+      <Button variant={selectedPreset ? "ghost" : "secondary"} onPress={() => setCustomOpen(true)}>
+        <Text>{selectedPreset ? "Custom tuning" : "Custom tuning · Active"}</Text>
+      </Button>
+
+      {customOpen ? (
+        <AppFormModal
+          description="Adjust all seven tuning controls without changing their current values on open."
+          onClose={() => setCustomOpen(false)}
+          testID="custom-tuning-modal"
+          title="Custom Tuning"
+        >
+          <CustomTuningFields
+            behaviorControls={behaviorControls}
+            onChange={onChange}
+            {...(onReset ? { onReset } : {})}
+          />
+        </AppFormModal>
+      ) : null}
     </View>
   );
 }

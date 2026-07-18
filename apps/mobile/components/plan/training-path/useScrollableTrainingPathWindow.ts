@@ -1,4 +1,5 @@
 import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
+import { isCanonicalDateKey } from "@/lib/calendar/dateMath";
 import type { TrainingPathSourceGoalMarker, TrainingPathWeekWindow } from "./trainingPathTypes";
 import { addDays, buildScrollableTrainingPathWindow } from "./trainingPathUtils";
 
@@ -6,6 +7,10 @@ type UseScrollableTrainingPathWindowParams = {
   goalMarkers?: TrainingPathSourceGoalMarker[] | null;
   todayKey: string;
 };
+
+function isCanonicalWeekWindow(window: TrainingPathWeekWindow) {
+  return isCanonicalDateKey(window.start) && isCanonicalDateKey(window.end);
+}
 
 export function useScrollableTrainingPathWindow({
   goalMarkers,
@@ -18,8 +23,10 @@ export function useScrollableTrainingPathWindow({
   );
 
   useEffect(() => {
+    if (!isCanonicalWeekWindow(initialWeekWindow)) return;
+
     setWeekWindow((current) => {
-      if (!current) return initialWeekWindow;
+      if (!current || !isCanonicalWeekWindow(current)) return initialWeekWindow;
 
       return {
         start: current.start < initialWeekWindow.start ? current.start : initialWeekWindow.start,
@@ -28,7 +35,8 @@ export function useScrollableTrainingPathWindow({
     });
   }, [initialWeekWindow]);
 
-  const resolvedWeekWindow = weekWindow ?? initialWeekWindow;
+  const resolvedWeekWindow =
+    weekWindow && isCanonicalWeekWindow(weekWindow) ? weekWindow : initialWeekWindow;
   const extendWindowStart = useCallback(() => {
     startTransition(() => {
       setWeekWindow((current) => {

@@ -60,6 +60,49 @@ export function hasCompletedActivityWithoutLoad(
   return point.hasCompletedActivityWithoutLoad === true;
 }
 
+function formatMetric(label: string, value: number | null | undefined, unit = "") {
+  const finiteValue = valueOrNull(value);
+  return finiteValue === null ? null : `${label} ${Math.round(finiteValue)}${unit}`;
+}
+
+export function buildDailyTrainingAdjustmentAccessibilityValue(
+  point: DailyTrainingAdjustmentPoint | null,
+) {
+  if (!point) return "No date selected";
+
+  const completedLoad = formatMetric("Completed load", point.completedLoadTss, " TSS");
+  const plannedLoad = formatMetric("Planned load", point.plannedLoadTss, " TSS");
+  const tentativeLoad = formatMetric(
+    "Tentative planned load",
+    point.tentativePlannedLoadTss,
+    " TSS",
+  );
+  const targetLoad =
+    point.hasTargetLoad === false
+      ? "Target load unavailable"
+      : formatMetric("Target load", point.targetLoadTss, " TSS");
+  const actualFitness = formatMetric("Actual fitness", point.fitnessCtl);
+  const projectedFitness = formatMetric("Projected fitness", point.scheduledFitnessCtl);
+  const targetFitness = formatMetric("Target fitness", point.targetFitnessCtl);
+  const completedState = hasCompletedActivityWithoutLoad(point)
+    ? "Completed activity, load unavailable"
+    : null;
+
+  return [
+    `Selected date ${point.date}`,
+    completedLoad,
+    completedState,
+    plannedLoad,
+    tentativeLoad,
+    targetLoad,
+    actualFitness,
+    projectedFitness,
+    targetFitness,
+  ]
+    .filter((value): value is string => value !== null)
+    .join(". ");
+}
+
 function formatDayLabel(dateKey: string) {
   const [, month, day] = dateKey.split("-");
   return `${month}/${day}`;

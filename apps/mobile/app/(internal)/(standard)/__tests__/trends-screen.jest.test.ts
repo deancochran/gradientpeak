@@ -18,7 +18,6 @@ jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: () => nul
 
 jest.mock("@/components/shared", () => ({
   __esModule: true,
-  AppHeader: () => null,
   CompactInsightCard: () => null,
 }));
 

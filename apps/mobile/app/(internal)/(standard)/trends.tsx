@@ -13,11 +13,12 @@ import {
   View,
 } from "react-native";
 import Svg, { Circle, Line, Path } from "react-native-svg";
-import { AppHeader, CompactInsightCard } from "@/components/shared";
+import { CompactInsightCard } from "@/components/shared";
 import { AppBottomSheet } from "@/components/shared/AppBottomSheet";
 import { api } from "@/lib/api";
 import { useTheme } from "@/lib/stores/theme-store";
 import { getResolvedThemeScale, type ResolvedThemeMode } from "@/lib/theme";
+import { buildActivityCalendarCells } from "@/lib/trends/activityCalendar";
 import {
   buildActivityInsights,
   buildProfileInsights,
@@ -63,13 +64,6 @@ export function getTrendsLoadState({
 function getInsightPointKey(point: InsightPoint) {
   return `${point.date?.toISOString() ?? "undated"}-${point.label}-${point.value}`;
 }
-
-const MINI_DOT_KEYS = Array.from({ length: 28 }, (_, index) => `mini-dot-${index}`);
-const EXPANDED_MINI_DOT_KEYS = Array.from(
-  { length: 42 },
-  (_, index) => `expanded-mini-dot-${index}`,
-);
-const DETAIL_DOT_KEYS = Array.from({ length: 60 }, (_, index) => `detail-dot-${index}`);
 
 function getToneAccentClass(tone: Tone) {
   switch (tone) {
@@ -179,7 +173,7 @@ function MiniLineVisual({
   );
 }
 
-export default function TrendsTabScreen() {
+export default function TrendsScreen() {
   return <TrendsInsightsSurface />;
 }
 
@@ -277,29 +271,32 @@ function MiniStackedVisual({
 }
 
 function MiniDotVisual({
+  endDate,
   points,
   expanded = false,
 }: {
+  endDate: Date;
   points: InsightPoint[];
   expanded?: boolean;
 }) {
-  const visiblePoints = points.slice(expanded ? -42 : -28);
-  if (visiblePoints.length === 0) return <EmptyMiniVisual expanded={expanded} />;
-  const dotKeys = expanded ? EXPANDED_MINI_DOT_KEYS : MINI_DOT_KEYS;
-
+  if (points.length === 0) return <EmptyMiniVisual expanded={expanded} />;
+  const cells = buildActivityCalendarCells({
+    points,
+    endDate,
+    maxDays: expanded ? 42 : 28,
+  });
   return (
     <View
+      accessible={false}
       className={`${expanded ? "h-24" : "h-16"} flex-row flex-wrap content-center gap-1.5 rounded-2xl bg-muted/30 p-3`}
+      importantForAccessibility="no-hide-descendants"
     >
-      {dotKeys.map((dotKey, index) => {
-        const active = index >= dotKeys.length - visiblePoints.length;
-        return (
-          <View
-            key={dotKey}
-            className={`h-2.5 w-2.5 rounded-full ${active ? "bg-green-500" : "bg-muted"}`}
-          />
-        );
-      })}
+      {cells.map((cell) => (
+        <View
+          key={cell.dateKey}
+          className={`h-2.5 w-2.5 rounded-full ${cell.active ? "bg-green-500" : "bg-muted"}`}
+        />
+      ))}
     </View>
   );
 }
@@ -326,12 +323,12 @@ function MiniLollipopVisual({ points, tone }: { points: InsightPoint[]; tone: To
   );
 }
 
-function TrendMiniVisual({ insight }: { insight: Insight }) {
+function TrendMiniVisual({ endDate, insight }: { endDate: Date; insight: Insight }) {
   const expanded = insight.compactLayout === "visualFirst";
   if (insight.visualType === "stacked")
     return <MiniStackedVisual points={insight.points} expanded={expanded} />;
   if (insight.visualType === "calendarDots")
-    return <MiniDotVisual points={insight.points} expanded={expanded} />;
+    return <MiniDotVisual points={insight.points} endDate={endDate} expanded={expanded} />;
   if (insight.visualType === "rankedLollipop")
     return <MiniLollipopVisual points={insight.points} tone={insight.tone} />;
   if (insight.visualType === "bar")
@@ -348,12 +345,33 @@ function TrendMiniVisual({ insight }: { insight: Insight }) {
   );
 }
 
-function TrendInsightCard({ insight, onPress }: { insight: Insight; onPress: () => void }) {
+function TrendInsightCard({
+  endDate,
+  insight,
+  onPress,
+}: {
+  endDate: Date;
+  insight: Insight;
+  onPress: () => void;
+}) {
   const hasData = insight.value !== "--";
+  const calendarCells =
+    insight.visualType === "calendarDots"
+      ? buildActivityCalendarCells({ points: insight.points, endDate, maxDays: 42 })
+      : [];
+  const calendarAccessibilityDetail = calendarCells.length
+    ? `Recent active dates: ${
+        calendarCells
+          .filter((cell) => cell.active)
+          .map((cell) => cell.dateKey)
+          .join(", ") || "none"
+      }.`
+    : undefined;
 
   return (
     <CompactInsightCard
       title={insight.title}
+      {...(calendarAccessibilityDetail ? { accessibilityDetail: calendarAccessibilityDetail } : {})}
       value={insight.value}
       icon={insight.icon}
       hasData={hasData}
@@ -363,7 +381,7 @@ function TrendInsightCard({ insight, onPress }: { insight: Insight; onPress: () 
       onPress={onPress}
       testID={`trend-card-${insight.id}`}
     >
-      <TrendMiniVisual insight={hasData ? insight : { ...insight, points: [] }} />
+      <TrendMiniVisual endDate={endDate} insight={hasData ? insight : { ...insight, points: [] }} />
     </CompactInsightCard>
   );
 }
@@ -723,24 +741,40 @@ function DetailStackedVisual({ points }: { points: InsightPoint[] }) {
   );
 }
 
-function DetailDotVisual({ points }: { points: InsightPoint[] }) {
+function DetailDotVisual({
+  endDate,
+  points,
+  startDate,
+}: {
+  endDate: Date;
+  points: InsightPoint[];
+  startDate: Date;
+}) {
   if (points.length === 0) return <EmptyDetailVisual />;
+  const cells = buildActivityCalendarCells({ points, startDate, endDate, maxDays: 60 });
+  const activeDateSummary = cells
+    .filter((cell) => cell.active)
+    .map((cell) => cell.dateKey)
+    .join(", ");
 
   return (
     <View className="h-[330px] justify-center gap-5 px-2 pt-12">
-      <View className="flex-row flex-wrap gap-2.5">
-        {DETAIL_DOT_KEYS.map((dotKey, index) => {
-          const active = index >= 60 - points.length;
-          return (
-            <View
-              key={dotKey}
-              className={`h-4 w-4 rounded-full ${active ? "bg-green-500" : "bg-muted"}`}
-            />
-          );
-        })}
+      <View
+        accessible
+        accessibilityLabel={`Activity calendar from ${cells[0]?.dateKey ?? "unknown"} to ${cells.at(-1)?.dateKey ?? "unknown"}. Active dates: ${activeDateSummary || "none"}`}
+        accessibilityRole="image"
+        className="flex-row flex-wrap gap-2.5"
+        importantForAccessibility="no-hide-descendants"
+      >
+        {cells.map((cell) => (
+          <View
+            key={cell.dateKey}
+            className={`h-4 w-4 rounded-full ${cell.active ? "bg-green-500" : "bg-muted"}`}
+          />
+        ))}
       </View>
       <Text className="text-center text-xs font-medium text-muted-foreground">
-        Active days are highlighted across the selected range.
+        Active dates are highlighted. Long ranges show the most recent 60 days.
       </Text>
     </View>
   );
@@ -780,7 +814,15 @@ function EmptyDetailVisual() {
   );
 }
 
-function TrendDetailVisual({ insight }: { insight: Insight }) {
+function TrendDetailVisual({
+  endDate,
+  insight,
+  startDate,
+}: {
+  endDate: Date;
+  insight: Insight;
+  startDate: Date;
+}) {
   const hasData =
     insight.points.length > 0 || (insight.series?.some((item) => item.points.length > 0) ?? false);
   if (!hasData) return <EmptyDetailVisual />;
@@ -804,7 +846,9 @@ function TrendDetailVisual({ insight }: { insight: Insight }) {
         </Text>
       </View>
       {insight.visualType === "stacked" ? <DetailStackedVisual points={insight.points} /> : null}
-      {insight.visualType === "calendarDots" ? <DetailDotVisual points={insight.points} /> : null}
+      {insight.visualType === "calendarDots" ? (
+        <DetailDotVisual points={insight.points} startDate={startDate} endDate={endDate} />
+      ) : null}
       {insight.visualType === "rankedLollipop" ? (
         <DetailLollipopVisual points={insight.points} tone={insight.tone} />
       ) : null}
@@ -989,7 +1033,11 @@ function TrendInsightDetailModal({
     ...item,
     points: filterPointsByRange(item.points, range.start, range.end),
   }));
-  const visibleInsight = { ...insight, points: visiblePoints, series: visibleSeries };
+  const visibleInsight: Insight = {
+    ...insight,
+    points: visiblePoints,
+    ...(visibleSeries ? { series: visibleSeries } : {}),
+  };
 
   return (
     <Modal
@@ -1005,8 +1053,10 @@ function TrendInsightDetailModal({
               {insight.title}
             </Text>
             <Pressable
+              accessibilityLabel="Close trend details"
+              accessibilityRole="button"
               onPress={onClose}
-              className="-mr-2 p-2"
+              className="-mr-2 h-11 w-11 items-center justify-center"
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               testID="trend-detail-close"
             >
@@ -1027,7 +1077,11 @@ function TrendInsightDetailModal({
         >
           <Card className="rounded-3xl border border-border bg-card">
             <CardContent className="p-4">
-              <TrendDetailVisual insight={visibleInsight} />
+              <TrendDetailVisual
+                insight={visibleInsight}
+                startDate={range.start}
+                endDate={range.end}
+              />
             </CardContent>
           </Card>
         </ScrollView>
@@ -1170,7 +1224,7 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
   return (
     <View
       className={embedded ? "gap-4" : "flex-1 bg-background"}
-      testID={embedded ? "profile-trends-section" : "trends-tab-screen"}
+      testID={embedded ? "profile-trends-section" : "trends-screen"}
     >
       {embedded ? (
         <View className="gap-1">
@@ -1180,9 +1234,7 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
             performance.
           </Text>
         </View>
-      ) : (
-        <AppHeader title="Trends" />
-      )}
+      ) : null}
       {showInitialLoading ? (
         <View
           className={
@@ -1258,6 +1310,7 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
             {insights.map((insight) => (
               <TrendInsightCard
                 key={insight.id}
+                endDate={range.endDate}
                 insight={insight}
                 onPress={() => setSelectedInsight(insight)}
               />
@@ -1293,6 +1346,7 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
             {insights.map((insight) => (
               <TrendInsightCard
                 key={insight.id}
+                endDate={range.endDate}
                 insight={insight}
                 onPress={() => setSelectedInsight(insight)}
               />

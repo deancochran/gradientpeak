@@ -104,7 +104,6 @@ export default function InternalLayout() {
           }}
         />
         <Tabs.Screen name="discover" options={{ href: null }} />
-        <Tabs.Screen name="trends" options={{ href: null }} />
         <Tabs.Screen name="groups" options={{ href: null }} />
         <Tabs.Screen
           name="plan"

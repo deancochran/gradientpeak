@@ -11,7 +11,7 @@ describe("buildTrainingPathLoadMetrics", () => {
         tentativePlannedLoadTss: 20,
       }),
     ).toEqual([
-      { label: "Recommended", value: "100 TSS" },
+      { label: "Target", value: "100 TSS" },
       { label: "Planned", value: "80 TSS" },
       { label: "Tentative", value: "20 TSS" },
       { label: "Completed", value: "60 TSS" },
@@ -50,7 +50,7 @@ describe("buildTrainingPathLoadMetrics", () => {
       }),
     ).toEqual([{ label: "Planned", value: "30 TSS" }]);
     expect(buildTrainingPathLoadMetrics({ plannedLoadTss: 30, targetLoadTss: 0 })).toContainEqual({
-      label: "Recommended",
+      label: "Target",
       value: "0 TSS",
     });
   });
@@ -62,7 +62,7 @@ describe("buildTrainingPathLoadMetrics", () => {
         { includeCompleted: false },
       ),
     ).toEqual([
-      { label: "Recommended", value: "100 TSS" },
+      { label: "Target", value: "100 TSS" },
       { label: "Planned", value: "80 TSS" },
     ]);
   });

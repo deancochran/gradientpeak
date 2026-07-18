@@ -9,7 +9,8 @@ import {
 } from "lucide-react-native";
 import { type ComponentProps, memo } from "react";
 import { Pressable, View } from "react-native";
-import { BuilderTrainingPathReviewSection } from "@/components/training-plan/create/BuilderTrainingPathReviewSection";
+import { BuilderProjectionOverview } from "@/components/training-plan/create/BuilderProjectionOverview";
+import type { BuilderTrainingPathReviewSection } from "@/components/training-plan/create/BuilderTrainingPathReviewSection";
 import type { TrainingPlanBuilderController } from "@/components/training-plan/create/useTrainingPlanBuilderController";
 import type { TrainingPlanBuilderState } from "@/lib/training-plan-creation/types";
 import type { BuilderViewModelTarget } from "@/lib/training-plan-creation/view-model";
@@ -133,12 +134,7 @@ export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
         </View>
       ) : null}
 
-      <View className="-mx-2">
-        <BuilderTrainingPathReviewSection
-          chartReview={chartReview}
-          renderBelowChart={renderBelowChart}
-        />
-      </View>
+      <BuilderProjectionOverview chartReview={chartReview} renderBelowChart={renderBelowChart} />
     </View>
   );
 });

@@ -99,11 +99,12 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
   const [legendOpen, setLegendOpen] = useState(false);
   const [previewSelectedDate, setPreviewSelectedDate] = useState<string | null>(null);
   const modelEmptyState = loading ? null : (model?.emptyState ?? null);
-  const resolvedEmptyState = modelEmptyState
-    ? { title: modelEmptyStateCopy[modelEmptyState], tone: "empty" as const }
-    : loading
-      ? { title: "Loading training path…", tone: "loading" as const }
-      : emptyState;
+  const resolvedEmptyState = loading
+    ? { title: "Loading training path…", tone: "loading" as const }
+    : (emptyState ??
+      (modelEmptyState
+        ? { title: modelEmptyStateCopy[modelEmptyState], tone: "empty" as const }
+        : undefined));
   const canRenderDailyChart = preferDailyChart && !!dailyPoints?.length;
   const canRenderWeeklyChart = !!model && !model.emptyState && !!onSelectedWeekChange;
   const contextSelectedDate = previewSelectedDate ?? selectedDate;
@@ -156,7 +157,7 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
                 accessibilityRole="button"
                 accessibilityLabel="Open training path legend"
                 activeOpacity={0.85}
-                className="h-7 w-7 items-center justify-center rounded-full"
+                className="h-11 w-11 items-center justify-center rounded-full"
                 onPress={() => setLegendOpen(true)}
                 testID="training-path-legend-button"
               >
@@ -169,7 +170,7 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
               accessibilityRole="button"
               accessibilityLabel="Edit training preferences"
               activeOpacity={0.85}
-              className="h-9 w-9 items-center justify-center rounded-full border border-border bg-background"
+              className="h-11 w-11 items-center justify-center rounded-full border border-border bg-background"
               onPress={onOpenSettings}
               testID="training-path-settings-button"
             >
@@ -184,7 +185,7 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
           <ChartEmptyState
             body={resolvedEmptyState.body}
             minHeight={chartHeight}
-            onCreateGoal={modelEmptyState === "noGoal" ? onCreateGoal : undefined}
+            onCreateGoal={!emptyState && modelEmptyState === "noGoal" ? onCreateGoal : undefined}
             testID="training-path-empty-state"
             title={resolvedEmptyState.title}
             tone={resolvedEmptyState.tone}
@@ -225,6 +226,16 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
             tone="empty"
           />
         )}
+        {!resolvedEmptyState && (canRenderDailyChart || canRenderWeeklyChart) ? (
+          <TrainingPathLegend
+            mode={canRenderDailyChart ? "daily" : "weekly"}
+            range="season"
+            showUnavailableLoad={
+              dailyPoints?.some((point) => point.hasCompletedActivityWithoutLoad === true) ?? false
+            }
+            variant="primary"
+          />
+        ) : null}
       </View>
 
       {renderBelowChart ? renderBelowChart(belowChartContext) : null}
@@ -236,8 +247,8 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
           testID="training-path-legend-modal"
           title="Chart Legend"
         >
-          <View className="gap-4 rounded-2xl border border-border bg-card p-4">
-            <TrainingPathLegend range="season" />
+          <View className="gap-4 px-1 py-2">
+            <TrainingPathLegend mode={canRenderDailyChart ? "daily" : "weekly"} range="season" />
           </View>
         </AppFormModal>
       ) : null}
@@ -274,7 +285,7 @@ function ChartEmptyState({
           accessibilityRole="button"
           accessibilityLabel="Create goal"
           activeOpacity={0.85}
-          className="mt-3 flex-row items-center gap-1.5 rounded-full bg-primary px-4 py-2"
+          className="mt-3 min-h-11 flex-row items-center gap-1.5 rounded-full bg-primary px-4 py-2"
           onPress={onCreateGoal}
           testID="plan-add-goal-button"
         >
