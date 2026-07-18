@@ -15,6 +15,7 @@ vi.mock("@repo/db", () => ({
   activityArtifacts: {
     id: "activity_artifacts.id",
     path: "activity_artifacts.path",
+    format: "activity_artifacts.format",
   },
   activityArtifactLinks: {
     activity_id: "activity_artifact_links.activity_id",
@@ -792,8 +793,8 @@ describe("activityFilesRouter", () => {
       selectResults: [
         [
           {
-            activityFilePath:
-              "activities/11111111-1111-4111-8111-111111111111/uploads/authorized.fit",
+            activityFilePath: `artifacts/sha256/11111111-1111-4111-8111-111111111111/${"a".repeat(64)}`,
+            activityFileType: "fit",
             profile_id: "11111111-1111-4111-8111-111111111111",
             is_private: true,
             activityType: "bike",
@@ -824,7 +825,10 @@ describe("activityFilesRouter", () => {
     });
 
     expect(mocks.storage.download).toHaveBeenCalledWith(
-      "activities/11111111-1111-4111-8111-111111111111/uploads/authorized.fit",
+      `artifacts/sha256/11111111-1111-4111-8111-111111111111/${"a".repeat(64)}`,
+    );
+    expect(mocks.parseActivityFile).toHaveBeenCalledWith(
+      expect.objectContaining({ fileType: "fit" }),
     );
     expect(result).toMatchObject({
       records: [
@@ -883,6 +887,7 @@ describe("activityFilesRouter", () => {
           {
             activityFilePath:
               "activities/11111111-1111-4111-8111-111111111111/uploads/multisport.fit",
+            activityFileType: "fit",
             profile_id: "11111111-1111-4111-8111-111111111111",
             activityType: "run",
             parentStartedAt: new Date("2026-03-01T10:00:00.000Z"),

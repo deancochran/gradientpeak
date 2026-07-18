@@ -57,6 +57,7 @@ const ACTIVITY_FILE_BUCKET = "activity-files";
 const ACTIVITY_FILE_SIZE_LIMIT = 50 * 1024 * 1024; // 50MB
 const ACTIVITY_FILE_BUCKET_SIZE_LIMIT = "50MB";
 const ACTIVITY_FILE_TYPES = [".fit", ".gpx", ".tcx"];
+const activityFileTypeSchema = z.enum(["fit", "gpx", "tcx"]);
 
 const ACTIVITY_FILE_NAME_PATTERN = /^[^/\\\0]+$/;
 
@@ -297,6 +298,7 @@ async function canAccessActivityStreams(
   scope: { type: "segment"; segmentId: string } | { type: "session"; sessionMessageIndex: number },
 ): Promise<{
   activityFilePath: string | null;
+  activityFileType: ActivityFileType | null;
   activityType: string;
   parentStartedAt: Date;
   startOffsetMs: number;
@@ -310,6 +312,7 @@ async function canAccessActivityStreams(
   const scopedActivities = await db
     .select({
       activityFilePath: activityArtifacts.path,
+      activityFileType: activityArtifacts.format,
       profile_id: activities.profile_id,
       parentStartedAt: activities.started_at,
       activityType: activitySegments.category,
@@ -355,6 +358,9 @@ async function canAccessActivityStreams(
   if (activity.profile_id === userId) {
     return {
       activityFilePath: activity.activityFilePath,
+      activityFileType: activity.activityFilePath
+        ? activityFileTypeSchema.parse(activity.activityFileType)
+        : null,
       activityType: activity.activityType ?? "other",
       parentStartedAt: activity.parentStartedAt,
       startOffsetMs: activity.startOffsetMs,
@@ -1101,6 +1107,12 @@ export const activityFilesRouter = createTRPCRouter({
             message: "Activity does not have an associated activity file",
           });
         }
+        if (!access.activityFileType) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Activity artifact format is unavailable",
+          });
+        }
 
         // Download activity file from storage
         const { data: activityFile, error: downloadError } = await supabase.storage
@@ -1122,6 +1134,7 @@ export const activityFilesRouter = createTRPCRouter({
           parseActivityFile({
             data: buffer,
             fileName: access.activityFilePath,
+            fileType: access.activityFileType,
           }),
         );
         const scopedRecords = scopeParsedRecords(parsedData.records, access, input.scope);
