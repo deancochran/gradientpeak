@@ -714,7 +714,12 @@ export function analyzeProject(root, config, trackedFiles) {
         if (
           kind &&
           candidate.name &&
-          !isDerivedOrReplica(candidate.node, importedBindings, schemaBindings, candidate.initializer)
+          !isDerivedOrReplica(
+            candidate.node,
+            importedBindings,
+            schemaBindings,
+            candidate.initializer,
+          )
         ) {
           contracts.push({
             owner,
