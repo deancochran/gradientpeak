@@ -39,19 +39,17 @@ export function RouteSelector({ selectedRouteId, onSelectRoute }: RouteSelectorP
     },
   );
 
-  // Extract string ID in case it's an object
-  const routeId =
-    typeof selectedRouteId === "string" ? selectedRouteId : (selectedRouteId as any)?.value || null;
+  const routeId = selectedRouteId ?? null;
 
   const { data: selectedRoute } = api.routes.get.useQuery(
-    { id: routeId! },
+    { id: routeId ?? "" },
     { enabled: !!routeId && typeof routeId === "string" },
   );
 
   const routes = data?.pages.flatMap((page) => page.items) ?? [];
 
   const handleUploadRoute = () => {
-    navigateTo("/route-upload" as any);
+    navigateTo("/route-upload");
   };
 
   return (

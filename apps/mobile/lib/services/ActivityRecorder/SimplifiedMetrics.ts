@@ -279,7 +279,7 @@ export function formatSpeed(speedKmH: number): string {
  */
 export function convertToSimplifiedMetrics(
   state: import("./types").LiveMetricsState,
-  currentReadings: any,
+  currentReadings: import("./types").CurrentReadings,
   hasEnoughData: boolean,
   profile?: { ftp?: number; weight_kg?: number },
 ): SimplifiedMetrics {

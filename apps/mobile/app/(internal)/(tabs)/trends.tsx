@@ -60,6 +60,17 @@ export function getTrendsLoadState({
   };
 }
 
+function getInsightPointKey(point: InsightPoint) {
+  return `${point.date?.toISOString() ?? "undated"}-${point.label}-${point.value}`;
+}
+
+const MINI_DOT_KEYS = Array.from({ length: 28 }, (_, index) => `mini-dot-${index}`);
+const EXPANDED_MINI_DOT_KEYS = Array.from(
+  { length: 42 },
+  (_, index) => `expanded-mini-dot-${index}`,
+);
+const DETAIL_DOT_KEYS = Array.from({ length: 60 }, (_, index) => `detail-dot-${index}`);
+
 function getToneAccentClass(tone: Tone) {
   switch (tone) {
     case "blue":
@@ -179,9 +190,9 @@ function MiniBarVisual({ points, tone }: { points: InsightPoint[]; tone: Tone })
   const { max } = getPointBounds(visiblePoints);
   return (
     <View className="h-16 flex-row items-end gap-1 rounded-2xl bg-muted/30 p-3">
-      {visiblePoints.map((point, index) => (
+      {visiblePoints.map((point) => (
         <View
-          key={`${point.label}-${index}`}
+          key={getInsightPointKey(point)}
           className={`flex-1 rounded-full ${getToneBarClass(tone)}`}
           style={{ height: 6 + Math.max(0, Math.min(1, point.value / max)) * 34 }}
         />
@@ -214,9 +225,9 @@ function MiniScatterVisual({ points, tone }: { points: InsightPoint[]; tone: Ton
           strokeWidth={1.5}
           opacity={0.32}
         />
-        {coordinates.map((coordinate, index) => (
+        {coordinates.map((coordinate) => (
           <Circle
-            key={`${coordinate.point.label}-${index}`}
+            key={getInsightPointKey(coordinate.point)}
             cx={coordinate.x}
             cy={coordinate.y}
             r={3.5}
@@ -248,7 +259,7 @@ function MiniStackedVisual({
       >
         {points.map((point, index) => (
           <View
-            key={`${point.label}-${index}`}
+            key={getInsightPointKey(point)}
             className={
               index < 2 ? "bg-green-500/80" : index < 4 ? "bg-orange-500/80" : "bg-pink-500/80"
             }
@@ -274,17 +285,17 @@ function MiniDotVisual({
 }) {
   const visiblePoints = points.slice(expanded ? -42 : -28);
   if (visiblePoints.length === 0) return <EmptyMiniVisual expanded={expanded} />;
-  const totalDots = expanded ? 42 : 28;
+  const dotKeys = expanded ? EXPANDED_MINI_DOT_KEYS : MINI_DOT_KEYS;
 
   return (
     <View
       className={`${expanded ? "h-24" : "h-16"} flex-row flex-wrap content-center gap-1.5 rounded-2xl bg-muted/30 p-3`}
     >
-      {Array.from({ length: totalDots }).map((_, index) => {
-        const active = index >= totalDots - visiblePoints.length;
+      {dotKeys.map((dotKey, index) => {
+        const active = index >= dotKeys.length - visiblePoints.length;
         return (
           <View
-            key={index}
+            key={dotKey}
             className={`h-2.5 w-2.5 rounded-full ${active ? "bg-green-500" : "bg-muted"}`}
           />
         );
@@ -300,8 +311,8 @@ function MiniLollipopVisual({ points, tone }: { points: InsightPoint[]; tone: To
   const { max } = getPointBounds(visiblePoints);
   return (
     <View className="h-16 justify-center gap-1 rounded-2xl bg-muted/30 px-3">
-      {visiblePoints.slice(-4).map((point, index) => (
-        <View key={`${point.label}-${index}`} className="flex-row items-center gap-2">
+      {visiblePoints.slice(-4).map((point) => (
+        <View key={getInsightPointKey(point)} className="flex-row items-center gap-2">
           <View className="h-1.5 flex-1 rounded-full bg-muted">
             <View
               className={`h-1.5 rounded-full ${getToneBarClass(tone)}`}
@@ -409,7 +420,11 @@ function shiftDate(date: Date, days: number) {
 }
 
 function buildRange(mode: TrendRangeMode, endDate = new Date()) {
-  const option = RANGE_OPTIONS.find((item) => item.value === mode) ?? RANGE_OPTIONS[0]!;
+  const option = RANGE_OPTIONS.find((item) => item.value === mode) ?? {
+    value: "30d" as const,
+    label: "30 days",
+    days: 30,
+  };
   const end = startOfDay(endDate);
   return { mode, start: shiftDate(end, -(option.days - 1)), end };
 }
@@ -420,7 +435,8 @@ function filterPointsByRange(points: InsightPoint[], start: Date, end: Date) {
   const startTime = startOfDay(start).getTime();
   const endTime = startOfDay(end).getTime();
   return datedPoints.filter((point) => {
-    const time = startOfDay(point.date!).getTime();
+    if (!point.date) return false;
+    const time = startOfDay(point.date).getTime();
     return time >= startTime && time <= endTime;
   });
 }
@@ -481,7 +497,7 @@ function DetailLineVisual({
         index % Math.ceil(Math.max(coordinates.length, 1) / 8) === 0 ||
         index === coordinates.length - 1 ? (
           <Circle
-            key={`${coordinate.point.label}-${index}`}
+            key={getInsightPointKey(coordinate.point)}
             cx={coordinate.x}
             cy={coordinate.y}
             r={3.5}
@@ -501,9 +517,9 @@ function DetailBarVisual({ points, tone }: { points: InsightPoint[]; tone: Tone 
   return (
     <View className="h-[330px] justify-end px-2 pb-8 pt-16">
       <View className="h-52 flex-row items-end gap-1.5">
-        {visiblePoints.map((point, index) => (
+        {visiblePoints.map((point) => (
           <View
-            key={`${point.label}-${index}`}
+            key={getInsightPointKey(point)}
             className={`flex-1 rounded-t-full ${getToneBarClass(tone)}`}
             style={{ height: 10 + Math.max(0, Math.min(1, point.value / max)) * 190 }}
           />
@@ -518,9 +534,9 @@ function DetailBarVisual({ points, tone }: { points: InsightPoint[]; tone: Tone 
               visiblePoints.at(-1),
             ]
         )
-          .filter(Boolean)
-          .map((point, index) => (
-            <Text key={`${point?.label}-${index}`} className="text-[10px] text-muted-foreground">
+          .filter((point): point is InsightPoint => Boolean(point))
+          .map((point) => (
+            <Text key={getInsightPointKey(point)} className="text-[10px] text-muted-foreground">
               {point?.label}
             </Text>
           ))}
@@ -582,7 +598,7 @@ function DetailScatterVisual({ points, tone }: { points: InsightPoint[]; tone: T
         const y = paddingTop + (1 - (point.value - min) / range) * chartHeight;
         return (
           <Circle
-            key={`${point.label}-${index}`}
+            key={getInsightPointKey(point)}
             cx={x}
             cy={y}
             r={4.5}
@@ -674,7 +690,7 @@ function DetailStackedVisual({ points }: { points: InsightPoint[] }) {
       <View className="h-16 flex-row overflow-hidden rounded-[28px] bg-muted">
         {points.map((point, index) => (
           <View
-            key={`${point.label}-${index}`}
+            key={getInsightPointKey(point)}
             className={
               index < 2 ? "bg-green-500/80" : index < 4 ? "bg-orange-500/80" : "bg-pink-500/80"
             }
@@ -684,7 +700,7 @@ function DetailStackedVisual({ points }: { points: InsightPoint[] }) {
       </View>
       <View className="gap-2">
         {points.map((point, index) => (
-          <View key={`${point.label}-${index}`} className="flex-row items-center gap-2">
+          <View key={getInsightPointKey(point)} className="flex-row items-center gap-2">
             <View
               className={
                 index < 2
@@ -713,11 +729,11 @@ function DetailDotVisual({ points }: { points: InsightPoint[] }) {
   return (
     <View className="h-[330px] justify-center gap-5 px-2 pt-12">
       <View className="flex-row flex-wrap gap-2.5">
-        {Array.from({ length: 60 }).map((_, index) => {
+        {DETAIL_DOT_KEYS.map((dotKey, index) => {
           const active = index >= 60 - points.length;
           return (
             <View
-              key={index}
+              key={dotKey}
               className={`h-4 w-4 rounded-full ${active ? "bg-green-500" : "bg-muted"}`}
             />
           );
@@ -737,8 +753,8 @@ function DetailLollipopVisual({ points, tone }: { points: InsightPoint[]; tone: 
   const { max } = getPointBounds(visiblePoints);
   return (
     <View className="h-[330px] justify-end gap-3 px-2 pb-8 pt-16">
-      {visiblePoints.map((point, index) => (
-        <View key={`${point.label}-${index}`} className="flex-row items-center gap-3">
+      {visiblePoints.map((point) => (
+        <View key={getInsightPointKey(point)} className="flex-row items-center gap-3">
           <Text className="w-8 text-xs font-semibold text-muted-foreground">{point.label}</Text>
           <View className="h-2 flex-1 rounded-full bg-muted">
             <View

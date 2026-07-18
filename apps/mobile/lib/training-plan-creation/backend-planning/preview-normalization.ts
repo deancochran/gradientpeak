@@ -2,26 +2,30 @@ import type { BackendPreviewProjection } from "./types";
 
 export function normalizeBackendPlanningPreview(data: unknown): BackendPreviewProjection | null {
   if (!data || typeof data !== "object") return null;
-  const record = data as Record<string, any>;
+  const record = data as Record<string, unknown>;
   const projectionChart = record.projection_chart;
-  const previewSnapshot = record.preview_snapshot;
+  const projectionChartRecord = objectRecord(projectionChart);
+  const previewSnapshot = objectRecord(record.preview_snapshot);
+  const projectionFeasibility = objectRecord(record.projection_feasibility);
+  const conflicts = objectRecord(record.conflicts);
+  const planPreview = objectRecord(record.plan_preview);
   return {
     source: "backend",
     isAvailable: true,
-    readinessScore: finiteOrNull(projectionChart?.readiness_score),
-    readinessConfidence: finiteOrNull(projectionChart?.readiness_confidence),
-    feasibilityState: isFeasibilityState(record.projection_feasibility?.state)
-      ? record.projection_feasibility.state
+    readinessScore: finiteOrNull(projectionChartRecord?.readiness_score),
+    readinessConfidence: finiteOrNull(projectionChartRecord?.readiness_confidence),
+    feasibilityState: isFeasibilityState(projectionFeasibility?.state)
+      ? projectionFeasibility.state
       : null,
-    feasibilityReasons: Array.isArray(record.projection_feasibility?.reasons)
-      ? record.projection_feasibility.reasons.filter(
+    feasibilityReasons: Array.isArray(projectionFeasibility?.reasons)
+      ? projectionFeasibility.reasons.filter(
           (reason: unknown): reason is string => typeof reason === "string",
         )
       : [],
     conflicts: {
-      isBlocking: Boolean(record.conflicts?.is_blocking),
-      items: Array.isArray(record.conflicts?.items)
-        ? record.conflicts.items.flatMap((item: unknown) => {
+      isBlocking: Boolean(conflicts?.is_blocking),
+      items: Array.isArray(conflicts?.items)
+        ? conflicts.items.flatMap((item: unknown) => {
             if (!item || typeof item !== "object") return [];
             const conflict = item as Record<string, unknown>;
             return [
@@ -35,19 +39,22 @@ export function normalizeBackendPlanningPreview(data: unknown): BackendPreviewPr
           })
         : [],
     },
-    planPreview:
-      record.plan_preview && typeof record.plan_preview === "object"
-        ? {
-            name: String(record.plan_preview.name ?? "Training plan"),
-            startDate: String(record.plan_preview.start_date ?? ""),
-            endDate: String(record.plan_preview.end_date ?? ""),
-            goalCount: Number(record.plan_preview.goal_count ?? 0),
-            blockCount: Number(record.plan_preview.block_count ?? 0),
-          }
-        : null,
+    planPreview: planPreview
+      ? {
+          name: String(planPreview.name ?? "Training plan"),
+          startDate: String(planPreview.start_date ?? ""),
+          endDate: String(planPreview.end_date ?? ""),
+          goalCount: Number(planPreview.goal_count ?? 0),
+          blockCount: Number(planPreview.block_count ?? 0),
+        }
+      : null,
     projectionChart,
     previewSnapshotToken: typeof previewSnapshot?.token === "string" ? previewSnapshot.token : null,
   };
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
 }
 
 function finiteOrNull(value: unknown) {

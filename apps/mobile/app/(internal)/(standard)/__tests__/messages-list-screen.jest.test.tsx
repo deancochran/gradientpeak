@@ -5,10 +5,21 @@ import { fireEvent, renderNative, screen } from "../../../../test/render-native"
 
 const pushMock = jest.fn();
 
+type HeaderOptions = { headerRight?: () => React.ReactNode };
+type FlatListMockProps = Record<string, unknown> & {
+  data: unknown[];
+  renderItem: (info: { item: unknown }) => React.ReactNode;
+  ListHeaderComponent?: React.ReactNode;
+  ListEmptyComponent?: React.ReactNode;
+};
+type PressableMockProps = React.PropsWithChildren<
+  { onPress?: () => void } & Record<string, unknown>
+>;
+
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: ({ options }: any) =>
+    Screen: ({ options }: { options?: HeaderOptions }) =>
       React.createElement(
         "StackScreen",
         { options },
@@ -20,14 +31,20 @@ jest.mock("expo-router", () => ({
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  FlatList: ({ data, renderItem, ListHeaderComponent, ListEmptyComponent, ...props }: any) =>
+  FlatList: ({
+    data,
+    renderItem,
+    ListHeaderComponent,
+    ListEmptyComponent,
+    ...props
+  }: FlatListMockProps) =>
     React.createElement(
       "FlatList",
       props,
       ListHeaderComponent,
-      data.length > 0 ? data.map((item: any) => renderItem({ item })) : ListEmptyComponent,
+      data.length > 0 ? data.map((item) => renderItem({ item })) : ListEmptyComponent,
     ),
-  Pressable: ({ children, onPress, ...props }: any) =>
+  Pressable: ({ children, onPress, ...props }: PressableMockProps) =>
     React.createElement("Pressable", { onPress, ...props }, children),
   View: mockCreateHost("View"),
 }));

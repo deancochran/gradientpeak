@@ -51,10 +51,11 @@ export function ActivityDistributionForm({
   useEffect(() => {
     if (data) {
       const categories = Object.keys(data) as ActivityCategory[];
-      if (categories.length === 1 && data[categories[0]] === 1) {
+      const [onlyCategory] = categories;
+      if (onlyCategory && categories.length === 1 && data[onlyCategory] === 1) {
         // Single-sport mode
         setIsMultiSport(false);
-        setPrimaryActivity(categories[0]!);
+        setPrimaryActivity(onlyCategory);
       } else {
         // Multi-sport mode
         setIsMultiSport(true);

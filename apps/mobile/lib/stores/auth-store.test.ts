@@ -8,7 +8,7 @@ describe("auth store profile contract", () => {
     expectTypeOf<AuthProfile["bio"]>().toEqualTypeOf<string | null>();
     expectTypeOf<AuthProfile["dob"]>().toEqualTypeOf<string | null>();
 
-    if (false) {
+    const assertRejectedShapes = () => {
       const profile = null as unknown as AuthProfile;
       const setProfile = null as unknown as AuthState["setProfile"];
 
@@ -16,6 +16,7 @@ describe("auth store profile contract", () => {
       void profile.followers_count;
       // @ts-expect-error Partial or stale profile DTOs cannot enter auth state.
       setProfile({ id: "profile-1", onboarded: true });
-    }
+    };
+    void assertRejectedShapes;
   });
 });

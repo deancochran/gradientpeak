@@ -72,20 +72,22 @@ export function getErrorMessage(error: unknown): string {
 
   // Handle API/API errors with shape
   if (typeof error === "object" && error !== null) {
-    const err = error as any;
+    const err = error as Record<string, unknown>;
+    const data =
+      err.data && typeof err.data === "object" ? (err.data as Record<string, unknown>) : null;
 
     // API error format
-    if (err.data?.code && ERROR_MESSAGE_MAP[err.data.code]) {
-      return ERROR_MESSAGE_MAP[err.data.code];
+    if (typeof data?.code === "string" && ERROR_MESSAGE_MAP[data.code]) {
+      return ERROR_MESSAGE_MAP[data.code];
     }
 
     // Check for message property
-    if (err.message && typeof err.message === "string") {
+    if (typeof err.message === "string") {
       return getErrorMessage(new Error(err.message));
     }
 
     // Check for error property
-    if (err.error && typeof err.error === "string") {
+    if (typeof err.error === "string") {
       return err.error;
     }
   }

@@ -48,11 +48,11 @@ export default function ScheduledScreen() {
   };
 
   const handleActivityTap = (activityId: string) => {
-    navigateTo(ROUTES.PLAN.ACTIVITY_DETAIL(activityId) as any);
+    navigateTo(ROUTES.PLAN.ACTIVITY_DETAIL(activityId));
   };
 
   const handleScheduleNew = () => {
-    router.navigate(ROUTES.CALENDAR as any);
+    router.navigate(ROUTES.CALENDAR);
   };
 
   if (isLoading) {

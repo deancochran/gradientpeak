@@ -123,12 +123,10 @@ export function MultiMetricChart({
 
   // Filter to only include metrics that have data
   const metricsConfig = getMetricConfig();
-  const availableMetrics = metricsConfig
-    .filter((config) => streams.has(config.type))
-    .map((config) => ({
-      ...config,
-      stream: streams.get(config.type)!,
-    }));
+  const availableMetrics = metricsConfig.flatMap((config) => {
+    const stream = streams.get(config.type);
+    return stream ? [{ ...config, stream }] : [];
+  });
 
   if (availableMetrics.length === 0) {
     return null;

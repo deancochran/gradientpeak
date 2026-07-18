@@ -16,7 +16,31 @@ const mockActivityPlansListUseQuery: jest.Mock = jest.fn(() => ({
   refetch: jest.fn(),
 }));
 
-const eventDetailData = {
+type ActivityPlanFixture = { id: string; name: string };
+type EventEditorInput = { starts_at: string; recurrence_rule?: string | null };
+type StackScreenProps = Record<string, unknown> & {
+  options?: { headerRight?: () => React.ReactNode };
+};
+type ResourcePickerProps = {
+  onSelect: (item: ActivityPlanFixture) => void;
+  visible: boolean;
+};
+
+const eventDetailData: {
+  id: string;
+  event_type: string;
+  title: string;
+  starts_at: string;
+  ends_at: string | null;
+  all_day: boolean;
+  notes: string;
+  activity_plan_id: string | null;
+  activity_plan: ActivityPlanFixture | null;
+  recurrence_rule: string | null;
+  series_id: string | null;
+  occurrence_key: string | null;
+  original_starts_at: string | null;
+} = {
   id: "event-1",
   event_type: "custom" as string,
   title: "Tempo Builder",
@@ -51,7 +75,7 @@ jest.mock("react-native", () => ({
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: any) =>
+    Screen: (props: StackScreenProps) =>
       React.createElement(
         "StackScreen",
         props,
@@ -120,25 +144,25 @@ jest.mock("@/components/event/EventEditorCard", () => ({
           rule: `FREQ=${frequency.toUpperCase()};UNTIL=${endDate.replace(/-/g, "")}T235959Z`,
           timezone: "UTC",
         },
-  parseEventDateForEditor: (event: any) => new Date(event.starts_at),
-  parseRecurrenceEndDate: (event: any) => {
+  parseEventDateForEditor: (event: EventEditorInput) => new Date(event.starts_at),
+  parseRecurrenceEndDate: (event: EventEditorInput) => {
     const match = event.recurrence_rule?.match(/UNTIL=(\d{4})(\d{2})(\d{2})/);
     return match ? `${match[1]}-${match[2]}-${match[3]}` : null;
   },
-  parseRecurrenceFrequency: (event: any) =>
+  parseRecurrenceFrequency: (event: EventEditorInput) =>
     event.recurrence_rule?.includes("FREQ=WEEKLY") ? "weekly" : "none",
 }));
 
 jest.mock("@/components/shared/resource-picker", () => ({
   __esModule: true,
-  ResourcePickerModal: ({ onSelect, visible }: any) => {
+  ResourcePickerModal: ({ onSelect, visible }: ResourcePickerProps) => {
     if (!visible) return null;
     const React = require("react");
     const items = mockActivityPlansListUseQuery().data?.items ?? [];
     return React.createElement(
       "ResourcePickerModal",
       { visible },
-      ...items.map((item: any) =>
+      ...items.map((item: ActivityPlanFixture) =>
         React.createElement(
           "Button",
           {
@@ -200,7 +224,7 @@ jest.mock("@/lib/api", () => ({
 }));
 
 describe("event detail update screen", () => {
-  function getDateInput(rendered: any, id: string) {
+  function getDateInput(rendered: ReturnType<typeof renderNative>, id: string) {
     return rendered.getByTestId(id);
   }
 
@@ -445,7 +469,7 @@ describe("event detail update screen", () => {
     eventDetailData.activity_plan = {
       id: "11111111-1111-4111-8111-111111111111",
       name: "Tempo Run",
-    } as any;
+    };
     updateEventMutateMock.mockClear();
 
     renderNative(<EventDetailUpdateScreen />);

@@ -35,18 +35,20 @@ function mapDistanceToPosition(
   distance: number,
   coordinates: Array<{ latitude: number; longitude: number; elevation?: number }>,
 ): VirtualPosition | null {
-  if (coordinates.length === 0) return null;
-  if (distance <= 0) return coordinates[0] || null;
+  const [firstCoordinate] = coordinates;
+  if (!firstCoordinate) return null;
+  if (distance <= 0) return firstCoordinate;
 
   // Calculate cumulative distance for each point
   let cumulativeDistance = 0;
   const coordinatesWithDistance: Array<VirtualPosition & { distance: number }> = [
-    { ...coordinates[0]!, distance: 0 },
+    { ...firstCoordinate, distance: 0 },
   ];
 
   for (let i = 1; i < coordinates.length; i++) {
-    const prev = coordinates[i - 1]!;
-    const curr = coordinates[i]!;
+    const prev = coordinates[i - 1];
+    const curr = coordinates[i];
+    if (!prev || !curr) continue;
     // Calculate distance using Haversine formula
     const R = 6371e3; // Earth's radius in meters
     const φ1 = (prev.latitude * Math.PI) / 180;
@@ -69,8 +71,9 @@ function mapDistanceToPosition(
 
   // Find the segment containing the target distance
   for (let i = 0; i < coordinatesWithDistance.length - 1; i++) {
-    const start = coordinatesWithDistance[i]!;
-    const end = coordinatesWithDistance[i + 1]!;
+    const start = coordinatesWithDistance[i];
+    const end = coordinatesWithDistance[i + 1];
+    if (!start || !end) continue;
 
     if (distance >= start.distance && distance <= end.distance) {
       // Linear interpolation within segment
@@ -140,7 +143,10 @@ export function VirtualRouteMap({ service, isFocused = false }: VirtualRouteMapP
       return { minLat: 0, maxLat: 0, minLng: 0, maxLng: 0 };
     }
 
-    const firstCoord = coordinates[0]!;
+    const [firstCoord] = coordinates;
+    if (!firstCoord) {
+      return { minLat: 0, maxLat: 0, minLng: 0, maxLng: 0 };
+    }
     let minLat = firstCoord.latitude;
     let maxLat = firstCoord.latitude;
     let minLng = firstCoord.longitude;

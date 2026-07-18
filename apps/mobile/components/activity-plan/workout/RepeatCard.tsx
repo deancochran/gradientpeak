@@ -152,7 +152,7 @@ const RepeatCard = memo(function RepeatCard({
               <Text className="text-xs text-muted-foreground mb-2">Steps:</Text>
               <View className="flex-row flex-wrap gap-1">
                 {segment.steps.slice(0, repeatCount).map((step, stepIndex) => (
-                  <View key={stepIndex} className="bg-muted px-2 py-1 rounded-md">
+                  <View key={JSON.stringify(step)} className="bg-muted px-2 py-1 rounded-md">
                     <Text className="text-xs text-muted-foreground">
                       {step.name || `Step ${stepIndex + 1}`}
                     </Text>

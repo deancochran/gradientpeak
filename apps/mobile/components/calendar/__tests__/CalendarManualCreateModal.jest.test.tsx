@@ -1,6 +1,5 @@
 import React from "react";
-
-import { createHost as mockCreateHost } from "../../../test/mock-components";
+import { type HostProps, createHost as mockCreateHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 
 const submitMock = jest.fn();
@@ -8,7 +7,7 @@ const submitMock = jest.fn();
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  Modal: ({ visible, children, ...props }: any) =>
+  Modal: ({ visible, children, ...props }: HostProps & { visible?: boolean }) =>
     visible ? React.createElement("Modal", props, children) : null,
 }));
 
@@ -17,7 +16,7 @@ jest.mock("@repo/ui/hooks", () => {
 
   return {
     __esModule: true,
-    useZodForm: ({ defaultValues }: any) => {
+    useZodForm: ({ defaultValues }: { defaultValues: Record<string, unknown> }) => {
       const initialDefaultsRef = React.useRef(defaultValues);
       const [values, setValues] = React.useState(initialDefaultsRef.current);
       const valuesRef = React.useRef(values);
@@ -38,8 +37,22 @@ jest.mock("@repo/ui/hooks", () => {
         };
       }, []);
     },
-    useZodFormSubmit: ({ form, onSubmit }: any) => ({
-      getSubmitButtonState: ({ disabled, label, submittingLabel }: any) => ({
+    useZodFormSubmit: ({
+      form,
+      onSubmit,
+    }: {
+      form: { getValues: () => Record<string, unknown> };
+      onSubmit: (values: Record<string, unknown>) => unknown;
+    }) => ({
+      getSubmitButtonState: ({
+        disabled,
+        label,
+        submittingLabel,
+      }: {
+        disabled?: boolean;
+        label: string;
+        submittingLabel?: string;
+      }) => ({
         disabled,
         label,
         loading: false,
@@ -62,19 +75,37 @@ jest.mock("@repo/ui/components/form", () => ({
   FormDateInputField: mockCreateHost("FormDateInputField"),
   FormSwitchField: mockCreateHost("FormSwitchField"),
   FormTextareaField: mockCreateHost("FormTextareaField"),
-  FormTextField: ({ testId, name, ...props }: any) =>
+  FormTextField: ({
+    testId,
+    name,
+    control,
+    ...props
+  }: HostProps & {
+    testId?: string;
+    name: string;
+    control?: { setValue?: (name: string, value: string) => void };
+  }) =>
     React.createElement("FormTextField", {
       testID: testId,
       name,
       ...props,
-      onChangeText: (value: string) => props.control?.setValue?.(name, value),
+      onChangeText: (value: string) => control?.setValue?.(name, value),
     }),
-  FormTimeInputField: ({ testId, name, ...props }: any) =>
+  FormTimeInputField: ({
+    testId,
+    name,
+    control,
+    ...props
+  }: HostProps & {
+    testId?: string;
+    name: string;
+    control?: { setValue?: (name: string, value: string) => void };
+  }) =>
     React.createElement("FormTimeInputField", {
       testID: testId,
       name,
       ...props,
-      onChangeText: (value: string) => props.control?.setValue?.(name, value),
+      onChangeText: (value: string) => control?.setValue?.(name, value),
     }),
 }));
 

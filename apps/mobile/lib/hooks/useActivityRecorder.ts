@@ -15,7 +15,7 @@
  */
 
 import type { MetricFamily, RecordingActivityCategory } from "@repo/core";
-import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Device } from "react-native-ble-plx";
 import type {
   ActivityRecorderService,
@@ -221,7 +221,6 @@ export function useRecordingState(service: ActivityRecorderService | null): Reco
 
     // Subscribe to state changes
     const handleStateChange = (newState: RecordingState) => {
-      console.log("[useRecordingState] State changed:", newState);
       setState(newState);
     };
 
@@ -336,19 +335,6 @@ export function useKnownSensors(service: ActivityRecorderService | null): Persis
 // ================================
 // Plan Hooks (Direct Service Access)
 // ================================
-
-/**
- * Helper hook to subscribe to service events and trigger re-renders
- */
-function _useServiceEvent(service: ActivityRecorderService | null, event: string): void {
-  const [, forceUpdate] = useReducer((x) => x + 1, 0);
-
-  useEffect(() => {
-    if (!service) return undefined;
-    const subscription = service.addListener(event, forceUpdate);
-    return () => subscription.remove();
-  }, [service, event]);
-}
 
 /**
  * Unified plan hook - provides all plan-related data and actions
@@ -606,7 +592,6 @@ export function useGpsTracking(service: ActivityRecorderService | null) {
 
     // Subscribe to GPS tracking changes
     const handleGpsTrackingChange = (enabled: boolean) => {
-      console.log("[useGpsTracking] GPS tracking changed:", enabled);
       setGpsEnabled(enabled);
     };
 

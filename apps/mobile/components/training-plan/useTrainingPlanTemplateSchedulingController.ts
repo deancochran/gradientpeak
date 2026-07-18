@@ -1,3 +1,4 @@
+import type { Router } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Alert } from "react-native";
 import { api } from "@/lib/api";
@@ -12,16 +13,14 @@ interface UseTrainingPlanTemplateSchedulingControllerParams {
   handleOpenCalendar: () => void;
   planId?: string;
   queryClient: ReturnType<typeof import("@tanstack/react-query").useQueryClient>;
-  router: { navigate: (value: any) => void; replace: (value: any) => void };
+  router: Pick<Router, "navigate" | "replace">;
   utils: ReturnType<typeof api.useUtils>;
 }
 
 export function useTrainingPlanTemplateSchedulingController({
-  handleOpenCalendar,
   planId,
   queryClient,
   router,
-  utils,
 }: UseTrainingPlanTemplateSchedulingControllerParams) {
   const [scheduleAnchorMode, setScheduleAnchorMode] = useState<ScheduleAnchorMode>("start");
   const [scheduleApplicationMode, setScheduleApplicationMode] =
@@ -39,17 +38,17 @@ export function useTrainingPlanTemplateSchedulingController({
     undefined,
     scheduleAwareReadQueryOptions,
   );
-  const activePlan = rawActivePlan as any;
+  const activePlan = rawActivePlan;
 
   const handleOpenCurrentPlan = useCallback(() => {
     handleCloseScheduleFlow();
 
     if (typeof activePlan?.id === "string") {
-      router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(activePlan.id) as any);
+      router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(activePlan.id));
       return;
     }
 
-    router.navigate(ROUTES.PLAN.INDEX as any);
+    router.navigate(ROUTES.PLAN.INDEX);
   }, [activePlan?.id, handleCloseScheduleFlow, router]);
 
   const applyTemplateMutation = api.trainingPlans.applyTemplate.useMutation({
@@ -62,8 +61,7 @@ export function useTrainingPlanTemplateSchedulingController({
       if (typeof result.applied_plan_id === "string") {
         successActions.push({
           text: "Open Scheduled Plan",
-          onPress: () =>
-            router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(result.applied_plan_id) as any),
+          onPress: () => router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(result.applied_plan_id)),
         });
       }
 
@@ -105,10 +103,14 @@ export function useTrainingPlanTemplateSchedulingController({
       applicationMode: ScheduleApplicationMode,
       replaceExisting: boolean,
     ) => {
+      if (!planId) {
+        Alert.alert("Schedule failed", "This training plan is unavailable.");
+        return;
+      }
       applyTemplateMutation.mutate({
         application_mode: applicationMode,
         template_type: "training_plan",
-        template_id: planId!,
+        template_id: planId,
         start_date:
           anchorMode === "start" && normalizedAnchorDate && applicationMode === "full"
             ? normalizedAnchorDate

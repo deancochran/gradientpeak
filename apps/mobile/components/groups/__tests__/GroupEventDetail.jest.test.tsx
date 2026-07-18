@@ -1,4 +1,4 @@
-import React from "react";
+import React, { type ComponentProps } from "react";
 import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 import { CurrentGroupEventPlanCard, GroupEventCard } from "../GroupEventCards";
@@ -9,9 +9,35 @@ const occurrencePressMock = jest.fn();
 const rsvpMock = jest.fn();
 const rsvpSeriesMock = jest.fn();
 
-let activityPlanItems: any[] = [];
+type GroupEventFixture = ComponentProps<typeof GroupEventDetailScreen>["event"];
+type ActivityPlanFixture = { id: string; name: string };
+function createViewerRsvp(
+  status: NonNullable<GroupEventFixture["viewerRsvp"]>["status"],
+): NonNullable<GroupEventFixture["viewerRsvp"]> {
+  return {
+    group_event_id: "group-event-1",
+    profile_id: "viewer-1",
+    status,
+    created_at: "2026-05-20T12:00:00.000Z",
+    updated_at: "2026-05-20T12:00:00.000Z",
+  };
+}
 
-function createGroupEvent(overrides: Record<string, unknown> = {}) {
+function createViewerSeriesRsvp(
+  status: NonNullable<GroupEventFixture["viewerSeriesRsvp"]>["status"],
+): NonNullable<GroupEventFixture["viewerSeriesRsvp"]> {
+  return {
+    group_event_series_id: "series-1",
+    profile_id: "viewer-1",
+    status,
+    created_at: "2026-05-20T12:00:00.000Z",
+    updated_at: "2026-05-20T12:00:00.000Z",
+  };
+}
+
+let activityPlanItems: ActivityPlanFixture[] = [];
+
+function createGroupEvent(overrides: Partial<GroupEventFixture> = {}): GroupEventFixture {
   return {
     id: "group-event-1",
     group_id: "group-1",
@@ -34,7 +60,6 @@ function createGroupEvent(overrides: Record<string, unknown> = {}) {
     is_recurring_occurrence: false,
     acceptedRsvpCount: 0,
     activity_plan_id: null,
-    activity_plan: null,
     viewerRsvp: null,
     viewerSeriesRsvp: null,
     group: { id: "group-1", name: "Trail Crew", slug: "trail-crew", avatar_url: null },
@@ -68,7 +93,13 @@ jest.mock("@/lib/server-config", () => ({
 
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
-  ActivityPlanCard: ({ activityPlan, onPress }: any) =>
+  ActivityPlanCard: ({
+    activityPlan,
+    onPress,
+  }: {
+    activityPlan: ActivityPlanFixture;
+    onPress?: () => void;
+  }) =>
     React.createElement(
       "ActivityPlanCard",
       { onPress, testID: `activity-plan-card-${activityPlan.id}` },
@@ -78,8 +109,15 @@ jest.mock("@/components/shared/ActivityPlanCard", () => ({
 
 jest.mock("@/components/shared/AppFormModal", () => ({
   __esModule: true,
-  AppFormModal: ({ children, testID, title }: any) =>
-    React.createElement("View", { testID }, React.createElement("Text", null, title), children),
+  AppFormModal: ({
+    children,
+    testID,
+    title,
+  }: {
+    children?: React.ReactNode;
+    testID?: string;
+    title?: React.ReactNode;
+  }) => React.createElement("View", { testID }, React.createElement("Text", null, title), children),
 }));
 
 jest.mock("lucide-react-native", () => ({
@@ -109,7 +147,7 @@ describe("GroupEventDetailScreen", () => {
     const groupPressMock = jest.fn();
 
     renderNative(
-      <GroupEventDetailScreen event={createGroupEvent() as any} onGroupPress={groupPressMock} />,
+      <GroupEventDetailScreen event={createGroupEvent()} onGroupPress={groupPressMock} />,
     );
 
     expect(screen.getByText("Trail Crew")).toBeTruthy();
@@ -130,7 +168,7 @@ describe("GroupEventDetailScreen", () => {
 
     renderNative(
       <GroupEventCard
-        event={createGroupEvent() as any}
+        event={createGroupEvent()}
         onGroupPress={groupPressMock}
         onPress={eventPressMock}
         variant="compact"
@@ -151,15 +189,13 @@ describe("GroupEventDetailScreen", () => {
   it("keeps series RSVP behind a lightweight apply action", () => {
     renderNative(
       <GroupEventDetailScreen
-        event={
-          createGroupEvent({
-            id: "occurrence-1",
-            series_id: "series-1",
-            occurrence_key: "2026-05-21",
-            is_recurring_occurrence: true,
-            viewerSeriesRsvp: { status: "accepted" },
-          }) as any
-        }
+        event={createGroupEvent({
+          id: "occurrence-1",
+          series_id: "series-1",
+          occurrence_key: "2026-05-21",
+          is_recurring_occurrence: true,
+          viewerSeriesRsvp: createViewerSeriesRsvp("accepted"),
+        })}
         onRsvpSeries={rsvpSeriesMock}
       />,
     );
@@ -179,7 +215,7 @@ describe("GroupEventDetailScreen", () => {
   });
 
   it("keeps the event detail layout minimal", () => {
-    renderNative(<GroupEventDetailScreen event={createGroupEvent() as any} />);
+    renderNative(<GroupEventDetailScreen event={createGroupEvent()} />);
 
     expect(screen.getByText("Trail Crew")).toBeTruthy();
     expect(screen.getByText("Saturday long run")).toBeTruthy();
@@ -190,11 +226,9 @@ describe("GroupEventDetailScreen", () => {
   it("allows clearing or returning an occurrence RSVP to tentative", () => {
     renderNative(
       <GroupEventDetailScreen
-        event={
-          createGroupEvent({
-            viewerRsvp: { status: "accepted" },
-          }) as any
-        }
+        event={createGroupEvent({
+          viewerRsvp: createViewerRsvp("accepted"),
+        })}
         onRsvp={rsvpMock}
       />,
     );
@@ -207,7 +241,7 @@ describe("GroupEventDetailScreen", () => {
   });
 
   it("does not label current group events as plans without activity plan options", () => {
-    renderNative(<CurrentGroupEventPlanCard event={createGroupEvent() as any} />);
+    renderNative(<CurrentGroupEventPlanCard event={createGroupEvent()} />);
 
     expect(screen.getByText("Current / next event")).toBeTruthy();
     expect(screen.queryByText("Current / next plan")).toBeNull();
@@ -216,14 +250,14 @@ describe("GroupEventDetailScreen", () => {
   it("shows accepted RSVP counts on the detail header without future dates", () => {
     renderNative(
       <GroupEventDetailScreen
-        event={createGroupEvent({ acceptedRsvpCount: 3, is_recurring_series: true }) as any}
+        event={createGroupEvent({ acceptedRsvpCount: 3, is_recurring_series: true })}
         futureOccurrences={[
           createGroupEvent({
             id: "occurrence-2",
             acceptedRsvpCount: 1,
             series_id: "series-1",
             title: "Next Saturday long run",
-          }) as any,
+          }),
         ]}
         onOccurrencePress={occurrencePressMock}
       />,
@@ -238,11 +272,9 @@ describe("GroupEventDetailScreen", () => {
 
     renderNative(
       <GroupEventDetailScreen
-        event={
-          createGroupEvent({
-            activity_plan_id: "plan-visible",
-          }) as any
-        }
+        event={createGroupEvent({
+          activity_plan_id: "plan-visible",
+        })}
         onActivityPlanPress={activityPlanPressMock}
         onRsvp={rsvpMock}
       />,
@@ -259,14 +291,12 @@ describe("GroupEventDetailScreen", () => {
     renderNative(
       <GroupEventDetailScreen
         canManage
-        event={
-          createGroupEvent({
-            id: "occurrence-1",
-            series_id: "series-1",
-            occurrence_key: "2026-05-21",
-            is_recurring_occurrence: true,
-          }) as any
-        }
+        event={createGroupEvent({
+          id: "occurrence-1",
+          series_id: "series-1",
+          occurrence_key: "2026-05-21",
+          is_recurring_occurrence: true,
+        })}
       />,
     );
 

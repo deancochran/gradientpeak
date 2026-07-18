@@ -1,5 +1,6 @@
 import { invalidateTrainingPlanQueries } from "@repo/api/react";
 import type { ContentVisibility } from "@repo/core";
+import type { Router } from "expo-router";
 import { Alert, Share } from "react-native";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
@@ -42,7 +43,7 @@ interface UseTrainingPlanHeaderSocialActionsParams {
     has_liked?: boolean;
     likes_count?: number;
   } | null;
-  router: { replace: (value: any) => void };
+  router: Pick<Router, "replace">;
   utils: ReturnType<typeof api.useUtils>;
 }
 
@@ -73,7 +74,7 @@ export function useTrainingPlanHeaderSocialActions({
       Alert.alert("Duplicated", "Training plan added to your plans.", [
         {
           text: "Open",
-          onPress: () => router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(result.id) as any),
+          onPress: () => router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(result.id)),
         },
       ]);
     },

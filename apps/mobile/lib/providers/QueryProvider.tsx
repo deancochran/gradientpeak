@@ -11,13 +11,17 @@ import { captureE2EQueryError } from "../testing/e2eRuntimeErrors";
 // Global error handler for 401/Unauthorized errors
 const handleGlobalError = (error: unknown) => {
   const errorMessage = error instanceof Error ? error.message : String(error);
+  const errorData =
+    typeof error === "object" && error !== null && "data" in error && error.data
+      ? error.data
+      : null;
   const isUnauthorized =
     errorMessage.includes("UNAUTHORIZED") ||
     errorMessage.includes("Unauthorized") ||
-    (typeof error === "object" &&
-      error !== null &&
-      "data" in error &&
-      (error as any).data?.code === "UNAUTHORIZED");
+    (typeof errorData === "object" &&
+      errorData !== null &&
+      "code" in errorData &&
+      errorData.code === "UNAUTHORIZED");
 
   if (isUnauthorized) {
     const { session } = useAuthStore.getState();
@@ -54,8 +58,14 @@ export const setupFocusManager = () => {
 
 export function QueryProvider({ children }: { children: React.ReactNode }) {
   const { version } = useServerConfig();
-  const queryClient = React.useMemo(() => createQueryClient(), []);
-  const apiClient = React.useMemo(() => createApiClient(), []);
+  const queryClient = React.useMemo(() => {
+    void version;
+    return createQueryClient();
+  }, [version]);
+  const apiClient = React.useMemo(() => {
+    void version;
+    return createApiClient();
+  }, [version]);
 
   React.useEffect(() => {
     const cleanupNetwork = setupNetworkListener();

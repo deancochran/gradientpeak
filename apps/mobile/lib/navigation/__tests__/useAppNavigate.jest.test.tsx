@@ -1,4 +1,5 @@
 import { act, renderHook } from "@testing-library/react-native";
+import type { Href } from "expo-router";
 
 const navigateMock = jest.fn();
 const pushMock = jest.fn();
@@ -25,7 +26,7 @@ describe("useAppNavigate", () => {
     const { result } = renderHook(() => useAppNavigate());
 
     act(() => {
-      result.current("/messages" as any);
+      result.current("/messages" as Href);
     });
 
     expect(navigateMock).toHaveBeenCalledWith("/messages");
@@ -38,7 +39,7 @@ describe("useAppNavigate", () => {
     const { result } = renderHook(() => useAppNavigate());
 
     act(() => {
-      result.current("/messages" as any);
+      result.current("/messages" as Href);
     });
 
     expect(pushMock).toHaveBeenCalledWith("/messages");

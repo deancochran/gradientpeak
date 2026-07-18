@@ -42,9 +42,12 @@ export default function WorkoutsReorder() {
       utils.events.invalidate();
     },
   });
+  type PlannedActivity = NonNullable<typeof plannedActivitiesData>["items"][number] & {
+    activity_plan_id: string;
+  };
 
   // Local state for reordering
-  const [activities, setActivities] = useState<any[]>([]);
+  const [activities, setActivities] = useState<PlannedActivity[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
@@ -59,7 +62,9 @@ export default function WorkoutsReorder() {
     if (plannedActivitiesData?.items) {
       // Filter out completed activities (activities with completed_activity_id)
       const upcomingActivities = plannedActivitiesData.items.filter(
-        (item: any) => !item.completed_activity_id,
+        (item): item is PlannedActivity =>
+          typeof item.activity_plan_id === "string" &&
+          (!("completed_activity_id" in item) || !item.completed_activity_id),
       );
       setActivities(upcomingActivities);
       setHasChanges(false);
@@ -68,7 +73,7 @@ export default function WorkoutsReorder() {
 
   // Group activities by date
   const activityGroups = useMemo(() => {
-    const groups: Record<string, any[]> = {};
+    const groups: Record<string, PlannedActivity[]> = {};
 
     activities.forEach((activity) => {
       const dateKey = normalizeDate(new Date(activity.scheduled_date)).toISOString();
@@ -132,7 +137,7 @@ export default function WorkoutsReorder() {
       const originalActivities = plannedActivitiesData?.items || [];
       const updatePromises = activities
         .filter((activity) => {
-          const original = originalActivities.find((orig: any) => orig.id === activity.id);
+          const original = originalActivities.find((orig) => orig.id === activity.id);
           return original && original.scheduled_date !== activity.scheduled_date;
         })
         .map((activity) =>
@@ -256,7 +261,10 @@ export default function WorkoutsReorder() {
                         </View>
                         <View className="flex-1">
                           <ActivityPlanCard
-                            plannedActivity={activity}
+                            plannedActivity={{
+                              ...activity,
+                              activity_plan: activity.activity_plan ?? undefined,
+                            }}
                             onPress={() => {}}
                             variant="compact"
                             showScheduleInfo={false}

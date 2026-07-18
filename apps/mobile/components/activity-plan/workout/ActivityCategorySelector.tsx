@@ -51,7 +51,7 @@ export const ActivityTypeSelector = memo<ActivityTypeSelectorProps>(function Act
               <View className="gap-2 py-2">
                 {Object.entries(ACTIVITY_CATEGORY_CONFIG).map(([key, config]) => {
                   const isSelected = value === key;
-                  const activityConfig = config as any;
+                  const activityConfig = config;
 
                   return (
                     <Pressable
@@ -69,7 +69,10 @@ export const ActivityTypeSelector = memo<ActivityTypeSelectorProps>(function Act
                           isSelected ? "text-primary" : "text-foreground"
                         }`}
                       >
-                        {activityConfig.shortName || activityConfig.name}
+                        {"shortName" in activityConfig &&
+                        typeof activityConfig.shortName === "string"
+                          ? activityConfig.shortName
+                          : activityConfig.name}
                       </Text>
                       {isSelected ? <Text className="ml-auto text-primary">✓</Text> : null}
                     </Pressable>
@@ -93,7 +96,7 @@ export const ActivityTypeSelector = memo<ActivityTypeSelectorProps>(function Act
     >
       {Object.entries(ACTIVITY_CATEGORY_CONFIG).map(([key, config]) => {
         const isSelected = value === key;
-        const activityConfig = config as any;
+        const activityConfig = config;
 
         return (
           <Button
@@ -110,7 +113,10 @@ export const ActivityTypeSelector = memo<ActivityTypeSelectorProps>(function Act
                 isSelected ? "text-primary-foreground" : "text-foreground"
               }`}
             >
-              {activityConfig.icon} {activityConfig.shortName || activityConfig.name}
+              {activityConfig.icon}{" "}
+              {"shortName" in activityConfig && typeof activityConfig.shortName === "string"
+                ? activityConfig.shortName
+                : activityConfig.name}
             </Text>
           </Button>
         );

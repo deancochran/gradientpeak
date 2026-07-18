@@ -32,6 +32,8 @@ const seriesRootEvent = {
   is_recurring_series: true,
 };
 
+type GroupEventSummary = { id: string; title: string };
+
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
@@ -58,18 +60,21 @@ jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHos
 jest.mock("@/components/shared/detail", () => ({
   __esModule: true,
   DetailOverflowMenu: createHost("DetailOverflowMenu"),
-  DetailScaffold: ({ children, screenTestID }: any) =>
+  DetailScaffold: ({
+    children,
+    screenTestID,
+  }: React.PropsWithChildren<{ screenTestID?: string }>) =>
     React.createElement("View", { testID: screenTestID }, children),
 }));
 
 jest.mock("@/components/groups", () => ({
   __esModule: true,
-  CurrentGroupEventPlanCard: ({ event }: any) =>
+  CurrentGroupEventPlanCard: ({ event }: { event: GroupEventSummary }) =>
     React.createElement("View", { testID: `current-event-${event.id}` }, event.title),
   GroupAccessLevelBadge: createHost("GroupAccessLevelBadge"),
-  GroupEventCard: ({ event }: any) =>
+  GroupEventCard: ({ event }: { event: GroupEventSummary }) =>
     React.createElement("View", { testID: `group-event-card-${event.id}` }, event.title),
-  GroupEventEmptyState: ({ title }: any) => React.createElement("Text", null, title),
+  GroupEventEmptyState: ({ title }: { title: string }) => React.createElement("Text", null, title),
   GroupEventListSkeleton: createHost("GroupEventListSkeleton"),
   GroupJoinPolicyBadge: createHost("GroupJoinPolicyBadge"),
   GroupMembersOnlyLockedState: createHost("GroupMembersOnlyLockedState"),

@@ -67,21 +67,29 @@ jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
     trainingPlans: {
-      get: { useQuery: (...args: any[]) => snapshotMocks.getPlanQuery(...args) },
+      get: {
+        useQuery: (...args: Parameters<typeof snapshotMocks.getPlanQuery>) =>
+          snapshotMocks.getPlanQuery(...args),
+      },
       getCurrentStatus: {
-        useQuery: (...args: any[]) => snapshotMocks.getStatusQuery(...args),
+        useQuery: (...args: Parameters<typeof snapshotMocks.getStatusQuery>) =>
+          snapshotMocks.getStatusQuery(...args),
       },
       getInsightTimeline: {
-        useQuery: (...args: any[]) => snapshotMocks.getInsightTimelineQuery(...args),
+        useQuery: (...args: Parameters<typeof snapshotMocks.getInsightTimelineQuery>) =>
+          snapshotMocks.getInsightTimelineQuery(...args),
       },
       getActualCurve: {
-        useQuery: (...args: any[]) => snapshotMocks.getActualCurveQuery(...args),
+        useQuery: (...args: Parameters<typeof snapshotMocks.getActualCurveQuery>) =>
+          snapshotMocks.getActualCurveQuery(...args),
       },
       getIdealCurve: {
-        useQuery: (...args: any[]) => snapshotMocks.getIdealCurveQuery(...args),
+        useQuery: (...args: Parameters<typeof snapshotMocks.getIdealCurveQuery>) =>
+          snapshotMocks.getIdealCurveQuery(...args),
       },
       getWeeklySummary: {
-        useQuery: (...args: any[]) => snapshotMocks.getWeeklySummaryQuery(...args),
+        useQuery: (...args: Parameters<typeof snapshotMocks.getWeeklySummaryQuery>) =>
+          snapshotMocks.getWeeklySummaryQuery(...args),
       },
     },
   },
@@ -228,7 +236,7 @@ describe("useTrainingPlanSnapshot", () => {
 
   it("requests insight timeline without a training plan id when no active plan exists", async () => {
     snapshotMocks.getPlanQuery.mockImplementationOnce(() => ({
-      data: null as any,
+      data: null as never,
       isLoading: false,
       isError: false,
       error: null,

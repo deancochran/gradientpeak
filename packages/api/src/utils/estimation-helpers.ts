@@ -2,7 +2,10 @@
  * Helper functions for integrating TSS estimation into tRPC endpoints
  */
 
-import { compileActivityPlanV3 } from "@repo/core/activity-plan";
+import {
+  type ActivityPlanAuthoritativeMetrics,
+  compileActivityPlanV3,
+} from "@repo/core/activity-plan";
 import {
   getActivityEffortThresholdEvidence,
   resolveCanonicalThresholds,
@@ -434,18 +437,7 @@ export type ActivityPlanWithEstimation<
   estimation_status: "estimated" | "partial" | "failed";
   estimation_warnings: string[];
   counts_toward_aggregation: boolean;
-  authoritative_metrics: {
-    estimated_tss: number | null;
-    estimated_duration: number | null;
-    intensity_factor: number | null;
-    estimated_distance?: number | null;
-    provenance: {
-      estimated_tss: "estimated" | null;
-      estimated_duration: "estimated" | null;
-      intensity_factor: "estimated" | null;
-      estimated_distance: "estimated" | null;
-    };
-  };
+  authoritative_metrics: ActivityPlanAuthoritativeMetrics;
   route: ActivityPlanRouteSummary | null;
 };
 
@@ -482,7 +474,7 @@ export function buildEstimatedPlan<TPlan extends EstimationActivityPlanInput>(
       estimated_tss: estimation.tss,
       estimated_duration: estimation.duration,
       intensity_factor: estimation.intensityFactor,
-      estimated_distance: metrics.distance,
+      estimated_distance: metrics.distance ?? null,
       provenance: {
         estimated_tss: estimation.tss === null ? null : "estimated",
         estimated_duration: estimation.duration === null ? null : "estimated",
@@ -510,6 +502,7 @@ export function buildFailedEstimationPlan<TPlan extends EstimationActivityPlanIn
       estimated_tss: null,
       estimated_duration: null,
       intensity_factor: null,
+      estimated_distance: null,
       provenance: {
         estimated_tss: null,
         estimated_duration: null,

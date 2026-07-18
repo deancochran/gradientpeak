@@ -352,6 +352,8 @@ function mapFtmsMachineTypeToRecordingMachineType(
 // ================================
 // Core Events (minimal, focused)
 // ================================
+type EventArguments = Parameters<typeof console.log>;
+
 export interface ServiceEvents {
   // Recording state changed (pending/ready/recording/paused/finished)
   stateChanged: (state: RecordingState) => void;
@@ -399,9 +401,7 @@ export interface ServiceEvents {
 
   // Immutable snapshot changed (created/reset)
   snapshotUpdated: (snapshot: RecordingSessionSnapshot | null) => void;
-
-  // Index signature for EventsMap
-  [key: string]: (...args: any[]) => void;
+  [key: string]: (...args: EventArguments) => void;
 }
 
 // ================================
@@ -1801,7 +1801,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     // Get all locations from StreamBuffer's persistent array (not cleared on flush)
     const allLocations = this.liveMetricsManager.streamBuffer.getAllLocations();
 
-    return allLocations.map((loc: any) => ({
+    return allLocations.map((loc) => ({
       latitude: loc.latitude,
       longitude: loc.longitude,
     }));

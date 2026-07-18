@@ -3,6 +3,10 @@ import { fireEvent, renderNative, screen } from "../../../test/render-native";
 import { UpcomingActivitiesCard } from "../UpcomingActivitiesCard";
 
 const navigateToMock = jest.fn();
+type PlannedActivityFixture = {
+  activity_plan?: { name?: string };
+  training_plan_id?: string | null;
+};
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -21,7 +25,17 @@ jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHos
 
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
-  ActivityPlanCard: ({ plannedActivity, onPress, testID, showScheduleInfo }: any) => {
+  ActivityPlanCard: ({
+    plannedActivity,
+    onPress,
+    testID,
+    showScheduleInfo,
+  }: {
+    plannedActivity?: PlannedActivityFixture;
+    onPress?: () => void;
+    testID?: string;
+    showScheduleInfo?: boolean;
+  }) => {
     const React = require("react");
     const activityPlan = plannedActivity?.activity_plan;
 

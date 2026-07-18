@@ -1,11 +1,20 @@
+import type { RecordingSessionContract } from "@repo/core";
 import { THEME } from "@repo/tailwindcss/native";
-import React from "react";
-import { createHost } from "../../../../test/mock-components";
+import React, { type ComponentProps } from "react";
+import type { ReactTestInstance } from "react-test-renderer";
+import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
+import { createHost, type HostProps } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
+import type { TrainerInsightCard as TrainerInsightCardComponent } from "../cards/TrainerInsightCard";
+
+jest.mock("@/lib/services/ActivityRecorder", () => ({
+  __esModule: true,
+  ActivityRecorderService: class ActivityRecorderService {},
+}));
 
 const addCallbackMock = jest.fn();
 const removeCallbackMock = jest.fn();
-const getLastKnownLocationMock = jest.fn<Promise<any>, []>(async () => null);
+const getLastKnownLocationMock = jest.fn<Promise<unknown>, []>(async () => null);
 
 const baseContract = {
   authority: {
@@ -46,22 +55,34 @@ const baseContract = {
     quickActions: [],
   },
   validation: { consequences: [] },
-};
+} satisfies Omit<RecordingSessionContract, "ui">;
 
 const mockPlanPrevious = jest.fn();
 const mockPlanSkip = jest.fn();
 const mockPlanAdvance = jest.fn();
 let mockManualAdvance = false;
 
-function buildContract(overrides: any = {}) {
+type DeepPartial<T> = T extends readonly unknown[]
+  ? T
+  : T extends object
+    ? { [Key in keyof T]?: DeepPartial<T[Key]> }
+    : T;
+
+function buildContract(
+  overrides: DeepPartial<RecordingSessionContract> = {},
+): RecordingSessionContract {
   const uiOverrides = overrides.ui ?? {};
 
   return {
     ...baseContract,
     ...overrides,
+    authority: { ...baseContract.authority, ...overrides.authority },
     guidance: { ...baseContract.guidance, ...overrides.guidance },
     devices: { ...baseContract.devices, ...overrides.devices },
     editing: { ...baseContract.editing, ...overrides.editing },
+    metrics: { ...baseContract.metrics, ...overrides.metrics },
+    surfaces: { ...baseContract.surfaces, ...overrides.surfaces },
+    validation: { ...baseContract.validation, ...overrides.validation },
     ui: {
       backdropMode: "ambient",
       ...uiOverrides,
@@ -77,12 +98,21 @@ function buildContract(overrides: any = {}) {
         ...uiOverrides.controls,
       },
     },
-  };
+  } satisfies RecordingSessionContract;
 }
 
-function buildService(overrides: any = {}) {
-  return {
-    currentRoute: null,
+type RecordingServiceOverrides = Omit<Partial<ActivityRecorderService>, "currentRoute"> & {
+  currentRoute?: Partial<NonNullable<ActivityRecorderService["currentRoute"]>> | null;
+};
+
+function buildService(overrides: RecordingServiceOverrides = {}): ActivityRecorderService {
+  const service: ActivityRecorderService = Object.create(ActivityRecorderService.prototype);
+  const { currentRoute, ...serviceOverrides } = overrides;
+  Object.assign(service, {
+    currentRoute:
+      currentRoute === undefined || currentRoute === null
+        ? null
+        : { id: "route-1", name: "Test route", coordinates: [], ...currentRoute },
     routeDistance: 0,
     currentRouteDistance: 0,
     routeProgress: 0,
@@ -122,13 +152,14 @@ function buildService(overrides: any = {}) {
         lastCommandStatus: null,
       },
     }),
-    ...overrides,
-  };
+    ...serviceOverrides,
+  });
+  return service;
 }
 
 jest.mock("react-native-maps", () => {
   const React = require("react");
-  const MapView = React.forwardRef((props: any, ref: any) => {
+  const MapView = React.forwardRef((props: HostProps, ref: React.ForwardedRef<unknown>) => {
     React.useImperativeHandle(ref, () => ({ animateCamera: jest.fn() }));
     return React.createElement("MapView", props, props.children);
   });
@@ -153,13 +184,18 @@ jest.mock("@/lib/stores/theme-store", () => ({
 
 jest.mock("@gorhom/bottom-sheet", () => {
   const React = require("react");
-  const BottomSheet = React.forwardRef((props: any, ref: any) => {
-    React.useImperativeHandle(ref, () => ({
-      snapToIndex: (index: number) => props.onChange?.(index),
-    }));
+  const BottomSheet = React.forwardRef(
+    (
+      props: HostProps & { onChange?: (index: number) => void },
+      ref: React.ForwardedRef<unknown>,
+    ) => {
+      React.useImperativeHandle(ref, () => ({
+        snapToIndex: (index: number) => props.onChange?.(index),
+      }));
 
-    return React.createElement("BottomSheet", props, props.children);
-  });
+      return React.createElement("BottomSheet", props, props.children);
+    },
+  );
 
   return {
     __esModule: true,
@@ -216,7 +252,16 @@ jest.mock("@shopify/react-native-skia", () => ({
 jest.mock("victory-native", () => ({
   __esModule: true,
   Area: createHost("Area"),
-  CartesianChart: ({ children, data }: any) =>
+  CartesianChart: ({
+    children,
+    data,
+  }: {
+    children: (context: {
+      points: { elevation: unknown[] };
+      chartBounds: HostProps;
+    }) => React.ReactNode;
+    data: unknown[];
+  }) =>
     React.createElement(
       "CartesianChart",
       { data },
@@ -349,6 +394,33 @@ const { RecordingControlSheet } = require("../RecordingControlSheet");
 const { RecordingFloatingPanel } = require("../RecordingFloatingPanel");
 const { TrainerInsightCard } = require("../cards/TrainerInsightCard");
 
+function findHostNodes(rendered: ReturnType<typeof renderNative>, type: string) {
+  return rendered.UNSAFE_root.findAll((node: ReactTestInstance) => node.type === type);
+}
+
+function buildSessionStats(): ComponentProps<typeof TrainerInsightCardComponent>["stats"] {
+  return {
+    duration: 0,
+    movingTime: 0,
+    pausedTime: 0,
+    distance: 0,
+    calories: 0,
+    work: 0,
+    ascent: 0,
+    descent: 0,
+    avgHeartRate: 0,
+    avgPower: 0,
+    avgSpeed: 0,
+    avgCadence: 0,
+    maxHeartRate: 0,
+    maxPower: 0,
+    maxSpeed: 0,
+    maxCadence: 0,
+    hrZones: [0, 0, 0, 0, 0],
+    powerZones: [0, 0, 0, 0, 0, 0, 0],
+  };
+}
+
 describe("recording cockpit", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -414,8 +486,8 @@ describe("recording cockpit", () => {
     expect(screen.getAllByText("+4.2%").length).toBeGreaterThan(0);
     expect(screen.queryByText("50% complete")).toBeNull();
     expect(screen.queryByText("Done")).toBeNull();
-    expect(result.UNSAFE_queryByType("MapView" as any)).toBeNull();
-    expect(result.UNSAFE_queryByType("Polyline" as any)).toBeNull();
+    expect(findHostNodes(result, "MapView")[0] ?? null).toBeNull();
+    expect(findHostNodes(result, "Polyline")[0] ?? null).toBeNull();
     expect(addCallbackMock).not.toHaveBeenCalled();
   });
 
@@ -493,7 +565,7 @@ describe("recording cockpit", () => {
     expect(screen.getByText("Route distance")).toBeTruthy();
     expect(screen.getByText("2.5 km / 10.0 km")).toBeTruthy();
     expect(screen.queryByText("Done")).toBeNull();
-    expect(result.UNSAFE_queryByType("MapView" as any)).toBeNull();
+    expect(findHostNodes(result, "MapView")[0] ?? null).toBeNull();
   });
 
   it("previews route elevation without a progress marker when GPS is off course", () => {
@@ -548,7 +620,7 @@ describe("recording cockpit", () => {
       />,
     );
 
-    expect(result.UNSAFE_queryByType("MapView" as any)).toBeNull();
+    expect(findHostNodes(result, "MapView")[0] ?? null).toBeNull();
     expect(screen.queryByText("GPS map")).toBeNull();
     expect(screen.getByTestId("recording-map-pending-backdrop")).toBeTruthy();
     expect(screen.getByText("Acquiring GPS")).toBeTruthy();
@@ -570,7 +642,7 @@ describe("recording cockpit", () => {
     );
 
     await waitFor(() => {
-      expect(result.UNSAFE_queryByType("MapView" as any)).toBeTruthy();
+      expect(findHostNodes(result, "MapView")[0] ?? null).toBeTruthy();
     });
 
     expect(screen.queryByTestId("recording-map-pending-backdrop")).toBeNull();
@@ -588,7 +660,7 @@ describe("recording cockpit", () => {
       />,
     );
 
-    expect(result.UNSAFE_queryByType("MapView" as any)).toBeNull();
+    expect(findHostNodes(result, "MapView")[0] ?? null).toBeNull();
     expect(screen.getByText("Route unavailable")).toBeTruthy();
     expect(
       screen.getByText("The route is attached, but there is no map geometry to preview."),
@@ -921,7 +993,8 @@ describe("recording cockpit", () => {
   });
 
   it("keeps trainer remote controls stable when BLE descriptors are rebuilt", () => {
-    const service = {
+    const service = buildService();
+    Object.assign(service, {
       getSessionView: () => ({
         overrideState: { trainerMode: "manual" },
         trainer: {
@@ -948,23 +1021,23 @@ describe("recording cockpit", () => {
       }),
       applyManualTrainerPower: jest.fn(async () => true),
       applyManualTrainerResistance: jest.fn(async () => true),
-    };
-    const props = {
+    });
+    const props: ComponentProps<typeof TrainerInsightCardComponent> = {
       mode: "expanded",
       plan: { hasPlan: false, select: jest.fn(), clear: jest.fn() },
       readings: { power: 210 },
       sensorCount: 1,
       service,
       sessionContract: buildContract({ devices: { hasTrainer: true, trainerControllable: true } }),
-      stats: {},
+      stats: buildSessionStats(),
     };
 
-    const result = renderNative(<TrainerInsightCard {...(props as any)} />);
+    const result = renderNative(<TrainerInsightCard {...props} />);
 
     expect(screen.getByTestId("trainer-insight-card")).toBeTruthy();
     expect(screen.getAllByText("Power").length).toBeGreaterThan(0);
 
-    result.rerender(<TrainerInsightCard {...(props as any)} />);
+    result.rerender(<TrainerInsightCard {...props} />);
 
     expect(screen.getAllByText("Power").length).toBeGreaterThan(0);
   });
@@ -1248,9 +1321,9 @@ describe("recording cockpit", () => {
     expect(screen.getByText("Activity")).toBeTruthy();
     expect(screen.getAllByText("Add")).toHaveLength(2);
 
-    const disabledActions = result
-      .UNSAFE_getAllByType("Pressable" as any)
-      .filter((node: any) => node.props.accessibilityState?.disabled === true);
+    const disabledActions = findHostNodes(result, "Pressable").filter(
+      (node: ReactTestInstance) => node.props.accessibilityState?.disabled === true,
+    );
 
     expect(disabledActions).toHaveLength(3);
   });
@@ -1282,11 +1355,13 @@ describe("recording cockpit", () => {
       />,
     );
 
-    const getHostProps = (type: string) =>
-      result.UNSAFE_getByType(type as never).props as {
-        backgroundStyle?: unknown;
-        color?: string;
-      };
+    const getHostProps = (
+      type: string,
+    ): { backgroundStyle?: { backgroundColor?: string }; color?: string } => {
+      const node = findHostNodes(result, type)[0];
+      if (!node) throw new Error(`Expected ${type} host node`);
+      return node.props;
+    };
 
     expect(getHostProps("BottomSheet").backgroundStyle).toEqual({
       backgroundColor: THEME.light.popover,

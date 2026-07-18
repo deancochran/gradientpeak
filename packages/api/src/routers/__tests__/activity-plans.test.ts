@@ -1,5 +1,6 @@
 import { activityPlans, contentAccessGrants, events, likes, profiles } from "@repo/db";
 import type { TRPCError } from "@trpc/server";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { estimationState, plannedWorkoutSyncState } = vi.hoisted(() => ({
@@ -90,10 +91,12 @@ type DbCall = {
   operation: MockOperation;
   table: MockTableName;
   payload?: unknown;
+  where?: unknown;
 };
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_USER_ID = "22222222-2222-4222-8222-222222222222";
+const pgDialect = new PgDialect();
 
 const sampleStructure: any = {
   version: 3,
@@ -121,6 +124,26 @@ const sampleStructure: any = {
     },
   ],
 };
+
+function createCompositionStructure(categories: Array<"bike" | "run">) {
+  return {
+    version: 3,
+    segments: categories.map((category, index) => {
+      const segment = structuredClone(sampleStructure.segments[0]);
+      const suffix = (index + 1).toString().padStart(12, "0");
+      segment.id = `10000000-0000-4000-8000-${suffix}`;
+      segment.category = category;
+      segment.name = category === "bike" ? "Bike" : "Run";
+      segment.intervals[0].id = `20000000-0000-4000-8000-${suffix}`;
+      segment.intervals[0].steps[0].id = `30000000-0000-4000-8000-${suffix}`;
+      segment.intervals[0].steps[0].targets =
+        category === "bike"
+          ? [{ type: "%FTP", intensity: 75 }]
+          : [{ type: "%MaxHR", intensity: 70 }];
+      return segment;
+    }),
+  };
+}
 
 function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -179,9 +202,12 @@ function createDbMock(state: MockDbState = {}) {
     return typeof result === "function" ? result(payload) : result;
   };
 
-  const createSelectBuilder = (table: MockTableName) => {
+  const createSelectBuilder = (table: MockTableName, call: DbCall) => {
     const builder: any = {
-      where: () => builder,
+      where: (condition: unknown) => {
+        call.where = condition;
+        return builder;
+      },
       groupBy: async () => nextRows("select", table),
       orderBy: () => builder,
       limit: async () => nextRows("select", table),
@@ -197,8 +223,9 @@ function createDbMock(state: MockDbState = {}) {
       select: () => ({
         from: (table: unknown) => {
           const tableName = resolveTableName(table);
-          callLog.push({ operation: "select", table: tableName });
-          return createSelectBuilder(tableName);
+          const call: DbCall = { operation: "select", table: tableName };
+          callLog.push(call);
+          return createSelectBuilder(tableName, call);
         },
       }),
       insert: (table: unknown) => {
@@ -249,6 +276,16 @@ function createDbMock(state: MockDbState = {}) {
     },
     callLog,
   };
+}
+
+function getActivityPlanListQuery(callLog: DbCall[]) {
+  const call = callLog.find(
+    (entry) => entry.operation === "select" && entry.table === "activity_plans",
+  );
+  if (!call?.where) {
+    throw new Error("Expected activity-plan list query to include a where condition");
+  }
+  return pgDialect.sqlToQuery(call.where as never);
 }
 
 function createCaller(params?: { state?: MockDbState; userId?: string }) {
@@ -401,6 +438,121 @@ describe("activityPlansRouter", () => {
     expect(
       callLog.filter((call) => call.operation === "select" && call.table === "activity_plans"),
     ).toHaveLength(1);
+  });
+
+  it("includes multisport plans by default and with the explicit include mode", async () => {
+    const structure = createCompositionStructure(["run", "bike"]);
+    const plan = createActivityPlanRow({ structure });
+
+    for (const input of [
+      { limit: 20 },
+      { compositionMode: "include_multisport" as const, limit: 20 },
+    ]) {
+      const { caller, callLog } = createCaller({
+        state: {
+          "select:activity_plans": [[plan]],
+          "select:likes": [[]],
+          "select:profiles": [[createProfileRow()]],
+        },
+      });
+
+      const result = await caller.list(input);
+
+      expect(result.items[0]).toMatchObject({
+        activity_kind: "multisport",
+        activity_segment_count: 2,
+        category_composition: ["run", "bike"],
+      });
+      expect(getActivityPlanListQuery(callLog).sql).not.toContain("jsonb_path_query_array");
+    }
+  });
+
+  it("applies the single-only activity-segment condition", async () => {
+    const plan = createActivityPlanRow();
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [[plan]],
+        "select:likes": [[]],
+        "select:profiles": [[createProfileRow()]],
+      },
+    });
+
+    await caller.list({ compositionMode: "single_only", limit: 20 });
+
+    expect(getActivityPlanListQuery(callLog).sql).toMatch(
+      /jsonb_array_length\(jsonb_path_query_array\(.+\)\) = 1/,
+    );
+  });
+
+  it("treats repeated categories in separate activity segments as multisport", async () => {
+    const structure = createCompositionStructure(["bike", "bike"]);
+    const plan = createActivityPlanRow({ structure });
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [[plan]],
+        "select:likes": [[]],
+        "select:profiles": [[createProfileRow()]],
+      },
+    });
+
+    const result = await caller.list({ compositionMode: "multisport_only", limit: 20 });
+
+    expect(result.items[0]).toMatchObject({
+      activity_kind: "multisport",
+      activity_segment_count: 2,
+      categories: ["bike"],
+      category_composition: ["bike", "bike"],
+      primary_category: "bike",
+    });
+    expect(getActivityPlanListQuery(callLog).sql).toMatch(
+      /jsonb_array_length\(jsonb_path_query_array\(.+\)\) > 1/,
+    );
+  });
+
+  it("returns ordered composition fields in list and detail DTOs", async () => {
+    const structure = createCompositionStructure(["run", "bike", "run"]);
+    const plan = createActivityPlanRow({ structure });
+    const state: MockDbState = {
+      "select:activity_plans": [[plan]],
+      "select:likes": [[]],
+      "select:profiles": [[createProfileRow()]],
+    };
+    const { caller: listCaller } = createCaller({ state });
+    const { caller: detailCaller } = createCaller({ state });
+
+    const [listResult, detailResult] = await Promise.all([
+      listCaller.list({ limit: 20 }),
+      detailCaller.getById({ id: plan.id }),
+    ]);
+
+    const composition = {
+      activity_kind: "multisport",
+      activity_segment_count: 3,
+      categories: ["run", "bike"],
+      category_composition: ["run", "bike", "run"],
+      primary_category: "run",
+    };
+    expect(listResult.items[0]).toMatchObject(composition);
+    expect(detailResult).toMatchObject(composition);
+  });
+
+  it("uses role-aware category containment SQL", async () => {
+    const plan = createActivityPlanRow();
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [[plan]],
+        "select:likes": [[]],
+        "select:profiles": [[createProfileRow()]],
+      },
+    });
+
+    await caller.list({ activityCategories: ["run"], limit: 20 });
+
+    const query = getActivityPlanListQuery(callLog);
+    expect(query.sql).toContain("@>");
+    expect(query.params).toContain(
+      JSON.stringify({ segments: [{ role: "activity", category: "run" }] }),
+    );
   });
 
   it("getById rejects a private plan owned by another user", async () => {

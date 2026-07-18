@@ -1,6 +1,7 @@
 import type { RecordingSessionContract } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
+import type { Href } from "expo-router";
 import { View } from "react-native";
 
 export function TrainerSurface({
@@ -8,7 +9,7 @@ export function TrainerSurface({
   sensorCount,
   sessionContract,
 }: {
-  navigateTo: (...args: any[]) => unknown;
+  navigateTo: (href: Href) => unknown;
   sensorCount: number;
   sessionContract: RecordingSessionContract | null;
 }) {

@@ -32,8 +32,8 @@ export interface TrainingPlanCardPlan {
   experienceLevel?: string[] | string | null;
   likes_count?: number | null;
   has_liked?: boolean | null;
-  created_at?: string | null;
-  updated_at?: string | null;
+  created_at?: string | Date | null;
+  updated_at?: string | Date | null;
   owner?: EntityOwner | null;
 }
 

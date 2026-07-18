@@ -18,7 +18,12 @@ let lastBackgroundStorageWriteTime = 0;
 // Define background location task at module level (required for Expo)
 TaskManager.defineTask(
   BACKGROUND_LOCATION_TASK,
-  async ({ data, error }: TaskManager.TaskManagerTaskBody<any>) => {
+  async ({
+    data,
+    error,
+  }: TaskManager.TaskManagerTaskBody<{
+    locations: Location.LocationObject[];
+  }>) => {
     if (error) {
       console.error("[Background Location Task] Error:", error);
       // Don't return - continue to process any data that might be present

@@ -1,14 +1,27 @@
 import React, { act } from "react";
+import type { ReactTestInstance } from "react-test-renderer";
 import { z } from "zod";
 
-import { createHost } from "../../test/mock-components";
+import { createHost, type HostProps } from "../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../test/render-native";
 
 const alertMock = jest.fn();
 const createMutateMock = jest.fn();
 const updateMutateMock = jest.fn();
 
-let existingActivityData: any = null;
+type ExistingActivityData = {
+  id: string;
+  scheduled_date: string;
+  starts_at: string;
+  all_day: boolean;
+  notes: string;
+  series_id?: string;
+  occurrence_key?: string;
+  recurrence_rule?: string;
+  activity_plan: { id: string };
+};
+
+let existingActivityData: ExistingActivityData | null = null;
 
 jest.mock("@tanstack/react-query", () => ({
   __esModule: true,
@@ -19,7 +32,7 @@ jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
   Alert: { alert: alertMock },
-  Modal: ({ visible, children, ...props }: any) =>
+  Modal: ({ visible, children, ...props }: HostProps & { visible?: boolean }) =>
     visible ? React.createElement("Modal", props, children) : null,
 }));
 
@@ -35,7 +48,7 @@ jest.mock("@repo/core", () => ({
     scheduled_date: z.string().optional(),
     notes: z.string().nullable().optional(),
     training_plan_id: z.string().nullable().optional(),
-    recurrence: z.any().optional(),
+    recurrence: z.unknown().optional(),
   }),
 }));
 
@@ -44,7 +57,7 @@ jest.mock("@repo/ui/hooks", () => {
 
   return {
     __esModule: true,
-    useZodForm: ({ defaultValues }: any) => {
+    useZodForm: ({ defaultValues }: { defaultValues: Record<string, unknown> }) => {
       const initialDefaultsRef = React.useRef(defaultValues);
       const [values, setValues] = React.useState(initialDefaultsRef.current);
       const valuesRef = React.useRef(values);
@@ -63,7 +76,13 @@ jest.mock("@repo/ui/hooks", () => {
         [],
       );
     },
-    useZodFormSubmit: ({ form, onSubmit }: any) => ({
+    useZodFormSubmit: ({
+      form,
+      onSubmit,
+    }: {
+      form: { getValues: () => Record<string, unknown> };
+      onSubmit: (values: Record<string, unknown>) => unknown;
+    }) => ({
       isSubmitting: false,
       handleSubmit: () => onSubmit(form.getValues()),
     }),
@@ -92,7 +111,11 @@ jest.mock("../training-plan/modals/components/ConstraintValidator", () => ({
 
 jest.mock("@/components/shared/AppFormModal", () => ({
   __esModule: true,
-  AppFormModal: ({ children, footerContent, ...props }: any) =>
+  AppFormModal: ({
+    children,
+    footerContent,
+    ...props
+  }: HostProps & { footerContent?: React.ReactNode }) =>
     React.createElement("AppFormModal", props, children, footerContent),
   AppConfirmModal: createHost("AppConfirmModal"),
 }));
@@ -106,10 +129,10 @@ jest.mock("@repo/ui/components/card", () => ({
 jest.mock("@repo/ui/components/form", () => ({
   __esModule: true,
   Form: createHost("Form"),
-  FormDateInputField: ({ testId, ...props }: any) =>
+  FormDateInputField: ({ testId, ...props }: HostProps & { testId?: string }) =>
     React.createElement("FormDateInputField", { testID: testId, ...props }, props.children),
   FormSwitchField: createHost("FormSwitchField"),
-  FormTimeInputField: ({ testId, ...props }: any) =>
+  FormTimeInputField: ({ testId, ...props }: HostProps & { testId?: string }) =>
     React.createElement("FormTimeInputField", { testID: testId, ...props }, props.children),
   FormTextareaField: createHost("FormTextareaField"),
 }));
@@ -210,7 +233,11 @@ describe("ScheduleActivityModal", () => {
     expect(screen.getByTestId("schedule-constraints-toggle")).toBeTruthy();
     expect(screen.getByTestId("schedule-preview-details")).toBeTruthy();
     expect(screen.queryByTestId("schedule-constraints-details")).toBeNull();
-    expect((rendered as any).UNSAFE_getByType("ActivityPlanCard").props.variant).toBe("compact");
+    expect(
+      rendered.UNSAFE_root.find(
+        (node: ReactTestInstance) => String(node.type) === "ActivityPlanCard",
+      ).props.variant,
+    ).toBe("compact");
   });
 
   it("reveals constraint details only when the disclosure control is used", () => {
@@ -334,7 +361,9 @@ describe("ScheduleActivityModal", () => {
     expect(screen.getByTestId("scheduled-date-button")).toBeTruthy();
     expect(screen.getByTestId("scheduled-time-button")).toBeTruthy();
 
-    const buttons = (screen as any).UNSAFE_getAllByType("Button");
+    const buttons = screen.UNSAFE_root.findAll(
+      (node: ReactTestInstance) => String(node.type) === "Button",
+    );
 
     act(() => {
       buttons[buttons.length - 1].props.onPress();
@@ -369,7 +398,7 @@ describe("ScheduleActivityModal", () => {
 
     renderNative(<ScheduleActivityModal visible onClose={jest.fn()} eventId="event-1" />);
 
-    expect(screen.getByTestId("schedule-submit-button").props["disabled"]).toBe(true);
+    expect(screen.getByTestId("schedule-submit-button").props.disabled).toBe(true);
     expect(updateMutateMock).not.toHaveBeenCalled();
 
     fireEvent.press(screen.getByTestId("schedule-edit-scope-future"));

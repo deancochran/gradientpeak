@@ -1,4 +1,4 @@
-import { parseFitFileWithSDK } from "@repo/core";
+import { parseFitFileWithSDK } from "@repo/core/activity-files/fit-parser";
 import { Buffer } from "buffer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 

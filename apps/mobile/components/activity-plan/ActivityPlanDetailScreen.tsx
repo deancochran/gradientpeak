@@ -81,7 +81,7 @@ export function ActivityPlanDetailScreen({
   });
 
   const { data: fetchedPlan, isLoading: loadingPlan } = api.activityPlans.getById.useQuery(
-    { id: planId! },
+    { id: planId ?? "" },
     { enabled: !!planId },
   );
 
@@ -89,7 +89,7 @@ export function ActivityPlanDetailScreen({
     data: plannedActivity,
     error: plannedActivityError,
     isLoading: loadingPlannedActivity,
-  } = api.events.getById.useQuery({ id: eventId! }, { enabled: !!eventId && !isRedirecting });
+  } = api.events.getById.useQuery({ id: eventId ?? "" }, { enabled: !!eventId && !isRedirecting });
 
   React.useEffect(() => {
     redirectOnNotFound(plannedActivityError);
@@ -113,9 +113,9 @@ export function ActivityPlanDetailScreen({
     (activePlannedActivity as { route_id?: string | null } | null | undefined)?.route_id ??
     (activityPlanRouteCandidate as { route_id?: string | null } | null | undefined)?.route_id ??
     null;
-  const { data: route } = api.routes.get.useQuery({ id: routeId! }, { enabled: !!routeId });
+  const { data: route } = api.routes.get.useQuery({ id: routeId ?? "" }, { enabled: !!routeId });
   const { data: routeFull, isFetching: isFetchingRouteFull } = api.routes.loadFull.useQuery(
-    { id: routeId! },
+    { id: routeId ?? "" },
     { enabled: !!routeId && shouldLoadRouteGeometry },
   );
 
@@ -203,9 +203,9 @@ export function ActivityPlanDetailScreen({
   const handleEdit = () => {
     if (!activityPlan) return;
     navigateTo({
-      pathname: "/create-activity-plan" as any,
+      pathname: "/create-activity-plan",
       params: { planId: planId || activityPlan.id },
-    } as any);
+    });
   };
 
   const deleteMutation = api.activityPlans.delete.useMutation({
@@ -394,7 +394,7 @@ export function ActivityPlanDetailScreen({
               variant="standalone"
               showAttribution={false}
             />
-            {scheduling.isScheduled ? (
+            {scheduling.isScheduled && scheduling.scheduledDate ? (
               <Pressable
                 className="mt-4 rounded-2xl bg-primary/10 px-4 py-3"
                 disabled={isEventContext || !eventId}

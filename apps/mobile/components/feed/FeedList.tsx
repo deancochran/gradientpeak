@@ -17,9 +17,9 @@ interface FeedListProps {
 function FeedShortcuts() {
   const navigateTo = useAppNavigate();
   const shortcuts = [
-    { label: "Groups", icon: Users, onPress: () => navigateTo("/groups" as any) },
-    { label: "Plan", icon: Route, onPress: () => navigateTo("/plan" as any) },
-    { label: "Calendar", icon: CalendarDays, onPress: () => navigateTo("/calendar" as any) },
+    { label: "Groups", icon: Users, onPress: () => navigateTo("/groups") },
+    { label: "Plan", icon: Route, onPress: () => navigateTo("/plan") },
+    { label: "Calendar", icon: CalendarDays, onPress: () => navigateTo("/calendar") },
   ];
 
   return (
@@ -70,7 +70,7 @@ export function FeedList({ onCommentPress }: FeedListProps) {
         activity={item}
         dateMode="absolute"
         onCommentPress={onCommentPress ? () => onCommentPress(item.id) : undefined}
-        onPress={() => navigateTo(`/activity-detail?id=${item.id}` as any)}
+        onPress={() => navigateTo(`/activity-detail?id=${item.id}`)}
         showLike
         variant="list"
       />

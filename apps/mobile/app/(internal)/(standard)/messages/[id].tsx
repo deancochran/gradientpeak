@@ -76,7 +76,7 @@ export default function ChatScreen() {
   );
   const { data: conversations = [] } = api.messaging.getConversations.useQuery();
   const conversation = conversations.find((entry) => entry.id === id);
-  const conversationTitle = conversation ? getConversationDisplayName(conversation as any) : "Chat";
+  const conversationTitle = conversation ? getConversationDisplayName(conversation) : "Chat";
   const conversationSubtitle = conversation
     ? conversation.is_group
       ? conversation.group_name

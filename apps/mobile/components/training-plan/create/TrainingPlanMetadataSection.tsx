@@ -2,9 +2,13 @@ import { Form, FormTextareaField, FormTextField } from "@repo/ui/components/form
 import { Text } from "@repo/ui/components/text";
 import type { UseFormReturn } from "react-hook-form";
 import { View } from "react-native";
+import type {
+  TrainingPlanMetadataFormData,
+  TrainingPlanMetadataFormValues,
+} from "./trainingPlanMetadataForm";
 
 interface TrainingPlanMetadataSectionProps {
-  form: UseFormReturn<any>;
+  form: UseFormReturn<TrainingPlanMetadataFormData, undefined, TrainingPlanMetadataFormValues>;
 }
 
 export function TrainingPlanMetadataSection({ form }: TrainingPlanMetadataSectionProps) {

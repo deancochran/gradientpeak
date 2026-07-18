@@ -5,10 +5,10 @@ import { act, fireEvent, renderNative, screen, waitFor } from "../../../../test/
 import { TrainingPlanBuilderScreen } from "../TrainingPlanBuilderScreen";
 
 const activityPlanCardProps: Array<{
-  activity?: unknown;
-  activityPlan?: unknown;
+  activity?: { name?: string };
+  activityPlan?: { name?: string };
 }> = [];
-const trainingPathChartProps: any[] = [];
+const trainingPathChartProps: unknown[] = [];
 const FIXTURE_NOW = new Date(Date.UTC(2026, 5, 15, 12));
 
 function fixtureIsoDate(daysFromNow: number) {
@@ -93,7 +93,12 @@ jest.mock("lucide-react-native", () => {
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: ({ options, ...props }: any) => (
+    Screen: ({
+      options,
+      ...props
+    }: React.ComponentProps<typeof View> & {
+      options?: { headerLeft?: () => React.ReactNode; headerRight?: () => React.ReactNode };
+    }) => (
       <View {...props}>
         {options?.headerLeft ? options.headerLeft() : null}
         {options?.headerRight ? options.headerRight() : null}
@@ -105,7 +110,13 @@ jest.mock("expo-router", () => ({
 
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
-  Button: ({ children, onPress, testID, disabled, ...props }: any) => (
+  Button: ({
+    children,
+    onPress,
+    testID,
+    disabled,
+    ...props
+  }: React.ComponentProps<typeof Pressable>) => (
     <Pressable disabled={disabled} onPress={onPress} testID={testID} {...props}>
       {children}
     </Pressable>
@@ -114,7 +125,7 @@ jest.mock("@repo/ui/components/button", () => ({
 
 jest.mock("@repo/ui/components/input", () => ({
   __esModule: true,
-  Input: ({ onChangeText, placeholder, testID, value }: any) => (
+  Input: ({ onChangeText, placeholder, testID, value }: React.ComponentProps<typeof TextInput>) => (
     <TextInput
       onChangeText={onChangeText}
       placeholder={placeholder}
@@ -126,12 +137,19 @@ jest.mock("@repo/ui/components/input", () => ({
 
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
-  Text: ({ children, testID }: any) => <Text testID={testID}>{children}</Text>,
+  Text: ({ children, testID }: React.ComponentProps<typeof Text>) => (
+    <Text testID={testID}>{children}</Text>
+  ),
 }));
 
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
-  ActivityPlanCard: (props: any) => {
+  ActivityPlanCard: (props: {
+    activity?: { name?: string };
+    activityPlan?: { name?: string };
+    onPress?: () => void;
+    testID?: string;
+  }) => {
     activityPlanCardProps.push({
       activity: props.activity,
       activityPlan: props.activityPlan,
@@ -146,19 +164,39 @@ jest.mock("@/components/shared/ActivityPlanCard", () => ({
 
 jest.mock("@/components/shared/IndexSearchBar", () => ({
   __esModule: true,
-  FilterChip: ({ label, onPress, testID }: any) => (
+  FilterChip: ({
+    label,
+    onPress,
+    testID,
+  }: {
+    label: string;
+    onPress?: () => void;
+    testID?: string;
+  }) => (
     <Pressable onPress={onPress} testID={testID}>
       <Text>{label}</Text>
     </Pressable>
   ),
-  FilterSection: ({ children, title }: any) => (
+  FilterSection: ({ children, title }: { children?: React.ReactNode; title: string }) => (
     <View>
       <Text>{title}</Text>
       {children}
     </View>
   ),
-  IndexResultsSummary: ({ count, pluralLabel }: any) => <Text>{`${count} ${pluralLabel}`}</Text>,
-  IndexSearchBar: ({ onFilterPress, placeholder, testIDPrefix, value }: any) => (
+  IndexResultsSummary: ({ count, pluralLabel }: { count: number; pluralLabel: string }) => (
+    <Text>{`${count} ${pluralLabel}`}</Text>
+  ),
+  IndexSearchBar: ({
+    onFilterPress,
+    placeholder,
+    testIDPrefix,
+    value,
+  }: {
+    onFilterPress?: () => void;
+    placeholder?: string;
+    testIDPrefix: string;
+    value?: string;
+  }) => (
     <View>
       <TextInput placeholder={placeholder} testID={`${testIDPrefix}-search`} value={value} />
       <Pressable onPress={onFilterPress} testID={`${testIDPrefix}-filter`}>
@@ -170,12 +208,13 @@ jest.mock("@/components/shared/IndexSearchBar", () => ({
 
 jest.mock("@/components/shared/IndexFilterSheet", () => ({
   __esModule: true,
-  IndexFilterSheet: ({ children, visible }: any) => (visible ? <View>{children}</View> : null),
+  IndexFilterSheet: ({ children, visible }: { children?: React.ReactNode; visible?: boolean }) =>
+    visible ? <View>{children}</View> : null,
 }));
 
 jest.mock("@/components/plan/training-path/TrainingPathChart", () => ({
   __esModule: true,
-  TrainingPathChart: (props: any) => {
+  TrainingPathChart: (props: unknown) => {
     trainingPathChartProps.push(props);
     return <View testID="builder-reactive-impact-chart" />;
   },
@@ -183,7 +222,7 @@ jest.mock("@/components/plan/training-path/TrainingPathChart", () => ({
 
 jest.mock("@/components/plan/training-path/DailyTrainingAdjustmentChart", () => ({
   __esModule: true,
-  DailyTrainingAdjustmentChart: (props: any) => {
+  DailyTrainingAdjustmentChart: (props: unknown) => {
     trainingPathChartProps.push(props);
     return <View testID="builder-reactive-impact-chart" />;
   },
@@ -191,7 +230,15 @@ jest.mock("@/components/plan/training-path/DailyTrainingAdjustmentChart", () => 
 
 jest.mock("../BuilderGoalEditorSheetContent", () => ({
   __esModule: true,
-  BuilderGoalEditorContent: ({ goalContext, onCreateLocalGoal, onChooseNoGoal }: any) => (
+  BuilderGoalEditorContent: ({
+    goalContext,
+    onCreateLocalGoal,
+    onChooseNoGoal,
+  }: {
+    goalContext: { selectedGoals: Array<{ localId: string; title: string }> };
+    onCreateLocalGoal?: () => void;
+    onChooseNoGoal?: () => void;
+  }) => (
     <View testID="builder-goal-editor-modal">
       <Pressable testID="builder-no-goal-choice" onPress={onChooseNoGoal}>
         <Text>No goal</Text>
@@ -200,12 +247,22 @@ jest.mock("../BuilderGoalEditorSheetContent", () => ({
         <Text>Plan-only intent</Text>
       </Pressable>
       <Text>New profile goal</Text>
-      {goalContext.selectedGoals.map((goal: any) => (
+      {goalContext.selectedGoals.map((goal: { localId: string; title: string }) => (
         <Text key={goal.localId}>{goal.title}</Text>
       ))}
     </View>
   ),
-  BuilderLocalGoalCreateContent: ({ onSave }: any) => (
+  BuilderLocalGoalCreateContent: ({
+    onSave,
+  }: {
+    onSave: (goal: {
+      title: string;
+      targetOffsetDays: number;
+      priority: number;
+      activityCategory: string;
+      objective: { type: string; activity_category: string; distance_m: number };
+    }) => void;
+  }) => (
     <View testID="builder-local-goal-create-form">
       <TextInput placeholder="Finish a 10K, raise FTP, train consistently..." />
       <Pressable
@@ -234,7 +291,13 @@ jest.mock("../BuilderAssumptionsPreferencesForms", () => ({
 
 jest.mock("../BuilderSessionEditorSheetContent", () => ({
   __esModule: true,
-  BuilderSessionEditorContent: ({ onOpenActivityPicker, session }: any) => (
+  BuilderSessionEditorContent: ({
+    onOpenActivityPicker,
+    session,
+  }: {
+    onOpenActivityPicker: (localId: string) => void;
+    session: { localId: string };
+  }) => (
     <View testID="builder-session-editor-modal">
       <Pressable
         testID="builder-session-assign-workout"
@@ -253,7 +316,17 @@ jest.mock("../BuilderSchedulePreviewSheetContent", () => ({
 
 jest.mock("@/components/shared/AppBottomSheet", () => ({
   __esModule: true,
-  AppBottomSheet: ({ children, headerContent, onClose, visible }: any) =>
+  AppBottomSheet: ({
+    children,
+    headerContent,
+    onClose,
+    visible,
+  }: {
+    children?: React.ReactNode;
+    headerContent?: React.ReactNode;
+    onClose?: () => void;
+    visible?: boolean;
+  }) =>
     visible ? (
       <View testID="training-plan-builder-sheet">
         <Pressable testID="training-plan-builder-sheet-close" onPress={onClose}>
@@ -276,7 +349,16 @@ jest.mock("../BuilderStrategyComposer", () => ({
     modules,
     savePlan,
     state,
-  }: any) => (
+  }: {
+    onEditMetadata?: () => void;
+    onOpenAthleteContext?: () => void;
+    onOpenGoals?: () => void;
+    onOpenPlanningConstraints?: () => void;
+    renderBelowChart?: (context: { selectedDayPoint: null }) => React.ReactNode;
+    modules: Array<{ id: string; title: string; status: string }>;
+    savePlan?: { readiness?: { label?: string; detail?: string } };
+    state: { details: { name?: string } };
+  }) => (
     <View testID="builder-strategy-composer">
       <Pressable onPress={onEditMetadata}>
         <Text>{state.details.name || "Name your plan"}</Text>
@@ -291,7 +373,7 @@ jest.mock("../BuilderStrategyComposer", () => ({
         <Text>Preferences</Text>
       </Pressable>
       <View testID="builder-adaptive-modules">
-        {modules.map((module: any) => (
+        {modules.map((module: { id: string; title: string; status: string }) => (
           <View key={module.id} accessibilityLabel={`${module.title}, ${module.status}`} />
         ))}
       </View>
@@ -307,7 +389,11 @@ jest.mock("../BuilderStrategyComposer", () => ({
 
 jest.mock("../BuilderScheduleEditor", () => ({
   __esModule: true,
-  BuilderScheduleEditor: ({ onAddSessionAtOffset }: any) => (
+  BuilderScheduleEditor: ({
+    onAddSessionAtOffset,
+  }: {
+    onAddSessionAtOffset: (offset: number) => void;
+  }) => (
     <View testID="builder-sessions-workspace">
       <Pressable onPress={() => onAddSessionAtOffset(0)} testID="builder-sessions-workspace-add">
         <Text>Workout</Text>

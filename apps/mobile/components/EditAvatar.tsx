@@ -1,5 +1,5 @@
 import * as ImagePicker from "expo-image-picker";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Alert, Button, Image, StyleSheet, View } from "react-native";
 import { api } from "@/lib/api";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
@@ -24,25 +24,27 @@ export default function Avatar({ url, size = 150, onUpload }: Props) {
   const [uploading, setUploading] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const avatarSize = { height: size, width: size };
-
-  useEffect(() => {
-    if (url) downloadImage(url);
-  }, [url, downloadImage]);
-
   const utils = api.useUtils();
 
-  async function downloadImage(path: string) {
-    try {
-      const { signedUrl } = await utils.client.storage.getSignedUrl.query({
-        filePath: path,
-      });
-      setAvatarUrl(signedUrl);
-    } catch (error) {
-      if (error instanceof Error) {
-        console.log("Error downloading image: ", error.message);
+  const downloadImage = useCallback(
+    async (path: string) => {
+      try {
+        const { signedUrl } = await utils.client.storage.getSignedUrl.query({
+          filePath: path,
+        });
+        setAvatarUrl(signedUrl);
+      } catch (error) {
+        if (error instanceof Error) {
+          console.log("Error downloading image: ", error.message);
+        }
       }
-    }
-  }
+    },
+    [utils.client.storage.getSignedUrl],
+  );
+
+  useEffect(() => {
+    if (url) void downloadImage(url);
+  }, [url, downloadImage]);
 
   async function uploadAvatar() {
     try {

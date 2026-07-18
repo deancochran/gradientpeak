@@ -217,8 +217,11 @@ describe("computeLocalCreationPreview", () => {
 
       const tolerance = 0.05;
       for (let i = 0; i < local.projectionChart.points.length; i += 1) {
-        const localPoint = local.projectionChart.points[i]!;
-        const serverPoint = server.points[i]!;
+        const localPoint = local.projectionChart.points[i];
+        const serverPoint = server.points[i];
+        if (!localPoint || !serverPoint) {
+          throw new Error(`Missing projection point ${i} for ${fixture.name}`);
+        }
 
         expect(localPoint.date).toBe(serverPoint.date);
         expect(

@@ -1,6 +1,10 @@
 import React from "react";
 
-import { createHost } from "../../../../test/mock-components";
+import {
+  createHost,
+  type HostProps,
+  type PressableHostProps,
+} from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const fixedNow = new Date("2026-04-05T12:00:00.000Z");
@@ -11,8 +15,9 @@ const refetchSnapshotMock = jest.fn(async () => undefined);
 const recentEventsUpdatedAtRef = { current: 1 };
 const upcomingEventsUpdatedAtRef = { current: 1 };
 const goalsUpdatedAtRef = { current: 1 };
-const activePlanQueryOptionsRef = { current: null as any };
-const eventQueryOptionsRef = { current: [] as any[] };
+type QueryOptions = { enabled?: boolean };
+const activePlanQueryOptionsRef: { current: QueryOptions | null } = { current: null };
+const eventQueryOptionsRef: { current: QueryOptions[] } = { current: [] };
 let mockDetailDateRange: "7d" | "30d" | "90d" | "all" = "90d";
 let mockNewUserNoActivities = false;
 const readinessChartPropsMock = jest.fn();
@@ -51,7 +56,25 @@ const defaultMockGoals = [
 ];
 let mockGoals = defaultMockGoals;
 
-function _getTextContent(children: any): string {
+type AuthStoreFixture = {
+  loading: boolean;
+  ready: boolean;
+  session: { user: { id: string } };
+  user: { email: string; emailVerified: boolean; id: string };
+};
+type TrainingPathMockProps = {
+  onSelectedWeekChange: (date: string) => void;
+  onOpenActivity: (id: string) => void;
+  onOpenGoal: (id: string) => void;
+  onOpenGroupEvent: (id: string) => void;
+  onOpenScheduledEvent: (id: string) => void;
+} & Record<string, unknown>;
+
+function hasChildrenProps(value: unknown): value is { props: { children?: unknown } } {
+  return typeof value === "object" && value !== null && "props" in value;
+}
+
+function _getTextContent(children: unknown): string {
   if (typeof children === "string" || typeof children === "number") {
     return String(children);
   }
@@ -61,7 +84,7 @@ function _getTextContent(children: any): string {
       .join(" ")
       .trim();
   }
-  if (children?.props?.children !== undefined) {
+  if (hasChildrenProps(children) && children.props.children !== undefined) {
     return _getTextContent(children.props.children);
   }
   return "";
@@ -100,7 +123,7 @@ jest.mock("@/lib/auth/auth-headers", () => ({
 
 jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
-  useAuthStore: (selector?: any) => {
+  useAuthStore: (selector?: (state: AuthStoreFixture) => unknown) => {
     const state = {
       loading: false,
       ready: true,
@@ -129,13 +152,13 @@ jest.mock("@/lib/hooks/useAuth", () => ({
 
 jest.mock("@/components/ErrorBoundary", () => ({
   __esModule: true,
-  ErrorBoundary: ({ children }: any) => children,
+  ErrorBoundary: ({ children }: React.PropsWithChildren) => children,
   ScreenErrorFallback: createHost("ScreenErrorFallback"),
 }));
 
 jest.mock("@/components/plan/training-path/TrainingPathSection", () => ({
   __esModule: true,
-  TrainingPathSection: (props: any) => {
+  TrainingPathSection: (props: TrainingPathMockProps) => {
     mockTrainingPathSectionProps(props);
     return React.createElement("View", { testID: "training-path-section" }, [
       React.createElement("Text", { key: "title" }, "Weekly Training Path"),
@@ -205,13 +228,33 @@ jest.mock("@/components/plan/usePlanDashboardViewModel", () => {
 jest.mock("@/components/shared", () => ({
   __esModule: true,
   AppHeader: createHost("AppHeader"),
-  CompactInsightCard: ({ children, icon: _icon, title, value, onPress, ...props }: any) =>
+  CompactInsightCard: ({
+    children,
+    icon: _icon,
+    title,
+    value,
+    onPress,
+    ...props
+  }: React.PropsWithChildren<{
+    icon?: unknown;
+    title?: React.ReactNode;
+    value?: React.ReactNode;
+    onPress?: () => void;
+  }> &
+    Record<string, unknown>) =>
     React.createElement("TouchableOpacity", { onPress, ...props }, [
       React.createElement("Text", { key: "title" }, title),
       React.createElement("Text", { key: "value" }, value),
       children,
     ]),
-  DetailChartModal: ({ children, visible, ...props }: any) =>
+  DetailChartModal: ({
+    children,
+    visible,
+    ...props
+  }: {
+    children: (range: typeof mockDetailDateRange) => React.ReactNode;
+    visible: boolean;
+  } & Record<string, unknown>) =>
     React.createElement(
       "DetailChartModal",
       { visible, ...props },
@@ -231,7 +274,21 @@ jest.mock("@/components/plan/GoalListItem", () => ({
     const parsed = new Date(`${date}T00:00:00.000Z`);
     return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
   },
-  GoalListItem: ({ goal, label, onPress, readinessPercent, status, testID }: any) =>
+  GoalListItem: ({
+    goal,
+    label,
+    onPress,
+    readinessPercent,
+    status,
+    testID,
+  }: {
+    goal: { title: string; target_date: string };
+    label: string;
+    onPress?: () => void;
+    readinessPercent: number;
+    status: string;
+    testID?: string;
+  }) =>
     React.createElement("TouchableOpacity", { onPress, testID }, [
       React.createElement("Text", { key: "label" }, label),
       React.createElement("Text", { key: "title" }, goal.title),
@@ -252,7 +309,7 @@ jest.mock("@/components/plan/GoalListItem", () => ({
 jest.mock("@/components/charts/PlanVsActualChart", () => ({
   __esModule: true,
   FitnessFatigueFormChart: createHost("FitnessFatigueFormChart"),
-  PlanVsActualChart: (props: any) => {
+  PlanVsActualChart: (props: HostProps) => {
     projectionChartPropsMock(props);
     return React.createElement("PlanVsActualChart", props, props.children);
   },
@@ -260,7 +317,7 @@ jest.mock("@/components/charts/PlanVsActualChart", () => ({
 
 jest.mock("@/components/charts/PlanReadinessComparisonChart", () => ({
   __esModule: true,
-  PlanReadinessComparisonChart: (props: any) => {
+  PlanReadinessComparisonChart: (props: HostProps) => {
     readinessChartPropsMock(props);
     return React.createElement("PlanReadinessComparisonChart", props, props.children);
   },
@@ -268,7 +325,7 @@ jest.mock("@/components/charts/PlanReadinessComparisonChart", () => ({
 
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
-  Button: ({ children, onPress, ...props }: any) =>
+  Button: ({ children, onPress, ...props }: PressableHostProps) =>
     React.createElement("Pressable", { onPress, ...props }, children),
 }));
 
@@ -277,7 +334,7 @@ jest.mock("@repo/ui/components/card", () => ({
   Card: createHost("Card"),
   CardContent: createHost("CardContent"),
   CardHeader: createHost("CardHeader"),
-  CardTitle: ({ children, ...props }: any) => React.createElement("Text", props, children),
+  CardTitle: ({ children, ...props }: HostProps) => React.createElement("Text", props, children),
 }));
 
 jest.mock("@repo/ui/components/icon", () => ({
@@ -674,22 +731,25 @@ jest.mock("@repo/core", () => ({
   createEmptyGoalDraft: jest.fn(() => ({ title: "", objective: null })),
   formatGoalTypeLabel: jest.fn(() => "Race"),
   getGoalObjectiveSummary: jest.fn(() => "5K target"),
-  resolveGoalReadinessTarget: jest.fn(({ target_surplus_preference }: any = {}) =>
-    typeof target_surplus_preference === "number"
-      ? Math.max(94, Math.min(110, Math.round(96 + target_surplus_preference * 16)))
-      : 100,
+  resolveGoalReadinessTarget: jest.fn(
+    ({ target_surplus_preference }: { target_surplus_preference?: number } = {}) =>
+      typeof target_surplus_preference === "number"
+        ? Math.max(94, Math.min(110, Math.round(96 + target_surplus_preference * 16)))
+        : 100,
   ),
-  resolveGoalReadinessViewModel: jest.fn(({ value, target }: any) => {
-    if (typeof value !== "number")
-      return { label: "Estimating", value: null, target: target ?? 100 };
-    if (value > (target ?? 100) + 2)
-      return { label: "Above target range", value, target: target ?? 100 };
-    if (value >= (target ?? 100) - 5)
-      return { label: "In target range", value, target: target ?? 100 };
-    if (value >= (target ?? 100) * 0.45)
-      return { label: "Building toward target", value, target: target ?? 100 };
-    return { label: "Below target range", value, target: target ?? 100 };
-  }),
+  resolveGoalReadinessViewModel: jest.fn(
+    ({ value, target }: { value?: number | null; target?: number | null }) => {
+      if (typeof value !== "number")
+        return { label: "Estimating", value: null, target: target ?? 100 };
+      if (value > (target ?? 100) + 2)
+        return { label: "Above target range", value, target: target ?? 100 };
+      if (value >= (target ?? 100) - 5)
+        return { label: "In target range", value, target: target ?? 100 };
+      if (value >= (target ?? 100) * 0.45)
+        return { label: "Building toward target", value, target: target ?? 100 };
+      return { label: "Below target range", value, target: target ?? 100 };
+    },
+  ),
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -703,7 +763,7 @@ jest.mock("@/lib/api", () => ({
     }),
     trainingPlans: {
       getActivePlan: {
-        useQuery: (_input: any, options: any) => {
+        useQuery: (_input: unknown, options: QueryOptions) => {
           activePlanQueryOptionsRef.current = options;
           return {
             data: {
@@ -716,7 +776,10 @@ jest.mock("@/lib/api", () => ({
         },
       },
       simulateScheduleAdjustment: {
-        useQuery: (input: any, options: any) => ({
+        useQuery: (
+          input: { adjustment_date: string; tss_delta: number; comparison_date?: string },
+          options: QueryOptions,
+        ) => ({
           data: options?.enabled
             ? {
                 adjustment: {
@@ -749,7 +812,10 @@ jest.mock("@/lib/api", () => ({
     },
     events: {
       list: {
-        useInfiniteQuery: (input: any, options: any) => {
+        useInfiniteQuery: (
+          input: { date_from?: string; date_to?: string },
+          options: QueryOptions,
+        ) => {
           eventQueryOptionsRef.current.push(options);
           const items =
             input?.date_from && input?.date_to

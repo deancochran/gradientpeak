@@ -38,7 +38,7 @@ function TrainingPlansListScreen() {
         limit: 25,
       },
       {
-        getNextPageParam: (lastPage: any) => lastPage.nextCursor,
+        getNextPageParam: (lastPage) => lastPage.nextCursor,
       },
     );
 
@@ -57,7 +57,7 @@ function TrainingPlansListScreen() {
         options={{
           headerRight: () => (
             <TouchableOpacity
-              onPress={() => navigateTo(ROUTES.PLAN.TRAINING_PLAN.CREATE as any)}
+              onPress={() => navigateTo(ROUTES.PLAN.TRAINING_PLAN.CREATE)}
               className="mr-2 rounded-full px-2 py-1"
               testID="training-plans-list-create-trigger"
             >
@@ -108,8 +108,8 @@ function TrainingPlansListScreen() {
         renderItem={(plan) => (
           <View testID={`training-plans-list-item-${plan.id}`}>
             <TrainingPlanCard
-              plan={plan as any}
-              onPress={() => navigateTo(ROUTES.PLAN.TRAINING_PLAN.DETAIL(plan.id) as any)}
+              plan={plan}
+              onPress={() => navigateTo(ROUTES.PLAN.TRAINING_PLAN.DETAIL(plan.id))}
               variant="list"
             />
           </View>

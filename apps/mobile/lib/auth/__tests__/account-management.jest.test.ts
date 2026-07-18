@@ -1,13 +1,13 @@
-const changeEmailMock = jest.fn(async (_input?: any) => ({ error: null }));
-const changePasswordMock = jest.fn(async (_input?: any) => ({ error: null }));
-const deleteUserMock = jest.fn(async (_input?: any) => ({ error: null }));
+const changeEmailMock = jest.fn(async (_input?: unknown) => ({ error: null }));
+const changePasswordMock = jest.fn(async (_input?: unknown) => ({ error: null }));
+const deleteUserMock = jest.fn(async (_input?: unknown) => ({ error: null }));
 
 jest.mock("@/lib/auth/client", () => ({
   __esModule: true,
   authClient: {
-    changeEmail: (input: any) => changeEmailMock(input),
-    changePassword: (input: any) => changePasswordMock(input),
-    deleteUser: (input: any) => deleteUserMock(input),
+    changeEmail: (input: unknown) => changeEmailMock(input),
+    changePassword: (input: unknown) => changePasswordMock(input),
+    deleteUser: (input: unknown) => deleteUserMock(input),
   },
   getEmailVerificationCallbackUrl: () => "gradientpeak://callback",
 }));

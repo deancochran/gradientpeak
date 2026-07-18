@@ -21,20 +21,13 @@ type CurrentMetrics = {
 };
 
 const ActiveActivityMode = memo<{
-  planProgress?: any;
-  activityPlan?: any;
+  planProgress?: { currentStepIndex: number };
+  activityPlan?: unknown;
   currentMetrics: CurrentMetrics;
   onNextStep?: () => void;
   isAdvancing: boolean;
   structure: ActivityPlanStructureV3;
-}>(function ActiveActivityMode({
-  planProgress,
-  activityPlan,
-  currentMetrics,
-  onNextStep,
-  isAdvancing,
-  structure,
-}) {
+}>(function ActiveActivityMode({ planProgress, structure }) {
   if (!planProgress) {
     return (
       <View className="flex-1 items-center justify-center py-16">

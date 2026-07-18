@@ -153,7 +153,7 @@ export function useHomeData() {
   const hasData = !!(data?.activePlan || data?.todaysActivity || data?.schedule?.length);
 
   return {
-    plan: plan ? { ...plan, targetType: (plan as any).targetType } : null,
+    plan: plan ? { ...plan, targetType: "targetType" in plan ? plan.targetType : undefined } : null,
     todaysActivity,
     weeklyStats,
     formStatus,

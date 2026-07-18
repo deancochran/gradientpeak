@@ -1,25 +1,21 @@
 import { invalidateActivityPlanQueries } from "@repo/api/react";
+import type { Router } from "expo-router";
 import { Alert } from "react-native";
+import type { ActivityPlan } from "@/components/shared/ActivityPlanCard";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
 
-type RouterLike = {
-  back: () => void;
-  navigate: (value: unknown) => void;
-  replace: (value: unknown) => void;
-};
-
 interface UseActivityPlanSchedulingActionsParams {
   action?: string;
-  activityPlan: any;
+  activityPlan: ActivityPlan | null;
   beginRedirect: () => void;
   eventId?: string;
-  plannedActivity: any;
+  plannedActivity: { id: string; scheduled_date?: string | null } | null | undefined;
   planId?: string;
   profileId?: string;
   queryClient: ReturnType<typeof import("@tanstack/react-query").useQueryClient>;
-  router: RouterLike;
+  router: Pick<Router, "back" | "navigate" | "replace">;
   utils: ReturnType<typeof api.useUtils>;
 }
 
@@ -51,7 +47,7 @@ export function useActivityPlanSchedulingActions({
           text: "Open",
           onPress: () =>
             router.replace({
-              pathname: "/activity-plan-detail" as any,
+              pathname: "/activity-plan-detail",
               params: { planId: duplicatedPlan.id },
             }),
         },
@@ -118,7 +114,10 @@ export function useActivityPlanSchedulingActions({
       return;
     }
     duplicateActionRef.current = "copy";
-    duplicatePlanMutation.mutate({ id: actualPlanId, newName: `${activityPlan.name} (Copy)` });
+    duplicatePlanMutation.mutate({
+      id: actualPlanId,
+      newName: `${activityPlan?.name ?? "Activity Plan"} (Copy)`,
+    });
   };
 
   React.useEffect(() => {

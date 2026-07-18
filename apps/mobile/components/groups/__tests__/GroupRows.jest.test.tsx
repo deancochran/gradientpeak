@@ -1,3 +1,4 @@
+import type { ComponentProps } from "react";
 import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 import { GroupJoinRequestRow, GroupMemberRow } from "../GroupRows";
@@ -44,10 +45,12 @@ describe("GroupRows", () => {
       <GroupMemberRow
         member={
           {
+            group_id: "group-1",
+            profile_id: "user-1",
             created_at: "2026-05-01T00:00:00.000Z",
             profile: { id: "user-1", username: "Runner", avatar_url: null },
             role: "member",
-          } as any
+          } satisfies ComponentProps<typeof GroupMemberRow>["member"]
         }
       />,
     );
@@ -63,9 +66,12 @@ describe("GroupRows", () => {
         joinRequest={
           {
             created_at: "2026-05-01T00:00:00.000Z",
+            group_id: "group-1",
             id: "request-1",
+            profile_id: "user-2",
+            status: "pending",
             profile: { id: "user-2", username: "Climber", avatar_url: null },
-          } as any
+          } satisfies ComponentProps<typeof GroupJoinRequestRow>["joinRequest"]
         }
       />,
     );

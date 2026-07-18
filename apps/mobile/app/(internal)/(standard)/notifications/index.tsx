@@ -138,7 +138,7 @@ export default function NotificationsScreen() {
       const previousNotifications = utils.notifications.getRecent.getData();
 
       // Optimistically update to remove the follow_request notification
-      utils.notifications.getRecent.setData({ limit: 20 }, (old: any[] = []) =>
+      utils.notifications.getRecent.setData({ limit: 20 }, (old = []) =>
         old?.filter((n) => !(n.type === "follow_request" && n.actor_id === follower_id)),
       );
 
@@ -167,7 +167,7 @@ export default function NotificationsScreen() {
       const previousNotifications = utils.notifications.getRecent.getData();
 
       // Optimistically update to remove the follow_request notification
-      utils.notifications.getRecent.setData({ limit: 20 }, (old: any[] = []) =>
+      utils.notifications.getRecent.setData({ limit: 20 }, (old = []) =>
         old?.filter((n) => !(n.type === "follow_request" && n.actor_id === follower_id)),
       );
 

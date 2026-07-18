@@ -1,4 +1,5 @@
 import { act, waitFor } from "@testing-library/react-native";
+import type { ReactTestInstance } from "react-test-renderer";
 
 import {
   createHost,
@@ -6,9 +7,25 @@ import {
 } from "../../../../test/mock-components";
 import { renderNative, screen } from "../../../../test/render-native";
 
+let renderedPreferences: ReturnType<typeof renderNative> | undefined;
+
+function renderPreferences() {
+  renderedPreferences = renderNative(<TrainingPreferencesScreen />);
+  return renderedPreferences;
+}
+
+function getHostNodes(type: string): ReactTestInstance[] {
+  if (!renderedPreferences) throw new Error("Training preferences have not been rendered");
+  return renderedPreferences.UNSAFE_root.findAll((node) => node.type === type);
+}
+
+function hasChildrenProps(value: unknown): value is { props: { children?: unknown } } {
+  return typeof value === "object" && value !== null && "props" in value;
+}
+
 jest.mock("expo-router", () => ({
   Stack: {
-    Screen: ({ options }: any) => {
+    Screen: ({ options }: { options?: { headerRight?: () => unknown } }) => {
       const React = require("react");
       const headerRight = typeof options?.headerRight === "function" ? options.headerRight() : null;
       return React.createElement("StackScreen", {}, headerRight);
@@ -16,7 +33,7 @@ jest.mock("expo-router", () => ({
   },
 }));
 
-function getNodeText(children: any): string {
+function getNodeText(children: unknown): string {
   if (typeof children === "string") {
     return children;
   }
@@ -29,7 +46,7 @@ function getNodeText(children: any): string {
     return children.map((child) => getNodeText(child)).join("");
   }
 
-  if (children?.props?.children !== undefined) {
+  if (hasChildrenProps(children) && children.props.children !== undefined) {
     return getNodeText(children.props.children);
   }
 
@@ -189,7 +206,11 @@ jest.mock("@/components/plan/training-path/DailyTrainingAdjustmentChart", () => 
 
 jest.mock("@/lib/training-plan-form/localPreview", () => ({
   __esModule: true,
-  computeLocalCreationPreview: ({ profileSettings }: any) => {
+  computeLocalCreationPreview: ({
+    profileSettings,
+  }: {
+    profileSettings?: { training_style?: { progression_pace?: number } };
+  }) => {
     const pace = profileSettings?.training_style?.progression_pace ?? 0.5;
     const finalCtl = 44 + Math.round((pace - 0.5) * 100) / 5;
     const finalLoad = 46 + Math.round((pace - 0.5) * 100);
@@ -309,24 +330,27 @@ jest.mock("@/lib/api", () => ({
 
 const TrainingPreferencesScreen = require("../training-preferences").default;
 
-const getTextValues = () =>
-  (screen as any).UNSAFE_getAllByType("Text").map((node: any) => getNodeText(node.props.children));
+const getTextValues = () => getHostNodes("Text").map((node) => getNodeText(node.props.children));
 
-const getTab = (label: string) =>
-  (screen as any).UNSAFE_getAllByType("Pressable").find((node: any) => {
+const getTab = (label: string) => {
+  const tab = getHostNodes("Pressable").find((node) => {
     if (node.props?.accessibilityRole !== "tab") {
       return false;
     }
 
     return node
-      .findAll((child: any) => child.type === "Text")
-      .some((child: any) => {
+      .findAll((child: ReactTestInstance) => String(child.type) === "Text")
+      .some((child: ReactTestInstance) => {
         return getNodeText(child.props.children) === label;
       });
   });
+  if (!tab) throw new Error(`Unable to find tab: ${label}`);
+  return tab;
+};
 
 describe("training preferences editor", () => {
   beforeEach(() => {
+    renderedPreferences = undefined;
     upsertMock.mockReset();
     activePlanData = { id: "plan-1" };
     activePlanIsLoading = false;
@@ -387,7 +411,7 @@ describe("training preferences editor", () => {
   });
 
   it("renders canonical preference tabs", () => {
-    renderNative(<TrainingPreferencesScreen />);
+    renderPreferences();
 
     const tabLabels = getTextValues();
 
@@ -401,7 +425,7 @@ describe("training preferences editor", () => {
   });
 
   it("renders planner-backed preference controls", () => {
-    renderNative(<TrainingPreferencesScreen />);
+    renderPreferences();
 
     act(() => {
       getTab("Training style").props.onPress();
@@ -491,7 +515,7 @@ describe("training preferences editor", () => {
   });
 
   it("blocks saving when schedule limits conflict", () => {
-    renderNative(<TrainingPreferencesScreen />);
+    renderPreferences();
 
     act(() => {
       getTab("Schedule").props.onPress();
@@ -516,7 +540,7 @@ describe("training preferences editor", () => {
   });
 
   it("converts fractional defaults to display percents and resets 60 back to 15", async () => {
-    renderNative(<TrainingPreferencesScreen />);
+    renderPreferences();
 
     act(() => {
       getTab("Goal strategy").props.onPress();
@@ -545,7 +569,7 @@ describe("training preferences editor", () => {
   });
 
   it("converts a display percent of 60 to a saved fraction of 0.6", async () => {
-    renderNative(<TrainingPreferencesScreen />);
+    renderPreferences();
 
     act(() => {
       getTab("Goal strategy").props.onPress();
@@ -584,7 +608,7 @@ describe("training preferences editor", () => {
   });
 
   it("saves baseline override dates as ISO values from date-only input", async () => {
-    renderNative(<TrainingPreferencesScreen />);
+    renderPreferences();
 
     act(() => {
       getTab("Baseline fitness").props.onPress();
@@ -616,7 +640,7 @@ describe("training preferences editor", () => {
   });
 
   it("warns when manual baseline CTL is likely to distort estimated readiness", () => {
-    renderNative(<TrainingPreferencesScreen />);
+    renderPreferences();
 
     act(() => {
       getTab("Baseline fitness").props.onPress();

@@ -1,4 +1,9 @@
-import type { ActivityPayload, RecordingActivityCategory, RecordingState } from "@repo/core";
+import type {
+  ActivityPayload,
+  RecordingActivityCategory,
+  RecordingServiceActivityPlan,
+  RecordingState,
+} from "@repo/core";
 import { useRouter } from "expo-router";
 import React from "react";
 import { Alert } from "react-native";
@@ -64,7 +69,7 @@ export function useRecordScreenController() {
     }
 
     try {
-      service.selectPlan(pendingPlanQuery.data as any);
+      service.selectPlan(pendingPlanQuery.data as RecordingServiceActivityPlan);
       setPendingPlanId(null);
       setResourcePickerScope(null);
     } catch (error) {

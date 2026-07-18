@@ -1,3 +1,4 @@
+import type { BottomTabBarButtonProps } from "@react-navigation/bottom-tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -20,16 +21,27 @@ import { useTheme } from "@/lib/stores/theme-store";
 import { useTrainingPreferencesSheetStore } from "@/lib/stores/trainingPreferencesSheetStore";
 import { getNavigationTheme, getResolvedThemeScale } from "@/lib/theme";
 
-function MeasuredTabButton({ routeKey, testID, ...props }: any) {
+function MeasuredTabButton({
+  routeKey,
+  testID,
+  ...props
+}: BottomTabBarButtonProps & { routeKey: string; testID: string }) {
   return (
     <TouchableOpacity
-      {...props}
+      accessibilityLabel={props.accessibilityLabel}
+      accessibilityRole={props.accessibilityRole}
+      accessibilityState={props.accessibilityState}
+      disabled={props.disabled ?? undefined}
+      onLongPress={props.onLongPress ?? undefined}
+      style={props.style}
       testID={testID}
       onPress={(event) => {
         markNavigationStart(routeKey);
         props.onPress?.(event);
       }}
-    />
+    >
+      {props.children}
+    </TouchableOpacity>
   );
 }
 
@@ -111,7 +123,12 @@ export default function InternalLayout() {
             tabBarIcon: ({ color }) => <Icon as={Circle} size={28} color={color} />,
             tabBarButton: (props) => (
               <TouchableOpacity
-                {...(props as any)}
+                accessibilityLabel={props.accessibilityLabel}
+                accessibilityRole={props.accessibilityRole}
+                accessibilityState={props.accessibilityState}
+                disabled={props.disabled ?? undefined}
+                onLongPress={props.onLongPress ?? undefined}
+                style={props.style}
                 testID="tab-button-record"
                 onPress={() =>
                   guardNavigation(() => {
@@ -122,7 +139,9 @@ export default function InternalLayout() {
                     navigateTo("/record");
                   })
                 }
-              />
+              >
+                {props.children}
+              </TouchableOpacity>
             ),
           }}
         />

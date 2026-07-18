@@ -105,7 +105,7 @@ export function CompactInsightCard({
 }: {
   title: string;
   value: string;
-  icon: React.ComponentType<any>;
+  icon: React.ComponentProps<typeof Icon>["as"];
   children: React.ReactNode;
   hasData?: boolean;
   layout?: CompactInsightLayout;

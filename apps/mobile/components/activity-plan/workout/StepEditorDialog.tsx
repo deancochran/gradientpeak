@@ -262,8 +262,8 @@ export function StepEditorDialog({
             </View>
           ) : null}
 
-          {targets.map((_target, index) => (
-            <View key={index} className="mb-2 rounded-lg border border-border p-3">
+          {targets.map((target, index) => (
+            <View key={JSON.stringify(target)} className="mb-2 rounded-lg border border-border p-3">
               <View className="flex-row items-start gap-2">
                 <View className="flex-1">
                   <Label nativeID={`target-type-${index}`} className="mb-1 text-xs">

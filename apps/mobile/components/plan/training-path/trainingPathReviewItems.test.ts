@@ -4,6 +4,9 @@ import {
   buildTrainingPathScheduledReviewItems,
 } from "./trainingPathReviewItems";
 
+type ScheduledReviewInput = Parameters<typeof buildTrainingPathScheduledReviewItems>[0];
+type GroupEventFixture = NonNullable<ScheduledReviewInput["groupEvents"]>[number];
+
 describe("buildTrainingPathEventReviewItems", () => {
   it("buckets timed events in the planning zone while retaining their event timezone", () => {
     const items = buildTrainingPathEventReviewItems({
@@ -58,6 +61,28 @@ describe("buildTrainingPathEventReviewItems", () => {
 });
 
 describe("buildTrainingPathScheduledReviewItems", () => {
+  it("does not restore stale load after an authoritative null", () => {
+    const items = buildTrainingPathScheduledReviewItems({
+      planningTimezone: "America/Los_Angeles",
+      groupEvents: [],
+      groupScheduledActivityPlanEvents: [],
+      plannedEvents: [
+        {
+          id: "event-1",
+          starts_at: "2026-04-14T15:00:00.000Z",
+          activity_plan: {
+            id: "activity-plan-1",
+            name: "Stale plan",
+            estimated_tss: 65,
+            authoritative_metrics: { estimated_tss: null },
+          },
+        },
+      ],
+    });
+
+    expect(items[0]?.estimatedLoad).toBeNull();
+  });
+
   it("includes a scheduled activity plan when the same source contributes tentative planned load", () => {
     const input = {
       planningTimezone: "America/Los_Angeles",
@@ -68,7 +93,7 @@ describe("buildTrainingPathScheduledReviewItems", () => {
           title: "Saturday Group Ride",
           starts_at: "2026-04-14T15:00:00.000Z",
           viewerRsvp: { status: "tentative" },
-        } as any,
+        } as GroupEventFixture,
       ],
       groupScheduledActivityPlanEvents: [
         {
@@ -119,7 +144,7 @@ describe("buildTrainingPathScheduledReviewItems", () => {
           title: "Track Tuesday",
           starts_at: "2026-04-23T18:30:00.000Z",
           viewerRsvp: { status: "tentative" },
-        } as any,
+        } as GroupEventFixture,
       ],
       groupScheduledActivityPlanEvents: [
         {

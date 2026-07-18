@@ -21,14 +21,20 @@ let mockProfileMetricItems = [
   },
 ];
 
+type FlatListMockProps = Record<string, unknown> & {
+  data?: unknown[];
+  renderItem: (info: { item: unknown }) => React.ReactNode;
+  ListEmptyComponent?: React.ReactNode;
+};
+
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  FlatList: ({ data, renderItem, ListEmptyComponent, ...props }: any) =>
+  FlatList: ({ data, renderItem, ListEmptyComponent, ...props }: FlatListMockProps) =>
     React.createElement(
       "FlatList",
       props,
-      data?.length ? data.map((item: any) => renderItem({ item })) : ListEmptyComponent,
+      data?.length ? data.map((item) => renderItem({ item })) : ListEmptyComponent,
     ),
 }));
 
@@ -53,7 +59,13 @@ jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHos
 jest.mock("@/components/shared", () => ({
   __esModule: true,
   CompactInsightCard: createHost("CompactInsightCard"),
-  DetailChartModal: ({ children, visible }: any) => {
+  DetailChartModal: ({
+    children,
+    visible,
+  }: {
+    children: React.ReactNode | ((range: string) => React.ReactNode);
+    visible: boolean;
+  }) => {
     if (!visible) return null;
 
     return React.createElement(

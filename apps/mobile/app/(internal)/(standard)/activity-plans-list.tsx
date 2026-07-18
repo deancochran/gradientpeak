@@ -24,6 +24,8 @@ function ActivityPlansListScreen() {
     "run" | "bike" | "swim" | "strength" | "other" | null
   >(null);
   const [draftCategoryFilter, setDraftCategoryFilter] = useState<typeof categoryFilter>(null);
+  const [includeMultisport, setIncludeMultisport] = useState(true);
+  const [draftIncludeMultisport, setDraftIncludeMultisport] = useState(true);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const { data, isLoading, error } = api.activityPlans.list.useQuery({
     ownerScope: "own",
@@ -31,6 +33,7 @@ function ActivityPlansListScreen() {
     includeSystemTemplates: false,
     search: searchQuery.trim() || undefined,
     activityCategories: categoryFilter ? [categoryFilter] : undefined,
+    compositionMode: includeMultisport ? "include_multisport" : "single_only",
     limit: 100,
   });
 
@@ -44,7 +47,7 @@ function ActivityPlansListScreen() {
             <HeaderTextAction
               accessibilityLabel="Create activity plan"
               label="Create"
-              onPress={() => navigateTo(ROUTES.PLAN.CREATE_ACTIVITY_PLAN.INDEX as any)}
+              onPress={() => navigateTo(ROUTES.PLAN.CREATE_ACTIVITY_PLAN.INDEX)}
               testID="activity-plans-list-create-trigger"
             />
           ),
@@ -53,11 +56,12 @@ function ActivityPlansListScreen() {
       <IndexSearchBar
         value={searchQuery}
         placeholder="Search activity plans"
-        hasActiveFilters={categoryFilter !== null}
+        hasActiveFilters={categoryFilter !== null || !includeMultisport}
         onChangeText={setSearchQuery}
         onClear={() => setSearchQuery("")}
         onFilterPress={() => {
           setDraftCategoryFilter(categoryFilter);
+          setDraftIncludeMultisport(includeMultisport);
           setIsFilterSheetOpen(true);
         }}
         testIDPrefix="activity-plans-list"
@@ -87,8 +91,8 @@ function ActivityPlansListScreen() {
         isLoading={isLoading}
         renderItem={(item) => (
           <ActivityPlanCard
-            activityPlan={item as any}
-            onPress={() => navigateTo(ROUTES.PLAN.PLAN_DETAIL(item.id) as any)}
+            activityPlan={item}
+            onPress={() => navigateTo(ROUTES.PLAN.PLAN_DETAIL(item.id))}
             testID={`activity-plan-list-item-${item.id}`}
             variant="list"
           />
@@ -98,10 +102,14 @@ function ActivityPlansListScreen() {
         visible={isFilterSheetOpen}
         title="Activity Plan Filters"
         description="Refine your activity plans list."
-        isResetDisabled={draftCategoryFilter === null}
-        onReset={() => setDraftCategoryFilter(null)}
+        isResetDisabled={draftCategoryFilter === null && draftIncludeMultisport}
+        onReset={() => {
+          setDraftCategoryFilter(null);
+          setDraftIncludeMultisport(true);
+        }}
         onApply={() => {
           setCategoryFilter(draftCategoryFilter);
+          setIncludeMultisport(draftIncludeMultisport);
           setIsFilterSheetOpen(false);
         }}
         onClose={() => setIsFilterSheetOpen(false)}
@@ -122,12 +130,24 @@ function ActivityPlansListScreen() {
                 isActive={draftCategoryFilter === option.id}
                 onPress={() =>
                   setDraftCategoryFilter(
-                    draftCategoryFilter === option.id ? null : (option.id as any),
+                    draftCategoryFilter === option.id
+                      ? null
+                      : (option.id as NonNullable<typeof categoryFilter>),
                   )
                 }
                 testID={`activity-plans-list-filter-category-${option.id}`}
               />
             ))}
+          </View>
+        </FilterSection>
+        <FilterSection title="Composition">
+          <View className="flex-row flex-wrap gap-2">
+            <FilterChip
+              label="Include multisport"
+              isActive={draftIncludeMultisport}
+              onPress={() => setDraftIncludeMultisport((current) => !current)}
+              testID="activity-plans-list-filter-include-multisport"
+            />
           </View>
         </FilterSection>
       </IndexFilterSheet>

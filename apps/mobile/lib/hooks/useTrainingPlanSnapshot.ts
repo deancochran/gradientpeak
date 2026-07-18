@@ -43,7 +43,7 @@ const isTrainingPlanSnapshotData = (value: unknown): value is TrainingPlanSnapsh
   );
 };
 
-const toDateKey = (value: Date) => value.toISOString().split("T")[0]!;
+const toDateKey = (value: Date) => value.toISOString().slice(0, 10);
 
 export function useTrainingPlanSnapshot(options: UseTrainingPlanSnapshotOptions = {}) {
   const {

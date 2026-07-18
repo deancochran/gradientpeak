@@ -1,4 +1,6 @@
 import React from "react";
+import type { ReactTestInstance } from "react-test-renderer";
+import type { HostProps } from "../../../../test/mock-components";
 import { fireEvent, renderNative } from "../../../../test/render-native";
 import { GoalTargetsSection } from "../GoalTargetsSection";
 
@@ -18,22 +20,22 @@ jest.mock("../GoalTargetEditorModal", () => ({
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  Pressable: (props: any) => React.createElement("Pressable", props, props.children),
-  View: (props: any) => React.createElement("View", props, props.children),
+  Pressable: (props: HostProps) => React.createElement("Pressable", props, props.children),
+  View: (props: HostProps) => React.createElement("View", props, props.children),
 }));
 
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
-  Button: (props: any) => React.createElement("Button", props, props.children),
+  Button: (props: HostProps) => React.createElement("Button", props, props.children),
 }));
 
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
-  Text: (props: any) => React.createElement("Text", props, props.children),
+  Text: (props: HostProps) => React.createElement("Text", props, props.children),
 }));
 
 jest.mock("lucide-react-native", () => {
-  const icon = (props: any) => React.createElement("Icon", props);
+  const icon = (props: HostProps) => React.createElement("Icon", props);
   return {
     __esModule: true,
     Flag: icon,
@@ -46,13 +48,7 @@ jest.mock("lucide-react-native", () => {
 });
 
 const findMockNodes = (rendered: ReturnType<typeof renderNative>, type: string) =>
-  (() => {
-    try {
-      return (rendered as any).UNSAFE_getAllByType(type);
-    } catch {
-      return [];
-    }
-  })();
+  rendered.UNSAFE_root.findAll((node: ReactTestInstance) => node.type === type);
 
 describe("GoalTargetsSection", () => {
   const activeGoal = {

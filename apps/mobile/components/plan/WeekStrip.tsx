@@ -49,7 +49,7 @@ export function WeekStrip({
 
             return (
               <TouchableOpacity
-                key={index}
+                key={date.toISOString()}
                 onPress={() => onSelectDay(index)}
                 className="items-center"
                 activeOpacity={0.7}

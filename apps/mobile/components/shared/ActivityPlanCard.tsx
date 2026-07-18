@@ -1,3 +1,4 @@
+import { getAuthoritativeActivityPlanMetrics } from "@repo/core/activity-plan";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
@@ -30,8 +31,8 @@ import {
 export interface ActivityPlan {
   id: string;
   name: string;
-  categories: readonly string[];
-  primary_category: string;
+  categories?: readonly string[];
+  primary_category?: string;
   structure_hash?: string;
   description?: string | null;
   structure?: unknown;
@@ -51,8 +52,8 @@ export interface ActivityPlan {
   profile_id?: string | null;
   template_visibility?: string | null;
   is_system_template?: boolean | null;
-  created_at?: string;
-  updated_at?: string;
+  created_at?: string | Date;
+  updated_at?: string | Date;
   likes_count?: number | null;
   has_liked?: boolean;
   owner?: EntityOwner | null;
@@ -96,7 +97,7 @@ export interface ActivityPlanCardData {
   estimatedDuration?: number; // in seconds
   estimatedTss?: number;
   intensityFactor?: number;
-  estimatedDistance?: number; // in km, if route provided
+  estimatedDistance?: number; // meters
   routeId?: string;
   routeName?: string;
   notes?: string;
@@ -340,25 +341,33 @@ function transformToCardData(
 
   // Extract route info from structure if available
   const routeInfo = getStructureRouteInfo(plan.structure);
-  const authoritativeMetrics = plan.authoritative_metrics;
+  const authoritativeMetrics = getAuthoritativeActivityPlanMetrics(plan);
   const planRoute = plan.route;
 
   return {
     id: plannedActivity?.id || plan.id,
     name: plan.name,
-    activityType: plan.primary_category ?? plan.categories[0] ?? "other",
+    activityType: plan.primary_category ?? plan.categories?.[0] ?? "other",
     description: plan.description || undefined,
     structure: plan.structure,
-    estimatedDuration: authoritativeMetrics?.estimated_duration ?? undefined,
-    estimatedTss: authoritativeMetrics?.estimated_tss ?? undefined,
-    intensityFactor: authoritativeMetrics?.intensity_factor ?? undefined,
+    estimatedDuration: authoritativeMetrics.estimated_duration ?? undefined,
+    estimatedTss: authoritativeMetrics.estimated_tss ?? undefined,
+    intensityFactor: authoritativeMetrics.intensity_factor ?? undefined,
     estimatedDistance:
-      authoritativeMetrics?.estimated_distance ?? planRoute?.distance ?? routeInfo?.distance,
+      authoritativeMetrics.estimated_distance === null
+        ? undefined
+        : (authoritativeMetrics.estimated_distance ?? planRoute?.distance ?? routeInfo?.distance),
     routeId: plan.route_id || undefined,
     routeName: routeInfo?.name,
     notes: plannedActivity?.notes || plan.description || plan.notes || undefined,
-    createdAt: plan.created_at || undefined,
-    updatedAt: plan.updated_at || undefined,
+    createdAt:
+      plan.created_at instanceof Date
+        ? plan.created_at.toISOString()
+        : plan.created_at || undefined,
+    updatedAt:
+      plan.updated_at instanceof Date
+        ? plan.updated_at.toISOString()
+        : plan.updated_at || undefined,
     scheduledDate: plannedActivity?.scheduled_date,
     isCompleted: Boolean(plannedActivity?.completed_activity_id),
     likes_count: plan.likes_count,

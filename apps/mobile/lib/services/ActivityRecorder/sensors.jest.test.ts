@@ -236,6 +236,34 @@ import { FTMSController } from "./FTMSController";
 import type { ConnectedSensor } from "./sensors";
 import { SensorsManager } from "./sensors";
 
+interface KnownSensorFixture {
+  id: string;
+  name: string;
+  lastConnected: number;
+  autoConnectSuppressed?: boolean;
+}
+
+interface SensorsManagerInternals {
+  knownSensorRegistry: {
+    sensors: Map<string, KnownSensorFixture>;
+    autoReconnectSuppressedSensorIds: Set<string>;
+    setAutoReconnectSuppressed(sensorId: string, suppressed: boolean): Promise<void>;
+  };
+  connectedSensors: Map<string, ConnectedSensor>;
+  controllableTrainer: ConnectedSensor | undefined;
+  trainerState: unknown;
+  reconnectionTimers: Map<string, unknown>;
+  attemptReconnection(sensorId: string, attempt: number): Promise<void>;
+  cancelReconnectionAttempts(sensorId: string): void;
+  stopConnectionMonitoring(): void;
+  setupFTMSRuntime(sensor: ConnectedSensor): Promise<void>;
+  monitorFTMSStreams(sensor: ConnectedSensor): Promise<void>;
+}
+
+function getManagerInternals(manager: SensorsManager): SensorsManagerInternals {
+  return manager as unknown as SensorsManagerInternals;
+}
+
 function createSensor(
   overrides: Partial<ConnectedSensor> & Pick<ConnectedSensor, "id" | "name" | "connectionState">,
 ): ConnectedSensor {
@@ -249,19 +277,11 @@ function createSensor(
   } as ConnectedSensor;
 }
 
-function setKnownSensors(
-  manager: SensorsManager,
-  sensors: Array<{
-    id: string;
-    name: string;
-    lastConnected: number;
-    autoConnectSuppressed?: boolean;
-  }>,
-) {
-  (manager as any).knownSensorRegistry.sensors = new Map(
+function setKnownSensors(manager: SensorsManager, sensors: KnownSensorFixture[]) {
+  getManagerInternals(manager).knownSensorRegistry.sensors = new Map(
     sensors.map((sensor) => [sensor.id, sensor]),
   );
-  (manager as any).knownSensorRegistry.autoReconnectSuppressedSensorIds = new Set(
+  getManagerInternals(manager).knownSensorRegistry.autoReconnectSuppressedSensorIds = new Set(
     sensors.filter((sensor) => sensor.autoConnectSuppressed).map((sensor) => sensor.id),
   );
 }
@@ -287,7 +307,7 @@ describe("SensorsManager QA regressions", () => {
       connectionState: "connected",
     });
 
-    (manager as any).connectedSensors = new Map([
+    getManagerInternals(manager).connectedSensors = new Map([
       [disconnected.id, disconnected],
       [alreadyConnected.id, alreadyConnected],
     ]);
@@ -298,7 +318,7 @@ describe("SensorsManager QA regressions", () => {
     ]);
 
     const reconnectSpy = jest
-      .spyOn(manager as any, "attemptReconnection")
+      .spyOn(getManagerInternals(manager), "attemptReconnection")
       .mockResolvedValue(undefined);
     const connectSpy = jest.spyOn(manager, "connectSensor").mockResolvedValue(null);
 
@@ -309,7 +329,7 @@ describe("SensorsManager QA regressions", () => {
     expect(reconnectSpy).not.toHaveBeenCalledWith("sensor-connected", 1);
     expect(connectSpy).not.toHaveBeenCalledWith("sensor-connected");
 
-    (manager as any).stopConnectionMonitoring();
+    getManagerInternals(manager).stopConnectionMonitoring();
   });
 
   it("clears active trainer ownership when disconnecting a controllable trainer", async () => {
@@ -322,9 +342,9 @@ describe("SensorsManager QA regressions", () => {
       ftmsController: { reset: jest.fn() } as never,
     });
 
-    (manager as any).connectedSensors = new Map([[trainer.id, trainer]]);
-    (manager as any).controllableTrainer = trainer;
-    (manager as any).trainerState = {
+    getManagerInternals(manager).connectedSensors = new Map([[trainer.id, trainer]]);
+    getManagerInternals(manager).controllableTrainer = trainer;
+    getManagerInternals(manager).trainerState = {
       deviceId: trainer.id,
       deviceName: trainer.name,
       connectionState: "connected",
@@ -345,7 +365,7 @@ describe("SensorsManager QA regressions", () => {
       controlState: "not_applicable",
     });
 
-    (manager as any).stopConnectionMonitoring();
+    getManagerInternals(manager).stopConnectionMonitoring();
   });
 
   it("preserves known sensor memory on disconnect", async () => {
@@ -356,7 +376,7 @@ describe("SensorsManager QA regressions", () => {
       connectionState: "connected",
     });
 
-    (manager as any).connectedSensors = new Map([[sensor.id, sensor]]);
+    getManagerInternals(manager).connectedSensors = new Map([[sensor.id, sensor]]);
     setKnownSensors(manager, [{ id: sensor.id, name: sensor.name, lastConnected: 1 }]);
 
     await manager.disconnectSensor(sensor.id);
@@ -366,7 +386,7 @@ describe("SensorsManager QA regressions", () => {
     ]);
     expect(AsyncStorage.setItem).not.toHaveBeenCalledWith("@sensors:persisted_devices", "[]");
 
-    (manager as any).stopConnectionMonitoring();
+    getManagerInternals(manager).stopConnectionMonitoring();
   });
 
   it("suppresses auto-reconnect after an intentional disconnect", async () => {
@@ -378,13 +398,13 @@ describe("SensorsManager QA regressions", () => {
       connectionState: "connected",
     });
 
-    (manager as any).connectedSensors = new Map([[sensor.id, sensor]]);
+    getManagerInternals(manager).connectedSensors = new Map([[sensor.id, sensor]]);
     setKnownSensors(manager, [{ id: sensor.id, name: sensor.name, lastConnected: 1 }]);
 
     await manager.disconnectSensor(sensor.id);
 
     const reconnectSpy = jest
-      .spyOn(manager as any, "attemptReconnection")
+      .spyOn(getManagerInternals(manager), "attemptReconnection")
       .mockResolvedValue(undefined);
     const connectSpy = jest.spyOn(manager, "connectSensor").mockResolvedValue(null);
 
@@ -400,7 +420,7 @@ describe("SensorsManager QA regressions", () => {
     ]);
     expect(AsyncStorage.setItem).toHaveBeenCalled();
 
-    (manager as any).stopConnectionMonitoring();
+    getManagerInternals(manager).stopConnectionMonitoring();
   });
 
   it("allows auto-reconnect again after the user manually reconnects", async () => {
@@ -412,7 +432,7 @@ describe("SensorsManager QA regressions", () => {
       connectionState: "disconnected",
     });
 
-    (manager as any).connectedSensors = new Map([[sensor.id, sensor]]);
+    getManagerInternals(manager).connectedSensors = new Map([[sensor.id, sensor]]);
     setKnownSensors(manager, [
       {
         id: sensor.id,
@@ -422,17 +442,20 @@ describe("SensorsManager QA regressions", () => {
       },
     ]);
 
-    await (manager as any).knownSensorRegistry.setAutoReconnectSuppressed(sensor.id, false);
+    await getManagerInternals(manager).knownSensorRegistry.setAutoReconnectSuppressed(
+      sensor.id,
+      false,
+    );
 
     const reconnectSpy = jest
-      .spyOn(manager as any, "attemptReconnection")
+      .spyOn(getManagerInternals(manager), "attemptReconnection")
       .mockResolvedValue(undefined);
 
     await manager.reconnectAll();
 
     expect(reconnectSpy).toHaveBeenCalledWith(sensor.id, 1);
 
-    (manager as any).stopConnectionMonitoring();
+    getManagerInternals(manager).stopConnectionMonitoring();
   });
 
   it("does not treat bulk disconnect as an intentional manual sensor disconnect", async () => {
@@ -443,7 +466,7 @@ describe("SensorsManager QA regressions", () => {
       connectionState: "connected",
     });
 
-    (manager as any).connectedSensors = new Map([[sensor.id, sensor]]);
+    getManagerInternals(manager).connectedSensors = new Map([[sensor.id, sensor]]);
     setKnownSensors(manager, [{ id: sensor.id, name: sensor.name, lastConnected: 1 }]);
 
     await manager.disconnectAll();
@@ -455,7 +478,7 @@ describe("SensorsManager QA regressions", () => {
       }),
     ]);
 
-    (manager as any).stopConnectionMonitoring();
+    getManagerInternals(manager).stopConnectionMonitoring();
   });
 
   it("schedules another reconnect attempt when connect returns null", async () => {
@@ -467,15 +490,15 @@ describe("SensorsManager QA regressions", () => {
       connectionState: "disconnected",
     });
 
-    (manager as any).connectedSensors = new Map([[sensor.id, sensor]]);
+    getManagerInternals(manager).connectedSensors = new Map([[sensor.id, sensor]]);
     jest.spyOn(manager, "connectSensor").mockResolvedValue(null);
 
-    await (manager as any).attemptReconnection(sensor.id, 1);
+    await getManagerInternals(manager).attemptReconnection(sensor.id, 1);
 
-    expect((manager as any).reconnectionTimers.has(sensor.id)).toBe(true);
+    expect(getManagerInternals(manager).reconnectionTimers.has(sensor.id)).toBe(true);
 
-    (manager as any).cancelReconnectionAttempts(sensor.id);
-    (manager as any).stopConnectionMonitoring();
+    getManagerInternals(manager).cancelReconnectionAttempts(sensor.id);
+    getManagerInternals(manager).stopConnectionMonitoring();
   });
 
   it("does not reconnect persisted sensors while auto-reconnect is disabled", async () => {
@@ -486,10 +509,10 @@ describe("SensorsManager QA regressions", () => {
       connectionState: "disconnected",
     });
 
-    (manager as any).connectedSensors = new Map([[sensor.id, sensor]]);
+    getManagerInternals(manager).connectedSensors = new Map([[sensor.id, sensor]]);
     setKnownSensors(manager, [{ id: sensor.id, name: sensor.name, lastConnected: 1 }]);
 
-    const reconnectSpy = jest.spyOn(manager as any, "attemptReconnection");
+    const reconnectSpy = jest.spyOn(getManagerInternals(manager), "attemptReconnection");
     const connectSpy = jest.spyOn(manager, "connectSensor").mockResolvedValue(null);
 
     await manager.reconnectAll();
@@ -497,7 +520,7 @@ describe("SensorsManager QA regressions", () => {
     expect(reconnectSpy).not.toHaveBeenCalled();
     expect(connectSpy).not.toHaveBeenCalled();
 
-    (manager as any).stopConnectionMonitoring();
+    getManagerInternals(manager).stopConnectionMonitoring();
   });
 
   it("cancels pending reconnect attempts when auto-reconnect is disabled", async () => {
@@ -509,17 +532,17 @@ describe("SensorsManager QA regressions", () => {
       connectionState: "disconnected",
     });
 
-    (manager as any).connectedSensors = new Map([[sensor.id, sensor]]);
+    getManagerInternals(manager).connectedSensors = new Map([[sensor.id, sensor]]);
     jest.spyOn(manager, "connectSensor").mockResolvedValue(null);
 
-    await (manager as any).attemptReconnection(sensor.id, 1);
-    expect((manager as any).reconnectionTimers.has(sensor.id)).toBe(true);
+    await getManagerInternals(manager).attemptReconnection(sensor.id, 1);
+    expect(getManagerInternals(manager).reconnectionTimers.has(sensor.id)).toBe(true);
 
     manager.setAutoReconnectEnabled(false);
 
-    expect((manager as any).reconnectionTimers.has(sensor.id)).toBe(false);
+    expect(getManagerInternals(manager).reconnectionTimers.has(sensor.id)).toBe(false);
 
-    (manager as any).stopConnectionMonitoring();
+    getManagerInternals(manager).stopConnectionMonitoring();
   });
 
   it("resolves an active scan when scanning is stopped manually", async () => {
@@ -530,7 +553,7 @@ describe("SensorsManager QA regressions", () => {
 
     await expect(scanPromise).resolves.toBeUndefined();
 
-    (manager as any).stopConnectionMonitoring();
+    getManagerInternals(manager).stopConnectionMonitoring();
   });
 
   it("reset disconnects connected sensors and clears known sensors", async () => {
@@ -541,7 +564,7 @@ describe("SensorsManager QA regressions", () => {
       connectionState: "connected",
     });
 
-    (manager as any).connectedSensors = new Map([[sensor.id, sensor]]);
+    getManagerInternals(manager).connectedSensors = new Map([[sensor.id, sensor]]);
     setKnownSensors(manager, [{ id: sensor.id, name: sensor.name, lastConnected: 1 }]);
 
     await manager.resetAllSensors();
@@ -550,7 +573,7 @@ describe("SensorsManager QA regressions", () => {
     expect(manager.getPersistedSensors()).toEqual([]);
     expect(AsyncStorage.removeItem).toHaveBeenCalledWith("@sensors:persisted_devices");
 
-    (manager as any).stopConnectionMonitoring();
+    getManagerInternals(manager).stopConnectionMonitoring();
   });
 
   it("removes known sensor memory only when forgotten", async () => {
@@ -561,7 +584,7 @@ describe("SensorsManager QA regressions", () => {
       connectionState: "connected",
     });
 
-    (manager as any).connectedSensors = new Map([[sensor.id, sensor]]);
+    getManagerInternals(manager).connectedSensors = new Map([[sensor.id, sensor]]);
     setKnownSensors(manager, [{ id: sensor.id, name: sensor.name, lastConnected: 1 }]);
 
     await manager.forgetSensor(sensor.id);
@@ -569,7 +592,7 @@ describe("SensorsManager QA regressions", () => {
     expect(manager.getPersistedSensors()).toEqual([]);
     expect(AsyncStorage.setItem).toHaveBeenCalledWith("@sensors:persisted_devices", "[]");
 
-    (manager as any).stopConnectionMonitoring();
+    getManagerInternals(manager).stopConnectionMonitoring();
   });
 
   it("serializes GATT operations per device without blocking other devices", async () => {
@@ -623,9 +646,9 @@ describe("SensorsManager QA regressions", () => {
       characteristics: new Map([["ftms-indoor-bike-data", "fitness-machine"]]),
     });
 
-    (manager as any).connectedSensors = new Map([[trainer.id, trainer]]);
+    getManagerInternals(manager).connectedSensors = new Map([[trainer.id, trainer]]);
 
-    await (manager as any).setupFTMSRuntime(trainer);
+    await getManagerInternals(manager).setupFTMSRuntime(trainer);
 
     expect(requestControl).toHaveBeenCalledWith("fitness-machine", "ftms-feature");
     expect(requestControl).toHaveBeenCalledTimes(1);
@@ -640,7 +663,7 @@ describe("SensorsManager QA regressions", () => {
     );
     expect(manager.getFTMSController(trainer.id)).toBeDefined();
 
-    (manager as any).stopConnectionMonitoring();
+    getManagerInternals(manager).stopConnectionMonitoring();
   });
 
   it("subscribes to all present FTMS registry streams and emits parsed readings", async () => {
@@ -688,10 +711,10 @@ describe("SensorsManager QA regressions", () => {
     });
     const readings: unknown[] = [];
 
-    (manager as any).connectedSensors = new Map([[trainer.id, trainer]]);
+    getManagerInternals(manager).connectedSensors = new Map([[trainer.id, trainer]]);
     manager.subscribe((reading) => readings.push(reading));
 
-    await (manager as any).monitorFTMSStreams(trainer);
+    await getManagerInternals(manager).monitorFTMSStreams(trainer);
 
     expect(monitorCallbacks.has("ftms-indoor-bike-data")).toBe(true);
     expect(monitorCallbacks.has("ftms-treadmill-data")).toBe(true);
@@ -711,7 +734,7 @@ describe("SensorsManager QA regressions", () => {
     );
     expect(trainer.observedMetrics).toEqual(new Set(["speed", "cadence", "power", "heartrate"]));
 
-    (manager as any).stopConnectionMonitoring();
+    getManagerInternals(manager).stopConnectionMonitoring();
   });
 
   it("requests FTMS control on first command and does not reset between mode changes", async () => {

@@ -136,14 +136,10 @@ export function useAllPermissionsGranted() {
 
         if (mounted) {
           setAllGranted(granted);
-          console.log("[useAllPermissionsGranted] Permissions check result:", granted);
         }
-      } catch (error) {
-        console.error("[useAllPermissionsGranted] Error checking permissions:", error);
-
+      } catch {
         // Retry logic for transient errors
         if (mounted && retryCount < 3) {
-          console.log(`[useAllPermissionsGranted] Retrying... (${retryCount + 1}/3)`);
           setTimeout(() => {
             if (mounted) {
               setRetryCount((prev) => prev + 1);
@@ -162,7 +158,6 @@ export function useAllPermissionsGranted() {
     // Re-check when app becomes active (force refresh to bypass cache)
     const subscription = AppState.addEventListener("change", (nextAppState) => {
       if (nextAppState === "active" && mounted) {
-        console.log("[useAllPermissionsGranted] App became active, force refreshing");
         check(true);
       }
     });

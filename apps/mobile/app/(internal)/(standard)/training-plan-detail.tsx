@@ -1,4 +1,5 @@
 import { invalidateTrainingPlanQueries } from "@repo/api/react";
+import { persistedTrainingPlanStructureSchema } from "@repo/core";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -72,6 +73,37 @@ type GroupedMicrocycleSessions = {
     sessions: StructureSessionRow[];
   }>;
 };
+
+type TrainingPlanDetail = {
+  content_visibility?: string | null;
+  created_at: string | Date;
+  description?: string | null;
+  duration_hours?: number | null;
+  has_liked?: boolean;
+  id: string;
+  is_system_template?: boolean;
+  likes_count?: number;
+  name: string;
+  owner?: { id: string; username: string | null; avatar_url: string | null } | null;
+  profile_id?: string | null;
+  sessions_per_week_target?: number | null;
+  structure: unknown;
+  structure_hash: string;
+  template_visibility?: string | null;
+  updated_at?: string | Date;
+};
+
+function isTrainingPlanDetail(value: unknown): value is TrainingPlanDetail {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.id === "string" &&
+    typeof record.name === "string" &&
+    typeof record.structure_hash === "string" &&
+    "structure" in record &&
+    (typeof record.created_at === "string" || record.created_at instanceof Date)
+  );
+}
 
 const weekDayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -339,7 +371,8 @@ export default function TrainingPlanOverview() {
     includeWeeklySummaries: false,
   });
 
-  const plan = (isSystemTemplateId ? templatePlan : snapshot.plan) as any;
+  const planCandidate = isSystemTemplateId ? templatePlan : snapshot.plan;
+  const plan = isTrainingPlanDetail(planCandidate) ? planCandidate : undefined;
   const loadingPlan = isSystemTemplateId ? isLoadingTemplate : snapshot.isLoadingSharedDependencies;
   const isOwnedByUser = plan?.profile_id === profile?.id;
 
@@ -360,7 +393,7 @@ export default function TrainingPlanOverview() {
   }>(null);
 
   const handleOpenCalendar = useCallback(() => {
-    router.navigate(ROUTES.CALENDAR as any);
+    router.navigate(ROUTES.CALENDAR);
   }, [router]);
 
   const scheduling = useTrainingPlanTemplateSchedulingController({
@@ -372,7 +405,7 @@ export default function TrainingPlanOverview() {
   });
   const isCurrentScheduledPlan = !!plan?.id && scheduling.activePlan?.id === plan.id;
   const headerActions = useTrainingPlanHeaderSocialActions({
-    plan,
+    plan: plan ?? null,
     router,
     utils,
   });
@@ -479,7 +512,7 @@ export default function TrainingPlanOverview() {
 
   const handleOpenActivity = useCallback(() => {
     if (typeof activityId !== "string") return;
-    navigateTo(ROUTES.PLAN.ACTIVITY_DETAIL(activityId) as any);
+    navigateTo(ROUTES.PLAN.ACTIVITY_DETAIL(activityId));
   }, [activityId, navigateTo]);
 
   const handleRefresh = async () => {
@@ -503,7 +536,7 @@ export default function TrainingPlanOverview() {
     navigateTo({
       pathname: ROUTES.PLAN.TRAINING_PLAN.EDIT,
       params: { id: plan?.id, initialTab: "plan" },
-    } as any);
+    });
   }, [isOwnedByUser, navigateTo, plan?.id]);
 
   const handleDeletePlan = useCallback(() => {
@@ -521,7 +554,7 @@ export default function TrainingPlanOverview() {
 
   const handleOpenLinkedActivityPlan = useCallback(
     (activityPlanId: string) => {
-      navigateTo(ROUTES.PLAN.PLAN_DETAIL(activityPlanId) as any);
+      navigateTo(ROUTES.PLAN.PLAN_DETAIL(activityPlanId));
     },
     [navigateTo],
   );
@@ -637,8 +670,19 @@ export default function TrainingPlanOverview() {
     () => linkedWorkoutCards.filter((planItem) => planItem.hasRoute),
     [linkedWorkoutCards],
   );
+  const planStructureRecord =
+    plan?.structure && typeof plan.structure === "object"
+      ? (plan.structure as Record<string, unknown>)
+      : null;
+  const periodizationTemplate =
+    planStructureRecord?.periodization_template &&
+    typeof planStructureRecord.periodization_template === "object"
+      ? (planStructureRecord.periodization_template as Record<string, unknown>)
+      : null;
   const periodizationTargetDate = formatDateLabel(
-    plan?.structure?.periodization_template?.target_date,
+    typeof periodizationTemplate?.target_date === "string"
+      ? periodizationTemplate.target_date
+      : undefined,
   );
 
   React.useEffect(() => {
@@ -763,7 +807,7 @@ export default function TrainingPlanOverview() {
       await updatePlanStructureMutation.mutateAsync({
         id: plan.id,
         expectedStructureHash: plan.structure_hash,
-        structure: nextStructure as any,
+        structure: persistedTrainingPlanStructureSchema.parse(nextStructure),
       });
     },
     [plan?.id, plan?.structure, plan?.structure_hash, updatePlanStructureMutation],
@@ -839,7 +883,7 @@ export default function TrainingPlanOverview() {
 
   React.useEffect(() => {
     if (!loadingPlan && !plan && !id) {
-      router.replace(ROUTES.PLAN.TRAINING_PLAN.CREATE as any);
+      router.replace(ROUTES.PLAN.TRAINING_PLAN.CREATE);
     }
   }, [id, loadingPlan, plan, router]);
 
@@ -1244,7 +1288,7 @@ function TrainingPlanCompactActivityPlanCard({
   linkedPlan,
   onPress,
 }: {
-  linkedPlan: any;
+  linkedPlan: ActivityPlanListItem;
   onPress: () => void;
 }) {
   return (

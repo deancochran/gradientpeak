@@ -31,6 +31,7 @@ import {
 } from "./SimplifiedMetrics";
 import { type DurableStreamReplay, StreamBuffer } from "./StreamBuffer";
 import type {
+  CurrentReadings,
   LiveMetricsState,
   LocationReading,
   ProfileMetrics,
@@ -41,12 +42,14 @@ import type {
 } from "./types";
 
 // Define event types for LiveMetricsManager
+type EventArguments = Parameters<typeof console.log>;
+
 interface LiveMetricsEvents {
   statsUpdate: (data: { stats: SessionStats; timestamp: number }) => void;
-  sensorUpdate: (data: { readings: any; timestamp: number }) => void;
+  sensorUpdate: (data: { readings: CurrentReadings; timestamp: number }) => void;
   metricsUpdated: (data: { profile: ProfileMetrics; zones: ZoneConfig }) => void;
   persistenceError: (error: unknown) => void;
-  [key: string]: (...args: any[]) => void; // Index signature for EventsMap
+  [key: string]: (...args: EventArguments) => void;
 }
 
 export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
@@ -489,8 +492,10 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   /**
    * Get current sensor readings with freshness tracking
    */
-  public getCurrentReadings() {
-    const readings: any = {
+  public getCurrentReadings(): CurrentReadings & {
+    lastUpdated: NonNullable<CurrentReadings["lastUpdated"]>;
+  } {
+    const readings: CurrentReadings = {
       heartRate: this.buffer.getLatest("heartrate"),
       power: this.buffer.getLatest("power"),
       cadence: this.buffer.getLatest("cadence"),
@@ -509,21 +514,24 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     }
 
     // Track freshness
-    readings.lastUpdated = {};
+    const lastUpdated: NonNullable<CurrentReadings["lastUpdated"]> = {};
+    readings.lastUpdated = lastUpdated;
     const metrics = ["heartrate", "power", "cadence", "speed", "temperature"];
     for (const metric of metrics) {
       const reading = this.buffer.getLatestReading(metric);
       if (reading) {
         const key = metric === "heartrate" ? "heartRate" : metric;
-        readings.lastUpdated[key] = reading.timestamp;
+        lastUpdated[key as keyof typeof lastUpdated] = reading.timestamp;
       }
     }
 
     if (this.lastLocation) {
-      readings.lastUpdated.position = this.lastLocation.timestamp;
+      lastUpdated.position = this.lastLocation.timestamp;
     }
 
-    return readings;
+    return readings as CurrentReadings & {
+      lastUpdated: NonNullable<CurrentReadings["lastUpdated"]>;
+    };
   }
 
   /**

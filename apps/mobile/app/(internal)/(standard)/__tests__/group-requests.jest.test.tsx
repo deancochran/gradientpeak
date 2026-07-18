@@ -6,12 +6,17 @@ import { fireEvent, renderNative, screen } from "../../../../test/render-native"
 const searchUsersUseQueryMock = jest.fn();
 const inviteProfilesMock = jest.fn(async () => undefined);
 
+type StackScreenProps = Record<string, unknown> & {
+  options?: { headerRight?: () => React.ReactNode };
+};
+type PressableProps = React.PropsWithChildren<{ onPress?: () => void } & Record<string, unknown>>;
+
 jest.useFakeTimers();
 
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: any) =>
+    Screen: (props: StackScreenProps) =>
       React.createElement(
         "StackScreen",
         props,
@@ -25,7 +30,7 @@ jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
   Alert: { alert: jest.fn() },
-  Pressable: ({ children, onPress, ...props }: any) =>
+  Pressable: ({ children, onPress, ...props }: PressableProps) =>
     React.createElement("Pressable", { onPress, ...props }, children),
   ScrollView: createHost("ScrollView"),
   View: createHost("View"),
@@ -43,7 +48,21 @@ jest.mock("@repo/ui/components/button", () => ({
 }));
 jest.mock("@repo/ui/components/search-field", () => ({
   __esModule: true,
-  SearchField: ({ accessibilityLabel, clearTestId, loading, onValueChange, testId, value }: any) =>
+  SearchField: ({
+    accessibilityLabel,
+    clearTestId,
+    loading,
+    onValueChange,
+    testId,
+    value,
+  }: {
+    accessibilityLabel: string;
+    clearTestId: string;
+    loading: boolean;
+    onValueChange: (value: string) => void;
+    testId: string;
+    value: string;
+  }) =>
     React.createElement(
       "View",
       null,
@@ -75,7 +94,10 @@ jest.mock("@/components/groups", () => ({
 }));
 jest.mock("@/components/shared/AppFormModal", () => ({
   __esModule: true,
-  AppFormModal: ({ children, footerContent }: any) =>
+  AppFormModal: ({
+    children,
+    footerContent,
+  }: React.PropsWithChildren<{ footerContent?: React.ReactNode }>) =>
     React.createElement("View", null, children, footerContent),
 }));
 jest.mock("@/lib/api", () => ({

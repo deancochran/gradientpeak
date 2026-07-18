@@ -24,7 +24,7 @@ export function TrainingPlanListItem({ plan, onPress }: TrainingPlanListItemProp
     if (onPress) {
       onPress();
     } else {
-      navigateTo(ROUTES.PLAN.TRAINING_PLAN.DETAIL(plan.id) as any);
+      navigateTo(ROUTES.PLAN.TRAINING_PLAN.DETAIL(plan.id));
     }
   };
 

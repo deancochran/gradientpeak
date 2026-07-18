@@ -27,7 +27,7 @@ export function UpcomingActivitiesCard({ activities }: UpcomingActivitiesCardPro
   const navigateTo = useAppNavigate();
 
   const handleActivityPress = (activityId: string) => {
-    navigateTo(ROUTES.PLAN.ACTIVITY_DETAIL(activityId) as any);
+    navigateTo(ROUTES.PLAN.ACTIVITY_DETAIL(activityId));
   };
 
   if (!activities || activities.length === 0) {
@@ -44,7 +44,14 @@ export function UpcomingActivitiesCard({ activities }: UpcomingActivitiesCardPro
           return (
             <View key={activity.id}>
               <ActivityPlanCard
-                plannedActivity={activity as any}
+                plannedActivity={{
+                  ...activity,
+                  activity_plan_id: activity.activity_plan.id,
+                  activity_plan: {
+                    ...activity.activity_plan,
+                    primary_category: activity.activity_plan.activity_category,
+                  },
+                }}
                 onPress={() => handleActivityPress(activity.id)}
                 showScheduleInfo
                 testID={`upcoming-activity-card-${activity.id}`}

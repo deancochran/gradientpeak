@@ -161,20 +161,12 @@ type EmittedLength = {
   active: boolean;
 };
 
-const DEFAULT_CONFIG: EncoderConfig = {
-  manufacturer: "GradientPeak",
-  deviceProduct: "MobileApp",
-  softwareVersion: "1.0.0",
-  hardwareVersion: 1,
-};
-
 export class GarminFitEncoder {
   private recordingId: string;
   private userId: string;
   private storageUri: string;
   private outputFilePath: string;
   private encoder: Encoder;
-  private config: EncoderConfig;
   private recordCount: number = 0;
   private startTime: number = 0;
   private isInitialized: boolean = false;
@@ -183,10 +175,9 @@ export class GarminFitEncoder {
   private timerStartedAt: number = 0;
   private emittedLengths: EmittedLength[] = [];
 
-  constructor(recordingId: string, userId: string, config?: Partial<EncoderConfig>) {
+  constructor(recordingId: string, userId: string, _config?: Partial<EncoderConfig>) {
     this.recordingId = recordingId;
     this.userId = userId;
-    this.config = { ...DEFAULT_CONFIG, ...config };
     const baseDir = Paths.cache.uri || Paths.document.uri || "";
     this.storageUri = `${baseDir}fit_encoding_${recordingId}/`;
     this.outputFilePath = `${this.storageUri}activity.fit`;
@@ -382,7 +373,7 @@ export class GarminFitEncoder {
     try {
       this.validateRecord(record);
       // Build fields object with only defined values
-      const fields: Record<string, any> = {
+      const fields: Record<string, unknown> = {
         timestamp: Utils.convertDateToDateTime(new Date(record.timestamp)),
       };
 
@@ -1277,7 +1268,6 @@ export class GarminFitEncoder {
           eventType: 4, // stopAll
         });
       } catch (_e) {
-        console.warn("[GarminFitEncoder] Failed to write stopAll event, trying stop...");
         this.encoder.writeMesg({
           mesgNum: Profile.MesgNum.EVENT,
           timestamp: fitEndTime,
@@ -1294,7 +1284,7 @@ export class GarminFitEncoder {
         // LAP message - only include standard FIT Profile fields
         // Note: avgSpeed/maxSpeed are NOT standard LAP fields per Garmin FIT SDK
         // Speed data should only be in RECORD messages
-        const lapFields: Record<string, any> = {
+        const lapFields: Record<string, unknown> = {
           messageIndex: 0,
           timestamp: fitEndTime,
           startTime: fitStartTime,
@@ -1317,7 +1307,7 @@ export class GarminFitEncoder {
 
           // LAP message - only include standard FIT Profile fields
           // Note: avgSpeed/maxSpeed are NOT standard LAP fields per Garmin FIT SDK
-          const lapFields: Record<string, any> = {
+          const lapFields: Record<string, unknown> = {
             messageIndex: lap.lapNumber - 1,
             timestamp: lapEndTime,
             startTime: lapStartTime,
@@ -1343,7 +1333,7 @@ export class GarminFitEncoder {
       // 3. SESSION Message (REQUIRED - must have messageIndex!)
       const fitStartTime = Utils.convertDateToDateTime(new Date(sessionData.startTime));
 
-      const sessionFields: Record<string, any> = {
+      const sessionFields: Record<string, unknown> = {
         messageIndex: 0, // CRITICAL: Required field for SESSION messages
         timestamp: fitEndTime,
         startTime: fitStartTime,
@@ -1445,9 +1435,7 @@ export class GarminFitEncoder {
     console.log(`[GarminFitEncoder] Wrote ${file.size ?? 0} bytes to ${this.outputFilePath}`);
 
     if (Platform.OS === "ios") {
-      console.log("[GarminFitEncoder] Applying iOS sync delay (1000ms)...");
       await new Promise((resolve) => setTimeout(resolve, 1000));
-      console.log("[GarminFitEncoder] iOS sync delay complete");
     }
   }
 

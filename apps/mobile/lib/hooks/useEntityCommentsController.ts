@@ -31,7 +31,7 @@ export function useEntityCommentsController({
         }
       : skipToken,
     {
-      getNextPageParam: (lastPage: any) => lastPage.nextCursor,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
     },
   );
 
@@ -60,7 +60,7 @@ export function useEntityCommentsController({
   return {
     addCommentPending: addCommentMutation.isPending,
     commentCount: commentsQuery.data?.pages[0]?.total ?? 0,
-    comments: commentsQuery.data?.pages.flatMap((page: any) => page.comments) ?? [],
+    comments: commentsQuery.data?.pages.flatMap((page) => page.comments) ?? [],
     handleAddComment,
     hasMoreComments: commentsQuery.hasNextPage ?? false,
     isLoadingMoreComments: commentsQuery.isFetchingNextPage,

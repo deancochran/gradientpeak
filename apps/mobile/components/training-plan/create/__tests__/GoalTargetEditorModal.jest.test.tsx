@@ -1,4 +1,6 @@
 import React from "react";
+import type { ReactTestInstance } from "react-test-renderer";
+import type { HostProps } from "../../../../test/mock-components";
 import { fireEvent, renderNative } from "../../../../test/render-native";
 import { GoalTargetEditorModal } from "../GoalTargetEditorModal";
 
@@ -17,58 +19,57 @@ jest.mock("../../../../lib/training-plan-form/input-parsers", () => ({
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  Modal: (props: any) => React.createElement("Modal", props, props.children),
-  ScrollView: (props: any) => React.createElement("ScrollView", props, props.children),
-  View: (props: any) => React.createElement("View", props, props.children),
+  Modal: (props: HostProps) => React.createElement("Modal", props, props.children),
+  ScrollView: (props: HostProps) => React.createElement("ScrollView", props, props.children),
+  View: (props: HostProps) => React.createElement("View", props, props.children),
 }));
 
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
-  Button: (props: any) => React.createElement("Button", props, props.children),
+  Button: (props: HostProps) => React.createElement("Button", props, props.children),
 }));
 
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
-  Text: (props: any) => React.createElement("Text", props, props.children),
+  Text: (props: HostProps) => React.createElement("Text", props, props.children),
 }));
 
 jest.mock("@repo/ui/components/label", () => ({
   __esModule: true,
-  Label: (props: any) => React.createElement("Label", props, props.children),
+  Label: (props: HostProps) => React.createElement("Label", props, props.children),
 }));
 
 jest.mock("@repo/ui/components/select", () => ({
   __esModule: true,
-  Select: (props: any) => React.createElement("Select", props, props.children),
-  SelectContent: (props: any) => React.createElement("SelectContent", props, props.children),
-  SelectItem: (props: any) => React.createElement("SelectItem", props, props.children),
-  SelectTrigger: (props: any) => React.createElement("SelectTrigger", props, props.children),
-  SelectValue: (props: any) => React.createElement("SelectValue", props),
+  Select: (props: HostProps) => React.createElement("Select", props, props.children),
+  SelectContent: (props: HostProps) => React.createElement("SelectContent", props, props.children),
+  SelectItem: (props: HostProps) => React.createElement("SelectItem", props, props.children),
+  SelectTrigger: (props: HostProps) => React.createElement("SelectTrigger", props, props.children),
+  SelectValue: (props: HostProps) => React.createElement("SelectValue", props),
 }));
 
 jest.mock("@repo/ui/components/bounded-number-input", () => ({
   __esModule: true,
-  BoundedNumberInput: (props: any) => React.createElement("BoundedNumberInput", props),
+  BoundedNumberInput: (props: HostProps) => React.createElement("BoundedNumberInput", props),
 }));
 
 jest.mock("@repo/ui/components/duration-input", () => ({
   __esModule: true,
-  DurationInput: (props: any) => React.createElement("DurationInput", props),
+  DurationInput: (props: HostProps) => React.createElement("DurationInput", props),
 }));
 
 jest.mock("@repo/ui/components/pace-input", () => ({
   __esModule: true,
-  PaceInput: (props: any) => React.createElement("PaceInput", props),
+  PaceInput: (props: HostProps) => React.createElement("PaceInput", props),
 }));
 
 const findMockNodes = (rendered: ReturnType<typeof renderNative>, type: string) =>
-  (() => {
-    try {
-      return (rendered as any).UNSAFE_getAllByType(type);
-    } catch {
-      return [];
-    }
-  })();
+  rendered.UNSAFE_root.findAll((node: ReactTestInstance) => node.type === type);
+
+function requireNode(node: ReactTestInstance | undefined): ReactTestInstance {
+  if (!node) throw new Error("Expected mock node");
+  return node;
+}
 
 describe("GoalTargetEditorModal", () => {
   it("updates target type from the editing context", () => {
@@ -126,18 +127,18 @@ describe("GoalTargetEditorModal", () => {
     );
 
     const wattsInput = findMockNodes(rendered, "BoundedNumberInput").find(
-      (node: any) => node.props.id === "editor-power-watts",
+      (node: ReactTestInstance) => node.props.id === "editor-power-watts",
     );
-    fireEvent(wattsInput, "onChange", "300");
+    fireEvent(requireNode(wattsInput), "onChange", "300");
 
     expect(onUpdateTarget).toHaveBeenCalledWith("goal-1", "target-1", {
       targetWatts: 300,
     });
 
     const doneButton = findMockNodes(rendered, "Button").find(
-      (node: any) => node.props.size === "sm",
+      (node: ReactTestInstance) => node.props.size === "sm",
     );
-    fireEvent.press(doneButton);
+    fireEvent.press(requireNode(doneButton));
 
     expect(onClose).toHaveBeenCalledTimes(1);
   });

@@ -106,12 +106,19 @@ export function PlannedAgendaEventCard({
           ) : null}
         </View>
 
-        {event.activity_plan ? (
+        {event.activity_plan?.id && event.activity_plan.name ? (
           <View className="gap-2">
             <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               Linked activity plan
             </Text>
-            <ActivityPlanCard activityPlan={event.activity_plan as any} variant="compact" />
+            <ActivityPlanCard
+              activityPlan={{
+                ...event.activity_plan,
+                id: event.activity_plan.id,
+                name: event.activity_plan.name,
+              }}
+              variant="compact"
+            />
           </View>
         ) : null}
       </View>

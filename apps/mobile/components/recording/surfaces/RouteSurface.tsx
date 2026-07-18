@@ -9,7 +9,7 @@ import type { RecordingRouteMode } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import type { LocationObject } from "expo-location";
+import type { LocationHeadingObject, LocationObject } from "expo-location";
 import { Navigation } from "lucide-react-native";
 import React, { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
@@ -52,9 +52,9 @@ export function RouteSurface({
     if (!hasRoute || !service?.currentRoute?.coordinates) return [];
 
     // Convert route coordinates to map format
-    return service.currentRoute.coordinates.map((coord: any) => ({
-      latitude: coord.lat || coord.latitude,
-      longitude: coord.lng || coord.longitude,
+    return service.currentRoute.coordinates.map((coord) => ({
+      latitude: coord.latitude,
+      longitude: coord.longitude,
     }));
   }, [hasRoute, service?.currentRoute]);
 
@@ -99,7 +99,7 @@ export function RouteSurface({
   useEffect(() => {
     if (!service || !isLiveNavigation) return;
 
-    const handleHeadingUpdate = (headingObject: any) => {
+    const handleHeadingUpdate = (headingObject: LocationHeadingObject) => {
       const newHeading = headingObject.magHeading ?? headingObject.trueHeading ?? 0;
 
       // Smooth interpolation to prevent jitter
@@ -310,7 +310,8 @@ export function RouteSurface({
 function getRouteRegion(coordinates: Array<{ latitude: number; longitude: number }>) {
   if (coordinates.length === 0) return null;
 
-  const first = coordinates[0]!;
+  const [first] = coordinates;
+  if (!first) return null;
   let minLat = first.latitude;
   let maxLat = first.latitude;
   let minLng = first.longitude;

@@ -20,10 +20,14 @@ const deleteMutateMock = jest.fn();
 const toggleLikeMutateMock = jest.fn();
 const authState = { user: { id: "profile-1" } };
 
+type StackScreenProps = Record<string, unknown> & {
+  options?: { headerRight?: () => React.ReactNode };
+};
+
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: any) =>
+    Screen: (props: StackScreenProps) =>
       React.createElement(
         "StackScreen",
         props,

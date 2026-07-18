@@ -5,12 +5,16 @@ import { renderNative, screen } from "../../../../test/render-native";
 import EventDetailScreen from "../event-detail";
 
 var mockRouterNavigate = jest.fn();
-var mockQuery = jest.fn((_input?: any, _options?: any) => ({
+var mockQuery = jest.fn((_input?: unknown, _options?: unknown) => ({
   data: null,
   error: { data: { code: "NOT_FOUND" } },
   isLoading: false,
   refetch: jest.fn(),
 }));
+
+type StackScreenProps = Record<string, unknown> & {
+  options?: { headerRight?: () => React.ReactNode };
+};
 
 jest.mock("@tanstack/react-query", () => ({
   __esModule: true,
@@ -31,7 +35,7 @@ jest.mock("react-native", () => ({
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: any) =>
+    Screen: (props: StackScreenProps) =>
       React.createElement(
         "StackScreen",
         props,
@@ -189,7 +193,7 @@ jest.mock("@/lib/api", () => ({
     },
     events: {
       getById: {
-        useQuery: (input: any, options: any) => mockQuery(input, options),
+        useQuery: (input: unknown, options: unknown) => mockQuery(input, options),
       },
       create: {
         useMutation: () => ({

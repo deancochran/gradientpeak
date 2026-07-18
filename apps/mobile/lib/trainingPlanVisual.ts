@@ -288,7 +288,10 @@ function buildPeriodizedModel(
         weightedBlocks.find((candidate) => {
           accumulatedWeeks += candidate.weeks;
           return positionWeek <= accumulatedWeeks;
-        }) ?? weightedBlocks[weightedBlocks.length - 1]!;
+        }) ?? weightedBlocks.at(-1);
+      if (!block) {
+        throw new Error("Expected at least one weighted training block");
+      }
 
       const relativeLoad = clampUnit(block.load <= 0 ? 0.35 : 0.28 + (block.load / maxLoad) * 0.62);
       const relativeRecovery =

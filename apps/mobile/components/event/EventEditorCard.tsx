@@ -29,8 +29,8 @@ export type EventRecurrenceFrequency = "none" | "daily" | "weekly" | "monthly";
 export type ActivityPlanListItem = {
   id: string;
   name: string;
-  categories: readonly string[];
-  primary_category: string;
+  categories?: readonly string[];
+  primary_category?: string;
   structure?: unknown;
   description?: string | null;
   authoritative_metrics?: {

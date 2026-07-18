@@ -133,9 +133,9 @@ function getRouteCoordinates(service: ActivityRecorderService | null) {
   const coordinates = service?.currentRoute?.coordinates ?? [];
 
   return coordinates
-    .map((coord: any) => ({
-      latitude: coord.latitude ?? coord.lat,
-      longitude: coord.longitude ?? coord.lng,
+    .map((coord) => ({
+      latitude: coord.latitude,
+      longitude: coord.longitude,
     }))
     .filter(
       (coord: { latitude?: number; longitude?: number }) =>
@@ -146,7 +146,8 @@ function getRouteCoordinates(service: ActivityRecorderService | null) {
 function getRouteRegion(coordinates: Array<{ latitude: number; longitude: number }>) {
   if (coordinates.length === 0) return null;
 
-  const first = coordinates[0]!;
+  const [first] = coordinates;
+  if (!first) return null;
   let minLat = first.latitude;
   let maxLat = first.latitude;
   let minLng = first.longitude;

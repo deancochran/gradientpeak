@@ -62,7 +62,7 @@ export class DataBuffer {
     if (!this.stores.has(reading.metric)) {
       this.stores.set(reading.metric, []);
     }
-    const readings = this.stores.get(reading.metric)!;
+    const readings = this.stores.get(reading.metric) ?? [];
     const insertIndex = readings.findIndex((existing) => existing.timestamp > reading.timestamp);
     if (insertIndex === -1) {
       readings.push(reading);

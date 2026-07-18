@@ -17,9 +17,6 @@ interface ActivityGraphProps {
 }
 export const ActivityGraph = memo<ActivityGraphProps>(function ActivityGraph({
   structure,
-  currentStep,
-  onStepPress,
-  className = "h-24",
 }: ActivityGraphProps) {
   const profileData = extractActivityProfile(compileActivityPlanV3(structure));
   const _totalDuration = profileData.reduce((sum, step) => sum + (step.durationSeconds ?? 0), 0);

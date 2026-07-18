@@ -1,4 +1,4 @@
-import { parseActivityFile } from "@repo/core/server/activity-files";
+import { parseActivityFile } from "@repo/core/activity-files/parser";
 import { useCallback, useState } from "react";
 import { api } from "@/lib/api";
 
@@ -12,7 +12,7 @@ export function useActivityFileStreams() {
   const utils = api.useUtils();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [streams, setStreams] = useState<any | null>(null);
+  const [streams, setStreams] = useState<ReturnType<typeof parseActivityFile> | null>(null);
 
   /**
    * Load and parse activity file from Supabase Storage
@@ -29,8 +29,6 @@ export function useActivityFileStreams() {
       setError(null);
 
       try {
-        console.log("[useActivityFileStreams] Downloading activity file:", activityFilePath);
-
         const { signedUrl } = await utils.client.activityFiles.getActivityFileUrl.query({
           filePath: activityFilePath,
         });
@@ -41,8 +39,6 @@ export function useActivityFileStreams() {
           throw new Error(`Failed to download activity file: ${activityFileResponse.status}`);
         }
 
-        console.log("[useActivityFileStreams] Parsing activity file...");
-
         const arrayBuffer = await activityFileResponse.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
         const parseResult = parseActivityFile({ data: buffer, fileName: activityFilePath });
@@ -51,12 +47,10 @@ export function useActivityFileStreams() {
           throw new Error("Failed to parse activity file - no session or records found");
         }
 
-        console.log("[useActivityFileStreams] Activity file parsed successfully");
         setStreams(parseResult);
         return parseResult;
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : "Unknown error loading streams";
-        console.error("[useActivityFileStreams] Error:", errorMessage);
         setError(errorMessage);
         return null;
       } finally {

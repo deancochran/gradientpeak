@@ -14,7 +14,15 @@ import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { router } from "expo-router";
-import { Activity, Bike, Check, Dumbbell, Footprints, Waves } from "lucide-react-native";
+import {
+  Activity,
+  Bike,
+  Check,
+  Dumbbell,
+  Footprints,
+  type LucideIcon,
+  Waves,
+} from "lucide-react-native";
 import { useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { useActivityStatus, useRecordingState } from "@/lib/hooks/useActivityRecorder";
@@ -24,7 +32,7 @@ import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvi
 const ACTIVITY_CATEGORIES: {
   value: RecordingActivityCategory;
   label: string;
-  icon: any;
+  icon: LucideIcon;
 }[] = [
   { value: "run", label: "Run", icon: Footprints },
   { value: "bike", label: "Bike", icon: Bike },

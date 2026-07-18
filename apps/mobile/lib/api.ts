@@ -14,6 +14,17 @@ export { api };
 
 const API_REQUEST_TIMEOUT_MS = 30000;
 
+export class ApiRequestTimeoutError extends Error {
+  readonly code = "API_REQUEST_TIMEOUT";
+  readonly timeoutMs: number;
+
+  constructor(timeoutMs: number) {
+    super(`API request timed out after ${timeoutMs}ms`);
+    this.name = "ApiRequestTimeoutError";
+    this.timeoutMs = timeoutMs;
+  }
+}
+
 function getActionName(input: RequestInfo | URL) {
   const rawUrl =
     typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
@@ -25,24 +36,34 @@ function getActionName(input: RequestInfo | URL) {
       ? (parsed.pathname.split(marker)[1] ?? parsed.pathname)
       : parsed.pathname;
 
-    return decodeURIComponent(actionPath || parsed.pathname);
+    return decodeURIComponent(actionPath || parsed.pathname)
+      .replace(/[^A-Za-z0-9._,-]/g, "_")
+      .slice(0, 160);
   } catch {
-    return rawUrl;
+    return "unknown";
   }
 }
 
-const fetchWithTimeout: typeof fetch = async (input, init) => {
+export const fetchWithTimeout: typeof fetch = async (input, init) => {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
+  let abortSource: "local_timeout" | "upstream_abort" | null = null;
+  const startedAt = Date.now();
+  const timeoutId = setTimeout(() => {
+    abortSource = "local_timeout";
+    controller.abort();
+  }, API_REQUEST_TIMEOUT_MS);
   const action = getActionName(input);
   const method = init?.method ?? "GET";
 
   const upstreamSignal = init?.signal;
-  const abortFromUpstream = () => controller.abort();
+  const abortFromUpstream = () => {
+    abortSource = "upstream_abort";
+    controller.abort();
+  };
 
   if (upstreamSignal) {
     if (upstreamSignal.aborted) {
-      controller.abort();
+      abortFromUpstream();
     } else {
       upstreamSignal.addEventListener("abort", abortFromUpstream, { once: true });
     }
@@ -65,11 +86,16 @@ const fetchWithTimeout: typeof fetch = async (input, init) => {
 
     return response;
   } catch (error) {
+    const elapsedMs = Math.max(0, Date.now() - startedAt);
     logMobileAction(action, "failure", {
       channel: "api",
       method,
-      error: error instanceof Error ? error.message : String(error),
+      classification: abortSource ?? "transport_failure",
+      elapsedMs,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+      timeoutMs: API_REQUEST_TIMEOUT_MS,
     });
+    if (abortSource === "local_timeout") throw new ApiRequestTimeoutError(API_REQUEST_TIMEOUT_MS);
     throw error;
   } finally {
     clearTimeout(timeoutId);

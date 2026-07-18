@@ -24,7 +24,6 @@ export function PerformanceTrendsChart({
   data,
   metric,
   height = 300,
-  showTrendline = true,
 }: PerformanceTrendsChartProps) {
   // Filter data based on metric availability
   const filteredData =

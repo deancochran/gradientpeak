@@ -1,6 +1,9 @@
 import React from "react";
 
-import { createHost as mockCreateHost } from "../../../test/mock-components";
+import {
+  createHost as mockCreateHost,
+  type PressableHostProps,
+} from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 
 const navigateMock = jest.fn();
@@ -13,7 +16,7 @@ jest.mock("expo-router", () => ({
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  TouchableOpacity: ({ children, onPress, ...props }: any) =>
+  TouchableOpacity: ({ children, onPress, ...props }: PressableHostProps) =>
     React.createElement("Pressable", { onPress, ...props }, children),
   View: mockCreateHost("View"),
 }));

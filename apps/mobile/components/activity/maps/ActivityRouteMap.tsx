@@ -82,11 +82,7 @@ export function ActivityRouteMap({
 
     const timestampsToUse = timestamps.length > 0 ? timestamps : coordPairs.map((_, i) => i);
 
-    const { coordinates: sampledCoords, timestamps: sampledTimestamps } = downsampleGPSRoute(
-      coordPairs,
-      timestampsToUse,
-      500,
-    );
+    const { coordinates: sampledCoords } = downsampleGPSRoute(coordPairs, timestampsToUse, 500);
 
     const sampledCoordinates = sampledCoords.map(([lat, lng]) => ({
       latitude: lat,
@@ -200,9 +196,9 @@ export function ActivityRouteMap({
             toolbarEnabled={false}
           >
             {/* Colored route segments */}
-            {segments.map((segment, index) => (
+            {segments.map((segment) => (
               <Polyline
-                key={index}
+                key={`${segment.color}-${JSON.stringify(segment.coordinates[0])}-${JSON.stringify(segment.coordinates.at(-1))}`}
                 coordinates={segment.coordinates}
                 strokeColor={segment.color}
                 strokeWidth={4}

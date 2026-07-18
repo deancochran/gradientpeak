@@ -1,5 +1,6 @@
 import { withSentry } from "@sentry/react-native/expo";
 import type { ConfigContext, ExpoConfig } from "expo/config";
+import { createMobileSentryOptions } from "./lib/services/sentry-options.js";
 import { version } from "./package.json";
 
 const EAS_PROJECT_ID = "6d9b541c-ffca-46c3-b323-af579ff46b68";
@@ -172,13 +173,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     organization: sentryOrganization,
     project: sentryProject,
     useNativeInit: Boolean(sentryDsn),
-    options: sentryDsn
-      ? {
-          dsn: sentryDsn,
-          environment,
-          tracesSampleRate: Number(process.env.EXPO_PUBLIC_SENTRY_TRACES_SAMPLE_RATE ?? 1),
-        }
-      : undefined,
+    options: sentryDsn ? createMobileSentryOptions(process.env, environment) : undefined,
   });
 };
 

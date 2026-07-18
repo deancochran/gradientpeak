@@ -170,14 +170,14 @@ export function IntervalWizard({
     return "#06b6d4"; // Z1 - Light Blue
   };
 
-  if (!open) {
-    return null;
-  }
-
   const submitForm = useZodFormSubmit<IntervalWizardValues>({
     form,
     onSubmit: handleSave,
   });
+
+  if (!open) {
+    return null;
+  }
 
   return (
     <AppFormModal

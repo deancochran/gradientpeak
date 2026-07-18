@@ -125,7 +125,7 @@ describe("LiveMetricsManager", () => {
     expect(manager.getSessionStats().distance).toBe(0);
     expect(manager.getCurrentReadings().speed).toBeUndefined();
     expect(manager.getCurrentReadings().position).toMatchObject({ lat: 40, lng: -75 });
-    expect(manager.getCurrentReadings().lastUpdated.position).toBe(1_000);
+    expect(manager.getCurrentReadings().lastUpdated).toMatchObject({ position: 1_000 });
 
     await manager.cleanup();
   });

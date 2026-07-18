@@ -1,7 +1,9 @@
 import { validateTrainingPlanForm } from "@repo/core/plan/formValidation";
 import { useZodForm } from "@repo/ui/hooks";
-import React from "react";
+import React, { type ComponentProps, isValidElement, type ReactNode } from "react";
+import type { ReactTestInstance } from "react-test-renderer";
 import { z } from "zod";
+import type { HostProps } from "../../../../test/mock-components";
 import { fireEvent, renderNative, waitFor } from "../../../../test/render-native";
 import { AvailabilityConfigSection } from "../AvailabilityConfigSection";
 import { BehaviorControlsConfigSection } from "../BehaviorControlsConfigSection";
@@ -19,10 +21,10 @@ import {
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  Modal: (props: any) => React.createElement("Modal", props, props.children),
-  Pressable: (props: any) => React.createElement("Pressable", props, props.children),
-  ScrollView: (props: any) => React.createElement("ScrollView", props, props.children),
-  View: (props: any) => React.createElement("View", props, props.children),
+  Modal: (props: HostProps) => React.createElement("Modal", props, props.children),
+  Pressable: (props: HostProps) => React.createElement("Pressable", props, props.children),
+  ScrollView: (props: HostProps) => React.createElement("ScrollView", props, props.children),
+  View: (props: HostProps) => React.createElement("View", props, props.children),
 }));
 
 jest.mock("@repo/core", () => ({
@@ -51,90 +53,91 @@ jest.mock("@repo/core", () => ({
 
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
-  Button: (props: any) => React.createElement("Button", props, props.children),
+  Button: (props: HostProps) => React.createElement("Button", props, props.children),
 }));
 
 jest.mock("@repo/ui/components/badge", () => ({
   __esModule: true,
-  Badge: (props: any) => React.createElement("Badge", props, props.children),
+  Badge: (props: HostProps) => React.createElement("Badge", props, props.children),
 }));
 
 jest.mock("@repo/ui/components/input", () => ({
   __esModule: true,
-  Input: (props: any) => React.createElement("Input", props),
+  Input: (props: HostProps) => React.createElement("Input", props),
 }));
 
 jest.mock("@repo/ui/components/textarea", () => ({
   __esModule: true,
-  Textarea: (props: any) => React.createElement("Textarea", props),
+  Textarea: (props: HostProps) => React.createElement("Textarea", props),
 }));
 
 jest.mock("@repo/ui/components/label", () => ({
   __esModule: true,
-  Label: (props: any) => React.createElement("Label", props, props.children),
+  Label: (props: HostProps) => React.createElement("Label", props, props.children),
 }));
 
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
-  Text: (props: any) => React.createElement("Text", props, props.children),
+  Text: (props: HostProps) => React.createElement("Text", props, props.children),
 }));
 
 jest.mock("@repo/ui/components/switch", () => ({
   __esModule: true,
-  Switch: (props: any) => React.createElement("Switch", props),
+  Switch: (props: HostProps) => React.createElement("Switch", props),
 }));
 
 jest.mock("@repo/ui/components/select", () => ({
   __esModule: true,
-  Select: (props: any) => React.createElement("Select", props, props.children),
-  SelectContent: (props: any) => React.createElement("SelectContent", props, props.children),
-  SelectItem: (props: any) => React.createElement("SelectItem", props, props.children),
-  SelectTrigger: (props: any) => React.createElement("SelectTrigger", props, props.children),
-  SelectValue: (props: any) => React.createElement("SelectValue", props),
+  Select: (props: HostProps) => React.createElement("Select", props, props.children),
+  SelectContent: (props: HostProps) => React.createElement("SelectContent", props, props.children),
+  SelectItem: (props: HostProps) => React.createElement("SelectItem", props, props.children),
+  SelectTrigger: (props: HostProps) => React.createElement("SelectTrigger", props, props.children),
+  SelectValue: (props: HostProps) => React.createElement("SelectValue", props),
 }));
 
 jest.mock("../CreationProjectionChart", () => ({
   __esModule: true,
-  CreationProjectionChart: (props: any) => React.createElement("CreationProjectionChart", props),
+  CreationProjectionChart: (props: HostProps) =>
+    React.createElement("CreationProjectionChart", props),
 }));
 
 jest.mock("@repo/ui/components/bounded-number-input", () => ({
   __esModule: true,
-  BoundedNumberInput: (props: any) => React.createElement("BoundedNumberInput", props),
+  BoundedNumberInput: (props: HostProps) => React.createElement("BoundedNumberInput", props),
 }));
 
 jest.mock("@repo/ui/components/date-input", () => ({
   __esModule: true,
-  DateInput: (props: any) => React.createElement("DateField", props),
+  DateInput: (props: HostProps) => React.createElement("DateField", props),
 }));
 
 jest.mock("@repo/ui/components/duration-input", () => ({
   __esModule: true,
-  DurationInput: (props: any) => React.createElement("DurationInput", props),
+  DurationInput: (props: HostProps) => React.createElement("DurationInput", props),
 }));
 
 jest.mock("@repo/ui/components/integer-stepper", () => ({
   __esModule: true,
-  IntegerStepper: (props: any) => React.createElement("IntegerStepper", props),
+  IntegerStepper: (props: HostProps) => React.createElement("IntegerStepper", props),
 }));
 
 jest.mock("@repo/ui/components/pace-input", () => ({
   __esModule: true,
-  PaceInput: (props: any) => React.createElement("PaceInput", props),
+  PaceInput: (props: HostProps) => React.createElement("PaceInput", props),
 }));
 
 jest.mock("@repo/ui/components/percent-slider-input", () => ({
   __esModule: true,
-  PercentSliderInput: (props: any) => React.createElement("PercentSliderInput", props),
+  PercentSliderInput: (props: HostProps) => React.createElement("PercentSliderInput", props),
 }));
 
 jest.mock("@repo/ui/components/number-slider-input", () => ({
   __esModule: true,
-  NumberSliderInput: (props: any) => React.createElement("NumberSliderInput", props),
+  NumberSliderInput: (props: HostProps) => React.createElement("NumberSliderInput", props),
 }));
 
 jest.mock("lucide-react-native", () => {
-  const icon = (props: any) => React.createElement("Icon", props);
+  const icon = (props: HostProps) => React.createElement("Icon", props);
   return {
     __esModule: true,
     Flag: icon,
@@ -153,36 +156,99 @@ jest.mock("lucide-react-native", () => {
   };
 });
 
-const getNodeText = (children: any): string => {
-  if (typeof children === "string") {
-    return children;
-  }
-
-  if (typeof children === "number") {
-    return String(children);
-  }
-
-  if (Array.isArray(children)) {
-    return children.map((child) => getNodeText(child)).join("");
-  }
-
-  if (children?.props?.children !== undefined) {
+const getNodeText = (children: ReactNode): string => {
+  if (typeof children === "string") return children;
+  if (typeof children === "number") return String(children);
+  if (Array.isArray(children)) return children.map(getNodeText).join("");
+  if (isValidElement<{ children?: ReactNode }>(children))
     return getNodeText(children.props.children);
-  }
-
   return "";
 };
 
 type RenderResult = ReturnType<typeof renderNative>;
+type SinglePageFormProps = ComponentProps<typeof SinglePageForm>;
+type ProjectionChartFixture = NonNullable<SinglePageFormProps["projectionChart"]>;
+type FeasibilitySafetyFixture = NonNullable<SinglePageFormProps["feasibilitySafetySummary"]>;
+type ReadinessDeltaFixture = NonNullable<SinglePageFormProps["readinessDeltaDiagnostics"]>;
 
 const findMockNodes = (rendered: RenderResult, type: string) =>
-  (() => {
-    try {
-      return (rendered as any).UNSAFE_getAllByType(type);
-    } catch {
-      return [];
-    }
-  })();
+  rendered.UNSAFE_root.findAll((node: ReactTestInstance) => node.type === type);
+
+function requireNode<T>(node: T | undefined): T {
+  if (node === undefined) {
+    throw new Error("Expected mock node to exist");
+  }
+  return node;
+}
+
+function createFeasibilitySafetyFixture(
+  overrides: Partial<FeasibilitySafetyFixture> = {},
+): FeasibilitySafetyFixture {
+  return {
+    feasibility_band: "on-track",
+    safety_band: "safe",
+    feasibility_score: 100,
+    safety_score: 100,
+    confidence: 1,
+    top_drivers: [],
+    recommended_actions: [],
+    blockers: [],
+    computed_at: "2026-02-14T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function projectionFixture<T extends ProjectionChartFixture>(fixture: T): T {
+  return fixture;
+}
+
+const baseProjectionDiagnostics: NonNullable<ProjectionChartFixture["projection_diagnostics"]> = {
+  selected_path: "full_mpc",
+  fallback_reason: null,
+  candidate_counts: { full_mpc: 0, degraded_bounded_mpc: 0, legacy_optimizer: 0 },
+  prune_counts: { full_mpc: 0, degraded_bounded_mpc: 0 },
+  active_constraints: [],
+  tie_break_chain: [],
+  effective_optimizer_config: {
+    weights: {
+      preparedness_weight: 0,
+      risk_penalty_weight: 0,
+      volatility_penalty_weight: 0,
+      churn_penalty_weight: 0,
+    },
+    caps: { max_weekly_tss_ramp_pct: 0, max_ctl_ramp_per_week: 0 },
+    search: { lookahead_weeks: 0, candidate_steps: 0 },
+    curvature: { target: 0, strength: 0, weight: 0 },
+  },
+  clamp_counts: { tss: 0, ctl: 0 },
+  objective_contributions: {
+    sampled_weeks: 0,
+    objective_score: 0,
+    weighted_terms: {
+      goal: 0,
+      readiness: 0,
+      risk: 0,
+      volatility: 0,
+      churn: 0,
+      monotony: 0,
+      strain: 0,
+      curve: 0,
+    },
+  },
+  optimization_tradeoff_summary: {
+    goal_utility: 0,
+    risk_penalty: 0,
+    volatility_penalty: 0,
+    churn_penalty: 0,
+    net_utility: 0,
+  },
+  convergence_guard: {
+    max_solver_attempts: 0,
+    solver_attempts: 0,
+    non_finite_objective_rejections: 0,
+    stability_assertions: [],
+  },
+};
 
 const baseFormData: TrainingPlanFormData = {
   planStartDate: "2026-02-14",
@@ -218,16 +284,23 @@ const baseConfigData = {
   },
   availabilityProvenance: {
     source: "default",
+    confidence: null,
+    rationale: [],
+    references: [],
     updated_at: "2026-02-13T00:00:00.000Z",
   },
   recentInfluenceScore: 0,
   recentInfluenceAction: "accepted",
   recentInfluenceProvenance: {
     source: "default",
+    confidence: null,
+    rationale: [],
+    references: [],
     updated_at: "2026-02-13T00:00:00.000Z",
   },
   constraints: {
     hard_rest_days: [],
+    goal_difficulty_preference: "balanced",
     min_sessions_per_week: 3,
     max_sessions_per_week: 5,
   },
@@ -306,7 +379,7 @@ const baseConfigData = {
     post_goal_recovery_days: { locked: false },
     behavior_controls_v1: { locked: false },
   },
-} as unknown as TrainingPlanConfigFormData;
+} as TrainingPlanConfigFormData;
 
 function renderSinglePageForm(
   props: Omit<React.ComponentProps<typeof SinglePageForm>, "metadataForm"> & {
@@ -347,7 +420,9 @@ describe("SinglePageForm blocker surfacing", () => {
 
     await waitFor(() => {
       const textNodes = findMockNodes(rendered, "Text");
-      const allText = textNodes.map((node: any) => getNodeText(node.props.children)).join("\n");
+      const allText = textNodes
+        .map((node: ReactTestInstance) => getNodeText(node.props.children))
+        .join("\n");
       expect(allText).toContain("Needs attention: Plan");
     });
   });
@@ -362,7 +437,7 @@ describe("SinglePageForm blocker surfacing", () => {
     });
 
     const tabs = findMockNodes(rendered, "Pressable")
-      .map((node: any) => node.props.accessibilityLabel)
+      .map((node: ReactTestInstance) => node.props.accessibilityLabel)
       .filter((label: unknown): label is string => typeof label === "string");
 
     expect(tabs).toContain("Plan tab");
@@ -389,19 +464,19 @@ describe("SinglePageForm blocker surfacing", () => {
     fireEvent.press(rendered.getByLabelText("Plan tab"));
 
     const planNameInput = findMockNodes(rendered, "Input").find(
-      (node: any) => node.props.accessibilityLabel === "Plan name",
+      (node: ReactTestInstance) => node.props.accessibilityLabel === "Plan name",
     );
-    fireEvent(planNameInput!, "changeText", "Peak Block");
+    fireEvent(requireNode(planNameInput), "changeText", "Peak Block");
 
     const updatedPlanNameInput = findMockNodes(rendered, "Input").find(
-      (node: any) => node.props.accessibilityLabel === "Plan name",
+      (node: ReactTestInstance) => node.props.accessibilityLabel === "Plan name",
     );
 
     expect(updatedPlanNameInput?.props.value).toBe("Peak Block");
     expect(updatedPlanNameInput?.props.maxLength).toBe(120);
 
     const descriptionInput = findMockNodes(rendered, "Textarea").find(
-      (node: any) => node.props.accessibilityLabel === "Description",
+      (node: ReactTestInstance) => node.props.accessibilityLabel === "Description",
     );
     expect(descriptionInput?.props.maxLength).toBe(500);
   });
@@ -416,7 +491,9 @@ describe("SinglePageForm blocker surfacing", () => {
 
     await waitFor(() => {
       const textNodes = findMockNodes(rendered, "Text");
-      const allText = textNodes.map((node: any) => getNodeText(node.props.children)).join("\n");
+      const allText = textNodes
+        .map((node: ReactTestInstance) => getNodeText(node.props.children))
+        .join("\n");
 
       expect(allText).toContain("Plan name is required.");
     });
@@ -433,9 +510,11 @@ describe("SinglePageForm blocker surfacing", () => {
     fireEvent.press(rendered.getByLabelText("Tuning tab"));
 
     const sliderNodes = findMockNodes(rendered, "PercentSliderInput");
-    expect(sliderNodes.some((node: any) => node.props.id === "behavior-aggressiveness")).toBe(true);
+    expect(
+      sliderNodes.some((node: ReactTestInstance) => node.props.id === "behavior-aggressiveness"),
+    ).toBe(true);
 
-    const textNodes = findMockNodes(rendered, "Text").map((node: any) =>
+    const textNodes = findMockNodes(rendered, "Text").map((node: ReactTestInstance) =>
       getNodeText(node.props.children),
     );
     expect(textNodes.some((text: string) => text.includes("Switch mode to Advanced"))).toBe(false);
@@ -456,7 +535,7 @@ describe("SinglePageForm blocker surfacing", () => {
 
     const buttons = findMockNodes(rendered, "Button");
     const resetButtons = buttons.filter(
-      (node: any) => getNodeText(node.props.children) === "Reset",
+      (node: ReactTestInstance) => getNodeText(node.props.children) === "Reset",
     );
     expect(resetButtons).toHaveLength(1);
     const reset = resetButtons[0];
@@ -479,10 +558,12 @@ describe("SinglePageForm blocker surfacing", () => {
     const numberSliders = findMockNodes(rendered, "NumberSliderInput");
     const percentSliders = findMockNodes(rendered, "PercentSliderInput");
 
-    expect(percentSliders.some((node: any) => node.props.id === "max-weekly-load-ramp")).toBe(
-      false,
-    );
-    expect(numberSliders.some((node: any) => node.props.id === "max-weekly-ctl-ramp")).toBe(false);
+    expect(
+      percentSliders.some((node: ReactTestInstance) => node.props.id === "max-weekly-load-ramp"),
+    ).toBe(false);
+    expect(
+      numberSliders.some((node: ReactTestInstance) => node.props.id === "max-weekly-ctl-ramp"),
+    ).toBe(false);
   });
 
   it("syncs limits slider edits back through the config callback", async () => {
@@ -498,10 +579,10 @@ describe("SinglePageForm blocker surfacing", () => {
     fireEvent.press(rendered.getByLabelText("Limits tab"));
 
     const startingCtlSlider = findMockNodes(rendered, "NumberSliderInput").find(
-      (node: any) => node.props.id === "starting-ctl-assumption",
+      (node: ReactTestInstance) => node.props.id === "starting-ctl-assumption",
     );
 
-    fireEvent(startingCtlSlider!, "onChange", 47.5);
+    fireEvent(requireNode(startingCtlSlider), "onChange", 47.5);
 
     await waitFor(() => {
       expect(onConfigChange).toHaveBeenCalledWith(
@@ -526,10 +607,10 @@ describe("SinglePageForm blocker surfacing", () => {
     fireEvent.press(rendered.getByLabelText("Limits tab"));
 
     const recoverySlider = findMockNodes(rendered, "NumberSliderInput").find(
-      (node: any) => node.props.id === "post-goal-recovery-days",
+      (node: ReactTestInstance) => node.props.id === "post-goal-recovery-days",
     );
 
-    fireEvent(recoverySlider!, "onChange", 9);
+    fireEvent(requireNode(recoverySlider), "onChange", 9);
 
     await waitFor(() => {
       expect(onConfigChange).toHaveBeenCalledWith(
@@ -549,22 +630,41 @@ describe("SinglePageForm blocker surfacing", () => {
       onFormDataChange: jest.fn(),
       configData: baseConfigData,
       onConfigChange,
-      projectionChart: {
+      projectionChart: projectionFixture({
+        start_date: "2026-02-14",
+        end_date: "2026-06-01",
+        points: [],
+        goal_markers: [],
+        periodization_phases: [],
+        microcycles: [],
         constraint_summary: {
+          normalized_creation_config: {
+            optimization_profile: "balanced",
+            post_goal_recovery_days: 5,
+            max_weekly_tss_ramp_pct: 8,
+            max_ctl_ramp_per_week: 4,
+            learned_ramp_rate: { max_safe_ramp_rate: 40, confidence: "medium", source: "default" },
+          },
+          tss_ramp_clamp_weeks: 0,
+          ctl_ramp_clamp_weeks: 0,
+          recovery_weeks: 0,
           starting_state: {
             starting_ctl: 33,
+            starting_atl: 30,
+            starting_tsb: 3,
+            starting_state_is_prior: true,
           },
         },
-      } as any,
+      }),
     });
 
     fireEvent.press(rendered.getByLabelText("Limits tab"));
 
     const recoverySlider = findMockNodes(rendered, "NumberSliderInput").find(
-      (node: any) => node.props.id === "post-goal-recovery-days",
+      (node: ReactTestInstance) => node.props.id === "post-goal-recovery-days",
     );
 
-    fireEvent(recoverySlider!, "onChange", 7);
+    fireEvent(requireNode(recoverySlider), "onChange", 7);
 
     await waitFor(() => {
       expect(onConfigChange).toHaveBeenCalledWith(
@@ -589,10 +689,10 @@ describe("SinglePageForm blocker surfacing", () => {
     );
 
     const startingCtlSlider = findMockNodes(rendered, "NumberSliderInput").find(
-      (node: any) => node.props.id === "starting-ctl-assumption",
+      (node: ReactTestInstance) => node.props.id === "starting-ctl-assumption",
     );
 
-    fireEvent(startingCtlSlider!, "onChange", 47.5);
+    fireEvent(requireNode(startingCtlSlider), "onChange", 47.5);
 
     await waitFor(() => {
       expect(onChange).toHaveBeenCalledWith({
@@ -614,7 +714,7 @@ describe("SinglePageForm blocker surfacing", () => {
 
     await waitFor(() => {
       const refreshedSlider = findMockNodes(rendered, "NumberSliderInput").find(
-        (node: any) => node.props.id === "starting-ctl-assumption",
+        (node: ReactTestInstance) => node.props.id === "starting-ctl-assumption",
       );
       expect(refreshedSlider?.props.value).toBe(12);
     });
@@ -636,10 +736,10 @@ describe("SinglePageForm blocker surfacing", () => {
     fireEvent.press(rendered.getByLabelText("Availability tab"));
 
     const tuesdayButton = findMockNodes(rendered, "Button").find(
-      (node: any) => getNodeText(node.props.children) === "Tue",
+      (node: ReactTestInstance) => getNodeText(node.props.children) === "Tue",
     );
 
-    fireEvent.press(tuesdayButton!);
+    fireEvent.press(requireNode(tuesdayButton));
 
     await waitFor(() => {
       expect(onConfigChange).toHaveBeenCalledWith(
@@ -677,10 +777,10 @@ describe("SinglePageForm blocker surfacing", () => {
     );
 
     const tuesdayButton = findMockNodes(rendered, "Button").find(
-      (node: any) => getNodeText(node.props.children) === "Tue",
+      (node: ReactTestInstance) => getNodeText(node.props.children) === "Tue",
     );
 
-    fireEvent.press(tuesdayButton!);
+    fireEvent.press(requireNode(tuesdayButton));
 
     await waitFor(() => {
       expect(onChange).toHaveBeenCalledWith(
@@ -727,7 +827,7 @@ describe("SinglePageForm blocker surfacing", () => {
 
     await waitFor(() => {
       const refreshedFridayButton = findMockNodes(rendered, "Button").find(
-        (node: any) => getNodeText(node.props.children) === "Fri",
+        (node: ReactTestInstance) => getNodeText(node.props.children) === "Fri",
       );
       expect(refreshedFridayButton?.props.variant).toBe("default");
     });
@@ -746,7 +846,8 @@ describe("SinglePageForm blocker surfacing", () => {
     fireEvent.press(rendered.getByLabelText("Tuning tab"));
 
     const sliderNodes = findMockNodes(rendered, "NumberSliderInput");
-    const byId = (id: string) => sliderNodes.find((node: any) => node.props.id === id)?.props;
+    const byId = (id: string) =>
+      sliderNodes.find((node: ReactTestInstance) => node.props.id === id)?.props;
 
     expect(byId("behavior-shape-target")).toMatchObject({
       min: -1,
@@ -763,7 +864,7 @@ describe("SinglePageForm blocker surfacing", () => {
       label: "Recovery priority",
     });
     const percentSliderIds = findMockNodes(rendered, "PercentSliderInput").map(
-      (node: any) => node.props.id,
+      (node: ReactTestInstance) => node.props.id,
     );
     expect(percentSliderIds).toContain("behavior-aggressiveness");
     expect(percentSliderIds).toContain("behavior-variability");
@@ -784,10 +885,10 @@ describe("SinglePageForm blocker surfacing", () => {
     fireEvent.press(rendered.getByLabelText("Tuning tab"));
 
     const aggressivenessSlider = findMockNodes(rendered, "PercentSliderInput").find(
-      (node: any) => node.props.id === "behavior-aggressiveness",
+      (node: ReactTestInstance) => node.props.id === "behavior-aggressiveness",
     );
 
-    fireEvent(aggressivenessSlider!, "onChange", 62);
+    fireEvent(requireNode(aggressivenessSlider), "onChange", 62);
 
     await waitFor(() => {
       expect(onConfigChange).toHaveBeenCalledWith(
@@ -812,10 +913,10 @@ describe("SinglePageForm blocker surfacing", () => {
     );
 
     const aggressivenessSlider = findMockNodes(rendered, "PercentSliderInput").find(
-      (node: any) => node.props.id === "behavior-aggressiveness",
+      (node: ReactTestInstance) => node.props.id === "behavior-aggressiveness",
     );
 
-    fireEvent(aggressivenessSlider!, "onChange", 68);
+    fireEvent(requireNode(aggressivenessSlider), "onChange", 68);
 
     await waitFor(() => {
       expect(onChange).toHaveBeenCalledWith({
@@ -838,7 +939,7 @@ describe("SinglePageForm blocker surfacing", () => {
 
     await waitFor(() => {
       const refreshedSlider = findMockNodes(rendered, "PercentSliderInput").find(
-        (node: any) => node.props.id === "behavior-aggressiveness",
+        (node: ReactTestInstance) => node.props.id === "behavior-aggressiveness",
       );
       expect(refreshedSlider?.props.value).toBe(41);
     });
@@ -868,7 +969,7 @@ describe("SinglePageForm blocker surfacing", () => {
 
     fireEvent.press(rendered.getByLabelText("Review tab"));
 
-    const textNodes = findMockNodes(rendered, "Text").map((node: any) =>
+    const textNodes = findMockNodes(rendered, "Text").map((node: ReactTestInstance) =>
       getNodeText(node.props.children),
     );
 
@@ -880,7 +981,7 @@ describe("SinglePageForm blocker surfacing", () => {
     expect(textNodes).toContain("Required weekly load exceeds cap");
     expect(textNodes).toContain("Min sessions exceeds max sessions");
 
-    const buttonText = findMockNodes(rendered, "Button").map((node: any) =>
+    const buttonText = findMockNodes(rendered, "Button").map((node: ReactTestInstance) =>
       getNodeText(node.props.children),
     );
     expect(buttonText.some((text: string) => text.includes("Apply suggested fix"))).toBe(false);
@@ -894,50 +995,47 @@ describe("SinglePageForm blocker surfacing", () => {
         onFormDataChange={jest.fn()}
         configData={baseConfigData}
         onConfigChange={jest.fn()}
-        projectionChart={
-          {
-            start_date: "2026-02-14",
-            end_date: "2026-06-01",
-            readiness_confidence: 72,
-            points: [],
-            goal_markers: [
-              {
-                id: "goal-1",
-                name: "Spring race",
-                target_date: "2026-06-01",
-                priority: 1,
-              },
-            ],
-            periodization_phases: [],
-            microcycles: [],
-            goal_assessments: [
-              {
-                goal_id: "goal-1",
-                priority: 1,
-                goal_readiness_score: 88,
-                state_readiness_score: 74,
-                goal_alignment_loss_0_100: 12,
-                prediction_uncertainty: 0.24,
-                feasibility_band: "aggressive",
-                target_scores: [
-                  {
-                    kind: "finish_time",
-                    score_0_100: 67,
-                    unmet_gap: 210,
-                    rationale_codes: ["gap_high"],
-                  },
-                ],
-                conflict_notes: ["priority_precedence"],
-              },
-            ],
-          } as any
-        }
+        projectionChart={projectionFixture({
+          start_date: "2026-02-14",
+          end_date: "2026-06-01",
+          readiness_confidence: 72,
+          points: [],
+          goal_markers: [
+            {
+              id: "goal-1",
+              name: "Spring race",
+              target_date: "2026-06-01",
+              priority: 1,
+            },
+          ],
+          periodization_phases: [],
+          microcycles: [],
+          goal_assessments: [
+            {
+              goal_id: "goal-1",
+              priority: 1,
+              goal_readiness_score: 88,
+              state_readiness_score: 74,
+              goal_alignment_loss_0_100: 12,
+              feasibility_band: "aggressive",
+              target_scores: [
+                {
+                  kind: "finish_time",
+                  score_0_100: 67,
+                  unmet_gap: 210,
+                  rationale_codes: ["gap_high"],
+                },
+              ],
+              conflict_notes: ["priority_precedence"],
+            },
+          ],
+        })}
       />,
     );
 
     fireEvent.press(rendered.getByLabelText("Review tab"));
 
-    const textNodes = findMockNodes(rendered, "Text").map((node: any) =>
+    const textNodes = findMockNodes(rendered, "Text").map((node: ReactTestInstance) =>
       getNodeText(node.props.children),
     );
 
@@ -967,20 +1065,18 @@ describe("SinglePageForm blocker surfacing", () => {
         onFormDataChange={jest.fn()}
         configData={baseConfigData}
         onConfigChange={jest.fn()}
-        feasibilitySafetySummary={
-          {
-            feasibility_band: "on-track",
-            safety_band: "safe",
-            blockers: [],
-            top_drivers: [],
-          } as any
-        }
+        feasibilitySafetySummary={createFeasibilitySafetyFixture({
+          feasibility_band: "on-track",
+          safety_band: "safe",
+          blockers: [],
+          top_drivers: [],
+        })}
       />,
     );
 
     fireEvent.press(rendered.getByLabelText("Review tab"));
 
-    const textNodes = findMockNodes(rendered, "Text").map((node: any) =>
+    const textNodes = findMockNodes(rendered, "Text").map((node: ReactTestInstance) =>
       getNodeText(node.props.children),
     );
 
@@ -1013,12 +1109,13 @@ describe("SinglePageForm blocker surfacing", () => {
     fireEvent.press(rendered.getByLabelText("Review tab"));
 
     const overrideSwitch = findMockNodes(rendered, "Switch").find(
-      (node: any) => node.props.accessibilityLabel === "Allow create despite blockers",
+      (node: ReactTestInstance) =>
+        node.props.accessibilityLabel === "Allow create despite blockers",
     );
 
     expect(overrideSwitch).toBeDefined();
 
-    fireEvent(overrideSwitch!, "checkedChange", true);
+    fireEvent(requireNode(overrideSwitch), "checkedChange", true);
 
     expect(onAllowBlockingIssueOverrideChange).toHaveBeenCalledWith(true);
   });
@@ -1069,14 +1166,14 @@ describe("SinglePageForm blocker surfacing", () => {
             },
             dominant_driver: "fatigue",
             summary_codes: ["readiness_delta_diagnostics_v1"],
-          } as any
+          } satisfies ReadinessDeltaFixture
         }
       />,
     );
 
     fireEvent.press(rendered.getByLabelText("Review tab"));
 
-    const textNodes = findMockNodes(rendered, "Text").map((node: any) =>
+    const textNodes = findMockNodes(rendered, "Text").map((node: ReactTestInstance) =>
       getNodeText(node.props.children),
     );
 
@@ -1097,46 +1194,44 @@ describe("SinglePageForm blocker surfacing", () => {
         onFormDataChange={jest.fn()}
         configData={baseConfigData}
         onConfigChange={jest.fn()}
-        feasibilitySafetySummary={
-          {
-            feasibility_band: "on-track",
-            safety_band: "safe",
-            blockers: [],
-            top_drivers: [],
-          } as any
-        }
-        projectionChart={
-          {
-            start_date: "2026-02-14",
-            end_date: "2026-06-01",
-            points: [],
-            goal_markers: [],
-            periodization_phases: [],
-            microcycles: [],
-            projection_diagnostics: {
-              continuous_projection_diagnostics: {
-                effective_optimizer: {
-                  preparedness_weight: 17.2,
-                  risk_penalty_weight: 0.31,
-                },
-                active_constraints: ["tss_ramp_cap_pressure"],
-                binding_constraints: ["availability_cap"],
-                clamp_pressure: 0.38,
-                objective_composition: {
-                  preparedness: 2.41,
-                  risk_penalty: -0.52,
-                },
-                curvature_contribution: 0.18,
+        feasibilitySafetySummary={createFeasibilitySafetyFixture({
+          feasibility_band: "on-track",
+          safety_band: "safe",
+          blockers: [],
+          top_drivers: [],
+        })}
+        projectionChart={projectionFixture({
+          start_date: "2026-02-14",
+          end_date: "2026-06-01",
+          points: [],
+          goal_markers: [],
+          periodization_phases: [],
+          microcycles: [],
+          projection_diagnostics: {
+            ...baseProjectionDiagnostics,
+            continuous_projection_diagnostics: {
+              ...baseProjectionDiagnostics,
+              effective_optimizer: {
+                preparedness_weight: 17.2,
+                risk_penalty_weight: 0.31,
               },
+              active_constraints: ["tss_ramp_cap_pressure"],
+              binding_constraints: ["availability_cap"],
+              clamp_pressure: 0.38,
+              objective_composition: {
+                preparedness: 2.41,
+                risk_penalty: -0.52,
+              },
+              curvature_contribution: 0.18,
             },
-          } as any
-        }
+          },
+        })}
       />,
     );
 
     fireEvent.press(rendered.getByLabelText("Review tab"));
 
-    const textNodes = findMockNodes(rendered, "Text").map((node: any) =>
+    const textNodes = findMockNodes(rendered, "Text").map((node: ReactTestInstance) =>
       getNodeText(node.props.children),
     );
 
@@ -1165,84 +1260,81 @@ describe("SinglePageForm blocker surfacing", () => {
         onFormDataChange={jest.fn()}
         configData={baseConfigData}
         onConfigChange={jest.fn()}
-        feasibilitySafetySummary={
-          {
-            feasibility_band: "on-track",
-            safety_band: "safe",
-            blockers: [],
-            top_drivers: [],
-          } as any
-        }
-        projectionChart={
-          {
-            start_date: "2026-02-14",
-            end_date: "2026-06-01",
-            points: [],
-            goal_markers: [],
-            periodization_phases: [],
-            microcycles: [],
-            projection_diagnostics: {
-              selected_path: "full_mpc",
-              fallback_reason: null,
-              candidate_counts: {
-                full_mpc: 50,
-                degraded_bounded_mpc: 0,
-                legacy_optimizer: 0,
+        feasibilitySafetySummary={createFeasibilitySafetyFixture({
+          feasibility_band: "on-track",
+          safety_band: "safe",
+          blockers: [],
+          top_drivers: [],
+        })}
+        projectionChart={projectionFixture({
+          start_date: "2026-02-14",
+          end_date: "2026-06-01",
+          points: [],
+          goal_markers: [],
+          periodization_phases: [],
+          microcycles: [],
+          projection_diagnostics: {
+            ...baseProjectionDiagnostics,
+            selected_path: "full_mpc",
+            fallback_reason: null,
+            candidate_counts: {
+              full_mpc: 50,
+              degraded_bounded_mpc: 0,
+              legacy_optimizer: 0,
+            },
+            prune_counts: {
+              full_mpc: 4,
+              degraded_bounded_mpc: 0,
+            },
+            active_constraints: ["single_mode_safety_caps_enforced", "feasibility_caps_enforced"],
+            tie_break_chain: ["objective", "readiness"],
+            effective_optimizer_config: {
+              weights: {
+                preparedness_weight: 19.1,
+                risk_penalty_weight: 0.16,
+                volatility_penalty_weight: 0.2,
+                churn_penalty_weight: 0.18,
               },
-              prune_counts: {
-                full_mpc: 4,
-                degraded_bounded_mpc: 0,
+              caps: {
+                max_weekly_tss_ramp_pct: 40,
+                max_ctl_ramp_per_week: 12,
               },
-              active_constraints: ["single_mode_safety_caps_enforced", "feasibility_caps_enforced"],
-              tie_break_chain: ["objective", "readiness"],
-              effective_optimizer_config: {
-                weights: {
-                  preparedness_weight: 19.1,
-                  risk_penalty_weight: 0.16,
-                  volatility_penalty_weight: 0.2,
-                  churn_penalty_weight: 0.18,
-                },
-                caps: {
-                  max_weekly_tss_ramp_pct: 40,
-                  max_ctl_ramp_per_week: 12,
-                },
-                search: {
-                  lookahead_weeks: 8,
-                  candidate_steps: 15,
-                },
-                curvature: {
-                  target: 0,
-                  strength: 0,
-                  weight: 0,
-                },
+              search: {
+                lookahead_weeks: 8,
+                candidate_steps: 15,
               },
-              clamp_counts: {
-                tss: 4,
-                ctl: 2,
-              },
-              objective_contributions: {
-                sampled_weeks: 6,
-                objective_score: 2.3,
-                weighted_terms: {
-                  goal: 2.2,
-                  readiness: 1.5,
-                  risk: -0.7,
-                  volatility: -0.2,
-                  churn: -0.1,
-                  monotony: -0.03,
-                  strain: -0.02,
-                  curve: 0.21,
-                },
+              curvature: {
+                target: 0,
+                strength: 0,
+                weight: 0,
               },
             },
-          } as any
-        }
+            clamp_counts: {
+              tss: 4,
+              ctl: 2,
+            },
+            objective_contributions: {
+              sampled_weeks: 6,
+              objective_score: 2.3,
+              weighted_terms: {
+                goal: 2.2,
+                readiness: 1.5,
+                risk: -0.7,
+                volatility: -0.2,
+                churn: -0.1,
+                monotony: -0.03,
+                strain: -0.02,
+                curve: 0.21,
+              },
+            },
+          },
+        })}
       />,
     );
 
     fireEvent.press(rendered.getByLabelText("Review tab"));
 
-    const textNodes = findMockNodes(rendered, "Text").map((node: any) =>
+    const textNodes = findMockNodes(rendered, "Text").map((node: ReactTestInstance) =>
       getNodeText(node.props.children),
     );
 

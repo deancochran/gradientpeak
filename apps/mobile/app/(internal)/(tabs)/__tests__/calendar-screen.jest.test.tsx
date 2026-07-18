@@ -1,9 +1,10 @@
 import { keepPreviousData } from "@tanstack/react-query";
 import { act } from "@testing-library/react-native/pure";
 import React from "react";
+import type { ReactTestInstance } from "react-test-renderer";
 import { create } from "zustand";
 
-import { createHost } from "../../../../test/mock-components";
+import { createHost, type HostProps } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
@@ -16,7 +17,7 @@ const mockFlatListScrollToOffset = jest.fn();
 const utilsEventsInvalidateMock = jest.fn(async () => undefined);
 let mockAuthReady = true;
 const fixedNow = new Date("2026-03-23T12:00:00.000Z");
-const today = fixedNow.toISOString().split("T")[0]!;
+const today = fixedNow.toISOString().slice(0, 10);
 let mockTodayKey = today;
 
 type CalendarStoreState = {
@@ -48,6 +49,22 @@ const createCalendarStore = () =>
 
 let useCalendarStore = createCalendarStore();
 
+type FlatListItem = Record<string, unknown> & { key?: React.Key };
+type FlatListHandle = {
+  scrollToIndex: typeof mockFlatListScrollToIndex;
+  scrollToOffset: typeof mockFlatListScrollToOffset;
+};
+type FlatListMockProps = {
+  data?: FlatListItem[];
+  renderItem: (info: {
+    item: FlatListItem;
+    index: number;
+    separators: Record<string, never>;
+  }) => React.ReactNode;
+  testID?: string;
+};
+type AuthStoreFixture = { ready: boolean; session: { user: { id: string } } };
+
 jest.mock("@repo/core", () => ({
   __esModule: true,
   formatGoalTypeLabel: () => "Race Day",
@@ -64,7 +81,10 @@ jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
   Alert: { alert: jest.fn() },
-  FlatList: React.forwardRef(({ data = [], renderItem, ...props }: any, ref: any) => {
+  FlatList: React.forwardRef(function FlatListMock(
+    { data = [], renderItem, ...props }: FlatListMockProps,
+    ref: React.ForwardedRef<FlatListHandle>,
+  ) {
     const imperativeHandle = {
       scrollToIndex: mockFlatListScrollToIndex,
       scrollToOffset: mockFlatListScrollToOffset,
@@ -77,7 +97,7 @@ jest.mock("react-native", () => ({
     return React.createElement(
       "FlatList",
       { data, renderItem, ...props },
-      data.map((item: any, index: number) =>
+      data.map((item, index) =>
         React.createElement(
           React.Fragment,
           { key: item.key ?? index },
@@ -118,7 +138,7 @@ jest.mock("@/lib/auth/auth-headers", () => ({
 
 jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
-  useAuthStore: (selector: any) =>
+  useAuthStore: <T,>(selector: (state: AuthStoreFixture) => T) =>
     selector({ ready: mockAuthReady, session: { user: { id: "profile-1" } } }),
 }));
 
@@ -147,22 +167,23 @@ jest.mock("@react-navigation/native", () => ({
   useFocusEffect: (callback: () => void) => callback(),
 }));
 
-jest.spyOn(global, "setTimeout").mockImplementation(((fn: any) => {
-  fn();
-  return 0 as any;
-}) as any);
-(global as any).requestAnimationFrame = jest.fn((fn: any) => {
-  fn();
-  return 0 as any;
+jest.spyOn(global, "setTimeout").mockImplementation((fn: TimerHandler) => {
+  if (typeof fn === "function") fn();
+  return 0 as ReturnType<typeof setTimeout>;
+});
+global.requestAnimationFrame = jest.fn((fn: FrameRequestCallback) => {
+  fn(0);
+  return 0;
 });
 
 jest.mock("@gorhom/bottom-sheet", () => {
   const React = require("react");
   return {
     __esModule: true,
-    default: ({ children, ...props }: any) => React.createElement("BottomSheet", props, children),
-    BottomSheetBackdrop: (props: any) => React.createElement("BottomSheetBackdrop", props),
-    BottomSheetView: ({ children, ...props }: any) =>
+    default: ({ children, ...props }: HostProps) =>
+      React.createElement("BottomSheet", props, children),
+    BottomSheetBackdrop: (props: HostProps) => React.createElement("BottomSheetBackdrop", props),
+    BottomSheetView: ({ children, ...props }: HostProps) =>
       React.createElement("BottomSheetView", props, children),
   };
 });
@@ -174,7 +195,7 @@ jest.mock("@react-native-community/datetimepicker", () => ({
 
 jest.mock("@/components/ErrorBoundary", () => ({
   __esModule: true,
-  ErrorBoundary: ({ children }: any) => children,
+  ErrorBoundary: ({ children }: React.PropsWithChildren) => children,
   ScreenErrorFallback: createHost("ScreenErrorFallback"),
 }));
 
@@ -224,7 +245,8 @@ jest.mock("lucide-react-native", () => ({
 
 jest.mock("@/lib/stores/calendar-store", () => ({
   __esModule: true,
-  useCalendarStore: (selector: any) => selector(useCalendarStore()),
+  useCalendarStore: <T,>(selector: (state: CalendarStoreState) => T) =>
+    selector(useCalendarStore()),
 }));
 
 jest.mock("@/lib/constants/routes", () => ({
@@ -249,7 +271,7 @@ jest.mock("@/lib/utils/plan/colors", () => ({
 
 jest.mock("@/lib/utils/plan/dateGrouping", () => ({
   __esModule: true,
-  isActivityCompleted: (activity: any) => activity?.completed === true,
+  isActivityCompleted: (activity: { completed?: boolean }) => activity.completed === true,
 }));
 
 jest.mock("@/lib/navigation/useNavigationActionGuard", () => ({
@@ -304,7 +326,7 @@ jest.mock("@/lib/api", () => ({
     }),
     events: {
       list: {
-        useInfiniteQuery: (input?: any, options?: any) =>
+        useInfiniteQuery: (input?: unknown, options?: unknown) =>
           eventsListUseQueryMock(input, options) ?? {
             data: {
               pages: [
@@ -419,7 +441,7 @@ jest.mock("@/lib/api", () => ({
     groups: {
       events: {
         myCalendarGroupEvents: {
-          useInfiniteQuery: (input?: any, options?: any) =>
+          useInfiniteQuery: (input?: unknown, options?: unknown) =>
             groupEventsListUseQueryMock(input, options) ?? {
               data: { pages: [{ items: [], nextCursor: undefined }] },
               fetchNextPage: jest.fn(async () => undefined),
@@ -446,7 +468,7 @@ jest.mock("@/lib/api", () => ({
     },
     activities: {
       listPaginated: {
-        useInfiniteQuery: (input?: any, options?: any) =>
+        useInfiniteQuery: (input?: unknown, options?: unknown) =>
           activitiesListUseQueryMock(input, options) ?? {
             data: {
               pages: [
@@ -504,8 +526,18 @@ const {
   ensureDayQueryWindowCovers,
 } = require("@/components/calendar/useCalendarTimelineController");
 
-function getFlatListByTestId(rendered: any, testID: string) {
-  return rendered.UNSAFE_getAllByType("FlatList").find((list: any) => list.props.testID === testID);
+function getFlatListByTestId(rendered: ReturnType<typeof renderNative>, testID: string) {
+  type HostQueries = { UNSAFE_getAllByType(type: string): ReactTestInstance[] };
+  const list = (rendered as typeof rendered & HostQueries)
+    .UNSAFE_getAllByType("FlatList")
+    .find((candidate) => candidate.props.testID === testID);
+  if (!list) throw new Error(`Unable to find FlatList: ${testID}`);
+  return list;
+}
+
+function getHostByType(rendered: ReturnType<typeof renderNative>, type: string) {
+  type HostQueries = { UNSAFE_getByType(type: string): ReactTestInstance };
+  return (rendered as typeof rendered & HostQueries).UNSAFE_getByType(type);
 }
 
 describe("calendar day timeline screen", () => {
@@ -578,7 +610,7 @@ describe("calendar day timeline screen", () => {
   it("renders the day-first calendar timeline instead of the month grid", () => {
     const rendered = renderNative(<CalendarScreenWithErrorBoundary />);
 
-    expect((rendered as any).UNSAFE_getByType("AppHeader").props.title).toBe("Calendar");
+    expect(getHostByType(rendered, "AppHeader").props.title).toBe("Calendar");
     expect(screen.getByTestId("calendar-visible-month-label")).toBeTruthy();
     expect(screen.getByTestId("calendar-visible-month-label").props.children).toBe("March 2026");
     expect(screen.getByTestId("calendar-week-strip")).toBeTruthy();
@@ -611,7 +643,7 @@ describe("calendar day timeline screen", () => {
       });
     });
 
-    expect((rendered as any).UNSAFE_getByType("AppHeader").props.title).toBe("Calendar");
+    expect(getHostByType(rendered, "AppHeader").props.title).toBe("Calendar");
     expect(screen.getByTestId("calendar-visible-month-label").props.children).toBe("April 2026");
     expect(screen.getByTestId("calendar-week-day-selected-2026-04-01")).toBeTruthy();
   });

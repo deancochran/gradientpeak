@@ -254,14 +254,15 @@ export function AdvancedConfigSheet({
             <TabsContent value="phases" className="p-4">
               <MesocycleBuilderForm
                 data={formData.periodization_template?.mesocycles || null}
-                onChange={(mesocycles: Mesocycle[]) =>
+                onChange={(mesocycles: Mesocycle[]) => {
+                  if (!formData.periodization_template) return;
                   updateFormData({
                     periodization_template: {
-                      ...formData.periodization_template!,
+                      ...formData.periodization_template,
                       mesocycles,
                     },
-                  })
-                }
+                  });
+                }}
                 periodizationData={
                   formData.periodization_template
                     ? {

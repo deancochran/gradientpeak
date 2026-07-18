@@ -10,10 +10,16 @@ import type { CurrentReadings } from "@/lib/services/ActivityRecorder/types";
 import { ActivityProgressGraph } from "./ActivityProgress";
 
 const ProgressTrackingDisplay = memo<{
-  planProgress: any;
+  planProgress: {
+    completedSteps: number;
+    currentStepIndex: number;
+    duration: number;
+    elapsedInStep: number;
+    totalSteps: number;
+  };
   structure: ActivityPlanStructureV3;
   currentMetrics: CurrentReadings;
-}>(function ProgressTrackingDisplay({ planProgress, structure, currentMetrics }) {
+}>(function ProgressTrackingDisplay({ planProgress, structure }) {
   const overallProgress = (planProgress.completedSteps / planProgress.totalSteps) * 100;
   const stepProgress =
     planProgress.duration > 0 ? (planProgress.elapsedInStep / planProgress.duration) * 100 : 0;

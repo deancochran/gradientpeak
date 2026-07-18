@@ -1,4 +1,5 @@
 import { act, renderHook, waitFor } from "@testing-library/react-native";
+import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import type { ActivitySubmissionQueueJob } from "@/lib/services/activitySubmissionQueue";
 
 const upsertJobMock = jest.fn(async () => undefined);
@@ -50,7 +51,6 @@ jest.mock("expo-file-system", () => ({
   File: class MockFile {
     exists = true;
     size = 1234;
-    constructor(_path: string) {}
   },
 }));
 
@@ -156,7 +156,9 @@ describe("useActivitySubmission", () => {
   });
 
   it("queues a finalized artifact, creates the backend activity, and continues upload processing", async () => {
-    const { result } = renderHook(() => useActivitySubmission(service as any));
+    const { result } = renderHook(() =>
+      useActivitySubmission(service as unknown as ActivityRecorderService),
+    );
 
     await waitFor(() => expect(result.current.isReady).toBe(true));
 
@@ -234,7 +236,9 @@ describe("useActivitySubmission", () => {
       updatedAt: "2026-01-01T11:05:00.000Z",
     });
 
-    const { result } = renderHook(() => useActivitySubmission(service as any));
+    const { result } = renderHook(() =>
+      useActivitySubmission(service as unknown as ActivityRecorderService),
+    );
     await waitFor(() => expect(result.current.isReady).toBe(true));
 
     await act(async () => {
@@ -278,7 +282,9 @@ describe("useActivitySubmission", () => {
     });
     createFromRecordingSummaryMock.mockRejectedValueOnce(new Error("server unavailable"));
 
-    const { result } = renderHook(() => useActivitySubmission(service as any));
+    const { result } = renderHook(() =>
+      useActivitySubmission(service as unknown as ActivityRecorderService),
+    );
     await waitFor(() => expect(result.current.isReady).toBe(true));
 
     await act(async () => {
@@ -297,7 +303,9 @@ describe("useActivitySubmission", () => {
       getFinalizedArtifact: () => ({ ...artifact, profileId: "profile-2" }),
     };
 
-    const { result } = renderHook(() => useActivitySubmission(otherProfileService as any));
+    const { result } = renderHook(() =>
+      useActivitySubmission(otherProfileService as unknown as ActivityRecorderService),
+    );
     await waitFor(() => expect(result.current.error).toContain("different profile"));
 
     expect(upsertJobMock).not.toHaveBeenCalled();

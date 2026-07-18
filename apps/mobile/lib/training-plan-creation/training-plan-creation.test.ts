@@ -46,7 +46,6 @@ import {
   deriveTrainingPlanReadinessPresentation,
 } from "./planning-session-engine";
 import {
-  addTrainingPlanPreferenceField,
   applyTrainingPlanConstraintPreset,
   applyTrainingPlanPreferenceFieldOverride,
   selectTrainingPlanPreferenceFields,

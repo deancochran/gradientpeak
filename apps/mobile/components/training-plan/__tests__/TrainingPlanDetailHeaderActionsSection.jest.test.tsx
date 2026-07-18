@@ -1,5 +1,5 @@
 import React from "react";
-import { createHost as mockCreateHost } from "../../../test/mock-components";
+import { type HostProps, createHost as mockCreateHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
 import { TrainingPlanDetailHeaderActionsSection } from "../TrainingPlanDetailHeaderActionsSection";
 
@@ -20,25 +20,12 @@ jest.mock("@/components/shared/EntityOwnerRow", () => ({
 }));
 jest.mock("../TrainingPlanSummaryHeader", () => ({
   __esModule: true,
-  TrainingPlanSummaryHeader: ({ rightAccessory, ...props }: any) =>
+  TrainingPlanSummaryHeader: ({
+    rightAccessory,
+    ...props
+  }: HostProps & { rightAccessory?: React.ReactNode }) =>
     React.createElement("TrainingPlanSummaryHeader", props, rightAccessory),
 }));
-
-const _getAllByTypeOrEmpty = (type: string) => {
-  try {
-    return (screen as any).UNSAFE_getAllByType(type);
-  } catch {
-    return [];
-  }
-};
-
-const _getNodeText = (children: any): string => {
-  if (typeof children === "string") return children;
-  if (typeof children === "number") return String(children);
-  if (Array.isArray(children)) return children.map((child) => _getNodeText(child)).join("");
-  if (children?.props?.children !== undefined) return _getNodeText(children.props.children);
-  return "";
-};
 
 describe("TrainingPlanDetailHeaderActionsSection", () => {
   it("shows the simplified identity card with save action", () => {

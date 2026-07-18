@@ -91,12 +91,11 @@ export function StaticRouteMapPreview({
     }
   };
 
-  if (coordinates.length === 0 || !region) {
+  const [startCoordinate] = coordinates;
+  const endCoordinate = coordinates.at(-1);
+  if (!startCoordinate || !endCoordinate || !region) {
     return null;
   }
-
-  const startCoordinate = coordinates[0]!;
-  const endCoordinate = coordinates[coordinates.length - 1]!;
 
   return (
     <View style={height != null ? { height } : { flex: 1 }} onLayout={handleLayout} testID={testID}>

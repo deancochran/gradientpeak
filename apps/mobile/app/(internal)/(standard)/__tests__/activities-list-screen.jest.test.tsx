@@ -125,7 +125,7 @@ describe("activities list screen filters", () => {
     activitiesListUseInfiniteQueryMock.mockClear();
   });
 
-  it("sends default query parameters without composition mode", () => {
+  it("includes multisport in the default query", () => {
     renderNative(<ActivitiesListScreen />);
 
     expect(activitiesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
@@ -133,10 +133,31 @@ describe("activities list screen filters", () => {
         limit: 20,
         search: undefined,
         activity_category: undefined,
+        composition_mode: "include_multisport",
         sort_by: "date",
         sort_order: "desc",
       },
       expect.objectContaining({ getNextPageParam: expect.any(Function) }),
+    );
+  });
+
+  it("applies and resets the multisport composition filter", () => {
+    renderNative(<ActivitiesListScreen />);
+
+    fireEvent.press(screen.getByTestId("activities-list-filter-button"));
+    fireEvent.press(screen.getByTestId("activities-list-filter-include-multisport"));
+    fireEvent.press(screen.getByTestId("activities-list-filter-sheet-apply"));
+    expect(activitiesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ composition_mode: "single_only" }),
+      expect.any(Object),
+    );
+
+    fireEvent.press(screen.getByTestId("activities-list-filter-button"));
+    fireEvent.press(screen.getByTestId("activities-list-filter-sheet-reset"));
+    fireEvent.press(screen.getByTestId("activities-list-filter-sheet-apply"));
+    expect(activitiesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ composition_mode: "include_multisport" }),
+      expect.any(Object),
     );
   });
 

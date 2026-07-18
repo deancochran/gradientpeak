@@ -34,7 +34,6 @@ function formatAllTargets(targets?: ActivityPlanIntervalStep["targets"]): string
 
 export const StepCard = memo<StepCardProps>(function StepCard({
   step,
-  index,
   isActive = false,
   onPress,
   onLongPress,

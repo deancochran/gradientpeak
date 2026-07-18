@@ -47,7 +47,6 @@ function SensorsScreen() {
     forgetDevice,
     resetSensors,
     setPreferredMetricSource,
-    clearPreferredMetricSource,
     disableMetricSource,
     enableMetricSource,
   } = useRecorderActions(service);
@@ -177,9 +176,9 @@ function SensorsScreen() {
 
     try {
       await startScan();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Scan failed:", error);
-      const errorMsg = error?.message || String(error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
       if (errorMsg.toLowerCase().includes("powered off")) {
         setScanError("Bluetooth is off. Turn it on before scanning for sensors.");
       } else if (errorMsg.toLowerCase().includes("unauthorized")) {
@@ -210,9 +209,10 @@ function SensorsScreen() {
 
       try {
         await connectDevice(device.id);
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("Connection failed:", error);
-        const errorMessage = error?.message || "Connection failed. Move closer and try again.";
+        const errorMessage =
+          error instanceof Error ? error.message : "Connection failed. Move closer and try again.";
         setConnectErrors((prev) => ({ ...prev, [device.id]: errorMessage || "Connection failed" }));
       } finally {
         setConnectingDevices((prev) => {
@@ -326,7 +326,6 @@ function SensorsScreen() {
                   preferredSources={preferredSources}
                   disabledSources={disabledSources}
                   onSelect={setPreferredMetricSource}
-                  onClear={clearPreferredMetricSource}
                   onDisable={disableMetricSource}
                   onEnable={enableMetricSource}
                   onDisconnect={handleDisconnectDevice}
@@ -542,7 +541,6 @@ function ConnectedSensorCard({
   preferredSources,
   disabledSources,
   onSelect,
-  onClear,
   onDisable,
   onEnable,
   onDisconnect,
@@ -553,7 +551,6 @@ function ConnectedSensorCard({
   preferredSources: Partial<Record<MetricFamily, string>>;
   disabledSources: Partial<Record<MetricFamily, string[]>>;
   onSelect: (metricFamily: MetricFamily, sourceId: string) => void;
-  onClear: (metricFamily: MetricFamily) => void;
   onDisable: (metricFamily: MetricFamily, sourceId: string) => void;
   onEnable: (metricFamily: MetricFamily, sourceId: string) => void;
   onDisconnect: (deviceId: string) => Promise<void>;
@@ -609,7 +606,6 @@ function ConnectedSensorCard({
         preferredSources={preferredSources}
         disabledSources={disabledSources}
         onSelect={onSelect}
-        onClear={onClear}
         onDisable={onDisable}
         onEnable={onEnable}
       />
@@ -624,7 +620,6 @@ function MetricSourceRows({
   preferredSources,
   disabledSources,
   onSelect,
-  onClear,
   onDisable,
   onEnable,
 }: {
@@ -634,7 +629,6 @@ function MetricSourceRows({
   preferredSources: Partial<Record<MetricFamily, string>>;
   disabledSources: Partial<Record<MetricFamily, string[]>>;
   onSelect: (metricFamily: MetricFamily, sourceId: string) => void;
-  onClear: (metricFamily: MetricFamily) => void;
   onDisable: (metricFamily: MetricFamily, sourceId: string) => void;
   onEnable: (metricFamily: MetricFamily, sourceId: string) => void;
 }) {

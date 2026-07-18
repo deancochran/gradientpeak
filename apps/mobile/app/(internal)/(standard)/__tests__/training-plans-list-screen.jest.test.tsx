@@ -22,7 +22,7 @@ const plansState = [
       },
     },
   },
-] as any[];
+];
 
 jest.mock("expo-router", () => ({
   __esModule: true,
@@ -46,7 +46,7 @@ jest.mock("@/lib/stores/theme-store", () => ({
 
 jest.mock("@/components/ErrorBoundary", () => ({
   __esModule: true,
-  ErrorBoundary: ({ children }: any) => children,
+  ErrorBoundary: ({ children }: React.PropsWithChildren) => children,
   ScreenErrorFallback: createHost("ScreenErrorFallback"),
 }));
 
@@ -95,7 +95,15 @@ jest.mock("@/lib/api", () => ({
 
 jest.mock("@/components/shared/TrainingPlanCard", () => ({
   __esModule: true,
-  TrainingPlanCard: ({ plan, onPress, variant }: any) =>
+  TrainingPlanCard: ({
+    plan,
+    onPress,
+    variant,
+  }: {
+    plan: { id: string; name: string };
+    onPress?: () => void;
+    variant?: string;
+  }) =>
     React.createElement(
       "TrainingPlanCard",
       { onPress, testID: `mock-training-plan-card-${plan.id}`, variant },

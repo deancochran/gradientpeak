@@ -31,6 +31,16 @@ function numberValue(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+function dateKeyAtOffset(dateKey: string, offsetDays: number): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return null;
+  const date = new Date(`${dateKey}T12:00:00.000Z`);
+  if (!Number.isFinite(date.getTime())) return null;
+  if (date.toISOString().slice(0, 10) !== dateKey) return null;
+  date.setUTCDate(date.getUTCDate() + offsetDays);
+  if (!Number.isFinite(date.getTime())) return null;
+  return date.toISOString().slice(0, 10);
+}
+
 export function buildSelectedWeekBucket<TPoint extends TrainingPathSelectedWeekPoint>(input: {
   points: TPoint[];
   weekEnd: string;
@@ -80,9 +90,8 @@ export function buildSelectedWeekBucket<TPoint extends TrainingPathSelectedWeekP
     ),
   );
   const hasCompleteTargetCoverage = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(`${input.weekStart}T12:00:00.000Z`);
-    date.setUTCDate(date.getUTCDate() + index);
-    return targetLoadByDate.has(date.toISOString().slice(0, 10));
+    const dateKey = dateKeyAtOffset(input.weekStart, index);
+    return dateKey !== null && targetLoadByDate.has(dateKey);
   }).every(Boolean);
   const actualOrScheduledLoadTss = sum((point) => point.actualOrScheduledLoadTss);
   const targetLoadTss = hasCompleteTargetCoverage

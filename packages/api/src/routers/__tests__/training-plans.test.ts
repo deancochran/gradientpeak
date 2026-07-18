@@ -833,6 +833,33 @@ describe("trainingPlansRouter plan_start_date support", () => {
     ).toBeGreaterThan(0.6);
   });
 
+  it("rejects incompatible confirmed constraints at the boundary", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+    const suggested = await caller.getCreationSuggestions();
+
+    await expect(
+      caller.previewCreationConfig({
+        minimal_plan: {
+          plan_start_date: "2026-01-05",
+          goals: [nonBlockingGoal],
+        },
+        creation_input: {
+          confirmed_suggestions: {
+            constraints: {
+              ...suggested.suggestions.constraints,
+              hard_rest_days: ["monday"],
+              min_sessions_per_week: 7,
+            },
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
   it("merges profile settings defaults without overriding explicit user values", async () => {
     const caller = createTrainingPlansCaller({
       activities: { data: [], error: null },

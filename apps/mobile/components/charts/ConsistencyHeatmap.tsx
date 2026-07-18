@@ -103,8 +103,8 @@ export function ConsistencyHeatmap({ data, startDate, endDate }: ConsistencyHeat
 
             {/* Day labels */}
             <View className="flex-row mb-1 ml-8">
-              {dayLabels.map((day, index) => (
-                <View key={index} className="w-8 items-center">
+              {dayLabels.map((day) => (
+                <View key={day} className="w-8 items-center">
                   <Text className="text-xs text-muted-foreground">{day}</Text>
                 </View>
               ))}
@@ -119,7 +119,10 @@ export function ConsistencyHeatmap({ data, startDate, endDate }: ConsistencyHeat
                     : "";
 
                   return (
-                    <View key={weekIndex} className="flex-row items-center mb-1">
+                    <View
+                      key={week.map((day) => day.date.toISOString()).join("-") || "empty-week"}
+                      className="flex-row items-center mb-1"
+                    >
                       {/* Month label */}
                       <View className="w-8 mr-1">
                         {weekIndex === 0 || week[0]?.date.getDate() <= 7 ? (
@@ -128,9 +131,9 @@ export function ConsistencyHeatmap({ data, startDate, endDate }: ConsistencyHeat
                       </View>
 
                       {/* Days */}
-                      {week.map((day, dayIndex) => (
+                      {week.map((day) => (
                         <View
-                          key={dayIndex}
+                          key={day.date.toISOString()}
                           className={`w-7 h-7 rounded m-0.5 items-center justify-center ${
                             day.isOutOfRange
                               ? "bg-gray-100"

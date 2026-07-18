@@ -19,6 +19,20 @@ const authState = {
     bio: "Own profile",
   },
 };
+type ProfileFixture = {
+  id: string;
+  username: string;
+  avatar_url: string | null;
+  bio: string | null;
+  gender: string | null;
+  preferred_units: string | null;
+  language: string | null;
+  dob?: string;
+  followers_count?: number;
+  following_count?: number;
+  follow_status?: string;
+  is_public?: boolean;
+};
 const profileQueryState = {
   data: {
     id: "11111111-1111-4111-8111-111111111111",
@@ -28,15 +42,19 @@ const profileQueryState = {
     gender: null,
     preferred_units: "metric",
     language: "en",
-  } as any,
+  } as ProfileFixture,
   isLoading: false,
-  error: null as any,
+  error: null as Error | null,
+};
+
+type StackScreenProps = Record<string, unknown> & {
+  options?: { headerRight?: () => React.ReactNode };
 };
 
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: any) =>
+    Screen: (props: StackScreenProps) =>
       React.createElement(
         "StackScreen",
         props,
@@ -49,7 +67,7 @@ jest.mock("expo-router", () => ({
 
 jest.mock("@/components/ErrorBoundary", () => ({
   __esModule: true,
-  ErrorBoundary: ({ children }: any) => children,
+  ErrorBoundary: ({ children }: React.PropsWithChildren) => children,
   ScreenErrorFallback: createHost("ScreenErrorFallback"),
 }));
 

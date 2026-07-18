@@ -1,6 +1,6 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { Activity, Heart, TrendingUp } from "lucide-react-native";
+import { Activity, Heart, type LucideIcon, TrendingUp } from "lucide-react-native";
 import { View } from "react-native";
 
 interface CurrentStatusCardProps {
@@ -104,7 +104,7 @@ function TrainingMetricCard({
   value,
   valueClassName,
 }: {
-  icon: any;
+  icon: LucideIcon;
   iconClassName: string;
   label: string;
   subtitle: string;

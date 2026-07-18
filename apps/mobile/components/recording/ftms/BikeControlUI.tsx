@@ -31,7 +31,7 @@ export interface BikeControlUIProps {
 
 type BikeMode = "erg" | "sim" | "resistance";
 
-export function BikeControlUI({ service, controlMode, hasPlan }: BikeControlUIProps) {
+export function BikeControlUI({ service, controlMode }: BikeControlUIProps) {
   const plan = usePlan(service);
 
   // Current bike control mode (ERG, SIM, Resistance)
@@ -279,8 +279,8 @@ export function BikeControlUI({ service, controlMode, hasPlan }: BikeControlUIPr
           {/* FTP Zones Reference */}
           <View className="mt-6">
             <Text className="text-sm font-medium mb-2">FTP Zones</Text>
-            {getFTPZones().map((zone, index) => (
-              <View key={index} className="flex-row items-center gap-2 mb-1">
+            {getFTPZones().map((zone) => (
+              <View key={zone.name} className="flex-row items-center gap-2 mb-1">
                 <View className={`w-3 h-3 rounded ${zone.color}`} />
                 <Text className="text-xs flex-1">{zone.name}</Text>
                 <Text className="text-xs text-muted-foreground">

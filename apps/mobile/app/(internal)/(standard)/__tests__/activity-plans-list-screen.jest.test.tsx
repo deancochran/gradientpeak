@@ -3,6 +3,22 @@ import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
+const activityPlansListUseQueryMock = jest.fn((_input?: unknown) => ({
+  data: {
+    items: [
+      {
+        id: "plan-1",
+        name: "Tempo Ride",
+        description: "Steady state tempo blocks",
+        activity_category: "bike",
+        template_visibility: "private",
+        owner: { id: "owner-1", username: "Owner", avatar_url: null },
+      },
+    ],
+  },
+  isLoading: false,
+  error: null,
+}));
 
 type ActivityPlan = {
   id: string;
@@ -87,6 +103,37 @@ jest.mock("@/components/ErrorBoundary", () => ({
   ScreenErrorFallback: createHost("ScreenErrorFallback"),
 }));
 
+jest.mock("@/components/shared/IndexFilterSheet", () => ({
+  __esModule: true,
+  IndexFilterSheet: ({
+    children,
+    onApply,
+    onReset,
+    testID,
+    visible,
+  }: React.PropsWithChildren<{
+    onApply: () => void;
+    onReset: () => void;
+    testID: string;
+    visible: boolean;
+  }>) =>
+    visible
+      ? React.createElement(
+          "IndexFilterSheet",
+          { testID },
+          children,
+          React.createElement("TouchableOpacity", {
+            onPress: onReset,
+            testID: `${testID}-reset`,
+          }),
+          React.createElement("TouchableOpacity", {
+            onPress: onApply,
+            testID: `${testID}-apply`,
+          }),
+        )
+      : null,
+}));
+
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
   ActivityPlanCard: createHost("ActivityPlanCard"),
@@ -102,26 +149,7 @@ jest.mock("@/lib/api", () => ({
   api: {
     activityPlans: {
       list: {
-        useQuery: () => ({
-          data: {
-            items: [
-              {
-                id: "plan-1",
-                name: "Tempo Ride",
-                description: "Steady state tempo blocks",
-                activity_category: "bike",
-                template_visibility: "private",
-                owner: {
-                  id: "owner-1",
-                  username: "Owner",
-                  avatar_url: null,
-                },
-              },
-            ],
-          },
-          isLoading: false,
-          error: null,
-        }),
+        useQuery: activityPlansListUseQueryMock,
       },
     },
   },
@@ -132,6 +160,28 @@ const ActivityPlansListScreen = require("../activity-plans-list").default;
 describe("activity plans list screen", () => {
   beforeEach(() => {
     pushMock.mockReset();
+    activityPlansListUseQueryMock.mockClear();
+  });
+
+  it("applies and resets the multisport composition filter", () => {
+    renderNative(<ActivityPlansListScreen />);
+    expect(activityPlansListUseQueryMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ compositionMode: "include_multisport" }),
+    );
+
+    fireEvent.press(screen.getByTestId("activity-plans-list-filter-button"));
+    fireEvent.press(screen.getByTestId("activity-plans-list-filter-include-multisport"));
+    fireEvent.press(screen.getByTestId("activity-plans-list-filter-sheet-apply"));
+    expect(activityPlansListUseQueryMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ compositionMode: "single_only" }),
+    );
+
+    fireEvent.press(screen.getByTestId("activity-plans-list-filter-button"));
+    fireEvent.press(screen.getByTestId("activity-plans-list-filter-sheet-reset"));
+    fireEvent.press(screen.getByTestId("activity-plans-list-filter-sheet-apply"));
+    expect(activityPlansListUseQueryMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ compositionMode: "include_multisport" }),
+    );
   });
 
   it("opens activity plan detail when tapping a row", () => {

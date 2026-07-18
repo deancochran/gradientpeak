@@ -34,7 +34,6 @@ export async function loadPendingFinalizedArtifact(): Promise<RecordingSessionAr
     }
     return recordingSessionArtifactSchema.parse(stored);
   } catch (error) {
-    console.warn("[finalizedArtifactStorage] Failed to parse pending artifact", error);
     throw new Error("Stored finalized activity artifact is unreadable", { cause: error });
   }
 }
@@ -56,9 +55,7 @@ export async function deleteFinalizedArtifactFiles(
       if (activityFile.exists) {
         activityFile.delete();
       }
-    } catch (error) {
-      console.warn("[finalizedArtifactStorage] Failed to delete activity file", error);
-    }
+    } catch {}
   }
 
   for (const streamArtifactPath of artifact.streamArtifactPaths) {
@@ -67,8 +64,6 @@ export async function deleteFinalizedArtifactFiles(
       if (directory.exists) {
         directory.delete();
       }
-    } catch (error) {
-      console.warn("[finalizedArtifactStorage] Failed to delete stream artifact", error);
-    }
+    } catch {}
   }
 }

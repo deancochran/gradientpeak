@@ -18,6 +18,7 @@ import { DeviceGattQueueRegistry } from "./DeviceGattQueue";
 import {
   type ControlMode,
   type FTMSCommandContext,
+  type FTMSControlEvent,
   FTMSController,
   type FTMSFeatures,
 } from "./FTMSController";
@@ -936,7 +937,9 @@ export class SensorsManager {
           () => service.characteristics(),
           { timeoutMs: 5000 },
         );
-        chars.forEach((c) => characteristics.set(c.uuid.toLowerCase(), service.uuid));
+        chars.forEach((c) => {
+          characteristics.set(c.uuid.toLowerCase(), service.uuid);
+        });
       }
 
       const connectedSensor: ConnectedSensor = {
@@ -1363,7 +1366,9 @@ export class SensorsManager {
           this.updateSensorDataTimestamp(sensor.id);
           readings.forEach((reading) => {
             this.markObservedMetric(sensor.id, reading.metric);
-            this.dataCallbacks.forEach((cb) => cb(reading));
+            this.dataCallbacks.forEach((cb) => {
+              cb(reading);
+            });
           });
         }
       };
@@ -1617,7 +1622,9 @@ export class SensorsManager {
       this.updateSensorDataTimestamp(sensor.id);
       readings.forEach((reading) => {
         this.markObservedMetric(sensor.id, reading.metric);
-        this.dataCallbacks.forEach((cb) => cb(reading));
+        this.dataCallbacks.forEach((cb) => {
+          cb(reading);
+        });
       });
     };
   }
@@ -1988,7 +1995,7 @@ export class SensorsManager {
   /**
    * Get control events for current session
    */
-  getControlEvents(): any[] {
+  getControlEvents(): FTMSControlEvent[] {
     const controller = this.getSelectedFTMSController();
     if (!controller) {
       return [];

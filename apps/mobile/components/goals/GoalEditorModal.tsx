@@ -37,7 +37,7 @@ import {
   Trophy,
 } from "lucide-react-native";
 import type React from "react";
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
 import { Pressable, View } from "react-native";
 import { z } from "zod";
 import { AppFormModal } from "@/components/shared/AppFormModal";
@@ -407,11 +407,11 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
       hasDraftTarget(draft) &&
       !isSubmitting;
 
-    const submitCurrentDraft = () => {
+    const submitCurrentDraft = useCallback(() => {
       if (canSubmit) {
         onSubmit(form.getValues() as GoalEditorDraft);
       }
-    };
+    }, [canSubmit, form, onSubmit]);
 
     useImperativeHandle(
       ref,
