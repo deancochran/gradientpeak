@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { ContentVisibility } from "@repo/core";
-import { activityPlanStructureSchemaV3, compileActivityPlanV3 } from "@repo/core/activity-plan";
+import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
 import { activityPlanCreateSchema, activityPlanUpdateSchema } from "@repo/core/schemas";
 import {
   type ActivityPlanInsert,
@@ -31,6 +31,11 @@ import {
 } from "../utils/activity-plan-derived-metrics";
 import { computePlanMetrics } from "../utils/estimation-helpers";
 import { loadProfileIdentityMap, type profileIdentitySchema } from "../utils/profile-identity";
+import {
+  activityPlanCompositionModeSchema,
+  buildActivityPlanCompositionCondition,
+  describeActivityPlanComposition,
+} from "./activity-plan-composition";
 
 // Input schemas for queries
 const uuidSchema = z.string().uuid();
@@ -68,6 +73,7 @@ const listActivityPlansSchema = z
     visibility: templateVisibilitySchema.optional(),
     activityCategory: activityCategoryFilterSchema.optional(),
     activityCategories: activityCategoryFiltersSchema.optional(),
+    compositionMode: activityPlanCompositionModeSchema.default("include_multisport"),
     search: z.string().optional(),
     limit: z.number().min(1).max(100).default(20),
     cursor: activityPlanCursorSchema.optional(),
@@ -176,11 +182,9 @@ function serializeActivityPlanRow(row: ActivityPlanRow | unknown) {
 }
 
 function toPublicActivityPlan<T extends { structure: unknown }>(plan: T) {
-  const compiled = compileActivityPlanV3(plan.structure);
   return {
     ...plan,
-    categories: compiled.categories,
-    primary_category: compiled.primaryCategory,
+    ...describeActivityPlanComposition(plan.structure),
   };
 }
 
@@ -409,15 +413,13 @@ export const activityPlansRouter = createTRPCRouter({
       ...(input.activityCategories ?? []),
     ]);
 
-    if (requestedCategories.size > 0) {
-      conditions.push(
-        or(
-          ...[...requestedCategories].map(
-            (category) =>
-              sql`${activityPlans.structure} @> ${JSON.stringify({ segments: [{ category }] })}::jsonb`,
-          ),
-        ),
-      );
+    const compositionCondition = buildActivityPlanCompositionCondition({
+      categories: [...requestedCategories],
+      mode: input.compositionMode,
+      structure: activityPlans.structure,
+    });
+    if (compositionCondition) {
+      conditions.push(compositionCondition);
     }
 
     const trimmedSearch = input.search?.trim();

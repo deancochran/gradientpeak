@@ -492,6 +492,10 @@ export const activityPlans = pgTable(
       .where(sql`${table.is_system_template} = true`),
     index("idx_activity_plans_visibility").on(table.template_visibility),
     index("idx_activity_plans_content_visibility").on(table.content_visibility),
+    index("idx_activity_plans_structure_categories").using(
+      "gin",
+      table.structure.op("jsonb_path_ops"),
+    ),
     uniqueIndex("idx_activity_plans_import_identity")
       .on(table.profile_id, table.import_provider, table.import_external_id)
       .where(sql`${table.import_provider} is not null and ${table.import_external_id} is not null`),

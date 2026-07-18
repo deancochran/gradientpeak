@@ -161,6 +161,7 @@ export function ResourcePickerModal({
     items,
     refetch: () => void query.refetch(),
   };
+  const hasFooterAction = Boolean(footerAction);
 
   if (!visible) return null;
 
@@ -168,7 +169,7 @@ export function ResourcePickerModal({
     <AppFormModal
       description={description ?? getDefaultDescription(scope)}
       footerContent={
-        footerSlot ?? (footerAction ? <View className="gap-2">{footerAction}</View> : undefined)
+        footerSlot ?? (hasFooterAction ? <View className="gap-2">{footerAction}</View> : undefined)
       }
       onClose={onClose}
       scrollProps={{ contentContainerClassName: "gap-3 p-4" }}

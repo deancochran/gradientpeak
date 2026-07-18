@@ -20,7 +20,7 @@ import { api } from "../api";
 export const useAuth = () => {
   const store = useAuthStore();
   const utils = api.useUtils();
-  const { session, user, ready, loading } = store;
+  const { session, user, ready } = store;
 
   const isAuthenticated = useMemo(() => !!session?.user, [session]);
   const hasAuthCredentials = useMemo(() => hasSessionAuthCredentials(), []);

@@ -352,6 +352,8 @@ function mapFtmsMachineTypeToRecordingMachineType(
 // ================================
 // Core Events (minimal, focused)
 // ================================
+type EventArguments = Parameters<typeof console.log>;
+
 export interface ServiceEvents {
   // Recording state changed (pending/ready/recording/paused/finished)
   stateChanged: (state: RecordingState) => void;
@@ -399,9 +401,7 @@ export interface ServiceEvents {
 
   // Immutable snapshot changed (created/reset)
   snapshotUpdated: (snapshot: RecordingSessionSnapshot | null) => void;
-
-  // Index signature for EventsMap
-  [key: string]: (...args: any[]) => void;
+  [key: string]: (...args: EventArguments) => void;
 }
 
 // ================================
@@ -559,7 +559,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     // Note: Location tracking is started conditionally when GPS recording is enabled
 
     // Check permissions on initialization
-    this.checkPermissions();
+    void this.checkPermissions().catch((error) => {
+      console.error("[Service] Failed to check permissions:", error);
+    });
 
     // Setup sensor data listeners
     this.sensorsManager.subscribe((reading) => this.handleSensorData(reading));
@@ -1670,7 +1672,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     // Returning to foreground - reconnect sensors
     if (prevState.match(/inactive|background/) && nextState === "active") {
-      this.reconnectDisconnectedSensors();
+      void this.reconnectDisconnectedSensors().catch((error) => {
+        console.error("[Service] Failed to reconnect sensors after foregrounding:", error);
+      });
     }
   }
 
@@ -1801,7 +1805,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     // Get all locations from StreamBuffer's persistent array (not cleared on flush)
     const allLocations = this.liveMetricsManager.streamBuffer.getAllLocations();
 
-    return allLocations.map((loc: any) => ({
+    return allLocations.map((loc) => ({
       latitude: loc.latitude,
       longitude: loc.longitude,
     }));
@@ -1865,7 +1869,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     this.selectedActivityCategory =
       this.currentStep?.category ?? compileActivityPlanV3(plan.structure).primaryCategory;
-    this.syncGpsTrackingForCurrentState();
+    void this.syncGpsTrackingForCurrentState().catch((error) => {
+      console.error("[Service] Failed to sync GPS tracking after selecting plan:", error);
+    });
 
     this.emit("planSelected", { plan, eventId });
 
@@ -2203,7 +2209,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   private startCheckpointWrite(): Promise<void> {
-    if (this.checkpointWriteInFlight) return this.checkpointWriteInFlight;
+    if (this.checkpointWriteInFlight !== null) return this.checkpointWriteInFlight;
     const write = this.planBoundaryTransition.then(async () => {
       if (!this.checkpointDirty) return;
       await this.writeCheckpointWithinFence();
@@ -2222,8 +2228,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private async forceRecoveryCheckpoint(): Promise<void> {
     this.checkpointDirty = true;
     this.clearCheckpointWriteTimer();
-    while (this.checkpointDirty || this.checkpointWriteInFlight) {
-      if (this.checkpointWriteInFlight) await this.checkpointWriteInFlight;
+    while (this.checkpointDirty || this.checkpointWriteInFlight !== null) {
+      if (this.checkpointWriteInFlight !== null) await this.checkpointWriteInFlight;
       else await this.startCheckpointWrite();
     }
   }
@@ -3700,7 +3706,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     // Auto-advance plan steps when recording
     if (this.state === "recording") {
       // Update FIT recording every second
-      this.updateFitRecording();
+      void this.updateFitRecording();
 
       if (this.hasPlan && this.currentStep) {
         const progress = this.stepProgress;

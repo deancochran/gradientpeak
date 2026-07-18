@@ -10,7 +10,8 @@
     "./athlete-inputs": "./athlete-inputs/index.ts",
     "./athlete-inputs/*": "./athlete-inputs/*.ts",
     "./activity-files": "./activity-files/index.ts",
-    "./activity-files/*": "./activity-files/*.ts",
+    "./activity-files/parser": "./activity-files/parser.ts",
+    "./activity-files/fit-parser": "./activity-files/fit-parser.ts",
     "./activity-plan": "./activity-plan/index.ts",
     "./activity-segments": "./activity-segments/index.ts",
     "./bluetooth": "./bluetooth/index.ts",
@@ -110,7 +111,7 @@
     "@types/mapbox__polyline": "^1.0.5",
     "chokidar-cli": "^3.0.0",
     "concurrently": "^9.2.1",
-    "typescript": "^5.5.2",
+    "typescript": "5.9.3",
     "vitest": "^4.1.9"
   }
 }

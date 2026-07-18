@@ -49,7 +49,16 @@ import { getActivityDisplayName, type RecordingActivityCategory } from "@repo/co
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { ToggleGroup, ToggleGroupIcon, ToggleGroupItem } from "@repo/ui/components/toggle-group";
-import { Activity, Bike, Dumbbell, Footprints, MapPin, Waves, X } from "lucide-react-native";
+import {
+  Activity,
+  Bike,
+  Dumbbell,
+  Footprints,
+  type LucideIcon,
+  MapPin,
+  Waves,
+  X,
+} from "lucide-react-native";
 import { memo } from "react";
 import { Modal, Pressable, ScrollView, View } from "react-native";
 
@@ -66,7 +75,7 @@ interface RecordingActivityQuickEditProps {
 // Simplified activity configurations
 const QUICK_ACTIVITIES: {
   category: RecordingActivityCategory;
-  icon: any;
+  icon: LucideIcon;
   color: string;
   bgColor: string;
 }[] = [

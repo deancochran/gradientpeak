@@ -304,8 +304,9 @@ export class RouteController {
       const coordinate = coordinates[index];
       if (!coordinate) continue;
 
-      if (typeof cumulativeDistances?.[index] === "number") {
-        cumulativeDistance = cumulativeDistances[index]!;
+      const indexedDistance = cumulativeDistances?.[index];
+      if (typeof indexedDistance === "number") {
+        cumulativeDistance = indexedDistance;
       } else if (index > 0) {
         const previous = coordinates[index - 1];
         if (previous) {
@@ -426,8 +427,9 @@ export class RouteController {
 
     if (!route.distanceIndex) {
       for (let index = 0; index < startIndex; index += 1) {
-        const start = coordinates[index]!;
-        const end = coordinates[index + 1]!;
+        const start = coordinates[index];
+        const end = coordinates[index + 1];
+        if (!start || !end) continue;
         fallbackCumulativeDistance += this.calculateDistance(
           start.latitude,
           start.longitude,
@@ -438,8 +440,9 @@ export class RouteController {
     }
 
     for (let index = startIndex; index <= endIndex; index += 1) {
-      const start = coordinates[index]!;
-      const end = coordinates[index + 1]!;
+      const start = coordinates[index];
+      const end = coordinates[index + 1];
+      if (!start || !end) continue;
       const startPoint = toPoint(start);
       const endPoint = toPoint(end);
       const segmentX = endPoint.x - startPoint.x;

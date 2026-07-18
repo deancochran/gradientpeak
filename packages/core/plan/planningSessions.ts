@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ActivityPlanMetricValues } from "../activity-plan/metrics";
 import {
   type ActivityPlanPlanningEstimate,
   type ActivityPlanPlanningEstimateInput,
@@ -76,12 +77,7 @@ export type EstimatedPlannedTrainingSession = z.infer<typeof estimatedPlannedTra
 
 export type EstimateablePlanningActivityPlan = {
   activity_category?: string | null;
-  authoritative_metrics?: {
-    estimated_duration?: number | null;
-    estimated_tss?: number | null;
-    intensity_factor?: number | null;
-    distance_meters?: number | null;
-  } | null;
+  authoritative_metrics?: Partial<ActivityPlanMetricValues> | null;
   structure?: unknown;
 };
 

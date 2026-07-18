@@ -6,7 +6,10 @@ import { View } from "react-native";
 import { PlanVsActualChart } from "./PlanVsActualChart";
 
 // Legacy Mesocycle type for backwards compatibility
-type Mesocycle = any;
+type Mesocycle = {
+  duration_weeks: number;
+  tss_multiplier: number;
+};
 
 // Legacy props (for backwards compatibility)
 export interface LegacyFitnessProjectionChartProps {

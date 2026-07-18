@@ -1,4 +1,6 @@
 import React from "react";
+import type { ReactTestInstance } from "react-test-renderer";
+import type { HostProps } from "../../../test/mock-components";
 
 import { renderNative, screen } from "../../../test/render-native";
 
@@ -7,27 +9,36 @@ import { PlanVsActualChart } from "../PlanVsActualChart";
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  Pressable: (props: any) => React.createElement("Pressable", props, props.children),
-  View: (props: any) => React.createElement("View", props, props.children),
+  Pressable: (props: HostProps) => React.createElement("Pressable", props, props.children),
+  View: (props: HostProps) => React.createElement("View", props, props.children),
 }));
 
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
-  Text: (props: any) => React.createElement("Text", props, props.children),
+  Text: (props: HostProps) => React.createElement("Text", props, props.children),
 }));
 
 jest.mock("@shopify/react-native-skia", () => ({
   __esModule: true,
-  DashPathEffect: (props: any) => React.createElement("DashPathEffect", props),
+  DashPathEffect: (props: HostProps) => React.createElement("DashPathEffect", props),
   useFont: () => ({ getTextWidth: () => 24 }),
-  Line: (props: any) => React.createElement("SkiaLine", props),
-  Text: (props: any) => React.createElement("SkiaText", props),
+  Line: (props: HostProps) => React.createElement("SkiaLine", props),
+  Text: (props: HostProps) => React.createElement("SkiaText", props),
   vec: (x: number, y: number) => ({ x, y }),
 }));
 
 jest.mock("victory-native", () => ({
   __esModule: true,
-  CartesianChart: ({ children, data }: any) =>
+  CartesianChart: ({
+    children,
+    data,
+  }: {
+    children: (context: {
+      points: Record<string, unknown[]>;
+      chartBounds: HostProps;
+    }) => React.ReactNode;
+    data: unknown[];
+  }) =>
     React.createElement(
       "CartesianChart",
       { data },
@@ -41,9 +52,9 @@ jest.mock("victory-native", () => ({
         chartBounds: { left: 0, right: 100, top: 0, bottom: 100 },
       }),
     ),
-  Area: (props: any) => React.createElement("Area", props),
-  Line: (props: any) => React.createElement("Line", props),
-  Scatter: (props: any) => React.createElement("Scatter", props),
+  Area: (props: HostProps) => React.createElement("Area", props),
+  Line: (props: HostProps) => React.createElement("Line", props),
+  Scatter: (props: HostProps) => React.createElement("Scatter", props),
 }));
 
 jest.mock("@/assets/fonts/SpaceMono-Regular.ttf", () => ({
@@ -55,6 +66,10 @@ jest.mock("@/lib/stores/theme-store", () => ({
   __esModule: true,
   useTheme: () => ({ resolvedTheme: "light" }),
 }));
+
+function getHostNodes(type: string) {
+  return screen.UNSAFE_root.findAll((node: ReactTestInstance) => String(node.type) === type);
+}
 
 describe("PlanVsActualChart", () => {
   it("renders the core series for a weekly timeline", () => {
@@ -81,9 +96,9 @@ describe("PlanVsActualChart", () => {
       />,
     );
 
-    const lines = (screen as any).UNSAFE_getAllByType("Line");
-    const areas = (screen as any).UNSAFE_getAllByType("Area");
-    const scatters = (screen as any).queryAllByType?.("Scatter") ?? [];
+    const lines = getHostNodes("Line");
+    const areas = getHostNodes("Area");
+    const scatters = getHostNodes("Scatter");
 
     expect(lines.length).toBe(2);
     expect(scatters.length).toBe(0);
@@ -125,9 +140,9 @@ describe("PlanVsActualChart", () => {
       />,
     );
 
-    const goalLines = (screen as any)
-      .UNSAFE_getAllByType("SkiaLine")
-      .filter((node: any) => node.props.color === "rgba(34, 197, 94, 0.68)");
+    const goalLines = getHostNodes("SkiaLine").filter(
+      (node: ReactTestInstance) => node.props.color === "rgba(34, 197, 94, 0.68)",
+    );
 
     expect(goalLines).toHaveLength(2);
   });

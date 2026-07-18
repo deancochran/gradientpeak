@@ -36,6 +36,8 @@ jest.mock("@/lib/api", () => ({
 
 import { useTrainingPlanHeaderSocialActions } from "../useTrainingPlanHeaderSocialActions";
 
+const emptyUtils = {} as Parameters<typeof useTrainingPlanHeaderSocialActions>[0]["utils"];
+
 describe("useTrainingPlanHeaderSocialActions", () => {
   beforeEach(() => {
     alertMock.mockReset();
@@ -55,7 +57,7 @@ describe("useTrainingPlanHeaderSocialActions", () => {
           template_visibility: "private",
         },
         router: { replace: jest.fn() },
-        utils: {} as any,
+        utils: emptyUtils,
       }),
     );
 
@@ -82,7 +84,7 @@ describe("useTrainingPlanHeaderSocialActions", () => {
           name: "Plan",
         },
         router: { replace: jest.fn() },
-        utils: {} as any,
+        utils: emptyUtils,
       }),
     );
 

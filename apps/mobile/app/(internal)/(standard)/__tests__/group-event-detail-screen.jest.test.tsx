@@ -11,7 +11,43 @@ const rsvpEventSeriesMock = jest.fn(async () => undefined);
 const cancelEventMock = jest.fn(async () => undefined);
 const rsvpMock = jest.fn(async () => undefined);
 
-const baseEvent = {
+type GroupEventFixture = {
+  id: string;
+  group_id: string;
+  series_id: string | null;
+  occurrence_key: string | null;
+  created_by_profile_id: string;
+  title: string;
+  description: string;
+  starts_at: string;
+  ends_at: string;
+  timezone: string;
+  recurrence_rule: string | null;
+  recurrence_timezone: string | null;
+  location_name: string;
+  route_id: string | null;
+  group: { id: string; name: string; slug: string; avatar_url: string | null } | null;
+  cancelled_at: string | null;
+  created_at: string;
+  updated_at: string;
+  is_recurring_series: boolean;
+  is_recurring_occurrence: boolean;
+  activityPlanOptions: unknown[];
+  viewerRsvp: unknown;
+  viewerSeriesRsvp: unknown;
+};
+type OverflowAction = { label: string; onPress?: () => void; testID: string };
+type DetailScaffoldProps = React.PropsWithChildren<{
+  headerRight?: () => React.ReactNode;
+  isLoading?: boolean;
+  loadingLabel?: string;
+  notFound?: boolean;
+  notFoundDescription?: string;
+  notFoundTitle?: string;
+  screenTestID?: string;
+}>;
+
+const baseEvent: GroupEventFixture = {
   id: "33333333-3333-4333-8333-333333333333",
   group_id: "22222222-2222-4222-8222-222222222222",
   series_id: null as string | null,
@@ -32,19 +68,28 @@ const baseEvent = {
   updated_at: "2026-05-21T12:00:00.000Z",
   is_recurring_series: false,
   is_recurring_occurrence: false,
-  activityPlanOptions: [] as any[],
+  activityPlanOptions: [],
   viewerRsvp: null,
   viewerSeriesRsvp: null,
 };
 
-const detailVm = {
+const detailVm: {
+  detailQuery: Record<string, unknown>;
+  event: GroupEventFixture | null;
+  error: Error | null;
+  isError: boolean;
+  isLoading: boolean;
+  refetch: typeof refetchMock;
+  seriesOccurrences: GroupEventFixture[];
+  seriesOccurrencesQuery: { isLoading: boolean };
+} = {
   detailQuery: {},
-  event: baseEvent as any,
+  event: baseEvent,
   error: null as Error | null,
   isError: false,
   isLoading: false,
   refetch: refetchMock,
-  seriesOccurrences: [] as any[],
+  seriesOccurrences: [],
   seriesOccurrencesQuery: { isLoading: false },
 };
 
@@ -88,17 +133,21 @@ jest.mock("@/components/shared/ActivityPlanCard", () => ({
 
 jest.mock("@/components/shared/AppFormModal", () => ({
   __esModule: true,
-  AppFormModal: ({ children, testID, title }: any) =>
+  AppFormModal: ({
+    children,
+    testID,
+    title,
+  }: React.PropsWithChildren<{ testID?: string; title?: string }>) =>
     React.createElement("View", { testID }, React.createElement("Text", null, title), children),
 }));
 
 jest.mock("@/components/shared/detail", () => ({
   __esModule: true,
-  DetailOverflowMenu: ({ actions }: any) =>
+  DetailOverflowMenu: ({ actions }: { actions: OverflowAction[] }) =>
     React.createElement(
       "View",
       { testID: "group-event-detail-overflow" },
-      ...actions.map((action: any) =>
+      ...actions.map((action) =>
         React.createElement(
           "Button",
           { key: action.testID, onPress: action.onPress, testID: action.testID },
@@ -115,7 +164,7 @@ jest.mock("@/components/shared/detail", () => ({
     notFoundDescription,
     notFoundTitle,
     screenTestID,
-  }: any) => {
+  }: DetailScaffoldProps) => {
     if (isLoading) return React.createElement("Text", null, loadingLabel);
     if (notFound) {
       return React.createElement(
@@ -179,7 +228,7 @@ const GroupEventDetailRoute = require("../group-event-detail").default;
 describe("group event detail route", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    detailVm.event = { ...baseEvent } as any;
+    detailVm.event = { ...baseEvent };
     detailVm.error = null;
     detailVm.isError = false;
     detailVm.isLoading = false;
@@ -211,7 +260,7 @@ describe("group event detail route", () => {
       title: "Occurrence Ride",
       is_recurring_occurrence: true,
       viewerSeriesRsvp: null,
-    } as any;
+    };
     detailVm.seriesOccurrences = [
       {
         ...baseEvent,
@@ -221,7 +270,7 @@ describe("group event detail route", () => {
         occurrence_key: "2026-06-04",
         is_recurring_occurrence: true,
       },
-    ] as any[];
+    ];
 
     renderNative(<GroupEventDetailRoute />);
 
@@ -249,7 +298,7 @@ describe("group event detail route", () => {
         slug: "ride-club",
         avatar_url: null,
       },
-    } as any;
+    };
 
     renderNative(<GroupEventDetailRoute />);
 
@@ -271,7 +320,7 @@ describe("group event detail route", () => {
       series_id: "33333333-3333-4333-8333-333333333333",
       occurrence_key: "2026-05-28",
       is_recurring_occurrence: true,
-    } as any;
+    };
     groupVm.viewer = { canCreateGroupEvent: true };
 
     renderNative(<GroupEventDetailRoute />);

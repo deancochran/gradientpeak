@@ -1,7 +1,7 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Progress } from "@repo/ui/components/progress";
 import { Text } from "@repo/ui/components/text";
-import { CheckCircle2, Target } from "lucide-react-native";
+import { CheckCircle2, type LucideIcon, Target } from "lucide-react-native";
 import { View } from "react-native";
 import { formatEstimatedTss } from "@/lib/estimatedMetrics";
 
@@ -93,7 +93,7 @@ function ProgressSection({
   summary,
   targetLabel,
 }: {
-  icon: any;
+  icon: LucideIcon;
   indicatorClassName: string;
   label: string;
   progress: number;

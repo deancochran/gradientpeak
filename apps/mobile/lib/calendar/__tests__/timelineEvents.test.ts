@@ -1,3 +1,4 @@
+import type { ProfileGoal } from "@repo/core";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/utils/plan/dateGrouping", () => ({
@@ -32,7 +33,9 @@ describe("timeline events", () => {
       isMutable: false,
       isDraggable: false,
     });
-    expect(getTimelineEventAuthority(event!)).toEqual({
+    expect(event).not.toBeNull();
+    if (!event) throw new Error("Expected a completed timeline event");
+    expect(getTimelineEventAuthority(event)).toEqual({
       isHistoricalTruth: true,
       canReschedule: false,
     });
@@ -65,23 +68,25 @@ describe("timeline events", () => {
   it("adapts goals and groups mixed timeline events by date", () => {
     const goal = adaptGoalToTimelineEvent({
       id: "goal-1",
+      profile_id: "00000000-0000-4000-8000-000000000001",
       title: "Spring marathon",
       target_date: "2026-05-09",
       activity_category: "run",
       priority: 8,
       objective: { type: "completion", distance_m: 42195 },
-    } as any);
+    } satisfies ProfileGoal);
     const events = buildTimelineEvents({
       todayKey: "2026-05-06",
       goals: [
         {
           id: "goal-1",
+          profile_id: "00000000-0000-4000-8000-000000000001",
           title: "Spring marathon",
           target_date: "2026-05-09",
           activity_category: "run",
           priority: 8,
           objective: { type: "completion", distance_m: 42195 },
-        } as any,
+        } satisfies ProfileGoal,
       ],
       calendarEvents: [
         {

@@ -198,7 +198,6 @@ export class ActivityFileUploader {
   async cancelUpload(): Promise<void> {
     this.uploadState.isUploading = false;
     this.uploadState.progress = null;
-    console.log("[ActivityFileUploader] Upload cancelled");
   }
 
   /**

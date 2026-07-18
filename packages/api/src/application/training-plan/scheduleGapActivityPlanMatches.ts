@@ -1,3 +1,7 @@
+import {
+  type ActivityPlanMetricsLike,
+  getAuthoritativeActivityPlanMetrics,
+} from "@repo/core/activity-plan";
 import { type SQLWrapper, sql } from "drizzle-orm";
 
 type ScheduleGapDbClient = {
@@ -6,16 +10,10 @@ type ScheduleGapDbClient = {
 
 type LegacyPlanningReader = { from: (...args: any[]) => any };
 
-type ActivityPlanLike = {
+type ActivityPlanLike = ActivityPlanMetricsLike & {
   id?: unknown;
   name?: unknown;
   activity_category?: unknown;
-  authoritative_metrics?: {
-    estimated_tss?: unknown;
-    estimated_duration?: unknown;
-  } | null;
-  estimated_tss?: unknown;
-  estimated_duration?: unknown;
   estimated_duration_seconds?: unknown;
   created_at?: unknown;
 };
@@ -122,19 +120,18 @@ export function buildScheduleGapActivityPlanMatches(input: {
 
   const target = Math.round(targetTssDelta * 10) / 10;
   const primaryCategory = input.primaryCategory ? String(input.primaryCategory) : null;
+  let hasEstimatedTss = false;
   const matches = input.plans
     .map<ScheduleGapActivityPlanMatch | null>((plan) => {
-      const estimatedTss = readFinitePlanNumber(
-        plan.authoritative_metrics?.estimated_tss,
-        plan.estimated_tss,
-      );
+      const metrics = getAuthoritativeActivityPlanMetrics(plan);
+      const estimatedTss = readFinitePlanNumber(metrics.estimated_tss);
       if (estimatedTss === null) return null;
+      hasEstimatedTss = true;
 
-      const estimatedDurationSeconds = readFinitePlanNumber(
-        plan.authoritative_metrics?.estimated_duration,
-        plan.estimated_duration,
-        plan.estimated_duration_seconds,
-      );
+      const estimatedDurationSeconds =
+        metrics.estimated_duration !== undefined
+          ? readFinitePlanNumber(metrics.estimated_duration)
+          : readFinitePlanNumber(plan.estimated_duration_seconds);
       const activityCategory =
         typeof plan.activity_category === "string" && plan.activity_category.trim().length > 0
           ? plan.activity_category
@@ -197,7 +194,8 @@ export function buildScheduleGapActivityPlanMatches(input: {
     target_date: input.targetDate,
     target_tss_delta: target,
     matches,
-    empty_reason: matches.length > 0 ? null : "no_estimated_tss",
+    empty_reason:
+      matches.length > 0 ? null : hasEstimatedTss ? "low_confidence" : "no_estimated_tss",
   };
 }
 

@@ -56,9 +56,7 @@ export function SportMixStep({
   const total = Object.values(activities).reduce((sum, val) => sum + val, 0);
 
   // Get enabled activities
-  const enabledActivities = ACTIVITIES.filter(
-    (act) => activities[act.key] !== undefined && activities[act.key]! > 0,
-  );
+  const enabledActivities = ACTIVITIES.filter((act) => (activities[act.key] ?? 0) > 0);
 
   const handlePresetSelect = (preset: (typeof PRESETS)[number]) => {
     onActivitiesChange(preset.values);
@@ -152,8 +150,7 @@ export function SportMixStep({
 
           {/* Activity Toggles and Sliders */}
           {ACTIVITIES.map((activity) => {
-            const isEnabled =
-              activities[activity.key] !== undefined && activities[activity.key]! > 0;
+            const isEnabled = (activities[activity.key] ?? 0) > 0;
             const value = activities[activity.key] || 0;
 
             return (

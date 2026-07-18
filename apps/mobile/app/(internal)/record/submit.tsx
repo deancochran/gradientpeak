@@ -73,7 +73,7 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
       if (service) {
         await service.cleanup();
       }
-      router.replace("/(internal)/(tabs)" as any);
+      router.replace("/(internal)/(tabs)");
     },
     [submission, service, router],
   );
@@ -92,7 +92,7 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
           if (service) {
             await service.cleanup();
           }
-          router.replace("/(internal)/(tabs)" as any);
+          router.replace("/(internal)/(tabs)");
         },
       },
     ]);

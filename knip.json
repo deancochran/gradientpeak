@@ -48,16 +48,14 @@
         "@tanstack/react-router-ssr-query",
         "@tanstack/router-plugin",
         "tailwindcss",
-        "@tailwindcss/typography",
-        "@testing-library/dom",
-        "@testing-library/react"
+        "@tailwindcss/typography"
       ]
     },
-    "packages/core": {
-      "ignoreDependencies": ["@garmin/fitsdk"]
+    "packages/db": {
+      "ignoreDependencies": ["supabase"]
     },
     "packages/ui": {
-      "ignoreDependencies": ["@radix-ui/.+", "@repo/core"]
+      "ignoreDependencies": ["@radix-ui/.+"]
     }
   }
 }

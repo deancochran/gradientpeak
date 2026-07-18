@@ -71,7 +71,7 @@ export function WeeklyTab({ weeklySummary, weeklyLoading, onWeekPress }: WeeklyT
 
           return (
             <Pressable
-              key={index}
+              key={week.weekStart}
               onPress={() => {
                 onWeekPress({
                   title: `Week ${weeklySummary.length - index} Activities`,

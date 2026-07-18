@@ -24,7 +24,19 @@ type ActivityLike = {
 
 type ActivityStreamsData =
   | {
-      records?: any[] | null;
+      records?: Array<{
+        altitude?: number;
+        cadence?: number;
+        distance?: number;
+        heartRate?: number;
+        latitude?: number;
+        longitude?: number;
+        positionLat?: number;
+        positionLong?: number;
+        power?: number;
+        speed?: number;
+        timestamp?: string | number | Date;
+      }> | null;
     }
   | null
   | undefined;
@@ -130,6 +142,7 @@ export function useActivityDetailStreams({
     const distData: { val: number; ts: number }[] = [];
 
     streamsData.records.forEach((record) => {
+      if (record.timestamp === undefined) return;
       const ts = new Date(record.timestamp).getTime();
       if (!Number.isFinite(ts)) return;
 

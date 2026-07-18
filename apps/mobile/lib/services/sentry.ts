@@ -1,34 +1,23 @@
 import * as Sentry from "@sentry/react-native";
 import { isRunningInExpoGo } from "expo";
 import Constants from "expo-constants";
+import {
+  createRuntimeSentryConfig,
+  sanitizeMobileSentryContext,
+  shouldEnableReplay,
+} from "./sentry-config";
 
 type SentryLevel = "info" | "warning" | "error";
 
 const extra = Constants.expoConfig?.extra ?? {};
 let sentryInitialized = false;
 
-function readSampleRate(value: string | undefined, fallback: number) {
-  if (!value) {
-    return fallback;
-  }
-
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
 function getSentryDsn() {
   return extra.sentryDsn ?? process.env.EXPO_PUBLIC_SENTRY_DSN;
 }
 
 function shouldEnableSentryReplay() {
-  if (__DEV__) {
-    return process.env.EXPO_PUBLIC_ENABLE_SENTRY_REPLAY_IN_DEV === "1";
-  }
-
-  return (
-    readSampleRate(process.env.EXPO_PUBLIC_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE, 1) > 0 ||
-    readSampleRate(process.env.EXPO_PUBLIC_SENTRY_REPLAYS_SESSION_SAMPLE_RATE, 0) > 0
-  );
+  return shouldEnableReplay(process.env);
 }
 
 function shouldEnableSentry(): boolean {
@@ -50,10 +39,11 @@ export function initSentry() {
   );
 
   Sentry.init({
-    dsn: String(getSentryDsn()),
-    enableLogs: true,
+    ...createRuntimeSentryConfig(
+      { ...process.env, EXPO_PUBLIC_SENTRY_DSN: String(getSentryDsn()) },
+      environment,
+    ),
     enableNativeFramesTracking: !isRunningInExpoGo(),
-    environment,
     integrations(integrations) {
       integrations.push(
         Sentry.expoRouterIntegration({
@@ -73,23 +63,6 @@ export function initSentry() {
 
       return integrations;
     },
-    replaysOnErrorSampleRate: readSampleRate(
-      process.env.EXPO_PUBLIC_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE,
-      1,
-    ),
-    replaysSessionSampleRate: readSampleRate(
-      process.env.EXPO_PUBLIC_SENTRY_REPLAYS_SESSION_SAMPLE_RATE,
-      0,
-    ),
-    sendDefaultPii: process.env.EXPO_PUBLIC_SENTRY_SEND_DEFAULT_PII === "1",
-    tracesSampleRate: readSampleRate(process.env.EXPO_PUBLIC_SENTRY_TRACES_SAMPLE_RATE, 1),
-    beforeSend(event) {
-      if (event.message?.includes("Network request failed") && __DEV__) {
-        return null;
-      }
-
-      return event;
-    },
   });
   sentryInitialized = true;
 }
@@ -104,7 +77,9 @@ export function captureException(error: Error, context?: Record<string, unknown>
     return;
   }
 
-  Sentry.captureException(error, { extra: context });
+  Sentry.captureException(error, {
+    extra: sanitizeMobileSentryContext(context) as Record<string, unknown> | undefined,
+  });
 }
 
 export function captureMessage(
@@ -123,7 +98,7 @@ export function captureMessage(
 
   Sentry.withScope((scope) => {
     if (context) {
-      scope.setExtras(context);
+      scope.setExtras(sanitizeMobileSentryContext(context) as Record<string, unknown>);
     }
     Sentry.captureMessage(message, level);
   });
@@ -160,14 +135,17 @@ export function addBreadcrumb(category: string, message: string, data?: Record<s
 
   Sentry.addBreadcrumb({
     category,
-    data,
+    data: sanitizeMobileSentryContext(data) as Record<string, unknown> | undefined,
     level: "info",
     message,
   });
 }
 
-export function withErrorBoundary<T extends (...args: any[]) => any>(fn: T, context?: string): T {
-  return ((...args: Parameters<T>) => {
+export function withErrorBoundary<Args extends unknown[], Result>(
+  fn: (...args: Args) => Result,
+  context?: string,
+): (...args: Args) => Result {
+  return ((...args: Args) => {
     try {
       const result = fn(...args);
 
@@ -183,7 +161,7 @@ export function withErrorBoundary<T extends (...args: any[]) => any>(fn: T, cont
       captureException(error as Error, { context });
       throw error;
     }
-  }) as T;
+  }) as (...args: Args) => Result;
 }
 
 export function startTransaction(name: string, operation: string) {

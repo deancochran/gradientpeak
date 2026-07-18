@@ -83,8 +83,8 @@ const StepPreviewCard = memo<StepPreviewCardProps>(function StepPreviewCard({
       {/* Targets preview */}
       {step.targets && step.targets.length > 0 && (
         <View className="flex-row flex-wrap gap-2">
-          {step.targets.map((target, index) => (
-            <View key={index} className="px-2 py-1 bg-muted/50 rounded-md">
+          {step.targets.map((target) => (
+            <View key={JSON.stringify(target)} className="px-2 py-1 bg-muted/50 rounded-md">
               <Text className="text-xs text-muted-foreground">
                 {getTargetDisplayName(target.type)}: {formatTargetValue(target)}
               </Text>

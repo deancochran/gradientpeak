@@ -9,7 +9,6 @@ import {
   activityArtifacts,
   activityFileIngestions,
   activityPlans,
-  activitySegments,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, count, desc, eq, gte, ilike, lt, lte, or, sql } from "drizzle-orm";
@@ -18,19 +17,30 @@ import { createActivityAnalysisStore } from "../../infrastructure/repositories";
 import {
   type ActivitySegmentReadRow,
   buildActivityDerivedSummaryMap,
+  buildActivitySegmentDerivedSummaries,
   loadActivitySegmentsByActivityId,
   mapActivityToDerivedResponse,
   mapActivityToListDerivedResponse,
 } from "../../lib/activity-analysis";
 import { getLikeStats, loadLikeStats } from "../../repositories/like-stats";
 import { buildIndexPageInfo, parseIndexCursor } from "../../utils/index-cursor";
+import {
+  type ActivityCompositionMode,
+  buildActivityCompositionCondition,
+  describeActivityComposition,
+  type MatchedCategorySummary,
+  matchedCategorySortValue,
+  summarizeMatchedCategory,
+} from "./activity-discovery";
 
 type Db = ReturnType<typeof getRequiredDb>;
+type ActivityCategory = NonNullable<ActivitySegmentReadRow["category"]>;
 
 export type ActivityListQueryInput = {
   limit: number;
   cursor?: string;
-  activity_category?: NonNullable<typeof activitySegments.$inferSelect.category>;
+  activity_category?: ActivityCategory;
+  composition_mode: ActivityCompositionMode;
   search?: string;
   date_from?: string;
   date_to?: string;
@@ -46,22 +56,40 @@ type ActivityReadRow = ActivityRow & {
   segments: ActivitySegmentReadRow[];
 };
 
-function decorateActivity(activity: ActivityReadRow) {
+function decorateActivity(
+  activity: ActivityReadRow,
+  matchedCategorySummary: MatchedCategorySummary | null = null,
+) {
   const { segments: _segments, ...publicActivity } = activity;
-  return publicActivity;
+  return {
+    ...publicActivity,
+    ...describeActivityComposition(activity.segments),
+    matched_category_summary: matchedCategorySummary,
+  };
 }
 
-function compareTssCandidates(
-  a: { activity: ActivityReadRow; derived: ActivityListDerivedSummary | null },
-  b: { activity: ActivityReadRow; derived: ActivityListDerivedSummary | null },
+type ActivityMetricCandidate = {
+  activity: ActivityReadRow;
+  derived: ActivityListDerivedSummary | null;
+  matchedCategorySummary: MatchedCategorySummary | null;
+};
+
+function compareMetricCandidates(
+  a: ActivityMetricCandidate,
+  b: ActivityMetricCandidate,
+  sortBy: "distance" | "duration" | "tss",
   sortOrder: ActivityListQueryInput["sort_order"],
 ) {
-  const aTss = a.derived?.tss ?? null;
-  const bTss = b.derived?.tss ?? null;
-  if (aTss !== bTss) {
-    if (aTss === null) return sortOrder === "asc" ? -1 : 1;
-    if (bTss === null) return sortOrder === "asc" ? 1 : -1;
-    return sortOrder === "asc" ? aTss - bTss : bTss - aTss;
+  const aValue = a.matchedCategorySummary
+    ? matchedCategorySortValue(a.matchedCategorySummary, sortBy)
+    : (a.derived?.tss ?? null);
+  const bValue = b.matchedCategorySummary
+    ? matchedCategorySortValue(b.matchedCategorySummary, sortBy)
+    : (b.derived?.tss ?? null);
+  if (aValue !== bValue) {
+    if (aValue === null) return sortOrder === "asc" ? -1 : 1;
+    if (bValue === null) return sortOrder === "asc" ? 1 : -1;
+    return sortOrder === "asc" ? aValue - bValue : bValue - aValue;
   }
 
   const startedAtDifference = b.activity.started_at.getTime() - a.activity.started_at.getTime();
@@ -83,13 +111,12 @@ export async function listActivitiesForProfile({
 }) {
   const offset = parseIndexCursor(input.cursor);
   const conditions = [eq(activities.profile_id, profileId)];
-  if (input.activity_category)
-    conditions.push(sql<boolean>`exists (
-      select 1 from ${activitySegments}
-      where ${activitySegments.activity_id} = ${activities.id}
-        and ${activitySegments.role} = 'activity'
-        and ${activitySegments.category} = ${input.activity_category}
-    )`);
+  const compositionCondition = buildActivityCompositionCondition({
+    activityId: activities.id,
+    category: input.activity_category,
+    mode: input.composition_mode,
+  });
+  if (compositionCondition) conditions.push(compositionCondition);
   if (input.search) {
     const searchCondition = or(
       ilike(activities.name, `%${input.search}%`),
@@ -102,7 +129,11 @@ export async function listActivitiesForProfile({
   const whereClause = and(...conditions);
   const distance = sql<number>`${activities.distance_meters}`;
   const duration = sql<number>`coalesce(${activities.active_ms}, ${activities.elapsed_ms})`;
-  if (input.sort_by === "tss") {
+  const requiresBoundedMetricScan =
+    input.sort_by === "tss" ||
+    (input.activity_category !== undefined &&
+      (input.sort_by === "distance" || input.sort_by === "duration"));
+  if (requiresBoundedMetricScan) {
     return db.transaction(
       async (tx) => {
         // Drizzle transactions expose the read APIs used below but intentionally omit the
@@ -116,17 +147,17 @@ export async function listActivitiesForProfile({
         if (total > tssSortMaximumHistory) {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: `TSS sorting supports at most ${tssSortMaximumHistory} matching activities; narrow the activity filters.`,
+            message:
+              input.sort_by === "tss"
+                ? `TSS sorting supports at most ${tssSortMaximumHistory} matching activities; narrow the activity filters.`
+                : `Category metric sorting supports at most ${tssSortMaximumHistory} matching activities; narrow the activity filters.`,
           });
         }
 
         // Scan the transaction snapshot by the stable (started_at, id) key instead of offset so
         // every internal batch has an indexable plan and cannot skip/duplicate rows. Evidence and
         // likes are loaded through the same transaction, preserving one repeatable-read snapshot.
-        const candidates: Array<{
-          activity: ActivityReadRow;
-          derived: ActivityListDerivedSummary | null;
-        }> = [];
+        const candidates: ActivityMetricCandidate[] = [];
         let scanCursor: Pick<ActivityRow, "id" | "started_at"> | undefined;
         while (candidates.length < total) {
           const scanWhere = scanCursor
@@ -158,6 +189,7 @@ export async function listActivitiesForProfile({
             ...normalizedBatch.map((activity) => ({
               activity: { ...activity, segments: segments.get(activity.id) ?? [] },
               derived: null,
+              matchedCategorySummary: null,
             })),
           );
           const lastActivity = normalizedBatch.at(-1);
@@ -168,27 +200,58 @@ export async function listActivitiesForProfile({
           };
         }
 
-        const derivedByActivityId = await buildActivityDerivedSummaryMap({
-          store: createActivityAnalysisStore(snapshotDb),
-          profileId,
-          activities: candidates.map(({ activity }) => activity),
-        });
+        const analysisStore = createActivityAnalysisStore(snapshotDb);
+        const [derivedByActivityId, segmentDerived] = await Promise.all([
+          buildActivityDerivedSummaryMap({
+            store: analysisStore,
+            profileId,
+            activities: candidates.map(({ activity }) => activity),
+          }),
+          input.activity_category
+            ? buildActivitySegmentDerivedSummaries({
+                store: analysisStore,
+                profileId,
+                activities: candidates.map(({ activity }) => activity),
+              })
+            : Promise.resolve([]),
+        ]);
+        const segmentDerivedByActivityId = new Map<string, typeof segmentDerived>();
+        for (const summary of segmentDerived) {
+          segmentDerivedByActivityId.set(summary.activity_id, [
+            ...(segmentDerivedByActivityId.get(summary.activity_id) ?? []),
+            summary,
+          ]);
+        }
         for (const candidate of candidates) {
           candidate.derived = derivedByActivityId.get(candidate.activity.id) ?? null;
+          candidate.matchedCategorySummary = input.activity_category
+            ? summarizeMatchedCategory({
+                segments: candidate.activity.segments,
+                category: input.activity_category,
+                derivedSegments: segmentDerivedByActivityId.get(candidate.activity.id),
+              })
+            : null;
         }
 
         const page = candidates
-          .sort((a, b) => compareTssCandidates(a, b, input.sort_order))
+          .sort((a, b) =>
+            compareMetricCandidates(
+              a,
+              b,
+              input.sort_by as "distance" | "duration" | "tss",
+              input.sort_order,
+            ),
+          )
           .slice(offset, offset + input.limit);
         const likeStats = await loadLikeStats(snapshotDb, {
           entityType: "activity",
           entityIds: page.map(({ activity }) => activity.id),
           viewerProfileId: profileId,
         });
-        const items = page.map(({ activity, derived }) =>
+        const items = page.map(({ activity, derived, matchedCategorySummary }) =>
           mapActivityToListDerivedResponse({
             activity: {
-              ...decorateActivity(activity),
+              ...decorateActivity(activity, matchedCategorySummary),
               likes_count: getLikeStats(likeStats, activity.id).likes_count,
             },
             has_liked: getLikeStats(likeStats, activity.id).has_liked,
@@ -243,11 +306,28 @@ export async function listActivitiesForProfile({
     ...activity,
     segments: segments.get(activity.id) ?? [],
   }));
-  const derived = await buildActivityDerivedSummaryMap({
-    store: createActivityAnalysisStore(db),
-    profileId,
-    activities: data,
-  });
+  const analysisStore = createActivityAnalysisStore(db);
+  const [derived, segmentDerived] = await Promise.all([
+    buildActivityDerivedSummaryMap({
+      store: analysisStore,
+      profileId,
+      activities: data,
+    }),
+    input.activity_category
+      ? buildActivitySegmentDerivedSummaries({
+          store: analysisStore,
+          profileId,
+          activities: data,
+        })
+      : Promise.resolve([]),
+  ]);
+  const segmentDerivedByActivityId = new Map<string, typeof segmentDerived>();
+  for (const summary of segmentDerived) {
+    segmentDerivedByActivityId.set(summary.activity_id, [
+      ...(segmentDerivedByActivityId.get(summary.activity_id) ?? []),
+      summary,
+    ]);
+  }
   const ids = data.map((activity) => activity.id);
   const likeStats = await loadLikeStats(db, {
     entityType: "activity",
@@ -257,7 +337,16 @@ export async function listActivitiesForProfile({
   const items = data.map((activity) =>
     mapActivityToListDerivedResponse({
       activity: {
-        ...decorateActivity(activity),
+        ...decorateActivity(
+          activity,
+          input.activity_category
+            ? summarizeMatchedCategory({
+                segments: activity.segments,
+                category: input.activity_category,
+                derivedSegments: segmentDerivedByActivityId.get(activity.id),
+              })
+            : null,
+        ),
         likes_count: getLikeStats(likeStats, activity.id).likes_count,
       },
       has_liked: getLikeStats(likeStats, activity.id).has_liked,

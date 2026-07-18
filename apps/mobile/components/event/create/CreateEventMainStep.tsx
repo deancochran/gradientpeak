@@ -159,7 +159,7 @@ export function CreateEventMainStep({
               </View>
               {selectedActivityPlan ? (
                 <ActivityPlanCard
-                  activityPlan={selectedActivityPlan as any}
+                  activityPlan={selectedActivityPlan}
                   onPress={onOpenActivityPlan}
                   testID={`${testIDPrefix}-selected-activity-plan`}
                   variant="compact"

@@ -169,11 +169,6 @@ export * from "./constants";
 export * from "./activity-analysis"; // Shared dynamic activity analysis contracts/helpers
 export * from "./activity-artifacts"; // Thin decoded source-artifact contracts
 export * from "./activity-files"; // Runtime-neutral activity file ingestion contracts
-/**
- * @deprecated Import server-only activity-file parsing from `@repo/core/server/activity-files`.
- * This root export remains as a compatibility shim.
- */
-export * from "./activity-files/activity-file-parser";
 export * from "./activity-plan"; // Strict V3 plan contracts and compiler
 export * from "./activity-segments"; // Completed activity segment contracts
 export {
@@ -218,18 +213,6 @@ export * from "./estimation"; // TSS estimation system
 export * from "./goals"; // Goal draft/payload helpers
 export * from "./groups"; // Group contracts, permissions, and display state
 export * from "./integrations"; // Provider capability registry and sync action helpers
-/**
- * @deprecated Import the FIT SDK parser from `@repo/core/server/fit-sdk-parser`.
- * This root export remains as a compatibility shim.
- */
-export * from "./lib/fit-sdk-parser";
-export {
-  decodeFitActivityArtifact,
-  parseFitFileWithSDK,
-  projectFitArtifactSemantics,
-  safeDecodeFitFile,
-  validateFitFileWithSDK,
-} from "./lib/fit-sdk-parser";
 export * from "./load"; // Canonical load-domain helpers
 export * from "./messaging"; // Shared messaging adapters
 export * from "./notifications"; // Shared notification normalization helpers

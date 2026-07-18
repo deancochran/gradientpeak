@@ -242,7 +242,7 @@ export function ActivityListModal({
                 {filteredActivities.map((activity) => (
                   <ActivityCard
                     key={activity.id}
-                    activity={activity as any}
+                    activity={activity}
                     dateMode="absolute"
                     onPress={() => handleActivityPress(activity.id)}
                     owner={activityOwner}

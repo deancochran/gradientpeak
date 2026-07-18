@@ -12,7 +12,13 @@
     "./react-library.json": "./react-library.json",
     "./tanstack-start.json": "./tanstack-start.json"
   },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  },
   "license": "MIT",
+  "scripts": {
+    "test": "node --test strictness-ratchet.test.mjs"
+  },
   "publishConfig": {
     "access": "public"
   }

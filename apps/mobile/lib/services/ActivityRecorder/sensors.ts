@@ -18,6 +18,7 @@ import { DeviceGattQueueRegistry } from "./DeviceGattQueue";
 import {
   type ControlMode,
   type FTMSCommandContext,
+  type FTMSControlEvent,
   FTMSController,
   type FTMSFeatures,
 } from "./FTMSController";
@@ -210,7 +211,7 @@ export class SensorsManager {
     this.initialize();
     this.startConnectionMonitoring();
     // Load persisted sensors and attempt auto-reconnection
-    this.knownSensorRegistry.load();
+    void this.knownSensorRegistry.load();
   }
 
   private toHex(bytes: Uint8Array): string {
@@ -272,7 +273,7 @@ export class SensorsManager {
           console.log(
             `[SensorsManager] BLE powered on, attempting to reconnect ${this.knownSensorRegistry.size} persisted sensors`,
           );
-          this.reconnectPersistedSensors();
+          void this.reconnectPersistedSensors();
         }
       }
       if (state === "PoweredOff" || state === "Unauthorized") {
@@ -296,7 +297,7 @@ export class SensorsManager {
           });
         }
         console.log(`[SensorsManager] BLE ${state}, disconnecting all sensors`);
-        this.disconnectAll();
+        void this.disconnectAll();
       }
     }, true);
   }
@@ -620,7 +621,7 @@ export class SensorsManager {
     }
 
     this.connectionMonitorTimer = setInterval(() => {
-      this.checkSensorHealth();
+      void this.checkSensorHealth();
     }, this.HEALTH_CHECK_INTERVAL_MS);
   }
 
@@ -788,7 +789,7 @@ export class SensorsManager {
 
     const timer = setTimeout(() => {
       this.reconnectionTimers.delete(sensorId);
-      this.attemptReconnection(sensorId, nextAttempt);
+      void this.attemptReconnection(sensorId, nextAttempt);
     }, delayMs);
 
     this.reconnectionTimers.set(sensorId, timer);
@@ -936,7 +937,9 @@ export class SensorsManager {
           () => service.characteristics(),
           { timeoutMs: 5000 },
         );
-        chars.forEach((c) => characteristics.set(c.uuid.toLowerCase(), service.uuid));
+        chars.forEach((c) => {
+          characteristics.set(c.uuid.toLowerCase(), service.uuid);
+        });
       }
 
       const connectedSensor: ConnectedSensor = {
@@ -1363,7 +1366,9 @@ export class SensorsManager {
           this.updateSensorDataTimestamp(sensor.id);
           readings.forEach((reading) => {
             this.markObservedMetric(sensor.id, reading.metric);
-            this.dataCallbacks.forEach((cb) => cb(reading));
+            this.dataCallbacks.forEach((cb) => {
+              cb(reading);
+            });
           });
         }
       };
@@ -1617,7 +1622,9 @@ export class SensorsManager {
       this.updateSensorDataTimestamp(sensor.id);
       readings.forEach((reading) => {
         this.markObservedMetric(sensor.id, reading.metric);
-        this.dataCallbacks.forEach((cb) => cb(reading));
+        this.dataCallbacks.forEach((cb) => {
+          cb(reading);
+        });
       });
     };
   }
@@ -1988,7 +1995,7 @@ export class SensorsManager {
   /**
    * Get control events for current session
    */
-  getControlEvents(): any[] {
+  getControlEvents(): FTMSControlEvent[] {
     const controller = this.getSelectedFTMSController();
     if (!controller) {
       return [];

@@ -1,5 +1,7 @@
 import { act } from "@testing-library/react-native";
 import React from "react";
+import type { Control, ControllerRenderProps, FieldValues } from "react-hook-form";
+import type { ReactTestInstance } from "react-test-renderer";
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 import EventDetailScreen from "../event-detail";
@@ -18,6 +20,31 @@ const mockActivityPlanGetByIdUseQuery: jest.Mock = jest.fn(() => ({
   refetch: jest.fn(),
 }));
 let paramsState: Record<string, string | undefined> = { mode: "create", date: "2026-03-24" };
+
+type ActivityPlanFixture = { id: string; name: string };
+type RecurrenceFixture = { recurrence?: { endDate?: string | null; frequency?: string } } | null;
+type StackScreenProps = Record<string, unknown> & {
+  options?: { headerRight?: () => React.ReactNode };
+};
+type ResourcePickerProps = {
+  onClose: () => void;
+  onSelect: (item: ActivityPlanFixture) => void;
+  visible: boolean;
+};
+type FormFieldMockProps = {
+  accessibilityHint?: string;
+  clearable?: boolean;
+  control: Control<FieldValues>;
+  name: string;
+  placeholder?: string;
+  testId?: string;
+};
+type MockControllerField = ControllerRenderProps<FieldValues, string>;
+type HostQueries = { UNSAFE_getByType(type: string): ReactTestInstance };
+
+function getHostByType(rendered: ReturnType<typeof renderNative>, type: string) {
+  return (rendered as typeof rendered & HostQueries).UNSAFE_getByType(type);
+}
 
 jest.mock("@tanstack/react-query", () => ({
   __esModule: true,
@@ -39,7 +66,7 @@ jest.mock("react-native", () => ({
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: any) =>
+    Screen: (props: StackScreenProps) =>
       React.createElement(
         "StackScreen",
         props,
@@ -70,8 +97,8 @@ jest.mock("@/components/event/EventEditorCard", () => ({
   buildCreateStartsAt: (date?: string) => new Date(`${date ?? "2026-03-24"}T12:00:00.000Z`),
   buildRecurrenceFromFrequency: (frequency: string, endDate: string | null) =>
     frequency === "none" ? undefined : { frequency, endDate },
-  parseRecurrenceEndDate: (event: any) => event?.recurrence?.endDate ?? null,
-  parseRecurrenceFrequency: (event: any) => event?.recurrence?.frequency ?? "none",
+  parseRecurrenceEndDate: (event: RecurrenceFixture) => event?.recurrence?.endDate ?? null,
+  parseRecurrenceFrequency: (event: RecurrenceFixture) => event?.recurrence?.frequency ?? "none",
 }));
 
 jest.mock("@/components/shared/ActivityPlanSummary", () => ({
@@ -86,7 +113,7 @@ jest.mock("@/components/shared/ActivityPlanCard", () => ({
 
 jest.mock("@/components/shared/resource-picker", () => ({
   __esModule: true,
-  ResourcePickerModal: ({ onClose, onSelect, visible }: any) => {
+  ResourcePickerModal: ({ onClose, onSelect, visible }: ResourcePickerProps) => {
     if (!visible) return null;
     const React = require("react");
     const data = mockActivityPlansListUseQuery().data;
@@ -95,7 +122,7 @@ jest.mock("@/components/shared/resource-picker", () => ({
       "ResourcePickerModal",
       { visible },
       React.createElement("Input", { testID: "event-detail-activity-plan-search-input" }),
-      ...items.map((item: any) =>
+      ...items.map((item: ActivityPlanFixture) =>
         React.createElement(
           "Button",
           {
@@ -122,13 +149,19 @@ jest.mock("@repo/ui/components/card", () => ({
 }));
 jest.mock("@repo/ui/components/form", () => ({
   __esModule: true,
-  Form: ({ children }: any) => children,
-  FormDateInputField: ({ accessibilityHint, clearable, control, name, testId }: any) => {
+  Form: ({ children }: React.PropsWithChildren) => children,
+  FormDateInputField: ({
+    accessibilityHint,
+    clearable,
+    control,
+    name,
+    testId,
+  }: FormFieldMockProps) => {
     const { Controller } = require("react-hook-form");
     return React.createElement(Controller, {
       control,
       name,
-      render: ({ field }: any) =>
+      render: ({ field }: { field: MockControllerField }) =>
         React.createElement(
           "Text",
           {
@@ -142,12 +175,12 @@ jest.mock("@repo/ui/components/form", () => ({
         ),
     });
   },
-  FormSwitchField: ({ control, name, testId }: any) => {
+  FormSwitchField: ({ control, name, testId }: FormFieldMockProps) => {
     const { Controller } = require("react-hook-form");
     return React.createElement(Controller, {
       control,
       name,
-      render: ({ field }: any) =>
+      render: ({ field }: { field: MockControllerField }) =>
         React.createElement("Switch", {
           testID: testId,
           checked: field.value,
@@ -155,12 +188,12 @@ jest.mock("@repo/ui/components/form", () => ({
         }),
     });
   },
-  FormTextareaField: ({ control, name, testId, placeholder }: any) => {
+  FormTextareaField: ({ control, name, testId, placeholder }: FormFieldMockProps) => {
     const { Controller } = require("react-hook-form");
     return React.createElement(Controller, {
       control,
       name,
-      render: ({ field }: any) =>
+      render: ({ field }: { field: MockControllerField }) =>
         React.createElement("Textarea", {
           testID: testId,
           placeholder,
@@ -169,12 +202,12 @@ jest.mock("@repo/ui/components/form", () => ({
         }),
     });
   },
-  FormTextField: ({ control, name, testId, placeholder }: any) => {
+  FormTextField: ({ control, name, testId, placeholder }: FormFieldMockProps) => {
     const { Controller } = require("react-hook-form");
     return React.createElement(Controller, {
       control,
       name,
-      render: ({ field }: any) =>
+      render: ({ field }: { field: MockControllerField }) =>
         React.createElement("Input", {
           testID: testId,
           placeholder,
@@ -183,12 +216,13 @@ jest.mock("@repo/ui/components/form", () => ({
         }),
     });
   },
-  FormTimeInputField: ({ control, name, testId }: any) => {
+  FormTimeInputField: ({ control, name, testId }: FormFieldMockProps) => {
     const { Controller } = require("react-hook-form");
     return React.createElement(Controller, {
       control,
       name,
-      render: ({ field }: any) => React.createElement("Text", { testID: testId }, field.value),
+      render: ({ field }: { field: MockControllerField }) =>
+        React.createElement("Text", { testID: testId }, field.value),
     });
   },
 }));
@@ -335,9 +369,7 @@ describe("event detail create mode", () => {
   it("prefills the selected date and requires the user to pick a type in the form", async () => {
     const rendered = renderNative(<EventDetailScreen />);
 
-    expect((rendered as any).UNSAFE_getByType("StackScreen").props.options.title).toBe(
-      "Create Event",
-    );
+    expect(getHostByType(rendered, "StackScreen").props.options.title).toBe("Create Event");
     expect(screen.getByTestId("event-detail-start-date-button").props.children).toBe(
       "Tuesday, Mar 24, 2026",
     );

@@ -73,9 +73,14 @@ describe("finalized artifact queue handoff", () => {
     expect(first).toMatchObject({ schemaVersion: 2, id: artifact.sessionId, status: "queued" });
     expect(mocks.clearArtifact).toHaveBeenCalledTimes(1);
     expect(mocks.clearCheckpoint).toHaveBeenCalledWith(artifact.sessionId);
-    expect(mocks.upsert.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.clearArtifact.mock.invocationCallOrder[0]!,
-    );
+    const upsertOrder = mocks.upsert.mock.invocationCallOrder[0];
+    const clearOrder = mocks.clearArtifact.mock.invocationCallOrder[0];
+    expect(upsertOrder).toBeDefined();
+    expect(clearOrder).toBeDefined();
+    if (upsertOrder === undefined || clearOrder === undefined) {
+      throw new Error("Expected both queue persistence and artifact cleanup calls");
+    }
+    expect(upsertOrder).toBeLessThan(clearOrder);
   });
 
   it("reuses a persisted job after process death without creating a duplicate", async () => {

@@ -7,6 +7,12 @@ const replaceMock = jest.fn();
 const cleanupStreamRecordingsMock = jest.fn(async () => undefined);
 const cleanupFitRecordingsMock = jest.fn(async () => undefined);
 const cleanupLocationTrackingMock = jest.fn(async () => undefined);
+type AuthStoreState = {
+  clearSession: () => Promise<void>;
+  initialize: () => Promise<void>;
+  ready: boolean;
+  profile: { id: string };
+};
 type LocalFileReference = {
   activityFilePath?: string | null;
   streamArtifactPaths?: string[];
@@ -52,7 +58,7 @@ jest.mock("react-native", () => ({
 
 jest.mock("@react-navigation/native", () => ({
   __esModule: true,
-  ThemeProvider: ({ children }: any) => children,
+  ThemeProvider: ({ children }: React.PropsWithChildren) => children,
 }));
 
 jest.mock("react-native-gesture-handler", () => ({
@@ -78,7 +84,7 @@ jest.mock("expo-status-bar", () => ({
 
 jest.mock("expo-router", () => ({
   __esModule: true,
-  Redirect: ({ href }: any) =>
+  Redirect: ({ href }: { href: unknown }) =>
     React.createElement("Text", { testID: "redirect-target" }, JSON.stringify(href)),
   Slot: () => React.createElement("Text", null, "Internal app content"),
   router: { replace: replaceMock },
@@ -87,8 +93,8 @@ jest.mock("expo-router", () => ({
 
 jest.mock("nativewind", () => ({
   __esModule: true,
-  vars: (value: any) => value,
-  VariableContextProvider: ({ children }: any) => children,
+  vars: <T extends Record<string, string | number>>(value: T) => value,
+  VariableContextProvider: ({ children }: React.PropsWithChildren) => children,
 }));
 
 jest.mock("@repo/ui/components/button", () => ({
@@ -122,7 +128,7 @@ jest.mock("@/lib/hooks/useAuth", () => ({
 
 jest.mock("@/lib/providers/QueryProvider", () => ({
   __esModule: true,
-  QueryProvider: ({ children }: any) => children,
+  QueryProvider: ({ children }: React.PropsWithChildren) => children,
 }));
 
 jest.mock("@/lib/server-config", () => ({
@@ -208,7 +214,7 @@ jest.mock("@/lib/services/sentry", () => ({
 
 jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
-  useAuthStore: (selector: any) =>
+  useAuthStore: <T,>(selector: (state: AuthStoreState) => T) =>
     selector({
       clearSession: jest.fn(async () => undefined),
       initialize: jest.fn(async () => undefined),
@@ -265,7 +271,7 @@ describe("root layout auth guard", () => {
 
   it("redirects signed-in users away from sign-up and into verify until confirmed", () => {
     authState.authState = "authenticated-unverified";
-    authState.userStatus = "unverified" as any;
+    authState.userStatus = "unverified";
     segmentsValue = ["(external)", "sign-up"];
 
     renderNative(<RootLayout />);

@@ -67,6 +67,14 @@
         "noShadowRestrictedNames": "warn",
         "noThenProperty": "warn",
         "useIterableCallbackReturn": "warn"
+      },
+      "nursery": {
+        "noFloatingPromises": "error",
+        "noMisusedPromises": "error",
+        "useExhaustiveSwitchCases": "error"
+      },
+      "style": {
+        "useImportType": "error"
       }
     }
   },

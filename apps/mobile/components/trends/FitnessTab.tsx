@@ -29,7 +29,6 @@ export function FitnessTab({
   trainingLoadData,
   zoneDistributionData,
   fitnessLoading,
-  timeRange,
 }: FitnessTabProps) {
   if (fitnessLoading) {
     return <TrendsOverviewSkeleton />;

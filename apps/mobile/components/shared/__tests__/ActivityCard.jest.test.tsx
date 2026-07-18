@@ -1,5 +1,6 @@
 import { decodePolyline } from "@repo/core";
 import { fireEvent } from "@testing-library/react-native";
+import type { ReactTestInstance } from "react-test-renderer";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
@@ -304,7 +305,11 @@ describe("ActivityCard", () => {
       />,
     );
 
-    expect(screen.UNSAFE_getByType("StaticRouteMapPreview" as any)).toBeTruthy();
+    expect(
+      screen.UNSAFE_root.find(
+        (node: ReactTestInstance) => String(node.type) === "StaticRouteMapPreview",
+      ),
+    ).toBeTruthy();
   });
 
   it("shows lightweight ingestion state for feed and list cards", () => {

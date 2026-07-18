@@ -1,8 +1,21 @@
 import { createHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 
+type ActivityPlanFixture = {
+  id: string;
+  name: string;
+  categories: string[];
+  primary_category: string;
+  estimated_duration: number;
+  estimated_tss: number;
+  description?: string;
+  likes_count?: number;
+  has_liked?: boolean;
+  updated_at: string;
+};
+
 const activityPlansState = {
-  items: [] as any[],
+  items: [] as ActivityPlanFixture[],
   isLoading: false,
   error: null as Error | null,
 };
@@ -38,7 +51,15 @@ jest.mock("lucide-react-native", () => ({
 
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
-  ActivityPlanCard: ({ activityPlan, onPress, testID }: any) => {
+  ActivityPlanCard: ({
+    activityPlan,
+    onPress,
+    testID,
+  }: {
+    activityPlan: ActivityPlanFixture;
+    onPress?: () => void;
+    testID?: string;
+  }) => {
     const React = require("react");
 
     return React.createElement(

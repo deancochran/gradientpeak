@@ -10,8 +10,8 @@ vi.mock("expo-file-system", () => {
     constructor(...parts: string[]) {
       this.uri =
         parts.length === 1
-          ? parts[0]!
-          : `${parts[0]!.replace(/\/$/, "")}/${parts.slice(1).join("/")}`;
+          ? (parts[0] ?? "")
+          : `${(parts[0] ?? "").replace(/\/$/, "")}/${parts.slice(1).join("/")}`;
     }
     get exists() {
       return directories.has(this.uri);
@@ -34,8 +34,8 @@ vi.mock("expo-file-system", () => {
     constructor(...parts: string[]) {
       this.uri =
         parts.length === 1
-          ? parts[0]!
-          : `${parts[0]!.replace(/\/$/, "")}/${parts.slice(1).join("/")}`;
+          ? (parts[0] ?? "")
+          : `${(parts[0] ?? "").replace(/\/$/, "")}/${parts.slice(1).join("/")}`;
     }
     get exists() {
       return files.has(this.uri);

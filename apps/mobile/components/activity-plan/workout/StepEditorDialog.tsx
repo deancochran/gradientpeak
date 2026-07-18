@@ -165,7 +165,9 @@ export function StepEditorDialog({
       notes: result.data.notes,
     };
 
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch((error) => {
+      console.warn("Haptic feedback failed:", error);
+    });
     onSave(savedStep);
     onOpenChange(false);
   };
@@ -180,7 +182,9 @@ export function StepEditorDialog({
     });
 
     form.setValue("targets", [...targets, defaultTarget]);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch((error) => {
+      console.warn("Haptic feedback failed:", error);
+    });
   };
 
   const handleRemoveTarget = (index: number) => {
@@ -190,7 +194,9 @@ export function StepEditorDialog({
       "targets",
       targets.filter((_, i) => i !== index),
     );
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch((error) => {
+      console.warn("Haptic feedback failed:", error);
+    });
   };
 
   if (!open) {
@@ -262,8 +268,8 @@ export function StepEditorDialog({
             </View>
           ) : null}
 
-          {targets.map((_target, index) => (
-            <View key={index} className="mb-2 rounded-lg border border-border p-3">
+          {targets.map((target, index) => (
+            <View key={JSON.stringify(target)} className="mb-2 rounded-lg border border-border p-3">
               <View className="flex-row items-start gap-2">
                 <View className="flex-1">
                   <Label nativeID={`target-type-${index}`} className="mb-1 text-xs">

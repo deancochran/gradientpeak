@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react-native";
 import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
 
-(globalThis as any).__DEV__ = false;
+(globalThis as typeof globalThis & { __DEV__: boolean }).__DEV__ = false;
 const backMock = jest.fn();
 const alertMock = jest.fn();
 const createMock = jest.fn(async (_input: unknown) => ({ id: "created-1" }));

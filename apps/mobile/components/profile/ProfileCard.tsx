@@ -57,6 +57,7 @@ export function ProfileCard({
   const usernameLabel = profile.username ? `@${profile.username}` : null;
   const visibilityLabel = profile.is_public ? "Public profile" : "Private profile";
   const isDisabled = disabled ?? !onPress;
+  const hasActions = Boolean(actions);
 
   return (
     <Card
@@ -131,7 +132,7 @@ export function ProfileCard({
           </View>
         ) : null}
 
-        {actions ? <View className="gap-2">{actions}</View> : null}
+        {hasActions ? <View className="gap-2">{actions}</View> : null}
       </CardContent>
     </Card>
   );

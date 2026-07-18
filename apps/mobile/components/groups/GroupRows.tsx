@@ -70,7 +70,7 @@ export function GroupMemberRow({ member, onPress, rightAccessory }: GroupMemberR
       return;
     }
 
-    navigateTo(`/user/${member.profile.id}` as any);
+    navigateTo(`/user/${member.profile.id}`);
   };
 
   return (
@@ -110,7 +110,7 @@ export function GroupInvitationRow({
     ("group" in invitation ? invitation.group.name : "Pending invitation");
   const subtitle = formatCreatedAt(invitation.created_at);
   const openInvitedProfile = invitedProfile
-    ? () => navigateTo(`/user/${invitedProfile.id}` as any)
+    ? () => navigateTo(`/user/${invitedProfile.id}`)
     : undefined;
 
   return (
@@ -158,7 +158,7 @@ export function GroupJoinRequestRow({
       <Pressable
         accessibilityRole="button"
         className="min-w-0 flex-1 flex-row items-center gap-3"
-        onPress={() => navigateTo(`/user/${joinRequest.profile.id}` as any)}
+        onPress={() => navigateTo(`/user/${joinRequest.profile.id}`)}
         testID={`group-join-request-profile-link-${joinRequest.profile.id}`}
       >
         <ProfileAvatar profile={joinRequest.profile} />

@@ -111,7 +111,7 @@ function ProfileInviteRow({
           className="flex-row min-w-0 flex-1 items-center gap-3"
           onPress={(event) => {
             event.stopPropagation();
-            navigateTo(`/user/${profile.id}` as any);
+            navigateTo(`/user/${profile.id}`);
           }}
           testID={`group-invite-profile-link-${profile.id}`}
         >

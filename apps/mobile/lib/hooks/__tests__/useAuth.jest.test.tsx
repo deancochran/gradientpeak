@@ -101,7 +101,8 @@ jest.mock("@/lib/api", () => ({
     }),
     profiles: {
       get: {
-        useQuery: (...args: any[]) => profileQueryUseQueryMock(...args),
+        useQuery: (...args: Parameters<typeof profileQueryUseQueryMock>) =>
+          profileQueryUseQueryMock(...args),
       },
     },
   },

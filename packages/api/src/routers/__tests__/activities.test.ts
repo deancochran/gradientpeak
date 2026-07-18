@@ -220,6 +220,36 @@ function buildActivityRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function buildSegmentReadRow(
+  activityId: string,
+  ordinal: number,
+  category: "run" | "bike" | "swim",
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    id: `99999999-9999-4999-8999-${ordinal.toString().padStart(12, "0")}`,
+    activity_id: activityId,
+    ordinal,
+    role: "activity" as const,
+    category,
+    start_offset_ms: ordinal * 1_000,
+    end_offset_ms: (ordinal + 1) * 1_000,
+    timing_coverage: "complete" as const,
+    active_ms: 1_000,
+    moving_ms: 900,
+    summary: {
+      version: 1 as const,
+      timing: {
+        timingCoverage: "complete" as const,
+        activeMs: 1_000,
+        movingMs: 900,
+      },
+      distanceMeters: 100,
+    },
+    ...overrides,
+  };
+}
+
 function buildActivityPlanRow(overrides: Record<string, unknown> = {}) {
   return {
     id: PLAN_ID,
@@ -628,37 +658,7 @@ beforeEach(() => {
       new Map(
         activityIds.map((activityId) => [
           activityId,
-          [
-            {
-              id: activityId,
-              activity_id: activityId,
-              ordinal: 0,
-              role: "activity",
-              category: activityCategories.get(activityId) ?? "run",
-              profile_id: OWNER_ID,
-              start_offset_ms: 0,
-              end_offset_ms: 2_700_000,
-              source_artifact_id: null,
-              source_session_index: null,
-              source_message_index: null,
-              raw_type_string: null,
-              raw_type_integer: null,
-              raw_sport_string: null,
-              raw_sport_integer: null,
-              summary: {
-                version: 1,
-                timing: { timingCoverage: "complete", activeMs: 2_700_000, movingMs: 2_650_000 },
-              },
-              summary_version: 1,
-              timing_coverage: "complete",
-              active_ms: 2_700_000,
-              moving_ms: 2_650_000,
-              segment_revision: 1,
-              parser_version: "test-parser-v1",
-              materializer_version: "test-materializer-v1",
-              created_at: new Date("2026-01-10T08:45:00.000Z"),
-            },
-          ],
+          [buildSegmentReadRow(activityId, 0, activityCategories.get(activityId) ?? "run")],
         ]),
       ),
   );
@@ -823,6 +823,10 @@ describe("activitiesRouter", () => {
         likes_count: 3,
         has_liked: true,
         derived,
+        activity_kind: "single",
+        activity_segment_count: 1,
+        activity_categories: ["run"],
+        matched_category_summary: null,
       },
     ]);
     expect(mockActivityAnalysis.buildActivityDerivedSummaryMap).toHaveBeenCalledWith(
@@ -831,6 +835,176 @@ describe("activitiesRouter", () => {
         activities: [expect.objectContaining({ id: ACTIVITY_ID, segments: expect.any(Array) })],
       }),
     );
+    expect(toSql(db.__spies.selectWhere.mock.calls[0]?.[0])).not.toContain("select count(*)");
+  });
+
+  it("filters by multisport composition and returns category-safe discovery DTOs", async () => {
+    const activity = buildActivityRow();
+    const segments = [
+      buildSegmentReadRow(ACTIVITY_ID, 0, "bike", {
+        summary: {
+          version: 1,
+          timing: { timingCoverage: "complete", activeMs: 1_000, movingMs: 900 },
+          distanceMeters: 1_000,
+        },
+      }),
+      buildSegmentReadRow(ACTIVITY_ID, 1, "run", {
+        active_ms: 2_000,
+        moving_ms: 1_800,
+        summary: {
+          version: 1,
+          timing: { timingCoverage: "complete", activeMs: 2_000, movingMs: 1_800 },
+          distanceMeters: 500,
+        },
+      }),
+      buildSegmentReadRow(ACTIVITY_ID, 2, "run", {
+        active_ms: 3_000,
+        moving_ms: 2_700,
+        summary: {
+          version: 1,
+          timing: { timingCoverage: "complete", activeMs: 3_000, movingMs: 2_700 },
+          distanceMeters: 700,
+        },
+      }),
+    ];
+    mockActivityAnalysis.loadActivitySegmentsByActivityId.mockResolvedValue(
+      new Map([[ACTIVITY_ID, segments]]),
+    );
+    mockActivityAnalysis.buildActivitySegmentDerivedSummaries.mockResolvedValue(
+      segments.slice(1).map((segment, index) => ({
+        activity_id: ACTIVITY_ID,
+        segment_id: segment.id,
+        category: "run",
+        tss: index === 0 ? 20 : 30,
+        tss_identity: RUN_TSS_IDENTITY,
+        intensity_factor: 0.8,
+        method: "run_pace_threshold",
+        unavailable_reason: null,
+        computed_as_of: "2026-01-10T09:00:00.000Z",
+        dedupe_key: segment.id,
+        load_stream_key: "run:pace",
+      })),
+    );
+    const db = createDbMock({ activityRows: [activity], totalRows: [{ total: 1 }] });
+
+    const result = await createCaller(db).listPaginated({
+      activity_category: "run",
+      composition_mode: "multisport_only",
+    });
+
+    expect(result.items[0]).toMatchObject({
+      activity_kind: "multisport",
+      activity_segment_count: 3,
+      activity_categories: ["bike", "run", "run"],
+      matched_category_summary: {
+        segment_count: 2,
+        distance_meters: 1_200,
+        active_ms: 5_000,
+        moving_ms: 4_500,
+        tss: 50,
+        tss_identity: RUN_TSS_IDENTITY,
+      },
+    });
+    const whereSql = toSql(db.__spies.selectWhere.mock.calls[0]?.[0]);
+    expect(whereSql).toContain('"activity_segments"."category" =');
+    expect(whereSql).toContain("select count(*)");
+    expect(whereSql).toContain("> 1");
+  });
+
+  it.each([
+    { sort_by: "distance" as const, expected: [ACTIVITY_ID_2, ACTIVITY_ID, ACTIVITY_ID_3] },
+    { sort_by: "duration" as const, expected: [ACTIVITY_ID_2, ACTIVITY_ID, ACTIVITY_ID_3] },
+    { sort_by: "tss" as const, expected: [ACTIVITY_ID, ACTIVITY_ID_2, ACTIVITY_ID_3] },
+  ])("sorts $sort_by by matched-category values with nulls last", async ({ sort_by, expected }) => {
+    const rows = [
+      buildActivityRow({ id: ACTIVITY_ID }),
+      buildActivityRow({ id: ACTIVITY_ID_2 }),
+      buildActivityRow({ id: ACTIVITY_ID_3 }),
+    ];
+    const segmentByActivityId = new Map([
+      [
+        ACTIVITY_ID,
+        [
+          buildSegmentReadRow(ACTIVITY_ID, 0, "run", {
+            active_ms: 1_000,
+            moving_ms: 900,
+            summary: {
+              version: 1,
+              timing: { timingCoverage: "complete", activeMs: 1_000, movingMs: 900 },
+              distanceMeters: 100,
+            },
+          }),
+        ],
+      ],
+      [
+        ACTIVITY_ID_2,
+        [
+          buildSegmentReadRow(ACTIVITY_ID_2, 0, "run", {
+            active_ms: 2_000,
+            moving_ms: 1_800,
+            summary: {
+              version: 1,
+              timing: { timingCoverage: "complete", activeMs: 2_000, movingMs: 1_800 },
+              distanceMeters: 200,
+            },
+          }),
+        ],
+      ],
+      [
+        ACTIVITY_ID_3,
+        [
+          buildSegmentReadRow(ACTIVITY_ID_3, 0, "run", {
+            timing_coverage: "unavailable",
+            active_ms: null,
+            moving_ms: null,
+            summary: { version: 1, timing: { timingCoverage: "unavailable" } },
+          }),
+        ],
+      ],
+    ]);
+    mockActivityAnalysis.loadActivitySegmentsByActivityId.mockImplementation(
+      async (_db: unknown, activityIds: string[]) =>
+        new Map(
+          activityIds.map((activityId) => [activityId, segmentByActivityId.get(activityId) ?? []]),
+        ),
+    );
+    mockActivityAnalysis.buildActivitySegmentDerivedSummaries.mockResolvedValue([
+      {
+        activity_id: ACTIVITY_ID,
+        segment_id: segmentByActivityId.get(ACTIVITY_ID)![0]!.id,
+        category: "run",
+        tss: 30,
+        tss_identity: RUN_TSS_IDENTITY,
+        load_stream_key: "run:pace",
+      },
+      {
+        activity_id: ACTIVITY_ID_2,
+        segment_id: segmentByActivityId.get(ACTIVITY_ID_2)![0]!.id,
+        category: "run",
+        tss: 10,
+        tss_identity: RUN_TSS_IDENTITY,
+        load_stream_key: "run:pace",
+      },
+    ]);
+    const db = createDbMock({ activityRows: rows, totalRows: [{ total: rows.length }] });
+
+    const result = await createCaller(db).listPaginated({
+      activity_category: "run",
+      sort_by,
+      sort_order: "desc",
+      limit: 3,
+    });
+
+    expect(result.items.map((item) => item.id)).toEqual(expected);
+    expect(result.items.at(-1)?.matched_category_summary).toMatchObject({
+      distance_meters: null,
+      active_ms: null,
+      tss: null,
+    });
+    expect(db.transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "repeatable read",
+      accessMode: "read only",
+    });
   });
 
   it("uses canonical parent values in paginated list responses", async () => {
@@ -1531,6 +1705,10 @@ describe("activitiesRouter", () => {
         likes_count: 5,
         activity_plans: null,
         segments: expect.any(Array),
+        activity_kind: "single",
+        activity_segment_count: 1,
+        activity_categories: ["run"],
+        matched_category_summary: null,
         current_artifact: null,
         ingestion: null,
       },
@@ -1613,6 +1791,13 @@ describe("activitiesRouter", () => {
         id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         availability: "accepted",
       }),
+    });
+    expect(result.activity.segments).toEqual([buildSegmentReadRow(ACTIVITY_ID, 0, "run")]);
+    expect(result.activity).toMatchObject({
+      activity_kind: "single",
+      activity_segment_count: 1,
+      activity_categories: ["run"],
+      matched_category_summary: null,
     });
   });
 

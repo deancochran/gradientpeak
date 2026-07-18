@@ -164,9 +164,9 @@ export function CalendarEventCard({
                         </Text>
                       </View>
                       <View className="mt-2 flex-row gap-1.5">
-                        {Array.from({ length: 3 }, (_, index) => (
+                        {["low", "medium", "high"].map((segment, index) => (
                           <View
-                            key={`${event.id}-intensity-${index}`}
+                            key={`${event.id}-intensity-${segment}`}
                             className={`h-2 flex-1 rounded-full ${index < intensityLevel ? activityColor.bg : "bg-muted"}`}
                           />
                         ))}

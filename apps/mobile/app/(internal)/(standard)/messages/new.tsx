@@ -41,7 +41,7 @@ export default function NewMessageScreen() {
   const getOrCreateDMMutation = api.messaging.getOrCreateDM.useMutation();
   const createConversationMutation = api.messaging.createConversation.useMutation({
     onSuccess: (conversation) => {
-      navigateTo(`/messages/${conversation.id}` as any);
+      navigateTo(`/messages/${conversation.id}`);
     },
   });
 
@@ -76,7 +76,7 @@ export default function NewMessageScreen() {
         target_user_id: selectedRecipients[0].id,
       });
 
-      navigateTo(`/messages/${conversation.id}` as any);
+      navigateTo(`/messages/${conversation.id}`);
       return;
     }
 

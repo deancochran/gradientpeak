@@ -175,6 +175,12 @@ function getMetricTarget(
           return `${Math.round(target.intensity)} rpm`;
         }
         break;
+      case "Time":
+      case "Lap Time":
+      case "Distance":
+      case "Pace":
+      case "Calories":
+        break;
     }
   }
   return null;

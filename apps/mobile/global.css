@@ -1,5 +1,5 @@
+@import "@repo/tailwindcss/native.css";
+
 @source "./app/**/*.{ts,tsx}";
 @source "./components/**/*.{ts,tsx}";
 @source "../../packages/ui/src/**/*.{ts,tsx}";
-
-@import "@repo/tailwindcss/native.css";

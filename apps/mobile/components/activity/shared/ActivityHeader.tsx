@@ -5,7 +5,7 @@ import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
 import { format } from "date-fns";
-import { Activity, Bike, Dumbbell, Footprints, Waves } from "lucide-react-native";
+import { Activity, Bike, Dumbbell, Footprints, type LucideIcon, Waves } from "lucide-react-native";
 import { useEffect, useRef } from "react";
 import { useWatch } from "react-hook-form";
 import { Pressable, View } from "react-native";
@@ -34,7 +34,7 @@ interface ActivityHeaderProps {
 }
 
 // Map activity types to Lucide icons
-const ACTIVITY_ICONS: Record<string, any> = {
+const ACTIVITY_ICONS: Record<string, LucideIcon> = {
   run: Footprints,
   bike: Bike,
   swim: Waves,
@@ -130,7 +130,7 @@ export function ActivityHeader({
     navigateTo({
       pathname: "/user/[userId]",
       params: { userId: user.id },
-    } as any);
+    });
   };
 
   const Content = (

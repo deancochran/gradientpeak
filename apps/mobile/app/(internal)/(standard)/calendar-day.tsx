@@ -255,9 +255,17 @@ export default function CalendarDayScreen() {
   );
 
   const handleOpenEvent = (event: CalendarEvent) => {
+    const eventType =
+      event.event_type === "planned" ||
+      event.event_type === "custom" ||
+      event.event_type === "race_target" ||
+      event.event_type === "imported" ||
+      event.event_type === "rest_day"
+        ? event.event_type
+        : undefined;
     const route = buildOpenEventRoute({
       id: event.id,
-      event_type: event.event_type === null ? undefined : (event.event_type as any),
+      event_type: eventType,
     });
 
     if (!route) {

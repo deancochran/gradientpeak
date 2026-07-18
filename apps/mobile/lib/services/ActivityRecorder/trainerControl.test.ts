@@ -29,10 +29,10 @@ describe("TrainerControl QA regressions", () => {
       getConnectedSensors: vi.fn(() => [trainer]),
       getLastTrainerCommandStatus: vi.fn(() => null),
       setPowerTarget: vi.fn(async () => true),
-    } as never;
+    };
 
     const control = new TrainerControl({
-      sensorsManager,
+      sensorsManager: sensorsManager as never,
       getCurrentReadings: () => ({}) as never,
       getSessionOverrideState: () => ({ trainerMode: "auto" }) as never,
       getSessionSnapshot: () => null,
@@ -52,7 +52,7 @@ describe("TrainerControl QA regressions", () => {
     expect(onCommandStatus).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: "control_unavailable", success: false }),
     );
-    expect((sensorsManager as any).setPowerTarget).not.toHaveBeenCalled();
+    expect(sensorsManager.setPowerTarget).not.toHaveBeenCalled();
   });
 
   it("applies route grade through bike simulation when supported", async () => {
@@ -67,10 +67,10 @@ describe("TrainerControl QA regressions", () => {
       getLastTrainerCommandStatus: vi.fn(() => null),
       setSimulation: vi.fn(async () => true),
       setTargetInclination: vi.fn(async () => true),
-    } as never;
+    };
 
     const control = new TrainerControl({
-      sensorsManager,
+      sensorsManager: sensorsManager as never,
       getCurrentReadings: () => ({}) as never,
       getSessionOverrideState: () => ({ trainerMode: "auto" }) as never,
       getSessionSnapshot: () => null,
@@ -79,11 +79,11 @@ describe("TrainerControl QA regressions", () => {
 
     await control.applyRouteGrade(6.4);
 
-    expect((sensorsManager as any).setSimulation).toHaveBeenCalledWith(
+    expect(sensorsManager.setSimulation).toHaveBeenCalledWith(
       { crr: 0.005, grade: 6.4, windResistance: 0.51, windSpeed: 0 },
       { coalesceKey: "route_grade", source: "periodic_refinement" },
     );
-    expect((sensorsManager as any).setTargetInclination).not.toHaveBeenCalled();
+    expect(sensorsManager.setTargetInclination).not.toHaveBeenCalled();
   });
 
   it("applies route grade as treadmill incline when simulation is unavailable", async () => {
@@ -98,10 +98,10 @@ describe("TrainerControl QA regressions", () => {
       getLastTrainerCommandStatus: vi.fn(() => null),
       setSimulation: vi.fn(async () => true),
       setTargetInclination: vi.fn(async () => true),
-    } as never;
+    };
 
     const control = new TrainerControl({
-      sensorsManager,
+      sensorsManager: sensorsManager as never,
       getCurrentReadings: () => ({}) as never,
       getSessionOverrideState: () => ({ trainerMode: "auto" }) as never,
       getSessionSnapshot: () => null,
@@ -110,11 +110,11 @@ describe("TrainerControl QA regressions", () => {
 
     await control.applyRouteGrade(3.1);
 
-    expect((sensorsManager as any).setTargetInclination).toHaveBeenCalledWith(3.1, {
+    expect(sensorsManager.setTargetInclination).toHaveBeenCalledWith(3.1, {
       coalesceKey: "route_grade",
       source: "periodic_refinement",
     });
-    expect((sensorsManager as any).setSimulation).not.toHaveBeenCalled();
+    expect(sensorsManager.setSimulation).not.toHaveBeenCalled();
   });
 
   it("does not resend unchanged or insignificant route grade commands", async () => {
@@ -129,10 +129,10 @@ describe("TrainerControl QA regressions", () => {
       getLastTrainerCommandStatus: vi.fn(() => null),
       setSimulation: vi.fn(async () => true),
       setTargetInclination: vi.fn(async () => true),
-    } as never;
+    };
 
     const control = new TrainerControl({
-      sensorsManager,
+      sensorsManager: sensorsManager as never,
       getCurrentReadings: () => ({}) as never,
       getSessionOverrideState: () => ({ trainerMode: "auto" }) as never,
       getSessionSnapshot: () => null,
@@ -144,8 +144,8 @@ describe("TrainerControl QA regressions", () => {
     await control.applyRouteGrade(4.05);
     await control.applyRouteGrade(4.2);
 
-    expect((sensorsManager as any).setSimulation).toHaveBeenCalledTimes(2);
-    expect((sensorsManager as any).setSimulation).toHaveBeenLastCalledWith(
+    expect(sensorsManager.setSimulation).toHaveBeenCalledTimes(2);
+    expect(sensorsManager.setSimulation).toHaveBeenLastCalledWith(
       { crr: 0.005, grade: 4.2, windResistance: 0.51, windSpeed: 0 },
       { coalesceKey: "route_grade", source: "periodic_refinement" },
     );
@@ -157,9 +157,9 @@ describe("TrainerControl QA regressions", () => {
       getConnectedSensors: vi.fn(() => []),
       getLastTrainerCommandStatus: vi.fn(() => null),
       resetTrainerControl: vi.fn(async () => true),
-    } as never;
+    };
     const control = new TrainerControl({
-      sensorsManager,
+      sensorsManager: sensorsManager as never,
       getCurrentReadings: () => ({}) as never,
       getSessionOverrideState: () => ({ trainerMode: "auto" }) as never,
       getSessionSnapshot: () => null,
@@ -167,6 +167,6 @@ describe("TrainerControl QA regressions", () => {
     });
 
     await expect(control.neutralizeForBoundary()).resolves.toBe(true);
-    expect((sensorsManager as any).resetTrainerControl).toHaveBeenCalledTimes(1);
+    expect(sensorsManager.resetTrainerControl).toHaveBeenCalledTimes(1);
   });
 });

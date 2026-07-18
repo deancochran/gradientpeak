@@ -118,6 +118,8 @@ export function PerformanceTab({
                 return d.avgPower !== null;
               case "heartrate":
                 return d.avgHeartRate !== null;
+              default:
+                return false;
             }
           })
           .sort((a, b) => {

@@ -8,10 +8,23 @@ const createDMMutateMock = jest.fn();
 const createConversationMutateMock = jest.fn();
 const searchUsersUseInfiniteQueryMock = jest.fn();
 
+type StackScreenProps = Record<string, unknown> & {
+  options?: { headerRight?: () => React.ReactNode };
+};
+type FlatListMockProps = Record<string, unknown> & {
+  data: unknown[];
+  renderItem: (info: { item: unknown }) => React.ReactNode;
+  ListHeaderComponent?: React.ReactNode;
+  ListEmptyComponent?: React.ReactNode;
+};
+type PressableMockProps = React.PropsWithChildren<
+  { onPress?: () => void } & Record<string, unknown>
+>;
+
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: any) =>
+    Screen: (props: StackScreenProps) =>
       React.createElement(
         "StackScreen",
         props,
@@ -23,14 +36,20 @@ jest.mock("expo-router", () => ({
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  FlatList: ({ data, renderItem, ListHeaderComponent, ListEmptyComponent, ...props }: any) =>
+  FlatList: ({
+    data,
+    renderItem,
+    ListHeaderComponent,
+    ListEmptyComponent,
+    ...props
+  }: FlatListMockProps) =>
     React.createElement(
       "FlatList",
       props,
       ListHeaderComponent,
-      data.length > 0 ? data.map((item: any) => renderItem({ item })) : ListEmptyComponent,
+      data.length > 0 ? data.map((item) => renderItem({ item })) : ListEmptyComponent,
     ),
-  Pressable: ({ children, onPress, ...props }: any) =>
+  Pressable: ({ children, onPress, ...props }: PressableMockProps) =>
     React.createElement("Pressable", { onPress, ...props }, children),
   View: createHost("View"),
 }));
@@ -42,7 +61,11 @@ jest.mock("@repo/ui/components/avatar", () => ({
 }));
 jest.mock("@repo/ui/components/input", () => ({
   __esModule: true,
-  Input: ({ value, onChangeText, ...props }: any) =>
+  Input: ({
+    value,
+    onChangeText,
+    ...props
+  }: { value?: string; onChangeText?: (value: string) => void } & Record<string, unknown>) =>
     React.createElement("TextInput", {
       value,
       onChangeText,
@@ -64,7 +87,7 @@ jest.mock("@/lib/api", () => ({
     messaging: {
       getOrCreateDM: {
         useMutation: () => ({
-          mutateAsync: async (input: any) => {
+          mutateAsync: async (input: unknown) => {
             createDMMutateMock(input);
             return { id: "conversation-1" };
           },
@@ -72,8 +95,8 @@ jest.mock("@/lib/api", () => ({
         }),
       },
       createConversation: {
-        useMutation: ({ onSuccess }: any) => ({
-          mutate: (input: any) => {
+        useMutation: ({ onSuccess }: { onSuccess?: (data: { id: string }) => void }) => ({
+          mutate: (input: unknown) => {
             createConversationMutateMock(input);
             onSuccess?.({ id: "conversation-2" });
           },
@@ -123,7 +146,7 @@ describe("new message screen", () => {
     jest.useRealTimers();
   });
 
-  it("debounces rapid recipient typing, clears immediately, and returns to empty suggestions", () => {
+  it("debounces rapid recipient typing, clears immediately, and returns to empty suggestions", async () => {
     jest.useFakeTimers();
     searchUsersUseInfiniteQueryMock.mockImplementation((input: { query?: string }) => ({
       data: {
@@ -160,7 +183,7 @@ describe("new message screen", () => {
       searchUsersUseInfiniteQueryMock.mock.calls.filter(([input]) => input.query === "coach"),
     ).toHaveLength(0);
 
-    act(() => jest.advanceTimersByTime(300));
+    await act(() => jest.advanceTimersByTime(300));
     expect(searchUsersUseInfiniteQueryMock).toHaveBeenLastCalledWith(
       { query: "coach", limit: 20 },
       expect.objectContaining({ getNextPageParam: expect.any(Function) }),
@@ -175,7 +198,7 @@ describe("new message screen", () => {
 
     fireEvent.press(screen.getByTestId("messages-new-search-clear"));
     expect(screen.getByTestId("messages-new-search-input").props.value).toBe("");
-    act(() => jest.advanceTimersByTime(300));
+    await act(() => jest.advanceTimersByTime(300));
     expect(searchUsersUseInfiniteQueryMock).toHaveBeenLastCalledWith(
       { query: undefined, limit: 20 },
       expect.objectContaining({ getNextPageParam: expect.any(Function) }),

@@ -15,7 +15,7 @@ import {
 import { type GroupedActivities, groupActivitiesByDate } from "@/lib/utils/plan/dateGrouping";
 
 export interface ActivityListProps {
-  activities: any[];
+  activities: PlannedActivity[];
   onActivityPress: (activityId: string) => void;
   groupBy?: "date" | "none";
   showEmptyState?: boolean;
@@ -25,12 +25,32 @@ export interface ActivityListProps {
 
 interface GroupSectionProps {
   title: string;
-  activities: any[];
+  activities: PlannedActivity[];
   onPress: (activityId: string) => void;
 }
 
 // Transform planned activity to card data format
-function transformToCardData(plannedActivity: any): ActivityPlanCardData {
+type PlannedActivity = {
+  activity_plan?: {
+    activity_category?: string | null;
+    authoritative_metrics?: {
+      estimated_distance?: number | null;
+      estimated_duration?: number | null;
+      estimated_tss?: number | null;
+      intensity_factor?: number | null;
+    } | null;
+    name?: string | null;
+    route_id?: string | null;
+    route?: { ascent?: number | null; descent?: number | null; distance?: number | null } | null;
+    structure?: unknown;
+  } | null;
+  completed_activity_id?: string | null;
+  id: string;
+  notes?: string | null;
+  scheduled_date: string;
+};
+
+function transformToCardData(plannedActivity: PlannedActivity): ActivityPlanCardData {
   const plan = plannedActivity.activity_plan;
   const planMetrics = getAuthoritativeActivityPlanMetrics(plan);
   const planRoute = getActivityPlanRoute(plan);
@@ -41,10 +61,24 @@ function transformToCardData(plannedActivity: any): ActivityPlanCardData {
     structure: plan?.structure,
     estimatedDuration: planMetrics.estimated_duration ?? undefined,
     estimatedTss: planMetrics.estimated_tss ?? undefined,
-    estimatedDistance: planRoute.distance ?? undefined,
-    routeId: plan?.route_id,
-    routeName: (plan?.structure as any)?.route?.name,
-    notes: plannedActivity.notes,
+    estimatedDistance:
+      planMetrics.estimated_distance === null
+        ? undefined
+        : (planMetrics.estimated_distance ?? planRoute.distance ?? undefined),
+    routeId: plan?.route_id ?? undefined,
+    routeName:
+      plan?.structure && typeof plan.structure === "object" && "route" in plan.structure
+        ? (() => {
+            const route = plan.structure.route;
+            return route &&
+              typeof route === "object" &&
+              "name" in route &&
+              typeof route.name === "string"
+              ? route.name
+              : undefined;
+          })()
+        : undefined,
+    notes: plannedActivity.notes ?? undefined,
     scheduledDate: plannedActivity.scheduled_date,
     isCompleted: Boolean(plannedActivity.completed_activity_id),
   };

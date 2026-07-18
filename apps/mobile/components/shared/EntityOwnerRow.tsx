@@ -37,7 +37,8 @@ export function EntityOwnerRow({
   const user = useAuthStore((state) => state.user);
   const navigateTo = useAppNavigate();
   const displayName = displayNameOverride?.trim() || owner?.username?.trim() || "Unknown User";
-  const canOpenProfile = typeof owner?.id === "string" && owner.id.length > 0;
+  const ownerId = typeof owner?.id === "string" && owner.id.length > 0 ? owner.id : null;
+  const canOpenProfile = ownerId !== null;
   const canPress = Boolean(onPress) || canOpenProfile;
 
   const handlePress = () => {
@@ -50,15 +51,15 @@ export function EntityOwnerRow({
       return;
     }
 
-    if (owner.id === user?.id) {
+    if (ownerId === user?.id) {
       navigateTo("/profile");
       return;
     }
 
     navigateTo({
       pathname: "/user/[userId]",
-      params: { userId: owner.id },
-    } as any);
+      params: { userId: ownerId },
+    });
   };
 
   return (

@@ -1,9 +1,12 @@
+import type { ReactTestInstance } from "react-test-renderer";
 import { createHost as mockCreateHost } from "../../../../test/mock-components";
 import { renderNative, screen } from "../../../../test/render-native";
 import GroupEventDetailRoute from "../group-event-detail";
 
+type HostQueries = { UNSAFE_getByType(type: string): ReactTestInstance };
+
 const detailVm = {
-  event: null as any,
+  event: null,
   isError: true,
   isLoading: false,
   refetch: jest.fn(),
@@ -70,6 +73,8 @@ describe("GroupEventDetailRoute", () => {
 
     expect(screen.getByText("Unable to load event")).toBeTruthy();
     expect(screen.getByText("This group event may be unavailable.")).toBeTruthy();
-    expect(() => (rendered as any).UNSAFE_getByType("GroupEventDetailScreen")).toThrow();
+    expect(() =>
+      (rendered as typeof rendered & HostQueries).UNSAFE_getByType("GroupEventDetailScreen"),
+    ).toThrow();
   });
 });

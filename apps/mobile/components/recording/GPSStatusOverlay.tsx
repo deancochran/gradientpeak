@@ -13,6 +13,7 @@
  */
 
 import { Text } from "@repo/ui/components/text";
+import type { LocationObject } from "expo-location";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
@@ -50,7 +51,7 @@ function useGPSStatus(
     setHasSignal(true);
 
     // Subscribe to location updates from service
-    const handleLocationUpdate = (location: any) => {
+    const handleLocationUpdate = (location: LocationObject) => {
       setLastUpdateTime(Date.now());
       setLastAccuracy(location?.coords?.accuracy ?? null);
 
@@ -92,7 +93,7 @@ function useGPSStatus(
           return prevTime; // Don't update time in the check interval
         });
       } catch (error) {
-        console.error("[GPSStatusOverlay] Error checking GPS status:", error);
+        console.error("Error checking GPS status:", error);
       }
     }, 2000); // Check every 2 seconds
 

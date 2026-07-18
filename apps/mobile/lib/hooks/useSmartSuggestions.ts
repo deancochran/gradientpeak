@@ -1,4 +1,8 @@
-import { extendTimeline, reduceIntensity } from "@repo/core/plan";
+import {
+  extendTimeline,
+  type QuickAdjustmentPlanStructure,
+  reduceIntensity,
+} from "@repo/core/plan";
 import { useMemo } from "react";
 
 export type SuggestionReason = "low_adherence" | "load_balance_review" | "timeline_risk";
@@ -7,15 +11,24 @@ export interface SmartSuggestion {
   reason: SuggestionReason;
   title: string;
   description: string;
-  adjustedStructure?: any;
+  adjustedStructure?: SmartPlanStructure;
   severity: "info" | "warning" | "alert";
 }
 
 interface UseSmartSuggestionsParams {
-  plan?: any;
-  status?: any;
-  weeklySummaries?: any[];
+  plan?: { created_at: string; structure: SmartPlanStructure };
+  status?: { ctl?: number | null; tsb?: number | null };
+  weeklySummaries?: Array<{ activityPercentage?: number | null }>;
 }
+
+type SmartPlanStructure = Partial<QuickAdjustmentPlanStructure> & {
+  periodization_template?:
+    | (NonNullable<QuickAdjustmentPlanStructure["periodization_template"]> & {
+        starting_ctl?: number | null;
+        target_ctl?: number | null;
+      })
+    | null;
+};
 
 /**
  * Hook to calculate smart adjustment suggestions based on training data
@@ -39,7 +52,7 @@ export function deriveSmartSuggestion({
 }: UseSmartSuggestionsParams): SmartSuggestion | null {
   if (!plan || !status) return null;
 
-  const structure = plan.structure as any;
+  const structure = plan.structure;
 
   // Check 1: Low Adherence (< 60% for 2+ weeks)
   if (weeklySummaries && weeklySummaries.length >= 2) {
@@ -53,7 +66,9 @@ export function deriveSmartSuggestion({
         reason: "low_adherence",
         title: "Low Training Adherence Detected",
         description: `Your adherence is ${Math.round(avgAdherence)}%. Consider reducing weekly targets to stay consistent.`,
-        adjustedStructure: reduceIntensity(structure),
+        adjustedStructure: isQuickAdjustmentPlanStructure(structure)
+          ? reduceIntensity(structure)
+          : undefined,
         severity: "warning",
       };
     }
@@ -100,11 +115,24 @@ export function deriveSmartSuggestion({
         reason: "timeline_risk",
         title: "Goal Timeline May Be Unrealistic",
         description: `You're ${Math.round(timeProgress)}% through the timeline but only ${Math.round(fitnessProgress)}% toward your fitness goal. Consider extending the target date.`,
-        adjustedStructure: extendTimeline(structure),
+        adjustedStructure: isQuickAdjustmentPlanStructure(structure)
+          ? extendTimeline(structure)
+          : undefined,
         severity: "warning",
       };
     }
   }
 
   return null;
+}
+
+function isQuickAdjustmentPlanStructure(
+  structure: SmartPlanStructure,
+): structure is QuickAdjustmentPlanStructure & SmartPlanStructure {
+  return (
+    typeof structure.min_rest_days_per_week === "number" &&
+    typeof structure.target_activities_per_week === "number" &&
+    typeof structure.target_weekly_tss_max === "number" &&
+    typeof structure.target_weekly_tss_min === "number"
+  );
 }

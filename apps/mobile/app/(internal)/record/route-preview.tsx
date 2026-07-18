@@ -94,10 +94,13 @@ export default function RoutePreviewScreen() {
     );
   }
 
+  const startCoordinate = coordinates[0];
+  const endCoordinate = coordinates.at(-1);
+
   return (
     <View className="flex-1 bg-background" testID="route-preview-screen">
       <View className="h-72 bg-muted">
-        {coordinates.length > 0 && initialRegion ? (
+        {startCoordinate && endCoordinate && initialRegion ? (
           <MapView
             style={{ flex: 1 }}
             provider={PROVIDER_DEFAULT}
@@ -109,8 +112,8 @@ export default function RoutePreviewScreen() {
             toolbarEnabled={false}
           >
             <Polyline coordinates={coordinates} strokeColor="#f97316" strokeWidth={4} />
-            <Marker coordinate={coordinates[0]!} title="Start" />
-            <Marker coordinate={coordinates[coordinates.length - 1]!} title="Finish" />
+            <Marker coordinate={startCoordinate} title="Start" />
+            <Marker coordinate={endCoordinate} title="Finish" />
           </MapView>
         ) : (
           <View className="flex-1 items-center justify-center">

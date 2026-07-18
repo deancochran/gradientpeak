@@ -28,13 +28,13 @@ function FollowersScreen() {
     refetch,
   } = api.social.getFollowers.useInfiniteQuery(
     { user_id: targetUserId, limit },
-    { enabled: !!targetUserId, getNextPageParam: (lastPage: any) => lastPage.nextCursor },
+    { enabled: !!targetUserId, getNextPageParam: (lastPage) => lastPage.nextCursor },
   );
 
   const users = followersData?.pages.flatMap((page) => page.users) || [];
   const total = followersData?.pages[0]?.total || 0;
   const handleUserPress = (profileUserId: string) => {
-    navigateTo(`/user/${profileUserId}` as any);
+    navigateTo(`/user/${profileUserId}`);
   };
 
   const renderItem = ({

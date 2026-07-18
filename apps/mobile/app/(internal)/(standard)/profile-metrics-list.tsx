@@ -230,7 +230,7 @@ function DetailTrendChart({
             {yTicks.map((tick, index) => {
               const y = frame.paddingTop + index * (chartHeight / 2);
               return (
-                <React.Fragment key={`${group.id}-tick-${index}`}>
+                <React.Fragment key={`${group.id}-tick-${tick}`}>
                   <Line
                     x1={frame.paddingLeft}
                     y1={y}
@@ -279,9 +279,9 @@ function DetailTrendChart({
               strokeLinecap="round"
               strokeLinejoin="round"
             />
-            {coordinates.map((point, index) => (
+            {coordinates.map((point) => (
               <Circle
-                key={`${group.id}-${index}`}
+                key={`${group.id}-${point.x}-${point.y}`}
                 cx={point.x}
                 cy={point.y}
                 r={3.5}
@@ -365,7 +365,7 @@ export default function ProfileMetricsListScreen() {
   const { data, isLoading, error, hasNextPage, isFetchingNextPage, fetchNextPage } =
     api.profileMetrics.list.useInfiniteQuery(
       { limit: 50 },
-      { getNextPageParam: (lastPage: any) => lastPage.nextCursor },
+      { getNextPageParam: (lastPage) => lastPage.nextCursor },
     );
   const metrics = (data?.pages.flatMap((page) => page.items) ?? []) as ProfileMetricRow[];
   const metricGroups = React.useMemo(() => buildProfileMetricTrendGroups(metrics), [metrics]);

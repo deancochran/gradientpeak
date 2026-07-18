@@ -143,7 +143,10 @@ export function AppBottomSheet({
     return null;
   }
 
-  const hasHeader = showTitleHeader || Boolean(headerContent);
+  const hasFooter = Boolean(footer);
+  const hasHeaderAction = Boolean(headerAction);
+  const hasHeaderContent = Boolean(headerContent);
+  const hasHeader = showTitleHeader || hasHeaderContent;
   const header = hasHeader ? (
     <View className="border-b border-border bg-background pb-3 pt-2">
       {showTitleHeader ? (
@@ -161,10 +164,10 @@ export function AppBottomSheet({
               ) : null}
             </View>
           </View>
-          {headerAction ? <View>{headerAction}</View> : null}
+          {hasHeaderAction ? <View>{headerAction}</View> : null}
         </View>
       ) : null}
-      {headerContent ? (
+      {hasHeaderContent ? (
         <View className={showTitleHeader ? "pt-3" : "pt-1"}>{headerContent}</View>
       ) : null}
     </View>
@@ -181,7 +184,7 @@ export function AppBottomSheet({
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
       backdropComponent={renderBackdrop}
-      footerComponent={footer ? renderFooter : undefined}
+      footerComponent={hasFooter ? renderFooter : undefined}
       onClose={onClose}
       handleIndicatorStyle={{
         width: 40,
@@ -212,7 +215,8 @@ export function AppBottomSheet({
             contentKey={contentKey}
             enableFooterMarginAdjustment={Boolean(footer)}
             paddingBottom={
-              contentPaddingBottom ?? (footer ? APP_BOTTOM_SHEET_ACTION_FOOTER_BOTTOM_INSET : 120)
+              contentPaddingBottom ??
+              (hasFooter ? APP_BOTTOM_SHEET_ACTION_FOOTER_BOTTOM_INSET : 120)
             }
           >
             {children}

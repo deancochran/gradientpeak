@@ -1,9 +1,9 @@
+import { compareActivityArtifactSemantics } from "@repo/core/activity-artifacts";
 import {
-  compareActivityArtifactSemantics,
   decodeFitActivityArtifact,
   parseFitFileWithSDK,
   projectFitArtifactSemantics,
-} from "@repo/core";
+} from "@repo/core/activity-files/fit-parser";
 import { Buffer } from "buffer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 

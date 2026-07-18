@@ -22,8 +22,8 @@ export const UpcomingStepsPreview = memo<UpcomingStepsPreviewProps>(function Upc
       <Text className="text-sm font-medium mb-3">{title}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} className="gap-3">
         <View className="flex-row gap-3 px-1">
-          {steps.map((step, index) => (
-            <View key={index} className="w-64">
+          {steps.map((step) => (
+            <View key={JSON.stringify(step)} className="w-64">
               <StepPreviewCard step={step} isUpcoming={true} showDuration={true} />
             </View>
           ))}
@@ -32,5 +32,3 @@ export const UpcomingStepsPreview = memo<UpcomingStepsPreviewProps>(function Upc
     </View>
   );
 });
-
-UpcomingStepsPreview.displayName = "UpcomingStepsPreview";

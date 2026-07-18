@@ -8,7 +8,7 @@ import { type DecompressedStream, decompressAllStreams } from "@/lib/utils/strea
  * @param activityStreams - Array of compressed stream objects from database
  * @returns Object with decompressed streams and helper methods
  */
-export function useActivityStreams(activityStreams?: any[]) {
+export function useActivityStreams(activityStreams?: Parameters<typeof decompressAllStreams>[0]) {
   const streams = useMemo(() => {
     if (!activityStreams || activityStreams.length === 0) {
       return new Map<string, DecompressedStream>();

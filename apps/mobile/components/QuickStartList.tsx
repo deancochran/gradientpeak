@@ -2,7 +2,15 @@ import { getActivityDisplayName, type RecordingActivityCategory } from "@repo/co
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { Activity, Bike, ChevronRight, Dumbbell, Footprints, Waves } from "lucide-react-native";
+import {
+  Activity,
+  Bike,
+  ChevronRight,
+  Dumbbell,
+  Footprints,
+  type LucideIcon,
+  Waves,
+} from "lucide-react-native";
 import { View } from "react-native";
 
 interface QuickStartListProps {
@@ -13,7 +21,7 @@ interface QuickStartListProps {
 const ACTIVITY_CONFIGS: {
   category: RecordingActivityCategory;
   gpsRecordingEnabled: boolean;
-  icon: any;
+  icon: LucideIcon;
   color: string;
   description: string;
 }[] = [
@@ -71,9 +79,9 @@ const ACTIVITY_CONFIGS: {
 export function QuickStartList({ onActivitySelect }: QuickStartListProps) {
   return (
     <View className="gap-3">
-      {ACTIVITY_CONFIGS.map((config, index) => (
+      {ACTIVITY_CONFIGS.map((config) => (
         <QuickStartActivityOption
-          key={`${config.category}-${config.gpsRecordingEnabled}-${index}`}
+          key={`${config.category}-${config.gpsRecordingEnabled}`}
           config={config}
           onSelect={() => onActivitySelect(config.category, config.gpsRecordingEnabled)}
         />

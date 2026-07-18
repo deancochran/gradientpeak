@@ -74,6 +74,7 @@ import {
   trainingPlanSchema,
   trainingPlanUpdateInputSchema,
 } from "@repo/core";
+import { getAuthoritativeActivityPlanMetrics } from "@repo/core/activity-plan";
 import {
   getActivityEffortThresholdEvidence,
   resolveCanonicalThresholds,
@@ -1050,7 +1051,10 @@ async function estimateWeeklyTssFromStructuredActivities(input: {
     );
 
     const estimatedTssByPlanId = new Map(
-      plansWithEstimations.map((plan: any) => [plan.id, plan.estimated_tss || 0]),
+      plansWithEstimations.map((plan: any) => [
+        plan.id,
+        getAuthoritativeActivityPlanMetrics(plan).estimated_tss ?? 0,
+      ]),
     );
 
     const dailyTss = new Map<string, number>();
@@ -1099,7 +1103,10 @@ async function estimateWeeklyTssFromStructuredActivities(input: {
   );
 
   const estimatedTssByPlanId = new Map(
-    plansWithEstimations.map((plan: any) => [plan.id, plan.estimated_tss || 0]),
+    plansWithEstimations.map((plan: any) => [
+      plan.id,
+      getAuthoritativeActivityPlanMetrics(plan).estimated_tss ?? 0,
+    ]),
   );
 
   const dailyTss = new Map<string, number>();
@@ -3342,7 +3349,7 @@ export async function getPlanTabProjectionService({
   const estimatedTssByPlanId = new Map(
     plansWithEstimations
       .filter((item: any) => item.counts_toward_aggregation !== false)
-      .map((item: any) => [item.id, item.estimated_tss]),
+      .map((item: any) => [item.id, getAuthoritativeActivityPlanMetrics(item).estimated_tss]),
   );
 
   const scheduledByDate = new Map<string, number>();
@@ -4316,22 +4323,30 @@ const trainingPlansProcedures = {
             ctx.session.user.id,
           )
         : [];
+    const upcomingPlansById = new Map(upcomingPlansWithEstimations.map((plan) => [plan.id, plan]));
 
     // Map back to planned activities structure with estimated values
     const upcomingActivities =
-      upcomingActivitiesRaw?.map((pa: any, index: number) => ({
-        id: pa.id,
-        scheduled_date: pa.scheduled_date,
-        activity_plan: upcomingPlansWithEstimations[index]
-          ? {
-              id: upcomingPlansWithEstimations[index].id,
-              name: upcomingPlansWithEstimations[index].name,
-              activity_category: upcomingPlansWithEstimations[index].activity_category,
-              estimated_duration: upcomingPlansWithEstimations[index].estimated_duration,
-              estimated_tss: upcomingPlansWithEstimations[index].estimated_tss,
-            }
-          : null,
-      })) || [];
+      upcomingActivitiesRaw?.map((pa: any) => {
+        const estimatedPlan = pa.activity_plan?.id
+          ? upcomingPlansById.get(pa.activity_plan.id)
+          : undefined;
+        const metrics = getAuthoritativeActivityPlanMetrics(estimatedPlan);
+        return {
+          id: pa.id,
+          scheduled_date: pa.scheduled_date,
+          activity_plan: estimatedPlan
+            ? {
+                id: estimatedPlan.id,
+                name: estimatedPlan.name,
+                activity_category: estimatedPlan.activity_category,
+                authoritative_metrics: estimatedPlan.authoritative_metrics,
+                estimated_duration: metrics.estimated_duration,
+                estimated_tss: metrics.estimated_tss,
+              }
+            : null,
+        };
+      }) || [];
 
     if (plan && !trainingPlanSchema.safeParse(plan.structure).success) {
       throw new TRPCError({
@@ -4703,9 +4718,9 @@ const trainingPlansProcedures = {
             )
           : [];
 
-      // Create a map for quick lookup of estimated TSS by plan ID
+      // Create a map for quick lookup of canonical metrics by plan ID.
       const estimationMap = new Map(
-        plansWithEstimations.map((plan: any) => [plan.id, plan.estimated_tss]),
+        plansWithEstimations.map((plan: any) => [plan.id, plan.authoritative_metrics]),
       );
 
       // Map planned activities with their estimations
@@ -4715,7 +4730,7 @@ const trainingPlansProcedures = {
           activity_plan: pa.activity_plan
             ? {
                 ...pa.activity_plan,
-                estimated_tss: estimationMap.get(pa.activity_plan.id) || 0,
+                authoritative_metrics: estimationMap.get(pa.activity_plan.id) ?? null,
               }
             : null,
         })) || [];
@@ -4759,7 +4774,8 @@ const trainingPlansProcedures = {
           }) || [];
 
         const plannedTSS = weekPlanned.reduce(
-          (sum: number, pa: any) => sum + (pa.activity_plan?.estimated_tss || 0),
+          (sum: number, pa: any) =>
+            sum + (getAuthoritativeActivityPlanMetrics(pa.activity_plan).estimated_tss ?? 0),
           0,
         );
 

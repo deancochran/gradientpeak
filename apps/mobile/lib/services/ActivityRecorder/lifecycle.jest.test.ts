@@ -281,7 +281,16 @@ const navigationIds = {
   rest: "10000000-0000-4000-8000-000000000005",
 };
 
-function configureDistancePlan(mutable: any, includeRest = false) {
+type DistancePlanMutableRecorder = {
+  _plan: Parameters<PlanExecution["loadPlan"]>[0];
+  planExecution: PlanExecution;
+  state: string;
+  startTime: number;
+  occurrenceStartedAt: number;
+  recordingMetadata: { startedAt: string; profileId: string };
+};
+
+function configureDistancePlan(mutable: DistancePlanMutableRecorder, includeRest = false) {
   const structure = {
     version: 3 as const,
     segments: [

@@ -77,7 +77,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       return;
     }
 
-    if (initializePromise) {
+    if (initializePromise !== null) {
       return initializePromise;
     }
 

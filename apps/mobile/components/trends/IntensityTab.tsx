@@ -184,8 +184,8 @@ export function IntensityTab({
           <Text className={`text-sm font-semibold mb-2 ${insightTone.title}`}>
             💡 Training Insights
           </Text>
-          {recommendations.map((rec, index) => (
-            <Text key={index} className={`text-xs mb-1 ${insightTone.body}`}>
+          {recommendations.map((rec) => (
+            <Text key={rec} className={`text-xs mb-1 ${insightTone.body}`}>
               • {rec}
             </Text>
           ))}

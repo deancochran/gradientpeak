@@ -32,7 +32,7 @@ function UserDetailScreen() {
 
   useEffect(() => {
     if (isOwnProfile) {
-      router.replace(ROUTES.PROFILE_SETTINGS as any);
+      router.replace(ROUTES.PROFILE_SETTINGS);
     }
   }, [isOwnProfile, router]);
 
@@ -76,8 +76,8 @@ function UserDetailScreen() {
 
   const messageMutation = api.messaging.getOrCreateDM.useMutation({
     onSuccess: (data) => {
-      if (data && "id" in data) {
-        navigateTo(`/messages/${(data as any).id}` as any);
+      if (data && "id" in data && typeof data.id === "string") {
+        navigateTo(`/messages/${data.id}`);
       }
     },
     onError: (err) => Alert.alert("Error", err.message || "Failed to start message"),
@@ -93,7 +93,7 @@ function UserDetailScreen() {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={6}>
           <DropdownMenuItem
-            onPress={() => navigateTo(ROUTES.PROFILE_EDIT as any)}
+            onPress={() => navigateTo(ROUTES.PROFILE_EDIT)}
             testID="user-detail-options-edit"
           >
             <Text>Edit Profile</Text>
@@ -221,16 +221,12 @@ function UserDetailScreen() {
         }
         emailFallback={isOwnProfile ? user?.email : null}
         isOwnProfile={isOwnProfile}
-        onEdit={isOwnProfile ? () => navigateTo(ROUTES.PROFILE_EDIT as any) : undefined}
+        onEdit={isOwnProfile ? () => navigateTo(ROUTES.PROFILE_EDIT) : undefined}
         onFollowersPress={
-          canViewSocialGraph
-            ? () => navigateTo(`/followers?userId=${targetUserId}` as any)
-            : undefined
+          canViewSocialGraph ? () => navigateTo(`/followers?userId=${targetUserId}`) : undefined
         }
         onFollowingPress={
-          canViewSocialGraph
-            ? () => navigateTo(`/following?userId=${targetUserId}` as any)
-            : undefined
+          canViewSocialGraph ? () => navigateTo(`/following?userId=${targetUserId}`) : undefined
         }
         profile={renderedProfile}
         showMetadata={

@@ -13,6 +13,23 @@ const useGroupEventDetailViewModelMock = jest.fn();
 const useGroupDetailViewModelMock = jest.fn();
 let overflowActions: Array<{ onPress?: () => void; testID: string }> = [];
 
+type OverflowAction = { label: string; onPress?: () => void; testID: string };
+type DetailScaffoldProps = React.PropsWithChildren<{
+  headerRight?: () => React.ReactNode;
+  isLoading?: boolean;
+  loadingLabel?: string;
+  notFound?: boolean;
+  notFoundDescription?: string;
+  notFoundTitle?: string;
+  screenTestID?: string;
+}>;
+type GroupEventDetailProps = {
+  event: { title: string };
+  onOccurrencePress: (event: { id: string }) => void;
+  onRsvp: (status: string, eventId: string) => void;
+  onRsvpSeries: (status: string) => void;
+};
+
 function createEvent(overrides: Record<string, unknown> = {}) {
   return {
     id: "99999999-9999-4999-8999-999999999999",
@@ -23,7 +40,7 @@ function createEvent(overrides: Record<string, unknown> = {}) {
     is_recurring_occurrence: true,
     cancelled_at: null,
     ...overrides,
-  } as any;
+  };
 }
 
 jest.mock("react-native", () => ({
@@ -47,12 +64,12 @@ jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: mockCreat
 
 jest.mock("@/components/shared/detail", () => ({
   __esModule: true,
-  DetailOverflowMenu: ({ actions, testID }: any) => {
+  DetailOverflowMenu: ({ actions, testID }: { actions: OverflowAction[]; testID?: string }) => {
     overflowActions = actions;
     return React.createElement(
       "View",
       { testID },
-      ...actions.map((action: any) =>
+      ...actions.map((action) =>
         React.createElement(
           "Button",
           { key: action.testID, onPress: action.onPress, testID: action.testID },
@@ -70,7 +87,7 @@ jest.mock("@/components/shared/detail", () => ({
     notFoundDescription,
     notFoundTitle,
     screenTestID,
-  }: any) => {
+  }: DetailScaffoldProps) => {
     if (isLoading) return React.createElement("Text", null, loadingLabel);
     if (notFound) {
       return React.createElement(
@@ -87,7 +104,12 @@ jest.mock("@/components/shared/detail", () => ({
 
 jest.mock("@/components/groups", () => ({
   __esModule: true,
-  GroupEventDetailScreen: ({ event, onOccurrencePress, onRsvp, onRsvpSeries }: any) =>
+  GroupEventDetailScreen: ({
+    event,
+    onOccurrencePress,
+    onRsvp,
+    onRsvpSeries,
+  }: GroupEventDetailProps) =>
     React.createElement(
       "View",
       { testID: "mock-group-event-detail-screen" },

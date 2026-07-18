@@ -6,6 +6,10 @@ import {
   canonicalSportSchema,
   getLoadBalanceStatus,
 } from "@repo/core";
+import {
+  type ActivityPlanMetricsLike,
+  getAuthoritativeActivityPlanMetrics,
+} from "@repo/core/activity-plan";
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
 import { schema, type TrainingPlanRow } from "@repo/db";
 import { and, asc, eq, gte, isNotNull, lte, sql } from "drizzle-orm";
@@ -24,6 +28,10 @@ import {
 import { featureFlags } from "../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { buildWorkloadEnvelopes } from "../utils/workload";
+
+function readActivityPlanMetrics(plan: unknown) {
+  return getAuthoritativeActivityPlanMetrics(plan as ActivityPlanMetricsLike | null | undefined);
+}
 
 const upcomingDaysSchema = z.object({
   days: z.number().min(1).max(14).default(7),
@@ -668,16 +676,16 @@ export const homeRouter = createTRPCRouter({
       const weeklyPlannedStats = {
         distance:
           weeklyPlanned.reduce(
-            (sum, pa) => sum + ((pa.activity_plan as any)?.estimated_distance || 0),
+            (sum, pa) => sum + (readActivityPlanMetrics(pa.activity_plan).estimated_distance ?? 0),
             0,
           ) / 1000,
         duration: weeklyPlanned.reduce(
-          (sum, pa) => sum + ((pa.activity_plan as any)?.estimated_duration || 0),
+          (sum, pa) => sum + (readActivityPlanMetrics(pa.activity_plan).estimated_duration ?? 0),
           0,
         ),
         tss: Math.round(
           weeklyPlanned.reduce(
-            (sum, pa) => sum + ((pa.activity_plan as any)?.estimated_tss || 0),
+            (sum, pa) => sum + (readActivityPlanMetrics(pa.activity_plan).estimated_tss ?? 0),
             0,
           ),
         ),
@@ -724,6 +732,7 @@ export const homeRouter = createTRPCRouter({
           return scheduledDate >= todayStr && scheduledDate < scheduleEndStr;
         })
         .map((pa: any) => {
+          const metrics = readActivityPlanMetrics(pa.activity_plan);
           const activityCategories = pa.activity_plan
             ? getPlanCategoryComposition(pa.activity_plan.structure)
             : [];
@@ -741,9 +750,9 @@ export const homeRouter = createTRPCRouter({
                   ? "single"
                   : "multisport",
             activityCategories,
-            estimatedDuration: (pa.activity_plan as any)?.estimated_duration || 0,
-            estimatedDistance: (pa.activity_plan as any)?.estimated_distance || 0,
-            estimatedTSS: (pa.activity_plan as any)?.estimated_tss || 0,
+            estimatedDuration: metrics.estimated_duration ?? 0,
+            estimatedDistance: metrics.estimated_distance ?? 0,
+            estimatedTSS: metrics.estimated_tss ?? 0,
           };
         });
 
@@ -770,7 +779,7 @@ export const homeRouter = createTRPCRouter({
       futureWithEstimations.forEach((pa) => {
         if (!pa.scheduled_date) return;
         const dateStr = pa.scheduled_date.split("T")[0]!; // Non-null assertion after check
-        const tss = (pa.activity_plan as any)?.estimated_tss || 0;
+        const tss = readActivityPlanMetrics(pa.activity_plan).estimated_tss ?? 0;
         futureTssByDate.set(dateStr, (futureTssByDate.get(dateStr) || 0) + tss);
       });
 

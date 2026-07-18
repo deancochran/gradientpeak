@@ -94,4 +94,25 @@ describe("buildSelectedWeekBucket", () => {
       }),
     ).toMatchObject({ completedLoadTss: null, completedLoadUnavailable: true });
   });
+
+  it.each([
+    "not-a-date",
+    "2026-02-30",
+    "999999-01-01",
+  ])("treats invalid week start %s as unavailable instead of throwing", (weekStart) => {
+    expect(() =>
+      buildSelectedWeekBucket({
+        weekStart,
+        weekEnd: weekStart,
+        points: [{ date: weekStart, targetLoadTss: 10 }],
+      }),
+    ).not.toThrow();
+    expect(
+      buildSelectedWeekBucket({
+        weekStart,
+        weekEnd: weekStart,
+        points: [{ date: weekStart, targetLoadTss: 10 }],
+      }),
+    ).toMatchObject({ targetLoadTss: null, loadDeltaTss: null });
+  });
 });

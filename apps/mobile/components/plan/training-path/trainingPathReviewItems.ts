@@ -1,3 +1,4 @@
+import { getAuthoritativeActivityPlanMetrics } from "@repo/core/activity-plan";
 import { getTrainingPathDateKey } from "./trainingPathPlanningTime";
 import type { TrainingPathCompletedActivity, TrainingPathScheduledItem } from "./trainingPathTypes";
 
@@ -81,11 +82,7 @@ function getScheduledEventTitle(event: ScheduledWeekEvent) {
 }
 
 function getScheduledEventLoad(event: ScheduledWeekEvent) {
-  return (
-    event.activity_plan?.authoritative_metrics?.estimated_tss ??
-    event.activity_plan?.estimated_tss ??
-    null
-  );
+  return getAuthoritativeActivityPlanMetrics(event.activity_plan).estimated_tss ?? null;
 }
 
 export function toTrainingPathScheduledItem(

@@ -1,5 +1,9 @@
 import React from "react";
-import { createButtonComponent, createHost } from "../../test/mock-components";
+import {
+  createButtonComponent,
+  createHost,
+  type PressableHostProps,
+} from "../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../test/render-native";
 import { ProfileSummaryCard } from "./ProfileSummaryCard";
 
@@ -7,7 +11,7 @@ jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
   Image: createHost("Image"),
-  TouchableOpacity: ({ children, disabled, onPress, ...props }: any) =>
+  TouchableOpacity: ({ children, disabled, onPress, ...props }: PressableHostProps) =>
     React.createElement("TouchableOpacity", { disabled, onPress, ...props }, children),
   View: createHost("View"),
 }));

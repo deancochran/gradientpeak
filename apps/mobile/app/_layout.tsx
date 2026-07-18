@@ -27,7 +27,7 @@ import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
 import { incompleteQueueJobReferencesLocalFiles } from "@/lib/services/activitySubmissionQueue";
 import { GarminFitEncoder } from "@/lib/services/fit/GarminFitEncoder";
 import { prepareMobileRecordingStartup } from "@/lib/services/mobileRecordingStartup";
-import { initSentry, Sentry } from "@/lib/services/sentry";
+import { captureException, initSentry, Sentry } from "@/lib/services/sentry";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useTheme } from "@/lib/stores/theme-store";
 import {
@@ -43,7 +43,7 @@ initSentry();
 // Export ErrorBoundary for the layout
 export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
   React.useEffect(() => {
-    Sentry.captureException(error);
+    captureException(error, { boundary: "root-layout" });
   }, [error]);
 
   return (

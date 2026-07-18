@@ -19,7 +19,7 @@ type ActivityPlanRouteSectionProps = {
   onClearRoute: () => void;
   onPickRoute: () => void;
   onSelectRoute: (routeId: string) => void;
-  route: any;
+  route: { name: string; total_distance?: number | null } | null;
   routeId: string | null;
 };
 

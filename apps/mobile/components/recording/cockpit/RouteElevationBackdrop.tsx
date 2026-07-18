@@ -425,12 +425,15 @@ function interpolateProfilePoint(
   currentDistanceMeters: number,
 ): RouteElevationDatum | null {
   if (profilePoints.length === 0) return null;
+  const [firstPoint] = profilePoints;
+  if (!firstPoint) return null;
 
-  if (currentDistanceMeters <= profilePoints[0]?.distanceMeters) return profilePoints[0]!;
+  if (currentDistanceMeters <= firstPoint.distanceMeters) return firstPoint;
 
   for (let index = 0; index < profilePoints.length - 1; index += 1) {
-    const start = profilePoints[index]!;
-    const end = profilePoints[index + 1]!;
+    const start = profilePoints[index];
+    const end = profilePoints[index + 1];
+    if (!start || !end) continue;
     if (
       currentDistanceMeters >= start.distanceMeters &&
       currentDistanceMeters <= end.distanceMeters
@@ -444,7 +447,7 @@ function interpolateProfilePoint(
     }
   }
 
-  return profilePoints[profilePoints.length - 1]!;
+  return profilePoints.at(-1) ?? null;
 }
 
 function resolveRenderedCurrentPoint(params: {
@@ -467,8 +470,9 @@ function resolveRenderedCurrentPoint(params: {
   }
 
   for (let index = 0; index < sortedPoints.length - 1; index += 1) {
-    const start = sortedPoints[index]!;
-    const end = sortedPoints[index + 1]!;
+    const start = sortedPoints[index];
+    const end = sortedPoints[index + 1];
+    if (!start || !end) continue;
     const startDistance = getRenderedPointDistance(start);
     const endDistance = getRenderedPointDistance(end);
     if (

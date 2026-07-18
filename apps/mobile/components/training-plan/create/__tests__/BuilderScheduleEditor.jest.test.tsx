@@ -1,4 +1,5 @@
 import React from "react";
+import type { HostProps, PressableHostProps } from "../../../../test/mock-components";
 
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 import { BuilderScheduleEditor } from "../BuilderScheduleEditor";
@@ -6,14 +7,14 @@ import { BuilderScheduleEditor } from "../BuilderScheduleEditor";
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  Pressable: (props: any) => React.createElement("Pressable", props, props.children),
-  ScrollView: (props: any) => React.createElement("ScrollView", props, props.children),
-  View: (props: any) => React.createElement("View", props, props.children),
+  Pressable: (props: HostProps) => React.createElement("Pressable", props, props.children),
+  ScrollView: (props: HostProps) => React.createElement("ScrollView", props, props.children),
+  View: (props: HostProps) => React.createElement("View", props, props.children),
 }));
 
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
-  Button: ({ children, disabled, onPress, ...props }: any) =>
+  Button: ({ children, disabled, onPress, ...props }: PressableHostProps) =>
     React.createElement(
       "Pressable",
       {
@@ -28,11 +29,11 @@ jest.mock("@repo/ui/components/button", () => ({
 
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
-  Text: (props: any) => React.createElement("Text", props, props.children),
+  Text: (props: HostProps) => React.createElement("Text", props, props.children),
 }));
 
 jest.mock("lucide-react-native", () => {
-  const Icon = (props: any) => React.createElement("Icon", props);
+  const Icon = (props: HostProps) => React.createElement("Icon", props);
   return {
     __esModule: true,
     ChevronLeft: Icon,

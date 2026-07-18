@@ -4,7 +4,15 @@ import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { type Control, useWatch } from "react-hook-form";
 import { AccessibilityInfo } from "react-native";
 import { z } from "zod";
@@ -65,7 +73,23 @@ function mergeNotes(values: Array<string | null | undefined>) {
   return values.filter((value): value is string => Boolean(value?.trim())).join("\n\n");
 }
 
-function isRecurringEvent(event: any) {
+type EditableEvent = {
+  activity_plan?: ActivityPlanListItem | null;
+  activity_plan_id?: string | null;
+  all_day?: boolean | null;
+  event_type?: string | null;
+  id: string;
+  notes?: string | null;
+  recurrence?: { rule?: string | null } | null;
+  recurrence_rule?: string | null;
+  scheduled_date?: string | null;
+  series_id?: string | null;
+  starts_at: string;
+  timezone?: string | null;
+  title?: string | null;
+};
+
+function isRecurringEvent(event: EditableEvent | null | undefined) {
   return !!(event?.series_id || event?.recurrence_rule || event?.recurrence?.rule);
 }
 
@@ -73,7 +97,7 @@ function toDateOnly(value: Date) {
   return format(value, "yyyy-MM-dd");
 }
 
-function buildDraftFromEvent(event: any): CreateEventDraft {
+function buildDraftFromEvent(event: EditableEvent): CreateEventDraft {
   const startsAt = parseEventDateForEditor(event);
   const scheduledDate = getEventScheduledDate(event) ?? toDateOnly(startsAt);
   const timezone = event.timezone || getDeviceTimeZone();
@@ -246,7 +270,7 @@ export const CreateEventFlow = forwardRef<
     showFooterActions?: boolean;
     testIDPrefix?: string;
     trainingPlanId?: string;
-    updateEvent?: any;
+    updateEvent?: EditableEvent;
   }
 >(function CreateEventFlow(
   {
@@ -318,7 +342,7 @@ export const CreateEventFlow = forwardRef<
     },
   );
   const { data: preselectedActivityPlan } = api.activityPlans.getById.useQuery(
-    { id: preselectedActivityPlanId! },
+    { id: preselectedActivityPlanId ?? "" },
     {
       enabled: draft.mode === "planned" && !!preselectedActivityPlanId,
     },
@@ -343,6 +367,23 @@ export const CreateEventFlow = forwardRef<
     });
   }, [activityPlansData?.items]);
 
+  const handleSelectPlan = useCallback((plan: ActivityPlanListItem) => {
+    setKnownActivityPlans((current) =>
+      current.some((item) => item.id === plan.id) ? current : [...current, plan],
+    );
+    setDraft((current) => {
+      if (current.mode !== "planned") return current;
+      return {
+        ...current,
+        activityPlanId: plan.id,
+        activityPlanName: plan.name,
+        title: plan.name,
+      };
+    });
+    setFormErrorMessage(null);
+    AccessibilityInfo?.announceForAccessibility?.(`Selected activity plan ${plan.name}`);
+  }, []);
+
   useEffect(() => {
     if (!preselectedActivityPlan) return;
     setKnownActivityPlans((current) =>
@@ -363,11 +404,12 @@ export const CreateEventFlow = forwardRef<
   }, [draft, knownActivityPlans, preselectedActivityPlanId, handleSelectPlan]);
 
   useEffect(() => {
-    if (updateEvent?.activity_plan) {
+    const updateActivityPlan = updateEvent?.activity_plan;
+    if (updateActivityPlan) {
       setKnownActivityPlans((current) =>
-        current.some((plan) => plan.id === updateEvent.activity_plan.id)
+        current.some((plan) => plan.id === updateActivityPlan.id)
           ? current
-          : [...current, updateEvent.activity_plan as ActivityPlanListItem],
+          : [...current, updateActivityPlan],
       );
     }
   }, [updateEvent?.activity_plan]);
@@ -490,23 +532,6 @@ export const CreateEventFlow = forwardRef<
     });
   };
 
-  function handleSelectPlan(plan: ActivityPlanListItem) {
-    setKnownActivityPlans((current) =>
-      current.some((item) => item.id === plan.id) ? current : [...current, plan],
-    );
-    setDraft((current) => {
-      if (current.mode !== "planned") return current;
-      return {
-        ...current,
-        activityPlanId: plan.id,
-        activityPlanName: plan.name,
-        title: plan.name,
-      };
-    });
-    setFormErrorMessage(null);
-    AccessibilityInfo?.announceForAccessibility?.(`Selected activity plan ${plan.name}`);
-  }
-
   const handleSelectPlanResource = (item: ResourcePickerItem) => {
     handleSelectPlan({
       categories: item.activityCategory ? [item.activityCategory] : ["other"],
@@ -552,7 +577,7 @@ export const CreateEventFlow = forwardRef<
         id: updateEvent.id,
         scope,
         patch: buildUpdatePatch(nextDraft),
-      } as any);
+      });
     } catch (error) {
       setFormErrorMessage(
         error instanceof Error
@@ -577,7 +602,7 @@ export const CreateEventFlow = forwardRef<
 
     if (!validateDraft(draft)) return;
     try {
-      createMutation.mutate(buildCreateEventInput(draft, { trainingPlanId }) as any);
+      createMutation.mutate(buildCreateEventInput(draft, { trainingPlanId }));
     } catch (error) {
       setFormErrorMessage(
         error instanceof Error
@@ -588,17 +613,19 @@ export const CreateEventFlow = forwardRef<
   };
 
   const pending = createMutation.isPending || updateMutation.isPending;
+  const submitCreateRef = useRef(submitCreate);
+  submitCreateRef.current = submitCreate;
 
   useImperativeHandle(
     ref,
     () => ({
       submit: () => {
         if (!pending) {
-          submitCreate();
+          submitCreateRef.current();
         }
       },
     }),
-    [pending, submitCreate],
+    [pending],
   );
 
   if (step === "repeat") {

@@ -10,6 +10,8 @@ export type FitFixtureSession = {
   pauseEventType?: 1 | 8 | 9;
   poolLength?: number;
   emitLengthBoundaryRecord?: boolean;
+  emitUnownedRecord?: boolean;
+  unownedLap?: boolean;
 };
 
 const ORIGIN_MS = Date.parse("2026-01-01T10:00:00.000Z");
@@ -92,9 +94,9 @@ export function buildFitFixture(sessions: readonly FitFixtureSession[]): Uint8Ar
     }
     encoder.writeMesg({
       mesgNum: Profile.MesgNum.LAP,
-      messageIndex: index,
-      timestamp: fitTime(endMs),
-      startTime: fitTime(startMs),
+      messageIndex: session.unownedLap ? 999 : index,
+      timestamp: fitTime(session.unownedLap ? endMs + 3_600_000 : endMs),
+      startTime: fitTime(session.unownedLap ? endMs + 3_599_000 : startMs),
       totalElapsedTime: session.elapsedSeconds,
       totalTimerTime: timerSeconds,
       totalDistance: session.distanceMeters ?? 0,
@@ -162,6 +164,13 @@ export function buildFitFixture(sessions: readonly FitFixtureSession[]): Uint8Ar
       event: 0,
       eventType: index === sessions.length - 1 ? 4 : 1,
     });
+    if (session.emitUnownedRecord) {
+      encoder.writeMesg({
+        mesgNum: Profile.MesgNum.RECORD,
+        timestamp: fitTime(endMs + 3_600_000),
+        distance: session.distanceMeters ?? 0,
+      });
+    }
     cursorMs = endMs;
     if (index < sessions.length - 1) {
       encoder.writeMesg({
@@ -243,4 +252,15 @@ export const fitFixtures = {
       { sport: 3, subSport: 34, elapsedSeconds: 5 },
     ]),
   sparse: () => buildFitFixture([{ sport: 1, elapsedSeconds: 1 }]),
+  unownedEvidence: () =>
+    buildFitFixture([
+      {
+        sport: 1,
+        subSport: 2,
+        elapsedSeconds: 60,
+        distanceMeters: 200,
+        emitUnownedRecord: true,
+        unownedLap: true,
+      },
+    ]),
 } as const;

@@ -36,13 +36,21 @@ export function GroupEventEmptyState({
 export function GroupEventListSkeleton({ count = 3 }: { count?: number }) {
   return (
     <View className="gap-3">
-      {Array.from({ length: count }).map((_, index) => (
-        <View key={index} className="gap-3 rounded-2xl border border-border bg-card p-4">
-          <Skeleton className="h-5 w-2/3" />
-          <Skeleton className="h-4 w-1/2" />
-          <Skeleton className="h-4 w-full" />
-        </View>
-      ))}
+      <GroupEventSkeletonRows count={count} />
     </View>
+  );
+}
+
+function GroupEventSkeletonRows({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <>
+      <View className="gap-3 rounded-2xl border border-border bg-card p-4">
+        <Skeleton className="h-5 w-2/3" />
+        <Skeleton className="h-4 w-1/2" />
+        <Skeleton className="h-4 w-full" />
+      </View>
+      <GroupEventSkeletonRows count={count - 1} />
+    </>
   );
 }

@@ -1,3 +1,4 @@
+import { getAuthoritativeActivityPlanMetrics } from "@repo/core/activity-plan";
 import { Text } from "@repo/ui/components/text";
 import { CalendarDays, Users } from "lucide-react-native";
 import { View } from "react-native";
@@ -170,17 +171,17 @@ function getScheduledActivityPlanCardData(event: CalendarEvent): ActivityPlanCar
     return null;
   }
 
-  const metrics = plan.authoritative_metrics;
+  const metrics = getAuthoritativeActivityPlanMetrics(plan);
 
   return {
     id: plan.id,
     name: plan.name?.trim() || event.title?.trim() || "Scheduled activity",
     activityType: plan.activity_category || "other",
     description: plan.description ?? event.description ?? undefined,
-    estimatedDistance: metrics?.estimated_distance ?? plan.estimated_distance ?? undefined,
-    estimatedDuration: metrics?.estimated_duration ?? plan.estimated_duration ?? undefined,
-    estimatedTss: metrics?.estimated_tss ?? plan.estimated_tss ?? undefined,
-    intensityFactor: metrics?.intensity_factor ?? plan.intensity_factor ?? undefined,
+    estimatedDistance: metrics.estimated_distance ?? undefined,
+    estimatedDuration: metrics.estimated_duration ?? undefined,
+    estimatedTss: metrics.estimated_tss ?? undefined,
+    intensityFactor: metrics.intensity_factor ?? undefined,
     notes: plan.notes ?? event.notes ?? undefined,
     routeId: plan.route_id ?? undefined,
     scheduledDate: event.starts_at ?? event.scheduled_date ?? undefined,
@@ -201,7 +202,7 @@ function getGroupEventActivityPlanCardData(event: CalendarGroupEvent): ActivityP
     return null;
   }
 
-  const metrics = plan.authoritative_metrics;
+  const metrics = getAuthoritativeActivityPlanMetrics(plan);
 
   return {
     id: plan.id,
@@ -212,10 +213,10 @@ function getGroupEventActivityPlanCardData(event: CalendarGroupEvent): ActivityP
       "Group activity plan",
     activityType: plan.activity_category || "other",
     description: plan.description ?? undefined,
-    estimatedDistance: metrics?.estimated_distance ?? plan.estimated_distance ?? undefined,
-    estimatedDuration: metrics?.estimated_duration ?? plan.estimated_duration ?? undefined,
-    estimatedTss: metrics?.estimated_tss ?? plan.estimated_tss ?? undefined,
-    intensityFactor: metrics?.intensity_factor ?? plan.intensity_factor ?? undefined,
+    estimatedDistance: metrics.estimated_distance ?? undefined,
+    estimatedDuration: metrics.estimated_duration ?? undefined,
+    estimatedTss: metrics.estimated_tss ?? undefined,
+    intensityFactor: metrics.intensity_factor ?? undefined,
     notes: plan.notes ?? undefined,
     routeId: plan.route_id ?? undefined,
     scheduledDate: event.starts_at,

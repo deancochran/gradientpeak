@@ -211,14 +211,10 @@ export default function ProfileTabScreen() {
         <ProfileSummaryCard
           emailFallback={user?.email}
           isOwnProfile
-          onEdit={() => navigateTo(ROUTES.PROFILE_EDIT as any)}
-          onFollowersPress={
-            user?.id ? () => navigateTo(`/followers?userId=${user.id}` as any) : undefined
-          }
-          onFollowingPress={
-            user?.id ? () => navigateTo(`/following?userId=${user.id}` as any) : undefined
-          }
-          onProfilePress={() => navigateTo(ROUTES.PROFILE_SETTINGS as any)}
+          onEdit={() => navigateTo(ROUTES.PROFILE_EDIT)}
+          onFollowersPress={user?.id ? () => navigateTo(`/followers?userId=${user.id}`) : undefined}
+          onFollowingPress={user?.id ? () => navigateTo(`/following?userId=${user.id}`) : undefined}
+          onProfilePress={() => navigateTo(ROUTES.PROFILE_SETTINGS)}
           profile={{
             ...profile,
             followers_count: publicProfile?.followers_count,
@@ -251,7 +247,7 @@ export default function ProfileTabScreen() {
             description="Weight, HRV, sleep, threshold, and other profile measurements by type."
             buttonLabel="Manage"
             variant="outline"
-            onPress={() => navigateTo(ROUTES.PROFILE_METRICS.LIST as any)}
+            onPress={() => navigateTo(ROUTES.PROFILE_METRICS.LIST)}
             testID="profile-tab-profile-metrics"
           />
           <SettingItem
@@ -260,7 +256,7 @@ export default function ProfileTabScreen() {
             description="Best power and speed efforts grouped by activity and measurement type."
             buttonLabel="Manage"
             variant="outline"
-            onPress={() => navigateTo(ROUTES.ACTIVITIES.EFFORTS_LIST as any)}
+            onPress={() => navigateTo(ROUTES.ACTIVITIES.EFFORTS_LIST)}
             testID="profile-tab-activity-efforts"
           />
         </SettingsGroup>
@@ -278,7 +274,7 @@ export default function ProfileTabScreen() {
               description={link.description}
               buttonLabel={link.buttonLabel}
               variant="outline"
-              onPress={() => navigateTo(link.route as any)}
+              onPress={() => navigateTo(link.route)}
               testID={link.testID}
             />
           ))}
@@ -295,7 +291,7 @@ export default function ProfileTabScreen() {
             description="Connect third-party services like Strava and Garmin."
             buttonLabel="Manage"
             variant="outline"
-            onPress={() => navigateTo(ROUTES.INTEGRATIONS as any)}
+            onPress={() => navigateTo(ROUTES.INTEGRATIONS)}
             testID="profile-tab-integrations"
           />
           <SettingItem

@@ -15,7 +15,7 @@ export class ProviderSyncDrainCoordinator<T> {
   async run(
     start: () => Promise<T>,
   ): Promise<{ alreadyRunning: true } | { alreadyRunning: false; result: T }> {
-    if (this.active) return { alreadyRunning: true };
+    if (this.active !== undefined) return { alreadyRunning: true };
     const invocation = start();
     this.active = invocation;
     try {

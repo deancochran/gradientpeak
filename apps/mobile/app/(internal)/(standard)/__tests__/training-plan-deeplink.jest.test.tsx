@@ -4,18 +4,61 @@ import { ROUTES } from "@/lib/constants/routes";
 import { createHost } from "../../../../test/mock-components";
 import { renderNative, screen } from "../../../../test/render-native";
 
-var mockAlert = jest.fn();
+type AlertButton = { onPress?: () => void };
+type NativeAlert = (title: string, message?: string, buttons?: AlertButton[]) => void;
+
+var mockAlert = jest.fn<void, Parameters<NativeAlert>>();
 var mockApplyTemplateMutate = jest.fn();
 var mockDuplicateMutate = jest.fn();
 var mockRemoveAppliedScheduleMutate = jest.fn();
 var mockUpdatePlanMutate = jest.fn();
-var mockActivePlanData: any = null;
-var mockApplyTemplateResult: any = null;
+type TrainingPlanFixture = {
+  id: string;
+  name: string;
+  created_at: string;
+  structure_hash: string;
+  structure: Record<string, unknown>;
+  profile_id?: string;
+  is_active?: boolean;
+  template_visibility?: string;
+  durationWeeks?: { recommended: number };
+  sessions_per_week_target?: number;
+  sport?: string[];
+  experienceLevel?: string[];
+};
+type ActivePlanFixture = { id: string; schedule_batch_id?: string };
+type ApplyTemplateResult = {
+  applied_plan_id: string;
+  scheduled_sessions_created: number;
+  scheduled_sessions_replaced: number;
+};
+type InsightTimelineFixture = {
+  timeline: Array<{
+    adherence_score: number;
+    boundary_state: string;
+    actual_tss: number;
+    scheduled_tss: number;
+  }>;
+  projection: { at_goal_date: Record<string, unknown> };
+  adherence_summary: { interpretation: string; contributors: Array<{ detail: string }> };
+  readiness_summary: { interpretation: string; contributors: Array<{ detail: string }> };
+};
+type StackScreenProps = Record<string, unknown> & {
+  options?: { headerRight?: () => React.ReactNode };
+};
+
+var mockActivePlanData: ActivePlanFixture | null = null;
+var mockApplyTemplateResult: ApplyTemplateResult | null = null;
 var mockRouterReplace = jest.fn();
 var mockRouterPush = jest.fn();
 var mockLocalSearchParams: Record<string, string | undefined> = {};
-var mockSnapshotState = {
-  plan: null as any,
+var mockSnapshotState: {
+  plan: TrainingPlanFixture | null;
+  isLoadingSharedDependencies: boolean;
+  hasSharedDependencyError: boolean;
+  insightTimeline: InsightTimelineFixture;
+} = {
+  plan: null,
   isLoadingSharedDependencies: false,
   hasSharedDependencyError: false,
   insightTimeline: {
@@ -34,7 +77,7 @@ var mockSnapshotState = {
       interpretation: "Readiness interpretation from timeline summary.",
       contributors: [{ detail: "Readiness contributor detail from timeline summary." }],
     },
-  } as any,
+  },
 };
 
 jest.mock("@tanstack/react-query", () => ({
@@ -46,7 +89,7 @@ jest.mock("@tanstack/react-query", () => ({
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: any) =>
+    Screen: (props: StackScreenProps) =>
       React.createElement(
         "StackScreen",
         props,
@@ -113,8 +156,8 @@ jest.mock("@/lib/api", () => ({
         }),
       },
       duplicate: {
-        useMutation: (options: any) => ({
-          mutate: (input: any) => {
+        useMutation: (options?: { onSuccess?: (data: { id: string }) => void }) => ({
+          mutate: (input: unknown) => {
             mockDuplicateMutate(input);
             options?.onSuccess?.({ id: "duplicated-training-plan-1" });
           },
@@ -122,9 +165,9 @@ jest.mock("@/lib/api", () => ({
         }),
       },
       applyTemplate: {
-        useMutation: (options: any) => ({
+        useMutation: (options?: { onSuccess?: (data: ApplyTemplateResult) => void }) => ({
           mutateAsync: jest.fn(),
-          mutate: (input: any) => {
+          mutate: (input: unknown) => {
             mockApplyTemplateMutate(input);
             if (mockApplyTemplateResult) {
               options?.onSuccess?.(mockApplyTemplateResult);
@@ -250,7 +293,19 @@ jest.mock("@/components/plan/PlanCapabilityMiniChart", () => ({
 }));
 jest.mock("@/components/shared/DetailChartModal", () => ({
   __esModule: true,
-  DetailChartModal: ({ children, visible, onClose, title, defaultDateRange = "30d" }: any) => {
+  DetailChartModal: ({
+    children,
+    visible,
+    onClose,
+    title,
+    defaultDateRange = "30d",
+  }: {
+    children?: React.ReactNode | ((range: string) => React.ReactNode);
+    visible: boolean;
+    onClose?: () => void;
+    title?: string;
+    defaultDateRange?: string;
+  }) => {
     const [range, setRange] = React.useState(defaultDateRange);
 
     if (!visible) {
@@ -355,9 +410,20 @@ jest.mock("lucide-react-native", () => {
 });
 
 const TrainingPlanOverview = require("../training-plan-detail").default;
-const nativeAlertMock = require("react-native").Alert.alert as jest.Mock;
+const { Alert: nativeAlert }: { Alert: { alert: jest.Mock<void, Parameters<NativeAlert>> } } =
+  require("react-native");
+const nativeAlertMock = nativeAlert.alert;
+let renderedPlan: ReturnType<typeof renderNative> | undefined;
 
-const getNodeText = (children: any): string => {
+const renderPlan = () => {
+  renderedPlan = renderNative(<TrainingPlanOverview />);
+  return renderedPlan;
+};
+
+const hasChildrenProps = (value: unknown): value is { props: { children?: unknown } } =>
+  typeof value === "object" && value !== null && "props" in value;
+
+const getNodeText = (children: unknown): string => {
   if (typeof children === "string") {
     return children;
   }
@@ -367,50 +433,59 @@ const getNodeText = (children: any): string => {
   if (Array.isArray(children)) {
     return children.map((child) => getNodeText(child)).join("");
   }
-  if (children?.props?.children !== undefined) {
+  if (hasChildrenProps(children) && children.props.children !== undefined) {
     return getNodeText(children.props.children);
   }
   return "";
 };
 
 const getAllByTypeOrEmpty = (type: string) => {
-  try {
-    return (screen as any).UNSAFE_getAllByType(type);
-  } catch {
-    return [];
-  }
+  if (!renderedPlan) return [];
+  return renderedPlan.UNSAFE_root.findAll((node) => node.type === type);
 };
 
 const hasTextContaining = (text: string) =>
-  getAllByTypeOrEmpty("Text").some((node: any) => getNodeText(node.props?.children).includes(text));
+  getAllByTypeOrEmpty("Text").some((node) => getNodeText(node.props.children).includes(text));
 
-const findTouchableByText = (text: string) =>
-  getAllByTypeOrEmpty("TouchableOpacity").find((node: any) => {
-    if (typeof node.props?.onPress !== "function") {
+const findTouchableByText = (text: string) => {
+  const node = getAllByTypeOrEmpty("TouchableOpacity").find((candidate) => {
+    if (typeof candidate.props.onPress !== "function") {
       return false;
     }
 
-    return node.findAll((child: any) => getNodeText(child.props?.children) === text).length > 0;
+    return candidate.findAll((child) => getNodeText(child.props.children) === text).length > 0;
   });
+  if (!node) throw new Error(`Unable to find touchable with text: ${text}`);
+  return node;
+};
 
-const findButtonByText = (text: string) =>
-  getAllByTypeOrEmpty("Button").find((node: any) => {
-    if (typeof node.props?.onPress !== "function") {
+const findButtonByText = (text: string) => {
+  const node = getAllByTypeOrEmpty("Button").find((candidate) => {
+    if (typeof candidate.props.onPress !== "function") {
       return false;
     }
 
-    return getNodeText(node.props?.children) === text;
+    return getNodeText(candidate.props.children) === text;
   });
+  if (!node) throw new Error(`Unable to find button with text: ${text}`);
+  return node;
+};
 
-const findButtonByTestId = (testID: string) =>
-  getAllByTypeOrEmpty("Button").find((node: any) => node.props?.testID === testID);
+const findButtonByTestId = (testID: string) => {
+  const node = getAllByTypeOrEmpty("Button").find((candidate) => candidate.props.testID === testID);
+  if (!node) throw new Error(`Unable to find button: ${testID}`);
+  return node;
+};
 
-const findNodeByTestId = (testID: string) =>
-  [
+const findNodeByTestId = (testID: string) => {
+  const node = [
     ...getAllByTypeOrEmpty("DropdownMenuItem"),
     ...getAllByTypeOrEmpty("Button"),
     ...getAllByTypeOrEmpty("TouchableOpacity"),
-  ].find((node: any) => node.props?.testID === testID);
+  ].find((candidate) => candidate.props.testID === testID);
+  if (!node) throw new Error(`Unable to find node: ${testID}`);
+  return node;
+};
 
 const getDateFields = () => getAllByTypeOrEmpty("DateField");
 
@@ -444,7 +519,7 @@ const resetTestState = () => {
       interpretation: "Readiness interpretation from timeline summary.",
       contributors: [{ detail: "Readiness contributor detail from timeline summary." }],
     },
-  } as any;
+  };
   Object.keys(mockLocalSearchParams).forEach((key) => {
     delete mockLocalSearchParams[key];
   });
@@ -456,7 +531,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
   });
 
   it("redirects to create when no selected plan id exists", () => {
-    renderNative(<TrainingPlanOverview />);
+    renderPlan();
 
     expect(mockRouterReplace).toHaveBeenCalledWith(ROUTES.PLAN.TRAINING_PLAN.CREATE);
   });
@@ -464,7 +539,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
   it("keeps deep-link context when selected plan id is provided", () => {
     mockLocalSearchParams.id = "plan-library-selection-1";
 
-    renderNative(<TrainingPlanOverview />);
+    renderPlan();
 
     expect(mockRouterReplace).not.toHaveBeenCalledWith(ROUTES.PLAN.TRAINING_PLAN.CREATE);
     expect(hasTextContaining("No Training Plan")).toBe(true);
@@ -478,12 +553,13 @@ describe("TrainingPlanOverview deep-link routing", () => {
       profile_id: "test-profile-id",
       is_active: true,
       created_at: "2026-01-01T00:00:00.000Z",
+      structure_hash: "fixture-structure-hash",
       structure: {},
-    } as any;
+    };
     mockLocalSearchParams.id = "plan-1";
     mockLocalSearchParams.nextStep = "settings";
 
-    renderNative(<TrainingPlanOverview />);
+    renderPlan();
 
     expect(hasTextContaining("Manage Plan")).toBe(true);
 
@@ -504,12 +580,13 @@ describe("TrainingPlanOverview deep-link routing", () => {
       profile_id: "test-profile-id",
       is_active: true,
       created_at: "2026-01-01T00:00:00.000Z",
+      structure_hash: "fixture-structure-hash",
       structure: {},
-    } as any;
+    };
     mockLocalSearchParams.id = "plan-2";
     mockLocalSearchParams.nextStep = "edit-structure";
 
-    renderNative(<TrainingPlanOverview />);
+    renderPlan();
 
     expect(hasTextContaining("Edit Plan Structure")).toBe(true);
 
@@ -530,11 +607,12 @@ describe("TrainingPlanOverview deep-link routing", () => {
       profile_id: "test-profile-id",
       template_visibility: "private",
       created_at: "2026-01-01T00:00:00.000Z",
+      structure_hash: "fixture-structure-hash",
       structure: {},
-    } as any;
+    };
     mockLocalSearchParams.id = "plan-owned-1";
 
-    renderNative(<TrainingPlanOverview />);
+    renderPlan();
 
     expect(hasTextContaining("Schedule")).toBe(true);
     expect(hasTextContaining("Edit Plan")).toBe(true);
@@ -553,11 +631,12 @@ describe("TrainingPlanOverview deep-link routing", () => {
       sessions_per_week_target: 4,
       sport: ["run"],
       experienceLevel: ["beginner"],
+      structure_hash: "fixture-structure-hash",
       structure: {},
-    } as any;
+    };
     mockLocalSearchParams.id = "plan-owned-snapshot-1";
 
-    renderNative(<TrainingPlanOverview />);
+    renderPlan();
 
     expect(hasTextContaining("Plan snapshot")).toBe(true);
     expect(screen.getByTestId("training-plan-periodization-preview")).toBeTruthy();
@@ -574,11 +653,12 @@ describe("TrainingPlanOverview deep-link routing", () => {
       profile_id: "test-profile-id",
       template_visibility: "private",
       created_at: "2026-01-01T00:00:00.000Z",
+      structure_hash: "fixture-structure-hash",
       structure: {},
-    } as any;
+    };
     mockLocalSearchParams.id = "plan-owned-anchor-1";
 
-    renderNative(<TrainingPlanOverview />);
+    renderPlan();
 
     act(() => {
       findNodeByTestId("training-plan-options-schedule").props.onPress();
@@ -599,11 +679,12 @@ describe("TrainingPlanOverview deep-link routing", () => {
       profile_id: "test-profile-id",
       template_visibility: "private",
       created_at: "2026-01-01T00:00:00.000Z",
+      structure_hash: "fixture-structure-hash",
       structure: {},
-    } as any;
+    };
     mockLocalSearchParams.id = "plan-owned-anchor-2";
 
-    renderNative(<TrainingPlanOverview />);
+    renderPlan();
 
     act(() => {
       findNodeByTestId("training-plan-options-schedule").props.onPress();
@@ -638,11 +719,12 @@ describe("TrainingPlanOverview deep-link routing", () => {
       profile_id: "test-profile-id",
       template_visibility: "private",
       created_at: "2026-01-01T00:00:00.000Z",
+      structure_hash: "fixture-structure-hash",
       structure: {},
-    } as any;
+    };
     mockLocalSearchParams.id = "plan-owned-anchor-3";
 
-    renderNative(<TrainingPlanOverview />);
+    renderPlan();
 
     await act(async () => {
       findNodeByTestId("training-plan-options-schedule").props.onPress();
@@ -672,12 +754,13 @@ describe("TrainingPlanOverview deep-link routing", () => {
       profile_id: "test-profile-id",
       template_visibility: "private",
       created_at: "2026-01-01T00:00:00.000Z",
+      structure_hash: "fixture-structure-hash",
       structure: {},
-    } as any;
+    };
     mockLocalSearchParams.id = "plan-owned-anchor-4";
     mockActivePlanData = { id: "active-plan-1" };
 
-    renderNative(<TrainingPlanOverview />);
+    renderPlan();
 
     await act(async () => {
       findNodeByTestId("training-plan-options-schedule").props.onPress();
@@ -699,12 +782,13 @@ describe("TrainingPlanOverview deep-link routing", () => {
       profile_id: "test-profile-id",
       template_visibility: "private",
       created_at: "2026-01-01T00:00:00.000Z",
+      structure_hash: "fixture-structure-hash",
       structure: {},
-    } as any;
+    };
     mockLocalSearchParams.id = "plan-owned-anchor-4b";
     mockActivePlanData = { id: "active-plan-1" };
 
-    renderNative(<TrainingPlanOverview />);
+    renderPlan();
 
     await act(async () => {
       findNodeByTestId("training-plan-options-schedule").props.onPress();
@@ -736,12 +820,13 @@ describe("TrainingPlanOverview deep-link routing", () => {
       profile_id: "test-profile-id",
       template_visibility: "private",
       created_at: "2026-01-01T00:00:00.000Z",
+      structure_hash: "fixture-structure-hash",
       structure: {},
-    } as any;
+    };
     mockLocalSearchParams.id = "plan-owned-anchor-5";
     mockActivePlanData = { id: "active-plan-1" };
 
-    renderNative(<TrainingPlanOverview />);
+    renderPlan();
 
     await act(async () => {
       findNodeByTestId("training-plan-options-schedule").props.onPress();
@@ -767,8 +852,9 @@ describe("TrainingPlanOverview deep-link routing", () => {
       profile_id: "test-profile-id",
       template_visibility: "private",
       created_at: "2026-01-01T00:00:00.000Z",
+      structure_hash: "fixture-structure-hash",
       structure: {},
-    } as any;
+    };
     mockLocalSearchParams.id = "plan-owned-anchor-6";
     mockApplyTemplateResult = {
       applied_plan_id: "scheduled-plan-1",
@@ -776,7 +862,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
       scheduled_sessions_replaced: 0,
     };
 
-    renderNative(<TrainingPlanOverview />);
+    renderPlan();
 
     await act(async () => {
       findNodeByTestId("training-plan-options-schedule").props.onPress();
@@ -793,9 +879,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
       expect.any(Array),
     );
 
-    const successButtons = nativeAlertMock.mock.calls.at(-1)?.[2] as
-      | Array<{ onPress?: () => void }>
-      | undefined;
+    const successButtons = nativeAlertMock.mock.calls.at(-1)?.[2];
 
     act(() => {
       successButtons?.[0]?.onPress?.();
@@ -813,12 +897,13 @@ describe("TrainingPlanOverview deep-link routing", () => {
       profile_id: "test-profile-id",
       template_visibility: "private",
       created_at: "2026-01-01T00:00:00.000Z",
+      structure_hash: "fixture-structure-hash",
       structure: {},
-    } as any;
+    };
     mockLocalSearchParams.id = "active-plan-1";
     mockActivePlanData = { id: "active-plan-1" };
 
-    renderNative(<TrainingPlanOverview />);
+    renderPlan();
 
     expect(hasTextContaining("currently scheduled plan")).toBe(true);
     expect(hasTextContaining("Remove Scheduled Sessions")).toBe(true);
@@ -831,15 +916,16 @@ describe("TrainingPlanOverview deep-link routing", () => {
       profile_id: "test-profile-id",
       template_visibility: "private",
       created_at: "2026-01-01T00:00:00.000Z",
+      structure_hash: "fixture-structure-hash",
       structure: {},
-    } as any;
+    };
     mockLocalSearchParams.id = "active-plan-2";
     mockActivePlanData = {
       id: "active-plan-2",
       schedule_batch_id: "33333333-3333-4333-8333-333333333333",
     };
 
-    renderNative(<TrainingPlanOverview />);
+    renderPlan();
 
     act(() => {
       findNodeByTestId("training-plan-options-remove-scheduled").props.onPress();
@@ -860,13 +946,14 @@ describe("TrainingPlanOverview deep-link routing", () => {
       name: "Plan Three",
       is_active: true,
       created_at: "2026-01-01T00:00:00.000Z",
+      structure_hash: "fixture-structure-hash",
       structure: {},
-    } as any;
+    };
     mockLocalSearchParams.id = "plan-3";
     mockLocalSearchParams.nextStep = "review-activity";
     mockLocalSearchParams.activityId = "activity-99";
 
-    renderNative(<TrainingPlanOverview />);
+    renderPlan();
 
     expect(hasTextContaining("Review Planned Activity")).toBe(true);
 
@@ -883,12 +970,13 @@ describe("TrainingPlanOverview deep-link routing", () => {
       name: "Plan Four",
       is_active: true,
       created_at: "2026-01-01T00:00:00.000Z",
+      structure_hash: "fixture-structure-hash",
       structure: {},
-    } as any;
+    };
     mockLocalSearchParams.id = "plan-4";
     mockLocalSearchParams.nextStep = "totally-unsupported-intent";
 
-    renderNative(<TrainingPlanOverview />);
+    renderPlan();
 
     expect(hasTextContaining("Manage Plan")).toBe(false);
     expect(hasTextContaining("Refine Plan")).toBe(false);
@@ -904,11 +992,12 @@ describe("TrainingPlanOverview deep-link routing", () => {
       profile_id: "someone-else",
       template_visibility: "public",
       created_at: "2026-01-01T00:00:00.000Z",
+      structure_hash: "fixture-structure-hash",
       structure: {},
-    } as any;
+    };
     mockLocalSearchParams.id = "plan-shared-1";
 
-    renderNative(<TrainingPlanOverview />);
+    renderPlan();
 
     await act(async () => {
       findNodeByTestId("training-plan-options-duplicate").props.onPress();
@@ -928,9 +1017,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
       );
     });
 
-    const duplicateAlertButtons = nativeAlertMock.mock.calls.at(-1)?.[2] as
-      | Array<{ onPress?: () => void }>
-      | undefined;
+    const duplicateAlertButtons = nativeAlertMock.mock.calls.at(-1)?.[2];
     duplicateAlertButtons?.[0]?.onPress?.();
 
     expect(mockRouterReplace).toHaveBeenCalledWith(

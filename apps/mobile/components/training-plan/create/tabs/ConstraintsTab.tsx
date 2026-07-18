@@ -52,7 +52,6 @@ export function ConstraintsTab({
   configData,
   expanded,
   showDetails,
-  informationalConflicts,
   restDaysCount,
   weekDays,
   goalDifficultyOptions,

@@ -1,5 +1,7 @@
+import type { NavigationAction } from "@react-navigation/native";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
+import type { ReactNode } from "react";
 import { type RefObject, useEffect, useMemo, useRef } from "react";
 import { Alert } from "react-native";
 
@@ -12,7 +14,14 @@ type ActivityPlanComposerProcessParams = {
   isLoading: boolean;
   isSubmitting: boolean;
   name: string;
-  navigation: any;
+  navigation: {
+    addListener: (
+      eventName: "beforeRemove",
+      listener: (event: { data: { action: NavigationAction }; preventDefault: () => void }) => void,
+    ) => () => void;
+    dispatch: (action: NavigationAction) => void;
+    setOptions: (options: { headerRight: () => ReactNode; title: string }) => void;
+  };
   notes: string;
   structure: unknown;
   submit: () => undefined | Promise<unknown>;
@@ -58,7 +67,7 @@ export function useActivityPlanComposerProcess({
     initialSignatureRef.current !== null && initialSignatureRef.current !== formSignature;
 
   useEffect(() => {
-    const unsubscribe = navigation.addListener("beforeRemove", (event: any) => {
+    const unsubscribe = navigation.addListener("beforeRemove", (event) => {
       if (allowNavigationRef.current || !isDirty || isSubmitting) {
         return;
       }

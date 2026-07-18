@@ -10,10 +10,21 @@ let mockRecordingLifecycle: "idle" | "setup" | "active" = "idle";
 
 const ButtonHost = createButtonComponent();
 
+type PressableMockProps = React.PropsWithChildren<
+  { onPress?: () => void } & Record<string, unknown>
+>;
+type TabScreenProps = {
+  name: string;
+  options?: {
+    tabBarButton?: (props: { testID: string }) => React.ReactNode;
+    title?: string;
+  };
+};
+
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  TouchableOpacity: ({ children, onPress, ...props }: any) =>
+  TouchableOpacity: ({ children, onPress, ...props }: PressableMockProps) =>
     React.createElement("Pressable", { onPress, ...props }, children),
   View: createHost("View"),
 }));
@@ -21,11 +32,11 @@ jest.mock("react-native", () => ({
 jest.mock("expo-router", () => {
   const React = require("react");
 
-  function Tabs({ children }: any) {
+  function Tabs({ children }: React.PropsWithChildren) {
     return React.createElement(React.Fragment, null, children);
   }
 
-  Tabs.Screen = ({ name, options }: any) => {
+  Tabs.Screen = ({ name, options }: TabScreenProps) => {
     const tabButton = options?.tabBarButton
       ? options.tabBarButton({ testID: `tab-button-${name}` })
       : React.createElement("View", { testID: `tab-screen-${name}` });

@@ -45,6 +45,8 @@ import { GoalTargetsSection } from "./GoalTargetsSection";
 import { TrainingPlanMetadataSection } from "./TrainingPlanMetadataSection";
 import {
   emptyTrainingPlanMetadataFormData,
+  type TrainingPlanMetadataFormData,
+  type TrainingPlanMetadataFormValues,
   trainingPlanMetadataFormSchema,
 } from "./trainingPlanMetadataForm";
 
@@ -105,7 +107,11 @@ export interface TrainingPlanConfigConflict {
 }
 
 interface SinglePageFormProps {
-  metadataForm?: UseFormReturn<any>;
+  metadataForm?: UseFormReturn<
+    TrainingPlanMetadataFormData,
+    undefined,
+    TrainingPlanMetadataFormValues
+  >;
   initialTab?: FormTabKey;
   formData: TrainingPlanFormData;
   onFormDataChange: (data: TrainingPlanFormData) => void;
@@ -435,7 +441,6 @@ export function SinglePageForm({
   configData,
   contextSummary,
   feasibilitySafetySummary,
-  informationalConflicts = [],
   blockingIssues = [],
   allowBlockingIssueOverride = false,
   onAllowBlockingIssueOverrideChange,
@@ -644,38 +649,44 @@ export function SinglePageForm({
     });
   };
 
-  const addTargetWithType = (goalId: string, targetType: GoalTargetType) => {
-    const target = createTargetByType(targetType);
-    onFormDataChange({
-      ...formData,
-      goals: formData.goals.map((goal) =>
-        goal.id === goalId ? { ...goal, targets: [...goal.targets, target] } : goal,
-      ),
-    });
-    setEditingTargetRef({ goalId, targetId: target.id });
-  };
+  const addTargetWithType = useCallback(
+    (goalId: string, targetType: GoalTargetType) => {
+      const target = createTargetByType(targetType);
+      onFormDataChange({
+        ...formData,
+        goals: formData.goals.map((goal) =>
+          goal.id === goalId ? { ...goal, targets: [...goal.targets, target] } : goal,
+        ),
+      });
+      setEditingTargetRef({ goalId, targetId: target.id });
+    },
+    [formData, onFormDataChange],
+  );
 
-  const removeTarget = (goalId: string, targetId: string) => {
-    onFormDataChange({
-      ...formData,
-      goals: formData.goals.map((goal) => {
-        if (goal.id !== goalId) {
-          return goal;
-        }
+  const removeTarget = useCallback(
+    (goalId: string, targetId: string) => {
+      onFormDataChange({
+        ...formData,
+        goals: formData.goals.map((goal) => {
+          if (goal.id !== goalId) {
+            return goal;
+          }
 
-        if (goal.targets.length <= 1) {
-          return goal;
-        }
+          if (goal.targets.length <= 1) {
+            return goal;
+          }
 
-        return {
-          ...goal,
-          targets: goal.targets.filter((target) => target.id !== targetId),
-        };
-      }),
-    });
-  };
+          return {
+            ...goal,
+            targets: goal.targets.filter((target) => target.id !== targetId),
+          };
+        }),
+      });
+    },
+    [formData, onFormDataChange],
+  );
 
-  const getError = (path: string) => errors[path];
+  const getError = useCallback((path: string) => errors[path], [errors]);
 
   const formValidationErrors = errors;
 
@@ -704,19 +715,22 @@ export function SinglePageForm({
     return map;
   }, [formData.goals, formValidationErrors]);
 
-  const getTargetRowError = (goalIndex: number, targetIndex: number) => {
-    const prefix = `goals.${goalIndex}.targets.${targetIndex}`;
-    return (
-      getError(`${prefix}.targetType`) ??
-      getError(`${prefix}.distanceKm`) ??
-      getError(`${prefix}.completionTimeHms`) ??
-      getError(`${prefix}.paceMmSs`) ??
-      getError(`${prefix}.activityCategory`) ??
-      getError(`${prefix}.testDurationHms`) ??
-      getError(`${prefix}.targetWatts`) ??
-      getError(`${prefix}.targetLthrBpm`)
-    );
-  };
+  const getTargetRowError = useCallback(
+    (goalIndex: number, targetIndex: number) => {
+      const prefix = `goals.${goalIndex}.targets.${targetIndex}`;
+      return (
+        getError(`${prefix}.targetType`) ??
+        getError(`${prefix}.distanceKm`) ??
+        getError(`${prefix}.completionTimeHms`) ??
+        getError(`${prefix}.paceMmSs`) ??
+        getError(`${prefix}.activityCategory`) ??
+        getError(`${prefix}.testDurationHms`) ??
+        getError(`${prefix}.targetWatts`) ??
+        getError(`${prefix}.targetLthrBpm`)
+      );
+    },
+    [getError],
+  );
 
   const activeGoal = useMemo(
     () => formData.goals.find((goal) => goal.id === activeGoalId) ?? formData.goals[0],

@@ -140,7 +140,7 @@ export default function MessagesScreen() {
             <HeaderTextAction
               accessibilityLabel="New message"
               label="New Message"
-              onPress={() => navigateTo("/messages/new" as any)}
+              onPress={() => navigateTo("/messages/new")}
               testID="messages-new-trigger"
             />
           ),

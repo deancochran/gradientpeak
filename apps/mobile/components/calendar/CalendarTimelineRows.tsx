@@ -1,4 +1,5 @@
 import { formatGoalTypeLabel, getGoalObjectiveSummary, type ProfileGoal } from "@repo/core";
+import { getAuthoritativeActivityPlanMetrics } from "@repo/core/activity-plan";
 import type { PreferredUnitSystem } from "@repo/core/units";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -229,16 +230,10 @@ function getActivityPlanMetricLabels(event: CalendarEvent) {
     return [];
   }
 
-  const metrics = plan.authoritative_metrics;
-  const duration =
-    readMetric(metrics?.estimated_duration) ??
-    readMetric((plan as { estimated_duration?: unknown }).estimated_duration);
-  const tss =
-    readMetric(metrics?.estimated_tss) ??
-    readMetric((plan as { estimated_tss?: unknown }).estimated_tss);
-  const intensityFactor =
-    readMetric(metrics?.intensity_factor) ??
-    readMetric((plan as { intensity_factor?: unknown }).intensity_factor);
+  const metrics = getAuthoritativeActivityPlanMetrics(plan);
+  const duration = readMetric(metrics.estimated_duration);
+  const tss = readMetric(metrics.estimated_tss);
+  const intensityFactor = readMetric(metrics.intensity_factor);
 
   return [
     formatEstimatedDurationSeconds(duration),

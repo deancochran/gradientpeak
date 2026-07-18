@@ -20,6 +20,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import { activityCompositionModeSchema } from "../application/activities/activity-discovery";
 import {
   deleteActivityForProfile,
   updateActivityForProfile,
@@ -73,8 +74,42 @@ const activityIngestionStatusSchema = z
   })
   .strict();
 
+const activityCompositionSchema = z.object({
+  activity_kind: z.enum(["single", "multisport", "unknown"]),
+  activity_segment_count: z.number().int().nonnegative(),
+  activity_categories: publicActivityCategorySchema.array(),
+  matched_category_summary: z
+    .object({
+      segment_count: z.number().int().nonnegative(),
+      distance_meters: z.number().nonnegative().nullable(),
+      active_ms: z.number().int().nonnegative().nullable(),
+      moving_ms: z.number().int().nonnegative().nullable(),
+      tss: z.number().nonnegative().nullable(),
+      tss_identity: activityTssIdentitySchema.nullable(),
+    })
+    .strict()
+    .nullable(),
+});
+
+const activitySegmentReadSchema = publicActivitySegmentsRowSchema
+  .pick({
+    id: true,
+    activity_id: true,
+    ordinal: true,
+    role: true,
+    category: true,
+    start_offset_ms: true,
+    end_offset_ms: true,
+    timing_coverage: true,
+    active_ms: true,
+    moving_ms: true,
+    summary: true,
+  })
+  .strict();
+
 const activityListItemSchema = activityRowSchema
   .extend({
+    ...activityCompositionSchema.shape,
     likes_count: z.number().int().nonnegative(),
     has_liked: z.boolean(),
     derived: activityListDerivedSummarySchema.nullable(),
@@ -84,13 +119,11 @@ const activityListItemSchema = activityRowSchema
 
 const activityWithPlanSchema = activityRowSchema
   .extend({
+    ...activityCompositionSchema.shape,
     likes_count: z.number().int().nonnegative(),
     activity_plans: activityPlanReferenceSchema.nullable(),
     ingestion: activityIngestionStatusSchema.nullable().optional(),
-    segments: publicActivitySegmentsRowSchema
-      .extend({ created_at: activityTimestampSchema })
-      .strict()
-      .array(),
+    segments: activitySegmentReadSchema.array(),
     current_artifact: z
       .object({
         id: z.string().uuid(),
@@ -122,6 +155,7 @@ const listPaginatedInputSchema = z
     cursor: indexCursorSchema.optional(),
     direction: z.enum(["forward", "backward"]).optional(),
     activity_category: publicActivityCategorySchema.optional(),
+    composition_mode: activityCompositionModeSchema.default("include_multisport"),
     search: z.string().trim().max(80).optional(),
     date_from: isoDatetimeSchema.optional(),
     date_to: isoDatetimeSchema.optional(),

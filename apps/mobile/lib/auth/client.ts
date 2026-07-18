@@ -9,12 +9,19 @@ import {
   resolveGradientPeakAuthBaseUrl,
 } from "@repo/auth/client";
 import { createGradientPeakExpoAuthClient } from "@repo/auth/client/expo";
-import type { AuthSession } from "@repo/auth/session";
+import type { AuthSession, AuthSessionLike } from "@repo/auth/session";
 import { getAppScheme } from "@/lib/hooks/useAppScheme";
 import { getServerConfig, subscribeServerConfig } from "@/lib/server-config";
 import { safeSecureStore } from "@/lib/storage/safe-secure-store";
 
 type SessionListener = (session: AuthSession | null) => void;
+type AuthClientSessionStore = {
+  $store?: {
+    atoms?: {
+      $sessionSignal?: { listen?: (listener: () => void) => () => void };
+    };
+  };
+};
 
 const listeners = new Set<SessionListener>();
 
@@ -41,25 +48,42 @@ subscribeServerConfig(() => {
     unsubscribe();
     unsubscribe = null;
   }
-  void emitCurrentSession();
+  emitCurrentSessionDetached();
 });
 
-function normalizeSession(session: unknown) {
-  return normalizeGradientPeakAuthClientSession(session as any, "bearer");
+function normalizeSession(session: AuthSessionLike | null | undefined) {
+  return normalizeGradientPeakAuthClientSession(session, "bearer");
 }
 
 async function emitCurrentSession() {
   const session = await getMobileAuthSession();
-  listeners.forEach((listener) => listener(session));
+  notifySessionListeners(session);
+}
+
+function emitCurrentSessionDetached() {
+  void emitCurrentSession().catch((error) => {
+    console.error("[MobileAuthClient] Failed to emit the current session", error);
+  });
+}
+
+function notifySessionListeners(session: AuthSession | null) {
+  listeners.forEach((listener) => {
+    try {
+      listener(session);
+    } catch (error) {
+      console.error("[MobileAuthClient] Session listener failed", error);
+    }
+  });
 }
 
 function ensureSubscription() {
   if (unsubscribe) return;
 
-  const sessionAtom = (authClient as any).$store?.atoms?.$sessionSignal;
+  const sessionAtom = (authClient as unknown as AuthClientSessionStore).$store?.atoms
+    ?.$sessionSignal;
   if (sessionAtom?.listen) {
     unsubscribe = sessionAtom.listen(() => {
-      void emitCurrentSession();
+      emitCurrentSessionDetached();
     });
   }
 }
@@ -116,7 +140,7 @@ export async function getMobileAuthSession() {
 
 export async function refreshMobileAuthSession() {
   const session = await getMobileAuthSession();
-  listeners.forEach((listener) => listener(session));
+  notifySessionListeners(session);
   return session;
 }
 

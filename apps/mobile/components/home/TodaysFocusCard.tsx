@@ -5,13 +5,13 @@ import { TouchableOpacity, View } from "react-native";
 
 interface TodaysActivity {
   id: string;
-  type: any;
-  title: any;
-  duration: any;
+  type: string;
+  title: string;
+  duration: number;
   distance: number;
-  zone: any;
+  zone: string;
   scheduledTime: string;
-  description: any;
+  description: string;
   intensity?: string;
 }
 

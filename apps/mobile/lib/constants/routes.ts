@@ -98,7 +98,7 @@ export const ROUTES = {
  * buildRoute(ROUTES.PLAN.SCHEDULE_ACTIVITY, { planId: '123' })
  * // Returns: { pathname: '/plan/schedule', params: { planId: '123' } }
  */
-export function buildRoute<T extends Record<string, any>>(
+export function buildRoute<T extends Record<string, unknown>>(
   pathname: string,
   params?: T,
 ): { pathname: string; params?: T } {

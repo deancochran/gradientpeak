@@ -4,8 +4,8 @@ const mocks = vi.hoisted(() => ({
   migrate: vi.fn(async () => undefined),
   loadArtifact: vi.fn(async (): Promise<unknown> => null),
   handoff: vi.fn(async () => undefined),
-  inspect: vi.fn(async (): Promise<any> => ({ status: "none" })),
-  loadJobs: vi.fn(async (): Promise<any[]> => []),
+  inspect: vi.fn(async (): Promise<unknown> => ({ status: "none" })),
+  loadJobs: vi.fn(async (): Promise<unknown[]> => []),
   clearCheckpoint: vi.fn(async () => undefined),
   hasQuarantine: vi.fn(async () => false),
 }));

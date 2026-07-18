@@ -8,7 +8,19 @@ const replaceMock = jest.fn();
 const updateEventMock = jest.fn();
 const updateEventOccurrenceMock = jest.fn();
 
-let detailEvent: any;
+type DetailEvent = {
+  id: string;
+  group_id: string;
+  series_id: string;
+  is_recurring_occurrence: boolean;
+  activityPlanOptions: unknown[];
+};
+type GroupEventFormHandle = { submit: () => void };
+type GroupEventFormProps = {
+  onSubmit: (input: { title: string; startsAt: string }) => void;
+};
+
+let detailEvent: DetailEvent;
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -35,7 +47,10 @@ jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: mockCreat
 
 jest.mock("@/components/groups", () => ({
   __esModule: true,
-  GroupEventForm: React.forwardRef(function MockGroupEventForm(props: any, ref: any) {
+  GroupEventForm: React.forwardRef(function MockGroupEventForm(
+    props: GroupEventFormProps,
+    ref: React.ForwardedRef<GroupEventFormHandle>,
+  ) {
     React.useImperativeHandle(ref, () => ({
       submit: () =>
         props.onSubmit({ title: "Occurrence override", startsAt: "2026-05-28T12:00:00.000Z" }),

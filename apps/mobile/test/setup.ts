@@ -5,8 +5,10 @@ import { vi } from "vitest";
   true;
 
 vi.mock("react-native-svg", () => {
-  const MockSvg = ({ children, ...props }: any) => React.createElement("svg", props, children);
-  const MockCircle = ({ children, ...props }: any) =>
+  type MockSvgProps = React.PropsWithChildren<Record<string, unknown>>;
+  const MockSvg = ({ children, ...props }: MockSvgProps) =>
+    React.createElement("svg", props, children);
+  const MockCircle = ({ children, ...props }: MockSvgProps) =>
     React.createElement("circle", props, children);
 
   return {

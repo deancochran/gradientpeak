@@ -1,4 +1,6 @@
 import React from "react";
+import type { ReactTestInstance } from "react-test-renderer";
+import type { HostProps } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 import { TrainingPathChart } from "./TrainingPathChart";
 import { TrainingPathLegend } from "./TrainingPathLegend";
@@ -10,30 +12,31 @@ const originalRequestAnimationFrame = global.requestAnimationFrame;
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  TouchableOpacity: (props: any) => React.createElement("TouchableOpacity", props, props.children),
-  View: (props: any) => React.createElement("View", props, props.children),
+  TouchableOpacity: (props: HostProps) =>
+    React.createElement("TouchableOpacity", props, props.children),
+  View: (props: HostProps) => React.createElement("View", props, props.children),
 }));
 
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
-  Text: (props: any) => React.createElement("Text", props, props.children),
+  Text: (props: HostProps) => React.createElement("Text", props, props.children),
 }));
 
 jest.mock("@shopify/react-native-skia", () => ({
   __esModule: true,
-  Circle: (props: any) => React.createElement("SkiaCircle", props),
-  DashPathEffect: (props: any) => React.createElement("DashPathEffect", props),
+  Circle: (props: HostProps) => React.createElement("SkiaCircle", props),
+  DashPathEffect: (props: HostProps) => React.createElement("DashPathEffect", props),
   interpolateColors: (_value: number, _input: number[], output: string[]) => output[0],
-  Line: (props: any) => React.createElement("SkiaLine", props, props.children),
-  Rect: (props: any) => React.createElement("SkiaRect", props),
-  Text: (props: any) => React.createElement("SkiaText", props),
+  Line: (props: HostProps) => React.createElement("SkiaLine", props, props.children),
+  Rect: (props: HostProps) => React.createElement("SkiaRect", props),
+  Text: (props: HostProps) => React.createElement("SkiaText", props),
   useFont: () => ({ getTextWidth: () => 24 }),
   vec: (x: number, y: number) => ({ x, y }),
 }));
 
 jest.mock("react-native-reanimated", () => {
   const React = require("react");
-  const ScrollView = React.forwardRef((props: any, ref: any) => {
+  const ScrollView = React.forwardRef((props: HostProps, ref: React.ForwardedRef<unknown>) => {
     React.useImperativeHandle(ref, () => ({
       scrollTo: () => interactionOrder.push("scrollTo"),
     }));
@@ -42,23 +45,40 @@ jest.mock("react-native-reanimated", () => {
   return {
     __esModule: true,
     default: { ScrollView },
-    runOnJS: (fn: any) => fn,
+    runOnJS: <T extends (...args: never[]) => unknown>(fn: T) => fn,
     scrollTo: () => interactionOrder.push("scrollTo"),
     useAnimatedRef: () => React.useRef(null),
     useAnimatedReaction: jest.fn(),
-    useAnimatedScrollHandler: (handler: any) => handler,
-    useDerivedValue: (factory: any) => ({ value: factory() }),
-    useSharedValue: (value: any) => ({ value }),
+    useAnimatedScrollHandler: <T,>(handler: T) => handler,
+    useDerivedValue: <T,>(factory: () => T) => ({ value: factory() }),
+    useSharedValue: <T,>(value: T) => ({ value }),
   };
 });
 
 jest.mock("victory-native", () => ({
   __esModule: true,
-  CartesianChart: ({ chartPressConfig, chartPressState, children, data, yAxis, yKeys }: any) => {
+  CartesianChart: ({
+    chartPressConfig,
+    chartPressState,
+    children,
+    data,
+    yAxis,
+    yKeys,
+  }: {
+    chartPressConfig?: unknown;
+    chartPressState?: unknown;
+    children: (context: {
+      points: Record<string, unknown[]>;
+      chartBounds: HostProps;
+    }) => React.ReactNode;
+    data: Record<string, number>[];
+    yAxis?: unknown;
+    yKeys: string[];
+  }) => {
     const points = Object.fromEntries(
       yKeys.map((key: string) => [
         key,
-        data.map((datum: any, index: number) => ({
+        data.map((datum: Record<string, number>, index: number) => ({
           x: index * 38,
           xValue: index,
           y: 120 - (datum[key] ?? 0),
@@ -72,7 +92,7 @@ jest.mock("victory-native", () => ({
       children({ points, chartBounds: { left: 0, right: 200, top: 0, bottom: 120 } }),
     );
   },
-  Line: (props: any) => React.createElement("Line", props, props.children),
+  Line: (props: HostProps) => React.createElement("Line", props, props.children),
   useChartPressState: jest.fn(() => ({
     isActive: false,
     state: {
@@ -89,6 +109,16 @@ jest.mock("@/assets/fonts/SpaceMono-Regular.ttf", () => ({
   __esModule: true,
   default: "mock-font",
 }));
+
+function getHostNodes(type: string) {
+  return screen.UNSAFE_root.findAll((node: ReactTestInstance) => String(node.type) === type);
+}
+
+function getHostNode(type: string) {
+  const node = getHostNodes(type)[0];
+  if (!node) throw new Error(`Expected ${type} host node`);
+  return node;
+}
 
 jest.mock("@/lib/stores/theme-store", () => ({
   __esModule: true,
@@ -164,7 +194,7 @@ describe("TrainingPathChart interactions", () => {
       />,
     );
 
-    const chart = (screen as any).UNSAFE_getByType("CartesianChart");
+    const chart = getHostNode("CartesianChart");
     expect(chart.props.chartPressState).toBeTruthy();
     expect(chart.props.chartPressConfig?.pan?.simultaneousWithExternalGesture).toBeTruthy();
     expect(screen.queryByTestId("training-path-week-2026-04-13")).toBeNull();
@@ -184,7 +214,7 @@ describe("TrainingPathChart interactions", () => {
       />,
     );
 
-    fireEvent((screen as any).UNSAFE_getByType("AnimatedScrollView"), "scroll", {
+    fireEvent(getHostNode("AnimatedScrollView"), "scroll", {
       contentOffset: { x: 38 },
       contentSize: { width: 300 },
       layoutMeasurement: { width: 100 },
@@ -207,9 +237,9 @@ describe("TrainingPathChart interactions", () => {
       />,
     );
 
-    const scrollView = (screen as any).UNSAFE_getByType("AnimatedScrollView");
-    const renderedLines = (screen as any).UNSAFE_getAllByType("Line");
-    const renderedRects = (screen as any).UNSAFE_getAllByType("SkiaRect");
+    const scrollView = getHostNode("AnimatedScrollView");
+    const renderedLines = getHostNodes("Line");
+    const renderedRects = getHostNodes("SkiaRect");
 
     expect(screen.queryByTestId("training-path-week-2026-04-13")).toBeNull();
     expect(scrollView.props.disableIntervalMomentum).toBe(false);
@@ -223,12 +253,12 @@ describe("TrainingPathChart interactions", () => {
       <TrainingPathChart model={model} range="season" onSelectedWeekChange={jest.fn()} />,
     );
 
-    const dots = (screen as any)
-      .UNSAFE_getAllByType("SkiaCircle")
-      .filter((circle: any) => circle.props.cx !== undefined && circle.props.cy !== undefined);
-    const strokedBars = (screen as any)
-      .UNSAFE_getAllByType("SkiaRect")
-      .filter((rect: any) => rect.props.style === "stroke");
+    const dots = getHostNodes("SkiaCircle").filter(
+      (circle: ReactTestInstance) => circle.props.cx !== undefined && circle.props.cy !== undefined,
+    );
+    const strokedBars = getHostNodes("SkiaRect").filter(
+      (rect: ReactTestInstance) => rect.props.style === "stroke",
+    );
 
     expect(dots.length).toBeGreaterThan(1);
     expect(strokedBars).toHaveLength(0);
@@ -242,14 +272,17 @@ describe("TrainingPathChart interactions", () => {
       </>,
     );
 
-    const lines = (screen as any).UNSAFE_getAllByType("Line");
+    const lines = getHostNodes("Line");
     const plannedCtlLine = lines.find(
-      (line: any) => line.props.color === "rgba(37, 99, 235, 0.95)",
+      (line: ReactTestInstance) => line.props.color === "rgba(37, 99, 235, 0.95)",
     );
-    const idealCtlLine = lines.find((line: any) => line.props.color === "rgba(15, 23, 42, 0.42)");
-    const legendDottedSwatch = (screen as any)
-      .UNSAFE_getAllByType("View")
-      .find((view: any) => view.props.style?.borderStyle === "dotted");
+    const idealCtlLine = lines.find(
+      (line: ReactTestInstance) => line.props.color === "rgba(15, 23, 42, 0.42)",
+    );
+    const legendDottedSwatch = getHostNodes("View").find(
+      (view: ReactTestInstance) => view.props.style?.borderStyle === "dotted",
+    );
+    if (!plannedCtlLine || !idealCtlLine) throw new Error("Expected planned and ideal CTL lines");
 
     expect(plannedCtlLine.props.children).toBeUndefined();
     expect(idealCtlLine.props.children.type).toEqual(expect.any(Function));
@@ -284,7 +317,7 @@ describe("TrainingPathChart interactions", () => {
       />,
     );
 
-    const renderedRects = (screen as any).UNSAFE_getAllByType("SkiaRect");
+    const renderedRects = getHostNodes("SkiaRect");
     expect(renderedRects.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -309,10 +342,10 @@ describe("TrainingPathChart interactions", () => {
       />,
     );
 
-    const renderedRects = (screen as any).UNSAFE_getAllByType("SkiaRect");
+    const renderedRects = getHostNodes("SkiaRect");
     expect(renderedRects.length).toBeGreaterThanOrEqual(4);
     const loadBarWidths = renderedRects
-      .map((rect: any) => rect.props.width)
+      .map((rect: ReactTestInstance) => rect.props.width)
       .filter((width: unknown): width is number => typeof width === "number" && width > 0);
     expect(loadBarWidths).toEqual(expect.arrayContaining([28, 28, 28, 28]));
   });
@@ -333,7 +366,7 @@ describe("TrainingPathChart interactions", () => {
 
     renderNative(<TrainingPathChart model={highTargetModel} range="season" />);
 
-    const chart = (screen as any).UNSAFE_getByType("CartesianChart");
+    const chart = getHostNode("CartesianChart");
     expect(chart.props.yAxis[0].domain[1]).toBeGreaterThan(240);
   });
 });

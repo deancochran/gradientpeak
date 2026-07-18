@@ -19,20 +19,13 @@ type CurrentMetrics = {
 // ================================
 
 const CurrentStepDisplay = memo<{
-  planProgress: any;
+  planProgress: { currentStepIndex: number; duration: number };
   currentMetrics: CurrentMetrics;
   currentStep?: RecordingPlanOccurrence;
   onNextStep?: () => void;
   isAdvancing: boolean;
   structure: ActivityPlanStructureV3;
-}>(function CurrentStepDisplay({
-  planProgress,
-  currentMetrics,
-  currentStep,
-  onNextStep,
-  isAdvancing,
-  structure,
-}) {
+}>(function CurrentStepDisplay({ planProgress, currentMetrics, currentStep }) {
   return (
     <View className="mb-6">
       <View className="flex-row justify-between items-center mb-3">

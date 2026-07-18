@@ -1,3 +1,5 @@
+import type { RecordingServiceActivityPlan } from "@repo/core";
+import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { handleRecordingObjectAction } from "../recordingObjectActions";
 
 jest.mock("react-native", () => ({
@@ -13,12 +15,12 @@ jest.mock("@/lib/stores/activitySelectionStore", () => ({
 describe("handleRecordingObjectAction", () => {
   it("returns to the recorder after attaching a plan", async () => {
     const navigateToRecord = jest.fn();
-    const service = { selectPlan: jest.fn() } as any;
+    const service = { selectPlan: jest.fn() } as unknown as ActivityRecorderService;
     const plan = {
       id: "plan-1",
       name: "Tempo",
       activity_category: "bike",
-    } as any;
+    } as unknown as RecordingServiceActivityPlan;
 
     await handleRecordingObjectAction({
       candidate: {
@@ -37,7 +39,9 @@ describe("handleRecordingObjectAction", () => {
 
   it("returns to the recorder after attaching a route", async () => {
     const navigateToRecord = jest.fn();
-    const service = { attachRoute: jest.fn(async () => undefined) } as any;
+    const service = {
+      attachRoute: jest.fn(async () => undefined),
+    } as unknown as ActivityRecorderService;
 
     await handleRecordingObjectAction({
       candidate: {

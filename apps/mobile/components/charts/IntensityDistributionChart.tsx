@@ -190,8 +190,8 @@ export function IntensityDistributionChart({
         <View style={{ width: chartSize, height: chartSize }}>
           <Svg width={chartSize} height={chartSize}>
             <G>
-              {paths.map((item, index) => (
-                <Path key={index} d={item.path} fill={item.color} opacity={0.8} />
+              {paths.map((item) => (
+                <Path key={item.zone.key} d={item.path} fill={item.color} opacity={0.8} />
               ))}
             </G>
             {/* Center circle for cleaner look */}

@@ -1,13 +1,23 @@
-import { createHost } from "../../../../test/mock-components";
+import type { ForwardedRef } from "react";
+import type { ReactTestInstance } from "react-test-renderer";
+import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
+import { createHost, type HostProps } from "../../../../test/mock-components";
 import { renderNative, screen } from "../../../../test/render-native";
+import { RouteSurface } from "../RouteSurface";
+
+jest.mock("@/lib/services/ActivityRecorder", () => ({
+  __esModule: true,
+  ActivityRecorderService: class ActivityRecorderService {},
+}));
 
 const addCallbackMock = jest.fn();
 const removeCallbackMock = jest.fn();
 const addHeadingCallbackMock = jest.fn();
 const removeHeadingCallbackMock = jest.fn();
 
-function buildService() {
-  return {
+function buildService(): ActivityRecorderService {
+  const service: ActivityRecorderService = Object.create(ActivityRecorderService.prototype);
+  Object.assign(service, {
     state: "recording",
     currentRoute: {
       name: "Test Route",
@@ -24,13 +34,14 @@ function buildService() {
       addHeadingCallback: addHeadingCallbackMock,
       removeHeadingCallback: removeHeadingCallbackMock,
     },
-  };
+  });
+  return service;
 }
 
 jest.mock("react-native-maps", () => {
   const React = require("react");
 
-  const MapView = React.forwardRef((props: any, ref: any) => {
+  const MapView = React.forwardRef((props: HostProps, ref: ForwardedRef<unknown>) => {
     React.useImperativeHandle(ref, () => ({ animateCamera: jest.fn() }));
     return React.createElement("MapView", props, props.children);
   });
@@ -78,7 +89,9 @@ jest.mock("lucide-react-native", () => ({
   Navigation: createHost("Navigation"),
 }));
 
-const { RouteSurface } = require("../RouteSurface");
+function findHostNodes(rendered: ReturnType<typeof renderNative>, type: string) {
+  return rendered.UNSAFE_root.findAll((node: ReactTestInstance) => node.type === type);
+}
 
 describe("RouteSurface", () => {
   beforeEach(() => {
@@ -88,14 +101,14 @@ describe("RouteSurface", () => {
   it("renders virtual route guidance without subscribing to GPS callbacks", () => {
     const result = renderNative(
       <RouteSurface
-        service={buildService() as any}
+        service={buildService()}
         gpsRecordingEnabled={false}
         hasRoute
         routeMode="virtual"
       />,
     );
 
-    expect(result.UNSAFE_getByType("VirtualRouteMap" as any)).toBeTruthy();
+    expect(findHostNodes(result, "VirtualRouteMap")[0]).toBeTruthy();
     expect(addCallbackMock).not.toHaveBeenCalled();
     expect(addHeadingCallbackMock).not.toHaveBeenCalled();
   });
@@ -103,7 +116,7 @@ describe("RouteSurface", () => {
   it("renders route preview without GPS overlay or GPS subscriptions", () => {
     const result = renderNative(
       <RouteSurface
-        service={buildService() as any}
+        service={buildService()}
         gpsRecordingEnabled={true}
         hasRoute
         routeMode="preview"
@@ -111,7 +124,7 @@ describe("RouteSurface", () => {
     );
 
     expect(screen.getByText("Route preview")).toBeTruthy();
-    expect(result.UNSAFE_queryByType("GPSStatusOverlay" as any)).toBeNull();
+    expect(findHostNodes(result, "GPSStatusOverlay")[0] ?? null).toBeNull();
     expect(addCallbackMock).not.toHaveBeenCalled();
     expect(addHeadingCallbackMock).not.toHaveBeenCalled();
   });
@@ -119,7 +132,7 @@ describe("RouteSurface", () => {
   it("subscribes to GPS callbacks only for live navigation", () => {
     const result = renderNative(
       <RouteSurface
-        service={buildService() as any}
+        service={buildService()}
         gpsRecordingEnabled={true}
         hasRoute
         routeMode="live_navigation"
@@ -128,6 +141,6 @@ describe("RouteSurface", () => {
 
     expect(addCallbackMock).toHaveBeenCalledTimes(1);
     expect(addHeadingCallbackMock).toHaveBeenCalledTimes(1);
-    expect(result.UNSAFE_getByType("GPSStatusOverlay" as any)).toBeTruthy();
+    expect(findHostNodes(result, "GPSStatusOverlay")[0]).toBeTruthy();
   });
 });

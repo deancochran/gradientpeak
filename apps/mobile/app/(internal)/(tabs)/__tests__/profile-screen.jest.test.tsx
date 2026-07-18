@@ -29,17 +29,33 @@ let authState = defaultAuthState;
 
 const ButtonHost = createButtonComponent();
 
+type InteractiveProps = React.PropsWithChildren<{ onPress?: () => void } & Record<string, unknown>>;
+type TextInputMockProps = Record<string, unknown> & {
+  value?: string;
+  onChangeText?: (value: string) => void;
+  testId?: string;
+};
+type SettingItemMockProps = React.PropsWithChildren<{
+  label?: string;
+  description?: string;
+  buttonLabel?: string;
+  onPress?: () => void;
+  onValueChange?: (value: boolean) => void;
+  value?: boolean;
+}> &
+  Record<string, unknown>;
+
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
   ActivityIndicator: createHost("ActivityIndicator"),
   Alert: { alert: jest.fn() },
   Modal: createHost("Modal"),
-  Pressable: ({ children, onPress, ...props }: any) =>
+  Pressable: ({ children, onPress, ...props }: InteractiveProps) =>
     React.createElement("Pressable", { onPress, ...props }, children),
   RefreshControl: createHost("RefreshControl"),
   ScrollView: createHost("ScrollView"),
-  TextInput: ({ value, onChangeText, ...props }: any) =>
+  TextInput: ({ value, onChangeText, ...props }: TextInputMockProps) =>
     React.createElement("TextInput", { value, onChangeText, ...props }),
   View: createHost("View"),
 }));
@@ -102,13 +118,18 @@ jest.mock("@repo/ui/components/icon", () => ({
 
 jest.mock("@repo/ui/components/input", () => ({
   __esModule: true,
-  Input: ({ value, onChangeText, testId, ...props }: any) =>
+  Input: ({ value, onChangeText, testId, ...props }: TextInputMockProps) =>
     React.createElement("TextInput", { value, onChangeText, testID: testId, ...props }),
 }));
 
 jest.mock("@repo/ui/components/settings-group", () => ({
   __esModule: true,
-  SettingsGroup: ({ title, description, children, ...props }: any) =>
+  SettingsGroup: ({
+    title,
+    description,
+    children,
+    ...props
+  }: React.PropsWithChildren<{ title?: string; description?: string }> & Record<string, unknown>) =>
     React.createElement("View", props, [
       React.createElement("Text", { key: "title" }, title),
       React.createElement("Text", { key: "description" }, description),
@@ -123,7 +144,7 @@ jest.mock("@repo/ui/components/settings-group", () => ({
     value,
     children,
     ...props
-  }: any) =>
+  }: SettingItemMockProps) =>
     React.createElement(
       "Pressable",
       { onPress: onPress ?? (() => onValueChange?.(!value)), ...props },
@@ -144,7 +165,18 @@ jest.mock("@repo/ui/components/text", () => ({
 jest.mock("@/components/shared", () => ({
   __esModule: true,
   AppHeader: createHost("AppHeader"),
-  CompactInsightCard: ({ title, value, onPress, children, ...props }: any) =>
+  CompactInsightCard: ({
+    title,
+    value,
+    onPress,
+    children,
+    ...props
+  }: React.PropsWithChildren<{
+    title?: string;
+    value?: React.ReactNode;
+    onPress?: () => void;
+  }> &
+    Record<string, unknown>) =>
     React.createElement("Pressable", { onPress, ...props }, [
       React.createElement("Text", { key: "title" }, title),
       React.createElement("Text", { key: "value" }, value),

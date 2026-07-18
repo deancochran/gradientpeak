@@ -18,7 +18,12 @@ let lastBackgroundStorageWriteTime = 0;
 // Define background location task at module level (required for Expo)
 TaskManager.defineTask(
   BACKGROUND_LOCATION_TASK,
-  async ({ data, error }: TaskManager.TaskManagerTaskBody<any>) => {
+  async ({
+    data,
+    error,
+  }: TaskManager.TaskManagerTaskBody<{
+    locations: Location.LocationObject[];
+  }>) => {
     if (error) {
       console.error("[Background Location Task] Error:", error);
       // Don't return - continue to process any data that might be present
@@ -132,7 +137,7 @@ export class LocationManager {
 
   constructor() {
     // Load any existing buffered locations on startup
-    this.loadBufferedLocations();
+    void this.loadBufferedLocations();
   }
 
   private async handleLocationUpdate(location: Location.LocationObject) {
@@ -364,8 +369,8 @@ export class LocationManager {
     if (this.healthCheckInterval !== null) return;
 
     this.healthCheckInterval = setInterval(() => {
-      this.performHealthCheck();
-    }, this.HEALTH_CHECK_INTERVAL) as unknown as number;
+      void this.performHealthCheck();
+    }, this.HEALTH_CHECK_INTERVAL);
 
     console.log("Location health monitoring started");
   }

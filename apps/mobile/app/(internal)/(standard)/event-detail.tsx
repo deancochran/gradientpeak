@@ -42,7 +42,16 @@ import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
 import { getActivityColor } from "@/lib/utils/plan/colors";
 import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
 
-function isRecurringEvent(event: any) {
+function isRecurringEvent(
+  event:
+    | {
+        series_id?: string | null;
+        recurrence_rule?: string | null;
+        recurrence?: { rule?: string | null } | null;
+      }
+    | null
+    | undefined,
+) {
   if (!event) {
     return false;
   }
@@ -106,10 +115,21 @@ function formatScheduleDateLabel(value: Date) {
   return format(value, "EEEE, MMMM d, yyyy");
 }
 
-function formatScheduleRepeatLabel(event: any, recurring: boolean) {
+function formatScheduleRepeatLabel(
+  event:
+    | {
+        recurrence_rule?: string | null;
+        recurrence?: { rule?: string | null } | null;
+      }
+    | null
+    | undefined,
+  recurring: boolean,
+) {
   if (!recurring) {
     return "Does not repeat";
   }
+
+  if (!event) return "Repeats";
 
   const frequency = parseRecurrenceFrequency(event);
   const endDate = parseRecurrenceEndDate(event);
@@ -288,7 +308,7 @@ export default function EventDetailScreen() {
 
   const recurring = useMemo(() => isRecurringEvent(event), [event]);
   const isReadOnlyImported = !startsInCreateMode && event?.event_type === "imported";
-  const activityPlan = event?.activity_plan as any;
+  const activityPlan = event?.activity_plan;
   const hasActivityPlan = Boolean(activityPlan?.id);
   const isPlannedEvent = !startsInCreateMode && event?.event_type === "planned" && hasActivityPlan;
   const updateSupportsRecurrence = !isPlannedEvent;
@@ -301,7 +321,12 @@ export default function EventDetailScreen() {
     },
   );
   const completed = isPlannedEvent ? isActivityCompleted(event) : false;
-  const activityType = activityPlan?.activity_category || "other";
+  const activityType =
+    activityPlan &&
+    "primary_category" in activityPlan &&
+    typeof activityPlan.primary_category === "string"
+      ? activityPlan.primary_category
+      : "other";
   const activityColor = getActivityColor(activityType);
   const _detailTitle = startsInCreateMode
     ? "Create Event"
@@ -318,9 +343,9 @@ export default function EventDetailScreen() {
     : event
       ? isPlannedEvent
         ? event.title?.trim() || "Scheduled activity"
-        : getEventTitle(event as any)
+        : getEventTitle(event)
       : activityPlan?.name || "Event";
-  const statusLabel = event ? getEventStatusLabel(event as any) : null;
+  const statusLabel = event ? getEventStatusLabel(event) : null;
   const displayStartsAt = event ? new Date(event.starts_at) : new Date();
   const displayAllDay = !!event?.all_day;
   const displayScheduleDate = event ? getEventScheduledDate(event) : null;
@@ -335,7 +360,7 @@ export default function EventDetailScreen() {
         eventId: event.id,
         planId: activityPlan.id,
       },
-    } as any);
+    });
   };
 
   const handleOpenSourceTrainingPlan = () => {
@@ -343,7 +368,7 @@ export default function EventDetailScreen() {
       return;
     }
 
-    navigateTo(ROUTES.PLAN.TRAINING_PLAN.DETAIL(event.training_plan_id) as any);
+    navigateTo(ROUTES.PLAN.TRAINING_PLAN.DETAIL(event.training_plan_id));
   };
 
   const handleAttachActivityPlan = async (item: ResourcePickerItem) => {
@@ -607,7 +632,7 @@ export default function EventDetailScreen() {
               </Text>
             </View>
             <ActivityPlanCard
-              activityPlan={activityPlan as any}
+              activityPlan={activityPlan}
               onPress={handleOpenPlanDetail}
               testID="event-detail-activity-plan-card"
               variant="default"

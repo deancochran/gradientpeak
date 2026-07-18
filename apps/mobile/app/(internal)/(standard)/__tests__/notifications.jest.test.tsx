@@ -7,10 +7,28 @@ const navigateMock = jest.fn();
 const pushMock = jest.fn();
 const markReadMutateMock = jest.fn();
 
+type NotificationFixture = {
+  actor_id?: string;
+  created_at: string;
+  description: string;
+  id: string;
+  is_unread: boolean;
+  title: string;
+  type: string;
+};
+type FlatListMockProps = Record<string, unknown> & {
+  data: unknown[];
+  renderItem: (info: { item: unknown }) => React.ReactNode;
+  ListEmptyComponent?: React.ReactNode;
+};
+type PressableMockProps = React.PropsWithChildren<
+  { onPress?: () => void } & Record<string, unknown>
+>;
+
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: ({ options }: any) =>
+    Screen: ({ options }: { options?: { headerRight?: () => React.ReactNode } }) =>
       React.createElement(
         "StackScreen",
         { options },
@@ -23,13 +41,13 @@ jest.mock("expo-router", () => ({
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  FlatList: ({ data, renderItem, ListEmptyComponent, ...props }: any) =>
+  FlatList: ({ data, renderItem, ListEmptyComponent, ...props }: FlatListMockProps) =>
     React.createElement(
       "FlatList",
       props,
-      data.length > 0 ? data.map((item: any) => renderItem({ item })) : ListEmptyComponent,
+      data.length > 0 ? data.map((item) => renderItem({ item })) : ListEmptyComponent,
     ),
-  Pressable: ({ children, onPress, ...props }: any) =>
+  Pressable: ({ children, onPress, ...props }: PressableMockProps) =>
     React.createElement("Pressable", { onPress, ...props }, children),
   View: mockCreateHost("View"),
 }));
@@ -40,7 +58,7 @@ jest.mock("@repo/ui/components/badge", () => ({
 }));
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
-  Button: ({ children, onPress, ...props }: any) =>
+  Button: ({ children, onPress, ...props }: PressableMockProps) =>
     React.createElement("Pressable", { onPress, ...props }, children),
 }));
 jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: mockCreateHost("Text") }));
@@ -58,7 +76,7 @@ jest.mock("lucide-react-native", () => ({
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
-  getNotificationViewModel: (notification: any) => ({
+  getNotificationViewModel: (notification: NotificationFixture) => ({
     actorId: notification.actor_id,
     createdAt: notification.created_at,
     description: notification.description,
@@ -68,9 +86,9 @@ jest.mock("@repo/core", () => ({
     title: notification.title,
     type: notification.type,
   }),
-  getUnreadNotificationIds: (notifications: any[]) =>
+  getUnreadNotificationIds: (notifications: NotificationFixture[]) =>
     notifications.filter((item) => item.is_unread).map((item) => item.id),
-  normalizeNotificationListItem: (notification: any) => notification,
+  normalizeNotificationListItem: (notification: NotificationFixture) => notification,
 }));
 
 jest.mock("@/lib/api", () => ({

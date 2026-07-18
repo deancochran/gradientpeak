@@ -1,4 +1,6 @@
 import { act } from "@testing-library/react-native";
+import { isValidElement, type ReactNode } from "react";
+import type { ReactTestInstance } from "react-test-renderer";
 import { createHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
 import { TrainingPlanStructureSection } from "../TrainingPlanStructureSection";
@@ -23,29 +25,28 @@ jest.mock("@repo/ui/components/dialog", () => ({
 }));
 jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
 
-const getAllByTypeOrEmpty = (type: string) => {
-  try {
-    return (screen as any).UNSAFE_getAllByType(type);
-  } catch {
-    return [];
-  }
-};
+const getAllByTypeOrEmpty = (type: string) =>
+  screen.UNSAFE_root.findAll((node: ReactTestInstance) => node.type === type);
 
-const getNodeText = (children: any): string => {
+const getNodeText = (children: ReactNode): string => {
   if (typeof children === "string") return children;
   if (typeof children === "number") return String(children);
   if (Array.isArray(children)) return children.map(getNodeText).join("");
-  if (children?.props?.children !== undefined) return getNodeText(children.props.children);
+  if (isValidElement<{ children?: ReactNode }>(children))
+    return getNodeText(children.props.children);
   return "";
 };
 
 const findTouchableByText = (text: string) =>
-  getAllByTypeOrEmpty("TouchableOpacity").find((node: any) => {
+  getAllByTypeOrEmpty("TouchableOpacity").find((node: ReactTestInstance) => {
     if (typeof node.props?.onPress !== "function") {
       return false;
     }
 
-    return node.findAll((child: any) => getNodeText(child.props?.children) === text).length > 0;
+    return (
+      node.findAll((child: ReactTestInstance) => getNodeText(child.props.children) === text)
+        .length > 0
+    );
   });
 
 describe("TrainingPlanStructureSection", () => {
@@ -95,8 +96,9 @@ describe("TrainingPlanStructureSection", () => {
     );
 
     const closeButton = getAllByTypeOrEmpty("Button").find(
-      (node: any) => getNodeText(node.props?.children) === "Close",
+      (node: ReactTestInstance) => getNodeText(node.props.children) === "Close",
     );
+    if (!closeButton) throw new Error("Expected a Close button");
     act(() => {
       closeButton.props.onPress();
     });
@@ -145,6 +147,7 @@ describe("TrainingPlanStructureSection", () => {
     );
 
     const trigger = findTouchableByText("Change");
+    if (!trigger) throw new Error("Expected a Change control");
     act(() => {
       trigger.props.onPress();
     });

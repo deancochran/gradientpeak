@@ -4,14 +4,30 @@ import { PostHog } from "posthog-node";
 let serverTelemetryInitialized = false;
 let posthogClient: PostHog | null = null;
 
-function readSampleRate(value: string | undefined, fallback: number) {
-  if (!value) {
-    return fallback;
-  }
-
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
+const EXPECTED_TRPC_CODES = new Set([
+  "BAD_REQUEST",
+  "UNAUTHORIZED",
+  "PAYMENT_REQUIRED",
+  "FORBIDDEN",
+  "NOT_FOUND",
+  "METHOD_NOT_SUPPORTED",
+  "TIMEOUT",
+  "CONFLICT",
+  "PRECONDITION_FAILED",
+  "PAYLOAD_TOO_LARGE",
+  "UNSUPPORTED_MEDIA_TYPE",
+  "UNPROCESSABLE_CONTENT",
+  "PRECONDITION_REQUIRED",
+  "TOO_MANY_REQUESTS",
+  "CLIENT_CLOSED_REQUEST",
+]);
+const CANCELLATION_CODES = new Set(["ABORT_ERR", "ERR_CANCELED", "CLIENT_CLOSED_REQUEST"]);
+const SENSITIVE_CONTEXT_KEY =
+  /(?:authorization|cookie|password|passcode|secret|token|api[-_]?key|email|phone|username|user[-_]?id|session|credential)/i;
+const MAX_CONTEXT_DEPTH = 4;
+const MAX_CONTEXT_ENTRIES = 25;
+const MAX_CONTEXT_ARRAY_LENGTH = 20;
+const MAX_CONTEXT_STRING_LENGTH = 500;
 
 export function initServerTelemetry() {
   if (serverTelemetryInitialized) {
@@ -21,16 +37,6 @@ export function initServerTelemetry() {
   serverTelemetryInitialized = true;
 
   const environment = process.env.APP_ENV ?? process.env.NODE_ENV ?? "development";
-  const sentryDsn = process.env.SENTRY_DSN;
-
-  if (sentryDsn) {
-    Sentry.init({
-      dsn: sentryDsn,
-      environment,
-      tracesSampleRate: readSampleRate(process.env.SENTRY_TRACES_SAMPLE_RATE, 1),
-    });
-  }
-
   const posthogKey = process.env.POSTHOG_KEY;
   if (posthogKey) {
     posthogClient = new PostHog(posthogKey, {
@@ -52,19 +58,104 @@ export function initServerTelemetry() {
   }
 }
 
-export function captureApiError(error: unknown, context?: Record<string, unknown>) {
+export function sanitizeTelemetryContext(
+  context?: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!context) {
+    return {};
+  }
+
+  const seen = new WeakSet<object>();
+  const sanitize = (value: unknown, depth: number): unknown => {
+    if (value === null || typeof value === "boolean" || typeof value === "number") {
+      return value;
+    }
+    if (typeof value === "string") {
+      return value.slice(0, MAX_CONTEXT_STRING_LENGTH);
+    }
+    if (typeof value === "bigint" || typeof value === "symbol") {
+      return String(value).slice(0, MAX_CONTEXT_STRING_LENGTH);
+    }
+    if (typeof value === "undefined" || typeof value === "function") {
+      return undefined;
+    }
+    if (depth >= MAX_CONTEXT_DEPTH) {
+      return "[Truncated]";
+    }
+    if (seen.has(value)) {
+      return "[Circular]";
+    }
+
+    seen.add(value);
+    if (Array.isArray(value)) {
+      return value.slice(0, MAX_CONTEXT_ARRAY_LENGTH).map((entry) => sanitize(entry, depth + 1));
+    }
+
+    return Object.fromEntries(
+      Object.entries(value)
+        .slice(0, MAX_CONTEXT_ENTRIES)
+        .map(([key, entry]) => [
+          key,
+          SENSITIVE_CONTEXT_KEY.test(key) ? "[Redacted]" : sanitize(entry, depth + 1),
+        ]),
+    );
+  };
+
+  return sanitize(context, 0) as Record<string, unknown>;
+}
+
+function readErrorField(error: object, field: string): unknown {
+  return field in error ? (error as Record<string, unknown>)[field] : undefined;
+}
+
+export function isExpectedApiError(error: unknown): boolean {
+  let current = error;
+  const seen = new Set<unknown>();
+
+  for (let depth = 0; depth < 5 && current && !seen.has(current); depth += 1) {
+    seen.add(current);
+
+    if (current instanceof Response && current.status >= 300 && current.status < 400) {
+      return true;
+    }
+    if (typeof current !== "object") {
+      return false;
+    }
+
+    const name = readErrorField(current, "name");
+    const code = readErrorField(current, "code");
+    const status = readErrorField(current, "status");
+    const statusCode = readErrorField(current, "statusCode");
+
+    if (name === "AbortError" || (typeof code === "string" && CANCELLATION_CODES.has(code))) {
+      return true;
+    }
+    if (name === "TRPCError" && typeof code === "string" && EXPECTED_TRPC_CODES.has(code)) {
+      return true;
+    }
+    if (
+      name === "APIError" &&
+      ((typeof statusCode === "number" && statusCode >= 400 && statusCode < 500) ||
+        (typeof status === "number" && status >= 400 && status < 500))
+    ) {
+      return true;
+    }
+
+    current = readErrorField(current, "cause");
+  }
+
+  return false;
+}
+
+export function captureApiError(error: unknown, context?: Record<string, unknown>): boolean {
   initServerTelemetry();
 
-  Sentry.captureException(error, { extra: context });
+  if (isExpectedApiError(error)) {
+    return false;
+  }
 
-  posthogClient?.capture({
-    distinctId: typeof context?.userId === "string" ? context.userId : "gradientpeak-server",
-    event: "api_error",
-    properties: {
-      ...context,
-      message: error instanceof Error ? error.message : String(error),
-    },
-  });
+  Sentry.captureException(error, { extra: sanitizeTelemetryContext(context) });
+  return true;
 }
 
 export function captureApiEvent(

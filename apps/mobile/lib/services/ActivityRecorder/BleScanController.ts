@@ -53,7 +53,9 @@ export class BleScanController {
         }
 
         discoveredIds.add(device.id);
-        this.callbacks.forEach((callback) => callback(device));
+        this.callbacks.forEach((callback) => {
+          callback(device);
+        });
       });
     });
   }

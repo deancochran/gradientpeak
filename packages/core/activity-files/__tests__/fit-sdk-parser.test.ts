@@ -92,6 +92,24 @@ describe("standards-first FIT decoding", () => {
     expect(owners).toEqual([0, 1]);
   });
 
+  it("keeps valid activity evidence when laps or records cannot be assigned", () => {
+    const artifact = decodeFitActivityArtifact(fitFixtures.unownedEvidence());
+
+    expect(artifact.sessions).toHaveLength(1);
+    expect(artifact.laps).toEqual([]);
+    expect(
+      artifact.recordCollections.flatMap((collection) =>
+        collection.storage === "inline" ? collection.records : [],
+      ),
+    ).toHaveLength(2);
+    expect(artifact.extensions).toMatchObject({
+      "fit.unownedLapCount": 1,
+      "fit.unownedLapMessageIndexes": [999],
+      "fit.unownedRecordCount": 1,
+      "fit.unownedRecordMessageIndexes": [2],
+    });
+  });
+
   it("does not collapse repeated sports", () => {
     const semantics = projectFitArtifactSemantics(
       decodeFitActivityArtifact(fitFixtures.repeatedSport()),

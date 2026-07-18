@@ -3,10 +3,10 @@ import React from "react";
 import { createHost } from "../../../../test/mock-components";
 import { renderNative } from "../../../../test/render-native";
 
-const localSearchParamsMock = {
+const localSearchParamsMock: Record<string, string | undefined> = {
   planId: "plan-123",
   eventId: "event-123",
-} as Record<string, string | undefined>;
+};
 const routerMock = {
   back: jest.fn(),
   navigate: jest.fn(),
@@ -39,11 +39,11 @@ const routeCardMock = jest.fn((props: RouteCardProps) =>
 const contentPreviewMock = jest.fn((props: ActivityPlanContentPreviewProps) =>
   React.createElement("ActivityPlanContentPreview", props, props.children),
 );
-const routeGetUseQueryMock = jest.fn((_input?: unknown, _options?: unknown) => ({
-  data: routeMock as typeof routeMock | null,
+const routeGetUseQueryMock = jest.fn((_input?: unknown, options?: { enabled?: boolean }) => ({
+  data: options?.enabled === false ? null : routeMock,
 }));
-const routeLoadFullUseQueryMock = jest.fn((_input?: unknown, _options?: unknown) => ({
-  data: routeFullMock as typeof routeFullMock | null,
+const routeLoadFullUseQueryMock = jest.fn((_input?: unknown, options?: { enabled?: boolean }) => ({
+  data: options?.enabled === false ? null : routeFullMock,
 }));
 
 const fetchedPlanMock = {
@@ -185,9 +185,13 @@ jest.mock("@/lib/api", () => ({
       },
     },
     routes: {
-      get: { useQuery: (input: unknown, options: unknown) => routeGetUseQueryMock(input, options) },
+      get: {
+        useQuery: (input: unknown, options?: { enabled?: boolean }) =>
+          routeGetUseQueryMock(input, options),
+      },
       loadFull: {
-        useQuery: (input: unknown, options: unknown) => routeLoadFullUseQueryMock(input, options),
+        useQuery: (input: unknown, options?: { enabled?: boolean }) =>
+          routeLoadFullUseQueryMock(input, options),
       },
     },
     social: {
@@ -290,13 +294,16 @@ describe("activity plan detail route card", () => {
     contentPreviewMock.mockClear();
     routeGetUseQueryMock.mockClear();
     routeLoadFullUseQueryMock.mockClear();
-    routeGetUseQueryMock.mockImplementation((_input?: unknown, options?: unknown) => ({
-      data: (options as { enabled?: boolean } | undefined)?.enabled === false ? null : routeMock,
-    }));
-    routeLoadFullUseQueryMock.mockImplementation((_input?: unknown, options?: unknown) => ({
-      data:
-        (options as { enabled?: boolean } | undefined)?.enabled === false ? null : routeFullMock,
-    }));
+    routeGetUseQueryMock.mockImplementation(
+      (_input?: unknown, options?: { enabled?: boolean }) => ({
+        data: options?.enabled === false ? null : routeMock,
+      }),
+    );
+    routeLoadFullUseQueryMock.mockImplementation(
+      (_input?: unknown, options?: { enabled?: boolean }) => ({
+        data: options?.enabled === false ? null : routeFullMock,
+      }),
+    );
     localSearchParamsMock.planId = "plan-123";
     localSearchParamsMock.eventId = "event-123";
     delete localSearchParamsMock.template;
@@ -347,8 +354,8 @@ describe("activity plan detail route card", () => {
 
     renderNative(<ActivityPlanDetail />);
 
-    expect(routeGetUseQueryMock).toHaveBeenCalledWith({ id: null }, { enabled: false });
-    expect(routeLoadFullUseQueryMock).toHaveBeenCalledWith({ id: null }, { enabled: false });
+    expect(routeGetUseQueryMock).toHaveBeenCalledWith({ id: "" }, { enabled: false });
+    expect(routeLoadFullUseQueryMock).toHaveBeenCalledWith({ id: "" }, { enabled: false });
     expect(routeCardMock).not.toHaveBeenCalled();
   });
 });

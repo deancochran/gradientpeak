@@ -107,6 +107,7 @@ export function ResourceOwnerActionRow({
   testID = "resource-owner-action-row",
 }: ResourceOwnerActionRowProps) {
   const timestampLabel = formatSmartTimestamp(timestamp);
+  const hasActions = Boolean(actions);
   const hasSubtitle = Boolean(categoryLabel || timestampLabel);
   const displayOwner = owner ?? null;
   const ownerName = displayOwner ? undefined : systemName || fallbackLabel;
@@ -147,7 +148,7 @@ export function ResourceOwnerActionRow({
         />
       </View>
 
-      {actions ? <View className="shrink-0 flex-row items-center gap-2">{actions}</View> : null}
+      {hasActions ? <View className="shrink-0 flex-row items-center gap-2">{actions}</View> : null}
     </View>
   );
 }

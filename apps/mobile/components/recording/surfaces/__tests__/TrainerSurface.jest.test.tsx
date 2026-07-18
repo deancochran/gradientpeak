@@ -1,11 +1,12 @@
-import React from "react";
+import React, { type ComponentProps } from "react";
 
-import { createHost } from "../../../../test/mock-components";
+import { createHost, type PressableHostProps } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
+import { TrainerSurface } from "../TrainerSurface";
 
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
-  Button: ({ children, disabled, onPress, ...props }: any) =>
+  Button: ({ children, disabled, onPress, ...props }: PressableHostProps) =>
     React.createElement(
       "Pressable",
       {
@@ -14,7 +15,11 @@ jest.mock("@repo/ui/components/button", () => ({
         onPress: disabled ? undefined : onPress,
         testID:
           props.testID ??
-          `button-${String(children?.props?.children ?? "")
+          `button-${String(
+            React.isValidElement<{ children?: React.ReactNode }>(children)
+              ? children.props.children
+              : "",
+          )
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, "-")}`,
       },
@@ -27,8 +32,6 @@ jest.mock("@repo/ui/components/text", () => ({
   Text: createHost("Text"),
 }));
 
-const { TrainerSurface } = require("../TrainerSurface");
-
 function buildSessionContract({
   hasTrainer,
   trainerControllable,
@@ -37,7 +40,7 @@ function buildSessionContract({
   hasTrainer: boolean;
   trainerControllable: boolean;
   consequences?: string[];
-}) {
+}): ComponentProps<typeof TrainerSurface>["sessionContract"] {
   return {
     devices: {
       hasTrainer,
@@ -46,7 +49,7 @@ function buildSessionContract({
     validation: {
       consequences,
     },
-  };
+  } as ComponentProps<typeof TrainerSurface>["sessionContract"];
 }
 
 describe("TrainerSurface", () => {
@@ -57,9 +60,7 @@ describe("TrainerSurface", () => {
       <TrainerSurface
         navigateTo={navigateTo}
         sensorCount={1}
-        sessionContract={
-          buildSessionContract({ hasTrainer: true, trainerControllable: true }) as any
-        }
+        sessionContract={buildSessionContract({ hasTrainer: true, trainerControllable: true })}
       />,
     );
 
@@ -75,13 +76,11 @@ describe("TrainerSurface", () => {
       <TrainerSurface
         navigateTo={navigateTo}
         sensorCount={1}
-        sessionContract={
-          buildSessionContract({
-            hasTrainer: true,
-            trainerControllable: false,
-            consequences: ["Trainer is connected without direct control."],
-          }) as any
-        }
+        sessionContract={buildSessionContract({
+          hasTrainer: true,
+          trainerControllable: false,
+          consequences: ["Trainer is connected without direct control."],
+        })}
       />,
     );
 
@@ -97,9 +96,7 @@ describe("TrainerSurface", () => {
       <TrainerSurface
         navigateTo={navigateTo}
         sensorCount={0}
-        sessionContract={
-          buildSessionContract({ hasTrainer: false, trainerControllable: false }) as any
-        }
+        sessionContract={buildSessionContract({ hasTrainer: false, trainerControllable: false })}
       />,
     );
 

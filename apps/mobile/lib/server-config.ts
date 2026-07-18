@@ -42,7 +42,9 @@ export function isServerUrlOverrideEnabled() {
 }
 
 function emit() {
-  listeners.forEach((listener) => listener());
+  listeners.forEach((listener) => {
+    listener();
+  });
 }
 
 function normalizeBaseUrl(url: string | undefined | null): string | null {
@@ -114,7 +116,7 @@ export async function initializeServerConfig() {
     return;
   }
 
-  if (initializePromise) {
+  if (initializePromise !== null) {
     return initializePromise;
   }
 

@@ -1,6 +1,7 @@
 import { Text } from "@repo/ui/components/text";
 import { useMemo } from "react";
 import { Pressable, View } from "react-native";
+import type { EntityOwner } from "@/components/shared/EntityOwnerRow";
 import {
   ResourceLikeButton,
   ResourceOwnerActionRow,
@@ -28,7 +29,13 @@ interface TrainingPlanDetailHeaderActionsSectionProps {
     routeBacked: number;
     sessions: number;
   };
-  plan: any;
+  plan: {
+    created_at: string | Date;
+    description?: string | null;
+    name: string;
+    owner?: EntityOwner | null;
+    [key: string]: unknown;
+  };
 }
 
 export function TrainingPlanDetailHeaderActionsSection({
@@ -83,7 +90,9 @@ export function TrainingPlanDetailHeaderActionsSection({
         isActive={isCurrentScheduledPlan}
         activeLabel="Current scheduled plan"
         inactiveLabel="Template"
-        createdAt={plan.created_at}
+        createdAt={
+          plan.created_at instanceof Date ? plan.created_at.toISOString() : plan.created_at
+        }
         showStatusDot={isCurrentScheduledPlan}
         formatStartedDate={(date) =>
           date.toLocaleDateString("en-US", {

@@ -2,7 +2,15 @@ import { getActivityDisplayName, type RecordingActivityCategory } from "@repo/co
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { Activity, Bike, Dumbbell, Footprints, MapPin, Waves } from "lucide-react-native";
+import {
+  Activity,
+  Bike,
+  Dumbbell,
+  Footprints,
+  type LucideIcon,
+  MapPin,
+  Waves,
+} from "lucide-react-native";
 import { useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 
@@ -13,7 +21,7 @@ interface InlineActivitySelectorProps {
 // Simplified activity configurations for inline selector
 const QUICK_ACTIVITIES: {
   category: RecordingActivityCategory;
-  icon: any;
+  icon: LucideIcon;
   color: string;
 }[] = [
   { category: "run", icon: Footprints, color: "text-emerald-600" },

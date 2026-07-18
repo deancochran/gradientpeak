@@ -10,7 +10,10 @@ const service = {
 
 let activityStatusMock = { activityCategory: "run", gpsRecordingEnabled: true };
 let recordingStateMock = "pending";
-let sessionContractMock: any = {
+let sessionContractMock: {
+  editing: { canEditActivity: boolean; canEditGps: boolean };
+  guidance: { hasPlan: boolean };
+} = {
   editing: { canEditActivity: true, canEditGps: true },
   guidance: { hasPlan: false },
 };

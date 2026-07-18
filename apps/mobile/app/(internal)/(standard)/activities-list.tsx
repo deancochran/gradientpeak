@@ -30,6 +30,8 @@ function ActivitiesScreen() {
   const [draftCategoryFilter, setDraftCategoryFilter] = useState<typeof categoryFilter>(null);
   const [sortBy, setSortBy] = useState<"date" | "distance" | "duration" | "tss">("date");
   const [draftSortBy, setDraftSortBy] = useState<typeof sortBy>("date");
+  const [includeMultisport, setIncludeMultisport] = useState(true);
+  const [draftIncludeMultisport, setDraftIncludeMultisport] = useState(true);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const limit = 20;
 
@@ -38,7 +40,6 @@ function ActivitiesScreen() {
     data: activitiesData,
     isLoading,
     isFetchingNextPage,
-    hasNextPage,
     fetchNextPage,
     refetch,
   } = api.activities.listPaginated.useInfiniteQuery(
@@ -46,11 +47,12 @@ function ActivitiesScreen() {
       limit,
       search: searchQuery.trim() || undefined,
       activity_category: categoryFilter ?? undefined,
+      composition_mode: includeMultisport ? "include_multisport" : "single_only",
       sort_by: sortBy,
       sort_order: "desc",
     },
     {
-      getNextPageParam: (lastPage: any) => lastPage.nextCursor,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
     },
   );
 
@@ -72,7 +74,7 @@ function ActivitiesScreen() {
   };
 
   const handleActivityPress = (activityId: string) => {
-    navigateTo(`/activity-detail?id=${activityId}` as any);
+    navigateTo(`/activity-detail?id=${activityId}`);
   };
 
   const handleLoadMore = () => {
@@ -87,7 +89,7 @@ function ActivitiesScreen() {
         options={{
           headerRight: () => (
             <TouchableOpacity
-              onPress={() => navigateTo(ROUTES.ACTIVITIES.IMPORT as any)}
+              onPress={() => navigateTo(ROUTES.ACTIVITIES.IMPORT)}
               className="mr-2 rounded-full px-2 py-1"
               testID="activities-list-import-trigger"
             >
@@ -99,12 +101,13 @@ function ActivitiesScreen() {
       <IndexSearchBar
         value={searchQuery}
         placeholder="Search activities"
-        hasActiveFilters={categoryFilter !== null || sortBy !== "date"}
+        hasActiveFilters={categoryFilter !== null || sortBy !== "date" || !includeMultisport}
         onChangeText={setSearchQuery}
         onClear={() => setSearchQuery("")}
         onFilterPress={() => {
           setDraftCategoryFilter(categoryFilter);
           setDraftSortBy(sortBy);
+          setDraftIncludeMultisport(includeMultisport);
           setIsFilterSheetOpen(true);
         }}
         testIDPrefix="activities-list"
@@ -138,7 +141,7 @@ function ActivitiesScreen() {
         refreshing={refreshing}
         renderItem={(activity) => (
           <ActivityCard
-            activity={activity as any}
+            activity={activity}
             dateMode="absolute"
             onPress={() => handleActivityPress(activity.id)}
             owner={activityOwner}
@@ -152,14 +155,18 @@ function ActivitiesScreen() {
         visible={isFilterSheetOpen}
         title="Activity Filters"
         description="Refine your activities list."
-        isResetDisabled={draftCategoryFilter === null && draftSortBy === "date"}
+        isResetDisabled={
+          draftCategoryFilter === null && draftSortBy === "date" && draftIncludeMultisport
+        }
         onReset={() => {
           setDraftCategoryFilter(null);
           setDraftSortBy("date");
+          setDraftIncludeMultisport(true);
         }}
         onApply={() => {
           setCategoryFilter(draftCategoryFilter);
           setSortBy(draftSortBy);
+          setIncludeMultisport(draftIncludeMultisport);
           setIsFilterSheetOpen(false);
         }}
         onClose={() => setIsFilterSheetOpen(false)}
@@ -186,6 +193,16 @@ function ActivitiesScreen() {
                 testID={`activities-list-filter-category-${option.id}`}
               />
             ))}
+          </View>
+        </FilterSection>
+        <FilterSection title="Composition">
+          <View className="flex-row flex-wrap gap-2">
+            <FilterChip
+              label="Include multisport"
+              isActive={draftIncludeMultisport}
+              onPress={() => setDraftIncludeMultisport((current) => !current)}
+              testID="activities-list-filter-include-multisport"
+            />
           </View>
         </FilterSection>
         <FilterSection title="Sort">

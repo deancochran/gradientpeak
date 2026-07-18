@@ -313,10 +313,14 @@ export function decodeFitActivityArtifact(buffer: Buffer | Uint8Array): DecodedA
 
   const lapMessages = messagesOf(decoded.messages, "lapMesgs");
   const lapOwners = new Map<number, SessionEvidence>();
-  const laps = lapMessages.map((lap, index) => {
+  const unownedLapMessageIndexes: number[] = [];
+  const laps = lapMessages.flatMap((lap, index) => {
     const indexValue = messageIndex(lap, index, "lap");
     const owner = lapOwner(sessions, lap, indexValue);
-    if (!owner) throw new Error(`Cannot determine FIT session ownership for lap ${indexValue}.`);
+    if (!owner) {
+      unownedLapMessageIndexes.push(indexValue);
+      return [];
+    }
     lapOwners.set(indexValue, owner);
     const startTimeMs = dateMs(lap.startTime, `lap ${indexValue} start_time`);
     let endTimeMs = dateMs(lap.timestamp, `lap ${indexValue} timestamp`);
@@ -324,7 +328,7 @@ export function decodeFitActivityArtifact(buffer: Buffer | Uint8Array): DecodedA
       const elapsed = finiteNumber(lap.totalElapsedTime);
       if (elapsed !== undefined) endTimeMs = startTimeMs + Math.round(elapsed * 1000);
     }
-    return {
+    return [{
       messageIndex: indexValue,
       sessionMessageIndex: owner.messageIndex,
       ...(startTimeMs === undefined ? {} : { startTimeMs }),
@@ -332,7 +336,7 @@ export function decodeFitActivityArtifact(buffer: Buffer | Uint8Array): DecodedA
       ...(metricExtensions(lap, LAP_EXTENSION_FIELDS) === undefined
         ? {}
         : { extensions: metricExtensions(lap, LAP_EXTENSION_FIELDS) }),
-    };
+    }];
   });
 
   const eventMessages = messagesOf(decoded.messages, "eventMesgs");
@@ -366,6 +370,7 @@ export function decodeFitActivityArtifact(buffer: Buffer | Uint8Array): DecodedA
   });
 
   const recordMessages = messagesOf(decoded.messages, "recordMesgs");
+  const unownedRecordMessageIndexes: number[] = [];
   const lengthAssociations = messagesOf(decoded.messages, "lengthMesgs").flatMap(
     (length, index) => {
       const startTimeMs = dateMs(length.startTime, `length ${index} start_time`);
@@ -376,7 +381,7 @@ export function decodeFitActivityArtifact(buffer: Buffer | Uint8Array): DecodedA
         : [];
     },
   );
-  const records = recordMessages.map((record, index) => {
+  const records = recordMessages.flatMap((record, index) => {
     const timestampMs = dateMs(record.timestamp, `record ${index} timestamp`);
     const associatedLength = lengthAssociations
       .filter(
@@ -385,7 +390,10 @@ export function decodeFitActivityArtifact(buffer: Buffer | Uint8Array): DecodedA
       )
       .sort((left, right) => right.sourceOrder - left.sourceOrder)[0];
     const owner = associatedLength?.owner ?? timestampOwner(sessions, timestampMs);
-    if (!owner) throw new Error(`Cannot determine FIT session ownership for record ${index}.`);
+    if (!owner) {
+      unownedRecordMessageIndexes.push(index);
+      return [];
+    }
     const ownedLap = laps.find(
       (lap) =>
         lap.sessionMessageIndex === owner.messageIndex &&
@@ -396,13 +404,13 @@ export function decodeFitActivityArtifact(buffer: Buffer | Uint8Array): DecodedA
         timestampMs <= lap.endTimeMs,
     );
     const extensions = metricExtensions(record, RECORD_EXTENSION_FIELDS);
-    return {
+    return [{
       messageIndex: index,
       sessionMessageIndex: owner.messageIndex,
       ...(ownedLap === undefined ? {} : { lapMessageIndex: ownedLap.messageIndex }),
       ...(timestampMs === undefined ? {} : { timestampMs }),
       ...(extensions === undefined ? {} : { extensions }),
-    };
+    }];
   });
 
   const activityMessage = messagesOf(decoded.messages, "activityMesgs")[0];
@@ -411,6 +419,22 @@ export function decodeFitActivityArtifact(buffer: Buffer | Uint8Array): DecodedA
   if (!first || !last) throw new Error("FIT session evidence disappeared during decoding.");
   const activityEndMs = dateMs(activityMessage?.timestamp, "activity timestamp") ?? last.endTimeMs;
   const fileId = messagesOf(decoded.messages, "fileIdMesgs")[0];
+  const artifactExtensions = {
+    ...(metricExtensions(fileId ?? {}, ["manufacturer", "product", "serialNumber", "timeCreated"]) ??
+      {}),
+    ...(unownedLapMessageIndexes.length === 0
+      ? {}
+      : {
+          "fit.unownedLapCount": unownedLapMessageIndexes.length,
+          "fit.unownedLapMessageIndexes": unownedLapMessageIndexes.slice(0, 64),
+        }),
+    ...(unownedRecordMessageIndexes.length === 0
+      ? {}
+      : {
+          "fit.unownedRecordCount": unownedRecordMessageIndexes.length,
+          "fit.unownedRecordMessageIndexes": unownedRecordMessageIndexes.slice(0, 64),
+        }),
+  };
   const recordCollections = [];
   for (let offset = 0; offset < records.length; offset += INLINE_RECORD_LIMIT) {
     recordCollections.push({ storage: "inline" as const, version: 1 as const, records: records.slice(offset, offset + INLINE_RECORD_LIMIT) });
@@ -438,7 +462,7 @@ export function decodeFitActivityArtifact(buffer: Buffer | Uint8Array): DecodedA
     laps,
     events,
     recordCollections,
-    extensions: metricExtensions(fileId ?? {}, ["manufacturer", "product", "serialNumber", "timeCreated"]),
+    extensions: Object.keys(artifactExtensions).length === 0 ? undefined : artifactExtensions,
   });
 }
 

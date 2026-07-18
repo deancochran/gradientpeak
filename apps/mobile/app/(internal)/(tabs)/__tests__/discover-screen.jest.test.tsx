@@ -1,28 +1,44 @@
 import React, { act } from "react";
-import { createButtonComponent, createHost } from "../../../../test/mock-components";
+import {
+  createButtonComponent,
+  createHost,
+  type HostProps,
+  type PressableHostProps,
+} from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
-const activityPlanCardMock = jest.fn(({ activityPlan, onPress, variant }: any) =>
-  React.createElement(
-    "Pressable",
-    { onPress, testID: `activity-plan-${activityPlan.id}`, variant },
-    React.createElement("Text", null, activityPlan.name),
-  ),
+type ResourceCardProps = {
+  onPress?: () => void;
+  variant?: string;
+};
+const activityPlanCardMock = jest.fn(
+  ({
+    activityPlan,
+    onPress,
+    variant,
+  }: ResourceCardProps & { activityPlan: { id: string; name: string } }) =>
+    React.createElement(
+      "Pressable",
+      { onPress, testID: `activity-plan-${activityPlan.id}`, variant },
+      React.createElement("Text", null, activityPlan.name),
+    ),
 );
-const trainingPlanCardMock = jest.fn(({ plan, onPress, variant }: any) =>
-  React.createElement(
-    "Pressable",
-    { onPress, testID: `training-plan-${plan.id}`, variant },
-    React.createElement("Text", null, plan.name),
-  ),
+const trainingPlanCardMock = jest.fn(
+  ({ plan, onPress, variant }: ResourceCardProps & { plan: { id: string; name: string } }) =>
+    React.createElement(
+      "Pressable",
+      { onPress, testID: `training-plan-${plan.id}`, variant },
+      React.createElement("Text", null, plan.name),
+    ),
 );
-const routeCardMock = jest.fn(({ route, onPress, variant }: any) =>
-  React.createElement(
-    "Pressable",
-    { onPress, testID: `route-${route.id}`, variant },
-    React.createElement("Text", null, route.name),
-  ),
+const routeCardMock = jest.fn(
+  ({ route, onPress, variant }: ResourceCardProps & { route: { id: string; name: string } }) =>
+    React.createElement(
+      "Pressable",
+      { onPress, testID: `route-${route.id}`, variant },
+      React.createElement("Text", null, route.name),
+    ),
 );
 const activityPlansUseInfiniteQueryMock = jest.fn((_input?: unknown, _options?: unknown) => ({
   data: { pages: [{ items: activityPlans, nextCursor: undefined }] },
@@ -138,25 +154,31 @@ jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
   ScrollView: createHost("ScrollView"),
-  TouchableOpacity: ({ children, onPress, ...props }: any) =>
+  TouchableOpacity: ({ children, onPress, ...props }: PressableHostProps) =>
     React.createElement("Pressable", { onPress, ...props }, children),
   View: createHost("View"),
 }));
 
 jest.mock("@gorhom/bottom-sheet", () => ({
   __esModule: true,
-  default: ({ children, footerComponent, ...props }: any) =>
+  default: ({
+    children,
+    footerComponent,
+    ...props
+  }: HostProps & {
+    footerComponent?: (props: { animatedFooterPosition: { value: number } }) => React.ReactNode;
+  }) =>
     React.createElement(
       "BottomSheet",
       props,
       children,
       footerComponent?.({ animatedFooterPosition: { value: 0 } }),
     ),
-  BottomSheetBackdrop: (props: any) => React.createElement("BottomSheetBackdrop", props),
+  BottomSheetBackdrop: (props: HostProps) => React.createElement("BottomSheetBackdrop", props),
   BottomSheetFooter: createHost("BottomSheetFooter"),
-  BottomSheetScrollView: ({ children, ...props }: any) =>
+  BottomSheetScrollView: ({ children, ...props }: HostProps) =>
     React.createElement("BottomSheetScrollView", props, children),
-  BottomSheetView: ({ children, ...props }: any) =>
+  BottomSheetView: ({ children, ...props }: HostProps) =>
     React.createElement("BottomSheetView", props, children),
 }));
 
@@ -179,7 +201,7 @@ jest.mock("@react-navigation/native", () => ({
 
 jest.mock("@/components/shared", () => ({
   __esModule: true,
-  AppHeader: ({ title }: any) => React.createElement("Text", null, `Header:${title}`),
+  AppHeader: ({ title }: { title: string }) => React.createElement("Text", null, `Header:${title}`),
 }));
 
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
@@ -211,7 +233,17 @@ jest.mock("@repo/ui/components/button", () => ({
 
 jest.mock("@repo/ui/components/empty-state-card", () => ({
   __esModule: true,
-  EmptyStateCard: ({ title, description, actionLabel, onAction }: any) =>
+  EmptyStateCard: ({
+    title,
+    description,
+    actionLabel,
+    onAction,
+  }: {
+    title: string;
+    description?: string;
+    actionLabel?: string;
+    onAction?: () => void;
+  }) =>
     React.createElement(
       "View",
       null,
@@ -234,7 +266,18 @@ jest.mock("@repo/ui/components/icon", () => ({
 
 jest.mock("@repo/ui/components/input", () => ({
   __esModule: true,
-  Input: ({ value, onChangeText, placeholder, testId, ...props }: any) =>
+  Input: ({
+    value,
+    onChangeText,
+    placeholder,
+    testId,
+    ...props
+  }: Record<string, unknown> & {
+    value?: string;
+    onChangeText?: (value: string) => void;
+    placeholder?: string;
+    testId?: string;
+  }) =>
     React.createElement("TextInput", {
       value,
       onChangeText,
@@ -332,8 +375,8 @@ describe("discover screen", () => {
     jest.clearAllMocks();
   });
 
-  afterEach(() => {
-    act(() => {
+  afterEach(async () => {
+    await act(() => {
       jest.runOnlyPendingTimers();
     });
   });
@@ -410,7 +453,7 @@ describe("discover screen", () => {
   it("searches across the mixed list with the same debounced query", async () => {
     renderNative(<DiscoverScreen />);
 
-    act(() => {
+    await act(() => {
       fireEvent.changeText(screen.getByPlaceholderText("Search activity plans"), "river");
       jest.advanceTimersByTime(350);
     });
@@ -447,14 +490,14 @@ describe("discover screen", () => {
     });
   });
 
-  it("keeps the shared search selectors, accessibility, sanitization, and clear debounce", () => {
+  it("keeps the shared search selectors, accessibility, sanitization, and clear debounce", async () => {
     renderNative(<DiscoverScreen />);
 
     const searchInput = screen.getByTestId("discover-search-input");
     expect(screen.getByLabelText("Search activity plans")).toBe(searchInput);
     expect(screen.getByTestId("discover-filter-button")).toBeTruthy();
 
-    act(() => {
+    await act(() => {
       fireEvent.changeText(searchInput, `  ${"r".repeat(100)}`);
     });
     expect(searchInput.props.value).toHaveLength(80);

@@ -41,7 +41,7 @@ export default function RoutesLibraryScreen() {
         options={{
           headerRight: () => (
             <Pressable
-              onPress={() => navigateTo(ROUTES.ROUTES.UPLOAD as any)}
+              onPress={() => navigateTo(ROUTES.ROUTES.UPLOAD)}
               className="mr-2 rounded-full px-2 py-1"
               testID="routes-list-upload-trigger"
             >
@@ -85,11 +85,11 @@ export default function RoutesLibraryScreen() {
         isLoading={isLoading}
         loadingMoreLabel="Loading more routes..."
         onLoadMore={() => void fetchNextPage()}
-        renderItem={(item: any) => (
+        renderItem={(item) => (
           <RouteCard
             route={item}
             variant="list"
-            onPress={() => navigateTo(`/route-detail?id=${item.id}` as any)}
+            onPress={() => navigateTo(`/route-detail?id=${item.id}`)}
           />
         )}
       />

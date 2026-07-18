@@ -10,7 +10,7 @@ jest.mock("react-native", () => ({
 
 jest.mock("@/components/ErrorBoundary", () => ({
   __esModule: true,
-  ErrorBoundary: ({ children }: any) => children,
+  ErrorBoundary: ({ children }: { children: React.ReactNode }) => children,
   ScreenErrorFallback: createHost("ScreenErrorFallback"),
 }));
 
@@ -21,7 +21,7 @@ jest.mock("@/components/feed", () => ({
 
 jest.mock("@/components/shared", () => ({
   __esModule: true,
-  AppHeader: ({ title }: any) => React.createElement("Text", null, `Header:${title}`),
+  AppHeader: ({ title }: { title: string }) => React.createElement("Text", null, `Header:${title}`),
 }));
 
 jest.mock("@/lib/performance", () => ({

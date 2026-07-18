@@ -177,9 +177,9 @@ export const TargetMetricsGrid = memo<TargetMetricsGridProps>(function TargetMet
 
   return (
     <View className="gap-3">
-      {targets.map((target, index) => (
+      {targets.map((target) => (
         <TargetMetricsCard
-          key={`${target.type}-${index}`}
+          key={JSON.stringify(target)}
           target={target}
           current={getCurrentValue(target.type)}
         />

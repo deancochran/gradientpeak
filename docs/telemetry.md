@@ -11,7 +11,10 @@ local web/mobile/API runtime
   -> Sentry MCP / PostHog MCP for assistant-side inspection
 ```
 
-Telemetry is disabled when the relevant DSN/API key is blank.
+Telemetry is disabled when the relevant DSN/API key is blank. Sentry logs, tracing, and replay
+are also disabled by default. Browser and mobile replay require a separate replay opt-in plus a
+nonzero sample rate. Keep request bodies, headers, cookies, query parameters, local variables, and
+default PII disabled; explicit error context is recursively sanitized and bounded before capture.
 
 ## Environment files
 
@@ -64,4 +67,4 @@ After credentials are added, start the local web app with `pnpm --filter web dev
 
 For PostHog TanStack Start browser telemetry, prefer `VITE_POSTHOG_PROJECT_TOKEN` and `VITE_POSTHOG_HOST`. `VITE_POSTHOG_KEY` remains supported as a fallback.
 
-For mobile, set `EXPO_PUBLIC_ENABLE_SENTRY_IN_DEV=1` only when you intentionally want development errors to be sent to Sentry.
+For mobile, set `EXPO_PUBLIC_ENABLE_SENTRY_IN_DEV=1` only when you intentionally want development errors to be sent to Sentry. Replay additionally requires `EXPO_PUBLIC_ENABLE_SENTRY_REPLAY=1`. Use synthetic errors only when validating local delivery; never include real user data or credentials.

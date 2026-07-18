@@ -57,25 +57,33 @@ export function SegmentHeader({
   };
 
   const handleToggle = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch((error) => {
+      console.warn("Haptic feedback failed:", error);
+    });
     onToggleCollapse();
   };
 
   const handleRename = () => {
     setShowActions(false);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch((error) => {
+      console.warn("Haptic feedback failed:", error);
+    });
     onRename?.();
   };
 
   const handleCopy = () => {
     setShowActions(false);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch((error) => {
+      console.warn("Haptic feedback failed:", error);
+    });
     onCopy?.();
   };
 
   const handleDelete = () => {
     setShowActions(false);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch((error) => {
+      console.warn("Haptic feedback failed:", error);
+    });
 
     const totalSteps = steps.length * repetitions;
     Alert.alert(
@@ -87,7 +95,11 @@ export function SegmentHeader({
           text: "Delete",
           style: "destructive",
           onPress: () => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
+              (error) => {
+                console.warn("Haptic feedback failed:", error);
+              },
+            );
             onDelete?.();
           },
         },
@@ -136,7 +148,9 @@ export function SegmentHeader({
               variant="ghost"
               size="sm"
               onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch((error) => {
+                  console.warn("Haptic feedback failed:", error);
+                });
                 setShowActions(!showActions);
               }}
               className="h-8 w-8 p-0"

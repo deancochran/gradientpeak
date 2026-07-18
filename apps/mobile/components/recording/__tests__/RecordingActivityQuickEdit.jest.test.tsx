@@ -1,13 +1,13 @@
 import React from "react";
 import { Pressable } from "react-native";
 
-import { createHost } from "../../../test/mock-components";
+import { createHost, type HostProps } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  Modal: ({ visible, children, ...props }: any) =>
+  Modal: ({ visible, children, ...props }: HostProps & { visible?: boolean }) =>
     visible ? React.createElement("Modal", props, children) : null,
 }));
 
@@ -28,9 +28,10 @@ jest.mock("@repo/ui/components/text", () => ({
 
 jest.mock("@repo/ui/components/toggle-group", () => ({
   __esModule: true,
-  ToggleGroup: ({ children, ...props }: any) => React.createElement("ToggleGroup", props, children),
+  ToggleGroup: ({ children, ...props }: HostProps) =>
+    React.createElement("ToggleGroup", props, children),
   ToggleGroupIcon: createHost("ToggleGroupIcon"),
-  ToggleGroupItem: ({ children, ...props }: any) =>
+  ToggleGroupItem: ({ children, ...props }: HostProps) =>
     React.createElement("Pressable", props, children),
 }));
 

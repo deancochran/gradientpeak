@@ -17,7 +17,11 @@ jest.mock("react-native", () => ({
     addEventListener: jest.fn(() => ({ remove: jest.fn() })),
   },
   ScrollView: createHost("ScrollView"),
-  TouchableOpacity: ({ children, onPress, ...props }: any) =>
+  TouchableOpacity: ({
+    children,
+    onPress,
+    ...props
+  }: React.PropsWithChildren<{ onPress?: () => void } & Record<string, unknown>>) =>
     React.createElement("Pressable", { onPress, ...props }, children),
   View: createHost("View"),
 }));

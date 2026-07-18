@@ -1,11 +1,40 @@
 import { format } from "date-fns";
 import React from "react";
+import type { ReactTestInstance } from "react-test-renderer";
 import { ROUTES } from "@/lib/constants/routes";
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 import EventDetailScreen from "../event-detail";
 
-const eventDetailData = {
+type ActivityPlanFixture = {
+  id: string;
+  name: string;
+  description: string;
+  activity_category: string;
+  estimated_duration: number;
+  estimated_tss: number;
+};
+type EventQueryError = { data: { code: string }; message?: string };
+type HostQueries = { UNSAFE_getByType(type: string): ReactTestInstance };
+
+function getHostByType(rendered: ReturnType<typeof renderNative>, type: string) {
+  return (rendered as typeof rendered & HostQueries).UNSAFE_getByType(type);
+}
+
+const eventDetailData: {
+  id: string;
+  event_type: string;
+  title: string;
+  scheduled_date: string;
+  starts_at: string;
+  all_day: boolean;
+  notes: string;
+  activity_plan: ActivityPlanFixture | null;
+  recurrence_rule: string | null;
+  series_id: string | null;
+  occurrence_key: string | null;
+  original_starts_at: string | null;
+} = {
   id: "event-1",
   event_type: "planned",
   title: "Tempo Builder",
@@ -29,12 +58,16 @@ const eventDetailData = {
 
 const eventQueryState = {
   data: eventDetailData as typeof eventDetailData | null,
-  error: null as any,
+  error: null as EventQueryError | null,
   isLoading: false,
 };
 
 const routerNavigateMock = jest.fn();
 const deleteEventMutateMock = jest.fn();
+
+type StackScreenProps = Record<string, unknown> & {
+  options?: { headerRight?: () => React.ReactNode };
+};
 
 jest.mock("@tanstack/react-query", () => ({
   __esModule: true,
@@ -55,7 +88,7 @@ jest.mock("react-native", () => ({
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: any) =>
+    Screen: (props: StackScreenProps) =>
       React.createElement(
         "StackScreen",
         props,
@@ -259,12 +292,10 @@ describe("event detail fallback screen", () => {
     const rendered = renderNative(<EventDetailScreen />);
 
     expect(screen.queryByText("Advanced event detail")).toBeNull();
-    expect((rendered as any).UNSAFE_getByType("ActivityPlanCard").props.activityPlan).toEqual(
+    expect(getHostByType(rendered, "ActivityPlanCard").props.activityPlan).toEqual(
       expect.objectContaining({ id: "plan-1", name: "Tempo Builder" }),
     );
-    expect((rendered as any).UNSAFE_getByType("ActivityPlanCard").props.onPress).toEqual(
-      expect.any(Function),
-    );
+    expect(getHostByType(rendered, "ActivityPlanCard").props.onPress).toEqual(expect.any(Function));
     expect(screen.getByText("Monday, March 23, 2026")).toBeTruthy();
     expect(screen.getByText(format(new Date(eventDetailData.starts_at), "h:mm a"))).toBeTruthy();
     expect(screen.queryByText("Event details")).toBeNull();
@@ -314,7 +345,7 @@ describe("event detail fallback screen", () => {
 
   it("requires an explicit delete scope for recurring custom events", () => {
     eventDetailData.event_type = "custom";
-    eventDetailData.activity_plan = null as any;
+    eventDetailData.activity_plan = null;
     eventDetailData.recurrence_rule = "FREQ=WEEKLY;UNTIL=20260530T235959Z";
 
     renderNative(<EventDetailScreen />);

@@ -8,7 +8,10 @@ async function loadServerConfigModule(environment = "development") {
   delete process.env.EXPO_PUBLIC_ENABLE_SERVER_OVERRIDE;
 
   const secureStore = await import("expo-secure-store");
-  (secureStore as any).__store.clear();
+  const store = Reflect.get(secureStore, "__store");
+  if (!(store instanceof Map))
+    throw new Error("SecureStore test mock is missing its backing store");
+  store.clear();
 
   const module = await import("./server-config");
   return { module, secureStore };

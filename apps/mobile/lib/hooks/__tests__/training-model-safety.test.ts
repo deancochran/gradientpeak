@@ -32,7 +32,15 @@ describe("training model safety", () => {
 
   it("offers review without automatically mutating the plan", () => {
     const suggestion = deriveSmartSuggestion({
-      plan: { structure: {}, created_at: "2026-01-01" },
+      plan: {
+        structure: {
+          min_rest_days_per_week: 1,
+          target_activities_per_week: 4,
+          target_weekly_tss_max: 500,
+          target_weekly_tss_min: 300,
+        },
+        created_at: "2026-01-01",
+      },
       status: { ctl: 45, tsb: -35 },
     });
     const copy = `${suggestion?.title} ${suggestion?.description}`.toLowerCase();

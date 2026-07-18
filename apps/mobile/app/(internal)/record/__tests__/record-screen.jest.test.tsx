@@ -14,6 +14,27 @@ let mockRecordingLifecycle: "idle" | "setup" | "active" = "idle";
 let mockServiceState: "pending" | "ready" | "recording" | "paused" | "finishing" | "finished" =
   "pending";
 
+type PlanValidation = {
+  isValid: boolean;
+  missingMetrics?: Array<{ name: string; description: string }>;
+  warnings: string[];
+};
+type ActivitySelection = {
+  category: string;
+  gpsRecordingEnabled: boolean;
+  eventId?: string;
+  launchSource?: "route";
+  routeId?: string;
+};
+type CockpitProps = {
+  onStart: () => void;
+  onPause: () => void;
+  onResume: () => void;
+  onLap: () => void;
+  onFinish: () => void;
+};
+type AlertButtonFixture = { text?: string; onPress?: () => void };
+
 const service = {
   currentRoute: null,
   plan: null,
@@ -23,12 +44,12 @@ const service = {
   updateMetrics: jest.fn(),
   refreshAndCheckAllPermissions: jest.fn(async () => true),
   refreshAndCheckRecordingPermissions: jest.fn(async () => true),
-  validatePlanRequirements: jest.fn<any, any>(() => ({ isValid: true, warnings: [] })),
+  validatePlanRequirements: jest.fn<PlanValidation, []>(() => ({ isValid: true, warnings: [] })),
   recordLap: jest.fn(() => 42),
 };
 
 const activitySelectionStoreMock = {
-  peekSelection: jest.fn(() => ({
+  peekSelection: jest.fn<ActivitySelection | null, []>(() => ({
     category: "bike",
     gpsRecordingEnabled: false,
     eventId: "event-9",
@@ -75,13 +96,13 @@ jest.mock("@/components/activity-plan/useActivityPlanRouteUpload", () => ({
 
 jest.mock("@/components/ErrorBoundary", () => ({
   __esModule: true,
-  ErrorBoundary: ({ children }: any) => children,
+  ErrorBoundary: ({ children }: React.PropsWithChildren) => children,
   ScreenErrorFallback: createHost("ScreenErrorFallback"),
 }));
 
 jest.mock("@/components/recording/cockpit", () => ({
   __esModule: true,
-  RecordingLiveCockpit: ({ onStart, onPause, onResume, onLap, onFinish }: any) =>
+  RecordingLiveCockpit: ({ onStart, onPause, onResume, onLap, onFinish }: CockpitProps) =>
     React.createElement(
       "View",
       null,
@@ -276,7 +297,7 @@ describe("record screen", () => {
       category: "bike",
       gpsRecordingEnabled: false,
       routeId: "route-1",
-    } as any);
+    });
 
     renderNative(<RecordScreen />);
 
@@ -296,7 +317,7 @@ describe("record screen", () => {
 
   it("does not apply default payload over existing setup", async () => {
     mockRecordingLifecycle = "setup";
-    activitySelectionStoreMock.peekSelection.mockReturnValue(null as any);
+    activitySelectionStoreMock.peekSelection.mockReturnValue(null);
 
     renderNative(<RecordScreen />);
 
@@ -380,7 +401,7 @@ describe("record screen", () => {
       );
     });
 
-    const alertButtons = (Alert.alert as jest.Mock).mock.calls[0]?.[2] as Array<any>;
+    const alertButtons = (Alert.alert as jest.Mock).mock.calls[0]?.[2] as AlertButtonFixture[];
     const goToProfile = alertButtons.find((button) => button.text === "Go to Profile");
     goToProfile?.onPress?.();
 

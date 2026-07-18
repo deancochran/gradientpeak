@@ -98,7 +98,7 @@ import { useEffect, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { z } from "zod";
-import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { type ActivityPlan, ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { AppFormModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
 import { refreshScheduleWithCallbacks } from "@/lib/scheduling/refreshScheduleViews";
@@ -127,7 +127,7 @@ interface ScheduleActivityModalProps {
 
   // Either provide activityPlanId (database ID), activityPlan (template object), or eventId (edit)
   activityPlanId?: string;
-  activityPlan?: any; // Template object from discover/samples
+  activityPlan?: ActivityPlan; // Template object from discover/samples
   eventId?: string;
 
   // Optional pre-selected date
@@ -140,12 +140,18 @@ interface ScheduleActivityModalProps {
   editScope?: EditScope;
 }
 
-function isRecurringEvent(event: any) {
-  if (!event) {
+function isRecurringEvent(event: unknown) {
+  if (!event || typeof event !== "object") {
     return false;
   }
 
-  return !!(event.series_id || event.recurrence_rule || event.recurrence?.rule);
+  const record = event as Record<string, unknown>;
+  const recurrence = record.recurrence;
+  return !!(
+    record.series_id ||
+    record.recurrence_rule ||
+    (recurrence && typeof recurrence === "object" && "rule" in recurrence && recurrence.rule)
+  );
 }
 
 function toDateOnlyString(value: Date): string {
@@ -288,20 +294,9 @@ export function ScheduleActivityModal({
   editScope,
 }: ScheduleActivityModalProps) {
   const { resolvedTheme } = useTheme();
-  if (!visible) {
-    return null;
-  }
-
   const isEditMode = !!eventId;
   const resolvedActivityPlanId = activityPlanId ?? activityPlan?.id ?? "";
   const isTemplate = !!activityPlan && !activityPlanId;
-
-  // Validation: Must have either activityPlanId, activityPlan, or eventId
-  if (!activityPlanId && !activityPlan && !eventId) {
-    throw new Error(
-      "ScheduleActivityModal requires either activityPlanId, activityPlan, or eventId",
-    );
-  }
 
   const form = useZodForm<
     ScheduleActivityModalFormInput,
@@ -338,7 +333,7 @@ export function ScheduleActivityModal({
 
   // Fetch existing activity if editing
   const { data: existingActivity, isLoading: loadingExistingActivity } =
-    api.events.getById.useQuery({ id: eventId! }, { enabled: isEditMode && visible });
+    api.events.getById.useQuery({ id: eventId ?? "" }, { enabled: isEditMode && visible });
 
   // Fetch plan details (only if we have an ID, not a template)
   const { data: planDetails, isLoading: loadingPlan } = api.activityPlans.getById.useQuery(
@@ -348,9 +343,12 @@ export function ScheduleActivityModal({
 
   // Use template if provided, otherwise use fetched plan
   const displayPlan = isTemplate ? activityPlan : planDetails;
-  const displayRouteId = displayPlan?.route_id;
+  const displayRouteId =
+    displayPlan && "route_id" in displayPlan && typeof displayPlan.route_id === "string"
+      ? displayPlan.route_id
+      : undefined;
   const { data: displayRoute } = api.routes.get.useQuery(
-    { id: displayRouteId! },
+    { id: displayRouteId ?? "" },
     { enabled: visible && !!displayRouteId },
   );
 
@@ -361,7 +359,7 @@ export function ScheduleActivityModal({
     error: validationError,
   } = api.events.validateConstraints.useQuery(
     {
-      training_plan_id: trainingPlanId!,
+      training_plan_id: trainingPlanId ?? "",
       scheduled_date: scheduledDateForApi,
       activity_plan_id: currentActivityPlanId,
     },
@@ -425,12 +423,16 @@ export function ScheduleActivityModal({
   };
 
   const submitEditWithScope = async (data: ScheduleActivityModalFormOutput, scope: EditScope) => {
+    if (!eventId) {
+      setRootFormError(form, new Error("Missing event ID"), "Failed to update activity.");
+      return;
+    }
     clearRootFormError(form);
 
     try {
       await runMutation(
         updateMutation,
-        toScheduleUpdatePayload({ data, eventId: eventId!, scope, startsAt }),
+        toScheduleUpdatePayload({ data, eventId, scope, startsAt }),
       );
 
       await handleMutationSuccess();
@@ -535,6 +537,16 @@ export function ScheduleActivityModal({
   const minimumScheduleDate = isEditMode ? undefined : new Date();
   const minimumScheduleDateProps = minimumScheduleDate ? { minimumDate: minimumScheduleDate } : {};
 
+  if (!visible) {
+    return null;
+  }
+
+  if (!activityPlanId && !activityPlan && !eventId) {
+    throw new Error(
+      "ScheduleActivityModal requires either activityPlanId, activityPlan, or eventId",
+    );
+  }
+
   return (
     <AppFormModal
       dismissDisabled={isSubmitting}
@@ -598,8 +610,8 @@ export function ScheduleActivityModal({
                 Selected activity
               </Text>
               <ActivityPlanCard
-                activityPlan={displayPlan as any}
-                route={displayRoute as any}
+                activityPlan={displayPlan}
+                route={displayRoute}
                 testID="schedule-selected-activity-card"
                 variant="compact"
               />

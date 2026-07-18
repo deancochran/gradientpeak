@@ -31,7 +31,7 @@ export interface BikeControlUIProps {
 
 type BikeMode = "erg" | "sim" | "resistance";
 
-export function BikeControlUI({ service, controlMode, hasPlan }: BikeControlUIProps) {
+export function BikeControlUI({ service, controlMode }: BikeControlUIProps) {
   const plan = usePlan(service);
 
   // Current bike control mode (ERG, SIM, Resistance)
@@ -261,7 +261,9 @@ export function BikeControlUI({ service, controlMode, hasPlan }: BikeControlUIPr
           <Button
             onPress={() => {
               console.log(`[BikeControl] Apply Power button pressed`);
-              applyPowerTarget();
+              void applyPowerTarget().catch((error) => {
+                console.error("[BikeControl] Failed to apply power target:", error);
+              });
             }}
             disabled={isDisabled}
             variant={isDisabled ? "ghost" : "default"}
@@ -279,8 +281,8 @@ export function BikeControlUI({ service, controlMode, hasPlan }: BikeControlUIPr
           {/* FTP Zones Reference */}
           <View className="mt-6">
             <Text className="text-sm font-medium mb-2">FTP Zones</Text>
-            {getFTPZones().map((zone, index) => (
-              <View key={index} className="flex-row items-center gap-2 mb-1">
+            {getFTPZones().map((zone) => (
+              <View key={zone.name} className="flex-row items-center gap-2 mb-1">
                 <View className={`w-3 h-3 rounded ${zone.color}`} />
                 <Text className="text-xs flex-1">{zone.name}</Text>
                 <Text className="text-xs text-muted-foreground">
@@ -394,7 +396,9 @@ export function BikeControlUI({ service, controlMode, hasPlan }: BikeControlUIPr
           <Button
             onPress={() => {
               console.log(`[BikeControl] Apply Simulation button pressed`);
-              applySimulation();
+              void applySimulation().catch((error) => {
+                console.error("[BikeControl] Failed to apply simulation:", error);
+              });
             }}
             disabled={isDisabled}
             variant={isDisabled ? "ghost" : "default"}
@@ -472,7 +476,9 @@ export function BikeControlUI({ service, controlMode, hasPlan }: BikeControlUIPr
           <Button
             onPress={() => {
               console.log(`[BikeControl] Apply Resistance button pressed`);
-              applyResistance();
+              void applyResistance().catch((error) => {
+                console.error("[BikeControl] Failed to apply resistance:", error);
+              });
             }}
             disabled={isDisabled}
             variant={isDisabled ? "ghost" : "default"}
