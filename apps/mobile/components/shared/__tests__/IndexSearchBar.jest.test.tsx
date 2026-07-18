@@ -1,5 +1,5 @@
 import { fireEvent, render } from "@testing-library/react-native";
-import { IndexSearchBar } from "../IndexSearchBar";
+import { FilterChip, IndexSearchBar } from "../IndexSearchBar";
 
 describe("IndexSearchBar", () => {
   it("keeps shared search and filter actions independently selectable", () => {
@@ -25,8 +25,24 @@ describe("IndexSearchBar", () => {
     expect(onChangeText).toHaveBeenCalledWith("recovery");
     expect(onClear).toHaveBeenCalledTimes(1);
     expect(onFilterPress).toHaveBeenCalledTimes(1);
-    expect(getByTestId("activities-list-filter-button").props.accessibilityState).toEqual({
+    expect(getByTestId("activities-list-filter-button").props.accessibilityState).toMatchObject({
       selected: true,
     });
+    expect(getByTestId("activities-list-filter-button").props.accessibilityRole).toBe("button");
+    expect(getByTestId("activities-list-filter-button").props.className).toContain("min-h-12");
+  });
+
+  it("exposes filter chips as selected 48dp buttons", () => {
+    const onPress = jest.fn();
+    const { getByTestId } = render(
+      <FilterChip isActive label="Cycling" onPress={onPress} testID="cycling-filter" />,
+    );
+
+    const chip = getByTestId("cycling-filter");
+    expect(chip.props.accessibilityRole).toBe("button");
+    expect(chip.props.accessibilityState).toEqual({ selected: true, disabled: false });
+    expect(chip.props.className).toContain("min-h-12");
+    fireEvent.press(chip);
+    expect(onPress).toHaveBeenCalledTimes(1);
   });
 });

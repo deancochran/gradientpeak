@@ -9,7 +9,7 @@ jest.mock("@rn-primitives/slot", () => {
 import { fireEvent, renderNative } from "../../test/render-native";
 import { Text } from "../text/index.native";
 import { buttonFixtures } from "./fixtures";
-import { Button } from "./index.native";
+import { Button, IconButton } from "./index.native";
 
 describe("Button native", () => {
   it("maps normalized test props and handles presses", () => {
@@ -28,5 +28,44 @@ describe("Button native", () => {
 
     fireEvent.press(button);
     expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it("enforces a 48dp target and merges disabled accessibility state", () => {
+    const { getByLabelText } = renderNative(
+      <Button
+        accessibilityLabel="Disabled action"
+        accessibilityState={{ busy: true, selected: true }}
+        className="rounded-full"
+        disabled
+      >
+        <Text>Disabled</Text>
+      </Button>,
+    );
+
+    const button = getByLabelText("Disabled action");
+
+    expect(button.props.className).toContain("min-h-12");
+    expect(button.props.className).toContain("min-w-12");
+    expect(button.props.className).toContain("rounded-full");
+    expect(button.props.accessibilityState).toEqual({
+      busy: true,
+      disabled: true,
+      selected: true,
+    });
+  });
+
+  it("provides a labeled, stable icon-only button contract", () => {
+    const { getByLabelText } = renderNative(
+      <IconButton {...buttonFixtures.moreActions}>
+        <Text>⋯</Text>
+      </IconButton>,
+    );
+
+    const button = getByLabelText(buttonFixtures.moreActions.accessibilityLabel);
+
+    expect(button.props.testID).toBe(buttonFixtures.moreActions.testId);
+    expect(button.props.nativeID).toBe(buttonFixtures.moreActions.id);
+    expect(button.props.className).toContain("min-h-12");
+    expect(button.props.className).toContain("min-w-12");
   });
 });

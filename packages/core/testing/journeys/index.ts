@@ -24,19 +24,67 @@ export const journeyEvidenceKindSchema = z.enum([
 ]);
 export type JourneyEvidenceKind = z.infer<typeof journeyEvidenceKindSchema>;
 
-export const journeyEvidenceSchema = z.object({
-  kind: journeyEvidenceKindSchema,
-  path: z.string().min(1),
-  status: journeyImplementationStatusSchema,
+export const journeyEvidenceVerificationStatusSchema = z.enum([
+  "declared",
+  "syntax_checked",
+  "runtime_verified",
+]);
+export type JourneyEvidenceVerificationStatus = z.infer<
+  typeof journeyEvidenceVerificationStatusSchema
+>;
+
+export const journeyExecutionMetadataSchema = z.object({
+  artifactPath: z.string().min(1),
+  command: z.string().min(1),
+  generatedAt: z.iso.datetime({ offset: true }),
+  source: z.literal("machine"),
 });
+export type JourneyExecutionMetadata = z.infer<typeof journeyExecutionMetadataSchema>;
+
+export const journeyEvidenceSchema = z
+  .object({
+    execution: journeyExecutionMetadataSchema.optional(),
+    kind: journeyEvidenceKindSchema,
+    path: z.string().min(1),
+    status: journeyImplementationStatusSchema,
+    verificationStatus: journeyEvidenceVerificationStatusSchema.default("declared"),
+  })
+  .superRefine((evidence, context) => {
+    if (evidence.verificationStatus === "runtime_verified" && !evidence.execution) {
+      context.addIssue({
+        code: "custom",
+        message: "runtime_verified evidence requires machine-produced execution metadata",
+        path: ["execution"],
+      });
+    }
+  });
 export type JourneyEvidence = z.infer<typeof journeyEvidenceSchema>;
 
-export const journeyCoverageSchema = z.object({
-  evidence: z.array(journeyEvidenceSchema).default([]),
-  notes: z.array(z.string().min(1)).default([]),
-  selectors: z.record(z.string().min(1), z.string().min(1)).default({}),
-  status: journeyImplementationStatusSchema,
-});
+export const journeyCoverageSchema = z
+  .object({
+    evidence: z.array(journeyEvidenceSchema).default([]),
+    notes: z.array(z.string().min(1)).default([]),
+    runtimeVerificationStatus: journeyEvidenceVerificationStatusSchema.default("declared"),
+    selectors: z.record(z.string().min(1), z.string().min(1)).default({}),
+    status: journeyImplementationStatusSchema,
+  })
+  .superRefine((coverage, context) => {
+    if (
+      coverage.runtimeVerificationStatus === "runtime_verified" &&
+      !coverage.evidence.some(
+        (evidence) =>
+          evidence.kind === "runtime_flow" &&
+          evidence.verificationStatus === "runtime_verified" &&
+          evidence.execution,
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "runtime-verified coverage requires executed runtime-flow evidence",
+        path: ["runtimeVerificationStatus"],
+      });
+    }
+  });
 export type JourneyCoverage = z.infer<typeof journeyCoverageSchema>;
 export type JourneyCoverageInput = z.input<typeof journeyCoverageSchema>;
 

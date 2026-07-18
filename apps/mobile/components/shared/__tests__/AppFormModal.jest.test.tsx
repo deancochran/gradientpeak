@@ -1,7 +1,7 @@
 import { Text } from "@repo/ui/components/text";
-import { render } from "@testing-library/react-native";
+import { fireEvent, render } from "@testing-library/react-native";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
-import { AppFormModal } from "../AppFormModal";
+import { AppConfirmModal, AppFormModal } from "../AppFormModal";
 
 jest.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ bottom: 34, left: 0, right: 0, top: 0 }),
@@ -43,5 +43,38 @@ describe("AppFormModal", () => {
       { paddingBottom: 50 },
       callerStyle,
     ]);
+  });
+
+  it("provides a labeled, stable 44-point close action", () => {
+    const onClose = jest.fn();
+    const { getByTestId } = render(
+      <AppFormModal onClose={onClose} testID="edit-details" title="Edit details">
+        <View />
+      </AppFormModal>,
+    );
+
+    const closeButton = getByTestId("edit-details-close");
+    expect(closeButton.props.accessibilityLabel).toBe("Close Edit details");
+    expect(closeButton.props.accessibilityRole).toBe("button");
+    expect(closeButton.props.accessibilityState).toEqual({ disabled: false });
+    expect(closeButton.props.className).toContain("min-h-12 min-w-12");
+    fireEvent.press(closeButton);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks a loading confirmation action busy and disables repeat presses", () => {
+    const onPress = jest.fn();
+    const { getByTestId } = render(
+      <AppConfirmModal
+        description="This takes a moment."
+        onClose={jest.fn()}
+        primaryAction={{ label: "Save", loading: true, onPress, testID: "confirm-save" }}
+        title="Confirm save"
+      />,
+    );
+
+    const saveButton = getByTestId("confirm-save");
+    expect(saveButton.props.accessibilityState).toMatchObject({ busy: true, disabled: true });
+    expect(saveButton.props.disabled).toBe(true);
   });
 });

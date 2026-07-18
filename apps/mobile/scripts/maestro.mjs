@@ -7,9 +7,11 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const appId = process.env.MAESTRO_APP_ID || "com.deancochran.gradientpeak.dev";
+const appScheme = process.env.MAESTRO_APP_SCHEME || "gradientpeak-dev";
 const defaultServerLabel = process.env.MAESTRO_EXPO_DEV_SERVER_LABEL || "http://10.0.2.2:8081";
 const artifactDir = process.env.MAESTRO_ARTIFACT_DIR || ".maestro/artifacts";
-const defaultFlows = [".maestro/flows/smoke"];
+const defaultCheckFlows = [".maestro/flows/smoke", ".maestro/flows/reusable"];
+const defaultTestFlows = [".maestro/flows/smoke"];
 const forwardedPorts = [8081, 3000, 3100, 54321];
 const loadedEnvKeys = new Set();
 
@@ -132,7 +134,7 @@ function collectFlowFiles(path) {
 }
 
 function checkSyntax(flowArgs) {
-  const paths = flowArgs.length > 0 ? flowArgs : defaultFlows;
+  const paths = flowArgs.length > 0 ? flowArgs : defaultCheckFlows;
   const flows = paths.flatMap(collectFlowFiles);
   for (const flow of flows) {
     run(process.env.MAESTRO_BIN || "maestro", ["check-syntax", flow]);
@@ -140,7 +142,7 @@ function checkSyntax(flowArgs) {
 }
 
 function buildMaestroArgs(flowArgs) {
-  const flows = flowArgs.length > 0 ? flowArgs : defaultFlows;
+  const flows = flowArgs.length > 0 ? flowArgs : defaultTestFlows;
   const debugOutput = process.env.MAESTRO_DEBUG_OUTPUT || `${artifactDir}/debug`;
   const testOutput = process.env.MAESTRO_TEST_OUTPUT_DIR || `${artifactDir}/test-output`;
   mkdirSync(resolve(root, debugOutput), { recursive: true });
@@ -156,6 +158,8 @@ function buildMaestroArgs(flowArgs) {
     `EXPO_DEV_SERVER_LABEL=${process.env.EXPO_DEV_SERVER_LABEL || defaultServerLabel}`,
     "--env",
     `MAESTRO_APP_ID=${appId}`,
+    "--env",
+    `MAESTRO_APP_SCHEME=${appScheme}`,
   ];
 
   for (const key of [...loadedEnvKeys].sort()) {

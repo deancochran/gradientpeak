@@ -129,7 +129,11 @@ jest.mock("@/components/activity/charts/ElevationProfileChart", () => ({
   ElevationProfileChart: createHost("ElevationProfileChart"),
 }));
 
-jest.mock("@repo/ui/components/button", () => ({ __esModule: true, Button: createHost("Button") }));
+jest.mock("@repo/ui/components/button", () => ({
+  __esModule: true,
+  Button: ({ testId, testID, ...props }: Record<string, unknown> & { testId?: string }) =>
+    React.createElement("Button", { ...props, testID: testId ?? testID }),
+}));
 jest.mock("@repo/ui/components/card", () => ({
   __esModule: true,
   Card: createHost("Card"),

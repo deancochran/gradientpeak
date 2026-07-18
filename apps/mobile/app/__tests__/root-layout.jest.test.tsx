@@ -107,6 +107,11 @@ jest.mock("@repo/ui/components/text", () => ({
   Text: createHost("Text"),
 }));
 
+jest.mock("@repo/ui/components/loading", () => ({
+  __esModule: true,
+  Spinner: createHost("Spinner"),
+}));
+
 jest.mock(
   "@repo/tailwindcss/native",
   () => ({
@@ -245,6 +250,7 @@ describe("root layout auth guard", () => {
       profileLoading: false,
       profileError: null,
     });
+    themeState.isLoaded = true;
     segmentsValue = ["(internal)", "(tabs)"];
   });
 
@@ -295,6 +301,21 @@ describe("root layout auth guard", () => {
     renderNative(<RootLayout />);
 
     await waitFor(() => expect(screen.getByText("Internal app content")).toBeTruthy());
+  });
+
+  it("exposes an accessible shared loading state while the theme initializes", async () => {
+    themeState.isLoaded = false;
+
+    renderNative(<RootLayout />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("app-theme-loading").props).toMatchObject({
+        accessibilityLiveRegion: "polite",
+        accessibilityState: { busy: true },
+        label: "Loading app theme",
+        size: "large",
+      }),
+    );
   });
 
   it("preserves finalized files when a pending artifact references them", async () => {

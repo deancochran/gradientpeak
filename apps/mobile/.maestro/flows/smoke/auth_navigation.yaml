@@ -1,7 +1,9 @@
-appId: com.deancochran.gradientpeak.dev
+appId: ${MAESTRO_APP_ID}
 ---
 - runFlow:
     file: ../reusable/ensure_signed_out.yaml
+- runFlow:
+    file: ../reusable/assert_runtime_errors_clear.yaml
 - assertVisible:
     id: "sign-in-screen"
 - tapOn:
@@ -22,3 +24,5 @@ appId: com.deancochran.gradientpeak.dev
     id: "back-to-signin-link-button"
 - assertVisible:
     id: "sign-in-screen"
+- runFlow:
+    file: ../reusable/assert_runtime_errors_clear.yaml

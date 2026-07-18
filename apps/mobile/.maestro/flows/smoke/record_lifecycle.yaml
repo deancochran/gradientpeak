@@ -1,4 +1,10 @@
-appId: com.deancochran.gradientpeak.dev
+appId: ${MAESTRO_APP_ID}
 ---
 - runFlow:
+    file: ../reusable/authenticated_home.yaml
+- runFlow:
+    file: ../reusable/assert_runtime_errors_clear.yaml
+- runFlow:
     file: ../journeys/record/quick_start_pause_resume_finish.yaml
+- runFlow:
+    file: ../reusable/assert_runtime_errors_clear.yaml

@@ -1,5 +1,6 @@
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { X } from "lucide-react-native";
 import type React from "react";
@@ -7,7 +8,6 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
-  Pressable,
   ScrollView,
   type ScrollViewProps,
   View,
@@ -67,14 +67,19 @@ export function AppFormModal({
                 <Text className="mt-1 text-sm text-muted-foreground">{description}</Text>
               ) : null}
             </View>
-            <Pressable
+            <Button
+              accessibilityLabel={`Close ${title}`}
+              accessibilityState={{ disabled: dismissDisabled }}
+              className="rounded-full bg-muted"
               disabled={dismissDisabled}
               onPress={handleClose}
-              className="rounded-full bg-muted p-2"
-              hitSlop={12}
+              role="button"
+              size="icon"
+              testId={`${testID ?? "app-form-modal"}-close`}
+              variant="ghost"
             >
               <Icon as={X} size={20} className="text-muted-foreground" />
-            </Pressable>
+            </Button>
           </View>
 
           <ScrollView
@@ -152,15 +157,18 @@ function renderConfirmButton(action: AppConfirmAction, fill = false) {
   const buttonClassName = action.variant === "destructive" ? "bg-destructive" : undefined;
 
   return (
-    <Button
+    <LoadingButton
       className={buttonClassName}
-      disabled={action.disabled || action.loading}
+      disabled={action.disabled}
+      loading={action.loading}
+      loadingLabel={`${action.label}...`}
+      loadingTextClassName={textClassName}
       onPress={action.onPress}
-      testID={action.testID}
+      testId={action.testID}
       variant={variant === "default" && !fill ? "outline" : variant}
     >
-      <Text className={textClassName}>{action.loading ? `${action.label}...` : action.label}</Text>
-    </Button>
+      <Text className={textClassName}>{action.label}</Text>
+    </LoadingButton>
   );
 }
 

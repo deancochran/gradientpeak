@@ -1,4 +1,4 @@
-appId: com.deancochran.gradientpeak.dev
+appId: ${MAESTRO_APP_ID}
 env:
   STANDARD_USER_EMAIL: "test@example.com"
   STANDARD_USER_PASS: "password123"

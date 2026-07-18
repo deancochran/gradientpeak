@@ -1,5 +1,6 @@
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
+import { UiPreviewSurface } from "@repo/ui/testing/ui-preview";
 import { router } from "expo-router";
 import * as React from "react";
 import { View } from "react-native";
@@ -8,8 +9,16 @@ type StorybookModule = {
   default: React.ComponentType;
 };
 
-function getStorybookRoot() {
-  if (!__DEV__ || process.env.EXPO_PUBLIC_STORYBOOK_ENABLED !== "1") {
+function getDeveloperRoot() {
+  if (!__DEV__) {
+    return null;
+  }
+
+  if (process.env.EXPO_PUBLIC_MAESTRO_E2E === "1") {
+    return UiPreviewSurface;
+  }
+
+  if (process.env.EXPO_PUBLIC_STORYBOOK_ENABLED !== "1") {
     return null;
   }
 
@@ -29,7 +38,7 @@ function UnavailableRoute({ title, description }: { title: string; description: 
 }
 
 export default function StorybookScreen() {
-  const StorybookRoot = React.useMemo(() => getStorybookRoot(), []);
+  const DeveloperRoot = React.useMemo(() => getDeveloperRoot(), []);
 
   if (!__DEV__) {
     return (
@@ -40,7 +49,7 @@ export default function StorybookScreen() {
     );
   }
 
-  if (!StorybookRoot) {
+  if (!DeveloperRoot) {
     return (
       <UnavailableRoute
         title="Storybook is disabled"
@@ -49,5 +58,5 @@ export default function StorybookScreen() {
     );
   }
 
-  return <StorybookRoot />;
+  return <DeveloperRoot />;
 }

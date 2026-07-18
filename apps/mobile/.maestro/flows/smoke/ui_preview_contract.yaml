@@ -1,0 +1,65 @@
+appId: ${MAESTRO_APP_ID}
+---
+- runFlow:
+    file: ../reusable/expo_dev_client_setup.yaml
+- openLink: "${MAESTRO_APP_SCHEME}://storybook"
+- assertVisible: "E2E_RUNTIME_ERRORS=0"
+- assertVisible:
+    id: "ui-preview-surface"
+- assertVisible:
+    id: "ui-preview-scenario-account-controls"
+- assertVisible:
+    id: "profile-card"
+- assertVisible:
+    id: "auth-email"
+- assertVisible:
+    id: "settings-save"
+- scrollUntilVisible:
+    element:
+      id: "ui-preview-scenario-plan-tabs"
+    direction: DOWN
+- assertVisible:
+    id: "settings-tabs"
+- assertVisible:
+    id: "settings-tabs-trigger-overview"
+- assertVisible:
+    id: "settings-tabs-content-overview"
+- tapOn:
+    id: "settings-tabs-trigger-sessions"
+- assertVisible:
+    id: "settings-tabs-content-sessions"
+- scrollUntilVisible:
+    element:
+      id: "ui-preview-scenario-feedback-states"
+    direction: DOWN
+- scrollUntilVisible:
+    element:
+      id: "ui-preview-scenario-selection-controls"
+    direction: DOWN
+- assertVisible:
+    id: "activity-type-select"
+- assertVisible:
+    id: "preferred-sport-radio-group"
+- tapOn:
+    id: "accept-terms-checkbox"
+- tapOn:
+    id: "email-notifications-switch"
+- scrollUntilVisible:
+    element:
+      id: "ui-preview-scenario-form-fields"
+    direction: DOWN
+- assertVisible:
+    id: "ui-preview-form-bio"
+- assertVisible:
+    id: "ui-preview-form-sport"
+- tapOn:
+    id: "ui-preview-form-username"
+- eraseText
+- hideKeyboard
+- tapOn:
+    id: "ui-preview-form-is-public"
+- tapOn:
+    id: "ui-preview-form-submit"
+- assertVisible:
+    id: "ui-preview-form-username-error"
+- assertVisible: "E2E_RUNTIME_ERRORS=0"

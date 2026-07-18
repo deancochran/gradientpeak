@@ -310,13 +310,19 @@ describe("Form fields native", () => {
     );
   });
 
-  it("renders switch validation errors and exposes invalid control state", () => {
+  it("announces switch validation errors without unsupported control props", () => {
     const { getByTestId, getByText } = renderNative(<SwitchValidationHarness />);
 
     fireEvent.press(getByTestId("set-switch-error"));
 
-    expect(getByText("Choose an availability")).toBeTruthy();
-    expect(getByTestId("enabled-switch").props.accessibilityInvalid).toBe(true);
+    const message = getByText("Choose an availability");
+    const control = getByTestId("enabled-switch");
+    expect(message.props).toMatchObject({
+      accessibilityLiveRegion: "assertive",
+      accessibilityRole: "alert",
+    });
+    expect(control.props).not.toHaveProperty("accessibilityInvalid");
+    expect(control.props.accessibilityState?.invalid).toBeUndefined();
   });
 
   it("forwards disabled and blur behavior for bounded number fields", () => {

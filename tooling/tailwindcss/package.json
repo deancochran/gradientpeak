@@ -17,6 +17,7 @@
   "scripts": {
     "sync:shadcn-theme": "node ./scripts/sync-shadcn-theme.mjs",
     "generate:theme": "node ./scripts/generate-theme.mjs",
+    "check:theme": "node ./scripts/generate-theme.mjs --check",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {

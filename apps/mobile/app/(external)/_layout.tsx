@@ -12,6 +12,15 @@ const AUTHENTICATED_UNVERIFIED_ALLOWED_PATHS = new Set([
   "/(external)/reset-password",
 ]);
 
+function isDeveloperRouteAllowed(pathname: string) {
+  return (
+    pathname === "/(external)/storybook" &&
+    __DEV__ &&
+    (process.env.EXPO_PUBLIC_MAESTRO_E2E === "1" ||
+      process.env.EXPO_PUBLIC_STORYBOOK_ENABLED === "1")
+  );
+}
+
 /**
  * External Layout (Unauthenticated Pages)
  *
@@ -25,7 +34,7 @@ export default function ExternalLayout() {
   const { isAuthenticated, isEmailVerified, isFullyLoaded } = useAuth();
 
   React.useEffect(() => {
-    if (!isFullyLoaded || !isAuthenticated) {
+    if (!isFullyLoaded || !isAuthenticated || isDeveloperRouteAllowed(pathname)) {
       return;
     }
 

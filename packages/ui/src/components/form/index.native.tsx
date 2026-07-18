@@ -7,7 +7,7 @@ import {
   useFormContext,
   useFormState,
 } from "react-hook-form";
-import { type TextProps, View, type ViewProps } from "react-native";
+import { type AccessibilityProps, type TextProps, View, type ViewProps } from "react-native";
 
 import { cn } from "../../lib/cn";
 import { Text } from "../text/index.native";
@@ -97,17 +97,24 @@ function FormLabel({ className, ...props }: FormLabelProps) {
 }
 
 type FormControlProps = {
-  children: React.ReactElement;
+  children: React.ReactElement<AccessibilityProps>;
 };
 
 function FormControl({ children }: FormControlProps) {
   const { error, formItemId } = useFormField();
+  const childProps = children.props;
+  const validationHint = error?.message ? `Invalid: ${String(error.message)}` : null;
 
-  const enhancedProps: Record<string, unknown> = {
-    ...(children.props as Record<string, unknown>),
-    accessibilityInvalid: !!error,
-    accessibilityLabel:
-      (children.props as Record<string, unknown>)?.accessibilityLabel || formItemId,
+  const enhancedProps: AccessibilityProps = {
+    ...childProps,
+    accessibilityLabelledBy: childProps.accessibilityLabelledBy ?? formItemId,
+    ...(validationHint
+      ? {
+          accessibilityHint: childProps.accessibilityHint
+            ? `${childProps.accessibilityHint} ${validationHint}`
+            : validationHint,
+        }
+      : {}),
   };
 
   return React.cloneElement(children, enhancedProps);
@@ -135,7 +142,13 @@ type FormMessageProps = Omit<TextProps, "className"> & {
   className?: string;
 };
 
-function FormMessage({ className, children, ...props }: FormMessageProps) {
+function FormMessage({
+  accessibilityLiveRegion,
+  accessibilityRole,
+  className,
+  children,
+  ...props
+}: FormMessageProps) {
   const { error, formMessageId } = useFormField();
   const body = error ? String(error?.message ?? "") : children;
 
@@ -145,6 +158,8 @@ function FormMessage({ className, children, ...props }: FormMessageProps) {
 
   return (
     <Text
+      accessibilityLiveRegion={accessibilityLiveRegion ?? "assertive"}
+      accessibilityRole={accessibilityRole ?? "alert"}
       className={cn("text-sm font-medium text-destructive", className)}
       nativeID={formMessageId}
       {...props}

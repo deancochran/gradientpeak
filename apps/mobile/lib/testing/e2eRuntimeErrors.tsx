@@ -9,17 +9,17 @@ import {
 const isE2EEnabled = process.env.EXPO_PUBLIC_MAESTRO_E2E === "1";
 
 type E2ERuntimeErrorEntry = {
-  kind: E2ERuntimeErrorKind;
-  procedure: string | null;
-  source: "console" | "query_cache" | "mutation_cache";
-  message: string;
+  readonly kind: E2ERuntimeErrorKind;
+  readonly procedure: string | null;
+  readonly source: "console" | "query_cache" | "mutation_cache";
+  readonly message: string;
 };
 
 type E2ERuntimeErrorState = {
-  entries: E2ERuntimeErrorEntry[];
+  readonly entries: readonly E2ERuntimeErrorEntry[];
 };
 
-const state: E2ERuntimeErrorState = {
+let state: E2ERuntimeErrorState = {
   entries: [],
 };
 
@@ -66,7 +66,7 @@ function recordEntry(entry: E2ERuntimeErrorEntry) {
     return;
   }
 
-  state.entries = [...state.entries, entry];
+  state = { entries: [...state.entries, entry] };
   emitChange();
 }
 
@@ -98,7 +98,7 @@ export function installE2ERuntimeErrorCapture() {
 
 export function clearE2ERuntimeErrors() {
   if (!isE2EEnabled) return;
-  state.entries = [];
+  state = { entries: [] };
   emitChange();
 }
 
@@ -109,10 +109,6 @@ export function captureE2EQueryError(
   if (!isE2EEnabled) return;
 
   const message = error instanceof Error ? error.message : String(error);
-
-  if (/TRPCClientError:\s*Aborted/i.test(message)) {
-    return;
-  }
 
   recordMessage(message, source);
 }

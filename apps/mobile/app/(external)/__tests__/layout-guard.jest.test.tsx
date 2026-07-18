@@ -12,6 +12,9 @@ const authState = {
 const pathnameState = {
   value: "/(external)/sign-in",
 };
+const runtimeGlobal = globalThis as typeof globalThis & { __DEV__?: boolean };
+const originalDev = runtimeGlobal.__DEV__;
+const originalE2E = process.env.EXPO_PUBLIC_MAESTRO_E2E;
 
 jest.mock("expo-router", () => {
   const React = require("react");
@@ -43,6 +46,21 @@ describe("external layout guard", () => {
     authState.isEmailVerified = false;
     authState.isFullyLoaded = true;
     pathnameState.value = "/(external)/sign-in";
+    runtimeGlobal.__DEV__ = false;
+    delete process.env.EXPO_PUBLIC_MAESTRO_E2E;
+  });
+
+  afterAll(() => {
+    if (originalDev === undefined) {
+      delete runtimeGlobal.__DEV__;
+    } else {
+      runtimeGlobal.__DEV__ = originalDev;
+    }
+    if (originalE2E === undefined) {
+      delete process.env.EXPO_PUBLIC_MAESTRO_E2E;
+    } else {
+      process.env.EXPO_PUBLIC_MAESTRO_E2E = originalE2E;
+    }
   });
 
   it("redirects verified users away from external auth routes", async () => {
@@ -72,6 +90,20 @@ describe("external layout guard", () => {
     authState.isAuthenticated = true;
     authState.isEmailVerified = false;
     pathnameState.value = "/(external)/verify";
+
+    renderNative(<ExternalLayout />);
+
+    await waitFor(() => {
+      expect(replaceMock).not.toHaveBeenCalled();
+    });
+  });
+
+  it("allows authenticated users to open the E2E developer route in development", async () => {
+    authState.isAuthenticated = true;
+    authState.isEmailVerified = true;
+    pathnameState.value = "/(external)/storybook";
+    runtimeGlobal.__DEV__ = true;
+    process.env.EXPO_PUBLIC_MAESTRO_E2E = "1";
 
     renderNative(<ExternalLayout />);
 

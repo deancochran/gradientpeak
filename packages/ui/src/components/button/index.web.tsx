@@ -15,5 +15,19 @@ function Button({ accessibilityLabel, id, role, testId, ...props }: ButtonProps)
   );
 }
 
-export type { ButtonProps };
-export { Button, buttonVariants };
+type IconButtonProps = Omit<ButtonProps, "accessibilityLabel" | "children" | "size" | "testId"> & {
+  accessibilityLabel: string;
+  children: React.ReactNode;
+  testId: string;
+};
+
+function IconButton({ accessibilityLabel, children, testId, ...props }: IconButtonProps) {
+  return (
+    <Button {...props} accessibilityLabel={accessibilityLabel} size="icon" testId={testId}>
+      {children}
+    </Button>
+  );
+}
+
+export type { ButtonProps, IconButtonProps };
+export { Button, buttonVariants, IconButton };

@@ -1,4 +1,4 @@
-appId: com.deancochran.gradientpeak.dev
+appId: ${MAESTRO_APP_ID}
 ---
 - runFlow: bootstrap.yaml
 - runFlow:

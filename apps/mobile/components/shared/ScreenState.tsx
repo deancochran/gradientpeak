@@ -1,8 +1,9 @@
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
+import { InlineLoadingStatus } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import type { ComponentType, ReactNode } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { View } from "react-native";
 
 type ScreenStateTone = "default" | "error" | "empty";
 type IconComponent = ComponentType<{ className?: string; color?: string; size?: number }>;
@@ -77,8 +78,7 @@ export function LoadingState({
 }) {
   return (
     <View className="items-center justify-center py-8" testID={testID}>
-      <ActivityIndicator />
-      <Text className="mt-2 text-sm text-muted-foreground">{message}</Text>
+      <InlineLoadingStatus className="flex-col gap-2" label={message} textClassName="text-sm" />
     </View>
   );
 }

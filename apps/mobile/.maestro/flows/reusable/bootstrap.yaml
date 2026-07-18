@@ -1,4 +1,4 @@
-appId: com.deancochran.gradientpeak.dev
+appId: ${MAESTRO_APP_ID}
 ---
 - runFlow: expo_dev_client_setup.yaml
 - extendedWaitUntil:

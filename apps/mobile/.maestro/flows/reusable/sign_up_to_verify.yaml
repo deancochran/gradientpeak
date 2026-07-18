@@ -1,4 +1,4 @@
-appId: com.deancochran.gradientpeak.dev
+appId: ${MAESTRO_APP_ID}
 ---
 - runFlow: ensure_signed_out.yaml
 - tapOn:

@@ -29,14 +29,33 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      - name: Setup Java for Maestro
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install Maestro CLI
+        env:
+          MAESTRO_VERSION: 2.3.0
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Check generated artifact freshness
+        run: pnpm check:generated
 
       - name: Format, lint, and architecture baseline
         run: pnpm check:ci
 
       - name: Type check
         run: pnpm check-types
+
+      - name: Check maintained mobile Maestro flows
+        run: pnpm --filter mobile maestro:check
 
       - name: Start local database
         run: pnpm --filter @repo/db self-host:up

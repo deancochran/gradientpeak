@@ -3,6 +3,7 @@ import "../polyfills";
 import { ThemeProvider } from "@react-navigation/native";
 import { NATIVE_THEME_VARIABLES } from "@repo/tailwindcss/native";
 import { Button } from "@repo/ui/components/button";
+import { Spinner } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import "@/global.css";
 import { PortalHost } from "@rn-primitives/portal";
@@ -10,7 +11,7 @@ import { router, Slot } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { vars } from "nativewind";
 import * as React from "react";
-import { ActivityIndicator, View } from "react-native";
+import { View } from "react-native";
 import {
   SafeAreaProvider,
   SafeAreaView,
@@ -90,7 +91,14 @@ function AppShell() {
   if (!isThemeLoaded) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator size="large" className="text-foreground" />
+        <Spinner
+          accessibilityLiveRegion="polite"
+          accessibilityState={{ busy: true }}
+          className="text-foreground"
+          label="Loading app theme"
+          size="large"
+          testID="app-theme-loading"
+        />
       </View>
     );
   }

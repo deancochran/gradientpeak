@@ -23,6 +23,7 @@
     "check:architecture": "node tooling/architecture/check-architecture.mjs",
     "check:architecture:baseline": "node tooling/architecture/check-architecture.mjs --write-baseline",
     "check:guidance": "node tooling/architecture/check-guidance.mjs",
+    "check:generated": "pnpm --filter @repo/tailwindcss check:theme && pnpm --filter @repo/ui check:testing-artifacts",
     "doctor": "node tooling/doctor.mjs",
     "multisport:legacy-denylist": "node --test tooling/multisport/legacy-denylist.self-test.mjs && node tooling/multisport/legacy-denylist.mjs",
     "dev": "turbo run dev",
@@ -85,7 +86,7 @@
     "verify:db": "pnpm --filter @repo/db db:verify:static",
     "verify": "pnpm verify:static && pnpm test",
     "verify:full": "pnpm verify && pnpm knip",
-    "quality:agent": "pnpm check && pnpm check-types && pnpm test && pnpm knip",
+    "quality:agent": "pnpm check:generated && pnpm check && pnpm check-types && pnpm test && pnpm knip",
     "self-host:up": "pnpm --filter @repo/db self-host:up",
     "self-host:down": "pnpm --filter @repo/db self-host:down"
   },

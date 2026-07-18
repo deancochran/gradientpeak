@@ -1,7 +1,7 @@
 import React from "react";
 
 import { createHost as mockCreateHost } from "../../../test/mock-components";
-import { renderNative, screen } from "../../../test/render-native";
+import { fireEvent, renderNative, screen } from "../../../test/render-native";
 
 const bottomSafeAreaInset = 34;
 
@@ -56,7 +56,8 @@ jest.mock("@gorhom/bottom-sheet", () => {
 
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
-  Button: mockCreateHost("Button"),
+  Button: ({ testId, ...props }: Record<string, unknown> & { testId?: string }) =>
+    React.createElement("Button", { ...props, testID: testId }),
 }));
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
@@ -109,5 +110,24 @@ describe("AppBottomSheet safe-area spacing", () => {
     expect(screen.getByTestId("bottom-sheet-scroll-view").props.contentContainerStyle).toEqual(
       expect.arrayContaining([expect.objectContaining({ paddingBottom: 74 })]),
     );
+  });
+
+  it("provides a labeled, stable back action", () => {
+    const onBack = jest.fn();
+    renderNative(
+      <AppBottomSheet onBack={onBack} onClose={jest.fn()} title="Filters" visible>
+        Content
+      </AppBottomSheet>,
+    );
+
+    const backButton = screen.getByTestId("app-bottom-sheet-back");
+    expect(backButton.props.accessibilityLabel).toBe("Back from Filters");
+    expect(backButton.props).toMatchObject({
+      accessibilityState: { disabled: false },
+      role: "button",
+      size: "icon",
+    });
+    fireEvent.press(backButton);
+    expect(onBack).toHaveBeenCalledTimes(1);
   });
 });

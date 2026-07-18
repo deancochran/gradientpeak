@@ -153,7 +153,15 @@ export function AppBottomSheet({
         <View className="flex-row items-start justify-between gap-3 px-4">
           <View className="flex-row flex-1 items-start gap-2">
             {onBack ? (
-              <Button size="icon" variant="ghost" onPress={onBack}>
+              <Button
+                accessibilityLabel={`Back from ${title}`}
+                accessibilityState={{ disabled: false }}
+                onPress={onBack}
+                role="button"
+                size="icon"
+                testId={`${testID}-back`}
+                variant="ghost"
+              >
                 <ChevronLeft size={18} className="text-foreground" />
               </Button>
             ) : null}

@@ -11,7 +11,6 @@
     "ui-component:date-input:missing-web-test",
     "ui-component:hover-card:missing-native-only-marker",
     "ui-component:integer-stepper:missing-web-test",
-    "ui-component:loading:missing-native-test",
     "ui-component:loading:missing-web-test",
     "ui-component:menubar:missing-native-only-marker",
     "ui-component:native-only-animated-view:missing-native-only-marker",

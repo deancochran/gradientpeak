@@ -12,9 +12,9 @@ function Checkbox({
   CheckboxClassNameOverrides &
   CheckboxTestProps) {
   const { role: _unusedRole, ...nativeTestProps } = getNativeTestProps({
-    accessibilityLabel,
-    id,
-    testId,
+    ...(accessibilityLabel ? { accessibilityLabel } : {}),
+    ...(id ? { id } : {}),
+    ...(testId ? { testId } : {}),
   });
 
   return <RegistryCheckbox {...nativeTestProps} {...props} />;

@@ -169,7 +169,7 @@ jest.mock("@react-navigation/native", () => ({
 
 jest.spyOn(global, "setTimeout").mockImplementation((fn: TimerHandler) => {
   if (typeof fn === "function") fn();
-  return 0 as ReturnType<typeof setTimeout>;
+  return 0 as never;
 });
 global.requestAnimationFrame = jest.fn((fn: FrameRequestCallback) => {
   fn(0);

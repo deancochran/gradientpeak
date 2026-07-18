@@ -1,8 +1,10 @@
 import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
+import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
+import { InlineLoadingStatus, Spinner } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { AlertCircle, Check, Link, RefreshCcw, Unlink } from "lucide-react-native";
-import { ActivityIndicator, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 import type { IntegrationProvider } from "@/lib/constants/integrations";
 
 type IntegrationOutputs = inferRouterOutputs<AppRouter>["integrations"];
@@ -22,10 +24,16 @@ type IntegrationProviderListProps = {
 function getStatusTone(health: IntegrationOverviewItem["summary"]["health"]) {
   switch (health) {
     case "connected":
-      return { container: "border-green-500/30 bg-green-500/10", text: "text-green-700" };
+      return {
+        container: "border-success/30 bg-success-subtle",
+        text: "text-success-subtle-foreground",
+      };
     case "queued":
     case "syncing":
-      return { container: "border-blue-500/30 bg-blue-500/10", text: "text-blue-700" };
+      return {
+        container: "border-info/30 bg-info-subtle",
+        text: "text-info-subtle-foreground",
+      };
     case "failed":
     case "needs_reconnect":
       return { container: "border-destructive/30 bg-destructive/10", text: "text-destructive" };
@@ -61,14 +69,15 @@ export function IntegrationProviderList({
   return (
     <View className="gap-4">
       <View className="flex-row items-center justify-between">
-        <Text className="text-sm text-muted-foreground">
-          {isLoading
-            ? "Checking…"
-            : error
+        {isLoading ? (
+          <InlineLoadingStatus label="Checking…" />
+        ) : (
+          <Text className="text-sm text-muted-foreground">
+            {error
               ? "Availability unavailable"
               : `${readyCount}/${visibleIntegrations.length} ready`}
-        </Text>
-        {isLoading ? <ActivityIndicator size="small" /> : null}
+          </Text>
+        )}
       </View>
 
       {error ? (
@@ -112,7 +121,6 @@ export function IntegrationProviderList({
           return (
             <View
               key={integration.provider}
-              accessibilityState={{ busy: isPending }}
               testID={`integration-provider-${integration.provider}`}
               className={`rounded-2xl border border-border bg-card px-4 py-3 ${isPending ? "opacity-70" : ""}`}
             >
@@ -134,39 +142,53 @@ export function IntegrationProviderList({
                 </View>
 
                 {isPending ? (
-                  <ActivityIndicator
-                    accessibilityLabel={`${integration.label} action in progress`}
+                  <Spinner
+                    accessibilityLiveRegion="polite"
+                    accessibilityState={{ busy: true }}
+                    label={`${integration.label} action in progress`}
                     size="small"
                   />
                 ) : integration.primaryAction === "connect" ? (
-                  <Pressable
-                    onPress={() => onConnect(integration.provider)}
+                  <Button
                     accessibilityLabel={`Connect ${integration.label}`}
-                    testID={`integration-connect-${integration.provider}`}
-                    className="rounded-full border border-border bg-background p-2"
+                    accessibilityState={{ disabled: false }}
+                    className="rounded-full border border-border bg-background"
+                    onPress={() => onConnect(integration.provider)}
+                    role="button"
+                    size="icon"
+                    testId={`integration-connect-${integration.provider}`}
+                    variant="ghost"
                   >
                     <Icon as={Link} size={18} className="text-foreground" />
-                  </Pressable>
+                  </Button>
                 ) : integration.primaryAction === "reconnect" ? (
-                  <Pressable
-                    onPress={() => onConnect(integration.provider)}
+                  <Button
                     accessibilityLabel={`Reconnect ${integration.label}`}
-                    testID={`integration-reconnect-${integration.provider}`}
-                    className="rounded-full border border-destructive/30 bg-background p-2"
+                    accessibilityState={{ disabled: false }}
+                    className="rounded-full border border-destructive/30 bg-background"
+                    onPress={() => onConnect(integration.provider)}
+                    role="button"
+                    size="icon"
+                    testId={`integration-reconnect-${integration.provider}`}
+                    variant="ghost"
                   >
                     <Icon as={RefreshCcw} size={18} className="text-destructive" />
-                  </Pressable>
+                  </Button>
                 ) : integration.primaryAction === "disconnect" && onDisconnect ? (
-                  <Pressable
-                    onPress={() => onDisconnect(integration)}
+                  <Button
                     accessibilityLabel={`Disconnect ${integration.label}`}
-                    testID={`integration-disconnect-${integration.provider}`}
-                    className="rounded-full border border-border bg-background p-2"
+                    accessibilityState={{ disabled: false }}
+                    className="rounded-full border border-border bg-background"
+                    onPress={() => onDisconnect(integration)}
+                    role="button"
+                    size="icon"
+                    testId={`integration-disconnect-${integration.provider}`}
+                    variant="ghost"
                   >
                     <Icon as={Unlink} size={18} className="text-muted-foreground" />
-                  </Pressable>
+                  </Button>
                 ) : integration.connected ? (
-                  <Icon as={Check} className="text-green-600" size={20} />
+                  <Icon as={Check} className="text-success" size={20} />
                 ) : null}
               </View>
 

@@ -43,6 +43,11 @@
       "accessibilityLabel": "Save changes",
       "id": "save-button",
       "testId": "settings-save"
+    },
+    "moreActions": {
+      "accessibilityLabel": "More actions",
+      "id": "more-actions-button",
+      "testId": "more-actions-button"
     }
   },
   "card": {

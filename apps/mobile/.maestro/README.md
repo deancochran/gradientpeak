@@ -47,9 +47,19 @@ Performance flows read app-side `perf-metric-*` beacons that are enabled only wh
 - `smoke/plan_available.yaml`: authenticate with the standard fixture and open Plan.
 - `smoke/record_lifecycle.yaml`: authenticate with the standard fixture, then start, pause,
   resume, and finish a recording.
+- `smoke/ui_preview_contract.yaml`: deep-link to the development-only shared UI preview and
+  exercise generated scenario selectors, tabs, selection controls, and form validation.
 
-The smoke suite does not capture or require video evidence. It needs an already-running dev client
-and the standard authenticated fixture for the Plan and recorder flows.
+The smoke suite does not capture or require video evidence. It needs an already-running E2E-enabled
+dev client and the standard authenticated fixture for the Plan and recorder flows. Every smoke flow
+asserts `E2E_RUNTIME_ERRORS=0` before and after its maintained behavior. This beacon covers classified
+query/mutation-cache and captured `console.error` messages; it is not a catch-all native crash signal.
+
+`pnpm --filter mobile maestro:check` statically syntax-checks both maintained `flows/smoke/` and
+`flows/reusable/` files; it does not prove that a flow executed on a device or execute reusable flows
+as independent scenarios. `pnpm --filter mobile test:e2e` still executes only `flows/smoke/` and is
+the explicit runtime verification gate. It requires a provisioned simulator/emulator or device plus
+the running E2E dev server.
 
 ## Fixtures
 
@@ -70,11 +80,15 @@ result as smoke-suite coverage.
 ## Notes
 
 - `pnpm --filter mobile maestro:prepare` preps the emulator, opens the Expo dev client into the running dev server, and handles the Android-side port reverses before Maestro starts.
-- Pipeline runners can set `MAESTRO_SKIP_PREPARE=1`, `MAESTRO_DEVICE_ID`, `MAESTRO_PLATFORM`, `EXPO_DEV_SERVER_LABEL`, and `MAESTRO_APP_ID` as needed.
+- Maintained smoke and reusable flows resolve `appId` from `MAESTRO_APP_ID` (default
+  `com.deancochran.gradientpeak.dev`) and deep links from `MAESTRO_APP_SCHEME` (default
+  `gradientpeak-dev`). Override both together for preview or production builds.
+- Pipeline runners can set `MAESTRO_SKIP_PREPARE=1`, `MAESTRO_DEVICE_ID`, `MAESTRO_PLATFORM`, `EXPO_DEV_SERVER_LABEL`, `MAESTRO_APP_ID`, and `MAESTRO_APP_SCHEME` as needed.
 - `apps/mobile/.maestro/flows/reusable/expo_dev_client_setup.yaml` is the single Expo-specific setup flow; it dismisses transient Dev Client UI before app assertions run.
 - `apps/mobile/.maestro/flows/reusable/reset_to_home.yaml` gives flows a neutral authenticated start by returning the app to `Home` before tab-specific navigation.
 - `pnpm --filter mobile maestro -- <flow>` is the underlying local Maestro runner. It keeps output under `apps/mobile/.maestro/`.
-- `pnpm --filter mobile maestro:check` checks only smoke-flow syntax without a connected device.
+- `pnpm --filter mobile maestro:check` checks maintained smoke and reusable flow syntax without a
+  connected device; `test:e2e` executes smoke flows only.
 - `flows/reusable/login.yaml` signs in only when the sign-in screen is actually visible.
 
 ## Clean artifacts

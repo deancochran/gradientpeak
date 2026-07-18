@@ -1,9 +1,10 @@
+import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { SearchField } from "@repo/ui/components/search-field";
 import { Text } from "@repo/ui/components/text";
 import { SlidersHorizontal } from "lucide-react-native";
 import type React from "react";
-import { TouchableOpacity, View } from "react-native";
+import { View } from "react-native";
 
 interface IndexSearchBarProps {
   value: string;
@@ -41,16 +42,17 @@ export function IndexSearchBar({
             }
           />
         </View>
-        <TouchableOpacity
-          className={`h-9 w-9 items-center justify-center rounded-full border ${
+        <Button
+          accessibilityLabel="Open filters"
+          accessibilityState={{ selected: hasActiveFilters }}
+          className={`rounded-full border ${
             hasActiveFilters ? "border-primary bg-primary" : "border-border bg-background"
           }`}
           onPress={onFilterPress}
-          activeOpacity={0.85}
-          testID={`${testIDPrefix}-filter-button`}
-          accessibilityRole="button"
-          accessibilityLabel="Open filters"
-          accessibilityState={{ selected: hasActiveFilters }}
+          role="button"
+          size="icon"
+          testId={`${testIDPrefix}-filter-button`}
+          variant="ghost"
         >
           <Icon
             as={SlidersHorizontal}
@@ -63,7 +65,7 @@ export function IndexSearchBar({
               testID={`${testIDPrefix}-filter-button-dot`}
             />
           ) : null}
-        </TouchableOpacity>
+        </Button>
       </View>
     </View>
   );
@@ -81,11 +83,13 @@ export function FilterChip({
   testID?: string;
 }) {
   return (
-    <TouchableOpacity
+    <Button
+      accessibilityLabel={label}
+      accessibilityState={{ selected: isActive }}
       onPress={onPress}
-      activeOpacity={0.8}
-      testID={testID}
-      className={`rounded-full border px-3 py-2 ${
+      {...(testID ? { testId: testID } : {})}
+      variant="outline"
+      className={`min-h-12 rounded-full border px-3 ${
         isActive ? "border-primary bg-primary/10" : "border-border bg-background"
       }`}
     >
@@ -94,7 +98,7 @@ export function FilterChip({
       >
         {label}
       </Text>
-    </TouchableOpacity>
+    </Button>
   );
 }
 

@@ -16,8 +16,9 @@ Keep shared primitives under `src/components/<name>/` and prefer this layout:
 Refresh the shadcn sources and generated theme outputs with:
 
 ```bash
-pnpm --filter @repo/ui sync:shadcn-theme
-pnpm --filter @repo/ui generate:theme
+pnpm --filter @repo/tailwindcss sync:shadcn-theme
+pnpm --filter @repo/tailwindcss generate:theme
+pnpm check:generated
 ```
 
 Do not hand-edit synced registry files or generated theme outputs.

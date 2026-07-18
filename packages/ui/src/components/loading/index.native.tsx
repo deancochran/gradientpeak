@@ -22,6 +22,7 @@ export type LoadingButtonProps = ButtonProps & {
 };
 
 export function LoadingButton({
+  accessibilityState,
   children,
   disabled,
   loading = false,
@@ -35,12 +36,22 @@ export function LoadingButton({
 
   return (
     <Button
-      accessibilityState={{ busy: loading, disabled: disabled || loading }}
+      accessibilityState={{
+        ...accessibilityState,
+        busy: loading || accessibilityState?.busy,
+        disabled: Boolean(disabled || loading || accessibilityState?.disabled),
+      }}
       disabled={disabled || loading}
       {...props}
     >
       <View className="flex-row items-center justify-center gap-2">
-        {loading && spinnerPlacement === "start" ? <Spinner size="small" /> : null}
+        {loading && spinnerPlacement === "start" ? (
+          <Spinner
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            size="small"
+          />
+        ) : null}
         {typeof content === "string" ? (
           <Text
             className={cn("text-sm font-semibold text-primary-foreground", loadingTextClassName)}
@@ -50,7 +61,13 @@ export function LoadingButton({
         ) : (
           content
         )}
-        {loading && spinnerPlacement === "end" ? <Spinner size="small" /> : null}
+        {loading && spinnerPlacement === "end" ? (
+          <Spinner
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            size="small"
+          />
+        ) : null}
       </View>
     </Button>
   );
@@ -63,6 +80,7 @@ export type InlineLoadingStatusProps = React.ComponentProps<typeof View> & {
 };
 
 export function InlineLoadingStatus({
+  accessibilityState,
   className,
   label = "Loading...",
   loading = true,
@@ -76,10 +94,16 @@ export function InlineLoadingStatus({
       accessibilityLabel={label}
       accessibilityLiveRegion="polite"
       accessibilityRole="progressbar"
+      accessibilityState={{ ...accessibilityState, busy: true }}
+      accessible
       className={cn("flex-row items-center gap-2", className)}
       {...props}
     >
-      <Spinner size="small" />
+      <Spinner
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        size="small"
+      />
       <Text className={cn("text-xs text-muted-foreground", textClassName)}>{label}</Text>
     </View>
   );

@@ -243,7 +243,8 @@ jest.mock("@/lib/api", () => ({
 
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
-  Button: createHost("Button"),
+  Button: ({ testId, testID, ...props }: Record<string, unknown> & { testId?: string }) =>
+    React.createElement("Button", { ...props, testID: testId ?? testID }),
 }));
 
 jest.mock("@repo/ui/components/icon", () => ({

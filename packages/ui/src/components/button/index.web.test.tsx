@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { renderWeb, screen } from "../../test/render-web";
 import { buttonFixtures } from "./fixtures";
-import { Button } from "./index.web";
+import { Button, IconButton } from "./index.web";
 
 describe("Button web", () => {
   it("maps normalized test props onto the DOM button", () => {
@@ -14,5 +14,17 @@ describe("Button web", () => {
 
     expect(button).toHaveAttribute("data-testid", buttonFixtures.save.testId);
     expect(button).toHaveAttribute("id", buttonFixtures.save.id);
+  });
+
+  it("keeps the icon-only contract available on web", () => {
+    renderWeb(
+      <IconButton {...buttonFixtures.moreActions}>
+        <span aria-hidden="true">⋯</span>
+      </IconButton>,
+    );
+
+    expect(
+      screen.getByRole("button", { name: buttonFixtures.moreActions.accessibilityLabel }),
+    ).toHaveAttribute("data-testid", buttonFixtures.moreActions.testId);
   });
 });

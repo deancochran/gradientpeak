@@ -39,6 +39,14 @@
   --sidebar-border: #e5e5e5;
   --sidebar-ring: #a1a1a1;
   --destructive-foreground: #fafafa;
+  --success: #0a7e3a;
+  --success-foreground: #f6fcf7;
+  --success-subtle: #e0fae4;
+  --success-subtle-foreground: #033816;
+  --info: #0074c9;
+  --info-foreground: #f6fbff;
+  --info-subtle: #e5f4ff;
+  --info-subtle-foreground: #002f57;
   --warning: #fbc031;
   --warning-foreground: #441c06;
 }
@@ -59,27 +67,35 @@
     --muted-foreground: #a1a1a1;
     --accent: #262626;
     --accent-foreground: #fafafa;
-    --destructive: #ff6467;
-    --border: rgb(255 255 255 / 10%);
-    --input: rgb(255 255 255 / 15%);
+    --destructive: #ff6568;
+    --border: rgba(255, 255, 255, 0.1);
+    --input: rgba(255, 255, 255, 0.15);
     --ring: #737373;
-    --chart-1: #5d3dfc;
-    --chart-2: #49cc8c;
+    --chart-1: #1447e6;
+    --chart-2: #00bb7f;
     --chart-3: #f99c00;
-    --chart-4: #d944fd;
-    --chart-5: #fe5b2a;
+    --chart-4: #ac4bff;
+    --chart-5: #ff2357;
     --radius: 0.625rem;
     --sidebar: #171717;
     --sidebar-foreground: #fafafa;
-    --sidebar-primary: #5d3dfc;
+    --sidebar-primary: #1447e6;
     --sidebar-primary-foreground: #fafafa;
     --sidebar-accent: #262626;
     --sidebar-accent-foreground: #fafafa;
-    --sidebar-border: rgb(255 255 255 / 10%);
+    --sidebar-border: rgba(255, 255, 255, 0.1);
     --sidebar-ring: #737373;
     --destructive-foreground: #fafafa;
-    --warning: #633819;
-    --warning-foreground: #fffbe8;
+    --success: #15632f;
+    --success-foreground: #f3fdf5;
+    --success-subtle: #0d2814;
+    --success-subtle-foreground: #b9eec2;
+    --info: #0e5794;
+    --info-foreground: #f6fbff;
+    --info-subtle: #0d2339;
+    --info-subtle-foreground: #c4e1ff;
+    --warning: #793207;
+    --warning-foreground: #fffcef;
   }
 }
 
@@ -116,6 +132,14 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-subtle: var(--success-subtle);
+  --color-success-subtle-foreground: var(--success-subtle-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-subtle: var(--info-subtle);
+  --color-info-subtle-foreground: var(--info-subtle-foreground);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
   --radius-sm: calc(var(--radius) * 0.6);

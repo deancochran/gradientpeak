@@ -33,6 +33,7 @@ pnpm --filter mobile check-types
 pnpm --filter mobile lint
 pnpm --filter mobile test
 pnpm --filter mobile test:jest
+pnpm --filter mobile maestro:check
 pnpm --filter mobile test:e2e
 ```
 
@@ -44,6 +45,16 @@ pnpm --filter mobile maestro:prepare
 pnpm --filter mobile test:e2e
 pnpm --filter mobile test:e2e:flow -- .maestro/flows/main
 ```
+
+`maestro:check` syntax-checks the maintained smoke suite without a device. Runtime verification is
+the separate `test:e2e` command and requires an E2E-enabled dev client plus a provisioned device.
+The runner defaults to the development app ID and scheme; set both `MAESTRO_APP_ID` and
+`MAESTRO_APP_SCHEME` when targeting preview or production builds.
+
+Journey coverage in `lib/testing/journey-coverage.ts` records implementation maturity separately
+from evidence verification. A present flow or `status: validated` does not mean it ran: maintained
+flows are at most `syntax_checked` until machine-produced execution metadata supports a
+`runtime_verified` claim. Manual `main/` and `journeys/` flows remain declared scaffolds.
 
 ## Related docs
 
