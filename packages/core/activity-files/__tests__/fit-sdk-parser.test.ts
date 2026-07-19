@@ -118,6 +118,38 @@ describe("standards-first FIT decoding", () => {
     expect(semantics.segments).toHaveLength(3);
   });
 
+  it("retains sessions when optional FIT summaries contradict timestamp bounds", () => {
+    const artifact = decodeFitActivityArtifact(fitFixtures.singleRun());
+    const session = artifact.sessions[0];
+    if (!session?.extensions || session.endTimeMs === undefined) {
+      throw new Error("Expected a bounded fixture session with summary extensions.");
+    }
+    session.extensions["fit.totalTimerTime"] = 61;
+    session.extensions["fit.totalMovingTime"] = 62;
+    session.extensions["fit.totalDistance"] = -1;
+    artifact.activity.endTimeMs = session.endTimeMs - 1_000;
+
+    const semantics = projectFitArtifactSemantics(artifact);
+
+    expect(semantics.segments[0]).not.toHaveProperty("activeMs");
+    expect(semantics.segments[0]).not.toHaveProperty("movingMs");
+    expect(semantics.segments[0]).not.toHaveProperty("distanceMeters");
+    expect(semantics.totals.elapsedMs).toBe(60_000);
+  });
+
+  it("preserves edge transition source identity without asserting invalid transition semantics", () => {
+    const artifact = decodeFitActivityArtifact(fitFixtures.repeatedSport());
+    const firstSession = artifact.sessions[0];
+    if (!firstSession) throw new Error("Expected a multisport fixture session.");
+    firstSession.rawSport = 3;
+
+    const semantics = projectFitArtifactSemantics(artifact);
+
+    expect(semantics.segments[0]).toMatchObject({ role: "unknown", rawSport: 3 });
+    expect(semantics.segments[1]).toMatchObject({ role: "unknown", rawSport: 3 });
+    expect(semantics.segments[2]).toMatchObject({ role: "activity", category: "run" });
+  });
+
   it("projects pause/resume ranges and timer events", () => {
     const semantics = projectFitArtifactSemantics(
       decodeFitActivityArtifact(fitFixtures.pausedRun()),

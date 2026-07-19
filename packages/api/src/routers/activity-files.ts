@@ -1218,7 +1218,7 @@ export const activityFilesRouter = createTRPCRouter({
         logger.error("Get streams error", getErrorDetails(error));
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: `Failed to retrieve streams: ${getErrorMessage(error)}`,
+          message: "Failed to retrieve activity streams",
         });
       }
     }),

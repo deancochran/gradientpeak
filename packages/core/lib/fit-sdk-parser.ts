@@ -470,6 +470,12 @@ function extensionNumber(extensions: DecodedArtifactExtensions | undefined, fiel
   return finiteNumber(extensions?.[`fit.${field}`]);
 }
 
+function boundedMilliseconds(seconds: number | undefined, maximumMs: number): number | undefined {
+  if (seconds === undefined || seconds < 0) return undefined;
+  const milliseconds = Math.round(seconds * 1000);
+  return milliseconds <= maximumMs ? milliseconds : undefined;
+}
+
 function segmentIdentity(rawSport: RawSourceValue | undefined):
   | { role: "activity"; category: "run" | "bike" | "swim" | "strength" | "other" }
   | { role: "transition" }
@@ -544,15 +550,32 @@ export function projectFitArtifactSemantics(artifactInput: unknown): ActivityArt
   if (origin === undefined || artifact.activity.endTimeMs === undefined) {
     throw new Error("FIT activity semantics require deterministic activity bounds.");
   }
-  const segments = artifact.sessions.map((session) => {
+  const identities = artifact.sessions.map((session) => segmentIdentity(session.rawSport));
+  const segments = artifact.sessions.map((session, index) => {
     if (session.startTimeMs === undefined || session.endTimeMs === undefined) {
       throw new Error(`FIT session ${session.messageIndex} has no semantic time range.`);
     }
     const startOffsetMs = session.startTimeMs - origin;
     const endOffsetMs = session.endTimeMs - origin;
-    const identity = segmentIdentity(session.rawSport);
-    const activeSeconds = extensionNumber(session.extensions, "totalTimerTime");
-    const movingSeconds = extensionNumber(session.extensions, "totalMovingTime");
+    const durationMs = endOffsetMs - startOffsetMs;
+    const sourceIdentity = identities[index];
+    const identity =
+      sourceIdentity?.role === "transition" &&
+      (identities[index - 1]?.role !== "activity" || identities[index + 1]?.role !== "activity")
+        ? ({ role: "unknown" } as const)
+        : sourceIdentity;
+    const activeMs = boundedMilliseconds(
+      extensionNumber(session.extensions, "totalTimerTime"),
+      durationMs,
+    );
+    const candidateMovingMs = boundedMilliseconds(
+      extensionNumber(session.extensions, "totalMovingTime"),
+      durationMs,
+    );
+    const movingMs =
+      candidateMovingMs !== undefined && (activeMs === undefined || candidateMovingMs <= activeMs)
+        ? candidateMovingMs
+        : undefined;
     const distanceMeters = extensionNumber(session.extensions, "totalDistance");
     return {
       ...identity,
@@ -560,19 +583,23 @@ export function projectFitArtifactSemantics(artifactInput: unknown): ActivityArt
       rawSubSport: session.rawSubSport,
       startOffsetMs,
       endOffsetMs,
-      ...(activeSeconds === undefined ? {} : { activeMs: Math.round(activeSeconds * 1000) }),
-      ...(movingSeconds === undefined ? {} : { movingMs: Math.round(movingSeconds * 1000) }),
-      ...(distanceMeters === undefined ? {} : { distanceMeters }),
+      ...(activeMs === undefined ? {} : { activeMs }),
+      ...(movingMs === undefined ? {} : { movingMs }),
+      ...(distanceMeters === undefined || distanceMeters < 0 ? {} : { distanceMeters }),
       ...timerEvidence(artifact, session.messageIndex, startOffsetMs, endOffsetMs),
     };
   });
   const allActive = segments.every((segment) => segment.activeMs !== undefined);
   const allMoving = segments.every((segment) => segment.movingMs !== undefined);
   const distances = segments.map((segment) => segment.distanceMeters);
+  const elapsedMs = Math.max(
+    artifact.activity.endTimeMs - origin,
+    ...segments.map((segment) => segment.endOffsetMs),
+  );
   return activityArtifactSemanticsSchema.parse({
     segments,
     totals: {
-      elapsedMs: artifact.activity.endTimeMs - origin,
+      elapsedMs,
       ...(allActive ? { activeMs: segments.reduce((sum, segment) => sum + (segment.activeMs ?? 0), 0) } : {}),
       ...(allMoving ? { movingMs: segments.reduce((sum, segment) => sum + (segment.movingMs ?? 0), 0) } : {}),
       ...(distances.some((distance) => distance !== undefined)

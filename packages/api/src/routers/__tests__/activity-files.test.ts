@@ -920,6 +920,43 @@ describe("activityFilesRouter", () => {
     expect(result.analysis.sport).toBe("run");
   });
 
+  it("does not expose parser validation details when stream decoding fails", async () => {
+    const activityId = "66666666-6666-4666-8666-666666666666";
+    const { db } = createDbMock({
+      selectResults: [
+        [
+          {
+            activityFilePath:
+              "activities/11111111-1111-4111-8111-111111111111/uploads/activity.fit",
+            activityFileType: "fit",
+            profile_id: "11111111-1111-4111-8111-111111111111",
+            is_private: true,
+            activityType: "run",
+            parentStartedAt: new Date("2026-03-01T10:00:00.000Z"),
+            startOffsetMs: 0,
+            endOffsetMs: 60_000,
+            sourceSessionIndex: 0,
+          },
+        ],
+      ],
+    });
+    const parserError = new Error('Sensitive parser detail at ["segments",0,"activeMs"]');
+    mocks.parseActivityFile.mockImplementation(() => {
+      throw parserError;
+    });
+
+    const result = createCaller({ db }).getStreams({
+      activityId,
+      scope: { type: "segment", segmentId: "99999999-9999-4999-8999-999999999999" },
+    });
+
+    const rejection: unknown = await result.catch((error: unknown) => error);
+    expect(rejection).toMatchObject({
+      message: "Failed to retrieve activity streams",
+      cause: undefined,
+    });
+  });
+
   it("rejects stream access when an authorized activity has no activity file", async () => {
     const activityId = "77777777-7777-4777-8777-777777777777";
     const { db } = createDbMock({
