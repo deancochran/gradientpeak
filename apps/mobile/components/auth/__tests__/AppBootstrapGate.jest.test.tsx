@@ -8,7 +8,7 @@ import {
   saveOnboardingRecovery,
 } from "@/lib/onboarding/onboarding-recovery";
 import { createHost } from "../../../test/mock-components";
-import { fireEvent, renderNative, screen } from "../../../test/render-native";
+import { renderNative, screen } from "../../../test/render-native";
 import { AppBootstrapGate } from "../AppBootstrapGate";
 
 const authState = {
@@ -92,36 +92,17 @@ describe("AppBootstrapGate onboarding recovery", () => {
     expect(screen.queryByText("Onboarding content")).toBeNull();
   });
 
-  it("shows recoverable storage error UI and retries without treating the error as pending", async () => {
+  it("does not block an onboarded user when optional local recovery is unreadable", async () => {
+    segmentsValue = ["(internal)", "(tabs)"];
     jest.mocked(SecureStore.getItemAsync).mockRejectedValueOnce(new Error("locked"));
     renderNative(
-      <AppBootstrapGate>
-        {React.createElement("Text", null, "Onboarding content")}
-      </AppBootstrapGate>,
+      <AppBootstrapGate>{React.createElement("Text", null, "App content")}</AppBootstrapGate>,
     );
 
-    await waitFor(() => expect(screen.getByTestId("recovery-storage-retry")).toBeTruthy());
-    expect(screen.queryByText("Onboarding content")).toBeNull();
-    fireEvent.press(screen.getByTestId("recovery-storage-retry"));
-    await waitFor(() =>
-      expect(screen.getByTestId("redirect-target").props.children).toContain("(tabs)"),
-    );
-    expect(SecureStore.getItemAsync).toHaveBeenCalledTimes(2);
-  });
-
-  it("lets an onboarded user explicitly continue without unreadable local recovery", async () => {
-    jest.mocked(SecureStore.getItemAsync).mockRejectedValueOnce(new Error("locked"));
-    renderNative(
-      <AppBootstrapGate>
-        {React.createElement("Text", null, "Onboarding content")}
-      </AppBootstrapGate>,
-    );
-
-    await waitFor(() => expect(screen.getByTestId("recovery-storage-continue")).toBeTruthy());
-    fireEvent.press(screen.getByTestId("recovery-storage-continue"));
-    await waitFor(() =>
-      expect(screen.getByTestId("redirect-target").props.children).toContain("(tabs)"),
-    );
+    await waitFor(() => expect(screen.getByText("App content")).toBeTruthy());
+    expect(screen.queryByTestId("redirect-target")).toBeNull();
+    expect(screen.queryByText("We couldn't check local setup recovery")).toBeNull();
+    expect(SecureStore.getItemAsync).toHaveBeenCalledTimes(1);
   });
 
   it("treats a completed marker as non-pending and retries its deletion", async () => {

@@ -33,13 +33,10 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
   const recoveryUserId = authState === "authenticated-verified" ? user?.id : undefined;
   const [recoveryLookup, setRecoveryLookup] = React.useState<{
     record: OnboardingRecoveryRecord | null;
-    status: "idle" | "loading" | "loaded" | "error";
+    status: "idle" | "loading" | "loaded";
     userId?: string;
   }>({ record: null, status: "idle" });
-  const [recoveryRetry, setRecoveryRetry] = React.useState(0);
-  const [recoveryBypassUserId, setRecoveryBypassUserId] = React.useState<string>();
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: recoveryRetry deliberately re-runs the secure-storage read.
   React.useEffect(() => {
     if (!recoveryUserId) {
       setRecoveryLookup({ record: null, status: "idle" });
@@ -64,7 +61,7 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
         }
       },
       () => {
-        if (active) setRecoveryLookup({ record: null, status: "error", userId: recoveryUserId });
+        if (active) setRecoveryLookup({ record: null, status: "loaded", userId: recoveryUserId });
       },
     );
 
@@ -72,7 +69,7 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
       active = false;
       unsubscribe();
     };
-  }, [recoveryRetry, recoveryUserId]);
+  }, [recoveryUserId]);
 
   const inInternalGroup = rootSegment === "(internal)";
   const inExternalGroup = rootSegment === "(external)";
@@ -84,20 +81,12 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
   const isAuthCallbackScreen = rootSegment === "(external)" && childSegment === "callback";
   const recoveryLookupReady =
     !recoveryUserId ||
-    recoveryBypassUserId === recoveryUserId ||
-    (recoveryLookup.userId === recoveryUserId &&
-      (recoveryLookup.status === "loaded" || recoveryLookup.status === "error"));
+    (recoveryLookup.userId === recoveryUserId && recoveryLookup.status === "loaded");
   const recoveryPending =
     recoveryUserId !== undefined &&
-    recoveryBypassUserId !== recoveryUserId &&
     recoveryLookup.userId === recoveryUserId &&
     recoveryLookup.status === "loaded" &&
     hasPendingOnboardingRecovery(recoveryLookup.record);
-  const recoveryError =
-    recoveryUserId !== undefined &&
-    recoveryBypassUserId !== recoveryUserId &&
-    recoveryLookup.userId === recoveryUserId &&
-    recoveryLookup.status === "error";
 
   const guardDecision = React.useMemo(() => {
     if (!initialized || !isFullyLoaded) {
@@ -124,10 +113,6 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
 
     if (!recoveryLookupReady) {
       return { type: "loading" as const };
-    }
-
-    if (recoveryError) {
-      return { type: "recovery-error" as const };
     }
 
     if (recoveryPending) {
@@ -181,7 +166,6 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
     profileError,
     profileLoading,
     recoveryLookupReady,
-    recoveryError,
     recoveryPending,
     user,
   ]);
@@ -205,38 +189,6 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
           <Text className="text-primary-foreground font-semibold">Try Again</Text>
         </Button>
         <Button variant="outline" onPress={() => void clearSession()} className="w-full max-w-xs">
-          <Text className="text-foreground">Sign Out</Text>
-        </Button>
-      </View>
-    );
-  }
-
-  if (guardDecision.type === "recovery-error") {
-    return (
-      <View className="flex-1 items-center justify-center gap-4 bg-background px-6">
-        <Text variant="h3" className="text-center text-foreground">
-          We couldn&apos;t check local setup recovery
-        </Text>
-        <Text className="text-center text-muted-foreground">
-          Retry secure storage, or continue without local recovery. Continuing will use your current
-          account status and will not restore unfinished optional setup.
-        </Text>
-        <Button
-          onPress={() => setRecoveryRetry((attempt) => attempt + 1)}
-          className="w-full max-w-xs"
-          testID="recovery-storage-retry"
-        >
-          <Text className="text-primary-foreground font-semibold">Retry</Text>
-        </Button>
-        <Button
-          variant="outline"
-          onPress={() => setRecoveryBypassUserId(recoveryUserId)}
-          className="w-full max-w-xs"
-          testID="recovery-storage-continue"
-        >
-          <Text className="text-foreground">Continue Without Recovery</Text>
-        </Button>
-        <Button variant="ghost" onPress={() => void clearSession()} className="w-full max-w-xs">
           <Text className="text-foreground">Sign Out</Text>
         </Button>
       </View>
