@@ -6,6 +6,7 @@ import { compare, hash } from "bcryptjs";
 import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { isStrongPassword } from "../contracts/forms";
@@ -19,6 +20,14 @@ import {
 } from "../contracts/session";
 import { authRuntimeEnvSchema, parseAuthRuntimeEnv } from "./env";
 import { createAuthMailer, type SendAuthEmailInput } from "./mailer";
+import {
+  AUTH_TOKEN_POLICY,
+  createVerificationAdvisoryLock,
+  recordVerifiedEmailToken,
+  type VerificationConsumptionStore,
+  VerificationTokenReplayError,
+  withVerificationReplayGuard,
+} from "./verification";
 
 export interface CreateGradientPeakAuthOptions {
   appUrl: string;
@@ -30,6 +39,7 @@ export interface CreateGradientPeakAuthOptions {
 }
 
 let poolSingleton: Pool | null = null;
+let verificationLockPoolSingleton: Pool | null = null;
 let authSingleton: ReturnType<typeof createGradientPeakAuth> | null = null;
 let authSecretWarningLogged = false;
 
@@ -41,9 +51,7 @@ const enforcePasswordPolicy = createAuthMiddleware(async (ctx) => {
         ? "newPassword"
         : undefined;
 
-  if (!passwordField) {
-    return;
-  }
+  if (!passwordField) return;
 
   const password = (ctx.body as Record<string, unknown> | undefined)?.[passwordField];
   if (typeof password !== "string" || !isStrongPassword(password)) {
@@ -54,6 +62,34 @@ const enforcePasswordPolicy = createAuthMiddleware(async (ctx) => {
   }
 });
 
+function createVerificationConsumptionStore(
+  db: ReturnType<typeof drizzle>,
+): VerificationConsumptionStore {
+  return {
+    async isConsumed(id) {
+      const rows = await db
+        .select({ id: schema.verifications.id })
+        .from(schema.verifications)
+        .where(eq(schema.verifications.id, id))
+        .limit(1);
+      return rows.length > 0;
+    },
+    async consume(input) {
+      const rows = await db
+        .insert(schema.verifications)
+        .values({
+          id: input.id,
+          identifier: "email-verification-consumed",
+          value: "consumed",
+          expiresAt: input.expiresAt,
+        })
+        .onConflictDoNothing({ target: schema.verifications.id })
+        .returning({ id: schema.verifications.id });
+      return rows.length === 1;
+    },
+  };
+}
+
 function getPool(databaseUrl: string) {
   if (!poolSingleton) {
     poolSingleton = new Pool({ connectionString: databaseUrl });
@@ -62,13 +98,24 @@ function getPool(databaseUrl: string) {
   return poolSingleton;
 }
 
+function getVerificationLockPool(databaseUrl: string) {
+  if (!verificationLockPoolSingleton) {
+    // Keep advisory-lock connections separate so lock holders cannot exhaust
+    // the pool Better Auth needs to complete the verification itself.
+    verificationLockPoolSingleton = new Pool({ connectionString: databaseUrl, max: 2 });
+  }
+
+  return verificationLockPoolSingleton;
+}
+
 function createTrustedOrigins(appUrl: string, mobileScheme: string, trustedOrigins?: string[]) {
   return Array.from(
     new Set([
       appUrl,
       `${mobileScheme}://`,
-      `${mobileScheme}://*`,
-      ...(process.env["NODE_ENV"] === "development" ? ["exp://", "exp://**"] : []),
+      ...(process.env["NODE_ENV"] === "development"
+        ? [`${mobileScheme}://*`, "exp://", "exp://**"]
+        : []),
       ...(trustedOrigins ?? []),
     ]),
   );
@@ -108,6 +155,7 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
     webCallbackPath: "/auth/confirm",
     mobileCallbackPath: "callback",
     emailMode: authRuntimeEnvSchema.shape.emailMode.parse(process.env["AUTH_EMAIL_MODE"] ?? "log"),
+    emailCapturePath: process.env["AUTH_EMAIL_CAPTURE_PATH"],
     emailFrom: process.env["AUTH_EMAIL_FROM"],
     emailReplyTo: process.env["AUTH_EMAIL_REPLY_TO"],
     smtpHost: process.env["AUTH_SMTP_HOST"],
@@ -135,13 +183,18 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
     }
   };
 
-  const db = drizzle(getPool(options.databaseUrl), {
+  const pool = getPool(options.databaseUrl);
+  const db = drizzle(pool, {
     schema: relationalSchema,
   });
+  const verificationConsumptionStore = createVerificationConsumptionStore(db);
+  const verificationRequestLock = createVerificationAdvisoryLock(
+    getVerificationLockPool(options.databaseUrl),
+  );
 
   const secret = resolveAuthSecret(options.secret);
 
-  return betterAuth({
+  const auth = betterAuth({
     ...(secret ? { secret } : {}),
     advanced: {
       database: {
@@ -158,6 +211,8 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
       enabled: true,
       requireEmailVerification: true,
       minPasswordLength: 8,
+      resetPasswordTokenExpiresIn: AUTH_TOKEN_POLICY.resetPasswordExpiresInSeconds,
+      revokeSessionsOnPasswordReset: AUTH_TOKEN_POLICY.revokeSessionsOnPasswordReset,
       password: {
         hash: async (password) => hash(password, 10),
         verify: async ({ hash: passwordHash, password }) => compare(password, passwordHash),
@@ -172,6 +227,7 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
       },
     },
     emailVerification: {
+      expiresIn: AUTH_TOKEN_POLICY.emailVerificationExpiresInSeconds,
       sendVerificationEmail: async ({ user, url }) => {
         await sendAuthEmail({
           kind: "verification",
@@ -179,6 +235,19 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
           actionUrl: url,
           userEmail: user.email,
         });
+      },
+      // Better Auth 1.6 applies emailVerified before invoking this callback.
+      // Duplicate delivery therefore leaves an idempotently verified user while
+      // the unique digest marker allows only the lock-winning request to succeed.
+      afterEmailVerification: async (_updatedUser, request) => {
+        try {
+          await recordVerifiedEmailToken(request, verificationConsumptionStore);
+        } catch (error) {
+          if (error instanceof VerificationTokenReplayError) {
+            throw new APIError("UNAUTHORIZED", { message: error.message });
+          }
+          throw error;
+        }
       },
     },
     user: {
@@ -222,6 +291,26 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
     trustedOrigins: createTrustedOrigins(env.appUrl, env.mobileScheme, options.trustedOrigins),
     plugins: [expo(), ...(options.plugins ?? []), tanstackStartCookies()],
   });
+
+  const handler = auth.handler;
+  return {
+    ...auth,
+    handler: async (request: Request) => {
+      try {
+        return await withVerificationReplayGuard(
+          request,
+          verificationConsumptionStore,
+          verificationRequestLock,
+          () => handler(request),
+        );
+      } catch (error) {
+        if (error instanceof VerificationTokenReplayError) {
+          return Response.json({ code: "UNAUTHORIZED", message: error.message }, { status: 401 });
+        }
+        throw error;
+      }
+    },
+  };
 }
 
 export function getGradientPeakAuth() {

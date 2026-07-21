@@ -60,6 +60,27 @@ describe("fetchWithTimeout", () => {
     );
   });
 
+  it("preserves the manually supplied auth cookie and omits native cookie-jar credentials", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(null, {
+        status: 200,
+      }),
+    );
+
+    await fetchWithTimeout("https://example.test/api/trpc/profiles.get", {
+      credentials: "include",
+      headers: { Cookie: "better-auth.session_token=redacted" },
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://example.test/api/trpc/profiles.get",
+      expect.objectContaining({
+        credentials: "omit",
+        headers: { Cookie: "better-auth.session_token=redacted" },
+      }),
+    );
+  });
+
   it("normalizes the native fetch timeout and records its source", async () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new TypeError("Network request timed out"));
 

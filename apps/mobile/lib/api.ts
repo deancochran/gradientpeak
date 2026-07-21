@@ -83,6 +83,9 @@ export const fetchWithTimeout: typeof fetch = async (input, init) => {
 
     const response = await fetch(input, {
       ...init,
+      // Better Auth's Expo integration stores the session cookie outside the native cookie jar.
+      // Omitting native credentials prevents that jar from overriding the manually supplied cookie.
+      credentials: "omit",
       signal: controller.signal,
     });
 

@@ -41,13 +41,13 @@ function normalizeRelativePath(path: string | undefined, fallback: string) {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
-function sanitizeWebPath(candidate: string | undefined, appUrl: string, fallbackPath: string) {
+export function sanitizeWebCallbackPath(
+  candidate: string | undefined,
+  appUrl: string,
+  fallbackPath: string,
+) {
   if (!candidate) {
     return fallbackPath;
-  }
-
-  if (candidate.startsWith("/")) {
-    return candidate;
   }
 
   try {
@@ -93,13 +93,59 @@ export function buildMobileCallbackUrl(
   return `${env.mobileScheme}://${callbackPath}`;
 }
 
+export function isAllowedMobileCallbackUrl(
+  candidate: string | undefined,
+  options: { allowedSchemePrefixes: readonly string[]; callbackPath: string },
+) {
+  if (!candidate) return false;
+
+  try {
+    const parsed = new URL(candidate);
+    const forbiddenProtocols = new Set([
+      "about:",
+      "blob:",
+      "data:",
+      "file:",
+      "http:",
+      "https:",
+      "intent:",
+      "javascript:",
+      "mailto:",
+      "tel:",
+      "vbscript:",
+    ]);
+    if (forbiddenProtocols.has(parsed.protocol.toLowerCase())) return false;
+    const allowedProtocols = new Set(
+      options.allowedSchemePrefixes
+        .map((prefix) => prefix.match(/^([a-z][a-z0-9+.-]*):\/\//i)?.[1]?.toLowerCase())
+        .filter((scheme): scheme is string => Boolean(scheme))
+        .map((scheme) => `${scheme}:`),
+    );
+    if (!allowedProtocols.has(parsed.protocol.toLowerCase())) return false;
+    if (parsed.username || parsed.password || parsed.port) return false;
+
+    const expectedHost = options.callbackPath.replace(/^\/+|\/+$/g, "").toLowerCase();
+    return (
+      parsed.hostname.toLowerCase() === expectedHost &&
+      (parsed.pathname === "" || parsed.pathname === "/") &&
+      parsed.hash === ""
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function resolveAuthCallbackRedirect(
   request: AuthCallbackRequest,
   env: Pick<AuthRuntimeEnv, "appUrl" | "loginPath" | "mobileScheme" | "mobileCallbackPath">,
   payload?: MobileCallbackPayload,
 ) {
   const normalizedRequest = authCallbackRequestSchema.parse(request);
-  const fallbackPath = sanitizeWebPath(normalizedRequest.fallback, env.appUrl, env.loginPath);
+  const fallbackPath = sanitizeWebCallbackPath(
+    normalizedRequest.fallback,
+    env.appUrl,
+    env.loginPath,
+  );
 
   if (normalizedRequest.target === "mobile") {
     return buildMobileCallbackUrl(payload ?? { intent: normalizedRequest.intent }, {
@@ -108,7 +154,7 @@ export function resolveAuthCallbackRedirect(
     });
   }
 
-  return sanitizeWebPath(normalizedRequest.next, env.appUrl, fallbackPath);
+  return sanitizeWebCallbackPath(normalizedRequest.next, env.appUrl, fallbackPath);
 }
 
 export function buildAuthCallbackUrls(
@@ -120,6 +166,11 @@ export function buildAuthCallbackUrls(
   payload?: MobileCallbackPayload,
 ): AuthCallbackUrls {
   const normalizedRequest = authCallbackRequestSchema.parse(request);
+  const fallbackPath = sanitizeWebCallbackPath(
+    normalizedRequest.fallback,
+    env.appUrl,
+    env.loginPath,
+  );
   const callbackUrl = new URL(
     normalizeRelativePath(env.webCallbackPath, "/auth/confirm"),
     env.appUrl,
@@ -127,15 +178,12 @@ export function buildAuthCallbackUrls(
 
   callbackUrl.searchParams.set("intent", normalizedRequest.intent);
   callbackUrl.searchParams.set("target", normalizedRequest.target);
-  callbackUrl.searchParams.set(
-    "fallback",
-    sanitizeWebPath(normalizedRequest.fallback, env.appUrl, env.loginPath),
-  );
+  callbackUrl.searchParams.set("fallback", fallbackPath);
 
   if (normalizedRequest.next) {
     callbackUrl.searchParams.set(
       "next",
-      sanitizeWebPath(normalizedRequest.next, env.appUrl, normalizedRequest.fallback),
+      sanitizeWebCallbackPath(normalizedRequest.next, env.appUrl, fallbackPath),
     );
   }
 

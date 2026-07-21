@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import nodemailer from "nodemailer";
 import type { AuthRuntimeEnv } from "./env";
 
@@ -96,6 +97,12 @@ export function createAuthMailer(env: AuthRuntimeEnv): AuthMailer {
   ) {
     throw new Error("Auth log email mode is only available in development or test");
   }
+  if (env.emailMode === "capture" && process.env.NODE_ENV !== "test") {
+    throw new Error("Auth capture email mode is only available in tests");
+  }
+  if (env.emailMode === "capture" && !env.emailCapturePath) {
+    throw new Error("Auth capture email mode requires AUTH_EMAIL_CAPTURE_PATH");
+  }
 
   return {
     async send(input) {
@@ -110,6 +117,20 @@ export function createAuthMailer(env: AuthRuntimeEnv): AuthMailer {
           ...(env.smtpHost ? { smtpHost: env.smtpHost } : {}),
           ...(env.smtpPort ? { smtpPort: env.smtpPort } : {}),
         });
+        return;
+      }
+
+      if (env.emailMode === "capture") {
+        await writeFile(
+          env.emailCapturePath as string,
+          `${JSON.stringify({
+            capturedAt: new Date().toISOString(),
+            kind: input.kind,
+            to: input.to,
+            actionUrl: input.actionUrl,
+          })}\n`,
+          { encoding: "utf8", flag: "a", mode: 0o600 },
+        );
         return;
       }
 
