@@ -392,7 +392,7 @@ describe("WahooSyncService", () => {
     );
   });
 
-  it("falls back to the profile FTP metric when no eligible observed effort exists", async () => {
+  it("does not send profile FTP when no eligible observed effort exists", async () => {
     const repository = createRepositoryMock();
     repository.getProfileSyncMetrics.mockResolvedValueOnce({
       bikePowerEfforts: [
@@ -426,7 +426,7 @@ describe("WahooSyncService", () => {
 
     expect(convertToWahooPlanMock).toHaveBeenCalledWith(
       expect.objectContaining({ segments: expect.any(Array) }),
-      expect.objectContaining({ ftp: 250 }),
+      expect.objectContaining({ ftp: undefined }),
     );
   });
 

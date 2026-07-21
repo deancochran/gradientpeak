@@ -14,7 +14,7 @@ import {
 import { detectLTHR, estimateVO2Max } from "@repo/core/calculations";
 import { activitySegments, profileMetrics } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, lte, ne } from "drizzle-orm";
+import { and, desc, eq, lte, ne, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 import { isClearedProfileOverride } from "../../utils/profile-override-observations";
 import { fetchActivityTemperature } from "../../utils/weather";
@@ -134,6 +134,7 @@ export async function getLatestSportLthrValue(
     .select({
       referenceActivityId: profileMetrics.reference_activity_id,
       value: profileMetrics.value,
+      source: profileMetrics.source,
       method: profileMetrics.method,
       provenance: profileMetrics.provenance,
     })
@@ -146,6 +147,10 @@ export async function getLatestSportLthrValue(
       and(
         eq(profileMetrics.profile_id, input.profileId),
         eq(profileMetrics.metric_type, "lthr"),
+        eq(profileMetrics.source, "derived"),
+        eq(profileMetrics.method, "activity_file_lthr_detection"),
+        sql`${profileMetrics.provenance} ->> 'activity_id' = ${profileMetrics.reference_activity_id}`,
+        sql`${profileMetrics.provenance} ->> 'derived_from' = 'activity_file_stream'`,
         eq(activitySegments.category, input.activityType),
         lte(profileMetrics.recorded_at, input.recordedAtLte),
         input.excludeActivityId
@@ -157,7 +162,16 @@ export async function getLatestSportLthrValue(
     .limit(1)
     .then((rows) => rows[0] ?? null);
 
+  const provenance =
+    row?.provenance && typeof row.provenance === "object" && !Array.isArray(row.provenance)
+      ? (row.provenance as Record<string, unknown>)
+      : null;
+
   return row &&
+    row.source === "derived" &&
+    row.method === "activity_file_lthr_detection" &&
+    provenance?.activity_id === row.referenceActivityId &&
+    provenance.derived_from === "activity_file_stream" &&
     row.referenceActivityId !== input.excludeActivityId &&
     !isClearedProfileOverride(row)
     ? toNumberOrNull(row.value)

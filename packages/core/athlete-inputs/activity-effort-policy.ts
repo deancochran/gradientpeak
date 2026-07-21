@@ -67,10 +67,7 @@ export type ActivityEffortPlausibilityClassification =
 
 export type ActivityEffortObservationStatus = "observed" | "modeled" | "review" | "invalid";
 
-export type ActivityEffortThresholdEvidence =
-  | "trusted_manual"
-  | "imported_activity_stream"
-  | "trusted_provider";
+export type ActivityEffortThresholdEvidence = "imported_activity_stream";
 
 export interface ActivityEffortObservationInput extends ActivityEffortPlausibilityInput {
   activityId?: string | null;
@@ -166,14 +163,27 @@ export function getActivityEffortObservationStatus(
 export function getActivityEffortThresholdEvidence(
   input: ActivityEffortObservationInput,
 ): ActivityEffortThresholdEvidence | null {
-  if (input.durationSeconds !== 1200 || getActivityEffortObservationStatus(input) !== "observed") {
+  if (input.durationSeconds !== 1200 || !hasTrustedActivityStreamEvidence(input)) {
     return null;
   }
+  return "imported_activity_stream";
+}
 
-  if (input.source === "manual") return "trusted_manual";
-  if (input.source === "imported") return "imported_activity_stream";
-  if (input.source === "provider") return "trusted_provider";
-  return null;
+/** True only for a plausible observation proven to originate from its owned activity stream. */
+export function hasTrustedActivityStreamEvidence(input: ActivityEffortObservationInput): boolean {
+  if (getActivityEffortObservationStatus(input) !== "observed") return false;
+  if (
+    input.source !== "imported" ||
+    input.method !== "activity_file_best_effort" ||
+    !input.activityId
+  ) {
+    return false;
+  }
+  const provenance = isRecord(input.provenance) ? input.provenance : null;
+  return (
+    provenance?.derived_from === "activity_file_stream" &&
+    provenance.activity_id === input.activityId
+  );
 }
 
 function bandForDuration<T extends PlausibilityBand>(

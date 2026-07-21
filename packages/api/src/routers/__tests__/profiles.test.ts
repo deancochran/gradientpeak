@@ -183,7 +183,7 @@ function createCaller(plan: DbPlan = {}) {
 }
 
 describe("profilesRouter", () => {
-  it("get returns the signed-in profile including email/full_name and legacy manual FTP", async () => {
+  it("get returns identity fields without exposing legacy manual thresholds", async () => {
     const { caller } = createCaller({
       select: {
         profiles: [[createProfileRow()], [createProfileRow()]],
@@ -197,13 +197,13 @@ describe("profilesRouter", () => {
     expect(result.email).toBe("athlete@example.com");
     expect(result.full_name).toBe("Athlete Example");
     expect(result.weight_kg).toBe(70.4);
-    expect(result.threshold_hr).toBe(176);
-    expect(result.ftp).toBe(285);
+    expect(result.threshold_hr).toBeNull();
+    expect(result.ftp).toBeNull();
     expect(result.created_at).toBe("2026-04-01T10:00:00.000Z");
     expect(result.planning_timezone).toBe("America/Los_Angeles");
   });
 
-  it("uses the canonical FTP source precedence for direct profile metrics", async () => {
+  it("does not expose direct profile metrics as canonical FTP", async () => {
     const now = new Date();
     const { caller } = createCaller({
       select: {
@@ -222,7 +222,7 @@ describe("profilesRouter", () => {
 
     const result = await caller.get();
 
-    expect(result.ftp).toBe(250);
+    expect(result.ftp).toBeNull();
   });
 
   it("get provisions a default profile when the auth user exists without a profile row", async () => {
@@ -295,7 +295,7 @@ describe("profilesRouter", () => {
             }),
           ],
         ],
-        profileMetrics: [[], [], [{ value: "68.2" }], [{ value: "182" }], []],
+        profileMetrics: [[], [{ value: "68.2" }], [{ value: "182" }], []],
         activityEfforts: [[], [{ value: 320, recorded_at: new Date() }], []],
       },
     });
@@ -312,8 +312,6 @@ describe("profilesRouter", () => {
       planning_timezone: "Pacific/Auckland",
       preferred_units: "imperial",
       weight_kg: 68.2,
-      threshold_hr: 182,
-      ftp: 304,
     });
 
     expect(result.username).toBe("updated_athlete");
@@ -335,13 +333,19 @@ describe("profilesRouter", () => {
       },
     });
     expect(calls.updates[0]?.values.dob).toEqual(new Date("1991-02-03T00:00:00.000Z"));
-    expect(calls.inserts.map((entry) => entry.table)).toEqual([
-      "profileMetrics",
-      "profileMetrics",
-      "activityEfforts",
-    ]);
+    expect(calls.inserts.map((entry) => entry.table)).toEqual(["profileMetrics"]);
     expect(calls.transactions).toBe(1);
     expect(calls.executes).toHaveLength(0);
+  });
+
+  it("rejects threshold fields in the generic profile patch", async () => {
+    const { caller, calls } = createCaller();
+
+    await expect(caller.update({ ftp: 300 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.update({ threshold_hr: 175 })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    expect(calls.updates).toHaveLength(0);
   });
 
   it("rejects unsupported preferred-unit values before persistence", async () => {
@@ -504,16 +508,16 @@ describe("profilesRouter", () => {
     const result = await caller.getZones();
 
     expect(result.profile).toEqual({
-      threshold_hr: 170,
-      ftp: 295,
+      threshold_hr: undefined,
+      ftp: undefined,
       weight_kg: 71,
-      threshold_pace: 222,
+      threshold_pace: undefined,
     });
-    expect(result.heartRateZones?.zone2).toEqual({ min: 128, max: 148 });
-    expect(result.powerZones?.zone4).toEqual({ min: 266, max: 310 });
+    expect(result.heartRateZones).toBeNull();
+    expect(result.powerZones).toBeNull();
   });
 
-  it("updateZones replaces threshold values and returns the refreshed profile", async () => {
+  it("rejects manual threshold updates", async () => {
     const { caller, calls } = createCaller({
       select: {
         profiles: [[createProfileRow()]],
@@ -522,15 +526,11 @@ describe("profilesRouter", () => {
       },
     });
 
-    const result = await caller.updateZones({ threshold_hr: 178, ftp: 300 });
-
-    expect(result.threshold_hr).toBe(178);
-    expect(result.ftp).toBe(300);
+    await expect(caller.updateZones({ threshold_hr: 178, ftp: 300 })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
     expect(calls.deletes).toEqual([]);
-    expect(calls.inserts.map((entry) => entry.table)).toEqual([
-      "profileMetrics",
-      "activityEfforts",
-    ]);
+    expect(calls.inserts).toEqual([]);
   });
 
   it("get provisions a missing profile instead of returning NOT_FOUND", async () => {

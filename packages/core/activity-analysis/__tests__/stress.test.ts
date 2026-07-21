@@ -82,6 +82,51 @@ describe("activity analysis", () => {
     expect(derived.computed_as_of).toBe(timestamps.started_at);
   });
 
+  it("keeps Critical Power load distinct from FTP-based TSS", () => {
+    const derived = analyzeActivityDerivedMetrics({
+      activity: {
+        id: "critical-power-bike",
+        type: "bike",
+        ...timestamps,
+        duration_seconds: 3600,
+        normalized_power: 200,
+      },
+      context: {
+        profileMetrics: {
+          ftp: 240,
+          cycling_power_watts: 250,
+          cycling_power_method: "critical_power_threshold",
+        },
+        calibrationQuality: {
+          cyclingPower: {
+            source: "observed_effort",
+            observed_at: "2026-02-28T10:00:00.000Z",
+            confidence: "medium",
+            stale: false,
+            estimate: true,
+            calculation_version: "critical-power-curve-fit-v1",
+            evidence_fingerprint: "cp:curve",
+          },
+        },
+        recentEfforts: [],
+        profile: {},
+      },
+    });
+
+    expect(derived.stress).toMatchObject({
+      tss: 64,
+      intensity_factor: 0.8,
+      method: "critical_power_threshold",
+      calibration_quality: {
+        calculation_version: "critical-power-curve-fit-v1",
+      },
+      tss_identity: {
+        method: "critical_power_threshold",
+        calibration: { type: "critical_power_watts", value: 250 },
+      },
+    });
+  });
+
   it("uses generic LTHR when a sport-specific threshold is absent", () => {
     const derived = analyzeActivityDerivedMetrics({
       activity: {

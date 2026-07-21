@@ -195,7 +195,7 @@ describe("estimation-helpers", () => {
     });
   });
 
-  it("uses a direct FTP profile metric when no eligible effort is available", async () => {
+  it("does not use a direct FTP profile metric without eligible activity effort", async () => {
     const inputs = await getEstimationProfileInputsFromStore(
       {
         getEstimationInputs: vi.fn(async () => ({
@@ -210,7 +210,7 @@ describe("estimation-helpers", () => {
       "profile-1",
     );
 
-    expect(inputs.ftp).toBe(271);
+    expect(inputs.ftp).toBeNull();
   });
 
   it("adds estimation for a single plan from the store-backed reader without plan route lookup", async () => {

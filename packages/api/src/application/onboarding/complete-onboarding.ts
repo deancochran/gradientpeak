@@ -1,5 +1,4 @@
 import { calculateAgeFromDOB, getBaselineProfile } from "@repo/core";
-import type { DerivedEffort } from "@repo/core/calculations";
 import type { CompleteOnboarding } from "@repo/core/schemas/onboarding";
 import type { getRequiredDb } from "../../db";
 import {
@@ -7,12 +6,7 @@ import {
   OnboardingProfileNotFoundForLockError,
   readOnboardingProfileState,
 } from "../../repositories/onboarding-lifecycle-repository";
-import {
-  batchInsertActivityEfforts,
-  batchInsertProfileMetrics,
-  deriveEffortsForSport,
-  prepareProfileMetrics,
-} from "../../utils/onboarding-helpers";
+import { batchInsertProfileMetrics, prepareProfileMetrics } from "../../utils/onboarding-helpers";
 import { OnboardingProviderEnrichmentService } from "../onboarding-provider-enrichment";
 import {
   OnboardingProfileNotFoundError,
@@ -80,14 +74,6 @@ export async function completeRequiredOnboarding(input: {
 
   const imported = await providerEnrichment.getImportedOnboardingValues(input.profileId);
   const fieldSources = input.data.baseline_field_sources;
-  const importedProviderFtp =
-    imported.sources.ftp && typeof imported.values.ftp === "number"
-      ? imported.values.ftp
-      : undefined;
-  const usesUnchangedProviderFtp =
-    importedProviderFtp !== undefined &&
-    (fieldSources?.ftp === undefined || fieldSources.ftp === "imported") &&
-    (input.data.ftp === undefined || input.data.ftp === importedProviderFtp);
   const effectiveDob = fieldSources?.dob === "cleared" ? undefined : input.data.dob;
   const effectiveGender = fieldSources?.gender === "cleared" ? undefined : input.data.gender;
   const effectiveWeight = fieldSources?.weight_kg === "cleared" ? undefined : input.data.weight_kg;
@@ -115,7 +101,6 @@ export async function completeRequiredOnboarding(input: {
     | "threshold_pace_seconds_per_km"
     | "css_seconds_per_hundred_meters"
   >();
-  if (usesUnchangedProviderFtp) preserveImportedFields.add("ftp");
   if (
     fieldSources?.weight_kg === "imported" &&
     input.data.weight_kg !== undefined &&
@@ -146,74 +131,7 @@ export async function completeRequiredOnboarding(input: {
     baseline,
     { fieldSources, importedProvenance, preserveImportedFields },
   );
-  const allEfforts: DerivedEffort[] = [];
-  const providerFtpEfforts: DerivedEffort[] = [];
-  const otherEfforts: DerivedEffort[] = [];
-  const sourceAwareEffortBatches: Array<{ efforts: DerivedEffort[]; seedSource: string }> = [];
-  const finalFtp =
-    fieldSources?.ftp === "cleared"
-      ? undefined
-      : (input.data.ftp ?? importedProviderFtp ?? baseline?.ftp);
-  const finalThresholdPace =
-    fieldSources?.threshold_pace_seconds_per_km === "cleared"
-      ? undefined
-      : (input.data.threshold_pace_seconds_per_km ?? baseline?.threshold_pace_seconds_per_km);
-  const finalCss =
-    fieldSources?.css_seconds_per_hundred_meters === "cleared"
-      ? undefined
-      : (input.data.css_seconds_per_hundred_meters ?? baseline?.css_seconds_per_hundred_meters);
-
-  const effortSeedSource = (
-    field: "ftp" | "threshold_pace_seconds_per_km" | "css_seconds_per_hundred_meters",
-  ) => {
-    const source = fieldSources?.[field];
-    if (!source) {
-      return field === "ftp" && usesUnchangedProviderFtp
-        ? `provider_${imported.sources.ftp?.provider ?? "wahoo"}_ftp`
-        : input.data.experience_level;
-    }
-    if (source === "imported") {
-      const provider = field === "ftp" ? imported.sources.ftp?.provider : undefined;
-      return provider ? `provider_${provider}_${field === "ftp" ? "ftp" : field}` : "imported";
-    }
-    return source;
-  };
-
-  if (finalFtp) {
-    const efforts = deriveEffortsForSport("cycling", finalFtp);
-    allEfforts.push(...efforts);
-    if (fieldSources) {
-      sourceAwareEffortBatches.push({ efforts, seedSource: effortSeedSource("ftp") });
-    } else {
-      (usesUnchangedProviderFtp ? providerFtpEfforts : otherEfforts).push(...efforts);
-    }
-  }
-  if (finalThresholdPace) {
-    const efforts = deriveEffortsForSport("running", finalThresholdPace);
-    allEfforts.push(...efforts);
-    if (fieldSources) {
-      sourceAwareEffortBatches.push({
-        efforts,
-        seedSource: effortSeedSource("threshold_pace_seconds_per_km"),
-      });
-    } else {
-      otherEfforts.push(...efforts);
-    }
-  }
-  if (finalCss) {
-    const efforts = deriveEffortsForSport("swimming", finalCss);
-    allEfforts.push(...efforts);
-    if (fieldSources) {
-      sourceAwareEffortBatches.push({
-        efforts,
-        seedSource: effortSeedSource("css_seconds_per_hundred_meters"),
-      });
-    } else {
-      otherEfforts.push(...efforts);
-    }
-  }
-
-  let writeStage: "profile" | "metrics" | "efforts" = "profile";
+  let writeStage: "profile" | "metrics" = "profile";
   try {
     const status = await input.db.transaction(async (tx) => {
       const lockedProfile = await lockOnboardingProfile(tx, input.profileId);
@@ -226,22 +144,6 @@ export async function completeRequiredOnboarding(input: {
       });
       writeStage = "metrics";
       await batchInsertProfileMetrics(tx, input.profileId, metrics);
-      writeStage = "efforts";
-      await batchInsertActivityEfforts(
-        tx,
-        input.profileId,
-        otherEfforts,
-        input.data.experience_level,
-      );
-      await batchInsertActivityEfforts(
-        tx,
-        input.profileId,
-        providerFtpEfforts,
-        effortSeedSource("ftp"),
-      );
-      for (const batch of sourceAwareEffortBatches) {
-        await batchInsertActivityEfforts(tx, input.profileId, batch.efforts, batch.seedSource);
-      }
       return "completed" as const;
     });
 
@@ -259,7 +161,7 @@ export async function completeRequiredOnboarding(input: {
   return {
     status: "completed",
     success: true,
-    created: { profile_metrics: metrics.length, activity_efforts: allEfforts.length },
+    created: { profile_metrics: metrics.length, activity_efforts: 0 },
     baseline_used: !!baseline,
     confidence: baseline?.confidence ?? "high",
     warnings: [],

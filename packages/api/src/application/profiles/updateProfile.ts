@@ -1,7 +1,6 @@
 import type { getRequiredDb } from "../../db";
 import {
   type ProfileFields,
-  replaceManualFtp,
   syncAppendOnlyProfileMetric,
   updateOwnedProfileFields,
 } from "../../repositories/profile-update-repository";
@@ -11,8 +10,8 @@ type DbClient = ReturnType<typeof getRequiredDb>;
 export interface UpdateProfileInput extends ProfileFields {
   profileId: string;
   weight_kg?: number | null;
-  threshold_hr?: number | null;
   ftp?: number | null;
+  threshold_hr?: number | null;
 }
 
 export class ProfileUpdateNotFoundError extends Error {
@@ -46,7 +45,10 @@ function isUsernameConflict(error: unknown): boolean {
 
 /** Atomically updates owned profile fields and their synchronized manual metrics. */
 export async function updateProfile(db: DbClient, input: UpdateProfileInput): Promise<void> {
-  const { profileId, weight_kg, threshold_hr, ftp, ...fields } = input;
+  const { profileId, weight_kg, ftp, threshold_hr, ...fields } = input;
+  if (ftp !== undefined || threshold_hr !== undefined) {
+    throw new Error("Training thresholds are calculated from trusted activity evidence.");
+  }
 
   try {
     await db.transaction(async (tx) => {
@@ -60,13 +62,6 @@ export async function updateProfile(db: DbClient, input: UpdateProfileInput): Pr
         value: weight_kg,
         now,
       });
-      await syncAppendOnlyProfileMetric(tx, {
-        profileId,
-        metricType: "lthr",
-        value: threshold_hr,
-        now,
-      });
-      await replaceManualFtp(tx, { profileId, value: ftp, now });
     });
   } catch (error) {
     if (error instanceof ProfileUpdateNotFoundError) throw error;

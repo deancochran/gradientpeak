@@ -738,13 +738,11 @@ describe("training plan creation domain", () => {
       slowProjection.planningProjection.estimatedContext.sessions[0]?.activityPlan
         ?.estimatedDurationSeconds,
     ).toBe(3600);
-    expect(fastProjection.creationPreview.totalEstimatedTss).toBeLessThan(
+    expect(fastProjection.creationPreview.totalEstimatedTss).toBe(
       slowProjection.creationPreview.totalEstimatedTss,
     );
     expect(fastProjection.creationPreview.totalEstimatedTss).not.toBe(100);
-    expect(
-      slowProjection.builderViewModel.dailyTrainingPathChart.weeks[0]?.plannedLoad,
-    ).toBeGreaterThan(
+    expect(slowProjection.builderViewModel.dailyTrainingPathChart.weeks[0]?.plannedLoad).toBe(
       fastProjection.builderViewModel.dailyTrainingPathChart.weeks[0]?.plannedLoad ?? 0,
     );
   });

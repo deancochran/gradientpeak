@@ -126,8 +126,12 @@ function toIsoString(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;
 }
 
-function contextRequestKey(input: { asOf: Date; profileId: string }): string {
-  return `${input.profileId}\u0000${input.asOf.toISOString()}`;
+function contextRequestKey(input: {
+  asOf: Date;
+  effortLookbackAsOf?: Date;
+  profileId: string;
+}): string {
+  return `${input.profileId}\u0000${input.asOf.toISOString()}\u0000${input.effortLookbackAsOf?.toISOString() ?? ""}`;
 }
 
 function streamKey(summary: ActivityListDerivedSummary): string | null {
@@ -145,7 +149,8 @@ export async function buildActivitySegmentDerivedSummaries(input: {
   const { store, profileId, activities } = input;
   if (activities.length === 0) return [];
   const requests = activities.map((activity) => ({
-    asOf: activity.started_at,
+    asOf: activity.finished_at,
+    effortLookbackAsOf: activity.started_at,
     profileId: activity.profile_id ?? profileId,
   }));
   let evidenceByProfileId = new Map<
@@ -173,7 +178,11 @@ export async function buildActivitySegmentDerivedSummaries(input: {
     const evidence = (store.loadContextEvidence
       ? evidenceByProfileId.get(activity.profile_id)
       : evidenceByRequest.get(
-          contextRequestKey({ asOf: activity.started_at, profileId: activity.profile_id }),
+          contextRequestKey({
+            asOf: activity.finished_at,
+            effortLookbackAsOf: activity.started_at,
+            profileId: activity.profile_id,
+          }),
         )) ?? {
       profile: { dob: null, gender: null },
       profileMetrics: [],
@@ -183,6 +192,7 @@ export async function buildActivitySegmentDerivedSummaries(input: {
       evidence,
       activityTimestamp: activity.started_at,
       activityId: activity.id,
+      activityEffortThrough: activity.finished_at,
     });
     for (const segment of orderedActivitySegments(activity.segments)) {
       const summary = segmentSummarySchemaV1.parse(segment.summary);

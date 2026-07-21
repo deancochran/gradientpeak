@@ -14,6 +14,8 @@ import type {
 export type ActivityAnalysisContext = {
   profileMetrics: {
     ftp?: number | null;
+    cycling_power_watts?: number | null;
+    cycling_power_method?: "power_threshold" | "critical_power_threshold" | null;
     lthr?: number | null;
     lthr_by_sport?: Partial<Record<CanonicalSport, number | null>> | null;
     max_hr?: number | null;
@@ -24,6 +26,7 @@ export type ActivityAnalysisContext = {
   };
   calibrationQuality?: {
     ftp?: ActivityCalibrationQuality | null;
+    cyclingPower?: ActivityCalibrationQuality | null;
     runThreshold?: ActivityCalibrationQuality | null;
     swimThreshold?: ActivityCalibrationQuality | null;
     lthr?: ActivityCalibrationQuality | null;
@@ -206,7 +209,10 @@ function resolveTssMethod(input: {
 
   switch (method) {
     case "power_threshold": {
-      const ftp = profileMetrics.ftp ?? null;
+      const ftp =
+        profileMetrics.cycling_power_method === "power_threshold"
+          ? (profileMetrics.cycling_power_watts ?? null)
+          : (profileMetrics.ftp ?? null);
       const measurement = resolveMeasurement(
         [activity.normalized_power, activity.avg_power],
         isInvalidPositiveValue,
@@ -229,6 +235,37 @@ function resolveTssMethod(input: {
               intensityFactor,
               calibration: { type: "ftp_watts", value: ftp },
               calibrationQuality: context.calibrationQuality?.ftp ?? null,
+            },
+          }
+        : { status: "invalid_data" };
+    }
+    case "critical_power_threshold": {
+      const criticalPower =
+        profileMetrics.cycling_power_method === "critical_power_threshold"
+          ? (profileMetrics.cycling_power_watts ?? null)
+          : null;
+      const measurement = resolveMeasurement(
+        [activity.normalized_power, activity.avg_power],
+        isInvalidPositiveValue,
+      );
+      const unavailable = unresolvedMethod({
+        threshold: criticalPower,
+        thresholdIsInvalid: isInvalidPositiveValue(criticalPower),
+        measurement,
+      });
+      if (unavailable) return unavailable;
+      const intensityFactor = resolveIntensityFactor({
+        normalizedPower: measurement.value,
+        ftp: criticalPower,
+      });
+      return intensityFactor !== null && typeof criticalPower === "number"
+        ? {
+            status: "resolved",
+            value: {
+              method,
+              intensityFactor,
+              calibration: { type: "critical_power_watts", value: criticalPower },
+              calibrationQuality: context.calibrationQuality?.cyclingPower ?? null,
             },
           }
         : { status: "invalid_data" };
@@ -377,7 +414,12 @@ function resolveTssSelection(input: {
     };
   }
 
-  const resolutions = completedActivityCalculationPolicy[sport].tssMethods.map((method) =>
+  const policyMethods = completedActivityCalculationPolicy[sport].tssMethods;
+  const methods =
+    sport === "bike" && context.profileMetrics.cycling_power_method
+      ? ([context.profileMetrics.cycling_power_method, "heart_rate_threshold"] as const)
+      : policyMethods;
+  const resolutions = methods.map((method) =>
     resolveTssMethod({ method, sport, activity, context }),
   );
   const resolved = resolutions.find(

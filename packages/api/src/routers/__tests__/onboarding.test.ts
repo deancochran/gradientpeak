@@ -315,7 +315,7 @@ describe("onboardingRouter", () => {
     expect(result).toMatchObject({
       success: true,
       created: {
-        profile_metrics: 5,
+        profile_metrics: 4,
         activity_efforts: 0,
       },
       baseline_used: true,
@@ -324,7 +324,7 @@ describe("onboardingRouter", () => {
     });
 
     const metricsInsert = insertCalls.find((call) => call.table === profileMetrics);
-    expect(metricsInsert?.values).toHaveLength(5);
+    expect(metricsInsert?.values).toHaveLength(4);
     expect(metricsInsert?.values).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -419,7 +419,7 @@ describe("onboardingRouter", () => {
     });
   });
 
-  it("persists one modeled anchor per threshold without attaching an unrelated activity", async () => {
+  it("does not persist submitted thresholds or synthetic effort anchors", async () => {
     const { caller, insertCalls } = createCaller({ latestActivityId: crypto.randomUUID() });
 
     await caller.completeOnboarding({
@@ -431,57 +431,22 @@ describe("onboardingRouter", () => {
       css_seconds_per_hundred_meters: 95,
     } as any);
 
-    expect(insertCalls).toEqual(
+    const metricValues =
+      (insertCalls.find((call) => call.table === profileMetrics)?.values as
+        | Array<{ metric_type: string }>
+        | undefined) ?? [];
+    expect(metricValues.map((metric) => metric.metric_type)).not.toEqual(
       expect.arrayContaining([
-        expect.objectContaining({
-          table: profileMetrics,
-          values: expect.arrayContaining([
-            expect.objectContaining({
-              metric_type: "threshold_pace_seconds_per_km",
-              unit: "seconds_per_km",
-              source: "manual",
-            }),
-            expect.objectContaining({
-              metric_type: "css_seconds_per_100m",
-              unit: "seconds_per_100m",
-              source: "manual",
-            }),
-          ]),
-        }),
+        "ftp",
+        "lthr",
+        "threshold_pace_seconds_per_km",
+        "css_seconds_per_100m",
       ]),
     );
-
-    const effortInsert = insertCalls.find((call) => call.table === activityEfforts);
-    expect(effortInsert?.values).toHaveLength(3);
-    expect(effortInsert?.values).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          activity_id: null,
-          activity_category: "bike",
-          duration_seconds: 3600,
-          value: 240,
-          source: "derived",
-          method: "onboarding_modeled_curve",
-          calculation_version: "onboarding-effort-curve-v1",
-        }),
-        expect.objectContaining({
-          activity_id: null,
-          activity_category: "run",
-          duration_seconds: 3600,
-        }),
-        expect.objectContaining({
-          activity_id: null,
-          activity_category: "swim",
-          duration_seconds: 1800,
-        }),
-      ]),
-    );
-    expect(
-      (effortInsert?.values as Array<{ value: number }>).some((effort) => effort.value === 4240),
-    ).toBe(false);
+    expect(insertCalls.some((call) => call.table === activityEfforts)).toBe(false);
   });
 
-  it("preserves provider FTP identity on completion and labels its modeled anchor", async () => {
+  it("does not seed provider FTP as onboarding threshold evidence", async () => {
     const userId = "11111111-1111-4111-8111-111111111111";
     const integrationId = "22222222-2222-4222-8222-222222222222";
     const { caller, insertCalls } = createCaller({
@@ -511,16 +476,10 @@ describe("onboardingRouter", () => {
 
     expect(result.created.profile_metrics).toBe(0);
     expect(insertCalls.some((call) => call.table === profileMetrics)).toBe(false);
-    expect(insertCalls.find((call) => call.table === activityEfforts)?.values).toEqual([
-      expect.objectContaining({
-        value: 248,
-        activity_id: null,
-        provenance: { seed_source: "provider_wahoo_ftp" },
-      }),
-    ]);
+    expect(insertCalls.some((call) => call.table === activityEfforts)).toBe(false);
   });
 
-  it("persists a genuinely changed provider FTP as a manual onboarding value", async () => {
+  it("ignores a changed provider FTP during onboarding completion", async () => {
     const userId = "11111111-1111-4111-8111-111111111111";
     const integrationId = "22222222-2222-4222-8222-222222222222";
     const { caller, insertCalls } = createCaller({
@@ -547,20 +506,8 @@ describe("onboardingRouter", () => {
       ftp: 260,
     });
 
-    expect(insertCalls.find((call) => call.table === profileMetrics)?.values).toEqual([
-      expect.objectContaining({
-        metric_type: "ftp",
-        value: 260,
-        source: "manual",
-        method: "onboarding_manual_seed",
-      }),
-    ]);
-    expect(insertCalls.find((call) => call.table === activityEfforts)?.values).toEqual([
-      expect.objectContaining({
-        value: 260,
-        provenance: { seed_source: "advanced" },
-      }),
-    ]);
+    expect(insertCalls.some((call) => call.table === profileMetrics)).toBe(false);
+    expect(insertCalls.some((call) => call.table === activityEfforts)).toBe(false);
   });
 
   it("persists explicit DOB and gender clears as profile nulls", async () => {
@@ -608,17 +555,9 @@ describe("onboardingRouter", () => {
           method: "onboarding_imported_seed",
           provenance: expect.objectContaining({ seed_type: "imported" }),
         }),
-        expect.objectContaining({
-          metric_type: "ftp",
-          source: "manual",
-          method: "onboarding_manual_seed",
-          provenance: expect.objectContaining({ seed_type: "manual" }),
-        }),
       ]),
     );
-    expect(insertCalls.find((call) => call.table === activityEfforts)?.values).toEqual([
-      expect.objectContaining({ provenance: { seed_source: "manual" } }),
-    ]);
+    expect(insertCalls.some((call) => call.table === activityEfforts)).toBe(false);
   });
 
   it("suppresses cleared generated metrics and efforts without deleting historical evidence", async () => {
@@ -1023,8 +962,8 @@ describe("onboardingRouter", () => {
       goal: { status: "saved", retryable: false },
       settings: { status: "unchanged", retryable: false },
     });
-    expect(insertCalls.filter((call) => call.table === profileMetrics)).toHaveLength(1);
-    expect(insertCalls.filter((call) => call.table === activityEfforts)).toHaveLength(1);
+    expect(insertCalls.filter((call) => call.table === profileMetrics)).toHaveLength(0);
+    expect(insertCalls.filter((call) => call.table === activityEfforts)).toHaveLength(0);
     expect(
       new Set(
         insertCalls
@@ -1163,8 +1102,8 @@ describe("onboardingRouter", () => {
       "already_completed",
       "completed",
     ]);
-    expect(insertCalls.filter((call) => call.table === profileMetrics)).toHaveLength(1);
-    expect(insertCalls.filter((call) => call.table === activityEfforts)).toHaveLength(1);
+    expect(insertCalls.filter((call) => call.table === profileMetrics)).toHaveLength(0);
+    expect(insertCalls.filter((call) => call.table === activityEfforts)).toHaveLength(0);
   });
 
   it("keeps legacy completion compatible while suppressing retry observations", async () => {
@@ -1172,7 +1111,7 @@ describe("onboardingRouter", () => {
 
     await expect(caller.completeOnboarding(lifecycleProfile)).resolves.toMatchObject({
       success: true,
-      created: { profile_metrics: 1, activity_efforts: 1 },
+      created: { profile_metrics: 0, activity_efforts: 0 },
     });
     await expect(
       caller.completeOnboarding({
@@ -1183,8 +1122,8 @@ describe("onboardingRouter", () => {
       success: true,
       created: { profile_metrics: 0, activity_efforts: 0 },
     });
-    expect(insertCalls.filter((call) => call.table === profileMetrics)).toHaveLength(1);
-    expect(insertCalls.filter((call) => call.table === activityEfforts)).toHaveLength(1);
+    expect(insertCalls.filter((call) => call.table === profileMetrics)).toHaveLength(0);
+    expect(insertCalls.filter((call) => call.table === activityEfforts)).toHaveLength(0);
   });
 
   it("repairs optional sections after onboarding and skips volatile provider prerequisites", async () => {

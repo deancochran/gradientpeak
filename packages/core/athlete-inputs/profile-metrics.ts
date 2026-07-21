@@ -27,6 +27,22 @@ export const profileMetricTypeSchema = z.enum([
 
 export type ProfileMetricType = z.infer<typeof profileMetricTypeSchema>;
 
+export const activityDerivedThresholdMetricTypes = [
+  "ftp",
+  "lthr",
+  "threshold_pace_seconds_per_km",
+  "css_seconds_per_100m",
+] as const satisfies readonly ProfileMetricType[];
+
+export type ActivityDerivedThresholdMetricType =
+  (typeof activityDerivedThresholdMetricTypes)[number];
+
+export function isActivityDerivedThresholdMetricType(
+  metricType: ProfileMetricType,
+): metricType is ActivityDerivedThresholdMetricType {
+  return (activityDerivedThresholdMetricTypes as readonly ProfileMetricType[]).includes(metricType);
+}
+
 export type ProfileMetricInputKind = "weight" | "integer" | "decimal" | "percent" | "scale";
 
 export interface ProfileMetricDefinition {

@@ -4,6 +4,7 @@ import {
   calculateSeasonBestCurve,
   evaluateCriticalPower,
   type ObservedCriticalPowerEffort,
+  selectCanonicalCriticalPowerEfforts,
 } from "../critical-power";
 
 // Helper to create mock efforts
@@ -84,6 +85,49 @@ describe("calculateSeasonBestCurve", () => {
 });
 
 describe("calculateCriticalPower", () => {
+  it("selects one strongest deterministic observation per duration", () => {
+    const selected = selectCanonicalCriticalPowerEfforts([
+      createEffort(300, 320, {
+        activity_id: "later-id",
+        recorded_at: "2026-07-01T10:00:00.000Z",
+      }),
+      createEffort(300, 325, {
+        activity_id: "stronger",
+        recorded_at: "2026-06-01T10:00:00.000Z",
+      }),
+      createEffort(1_200, 275, {
+        activity_id: "z-id",
+        recorded_at: "2026-07-01T10:00:00.000Z",
+      }),
+      createEffort(1_200, 275, {
+        activity_id: "a-id",
+        recorded_at: "2026-07-01T10:00:00.000Z",
+      }),
+    ]);
+
+    expect(
+      selected.map(({ duration_seconds, activity_id, value }) => ({
+        duration_seconds,
+        activity_id,
+        value,
+      })),
+    ).toEqual([
+      { duration_seconds: 300, activity_id: "stronger", value: 325 },
+      { duration_seconds: 1_200, activity_id: "a-id", value: 275 },
+    ]);
+  });
+
+  it("keeps canonical threshold curves to materialized standard durations", () => {
+    const selected = selectCanonicalCriticalPowerEfforts([
+      createEffort(180, 340),
+      createEffort(300, 320),
+      createEffort(900, 280),
+      createEffort(1_200, 270),
+    ]);
+
+    expect(selected.map((effort) => effort.duration_seconds)).toEqual([300, 1_200]);
+  });
+
   it("requires at least three distinct observed points", () => {
     expect(calculateCriticalPower([createEffort(180, 330), createEffort(1_200, 260)])).toBeNull();
     expect(

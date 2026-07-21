@@ -10,6 +10,7 @@ type CalibrationQuality = {
   observed_at: string | null;
   stale: boolean;
   estimate: boolean;
+  calculation_version?: string | null;
 };
 
 export function getActivityLoadLabels(method?: string | null) {
@@ -19,18 +20,21 @@ export function getActivityLoadLabels(method?: string | null) {
   if (method === "run_pace_threshold") return { load: "rTSS", intensity: "Run IF" };
   if (method === "swim_pace_threshold") return { load: "sTSS", intensity: "Swim IF" };
   if (method === "power_threshold") return { load: "TSS", intensity: "IF" };
+  if (method === "critical_power_threshold") {
+    return { load: "Estimated CP Load", intensity: "CP IF" };
+  }
   return { load: "Load", intensity: "Intensity" };
 }
 
 export function getThresholdNextAction(activityType?: string | null): string {
   if (activityType === "bike") {
-    return "Set FTP, complete a qualifying 20-minute power effort, or establish bike LTHR.";
+    return "Record qualifying bike activities to build a reliable power curve or establish bike LTHR.";
   }
   if (activityType === "run") {
-    return "Set threshold pace, complete a qualifying 20-minute run effort, or establish run LTHR.";
+    return "Record a qualifying 20-minute run effort or activity-derived run LTHR.";
   }
   if (activityType === "swim") {
-    return "Set CSS, complete a qualifying 20-minute swim effort, or establish swim LTHR.";
+    return "Record a qualifying 20-minute swim effort or activity-derived swim LTHR.";
   }
   return "Establish a sport-specific LTHR.";
 }
@@ -42,7 +46,9 @@ export function formatCalibrationQuality(
   if (!quality) return null;
   const source =
     quality.source === "observed_effort"
-      ? "20-minute effort estimate"
+      ? quality.calculation_version === "critical-power-curve-fit-v1"
+        ? "Multi-ride Critical Power estimate"
+        : "20-minute effort estimate"
       : quality.source === "validated_test"
         ? "Validated threshold test"
         : quality.source === "manual"

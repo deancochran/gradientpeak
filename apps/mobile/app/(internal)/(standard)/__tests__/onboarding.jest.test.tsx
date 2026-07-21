@@ -1892,7 +1892,6 @@ describe("onboarding screen", () => {
           profile: expect.objectContaining({
             experience_level: "beginner",
             full_name: "Riley Chen",
-            ftp: 210,
             max_hr: 185,
             weight_kg: 72,
             gender: "male",
@@ -1953,9 +1952,9 @@ describe("onboarding screen", () => {
     expect(screen.getByLabelText("Weight (Optional)").props["aria-required"]).toBe(false);
     expect(screen.getByLabelText("Max heart rate (Optional)")).toBeTruthy();
     expect(screen.getByLabelText("Resting heart rate (Optional)")).toBeTruthy();
-    expect(screen.getByLabelText("Bike FTP (Optional)")).toBeTruthy();
-    expect(screen.getByTestId("athlete-baseline-threshold-pace")).toBeTruthy();
-    expect(screen.getByTestId("athlete-baseline-css")).toBeTruthy();
+    expect(screen.queryByLabelText("Bike FTP (Optional)")).toBeNull();
+    expect(screen.queryByTestId("athlete-baseline-threshold-pace")).toBeNull();
+    expect(screen.queryByTestId("athlete-baseline-css")).toBeNull();
     expect(screen.queryByText(/^Use estimate/)).toBeNull();
 
     fireEvent.press(screen.getByLabelText("Clear date"));
@@ -1977,15 +1976,13 @@ describe("onboarding screen", () => {
     );
 
     const maxHrReset = screen.getByTestId("athlete-baseline-maxHr-reset-estimate");
-    const ftpReset = screen.getByTestId("athlete-baseline-ftp-reset-estimate");
     expect(maxHrReset.props.variant).toBe("ghost");
-    expect(ftpReset.props.variant).toBe("ghost");
+    expect(screen.queryByTestId("athlete-baseline-ftp-reset-estimate")).toBeNull();
 
     fireEvent.press(maxHrReset);
-    fireEvent.press(ftpReset);
 
     expect(screen.getByLabelText("Max heart rate (Optional)").props.value).toBe("185");
-    expect(screen.getByLabelText("Bike FTP (Optional)").props.value).toBe("210");
+    expect(screen.queryByLabelText("Bike FTP (Optional)")).toBeNull();
     expect(screen.queryByText(/^Use estimate/)).toBeNull();
   });
 
@@ -2166,8 +2163,6 @@ describe("onboarding screen", () => {
       expect(screen.getByText("beginner")).toBeTruthy();
     });
     expect(screen.getAllByText("Imported from Wahoo").length).toBeGreaterThan(0);
-    fireEvent.changeText(screen.getByLabelText("Bike FTP (Optional)"), "260");
-    expect(screen.getByText("Manual")).toBeTruthy();
     expect(screen.getAllByText("Imported from Wahoo").length).toBe(3);
     fireEvent.press(screen.getByText("beginner"));
     fireEvent.press(screen.getByText("Next"));
@@ -2180,11 +2175,13 @@ describe("onboarding screen", () => {
         expect.objectContaining({
           profile: expect.objectContaining({
             dob: "1988-04-05",
-            ftp: 260,
             gender: "female",
             weight_kg: 64,
           }),
         }),
+      );
+      expect(completeLifecycleSetupMutationMock.mock.calls[0]?.[0]?.profile).not.toHaveProperty(
+        "ftp",
       );
     });
   });

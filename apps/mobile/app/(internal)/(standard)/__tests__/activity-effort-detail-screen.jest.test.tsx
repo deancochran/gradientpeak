@@ -1,6 +1,6 @@
 import React from "react";
 import { createHost } from "../../../../test/mock-components";
-import { fireEvent, renderNative, screen } from "../../../../test/render-native";
+import { renderNative, screen } from "../../../../test/render-native";
 
 const deleteMutateMock = jest.fn();
 
@@ -185,16 +185,11 @@ describe("activity effort detail screen", () => {
     ).toBeTruthy();
   });
 
-  it("uses a confirm modal before deleting an effort", () => {
+  it("keeps effort evidence read-only", () => {
     renderNative(<ActivityEffortDetailScreen />);
 
-    fireEvent.press(screen.getByTestId("activity-effort-detail-options-delete"));
-
-    expect(screen.getByTestId("activity-effort-detail-delete-modal")).toBeTruthy();
+    expect(screen.queryByTestId("activity-effort-detail-options-delete")).toBeNull();
+    expect(screen.queryByTestId("activity-effort-detail-delete-modal")).toBeNull();
     expect(deleteMutateMock).not.toHaveBeenCalled();
-
-    fireEvent.press(screen.getByTestId("activity-effort-detail-delete-confirm"));
-
-    expect(deleteMutateMock).toHaveBeenCalledWith({ id: "effort-1" });
   });
 });

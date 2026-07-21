@@ -1,3 +1,4 @@
+import { CRITICAL_POWER_CANONICAL_DURATIONS } from "@repo/core/calculations";
 import { type DrizzleDbClient, schema } from "@repo/db";
 import { and, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import type { ActivityAnalysisContextSnapshot, ActivityAnalysisStore } from "../../repositories";
@@ -28,7 +29,9 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
     const profileIds = [...new Set(requests.map((request) => request.profileId))];
     // One fixed upper bound keeps every in-memory as-of resolution on the same evidence window.
     const fixedAsOf = new Date(Math.max(...requests.map((request) => request.asOf.getTime())));
-    const earliestAsOf = Math.min(...requests.map((request) => request.asOf.getTime()));
+    const earliestAsOf = Math.min(
+      ...requests.map((request) => (request.effortLookbackAsOf ?? request.asOf).getTime()),
+    );
     const effortCutoff = new Date(earliestAsOf - 90 * 24 * 60 * 60 * 1000);
     const profileMetricBaseQuery = db
       .select({
@@ -43,9 +46,18 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
         calculation_version: schema.profileMetrics.calculation_version,
         provenance: schema.profileMetrics.provenance,
         reference_activity_id: schema.profileMetrics.reference_activity_id,
-        // A parent activity can contain several/repeated categories. Profile metrics do not yet
-        // carry a segment reference, so attributing one parent category would fabricate evidence.
-        reference_activity_category: sql<null>`null`,
+        // Preserve sport identity only for a single activity-role segment. Multisport parents,
+        // including repeated same-category legs, remain unscoped rather than fabricating one sport.
+        reference_activity_category: sql<string | null>`(
+          select case
+            when count(*) = 1
+              then min(reference_segment.category)
+            else null
+          end
+          from activity_segments as reference_segment
+          where reference_segment.activity_id = ${schema.profileMetrics.reference_activity_id}
+            and reference_segment.role = 'activity'
+        )`,
       })
       .from(schema.profileMetrics);
     const profileMetricQuery = profileMetricBaseQuery;
@@ -89,6 +101,7 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
           unit: schema.activityEfforts.unit,
           value: schema.activityEfforts.value,
           method: schema.activityEfforts.method,
+          calculation_version: schema.activityEfforts.calculation_version,
           provenance: schema.activityEfforts.provenance,
           source: schema.activityEfforts.source,
         })
@@ -98,7 +111,21 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
             inArray(schema.activityEfforts.profile_id, profileIds),
             lte(schema.activityEfforts.recorded_at, fixedAsOf),
             inArray(schema.activityEfforts.effort_type, effortTypes),
-            eq(schema.activityEfforts.duration_seconds, 1200),
+            or(
+              and(
+                eq(schema.activityEfforts.activity_category, "bike"),
+                eq(schema.activityEfforts.effort_type, "power"),
+                inArray(
+                  schema.activityEfforts.duration_seconds,
+                  CRITICAL_POWER_CANONICAL_DURATIONS,
+                ),
+              ),
+              and(
+                inArray(schema.activityEfforts.activity_category, ["run", "swim"]),
+                eq(schema.activityEfforts.effort_type, "speed"),
+                eq(schema.activityEfforts.duration_seconds, 1200),
+              ),
+            ),
             or(
               gte(schema.activityEfforts.recorded_at, effortCutoff),
               eq(schema.activityEfforts.source, "manual"),
@@ -155,6 +182,7 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
             unit: effort.unit,
             value: toNumber(effort.value),
             method: effort.method,
+            calculation_version: effort.calculation_version,
             provenance: effort.provenance,
             source: effort.source,
           })),
@@ -165,10 +193,16 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
 
   return {
     loadContextEvidence,
-    async getContextSnapshot({ asOf, profileId, evidenceScope }) {
+    async getContextSnapshot({ asOf, effortLookbackAsOf, profileId, evidenceScope }) {
       const evidence = await loadContextEvidence({
-        requests: [{ asOf, profileId }],
-        evidenceScope,
+        requests: [
+          {
+            asOf,
+            profileId,
+            ...(effortLookbackAsOf !== undefined ? { effortLookbackAsOf } : {}),
+          },
+        ],
+        ...(evidenceScope !== undefined ? { evidenceScope } : {}),
       });
       return (
         evidence.get(profileId) ?? {

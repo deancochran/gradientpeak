@@ -31,10 +31,12 @@ export const activityCalibrationQualitySchema = z.object({
   stale: z.boolean(),
   estimate: z.boolean(),
   calculation_version: z.string().nullable().optional(),
+  evidence_fingerprint: z.string().trim().min(1).nullable().optional(),
 });
 
 const activityTssCalibrationSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("ftp_watts"), value: z.number().positive() }).strict(),
+  z.object({ type: z.literal("critical_power_watts"), value: z.number().positive() }).strict(),
   z.object({ type: z.literal("threshold_speed_mps"), value: z.number().positive() }).strict(),
   z.object({ type: z.literal("swim_threshold_speed_mps"), value: z.number().positive() }).strict(),
   z.object({ type: z.literal("lthr_bpm"), value: z.number().min(80).max(220) }).strict(),
@@ -75,13 +77,15 @@ function validateTssIdentity(
   const expected =
     identity.method === "power_threshold"
       ? "ftp_watts"
-      : identity.method === "run_pace_threshold"
-        ? "threshold_speed_mps"
-        : identity.method === "swim_pace_threshold"
-          ? "swim_threshold_speed_mps"
-          : identity.method === "heart_rate_threshold"
-            ? "lthr_bpm"
-            : "heart_rate_reserve_bpm";
+      : identity.method === "critical_power_threshold"
+        ? "critical_power_watts"
+        : identity.method === "run_pace_threshold"
+          ? "threshold_speed_mps"
+          : identity.method === "swim_pace_threshold"
+            ? "swim_threshold_speed_mps"
+            : identity.method === "heart_rate_threshold"
+              ? "lthr_bpm"
+              : "heart_rate_reserve_bpm";
   if (identity.calibration.type !== expected) {
     context.addIssue({
       code: "custom",

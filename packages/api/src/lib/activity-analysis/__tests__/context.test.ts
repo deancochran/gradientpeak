@@ -2,6 +2,297 @@ import { describe, expect, it } from "vitest";
 import { resolveActivityContextAsOf, resolveActivityContextFromEvidence } from "../context";
 
 describe("resolveActivityContextAsOf", () => {
+  it("selects a guarded multi-ride Critical Power calibration ahead of a 20-minute estimate", () => {
+    const powerEffort = (
+      activityId: string,
+      durationSeconds: number,
+      value: number,
+      recordedAt: string,
+    ) => ({
+      activity_id: activityId,
+      activity_category: "bike" as const,
+      duration_seconds: durationSeconds,
+      effort_type: "power" as const,
+      recorded_at: new Date(recordedAt),
+      unit: "watts",
+      value,
+      source: "imported",
+      method: "activity_file_best_effort",
+      calculation_version: "best-efforts-v1",
+      provenance: { activity_id: activityId, derived_from: "activity_file_stream" },
+    });
+    const result = resolveActivityContextFromEvidence({
+      activityTimestamp: "2026-05-01T12:00:00.000Z",
+      evidence: {
+        profile: { dob: null, gender: null },
+        profileMetrics: [],
+        recentEfforts: [
+          powerEffort("ride-a", 300, 300, "2026-04-10T12:00:00.000Z"),
+          powerEffort("ride-b", 600, 275, "2026-04-15T12:00:00.000Z"),
+          powerEffort("ride-c", 1200, 262.5, "2026-04-20T12:00:00.000Z"),
+        ],
+      },
+    });
+
+    expect(result.profileMetrics).toMatchObject({
+      ftp: 249,
+      cycling_power_watts: 250,
+      cycling_power_method: "critical_power_threshold",
+    });
+    expect(result.calibrationQuality?.cyclingPower).toMatchObject({
+      source: "observed_effort",
+      calculation_version: "critical-power-curve-fit-v1",
+      estimate: true,
+    });
+  });
+
+  it("allows the current ride to complete a guarded curve only when prior calibration is missing", () => {
+    const powerEffort = (
+      activityId: string,
+      durationSeconds: number,
+      value: number,
+      recordedAt: string,
+    ) => ({
+      activity_id: activityId,
+      activity_category: "bike" as const,
+      duration_seconds: durationSeconds,
+      effort_type: "power" as const,
+      recorded_at: new Date(recordedAt),
+      unit: "watts",
+      value,
+      source: "imported",
+      method: "activity_file_best_effort",
+      provenance: { activity_id: activityId, derived_from: "activity_file_stream" },
+    });
+    const result = resolveActivityContextFromEvidence({
+      activityTimestamp: "2026-05-01T12:00:00.000Z",
+      activityEffortThrough: "2026-05-01T13:00:00.000Z",
+      activityId: "current-ride",
+      evidence: {
+        profile: { dob: null, gender: null },
+        profileMetrics: [],
+        recentEfforts: [
+          powerEffort("ride-a", 300, 300, "2026-04-10T12:00:00.000Z"),
+          powerEffort("ride-b", 600, 275, "2026-04-15T12:00:00.000Z"),
+          powerEffort("current-ride", 1200, 262.5, "2026-05-01T12:45:00.000Z"),
+        ],
+      },
+    });
+
+    expect(result.profileMetrics).toMatchObject({
+      cycling_power_watts: 250,
+      cycling_power_method: "critical_power_threshold",
+    });
+  });
+
+  it("does not let stale points from a bulk evidence window complete a fresh curve", () => {
+    const powerEffort = (
+      activityId: string,
+      durationSeconds: number,
+      value: number,
+      recordedAt: string,
+    ) => ({
+      activity_id: activityId,
+      activity_category: "bike" as const,
+      duration_seconds: durationSeconds,
+      effort_type: "power" as const,
+      recorded_at: new Date(recordedAt),
+      unit: "watts",
+      value,
+      source: "imported",
+      method: "activity_file_best_effort",
+      provenance: { activity_id: activityId, derived_from: "activity_file_stream" },
+    });
+    const result = resolveActivityContextFromEvidence({
+      activityTimestamp: "2026-05-01T12:00:00.000Z",
+      evidence: {
+        profile: { dob: null, gender: null },
+        profileMetrics: [],
+        recentEfforts: [
+          powerEffort("stale-a", 300, 300, "2026-01-01T12:00:00.000Z"),
+          powerEffort("stale-b", 600, 275, "2026-01-02T12:00:00.000Z"),
+          powerEffort("fresh-c", 1200, 262.5, "2026-04-20T12:00:00.000Z"),
+        ],
+      },
+    });
+
+    expect(result.profileMetrics).toMatchObject({
+      ftp: 249,
+      cycling_power_watts: 249,
+      cycling_power_method: "power_threshold",
+    });
+    expect(result.calibrationQuality?.cyclingPower?.calculation_version).toBe(
+      "twenty_minute_effort_v1",
+    );
+  });
+
+  it("allows a provenance-backed effort from the activity interval without admitting later evidence", async () => {
+    const evidence = {
+      profile: { dob: null, gender: null },
+      profileMetrics: [],
+      recentEfforts: [
+        {
+          activity_id: "activity-under-analysis",
+          activity_category: "bike" as const,
+          duration_seconds: 1200,
+          effort_type: "power" as const,
+          recorded_at: new Date("2026-05-01T12:45:00.000Z"),
+          unit: "watts",
+          value: 250,
+          source: "imported",
+          method: "activity_file_best_effort",
+          provenance: {
+            activity_id: "activity-under-analysis",
+            derived_from: "activity_file_stream",
+          },
+        },
+        {
+          activity_id: "later-activity",
+          activity_category: "bike" as const,
+          duration_seconds: 1200,
+          effort_type: "power" as const,
+          recorded_at: new Date("2026-05-01T12:30:00.000Z"),
+          unit: "watts",
+          value: 400,
+          source: "imported",
+          method: "activity_file_best_effort",
+          provenance: { activity_id: "later-activity", derived_from: "activity_file_stream" },
+        },
+        {
+          activity_id: "activity-under-analysis",
+          activity_category: "bike" as const,
+          duration_seconds: 1200,
+          effort_type: "power" as const,
+          recorded_at: new Date("2026-05-01T11:59:59.000Z"),
+          unit: "watts",
+          value: 500,
+          source: "imported",
+          method: "activity_file_best_effort",
+          provenance: {
+            activity_id: "activity-under-analysis",
+            derived_from: "activity_file_stream",
+          },
+        },
+        {
+          activity_id: "activity-under-analysis",
+          activity_category: "bike" as const,
+          duration_seconds: 1200,
+          effort_type: "power" as const,
+          recorded_at: new Date("2026-05-01T13:00:01.000Z"),
+          unit: "watts",
+          value: 450,
+          source: "imported",
+          method: "activity_file_best_effort",
+          provenance: {
+            activity_id: "activity-under-analysis",
+            derived_from: "activity_file_stream",
+          },
+        },
+        {
+          activity_id: "activity-under-analysis",
+          activity_category: "bike" as const,
+          duration_seconds: 1200,
+          effort_type: "power" as const,
+          recorded_at: new Date("2026-05-01T12:50:00.000Z"),
+          unit: "watts",
+          value: 400,
+          source: "imported",
+          method: "activity_file_best_effort",
+          provenance: { activity_id: "different-activity", derived_from: "activity_file_stream" },
+        },
+      ],
+    };
+
+    const result = resolveActivityContextFromEvidence({
+      activityTimestamp: "2026-05-01T12:00:00.000Z",
+      activityEffortThrough: "2026-05-01T13:00:00.000Z",
+      activityId: "activity-under-analysis",
+      evidence,
+    });
+
+    expect(result.profileMetrics.ftp).toBe(238);
+    expect(result.calibrationQuality?.ftp).toMatchObject({
+      source: "observed_effort",
+      observed_at: "2026-05-01T12:45:00.000Z",
+    });
+  });
+
+  it("keeps an eligible prior threshold instead of recalibrating every activity from itself", () => {
+    const effort = (activityId: string, recordedAt: string, value: number) => ({
+      activity_id: activityId,
+      activity_category: "bike" as const,
+      duration_seconds: 1200,
+      effort_type: "power" as const,
+      recorded_at: new Date(recordedAt),
+      unit: "watts",
+      value,
+      source: "imported",
+      method: "activity_file_best_effort",
+      provenance: { activity_id: activityId, derived_from: "activity_file_stream" },
+    });
+
+    const result = resolveActivityContextFromEvidence({
+      activityTimestamp: "2026-05-01T12:00:00.000Z",
+      activityEffortThrough: "2026-05-01T13:00:00.000Z",
+      activityId: "activity-under-analysis",
+      evidence: {
+        profile: { dob: null, gender: null },
+        profileMetrics: [],
+        recentEfforts: [
+          effort("activity-under-analysis", "2026-05-01T12:45:00.000Z", 300),
+          effort("prior-activity", "2026-04-20T12:00:00.000Z", 250),
+        ],
+      },
+    });
+
+    expect(result.profileMetrics.ftp).toBe(238);
+    expect(result.calibrationQuality?.ftp?.observed_at).toBe("2026-04-20T12:00:00.000Z");
+  });
+
+  it("evaluates prior-effort freshness at activity start", () => {
+    const result = resolveActivityContextFromEvidence({
+      activityTimestamp: "2026-05-01T12:00:00.000Z",
+      activityEffortThrough: "2026-05-01T14:00:00.000Z",
+      activityId: "activity-under-analysis",
+      evidence: {
+        profile: { dob: null, gender: null },
+        profileMetrics: [],
+        recentEfforts: [
+          {
+            activity_id: "prior-activity",
+            activity_category: "bike",
+            duration_seconds: 1200,
+            effort_type: "power",
+            recorded_at: new Date("2026-01-31T13:00:00.000Z"),
+            unit: "watts",
+            value: 250,
+            source: "imported",
+            method: "activity_file_best_effort",
+            provenance: { activity_id: "prior-activity", derived_from: "activity_file_stream" },
+          },
+          {
+            activity_id: "activity-under-analysis",
+            activity_category: "bike",
+            duration_seconds: 1200,
+            effort_type: "power",
+            recorded_at: new Date("2026-05-01T13:00:00.000Z"),
+            unit: "watts",
+            value: 300,
+            source: "imported",
+            method: "activity_file_best_effort",
+            provenance: {
+              activity_id: "activity-under-analysis",
+              derived_from: "activity_file_stream",
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.profileMetrics.ftp).toBe(238);
+    expect(result.calibrationQuality?.ftp?.observed_at).toBe("2026-01-31T13:00:00.000Z");
+  });
+
   it("resolves canonical cycling, running, and swimming thresholds from fresh efforts", async () => {
     const result = await resolveActivityContextAsOf({
       activityTimestamp: "2026-05-01T12:00:00.000Z",
@@ -105,7 +396,7 @@ describe("resolveActivityContextAsOf", () => {
     expect(result.profileMetrics.ftp).toBeNull();
   });
 
-  it("retains stale direct threshold age and source for presentation", () => {
+  it("retains stale direct threshold history without using it for calibration", () => {
     const result = resolveActivityContextFromEvidence({
       activityTimestamp: "2026-05-01T12:00:00.000Z",
       evidence: {
@@ -123,18 +414,11 @@ describe("resolveActivityContextAsOf", () => {
       },
     });
 
-    expect(result.profileMetrics.ftp).toBe(250);
-    expect(result.calibrationQuality?.ftp).toEqual({
-      source: "manual",
-      observed_at: "2025-12-01T00:00:00.000Z",
-      confidence: "high",
-      stale: true,
-      estimate: false,
-      calculation_version: null,
-    });
+    expect(result.profileMetrics.ftp).toBeNull();
+    expect(result.calibrationQuality?.ftp).toBeNull();
   });
 
-  it("identifies a validated CSS test without treating it as provider data", () => {
+  it("does not use an athlete-entered CSS test as activity calibration", () => {
     const result = resolveActivityContextFromEvidence({
       activityTimestamp: "2026-07-14T12:00:00.000Z",
       evidence: {
@@ -153,14 +437,8 @@ describe("resolveActivityContextAsOf", () => {
       },
     });
 
-    expect(result.calibrationQuality?.swimThreshold).toEqual({
-      source: "validated_test",
-      observed_at: "2026-07-14T09:00:00.000Z",
-      confidence: "high",
-      stale: false,
-      estimate: false,
-      calculation_version: "css_400m_200m_v1",
-    });
+    expect(result.profileMetrics.swim_threshold_speed_mps).toBeNull();
+    expect(result.calibrationQuality?.swimThreshold).toBeNull();
   });
 
   it.each([
@@ -239,7 +517,7 @@ describe("resolveActivityContextAsOf", () => {
     expect(result.profileMetrics.ftp).toBe(238);
   });
 
-  it("prefers a locked manual threshold while allowing fresh effort to supersede provider data", () => {
+  it("uses trusted activity efforts instead of locked manual or provider thresholds", () => {
     const result = resolveActivityContextFromEvidence({
       activityTimestamp: "2026-05-01T12:00:00.000Z",
       evidence: {
@@ -297,7 +575,7 @@ describe("resolveActivityContextAsOf", () => {
     });
 
     expect(result.profileMetrics).toMatchObject({
-      threshold_speed_mps: 4,
+      threshold_speed_mps: 5,
       swim_threshold_speed_mps: 1.5,
     });
   });
@@ -378,7 +656,7 @@ describe("resolveActivityContextAsOf", () => {
     });
   });
 
-  it("resolves latest linked LTHR by sport and keeps unlinked or manual LTHR generic", () => {
+  it("uses the strongest fresh activity-derived LTHR by sport and ignores manual values", () => {
     const evidence = {
       profile: { dob: null, gender: null },
       profileMetrics: [
@@ -389,8 +667,13 @@ describe("resolveActivityContextAsOf", () => {
           unit: "bpm",
           value: 180,
           source: "derived" as const,
+          method: "activity_file_lthr_detection",
           reference_activity_id: "activity-under-analysis",
           reference_activity_category: "bike",
+          provenance: {
+            activity_id: "activity-under-analysis",
+            derived_from: "activity_file_stream",
+          },
         },
         {
           id: "latest-prior-bike-lthr",
@@ -399,18 +682,22 @@ describe("resolveActivityContextAsOf", () => {
           unit: "beats_per_minute",
           value: 172,
           source: "derived" as const,
+          method: "activity_file_lthr_detection",
           reference_activity_id: "prior-bike",
           reference_activity_category: "bike",
+          provenance: { activity_id: "prior-bike", derived_from: "activity_file_stream" },
         },
         {
           id: "older-bike-lthr",
           metric_type: "lthr" as const,
           recorded_at: new Date("2026-04-10T00:00:00.000Z"),
           unit: "bpm",
-          value: 170,
+          value: 174,
           source: "derived" as const,
+          method: "activity_file_lthr_detection",
           reference_activity_id: "older-bike",
           reference_activity_category: "bike",
+          provenance: { activity_id: "older-bike", derived_from: "activity_file_stream" },
         },
         {
           id: "run-lthr",
@@ -418,9 +705,11 @@ describe("resolveActivityContextAsOf", () => {
           recorded_at: new Date("2026-04-15T00:00:00.000Z"),
           unit: "beats per minute",
           value: 168,
-          source: "test" as const,
+          source: "derived" as const,
+          method: "activity_file_lthr_detection",
           reference_activity_id: "run-test",
           reference_activity_category: "run",
+          provenance: { activity_id: "run-test", derived_from: "activity_file_stream" },
         },
         {
           id: "wrong-unit-generic-lthr",
@@ -471,10 +760,8 @@ describe("resolveActivityContextAsOf", () => {
       activityId: "activity-under-analysis",
       evidence,
     }).profileMetrics;
-    expect(withoutSelf).toMatchObject({
-      lthr: 160,
-      lthr_by_sport: { bike: 172, run: 168 },
-    });
+    expect(withoutSelf).toMatchObject({ lthr_by_sport: { bike: 174, run: 168 } });
+    expect(withoutSelf.lthr).toBeUndefined();
     expect(withoutSelf.lthr_by_sport).not.toHaveProperty("swim");
     expect(
       resolveActivityContextFromEvidence({
@@ -482,6 +769,67 @@ describe("resolveActivityContextAsOf", () => {
         evidence,
       }).profileMetrics.lthr_by_sport,
     ).toMatchObject({ bike: 180, run: 168 });
+  });
+
+  it("uses trusted same-activity LTHR only when prior sport evidence is absent", () => {
+    const currentBikeLthr = {
+      id: "current-bike-lthr",
+      metric_type: "lthr" as const,
+      recorded_at: new Date("2026-05-01T13:00:00.000Z"),
+      unit: "bpm",
+      value: 180,
+      source: "derived" as const,
+      method: "activity_file_lthr_detection",
+      reference_activity_id: "activity-under-analysis",
+      reference_activity_category: "bike",
+      provenance: {
+        activity_id: "activity-under-analysis",
+        derived_from: "activity_file_stream",
+      },
+    };
+    const malformedCurrent = {
+      ...currentBikeLthr,
+      id: "malformed-current-bike-lthr",
+      value: 190,
+      provenance: { activity_id: "another-activity", derived_from: "activity_file_stream" },
+    };
+    const input = {
+      activityTimestamp: "2026-05-01T12:00:00.000Z",
+      activityEffortThrough: "2026-05-01T13:30:00.000Z",
+      activityId: "activity-under-analysis",
+    };
+
+    expect(
+      resolveActivityContextFromEvidence({
+        ...input,
+        evidence: {
+          profile: { dob: null, gender: null },
+          profileMetrics: [malformedCurrent, currentBikeLthr],
+          recentEfforts: [],
+        },
+      }).profileMetrics.lthr_by_sport,
+    ).toEqual({ bike: 180 });
+
+    expect(
+      resolveActivityContextFromEvidence({
+        ...input,
+        evidence: {
+          profile: { dob: null, gender: null },
+          profileMetrics: [
+            currentBikeLthr,
+            {
+              ...currentBikeLthr,
+              id: "prior-bike-lthr",
+              recorded_at: new Date("2026-04-20T12:00:00.000Z"),
+              value: 170,
+              reference_activity_id: "prior-bike",
+              provenance: { activity_id: "prior-bike", derived_from: "activity_file_stream" },
+            },
+          ],
+          recentEfforts: [],
+        },
+      }).profileMetrics.lthr_by_sport,
+    ).toEqual({ bike: 170 });
   });
 
   it("finds a valid threshold observation after more than 50 unrelated recent efforts", () => {
@@ -531,7 +879,7 @@ describe("resolveActivityContextAsOf", () => {
     expect(result.recentEfforts).toHaveLength(50);
   });
 
-  it("honors append-only override tombstones across historical as-of reconstruction", () => {
+  it("honors non-threshold tombstones while ignoring historical manual FTP overrides", () => {
     const active = { input: "profile_update", override_state: "active" };
     const cleared = { input: "profile_update", override_state: "cleared" };
     const evidence = {
@@ -613,7 +961,7 @@ describe("resolveActivityContextAsOf", () => {
         evidence,
         activityTimestamp: "2026-05-01T12:00:00.000Z",
       }).profileMetrics,
-    ).toMatchObject({ weight_kg: 70, ftp: 300 });
+    ).toMatchObject({ weight_kg: 70, ftp: null });
     expect(
       resolveActivityContextFromEvidence({
         evidence,
@@ -625,6 +973,6 @@ describe("resolveActivityContextAsOf", () => {
         evidence,
         activityTimestamp: "2026-05-03T12:00:00.000Z",
       }).profileMetrics,
-    ).toMatchObject({ weight_kg: 72, ftp: 320 });
+    ).toMatchObject({ weight_kg: 72, ftp: null });
   });
 });

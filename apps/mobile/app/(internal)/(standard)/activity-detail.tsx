@@ -366,8 +366,19 @@ function ActivityDetailScreen() {
         : derived?.stress.unavailable_reason === "invalid_data"
           ? "The available activity or threshold data is invalid."
           : "Compatible activity data is missing.";
+  const loadCalibrationQuality = derived?.stress.calibration_quality;
   const calibrationText = formatCalibrationQuality(
-    derived?.stress.calibration_quality,
+    loadCalibrationQuality
+      ? {
+          source: loadCalibrationQuality.source,
+          observed_at: loadCalibrationQuality.observed_at,
+          stale: loadCalibrationQuality.stale,
+          estimate: loadCalibrationQuality.estimate,
+          ...(loadCalibrationQuality.calculation_version !== undefined
+            ? { calculation_version: loadCalibrationQuality.calculation_version }
+            : {}),
+        }
+      : loadCalibrationQuality,
     activity?.started_at,
   );
 
@@ -821,6 +832,12 @@ function ActivityDetailScreen() {
                   <Text className="mt-2 text-xs text-muted-foreground">
                     Estimated HR Load uses summary average heart rate and LTHR; it is separate from
                     Stream HR Load.
+                  </Text>
+                ) : null}
+                {loadMethod === "critical_power_threshold" ? (
+                  <Text className="mt-2 text-xs text-muted-foreground">
+                    Estimated CP Load uses a guarded power curve from multiple rides and remains
+                    separate from FTP-based TSS.
                   </Text>
                 ) : null}
               </CardContent>

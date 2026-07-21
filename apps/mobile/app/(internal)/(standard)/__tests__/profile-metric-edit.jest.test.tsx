@@ -1,8 +1,12 @@
-import { getProfileMetricDefinition, profileMetricTypes } from "@repo/core/athlete-inputs";
+import {
+  getProfileMetricDefinition,
+  isActivityDerivedThresholdMetricType,
+  profileMetricTypes,
+} from "@repo/core/athlete-inputs";
 import type { ReactNode } from "react";
 import React from "react";
 import { createHost } from "../../../../test/mock-components";
-import { act, fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
+import { renderNative, screen } from "../../../../test/render-native";
 
 const backMock = jest.fn();
 const createMock = jest.fn();
@@ -130,18 +134,6 @@ jest.mock("@/lib/utils/formErrors", () => ({
 
 const ProfileMetricEditScreen = require("../profile-metric-edit").default;
 
-async function chooseMetric(metricType: string) {
-  await act(async () => {
-    fireEvent.press(screen.getByTestId(`profile-metric-type-${metricType}`));
-  });
-}
-
-async function save() {
-  await act(async () => {
-    await screen.getByText("Save").props.onPress();
-  });
-}
-
 describe("profile metric semantic pace entry", () => {
   beforeEach(() => {
     backMock.mockReset();
@@ -171,13 +163,17 @@ describe("profile metric semantic pace entry", () => {
     ]) {
       expect(screen.getByText(category)).toBeTruthy();
     }
-    for (const metricType of profileMetricTypes) {
+    for (const metricType of profileMetricTypes.filter(
+      (candidate) => !isActivityDerivedThresholdMetricType(candidate),
+    )) {
       const option = screen.getByTestId(`profile-metric-type-${metricType}`);
       expect(option.props.children).toBe(getProfileMetricDefinition(metricType).label);
     }
+    expect(screen.queryByTestId("profile-metric-type-ftp")).toBeNull();
+    expect(screen.queryByTestId("profile-metric-type-lthr")).toBeNull();
   });
 
-  it("shows an edited metric type as static labeled text without a picker trigger", async () => {
+  it("shows an existing threshold as read-only", async () => {
     routeId = "metric-1";
     metric = {
       metric_type: "ftp",
@@ -188,10 +184,8 @@ describe("profile metric semantic pace entry", () => {
 
     renderNative(<ProfileMetricEditScreen />);
 
-    expect((await screen.findByTestId("profile-metric-type-static")).props.children).toBe(
-      "Bike FTP",
-    );
-    expect(screen.getByText("Metric")).toBeTruthy();
+    expect(await screen.findByText("Read-only threshold")).toBeTruthy();
+    expect(screen.getByText(/calculated from trusted recorded activity evidence/)).toBeTruthy();
     expect(screen.queryByTestId("profile-metric-type-trigger")).toBeNull();
   });
 
@@ -201,107 +195,5 @@ describe("profile metric semantic pace entry", () => {
     renderNative(<ProfileMetricEditScreen />);
 
     expect(screen.getByTestId("profile-metric-type-trigger").props.disabled).toBe(true);
-  });
-
-  it("uses the threshold default and submits canonical seconds", async () => {
-    renderNative(<ProfileMetricEditScreen />);
-    await chooseMetric("threshold_pace_seconds_per_km");
-
-    const input = screen.getByTestId("profile-metric-value");
-    expect(input.props.value).toBe("4:30");
-    expect(screen.getByText("/km")).toBeTruthy();
-
-    fireEvent.changeText(input, "4:45");
-    await save();
-
-    await waitFor(() =>
-      expect(createMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          metric_type: "threshold_pace_seconds_per_km",
-          notes: null,
-          profile_id: "athlete-1",
-          value: 285,
-        }),
-      ),
-    );
-    expect(createMock.mock.calls[0]?.[0].recorded_at).toEqual(expect.any(String));
-  });
-
-  it("uses the CSS default and semantic unit", async () => {
-    renderNative(<ProfileMetricEditScreen />);
-    await chooseMetric("css_seconds_per_100m");
-
-    expect(screen.getByTestId("profile-metric-value").props.value).toBe("1:40");
-    expect(screen.getByText("/100m")).toBeTruthy();
-  });
-
-  it("hydrates and submits an edited threshold pace as canonical seconds", async () => {
-    routeId = "metric-1";
-    metric = {
-      metric_type: "threshold_pace_seconds_per_km",
-      value: 305,
-      recorded_at: "2026-07-01T08:30:00.000Z",
-      notes: "Track test",
-    };
-
-    renderNative(<ProfileMetricEditScreen />);
-
-    const input = await screen.findByTestId("profile-metric-value");
-    expect(input.props.value).toBe("5:05");
-    fireEvent.changeText(input, "5:10");
-    await save();
-
-    await waitFor(() =>
-      expect(updateMock).toHaveBeenCalledWith({
-        id: "metric-1",
-        notes: "Track test",
-        recorded_at: "2026-07-01T08:30:00.000Z",
-        value: 310,
-      }),
-    );
-  });
-
-  it("resets to each metric's canonical default when switching", async () => {
-    renderNative(<ProfileMetricEditScreen />);
-    await chooseMetric("threshold_pace_seconds_per_km");
-    fireEvent.changeText(screen.getByTestId("profile-metric-value"), "5:00");
-
-    await chooseMetric("css_seconds_per_100m");
-    expect(screen.getByTestId("profile-metric-value").props.value).toBe("1:40");
-
-    await chooseMetric("threshold_pace_seconds_per_km");
-    expect(screen.getByTestId("profile-metric-value").props.value).toBe("4:30");
-  });
-
-  it("does not submit an incomplete pace draft and retains it for correction", async () => {
-    renderNative(<ProfileMetricEditScreen />);
-    await chooseMetric("threshold_pace_seconds_per_km");
-
-    fireEvent.changeText(screen.getByTestId("profile-metric-value"), "4:3");
-    await save();
-
-    expect(createMock).not.toHaveBeenCalled();
-    expect(screen.getByTestId("profile-metric-value").props.value).toBe("4:3");
-    expect(screen.getByTestId("profile-metric-value").props.accessibilityHint).toContain(
-      "Error: Value is required",
-    );
-    expect(screen.getByText("Adjust this field: Value is required")).toBeTruthy();
-  });
-
-  it.each([
-    "1:59",
-    "20:01",
-  ])("rejects threshold pace %s outside the canonical range", async (pace) => {
-    renderNative(<ProfileMetricEditScreen />);
-    await chooseMetric("threshold_pace_seconds_per_km");
-    fireEvent.changeText(screen.getByTestId("profile-metric-value"), pace);
-    await save();
-
-    expect(
-      await screen.findByText(
-        "Adjust this field: Running threshold pace must be between 2:00 and 20:00 /km",
-      ),
-    ).toBeTruthy();
-    expect(createMock).not.toHaveBeenCalled();
   });
 });

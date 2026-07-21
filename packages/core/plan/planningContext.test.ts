@@ -39,7 +39,7 @@ describe("planningContext", () => {
     expect(context.scheduling.preferredWeekdays).toEqual([1, 3, 5]);
   });
 
-  it("resolves canonical thresholds from locked metrics and eligible twenty-minute efforts", () => {
+  it("resolves thresholds only from eligible activity efforts", () => {
     const context = createAthletePlanningContextFromSnapshot({
       asOf: "2026-06-01T00:00:00.000Z",
       profileMetrics: [
@@ -85,17 +85,13 @@ describe("planningContext", () => {
       ],
     });
 
-    expect(context.physiology.ftpWatts).toMatchObject({ value: 240, source: "profile_metric" });
+    expect(context.physiology.ftpWatts).toMatchObject({ value: null, source: "unknown" });
     expect(context.physiology.thresholdPaceSecondsPerKm).toMatchObject({
       value: 250,
       source: "activity_effort",
       unit: "s/1000m",
     });
-    expect(context.physiology.cssSecondsPer100m).toMatchObject({
-      value: 100,
-      source: "profile_metric",
-      unit: "s/100m",
-    });
+    expect(context.physiology.cssSecondsPer100m).toMatchObject({ value: null, source: "unknown" });
   });
 
   it("maps simple planning preferences through canonical creation constraints", () => {

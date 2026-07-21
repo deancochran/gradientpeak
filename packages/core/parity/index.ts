@@ -299,14 +299,6 @@ export const parityRegistry = [
     title: "Activity effort detail",
   },
   {
-    area: "activity_efforts",
-    backendOperations: ["activityEfforts.create"],
-    id: "activity_efforts.create",
-    mobileRoute: "/(internal)/(standard)/activity-effort-create",
-    policy: "required_on_web",
-    title: "Activity effort create",
-  },
-  {
     area: "activity_plans",
     backendOperations: ["activityPlans.list"],
     id: "activity_plans.list",

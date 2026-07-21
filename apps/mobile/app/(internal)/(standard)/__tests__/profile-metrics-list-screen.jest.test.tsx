@@ -177,13 +177,12 @@ describe("profile metrics list screen", () => {
     expect(screen.getByTestId("profile-metric-type-lthr")).toBeTruthy();
   });
 
-  it("opens the dedicated test from the Load Calibration CSS detail", () => {
+  it("keeps calculated CSS history read-only", () => {
     renderNative(<ProfileMetricsListScreen />);
 
     fireEvent.press(screen.getByTestId("profile-metric-type-css_seconds_per_100m"));
-    fireEvent.press(screen.getByTestId("profile-metric-css-test"));
-
-    expect(pushMock).toHaveBeenCalledWith("/profile-css-test");
+    expect(screen.queryByTestId("profile-metric-css-test")).toBeNull();
+    expect(pushMock).not.toHaveBeenCalledWith("/profile-css-test");
   });
 
   it("shows the latest value from the selected date range", () => {

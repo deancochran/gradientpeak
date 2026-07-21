@@ -74,6 +74,42 @@ export type ObservedCriticalPowerEffort = BestEffort & {
   provenance: unknown;
 };
 
+export const CRITICAL_POWER_CANONICAL_DURATIONS = [300, 600, 1200, 1800] as const;
+
+function isPreferredCriticalPowerEffort<T extends ObservedCriticalPowerEffort>(
+  candidate: T,
+  current: T,
+): boolean {
+  if (candidate.value !== current.value) return candidate.value > current.value;
+  if (candidate.recorded_at !== current.recorded_at) {
+    return candidate.recorded_at > current.recorded_at;
+  }
+  return (candidate.activity_id ?? "") < (current.activity_id ?? "");
+}
+
+/** Selects one deterministic strongest observation per duration for guarded CP evaluation. */
+export function selectCanonicalCriticalPowerEfforts<T extends ObservedCriticalPowerEffort>(
+  efforts: readonly T[],
+): T[] {
+  const selected = new Map<number, T>();
+  for (const candidate of efforts) {
+    if (
+      !(CRITICAL_POWER_CANONICAL_DURATIONS as readonly number[]).includes(
+        candidate.duration_seconds,
+      )
+    ) {
+      continue;
+    }
+    const current = selected.get(candidate.duration_seconds);
+    if (!current || isPreferredCriticalPowerEffort(candidate, current)) {
+      selected.set(candidate.duration_seconds, candidate);
+    }
+  }
+  return [...selected.values()].sort(
+    (left, right) => left.duration_seconds - right.duration_seconds,
+  );
+}
+
 const DEFAULT_FIT_OPTIONS: Required<CriticalPowerFitOptions> = {
   minRSquared: 0.95,
   minCpWatts: 50,

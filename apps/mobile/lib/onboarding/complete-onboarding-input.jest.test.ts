@@ -37,10 +37,10 @@ describe("buildCompleteOnboardingInput", () => {
     if (!result.ok) return;
     expect(result.input.baseline_field_sources).toEqual({
       dob: "cleared",
-      ftp: "imported",
       max_hr: "estimated",
       resting_hr: "cleared",
       weight_kg: "manual",
     });
+    expect(result.input).not.toHaveProperty("ftp");
   });
 });

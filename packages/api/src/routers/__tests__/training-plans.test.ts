@@ -216,25 +216,31 @@ function buildLoadActivity(id: string, startedAt: Date, normalizedPower: number 
 
 const loadEvidenceResults = {
   profiles: { data: [{ profile_id: "profile-123", dob: null, gender: null }], error: null },
-  profile_metrics: {
+  profile_metrics: { data: [], error: null },
+  activity_efforts: {
     data: [
-      {
-        id: "ftp-1",
-        profile_id: "profile-123",
-        metric_type: "ftp",
-        recorded_at: new Date("2025-01-01T00:00:00.000Z"),
-        unit: "W",
-        value: 250,
-        source: "manual",
-        method: null,
-        provenance: null,
-        reference_activity_id: null,
-        reference_activity_category: null,
-      },
+      ...[new Date("2025-12-20T00:00:00.000Z"), new Date(Date.now() - 30 * 86_400_000)].map(
+        (recordedAt, index) => ({
+          id: `ftp-effort-${index}`,
+          profile_id: "profile-123",
+          activity_id: `threshold-activity-${index}`,
+          activity_category: "bike",
+          duration_seconds: 1200,
+          effort_type: "power",
+          recorded_at: recordedAt,
+          unit: "watts",
+          value: 250 / 0.95,
+          source: "imported",
+          method: "activity_file_best_effort",
+          provenance: {
+            activity_id: `threshold-activity-${index}`,
+            derived_from: "activity_file_stream",
+          },
+        }),
+      ),
     ],
     error: null,
   },
-  activity_efforts: { data: [], error: null },
 } satisfies QueryMap;
 
 const AGGRESSIVE_BEHAVIOR_CONTROLS = {

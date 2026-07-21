@@ -85,9 +85,7 @@ export function getProfileQuickUpdateDefaults(
   profile: ProfileSettingsView | null | undefined,
 ): z.input<typeof profileQuickUpdateSchema> {
   return {
-    ftp: profile?.ftp ?? undefined,
     is_public: profile?.is_public ?? false,
-    threshold_hr: profile?.threshold_hr ?? undefined,
     username: profile?.username ?? "",
     weight_kg: profile?.weight_kg ?? undefined,
   };

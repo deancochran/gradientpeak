@@ -1,6 +1,7 @@
 import {
   addProfileMetricValueRangeIssue,
   getProfileMetricDefinition,
+  isActivityDerivedThresholdMetricType,
   type ProfileMetricType,
   profileMetricToInputDescriptor,
   profileMetricTypeSchema,
@@ -139,7 +140,9 @@ function ProfileMetricEditScreen() {
   const isEditMode = Boolean(id);
   const overrideMetricTypeResult = profileMetricTypeSchema.safeParse(metricType);
   const initialMetricType = overrideMetricTypeResult.success
-    ? overrideMetricTypeResult.data
+    ? isActivityDerivedThresholdMetricType(overrideMetricTypeResult.data)
+      ? "weight_kg"
+      : overrideMetricTypeResult.data
     : "weight_kg";
   const initialValue = Number(value);
   const router = useRouter();
@@ -227,6 +230,20 @@ function ProfileMetricEditScreen() {
     );
   }
 
+  if (metric && isActivityDerivedThresholdMetricType(metric.metric_type as ProfileMetricType)) {
+    return (
+      <View className="flex-1 items-center justify-center gap-2 bg-background px-6">
+        <Stack.Screen options={{ title: "Calculated threshold" }} />
+        <Text className="text-center text-lg font-semibold text-foreground">
+          Read-only threshold
+        </Text>
+        <Text className="text-center text-sm text-muted-foreground">
+          This value is calculated from trusted recorded activity evidence and cannot be edited.
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -298,19 +315,23 @@ function ProfileMetricEditScreen() {
                           {profileMetricSections.map((section) => (
                             <SelectGroup key={section.id}>
                               <SelectLabel>{section.title}</SelectLabel>
-                              {section.metricTypes.map((metricType) => {
-                                const definition = getProfileMetricDefinition(metricType);
-                                return (
-                                  <SelectItem
-                                    key={metricType}
-                                    label={definition.label}
-                                    testID={`profile-metric-type-${metricType}`}
-                                    value={metricType}
-                                  >
-                                    {definition.label}
-                                  </SelectItem>
-                                );
-                              })}
+                              {section.metricTypes
+                                .filter(
+                                  (metricType) => !isActivityDerivedThresholdMetricType(metricType),
+                                )
+                                .map((metricType) => {
+                                  const definition = getProfileMetricDefinition(metricType);
+                                  return (
+                                    <SelectItem
+                                      key={metricType}
+                                      label={definition.label}
+                                      testID={`profile-metric-type-${metricType}`}
+                                      value={metricType}
+                                    >
+                                      {definition.label}
+                                    </SelectItem>
+                                  );
+                                })}
                             </SelectGroup>
                           ))}
                         </NativeSelectScrollView>

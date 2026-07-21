@@ -1,9 +1,9 @@
 import {
   formatProfileMetricValue,
   getProfileMetricDefinition,
+  isActivityDerivedThresholdMetricType,
   isProfileMetricType,
 } from "@repo/core/athlete-inputs";
-import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import {
   DropdownMenu,
@@ -83,6 +83,7 @@ export default function ProfileMetricDetailScreen() {
 
   const renderHeaderActions = () => {
     if (!metric) return null;
+    if (isActivityDerivedThresholdMetricType(metric.metric_type)) return null;
     const isManual = metric.source === "manual";
     return (
       <DropdownMenu>
@@ -198,15 +199,6 @@ export default function ProfileMetricDetailScreen() {
               </View>
             </CardContent>
           </Card>
-
-          {metric.metric_type === "css_seconds_per_100m" ? (
-            <Button
-              onPress={() => navigateTo(ROUTES.PROFILE_METRICS.CSS_TEST as Href)}
-              testId="profile-metric-css-test"
-            >
-              <Text>Record 400m / 200m CSS test</Text>
-            </Button>
-          ) : null}
 
           {metric.notes ? (
             <Card className="rounded-3xl border border-border bg-card">

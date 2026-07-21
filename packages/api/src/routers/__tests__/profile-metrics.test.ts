@@ -175,52 +175,18 @@ function createCaller(plan: QueryPlan = {}, userId = "11111111-1111-4111-8111-11
 }
 
 describe("profileMetricsRouter", () => {
-  it("records a validated CSS test through one transaction and returns a bounded DTO", async () => {
-    const efforts = [
-      createActivityEffortRow(),
-      createActivityEffortRow({
-        id: "00000000-0000-4000-8000-000000000011",
-        duration_seconds: 168,
-        value: 200 / 168,
+  it("rejects athlete-entered CSS threshold tests", async () => {
+    const { caller, callLog } = createCaller();
+
+    await expect(
+      caller.recordCssTest({
+        operation_id: "22222222-2222-4222-8222-222222222222",
+        time_400_seconds: 360,
+        time_200_seconds: 168,
+        recorded_at: new Date("2026-07-14T09:00:00.000Z"),
       }),
-    ];
-    const metric = createProfileMetricRow({
-      id: "00000000-0000-4000-8000-000000000012",
-      metric_type: "css_seconds_per_100m",
-      unit: "seconds_per_100m",
-      value: 96,
-      source: "test",
-      method: "css_400m_200m_test",
-      calculation_version: "css_400m_200m_v1",
-      quality_score: 1,
-      provenance: { observation_type: "validated_test", trusted: true },
-    });
-    const { caller, callLog } = createCaller({ insertResults: [efforts, [metric]] });
-
-    const result = await caller.recordCssTest({
-      operation_id: "22222222-2222-4222-8222-222222222222",
-      time_400_seconds: 360,
-      time_200_seconds: 168,
-      recorded_at: new Date("2026-07-14T09:00:00.000Z"),
-    });
-
-    expect(result).toMatchObject({
-      test_id: expect.any(String),
-      css_seconds_per_100m: 96,
-      recorded_at: new Date("2026-07-14T09:00:00.000Z"),
-      source: "validated_test",
-      calculation_version: "css_400m_200m_v1",
-      efforts: [
-        { distance_meters: 400, time_seconds: 360, speed_meters_per_second: 400 / 360 },
-        { distance_meters: 200, time_seconds: 168, speed_meters_per_second: 200 / 168 },
-      ],
-    });
-    expect(result).not.toHaveProperty("profile_metric");
-    expect(result.efforts[0]).not.toHaveProperty("profile_id");
-    expect(callLog.filter(({ operation }) => operation === "insert.values")).toHaveLength(2);
-    expect(callLog.map(({ operation }) => operation)).toEqual(
-      expect.arrayContaining(["transaction.begin", "transaction.commit"]),
-    );
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(callLog).toEqual([]);
   });
 
   it("rejects an invalid CSS relationship before starting a transaction", async () => {

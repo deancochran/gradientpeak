@@ -112,12 +112,12 @@ function ControlledHarness({
 }
 
 describe("AthleteBaselineFields", () => {
-  it("progressively discloses sport-specific semantic fields", () => {
+  it("never exposes manually editable sport thresholds", () => {
     const { rerender } = renderNative(
       <AthleteBaselineFields value={baseValue} onChange={jest.fn()} visibleSports={["running"]} />,
     );
 
-    expect(screen.getByLabelText("Running threshold pace (Optional)")).toBeTruthy();
+    expect(screen.queryByLabelText("Running threshold pace (Optional)")).toBeNull();
     expect(screen.queryByTestId("athlete-baseline-ftp")).toBeNull();
     expect(screen.queryByLabelText("Swim CSS (Optional)")).toBeNull();
 
@@ -128,8 +128,8 @@ describe("AthleteBaselineFields", () => {
         visibleSports={["cycling", "swimming"]}
       />,
     );
-    expect(screen.getByTestId("athlete-baseline-ftp")).toBeTruthy();
-    expect(screen.getByLabelText("Swim CSS (Optional)")).toBeTruthy();
+    expect(screen.queryByTestId("athlete-baseline-ftp")).toBeNull();
+    expect(screen.queryByLabelText("Swim CSS (Optional)")).toBeNull();
     expect(screen.queryByLabelText("Running threshold pace (Optional)")).toBeNull();
   });
 
@@ -234,17 +234,14 @@ describe("AthleteBaselineFields", () => {
     expect(onChange).toHaveBeenLastCalledWith({ field: "gender", value: null, source: "cleared" });
   });
 
-  it("replaces an imported label with explicit manual provenance after an edit", () => {
+  it("does not expose imported FTP as an editable onboarding value", () => {
     renderNative(
       <ControlledHarness
         initialValue={{ ftp: 245 }}
         initialSources={{ ftp: { kind: "imported", label: "Wahoo" } }}
       />,
     );
-    expect(screen.getByText("Imported from Wahoo")).toBeTruthy();
-
-    fireEvent.changeText(screen.getByTestId("athlete-baseline-ftp"), "260");
-    expect(screen.getByText("Manual")).toBeTruthy();
+    expect(screen.queryByTestId("athlete-baseline-ftp")).toBeNull();
     expect(screen.queryByText("Imported from Wahoo")).toBeNull();
   });
 
@@ -290,18 +287,16 @@ describe("AthleteBaselineFields", () => {
     expect(screen.getByTestId("athlete-baseline-weight").props.error).toBeUndefined();
   });
 
-  it("captures valid running and swimming pace edits before Next without blur", () => {
+  it("submits onboarding without athlete-entered threshold values", () => {
     const onNext = jest.fn();
     renderNative(<ControlledHarness onNext={onNext} />);
 
-    fireEvent.changeText(screen.getByLabelText("Running threshold pace (Optional)"), "4:30");
-    fireEvent.changeText(screen.getByLabelText("Swim CSS (Optional)"), "1:45");
     fireEvent.press(screen.getByTestId("athlete-baseline-next"));
 
     expect(onNext).toHaveBeenCalledWith(
       expect.objectContaining({
-        thresholdPaceSecondsPerKm: 270,
-        cssSecondsPer100m: 105,
+        thresholdPaceSecondsPerKm: null,
+        cssSecondsPer100m: null,
       }),
     );
   });

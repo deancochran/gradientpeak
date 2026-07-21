@@ -8,6 +8,7 @@
 import { randomUUID } from "node:crypto";
 import {
   getProfileMetricDefinition,
+  isActivityDerivedThresholdMetricType,
   isProfileMetricValueWithinRange,
   normalizeProfileMetricCreate,
   normalizeProfileMetricUpdate,
@@ -21,11 +22,7 @@ import { TRPCError } from "@trpc/server";
 import { and, desc, eq, lte } from "drizzle-orm";
 import { z } from "zod";
 import { listProfileMetricHistory } from "../application/profile-metrics/listProfileMetricHistory";
-import {
-  CSS_TEST_CALCULATION_VERSION,
-  CssTestOperationConflictError,
-  persistCssTest,
-} from "../application/profile-metrics/persist-css-test";
+import { CSS_TEST_CALCULATION_VERSION } from "../application/profile-metrics/persist-css-test";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { indexCursorSchema } from "../utils/index-cursor";
@@ -143,42 +140,24 @@ function parseNullableProfileMetricRow(row: unknown) {
   return row ? parseProfileMetricRow(row) : null;
 }
 
+function assertUserWritableMetric(metricType: z.infer<typeof profileMetricTypeSchema>): void {
+  if (!isActivityDerivedThresholdMetricType(metricType)) return;
+  throw new TRPCError({
+    code: "FORBIDDEN",
+    message:
+      "Training thresholds are calculated from trusted activity evidence and cannot be edited.",
+  });
+}
+
 export const profileMetricsRouter = createTRPCRouter({
   recordCssTest: protectedProcedure
     .input(recordCssTestInputSchema)
     .output(recordCssTestOutputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const result = await persistCssTest(getRequiredDb(ctx), {
-        profileId: ctx.session.user.id,
-        operationId: input.operation_id,
-        recordedAt: input.recorded_at,
-        time400Seconds: input.time_400_seconds,
-        time200Seconds: input.time_200_seconds,
-      }).catch((error: unknown) => {
-        if (error instanceof CssTestOperationConflictError) {
-          throw new TRPCError({ code: "CONFLICT", message: error.message });
-        }
-        throw error;
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "Swim threshold is calculated from trusted recorded activities.",
       });
-      return {
-        test_id: result.testId,
-        css_seconds_per_100m: result.cssSecondsPer100m,
-        recorded_at: result.recordedAt,
-        source: "validated_test" as const,
-        calculation_version: CSS_TEST_CALCULATION_VERSION,
-        efforts: [
-          {
-            distance_meters: 400 as const,
-            time_seconds: result.efforts[0].durationSeconds,
-            speed_meters_per_second: result.efforts[0].speedMetersPerSecond,
-          },
-          {
-            distance_meters: 200 as const,
-            time_seconds: result.efforts[1].durationSeconds,
-            speed_meters_per_second: result.efforts[1].speedMetersPerSecond,
-          },
-        ],
-      };
     }),
 
   /**
@@ -260,6 +239,7 @@ export const profileMetricsRouter = createTRPCRouter({
 
       const { profile_id: _profileId, ...metricInput } = input;
       const normalizedMetric = normalizeProfileMetricCreate(metricInput);
+      assertUserWritableMetric(normalizedMetric.metric_type);
 
       const [data] = await db
         .insert(profileMetrics)
@@ -311,6 +291,7 @@ export const profileMetricsRouter = createTRPCRouter({
       if (!existing) {
         return null;
       }
+      assertUserWritableMetric(existing.metric_type);
 
       const normalizedPatch = (() => {
         try {
@@ -380,7 +361,7 @@ export const profileMetricsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const [existing] = await db
-        .select({ source: profileMetrics.source })
+        .select({ source: profileMetrics.source, metric_type: profileMetrics.metric_type })
         .from(profileMetrics)
         .where(
           and(eq(profileMetrics.id, input.id), eq(profileMetrics.profile_id, ctx.session.user.id)),
@@ -393,6 +374,8 @@ export const profileMetricsRouter = createTRPCRouter({
           message: "Only manual profile metric observations can be deleted",
         });
       }
+
+      if (existing) assertUserWritableMetric(existing.metric_type);
 
       if (!existing) return deleteProfileMetricOutputSchema.parse({ success: true });
 

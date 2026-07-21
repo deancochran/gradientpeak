@@ -275,7 +275,21 @@ describe("analyzeParsedActivityFile", () => {
   it("keeps the same-sport LTHR high-water behavior", async () => {
     const startedAt = new Date("2026-01-01T10:00:00Z");
     const result = await analyzeParsedActivityFile(
-      dbWithMetricResults([[{ value: 165, method: null, provenance: null }], []]),
+      dbWithMetricResults([
+        [
+          {
+            referenceActivityId: "prior-bike-activity",
+            value: 165,
+            source: "derived",
+            method: "activity_file_lthr_detection",
+            provenance: {
+              activity_id: "prior-bike-activity",
+              derived_from: "activity_file_stream",
+            },
+          },
+        ],
+        [],
+      ]),
       {
         activityId: "bike-activity",
         profileId: "profile-1",
@@ -291,6 +305,36 @@ describe("analyzeParsedActivityFile", () => {
     expect(result.detectedLTHR).toBeNull();
   });
 
+  it("does not let untrusted LTHR suppress trusted activity detection", async () => {
+    const startedAt = new Date("2026-01-01T10:00:00Z");
+    const result = await analyzeParsedActivityFile(
+      dbWithMetricResults([
+        [
+          {
+            referenceActivityId: "manual-threshold",
+            value: 190,
+            source: "manual",
+            method: "profile_update_override",
+            provenance: null,
+          },
+        ],
+        [],
+      ]),
+      {
+        activityId: "bike-activity",
+        profileId: "profile-1",
+        parsedData: {
+          metadata: { startTime: startedAt, type: "cycling" },
+          summary: { totalTime: 1_200, totalDistance: 20_000, avgHeartRate: 170 },
+          records: sustainedHeartRateRecords(startedAt),
+          segments: explicitBikeSegment(startedAt, 1_200),
+        },
+      },
+    );
+
+    expect(result.detectedLTHR).toBe(162);
+  });
+
   it("does not let an activity suppress its own equal LTHR during reanalysis", async () => {
     const startedAt = new Date("2026-01-01T10:00:00Z");
     const result = await analyzeParsedActivityFile(
@@ -299,8 +343,12 @@ describe("analyzeParsedActivityFile", () => {
           {
             referenceActivityId: "bike-activity",
             value: 162,
+            source: "derived",
             method: "activity_file_lthr_detection",
-            provenance: null,
+            provenance: {
+              activity_id: "bike-activity",
+              derived_from: "activity_file_stream",
+            },
           },
         ],
         [],

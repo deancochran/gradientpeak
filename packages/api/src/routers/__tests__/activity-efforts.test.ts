@@ -155,232 +155,6 @@ describe("activityEffortsRouter", () => {
     await expect(caller.getById({ id: tombstone.id })).resolves.toBeNull();
   });
 
-  it("creates an effort for the current profile and normalizes timestamps", async () => {
-    const input = {
-      activity_id: null,
-      activity_category: "run" as const,
-      duration_seconds: 600,
-      effort_type: "speed" as const,
-      value: 4.2,
-      start_offset: 30,
-      recorded_at: "2026-03-02T12:34:56.000Z",
-    };
-    const insertedRow = buildEffortRow({
-      id: randomUuidState.next,
-      ...input,
-      created_at: new Date("2026-03-03T00:00:00.000Z"),
-      recorded_at: new Date(input.recorded_at),
-      source: "manual",
-      method: "manual_activity_effort_entry",
-      provenance: { trusted: true, observation_type: "observed", entered_by: "athlete" },
-    });
-    const { caller, spies } = createCaller({ insertResult: [insertedRow] });
-
-    const result = await caller.create(input);
-
-    expect(result).toEqual(insertedRow);
-    expect(spies.insert).toHaveBeenCalledOnce();
-    expect(spies.values).toHaveBeenCalledOnce();
-    expect(spies.returning).toHaveBeenCalledOnce();
-
-    const insertedPayload = (spies.values.mock.calls as any[][])[0]?.[0];
-    expect(insertedPayload).toMatchObject({
-      id: randomUuidState.next,
-      profile_id: userId,
-      activity_id: null,
-      activity_category: "run",
-      duration_seconds: 600,
-      effort_type: "speed",
-      value: 4.2,
-      unit: "meters_per_second",
-      source: "manual",
-      method: "manual_activity_effort_entry",
-      provenance: { trusted: true, observation_type: "observed", entered_by: "athlete" },
-      start_offset: 30,
-    });
-    expect(insertedPayload.created_at).toBeInstanceOf(Date);
-    expect(insertedPayload.recorded_at).toBeInstanceOf(Date);
-    expect(insertedPayload.recorded_at.toISOString()).toBe(input.recorded_at);
-  });
-
-  it("rejects activity-backed efforts without one exact segment", async () => {
-    const activityId = "33333333-3333-4333-8333-333333333333";
-    const segmentId = "44444444-4444-4444-8444-444444444444";
-    const { caller, spies } = createCaller({ selectOneResults: [[]] });
-
-    await expect(
-      caller.create({
-        activity_id: activityId,
-        segment_id: segmentId,
-        activity_category: "run",
-        duration_seconds: 60,
-        effort_type: "speed",
-        value: 4.2,
-        start_offset: 30,
-        recorded_at: "2026-03-02T12:34:56.000Z",
-      }),
-    ).rejects.toMatchObject({
-      code: "BAD_REQUEST",
-      message: "Effort must reference exactly one owned activity segment",
-    });
-    expect(spies.insert).not.toHaveBeenCalled();
-  });
-
-  it("rejects an effort range that crosses its referenced segment", async () => {
-    const { caller, spies } = createCaller({
-      selectOneResults: [
-        [
-          {
-            role: "activity",
-            category: "run",
-            start_offset_ms: 60_000,
-            end_offset_ms: 120_000,
-          },
-        ],
-      ],
-    });
-
-    await expect(
-      caller.create({
-        activity_id: "33333333-3333-4333-8333-333333333333",
-        segment_id: "44444444-4444-4444-8444-444444444444",
-        activity_category: "run",
-        duration_seconds: 40,
-        effort_type: "speed",
-        value: 4.2,
-        start_offset: 90,
-        recorded_at: "2026-03-02T12:34:56.000Z",
-      }),
-    ).rejects.toMatchObject({
-      code: "BAD_REQUEST",
-      message: "Effort range must remain within its referenced activity segment",
-    });
-    expect(spies.insert).not.toHaveBeenCalled();
-  });
-
-  it("updates an owned effort and normalizes timestamps", async () => {
-    const oldRecordedAt = new Date("2026-03-01T10:00:00.000Z");
-    const newRecordedAt = "2026-03-02T12:34:56.000Z";
-    const updatedRow = buildEffortRow({
-      value: 4.8,
-      recorded_at: new Date(newRecordedAt),
-      updated_at: new Date("2026-03-03T01:02:03.000Z"),
-    });
-    const { caller, spies } = createCaller({
-      selectOneResult: [
-        buildEffortRow({
-          recorded_at: oldRecordedAt,
-          source: "manual",
-          method: "manual_activity_effort_entry",
-        }),
-      ],
-      updateResult: [updatedRow],
-    });
-
-    const result = await caller.update({
-      id: updatedRow.id,
-      value: 4.8,
-      recorded_at: newRecordedAt,
-    });
-
-    expect(result).toEqual(updatedRow);
-    expect(spies.select).toHaveBeenCalledOnce();
-    expect(spies.limit).toHaveBeenCalledOnce();
-    expect(spies.update).toHaveBeenCalledOnce();
-    expect(spies.set).toHaveBeenCalledOnce();
-    expect(spies.whereForUpdate).toHaveBeenCalledOnce();
-    expect(spies.updateReturning).toHaveBeenCalledOnce();
-
-    const updatePayload = (spies.set.mock.calls as any[][])[0]?.[0];
-    expect(updatePayload).toMatchObject({ value: 4.8 });
-    expect(updatePayload.unit).toBe("meters_per_second");
-    expect(updatePayload.recorded_at).toBeInstanceOf(Date);
-    expect(updatePayload.recorded_at.toISOString()).toBe(newRecordedAt);
-    expect(updatePayload.updated_at).toBeInstanceOf(Date);
-  });
-
-  it("creates a manual override instead of mutating imported evidence", async () => {
-    const activityId = "33333333-3333-4333-8333-333333333333";
-    const imported = buildEffortRow({
-      activity_id: activityId,
-      segment_id: "44444444-4444-4444-8444-444444444444",
-      activity_category: "bike",
-      effort_type: "power",
-      duration_seconds: 300,
-      unit: "watts",
-      value: 320,
-      source: "imported",
-      method: "activity_file_best_effort",
-      provenance: { activity_id: activityId, derived_from: "activity_file_stream" },
-    });
-    const manualOverride = buildEffortRow({
-      ...imported,
-      id: randomUuidState.next,
-      segment_id: imported.segment_id,
-      value: 330,
-      source: "manual",
-      method: "manual_activity_effort_entry",
-      provenance: { trusted: true, observation_type: "observed", entered_by: "athlete" },
-    });
-    const { caller, spies } = createCaller({
-      selectOneResults: [
-        [imported],
-        [
-          {
-            role: "activity",
-            category: "bike",
-            start_offset_ms: 0,
-            end_offset_ms: 3_600_000,
-          },
-        ],
-      ],
-      insertResult: [manualOverride],
-    });
-
-    const result = await caller.update({ id: imported.id, value: 330 });
-
-    expect(result).toEqual(manualOverride);
-    const insertPayload = (spies.values.mock.calls as any[][])[0]?.[0];
-    expect(insertPayload).toMatchObject({
-      activity_id: activityId,
-      value: 330,
-      source: "manual",
-      method: "manual_activity_effort_entry",
-      provenance: { trusted: true, observation_type: "observed", entered_by: "athlete" },
-    });
-    expect(spies.update).not.toHaveBeenCalled();
-  });
-
-  it("returns null for update when the effort is not owned or not found", async () => {
-    const { caller, spies } = createCaller({
-      selectOneResult: [],
-      updateResult: [],
-    });
-
-    const result = await caller.update({
-      id: "22222222-2222-4222-8222-222222222222",
-      value: 4.8,
-    });
-
-    expect(result).toBeNull();
-    expect(spies.select).toHaveBeenCalledOnce();
-    expect(spies.limit).toHaveBeenCalledOnce();
-    expect(spies.update).not.toHaveBeenCalled();
-    expect(spies.updateReturning).not.toHaveBeenCalled();
-  });
-
-  it("returns a success payload after deleting an owned effort", async () => {
-    const existing = buildEffortRow({ source: "manual" });
-    const { caller, spies } = createCaller({ selectOneResult: [existing] });
-    const id = "22222222-2222-4222-8222-222222222222";
-
-    const result = await caller.delete({ id });
-
-    expect(result).toEqual({ success: true, deletedId: id });
-    expect(spies.delete).toHaveBeenCalledOnce();
-    expect(spies.whereForDelete).toHaveBeenCalledOnce();
-  });
-
   it("rejects deletion of imported effort evidence", async () => {
     const imported = buildEffortRow({ source: "imported" });
     const { caller, spies } = createCaller({ selectOneResult: [imported] });
@@ -389,15 +163,27 @@ describe("activityEffortsRouter", () => {
     expect(spies.delete).not.toHaveBeenCalled();
   });
 
-  it("returns idempotent success for delete when the effort is not owned or not found", async () => {
-    const { caller, spies } = createCaller({ selectOneResult: [] });
-    const id = "22222222-2222-4222-8222-222222222222";
-
-    const result = await caller.delete({ id });
-
-    expect(result).toEqual({ success: true, deletedId: id });
-    expect(spies.delete).toHaveBeenCalledOnce();
-    expect(spies.whereForDelete).toHaveBeenCalledOnce();
+  it("rejects user create, update, and delete mutations without touching storage", async () => {
+    const { caller, spies } = createCaller();
+    await expect(
+      caller.create({
+        activity_id: null,
+        activity_category: "run",
+        duration_seconds: 600,
+        effort_type: "speed",
+        value: 4.2,
+        recorded_at: "2026-03-02T12:34:56.000Z",
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      caller.update({ id: "22222222-2222-4222-8222-222222222222", value: 4.8 }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      caller.delete({ id: "22222222-2222-4222-8222-222222222222" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(spies.insert).not.toHaveBeenCalled();
+    expect(spies.update).not.toHaveBeenCalled();
+    expect(spies.delete).not.toHaveBeenCalled();
   });
 
   it("rejects unexpected create input keys at the router boundary", async () => {

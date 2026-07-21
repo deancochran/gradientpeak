@@ -6,7 +6,6 @@ import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
 import { DateInput } from "@repo/ui/components/date-input";
 import { Icon } from "@repo/ui/components/icon";
-import { PaceSecondsField } from "@repo/ui/components/pace-seconds-field";
 import { Text } from "@repo/ui/components/text";
 import { WeightInputField } from "@repo/ui/components/weight-input-field";
 import { Check } from "lucide-react-native";
@@ -200,7 +199,6 @@ export function AthleteBaselineFields({
   onChange,
   sources = {},
   value,
-  visibleSports,
 }: AthleteBaselineFieldsProps) {
   const emit = <Field extends AthleteBaselineField>(
     field: Field,
@@ -211,11 +209,8 @@ export function AthleteBaselineFields({
       value: nextValue,
       source: nextValue === null ? "cleared" : "manual",
     } as AthleteBaselineChange);
-  const numberField = (field: "maxHr" | "restingHr" | "ftp", nextValue: number | undefined) =>
+  const numberField = (field: "maxHr" | "restingHr", nextValue: number | undefined) =>
     emit(field, nextValue == null ? null : Math.round(nextValue));
-  const showCycling = visibleSports.includes("cycling");
-  const showRunning = visibleSports.includes("running");
-  const showSwimming = visibleSports.includes("swimming");
   const weightError =
     value.weightKg !== null && !isProfileMetricValueWithinRange("weight_kg", value.weightKg)
       ? `Enter a weight from ${metric.weight.min} to ${metric.weight.max} kg.`
@@ -317,74 +312,6 @@ export function AthleteBaselineFields({
           onChange={onChange}
         />
       </View>
-
-      {showCycling || showRunning || showSwimming ? (
-        <View className="gap-5">
-          <Text className="text-lg font-semibold">Sport-specific values</Text>
-          {showCycling ? (
-            <View className="gap-2">
-              <BoundedNumberInput
-                id="athlete-baseline-ftp"
-                label={`${metric.ftp.label} (Optional)`}
-                value={value.ftp?.toString() ?? ""}
-                onChange={(text) => {
-                  if (!text.trim()) emit("ftp", null);
-                }}
-                onNumberChange={(nextValue) => numberField("ftp", nextValue)}
-                min={metric.ftp.min}
-                max={metric.ftp.max}
-                decimals={metric.ftp.decimals}
-                unitLabel={metric.ftp.unit}
-              />
-              <MetricSourceRow
-                field="ftp"
-                hasValue={value.ftp !== null}
-                source={sources.ftp}
-                estimate={estimates?.ftp}
-                unit={metric.ftp.unit}
-                onChange={onChange}
-              />
-            </View>
-          ) : null}
-          {showRunning ? (
-            <View className="gap-2">
-              <PaceSecondsField
-                id="athlete-baseline-threshold-pace"
-                label={`${metric.thresholdPace.label} (Optional)`}
-                valueSeconds={value.thresholdPaceSecondsPerKm}
-                onChangeSeconds={(nextValue) => emit("thresholdPaceSecondsPerKm", nextValue)}
-                helperText="Enter pace in mm:ss per kilometer."
-                placeholder="4:30"
-              />
-              <MetricSourceRow
-                field="thresholdPaceSecondsPerKm"
-                hasValue={value.thresholdPaceSecondsPerKm !== null}
-                source={sources.thresholdPaceSecondsPerKm}
-                onChange={onChange}
-              />
-            </View>
-          ) : null}
-          {showSwimming ? (
-            <View className="gap-2">
-              <PaceSecondsField
-                id="athlete-baseline-css"
-                label={`${metric.css.label} (Optional)`}
-                valueSeconds={value.cssSecondsPer100m}
-                onChangeSeconds={(nextValue) => emit("cssSecondsPer100m", nextValue)}
-                helperText="Enter pace in mm:ss per 100 meters."
-                placeholder="1:45"
-                unitLabel="/100m"
-              />
-              <MetricSourceRow
-                field="cssSecondsPer100m"
-                hasValue={value.cssSecondsPer100m !== null}
-                source={sources.cssSecondsPer100m}
-                onChange={onChange}
-              />
-            </View>
-          ) : null}
-        </View>
-      ) : null}
     </View>
   );
 }

@@ -211,6 +211,23 @@ function rows(): AthleteIntelligenceRows {
         createdAt: new Date("2026-05-31T10:10:00.000Z"),
         updatedAt: new Date("2026-05-31T10:10:00.000Z"),
       },
+      {
+        profileId,
+        id: "effort-threshold",
+        activityId: "activity-1",
+        recordedAt: new Date("2026-05-31T10:45:00.000Z"),
+        sport: "bike",
+        kind: "power",
+        durationSeconds: 1200,
+        startOffsetSeconds: 1200,
+        unit: "watts",
+        value: 250,
+        source: "imported",
+        method: "activity_file_best_effort",
+        provenance: { activity_id: "activity-1", derived_from: "activity_file_stream" },
+        createdAt: new Date("2026-05-31T10:45:00.000Z"),
+        updatedAt: new Date("2026-05-31T10:45:00.000Z"),
+      },
     ],
     goals: [
       {
@@ -524,20 +541,18 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     });
     expect(result.activities[0]).toMatchObject({ athleteId: profileId, sport: "bike" });
     expect(result.activities[0]?.metrics.trainingLoad).toMatchObject({
-      value: 225,
-      identity: {
-        sport: "bike",
-        family: "tss",
-        method: "power_threshold",
-        version: "1",
-        sourceDefinition: "activity_analysis",
-      },
+      value: null,
+      identity: null,
     });
-    expect(result.efforts[0]).toMatchObject({
-      kind: "power",
-      powerWatts: 350,
-      activitySourceId: "activity:activity-1:record",
-    });
+    expect(result.efforts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "power",
+          powerWatts: 350,
+          activitySourceId: "activity:activity-1:record",
+        }),
+      ]),
+    );
     expect(result.trainingContext).toMatchObject({
       preferredSports: ["bike"],
       weeklyTimeWindows: [{ day: "monday", startMinuteLocal: 360, endMinuteLocal: 480 }],

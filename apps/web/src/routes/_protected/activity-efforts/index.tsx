@@ -38,7 +38,7 @@ import {
   TableRow,
 } from "@repo/ui/components/table";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { BarChart3, Loader2, Plus, Trash2 } from "lucide-react";
+import { BarChart3, Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { SimpleTrendChart } from "../../../components/charts/simple-trend-chart";
@@ -86,7 +86,6 @@ export const Route = createFileRoute("/_protected/activity-efforts/")({
 });
 
 function ActivityEffortsPage() {
-  const navigate = Route.useNavigate();
   const utils = api.useUtils();
   const effortsQuery = api.activityEfforts.getForProfile.useQuery();
   const efforts = (effortsQuery.data ?? []) as unknown as ActivityEffortRow[];
@@ -148,12 +147,7 @@ function ActivityEffortsPage() {
   return (
     <div className="container mx-auto max-w-6xl space-y-6 py-4">
       <DetailPageIntro
-        actions={
-          <Button onClick={() => void navigate({ to: "/activity-efforts/new" })} type="button">
-            <Plus className="mr-2 h-4 w-4" />
-            Add effort
-          </Button>
-        }
+        actions={null}
         description="Choose a measurement card to open its chart and manage the records behind it."
         eyebrow="Performance"
         title="Activity efforts"
@@ -298,11 +292,7 @@ function ActivityEffortsPage() {
                   }))}
                   title={`${formatDuration(activeDuration)} history over date`}
                 />
-                <EffortRowsTable
-                  rows={selectedRows}
-                  onEdit={setEditingEffort}
-                  onDelete={setDeleteEffort}
-                />
+                <EffortRowsTable rows={selectedRows} />
               </CardContent>
             </Card>
           </div>
@@ -351,15 +341,7 @@ function ActivityEffortsPage() {
   );
 }
 
-function EffortRowsTable({
-  rows,
-  onEdit,
-  onDelete,
-}: {
-  rows: ActivityEffortRow[];
-  onEdit: (row: ActivityEffortRow) => void;
-  onDelete: (row: ActivityEffortRow) => void;
-}) {
+function EffortRowsTable({ rows }: { rows: ActivityEffortRow[] }) {
   if (rows.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed px-6 py-10 text-center text-muted-foreground">
@@ -384,9 +366,8 @@ function EffortRowsTable({
         <TableBody>
           {rows.map((row) => {
             const status = getEffortStatus(row);
-            const isManual = row.source === "manual";
             return (
-              <TableRow className="cursor-pointer" key={row.id} onClick={() => onEdit(row)}>
+              <TableRow key={row.id}>
                 <TableCell>{formatDateTime(row.recorded_at)}</TableCell>
                 <TableCell className="whitespace-nowrap font-medium">
                   {formatActivityEffortDisplayValue(row)}
@@ -413,32 +394,7 @@ function EffortRowsTable({
                   )}
                 </TableCell>
                 <TableCell className="text-right">
-                  {isManual ? (
-                    <Button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onDelete(row);
-                      }}
-                      size="sm"
-                      type="button"
-                      variant="ghost"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      <span className="sr-only">Delete</span>
-                    </Button>
-                  ) : (
-                    <Button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onEdit(row);
-                      }}
-                      size="sm"
-                      type="button"
-                      variant="ghost"
-                    >
-                      Add override
-                    </Button>
-                  )}
+                  <span className="text-xs text-muted-foreground">Calculated</span>
                 </TableCell>
               </TableRow>
             );

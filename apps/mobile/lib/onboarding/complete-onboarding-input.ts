@@ -29,9 +29,6 @@ export function buildCompleteOnboardingInput(
     ["weight_kg", "weight_kg"],
     ["max_hr", "max_hr"],
     ["resting_hr", "resting_hr"],
-    ["ftp", "ftp"],
-    ["threshold_pace", "threshold_pace_seconds_per_km"],
-    ["css", "css_seconds_per_hundred_meters"],
   ] as const;
 
   for (const [mobileField, transportField] of sourceMappings) {
@@ -42,18 +39,14 @@ export function buildCompleteOnboardingInput(
   return {
     ok: true,
     input: {
-      css_seconds_per_hundred_meters: data.css ?? undefined,
       dob,
       experience_level: data.experience_level ?? "skip",
-      ftp: data.ftp ?? undefined,
       full_name: fullName,
       gender: data.gender ?? undefined,
       intents: data.intent,
       planning_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-      lthr: data.lthr ?? undefined,
       max_hr: data.max_hr ?? undefined,
       resting_hr: data.resting_hr ?? undefined,
-      threshold_pace_seconds_per_km: data.threshold_pace ?? undefined,
       username,
       vo2max: data.vo2max ?? undefined,
       weight_kg: data.weight_kg ?? undefined,

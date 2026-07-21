@@ -22,6 +22,8 @@ import {
   updateProfile,
 } from "../application/profiles/updateProfile";
 import { getRequiredDb } from "../db";
+import { createActivityAnalysisStore } from "../infrastructure/repositories/drizzle-activity-analysis-repository";
+import { resolveActivityContextAsOf } from "../lib/activity-analysis/context";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { indexCursorSchema } from "../utils/index-cursor";
 import {
@@ -63,7 +65,15 @@ export const profilesRouter = createTRPCRouter({
         email: ctx.session.user.email,
       });
 
-      const profile = await getSerializedProfile(db, ctx.session.user.id);
+      const [profile, activityContext] = await Promise.all([
+        getSerializedProfile(db, ctx.session.user.id),
+        resolveActivityContextAsOf({
+          store: createActivityAnalysisStore(db),
+          profileId: ctx.session.user.id,
+          activityTimestamp: new Date(),
+          evidenceScope: "thresholds",
+        }),
+      ]);
 
       if (!profile) {
         throw new TRPCError({
@@ -72,7 +82,11 @@ export const profilesRouter = createTRPCRouter({
         });
       }
 
-      return profile;
+      return {
+        ...profile,
+        ftp: activityContext.profileMetrics.ftp ?? null,
+        threshold_hr: null as number | null,
+      };
     } catch (error) {
       if (error instanceof TRPCError) {
         throw error;
@@ -118,6 +132,13 @@ export const profilesRouter = createTRPCRouter({
 
   update: protectedProcedure.input(profilePatchInputSchema).mutation(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
+
+    if (input.ftp !== undefined || input.threshold_hr !== undefined) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "Training thresholds are calculated from trusted activity evidence.",
+      });
+    }
 
     try {
       await updateProfile(db, {
@@ -214,7 +235,7 @@ export const profilesRouter = createTRPCRouter({
     try {
       const cutoffDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 
-      const [performance, thresholdEfforts] = await Promise.all([
+      const [performance, thresholdEfforts, activityContext] = await Promise.all([
         getProfilePerformanceSnapshot(db, ctx.session.user.id),
         db
           .select({
@@ -239,9 +260,15 @@ export const profilesRouter = createTRPCRouter({
           )
           .orderBy(desc(activityEfforts.recorded_at), desc(activityEfforts.id))
           .limit(100),
+        resolveActivityContextAsOf({
+          store: createActivityAnalysisStore(db),
+          profileId: ctx.session.user.id,
+          activityTimestamp: new Date(),
+          evidenceScope: "thresholds",
+        }),
       ]);
 
-      const threshold_hr = performance.threshold_hr ?? undefined;
+      const threshold_hr = activityContext.profileMetrics.lthr_by_sport?.bike ?? undefined;
       const weight_kg = performance.weight_kg ?? undefined;
       const currentThresholdEfforts = filterSupersededProfileOverrides(
         thresholdEfforts,
@@ -428,37 +455,10 @@ export const profilesRouter = createTRPCRouter({
     }
   }),
 
-  updateZones: protectedProcedure
-    .input(trainingZonesUpdateSchema)
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-
-      try {
-        await updateProfile(db, {
-          profileId: ctx.session.user.id,
-          threshold_hr: input.threshold_hr,
-          ftp: input.ftp,
-        });
-
-        const profile = await getSerializedProfile(db, ctx.session.user.id);
-
-        if (!profile) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Profile not found",
-          });
-        }
-
-        return profile;
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to update training zones",
-        });
-      }
-    }),
+  updateZones: protectedProcedure.input(trainingZonesUpdateSchema).mutation(async () => {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Training thresholds are calculated from trusted activity evidence.",
+    });
+  }),
 });

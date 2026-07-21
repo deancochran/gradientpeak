@@ -2,6 +2,7 @@ import type { CanonicalSport } from "../schemas/sport";
 
 export const activityTssMethodValues = [
   "power_threshold",
+  "critical_power_threshold",
   "run_pace_threshold",
   "swim_pace_threshold",
   "heart_rate_threshold",
@@ -31,7 +32,12 @@ export type CompletedActivityCalculationPolicy = {
 /** Append-only compatibility for parsing historical calculation identities. */
 export const activityTssCompatibleMethodsBySport = {
   run: ["run_pace_threshold", "heart_rate_threshold", "heart_rate_reserve"],
-  bike: ["power_threshold", "heart_rate_threshold", "heart_rate_reserve"],
+  bike: [
+    "power_threshold",
+    "critical_power_threshold",
+    "heart_rate_threshold",
+    "heart_rate_reserve",
+  ],
   swim: ["swim_pace_threshold", "heart_rate_threshold", "heart_rate_reserve"],
   strength: ["heart_rate_threshold", "heart_rate_reserve"],
   other: ["heart_rate_threshold", "heart_rate_reserve"],
@@ -47,7 +53,7 @@ export const completedActivityCalculationPolicy = {
   bike: {
     performanceCurve: "power_duration",
     threshold: "cycling_ftp",
-    tssMethods: ["power_threshold", "heart_rate_threshold"],
+    tssMethods: ["power_threshold", "critical_power_threshold", "heart_rate_threshold"],
   },
   swim: {
     performanceCurve: "swim_speed_duration",

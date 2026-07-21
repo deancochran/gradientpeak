@@ -1,22 +1,15 @@
 import { decodePolyline } from "@repo/core";
 import { formatEffortDuration } from "@repo/core/athlete-inputs";
 import { Card, CardContent } from "@repo/ui/components/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@repo/ui/components/dropdown-menu";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { skipToken } from "@tanstack/react-query";
-import { type Href, useLocalSearchParams, useRouter } from "expo-router";
-import { Ellipsis, Zap } from "lucide-react-native";
-import { useMemo, useState } from "react";
-import { Alert, ScrollView, View } from "react-native";
+import { type Href, useLocalSearchParams } from "expo-router";
+import { Zap } from "lucide-react-native";
+import { useMemo } from "react";
+import { ScrollView, View } from "react-native";
 import { ActivityRouteMap } from "@/components/activity/maps/ActivityRouteMap";
 import { ActivityCard, type ActivityCardActivity } from "@/components/shared/ActivityCard";
-import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { formatActivityEffortPresentationValue } from "@/lib/activity-efforts/curves";
 import { api } from "@/lib/api";
@@ -32,12 +25,8 @@ function formatEffortTitle(category: string, type: string) {
 export default function ActivityEffortDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const effortId = typeof id === "string" ? id : "";
-  const router = useRouter();
   const navigateTo = useAppNavigate();
   const { profile, user } = useAuth();
-  const { Stack } = require("expo-router") as typeof import("expo-router");
-  const utils = api.useUtils();
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const { data: effort, isLoading } = api.activityEfforts.getById.useQuery(
     { id: effortId },
@@ -47,76 +36,10 @@ export default function ActivityEffortDetailScreen() {
     effort?.activity_id ? { id: effort.activity_id } : skipToken,
   );
 
-  const deleteMutation = api.activityEfforts.delete.useMutation({
-    onSuccess: async () => {
-      await Promise.all([
-        utils.activityEfforts.getForProfile.invalidate(),
-        utils.activities.invalidate(),
-        utils.events.invalidate(),
-        utils.trainingPlans.invalidate(),
-      ]);
-      router.back();
-    },
-    onError: (err) => {
-      Alert.alert("Error", err.message || "Failed to delete effort");
-    },
-  });
-
   const routeCoordinates = useMemo(() => {
     const polyline = activityData?.activity?.polyline;
     return polyline ? decodePolyline(polyline) : [];
   }, [activityData?.activity?.polyline]);
-
-  const handleDelete = () => {
-    if (!effort) return;
-    setShowDeleteConfirm(true);
-  };
-
-  const renderHeaderActions = () => {
-    if (!effort) return null;
-    const isManual = effort.source === "manual";
-    return (
-      <DropdownMenu>
-        <DropdownMenuTrigger testID="activity-effort-detail-options-trigger">
-          <View className="rounded-full p-2">
-            <Icon as={Ellipsis} size={18} className="text-foreground" />
-          </View>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" sideOffset={6}>
-          {isManual ? (
-            <DropdownMenuItem
-              onPress={handleDelete}
-              variant="destructive"
-              testID="activity-effort-detail-options-delete"
-            >
-              <Text>{deleteMutation.isPending ? "Deleting..." : "Delete Effort"}</Text>
-            </DropdownMenuItem>
-          ) : (
-            <DropdownMenuItem
-              onPress={() =>
-                navigateTo({
-                  pathname: "/(internal)/(standard)/activity-effort-create",
-                  params: {
-                    activityCategory: effort.activity_category,
-                    effortType: effort.effort_type,
-                    durationSeconds: String(effort.duration_seconds),
-                    recordedAt:
-                      effort.recorded_at instanceof Date
-                        ? effort.recorded_at.toISOString()
-                        : effort.recorded_at,
-                    value: String(effort.value),
-                  },
-                } as Href)
-              }
-              testID="activity-effort-detail-options-override"
-            >
-              <Text>Add Manual Effort</Text>
-            </DropdownMenuItem>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    );
-  };
 
   if (isLoading) {
     return (
@@ -151,7 +74,6 @@ export default function ActivityEffortDetailScreen() {
     : null;
   return (
     <View className="flex-1 bg-background" testID="activity-effort-detail-screen">
-      <Stack.Screen options={{ headerRight: renderHeaderActions }} />
       <ScrollView className="flex-1">
         <View className="gap-4 p-4 pb-6">
           <Card className="rounded-3xl border border-border bg-card">
@@ -213,25 +135,6 @@ export default function ActivityEffortDetailScreen() {
           ) : null}
         </View>
       </ScrollView>
-      {showDeleteConfirm ? (
-        <AppConfirmModal
-          description="Are you sure you want to delete this activity effort?"
-          onClose={() => setShowDeleteConfirm(false)}
-          primaryAction={{
-            label: deleteMutation.isPending ? "Deleting..." : "Delete Effort",
-            onPress: () => deleteMutation.mutate({ id: effort.id }),
-            testID: "activity-effort-detail-delete-confirm",
-            variant: "destructive",
-          }}
-          secondaryAction={{
-            label: "Cancel",
-            onPress: () => setShowDeleteConfirm(false),
-            variant: "outline",
-          }}
-          testID="activity-effort-detail-delete-modal"
-          title="Delete Effort"
-        />
-      ) : null}
     </View>
   );
 }

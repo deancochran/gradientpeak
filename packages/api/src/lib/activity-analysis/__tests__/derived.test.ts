@@ -61,22 +61,124 @@ function store() {
             PROFILE_ID,
             {
               profile: { dob: null, gender: null },
-              profileMetrics: [
+              profileMetrics: [],
+              recentEfforts: [
                 {
-                  id: "ftp",
-                  metric_type: "ftp",
-                  value: 250,
+                  activity_id: "prior-threshold-ride",
+                  activity_category: "bike",
+                  duration_seconds: 1200,
+                  effort_type: "power",
+                  recorded_at: new Date("2026-06-01T00:00:00.000Z"),
                   unit: "watts",
-                  recorded_at: new Date("2026-01-01T00:00:00.000Z"),
-                  source: "manual",
-                  method: null,
-                  calculation_version: null,
-                  provenance: null,
-                  reference_activity_id: null,
-                  reference_activity_category: null,
+                  value: 250 / 0.95,
+                  source: "imported",
+                  method: "activity_file_best_effort",
+                  provenance: {
+                    activity_id: "prior-threshold-ride",
+                    derived_from: "activity_file_stream",
+                  },
                 },
               ],
-              recentEfforts: [],
+            },
+          ],
+        ]),
+    ),
+  };
+}
+
+function selfCalibratingStore() {
+  return {
+    loadContextEvidence: vi.fn(
+      async () =>
+        new Map([
+          [
+            PROFILE_ID,
+            {
+              profile: { dob: null, gender: null },
+              profileMetrics: [],
+              recentEfforts: [
+                {
+                  activity_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  activity_category: "bike",
+                  duration_seconds: 1200,
+                  effort_type: "power",
+                  recorded_at: new Date("2026-07-01T08:45:00.000Z"),
+                  unit: "watts",
+                  value: 250,
+                  source: "imported",
+                  method: "activity_file_best_effort",
+                  provenance: {
+                    activity_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    derived_from: "activity_file_stream",
+                  },
+                },
+              ],
+            },
+          ],
+        ]),
+    ),
+  };
+}
+
+function selfCalibratingFallbackStore() {
+  return {
+    getContextSnapshot: vi.fn(async () => ({
+      profile: { dob: null, gender: null },
+      profileMetrics: [],
+      recentEfforts: [
+        {
+          activity_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          activity_category: "bike",
+          duration_seconds: 1200,
+          effort_type: "power",
+          recorded_at: new Date("2026-07-01T08:45:00.000Z"),
+          unit: "watts",
+          value: 250,
+          source: "imported",
+          method: "activity_file_best_effort",
+          provenance: {
+            activity_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            derived_from: "activity_file_stream",
+          },
+        },
+      ],
+    })),
+  };
+}
+
+function criticalPowerStore() {
+  const effort = (
+    activityId: string,
+    durationSeconds: number,
+    value: number,
+    recordedAt: string,
+  ) => ({
+    activity_id: activityId,
+    activity_category: "bike",
+    duration_seconds: durationSeconds,
+    effort_type: "power",
+    recorded_at: new Date(recordedAt),
+    unit: "watts",
+    value,
+    source: "imported",
+    method: "activity_file_best_effort",
+    calculation_version: "best-efforts-v1",
+    provenance: { activity_id: activityId, derived_from: "activity_file_stream" },
+  });
+  return {
+    loadContextEvidence: vi.fn(
+      async () =>
+        new Map([
+          [
+            PROFILE_ID,
+            {
+              profile: { dob: null, gender: null },
+              profileMetrics: [],
+              recentEfforts: [
+                effort("ride-a", 300, 300, "2026-06-10T12:00:00.000Z"),
+                effort("ride-b", 600, 275, "2026-06-15T12:00:00.000Z"),
+                effort("ride-c", 1200, 262.5, "2026-06-20T12:00:00.000Z"),
+              ],
             },
           ],
         ]),
@@ -121,5 +223,158 @@ describe("segment-derived activity analysis", () => {
     });
     expect(parent.has(input.id)).toBe(false);
     expect(parent.has(input.segments[0]?.id ?? "missing-segment")).toBe(true);
+  });
+
+  it("uses a qualifying effort from the activity interval when no earlier threshold exists", async () => {
+    const input = activity([
+      segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 3_600_000),
+    ]);
+    const analysisStore = selfCalibratingStore();
+
+    const summaries = await buildActivitySegmentDerivedSummaries({
+      store: analysisStore as never,
+      profileId: PROFILE_ID,
+      activities: [input],
+    });
+
+    expect(analysisStore.loadContextEvidence).toHaveBeenCalledWith({
+      requests: [
+        {
+          asOf: input.finished_at,
+          effortLookbackAsOf: input.started_at,
+          profileId: PROFILE_ID,
+        },
+      ],
+    });
+    expect(summaries[0]).toMatchObject({
+      method: "power_threshold",
+      unavailable_reason: null,
+      calibration_quality: {
+        source: "observed_effort",
+        observed_at: "2026-07-01T08:45:00.000Z",
+      },
+    });
+    expect(summaries[0]?.tss).toBe(71);
+  });
+
+  it("publishes guarded Critical Power load as a distinct stream", async () => {
+    const input = activity([
+      segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 3_600_000),
+    ]);
+
+    const summaries = await buildActivitySegmentDerivedSummaries({
+      store: criticalPowerStore() as never,
+      profileId: PROFILE_ID,
+      activities: [input],
+    });
+
+    expect(summaries[0]).toMatchObject({
+      tss: 64,
+      method: "critical_power_threshold",
+      tss_identity: {
+        method: "critical_power_threshold",
+        calibration: { type: "critical_power_watts", value: 250 },
+      },
+      calibration_quality: {
+        calculation_version: "critical-power-curve-fit-v1",
+      },
+      load_stream_key: "bike:critical_power_threshold:activity_analysis:1",
+    });
+  });
+
+  it("uses finish-time evidence with a snapshot-only analysis store", async () => {
+    const input = activity([
+      segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 3_600_000),
+    ]);
+    const analysisStore = selfCalibratingFallbackStore();
+
+    const summaries = await buildActivitySegmentDerivedSummaries({
+      store: analysisStore as never,
+      profileId: PROFILE_ID,
+      activities: [input],
+    });
+
+    expect(analysisStore.getContextSnapshot).toHaveBeenCalledWith({
+      asOf: input.finished_at,
+      effortLookbackAsOf: input.started_at,
+      profileId: PROFILE_ID,
+    });
+    expect(summaries[0]).toMatchObject({
+      tss: 71,
+      method: "power_threshold",
+      unavailable_reason: null,
+    });
+  });
+
+  it("keeps snapshot-only evidence distinct when activities share a finish time", async () => {
+    const firstId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const secondId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const finish = new Date("2026-07-01T09:00:00.000Z");
+    const makeInput = (id: string, start: Date, segmentId: string) => {
+      const input = activity([
+        segment(segmentId, 0, "bike", 0, finish.getTime() - start.getTime()),
+      ]);
+      return {
+        ...input,
+        id,
+        started_at: start,
+        finished_at: finish,
+        elapsed_ms: finish.getTime() - start.getTime(),
+        active_ms: finish.getTime() - start.getTime(),
+        moving_ms: finish.getTime() - start.getTime(),
+        segments: input.segments.map((item) => ({ ...item, activity_id: id })),
+      };
+    };
+    const first = makeInput(
+      firstId,
+      new Date("2026-07-01T07:00:00.000Z"),
+      "11111111-1111-4111-8111-111111111111",
+    );
+    const second = makeInput(
+      secondId,
+      new Date("2026-07-01T08:00:00.000Z"),
+      "22222222-2222-4222-8222-222222222222",
+    );
+    const analysisStore = {
+      getContextSnapshot: vi.fn(async ({ effortLookbackAsOf }: { effortLookbackAsOf?: Date }) => ({
+        profile: { dob: null, gender: null },
+        profileMetrics: [],
+        recentEfforts:
+          effortLookbackAsOf?.toISOString() === first.started_at.toISOString()
+            ? [
+                {
+                  activity_id: "prior-threshold-ride",
+                  activity_category: "bike" as const,
+                  duration_seconds: 1200,
+                  effort_type: "power" as const,
+                  value: 250 / 0.95,
+                  unit: "watts",
+                  recorded_at: new Date("2026-06-01T00:00:00.000Z"),
+                  source: "imported" as const,
+                  method: "activity_file_best_effort",
+                  provenance: {
+                    activity_id: "prior-threshold-ride",
+                    derived_from: "activity_file_stream",
+                  },
+                },
+              ]
+            : [],
+      })),
+    };
+
+    const summaries = await buildActivitySegmentDerivedSummaries({
+      store: analysisStore as never,
+      profileId: PROFILE_ID,
+      activities: [first, second],
+    });
+
+    expect(summaries.find((item) => item.activity_id === firstId)).toMatchObject({
+      method: "power_threshold",
+      unavailable_reason: null,
+    });
+    expect(summaries.find((item) => item.activity_id === secondId)).toMatchObject({
+      method: null,
+      unavailable_reason: "threshold_missing",
+    });
   });
 });

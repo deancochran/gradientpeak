@@ -274,11 +274,9 @@ export function prepareProfileMetrics(
     });
   }
 
-  // Merge HR and FTP metrics with baseline
-  const ftpSource = sourceFor("ftp", input.ftp !== undefined);
+  // Non-threshold HR measurements may be seeded; training thresholds are activity-derived only.
   const maxHrSource = sourceFor("max_hr", input.max_hr !== undefined);
   const restingHrSource = sourceFor("resting_hr", input.resting_hr !== undefined);
-  const ftp = ftpSource ? (input.ftp ?? baseline?.ftp) : undefined;
   const maxHR = maxHrSource ? (input.max_hr ?? baseline?.max_hr) : undefined;
   const restingHR = restingHrSource ? (input.resting_hr ?? baseline?.resting_hr) : undefined;
 
@@ -310,62 +308,6 @@ export function prepareProfileMetrics(
     });
   }
 
-  if (ftp && ftpSource && !shouldPreserveImported("ftp")) {
-    const observation = observationFor("ftp", ftpSource, baseline?.source);
-    metrics.push({
-      metric_type: "ftp",
-      value: ftp,
-      unit: "W",
-      source: ftpSource === "baseline" ? baseline?.source : undefined,
-      observationSource: observation.observationSource,
-      method: observation.method,
-      calculationVersion: "onboarding-v1",
-      provenance: observation.provenance,
-    });
-  }
-
-  const thresholdPaceSource = sourceFor(
-    "threshold_pace_seconds_per_km",
-    input.threshold_pace_seconds_per_km !== undefined,
-  );
-  if (
-    input.threshold_pace_seconds_per_km &&
-    thresholdPaceSource &&
-    !shouldPreserveImported("threshold_pace_seconds_per_km")
-  ) {
-    const observation = observationFor("threshold_pace_seconds_per_km", thresholdPaceSource);
-    metrics.push({
-      metric_type: "threshold_pace_seconds_per_km",
-      value: input.threshold_pace_seconds_per_km,
-      unit: "seconds_per_km",
-      observationSource: observation.observationSource,
-      method: observation.method,
-      calculationVersion: "onboarding-v1",
-      provenance: observation.provenance,
-    });
-  }
-
-  const cssSource = sourceFor(
-    "css_seconds_per_hundred_meters",
-    input.css_seconds_per_hundred_meters !== undefined,
-  );
-  if (
-    input.css_seconds_per_hundred_meters &&
-    cssSource &&
-    !shouldPreserveImported("css_seconds_per_hundred_meters")
-  ) {
-    const observation = observationFor("css_seconds_per_hundred_meters", cssSource);
-    metrics.push({
-      metric_type: "css_seconds_per_100m",
-      value: input.css_seconds_per_hundred_meters,
-      unit: "seconds_per_100m",
-      observationSource: observation.observationSource,
-      method: observation.method,
-      calculationVersion: "onboarding-v1",
-      provenance: observation.provenance,
-    });
-  }
-
   // VO2max (calculated or from baseline)
   const vo2max = input.vo2max ?? baseline?.vo2_max;
   if (vo2max) {
@@ -380,25 +322,6 @@ export function prepareProfileMetrics(
       provenance: {
         input: "onboarding",
         seed_type: input.vo2max ? "manual" : "estimated",
-      },
-    });
-  }
-
-  // LTHR (estimated or from baseline)
-  const lthr = input.lthr ?? baseline?.lthr;
-  if (lthr) {
-    metrics.push({
-      metric_type: "lthr",
-      value: lthr,
-      unit: "bpm",
-      source: input.lthr ? undefined : "estimated",
-      observationSource: input.lthr ? "manual" : "estimated",
-      method: input.lthr ? "onboarding_manual_seed" : "onboarding_baseline_seed",
-      calculationVersion: "onboarding-v1",
-      provenance: {
-        input: "onboarding",
-        seed_type: input.lthr ? "manual" : "baseline",
-        baseline_source: input.lthr ? undefined : baseline?.source,
       },
     });
   }

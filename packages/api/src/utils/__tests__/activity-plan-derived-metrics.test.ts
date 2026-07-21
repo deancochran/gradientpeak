@@ -196,7 +196,7 @@ describe("on-demand activity plan estimation", () => {
     expect(changedPlan?.authoritative_metrics.estimated_tss).not.toBe(
       base?.authoritative_metrics.estimated_tss,
     );
-    expect(changedProfile?.authoritative_metrics.estimated_tss).not.toBe(
+    expect(changedProfile?.authoritative_metrics.estimated_tss).toBe(
       base?.authoritative_metrics.estimated_tss,
     );
   });

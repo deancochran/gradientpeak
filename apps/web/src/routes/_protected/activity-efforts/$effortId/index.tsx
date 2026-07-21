@@ -1,20 +1,7 @@
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@repo/ui/components/alert-dialog";
-import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { createFileRoute } from "@tanstack/react-router";
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useMemo } from "react";
-import { toast } from "sonner";
 import {
   ActivityListCard,
   DetailMetricGrid,
@@ -33,7 +20,6 @@ export const Route = createFileRoute("/_protected/activity-efforts/$effortId/")(
 });
 
 function ActivityEffortDetailPage() {
-  const utils = api.useUtils();
   const navigate = Route.useNavigate();
   const { effortId } = Route.useParams();
   const effortQuery = api.activityEfforts.getById.useQuery({ id: effortId });
@@ -42,13 +28,6 @@ function ActivityEffortDetailPage() {
     { id: effort?.activity_id ?? "00000000-0000-0000-0000-000000000000" },
     { enabled: Boolean(effort?.activity_id) },
   );
-  const deleteMutation = api.activityEfforts.delete.useMutation({
-    onSuccess: async () => {
-      await utils.activityEfforts.invalidate();
-      toast.success("Effort deleted");
-      void navigate({ to: "/activity-efforts" });
-    },
-  });
   const coordinates = useMemo(
     () => getActivityCoordinates(activityQuery.data?.activity?.polyline, undefined),
     [activityQuery.data?.activity?.polyline],
@@ -77,30 +56,7 @@ function ActivityEffortDetailPage() {
   return (
     <div className="container mx-auto max-w-5xl space-y-6 py-4">
       <DetailPageIntro
-        actions={
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button type="button" variant="destructive">
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete effort?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This removes the saved effort from your profile.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={() => deleteMutation.mutate({ id: effort.id })}>
-                  Delete effort
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        }
+        actions={null}
         badges={[
           `${effort.activity_category} ${effort.effort_type}`,
           formatDate(effort.recorded_at),

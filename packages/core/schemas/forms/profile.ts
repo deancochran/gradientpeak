@@ -234,37 +234,19 @@ export const optionalBioSchema = z.preprocess(emptyStringToNull, bioSchema.nulla
 /**
  * Profile Settings Form Schema
  * Matches the actual database schema (public.profiles table)
- * Fields: username, bio, weight_kg, ftp, threshold_hr, dob, avatar_url, cover_url, preferred_units, language, onboarded
+ * Performance thresholds are intentionally excluded and are calculated from activity evidence.
  */
-export const profileSettingsFormSchema = z
-  .object({
-    username: optionalUsernameSchema,
-    bio: optionalBioSchema,
-    weight_kg: optionalWeightKgSchema,
-    ftp: optionalFtpSchema,
-    threshold_hr: optionalThresholdHrSchema,
-    dob: optionalDobSchema,
-    avatar_url: optionalUrlSchema,
-    cover_url: optionalUrlSchema,
-    preferred_units: preferredUnitSystemSchema.optional().nullable(),
-    language: z.string().max(10).optional().nullable(),
-    onboarded: z.boolean().optional().nullable(),
-  })
-  .refine(
-    (data) => {
-      // Power-to-weight ratio sanity check (if both provided)
-      if (data.ftp && data.weight_kg) {
-        const powerToWeight = data.ftp / data.weight_kg;
-        // Reasonable range: 1.0 - 7.0 W/kg
-        return powerToWeight >= 1.0 && powerToWeight <= 7.0;
-      }
-      return true;
-    },
-    {
-      message: "Power-to-weight ratio seems unrealistic. Please verify FTP and weight.",
-      path: ["ftp"],
-    },
-  );
+export const profileSettingsFormSchema = z.object({
+  username: optionalUsernameSchema,
+  bio: optionalBioSchema,
+  weight_kg: optionalWeightKgSchema,
+  dob: optionalDobSchema,
+  avatar_url: optionalUrlSchema,
+  cover_url: optionalUrlSchema,
+  preferred_units: preferredUnitSystemSchema.optional().nullable(),
+  language: z.string().max(10).optional().nullable(),
+  onboarded: z.boolean().optional().nullable(),
+});
 
 export type ProfileSettingsFormData = z.infer<typeof profileSettingsFormSchema>;
 
@@ -274,8 +256,6 @@ export type ProfileSettingsFormData = z.infer<typeof profileSettingsFormSchema>;
 export const profileQuickUpdateSchema = z.object({
   username: optionalUsernameSchema,
   weight_kg: optionalWeightKgSchema,
-  ftp: optionalFtpSchema,
-  threshold_hr: optionalThresholdHrSchema,
   is_public: z.boolean().optional(),
 });
 

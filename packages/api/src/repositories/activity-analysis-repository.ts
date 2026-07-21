@@ -25,6 +25,7 @@ export type ActivityAnalysisEffortSnapshot = Omit<
   id?: string;
   activity_id?: string | null;
   method?: string | null;
+  calculation_version?: string | null;
   provenance?: unknown;
   source?: string | null;
 };
@@ -38,11 +39,12 @@ export type ActivityAnalysisContextSnapshot = {
 export interface ActivityAnalysisStore {
   getContextSnapshot(input: {
     asOf: Date;
+    effortLookbackAsOf?: Date;
     profileId: string;
     evidenceScope?: "thresholds";
   }): Promise<ActivityAnalysisContextSnapshot>;
   loadContextEvidence?(input: {
-    requests: Array<{ asOf: Date; profileId: string }>;
+    requests: Array<{ asOf: Date; effortLookbackAsOf?: Date; profileId: string }>;
     evidenceScope?: "thresholds";
   }): Promise<Map<string, ActivityAnalysisContextSnapshot>>;
 }

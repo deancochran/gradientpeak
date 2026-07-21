@@ -581,19 +581,7 @@ function ActivityEffortsList() {
 
   return (
     <View className="flex-1 bg-background">
-      <Stack.Screen
-        options={{
-          headerRight: () => (
-            <Pressable
-              onPress={() => navigateTo("/(internal)/(standard)/activity-effort-create" as Href)}
-              className="mr-2 rounded-full px-2 py-1"
-              testID="activity-efforts-list-add-trigger"
-            >
-              <Text className="text-sm font-medium text-primary">Add</Text>
-            </Pressable>
-          ),
-        }}
-      />
+      <Stack.Screen options={{}} />
       <ScrollView contentContainerClassName="gap-5 p-4 pb-8">
         <View className="gap-1">
           <Text className="text-xl font-semibold text-foreground">Activity effort trends</Text>

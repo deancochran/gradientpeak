@@ -3,7 +3,6 @@ import {
   getProfileMetricDefinition,
   isProfileMetricType,
 } from "@repo/core/athlete-inputs";
-import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
 import { type Href, Stack } from "expo-router";
@@ -491,17 +490,6 @@ export default function ProfileMetricsListScreen() {
             return (
               <View className="gap-4">
                 <DetailTrendChart group={selectedGroup} records={rangeRecords} />
-                {selectedGroup.id === "css_seconds_per_100m" ? (
-                  <Button
-                    onPress={() => {
-                      setSelectedMetricType(null);
-                      navigateTo(ROUTES.PROFILE_METRICS.CSS_TEST as Href);
-                    }}
-                    testId="profile-metric-css-test"
-                  >
-                    <Text>Record 400m / 200m CSS test</Text>
-                  </Button>
-                ) : null}
                 <ProfileMetricRecords records={rangeRecords} onOpenRecord={openRecord} />
               </View>
             );

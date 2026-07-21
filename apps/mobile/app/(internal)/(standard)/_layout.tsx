@@ -146,13 +146,6 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
-        name="activity-effort-create"
-        options={{
-          title: "Add Effort",
-          presentation: "modal",
-        }}
-      />
-      <Stack.Screen
         name="activity-effort-detail"
         options={{
           title: "Activity Effort",
@@ -393,12 +386,6 @@ export default function StandardLayout() {
         name="profile-metric-detail"
         options={{
           title: "Profile Metric",
-        }}
-      />
-      <Stack.Screen
-        name="profile-css-test"
-        options={{
-          title: "CSS Test",
         }}
       />
       <Stack.Screen

@@ -1,4 +1,4 @@
-import type { CssTestObservationInput } from "@repo/core";
+import { isActivityDerivedThresholdMetricType } from "@repo/core/athlete-inputs";
 import type { ProfileMetricType } from "@repo/core/schemas/profile-metrics";
 import {
   AlertDialog,
@@ -40,7 +40,6 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { SimpleTrendChart } from "../../../components/charts/simple-trend-chart";
 import { DetailPageIntro } from "../../../components/protected/activity-route-primitives";
-import { CssTestForm } from "../../../components/protected/css-test-form";
 import {
   getProfileMetricFormValues,
   ProfileMetricForm,
@@ -100,7 +99,6 @@ function ProfileMetricsPage() {
   const [selectedMetricType, setSelectedMetricType] = useState<ProfileMetricType>("ftp");
   const [editorTarget, setEditorTarget] = useState<MetricEditorTarget | null>(null);
   const [deleteMetric, setDeleteMetric] = useState<ProfileMetricRow | null>(null);
-  const [cssTestOpen, setCssTestOpen] = useState(false);
   const metricsQuery = api.profileMetrics.list.useInfiniteQuery(
     { limit: 50 },
     { getNextPageParam: (lastPage) => lastPage.nextCursor },
@@ -129,6 +127,7 @@ function ProfileMetricsPage() {
     profileMetricGroups[0].metrics[0];
   const selectedRows = groupedMetrics.get(selectedOption.type) ?? [];
   const latestMetric = selectedRows[0];
+  const selectedIsThreshold = isActivityDerivedThresholdMetricType(selectedOption.type);
 
   const createMutation = api.profileMetrics.create.useMutation({
     onSuccess: async () => {
@@ -151,42 +150,21 @@ function ProfileMetricsPage() {
       setDeleteMetric(null);
     },
   });
-  const cssTestMutation = api.profileMetrics.recordCssTest.useMutation({
-    onSuccess: async (result) => {
-      await utils.profileMetrics.invalidate();
-      toast.success(
-        `CSS test recorded: ${formatProfileMetricDisplayValue({
-          metric_type: "css_seconds_per_100m",
-          unit: "seconds_per_100m",
-          value: result.css_seconds_per_100m,
-        })}`,
-      );
-      setCssTestOpen(false);
-    },
-  });
-
-  const recordCssTest = async (values: CssTestObservationInput) => {
-    await cssTestMutation.mutateAsync({
-      operation_id: values.operationId,
-      recorded_at: values.recordedAt,
-      time_200_seconds: values.time200Seconds,
-      time_400_seconds: values.time400Seconds,
-    });
-  };
-
   return (
     <div className="container mx-auto max-w-6xl space-y-6 py-4">
       <DetailPageIntro
         actions={
-          <Button
-            onClick={() =>
-              setEditorTarget({ mode: "create", metric: { metric_type: selectedMetricType } })
-            }
-            type="button"
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Add measurement
-          </Button>
+          selectedIsThreshold ? null : (
+            <Button
+              onClick={() =>
+                setEditorTarget({ mode: "create", metric: { metric_type: selectedMetricType } })
+              }
+              type="button"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Add measurement
+            </Button>
+          )
         }
         description="Trends now live with profile metrics: pick a measurement, inspect the chart, then edit or delete records from the table below."
         eyebrow="Profile"
@@ -283,11 +261,6 @@ function ProfileMetricsPage() {
                     <CardDescription>Edit or delete the records behind this trend.</CardDescription>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    {selectedOption.type === "css_seconds_per_100m" ? (
-                      <Button onClick={() => setCssTestOpen(true)} size="sm" type="button">
-                        Record 400m / 200m test
-                      </Button>
-                    ) : null}
                     {latestMetric ? (
                       <Badge variant="secondary">
                         Latest {formatDate(latestMetric.recorded_at)}
@@ -302,6 +275,7 @@ function ProfileMetricsPage() {
                   onDelete={setDeleteMetric}
                   onEdit={(metric) => setEditorTarget({ metric, mode: "edit" })}
                   onOverride={(metric) => setEditorTarget({ metric, mode: "override" })}
+                  readOnly={selectedIsThreshold}
                   rows={selectedRows}
                 />
               </CardContent>
@@ -338,23 +312,6 @@ function ProfileMetricsPage() {
         pending={createMutation.isPending || updateMutation.isPending}
       />
 
-      <Dialog open={cssTestOpen} onOpenChange={setCssTestOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>400m / 200m CSS test</DialogTitle>
-            <DialogDescription>
-              Enter both all-out swim times. They are validated and saved together as one CSS test,
-              not as editable effort entries.
-            </DialogDescription>
-          </DialogHeader>
-          <CssTestForm
-            onCancel={() => setCssTestOpen(false)}
-            onSubmit={recordCssTest}
-            pending={cssTestMutation.isPending}
-          />
-        </DialogContent>
-      </Dialog>
-
       <AlertDialog open={!!deleteMetric} onOpenChange={(open) => !open && setDeleteMetric(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -384,12 +341,14 @@ function MetricRowsTable({
   onDelete,
   onEdit,
   onOverride,
+  readOnly,
   rows,
 }: {
   emptyMessage: string;
   onDelete: (row: ProfileMetricRow) => void;
   onEdit: (row: ProfileMetricRow) => void;
   onOverride: (row: ProfileMetricRow) => void;
+  readOnly?: boolean;
   rows: ProfileMetricRow[];
 }) {
   if (rows.length === 0) {
@@ -417,9 +376,9 @@ function MetricRowsTable({
             const manual = isManualProfileMetric(row.source);
             return (
               <TableRow
-                className={manual ? "cursor-pointer" : undefined}
+                className={manual && !readOnly ? "cursor-pointer" : undefined}
                 key={row.id}
-                onClick={() => manual && onEdit(row)}
+                onClick={() => manual && !readOnly && onEdit(row)}
               >
                 <TableCell>{formatDateTime(row.recorded_at)}</TableCell>
                 <TableCell className="whitespace-nowrap font-medium">
@@ -434,7 +393,9 @@ function MetricRowsTable({
                   {row.notes || "-"}
                 </TableCell>
                 <TableCell className="text-right">
-                  {manual ? (
+                  {readOnly ? (
+                    <span className="text-xs text-muted-foreground">Calculated</span>
+                  ) : manual ? (
                     <Button
                       onClick={(event) => {
                         event.stopPropagation();
