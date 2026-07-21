@@ -13,6 +13,10 @@ function segment(
   category: "bike" | "run",
   start: number,
   end: number,
+  heartRateDistribution?: {
+    coverageSeconds: number;
+    buckets: Array<{ bpm: number; seconds: number }>;
+  },
 ) {
   return {
     id,
@@ -31,6 +35,8 @@ function segment(
       distanceMeters: category === "bike" ? 20_000 : 5_000,
       averagePowerWatts: category === "bike" ? 200 : undefined,
       averageSpeedMetersPerSecond: category === "run" ? 3.5 : undefined,
+      averageHeartRateBpm: heartRateDistribution ? 150 : undefined,
+      heartRateDistribution,
     },
   };
 }
@@ -79,6 +85,41 @@ function store() {
                   },
                 },
               ],
+            },
+          ],
+        ]),
+    ),
+  };
+}
+
+function heartRateStore() {
+  return {
+    loadContextEvidence: vi.fn(
+      async () =>
+        new Map([
+          [
+            PROFILE_ID,
+            {
+              profile: { dob: null, gender: null },
+              profileMetrics: [
+                {
+                  id: "run-lthr-evidence",
+                  metric_type: "lthr",
+                  recorded_at: new Date("2026-06-15T10:30:00.000Z"),
+                  unit: "bpm",
+                  value: 150,
+                  source: "derived",
+                  method: "activity_file_lthr_detection",
+                  calculation_version: "lthr-detection-v1",
+                  reference_activity_id: "prior-run",
+                  reference_activity_category: "run",
+                  provenance: {
+                    activity_id: "prior-run",
+                    derived_from: "activity_file_stream",
+                  },
+                },
+              ],
+              recentEfforts: [],
             },
           ],
         ]),
@@ -214,6 +255,10 @@ describe("segment-derived activity analysis", () => {
     expect(segments[0]).toMatchObject({
       dedupe_key: `activity-segment:${input.id}:11111111-1111-4111-8111-111111111111:load:v1`,
       load_stream_key: "bike:power_threshold:activity_analysis:1",
+      common_load: {
+        status: "available",
+        method: "power_threshold",
+      },
     });
 
     const parent = await buildActivityDerivedSummaryMap({
@@ -249,12 +294,74 @@ describe("segment-derived activity analysis", () => {
     expect(summaries[0]).toMatchObject({
       method: "power_threshold",
       unavailable_reason: null,
+      intensity_factor: 0.84,
       calibration_quality: {
         source: "observed_effort",
         observed_at: "2026-07-01T08:45:00.000Z",
+        valid_at: "2026-07-01T08:45:00.000Z",
+        evidence_fingerprint: expect.stringMatching(/^activity-threshold:v1:sha256:/),
+      },
+      common_load: {
+        status: "unavailable",
+        reason: "invalid_data",
       },
     });
     expect(summaries[0]?.tss).toBe(71);
+  });
+
+  it.each([
+    {
+      name: "full",
+      distribution: {
+        coverageSeconds: 3600,
+        buckets: [
+          { bpm: 110, seconds: 1800 },
+          { bpm: 150, seconds: 1800 },
+        ],
+      },
+      expected: { status: "available", contributingDurationSeconds: 3600 },
+    },
+    {
+      name: "partial",
+      distribution: {
+        coverageSeconds: 1800,
+        buckets: [{ bpm: 150, seconds: 1800 }],
+      },
+      expected: {
+        status: "partial",
+        contributingDurationSeconds: 1800,
+        sourceTimeCoverage: 0.5,
+        reason: "duration_partial",
+      },
+    },
+  ])("derives $name HR-zone common load from the persisted segment summary", async ({
+    distribution,
+    expected,
+  }) => {
+    const input = activity([
+      segment("22222222-2222-4222-8222-222222222222", 0, "run", 0, 3_600_000, distribution),
+    ]);
+
+    const summaries = await buildActivitySegmentDerivedSummaries({
+      store: heartRateStore() as never,
+      profileId: PROFILE_ID,
+      activities: [input],
+    });
+
+    expect(summaries[0]).toMatchObject({
+      tss: 100,
+      intensity_factor: 1,
+      method: "heart_rate_threshold",
+      common_load: {
+        ...expected,
+        method: "heart_rate_zones",
+        evidenceFingerprint: expect.stringMatching(/^activity-metric:v1:sha256:/),
+        thresholdEvidence: {
+          observedAt: "2026-06-15T10:30:00.000Z",
+          validAt: "2026-06-15T10:30:00.000Z",
+        },
+      },
+    });
   });
 
   it("publishes guarded Critical Power load as a distinct stream", async () => {

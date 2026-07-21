@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { activityCalibrationQualitySchema } from "../activity-analysis/contracts";
+import { activityCalibrationQualitySchema } from "../activity-analysis/calibration-quality";
 import { type CanonicalSport, canonicalSportSchema } from "../schemas/sport";
 
 export const COMMON_RELATIVE_LOAD_MODEL = "gradientpeak_relative_load" as const;
@@ -24,8 +24,8 @@ const thresholdEvidenceBaseShape = {
     "estimated",
     "unknown",
   ]),
-  observedAt: z.string().datetime(),
-  validAt: z.string().datetime(),
+  observedAt: z.string().datetime({ offset: true }),
+  validAt: z.string().datetime({ offset: true }),
   freshness: z.enum(["current", "stale", "unknown"]),
   calculationVersion: z.string().trim().min(1).nullable(),
   sourceFingerprint: z.string().trim().min(1),
@@ -86,7 +86,7 @@ const commonLoadProvenanceShape = {
   quality: activityCalibrationQualitySchema.nullable(),
   thresholdEvidence: commonThresholdEvidenceSchema.nullable(),
   evidenceFingerprint: z.string().trim().min(1).nullable(),
-  computedAsOf: z.string().datetime(),
+  computedAsOf: z.string().datetime({ offset: true }),
 };
 
 const commonLoadAvailableSchema = z

@@ -16,6 +16,8 @@ export interface CalculateHeartRateZoneStressInput {
 export interface HeartRateZoneStressResult {
   tss: number;
   equivalentIntensityFactor: number;
+  rawTss: number;
+  rawEquivalentIntensityFactor: number;
   coverageRatio: number;
   zoneSeconds: readonly [number, number, number, number, number];
   calculationVersion: "heart-rate-zones-v1";
@@ -92,6 +94,8 @@ export function calculateHeartRateZoneStress(
   return {
     tss: Math.round(tss * 100) / 100,
     equivalentIntensityFactor: Math.round(equivalentIntensityFactor * 10_000) / 10_000,
+    rawTss: tss,
+    rawEquivalentIntensityFactor: equivalentIntensityFactor,
     coverageRatio: Math.round(coverageRatio * 10_000) / 10_000,
     zoneSeconds: zoneSeconds as [number, number, number, number, number],
     calculationVersion: "heart-rate-zones-v1",

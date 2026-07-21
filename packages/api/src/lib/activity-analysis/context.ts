@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { ActivityAnalysisContext, ActivityCalibrationQuality } from "@repo/core";
 import {
   type CriticalPowerThresholdCandidate,
@@ -392,6 +393,11 @@ export function resolveActivityContextFromEvidence(input: {
   };
 }
 
+function evidenceFingerprint(kind: string, evidence: readonly unknown[]): string {
+  const digest = createHash("sha256").update(JSON.stringify(evidence)).digest("hex");
+  return `${kind}:v1:sha256:${digest}`;
+}
+
 function thresholdQuality(threshold: {
   source: ActivityCalibrationQuality["source"];
   observedAt: string | null;
@@ -400,18 +406,30 @@ function thresholdQuality(threshold: {
   estimate: boolean;
   calculationVersion: string | null;
   evidenceFingerprint?: string | null;
+  value: number | null;
+  unit: string;
+  threshold?: string;
+  kind?: string;
 }): ActivityCalibrationQuality | null {
-  if (threshold.source === "unknown") return null;
+  if (threshold.source === "unknown" || !threshold.observedAt) return null;
   return {
     source: threshold.source,
     observed_at: threshold.observedAt,
+    valid_at: threshold.observedAt,
     confidence: threshold.confidence,
     stale: threshold.stale,
     estimate: threshold.estimate,
     calculation_version: threshold.calculationVersion,
-    ...(threshold.evidenceFingerprint
-      ? { evidence_fingerprint: threshold.evidenceFingerprint }
-      : {}),
+    evidence_fingerprint:
+      threshold.evidenceFingerprint ??
+      evidenceFingerprint("activity-threshold", [
+        threshold.threshold ?? threshold.kind ?? "unknown",
+        threshold.value,
+        threshold.unit,
+        threshold.source,
+        threshold.observedAt,
+        threshold.calculationVersion,
+      ]),
   };
 }
 
@@ -473,16 +491,19 @@ function resolveCriticalPowerCandidate(
     null,
   );
   if (!observedAt) return null;
-  const evidenceFingerprint = curve
-    .map(
-      (effort) =>
-        `${effort.duration_seconds}:${effort.value}:${effort.activity_id ?? "none"}:${effort.recorded_at}`,
-    )
-    .join("|");
+  const curveEvidenceFingerprint = evidenceFingerprint(
+    "critical-power-curve",
+    curve.map((effort) => [
+      effort.duration_seconds,
+      effort.value,
+      effort.activity_id ?? "none",
+      effort.recorded_at,
+    ]),
+  );
   return {
     valueWatts: evaluation.model.cp,
     observedAt,
-    evidenceFingerprint,
+    evidenceFingerprint: curveEvidenceFingerprint,
     calculationVersion: CRITICAL_POWER_CALCULATION_VERSION,
   };
 }
@@ -499,10 +520,23 @@ function metricQuality(
   return {
     source,
     observed_at: observedAt,
+    valid_at: observedAt,
     confidence: source === "manual" ? "high" : source === "provider" ? "medium" : "low",
     stale: asOf.getTime() - new Date(observedAt).getTime() > freshnessWindowMs,
     estimate: source === "modeled" || source === "estimated",
     calculation_version: metric.calculation_version ?? null,
+    evidence_fingerprint: evidenceFingerprint("activity-metric", [
+      metric.id ?? null,
+      metric.metric_type,
+      metric.value,
+      metric.unit,
+      observedAt,
+      metric.source ?? null,
+      metric.method ?? null,
+      metric.calculation_version ?? null,
+      metric.reference_activity_id ?? null,
+      metric.reference_activity_category ?? null,
+    ]),
   };
 }
 

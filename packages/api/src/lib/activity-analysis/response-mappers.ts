@@ -12,6 +12,7 @@ function toPublicSegmentLoad(summary: SegmentDerivedSummary) {
     method: summary.method,
     unavailable_reason: summary.unavailable_reason,
     calibration_quality: summary.calibration_quality,
+    ...(summary.common_load !== undefined ? { common_load: summary.common_load } : {}),
     computed_as_of: summary.computed_as_of,
   };
 }

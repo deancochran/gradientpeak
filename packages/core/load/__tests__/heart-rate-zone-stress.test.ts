@@ -22,6 +22,11 @@ describe("calculateHeartRateZoneStress", () => {
       zoneSeconds: [1800, 0, 0, 0, 1800],
       calculationVersion: "heart-rate-zones-v1",
     });
+    const expectedRawTss = (1800 / 3600) * 0.7 ** 2 * 100 + (1800 / 3600) * 1.05 ** 2 * 100;
+    expect(result?.rawTss).toBe(expectedRawTss);
+    expect(result?.rawEquivalentIntensityFactor).toBe(
+      Math.sqrt(expectedRawTss / ((3600 / 3600) * 100)),
+    );
   });
 
   it("abstains when coverage is insufficient", () => {

@@ -272,6 +272,7 @@ export async function buildActivitySegmentDerivedSummaries(input: {
           normalized_graded_speed_mps: null,
         },
         context,
+        heartRateDistribution: summary.heartRateDistribution,
       });
       const compact: ActivityListDerivedSummary = {
         tss: derived.stress.tss,
@@ -280,6 +281,7 @@ export async function buildActivitySegmentDerivedSummaries(input: {
         method: derived.stress.method,
         unavailable_reason: derived.stress.unavailable_reason,
         calibration_quality: derived.stress.calibration_quality,
+        common_load: derived.stress.common_load,
         computed_as_of: derived.computed_as_of,
       };
       output.push({

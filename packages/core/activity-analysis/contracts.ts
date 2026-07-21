@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { commonLoadResultSchema } from "../load/common-relative-load";
 import { canonicalSportSchema } from "../schemas/sport";
 import {
   type ActivityTssIdentityMethod,
@@ -6,6 +7,7 @@ import {
   activityTssIdentityMethodValues,
   activityTssMethodValues,
 } from "./calculation-policy";
+import { activityCalibrationQualitySchema } from "./calibration-quality";
 
 export const activityStressUnavailableReasonValues = [
   "threshold_missing",
@@ -16,23 +18,8 @@ export const activityStressUnavailableReasonValues = [
 export const activityStressUnavailableReasonSchema = z.enum(activityStressUnavailableReasonValues);
 const currentActivityTssMethodSchema = z.enum(activityTssMethodValues);
 
-export const activityCalibrationQualitySchema = z.object({
-  source: z.enum([
-    "manual",
-    "validated_test",
-    "observed_effort",
-    "provider",
-    "modeled",
-    "estimated",
-    "unknown",
-  ]),
-  observed_at: z.string().nullable(),
-  confidence: z.enum(["high", "medium", "low", "unknown"]),
-  stale: z.boolean(),
-  estimate: z.boolean(),
-  calculation_version: z.string().nullable().optional(),
-  evidence_fingerprint: z.string().trim().min(1).nullable().optional(),
-});
+export type { ActivityCalibrationQuality } from "./calibration-quality";
+export { activityCalibrationQualitySchema } from "./calibration-quality";
 
 const activityTssCalibrationSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("ftp_watts"), value: z.number().positive() }).strict(),
@@ -153,6 +140,7 @@ function validateMethodAwareStress(
 export const activityDerivedStressSchema = z
   .object({
     ...methodAwareStressFields,
+    common_load: commonLoadResultSchema.optional(),
     trimp: z.number().nullable(),
     trimp_source: z.enum(["hr", "power_proxy"]).nullable().optional(),
     training_effect: z
@@ -182,6 +170,7 @@ export const activityDerivedMetricsSchema = z.object({
 export const activityListDerivedSummarySchema = z
   .object({
     ...methodAwareStressFields,
+    common_load: commonLoadResultSchema.optional(),
     computed_as_of: z.string(),
   })
   .superRefine(validateMethodAwareStress);
@@ -194,4 +183,3 @@ export type ActivityDerivedZones = z.infer<typeof activityDerivedZonesSchema>;
 export type ActivityDerivedMetrics = z.infer<typeof activityDerivedMetricsSchema>;
 export type ActivityListDerivedSummary = z.infer<typeof activityListDerivedSummarySchema>;
 export type ActivityStressUnavailableReason = z.infer<typeof activityStressUnavailableReasonSchema>;
-export type ActivityCalibrationQuality = z.infer<typeof activityCalibrationQualitySchema>;

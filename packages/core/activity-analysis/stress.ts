@@ -1,10 +1,25 @@
+import { z } from "zod";
 import type { AggregatedStream } from "../calculations";
 import { calculateHRZones, calculatePowerZones } from "../calculations";
+import {
+  COMMON_RELATIVE_LOAD_MODEL,
+  COMMON_RELATIVE_LOAD_VERSION,
+  type CommonLoadMethod,
+  type CommonLoadResult,
+  type CommonThresholdEvidence,
+  calculateAvailableCommonLoad,
+  commonLoadResultSchema,
+  commonThresholdEvidenceSchema,
+} from "../load/common-relative-load";
+import { calculateHeartRateZoneStress } from "../load/heart-rate-zone-stress";
 import { calculateTrainingTSS, getTrainingIntensityZone } from "../load/tss";
 import { type CanonicalSport, canonicalSportValues } from "../schemas/sport";
 import { type ActivityTssMethod, completedActivityCalculationPolicy } from "./calculation-policy";
+import {
+  type ActivityCalibrationQuality,
+  activityCalibrationQualitySchema,
+} from "./calibration-quality";
 import type {
-  ActivityCalibrationQuality,
   ActivityDerivedMetrics,
   ActivityStressUnavailableReason,
   ActivityZoneEntry,
@@ -71,10 +86,45 @@ export type ActivityAnalysisStreams = {
   speed?: AggregatedStream | null;
 };
 
+export const activityHeartRateDistributionSchema = z
+  .object({
+    coverageSeconds: z.number().int().positive(),
+    buckets: z
+      .array(
+        z
+          .object({
+            bpm: z.number().int().min(30).max(250),
+            seconds: z.number().int().positive(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(221),
+  })
+  .strict()
+  .superRefine((distribution, context) => {
+    if (new Set(distribution.buckets.map(({ bpm }) => bpm)).size !== distribution.buckets.length) {
+      context.addIssue({ code: "custom", path: ["buckets"], message: "HR buckets must be unique" });
+    }
+    if (
+      distribution.buckets.reduce((sum, bucket) => sum + bucket.seconds, 0) !==
+      distribution.coverageSeconds
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["coverageSeconds"],
+        message: "HR coverage must equal the sum of bucket durations",
+      });
+    }
+  });
+
+export type ActivityHeartRateDistribution = z.infer<typeof activityHeartRateDistributionSchema>;
+
 type AnalyzeActivityDerivedMetricsInput = {
   activity: ActivitySummaryForAnalysis;
   context: ActivityAnalysisContext;
   streams?: ActivityAnalysisStreams | null;
+  heartRateDistribution?: ActivityHeartRateDistribution | null;
 };
 
 const HR_ZONE_LABELS = [
@@ -124,7 +174,7 @@ function resolveIntensityFactor(input: {
   );
   if (referencePower === undefined) return null;
 
-  return Math.max(0, Math.min(1.5, referencePower / ftp));
+  return referencePower / ftp;
 }
 
 function resolveHeartRateThresholdIntensityFactor(input: {
@@ -157,12 +207,13 @@ function resolvePaceIntensityFactor(input: {
     return null;
   }
 
-  return Math.max(0, Math.min(1.5, referenceSpeed / thresholdSpeedMps));
+  return referenceSpeed / thresholdSpeedMps;
 }
 
 type ResolvedTssMethod = {
   method: ActivityTssMethod;
   intensityFactor: number;
+  rawIntensityFactor: number;
   calibration: CurrentActivityTssIdentity["calibration"];
   calibrationQuality: ActivityCalibrationQuality | null;
 };
@@ -170,6 +221,23 @@ type ResolvedTssMethod = {
 type TssMethodResolution =
   | { status: "resolved"; value: ResolvedTssMethod }
   | { status: "invalid_data" | "activity_data_missing" | "threshold_missing" };
+
+function resolveLthrCalibration(
+  context: ActivityAnalysisContext,
+  sport: CanonicalSport,
+): { value: number | null; quality: ActivityCalibrationQuality | null } {
+  const sportSpecificValue = context.profileMetrics.lthr_by_sport?.[sport];
+  if (sportSpecificValue != null) {
+    return {
+      value: sportSpecificValue,
+      quality: context.calibrationQuality?.lthrBySport?.[sport] ?? null,
+    };
+  }
+  return {
+    value: context.profileMetrics.lthr ?? null,
+    quality: context.calibrationQuality?.lthr ?? null,
+  };
+}
 
 function resolveMeasurement(
   values: Array<number | null | undefined>,
@@ -209,10 +277,13 @@ function resolveTssMethod(input: {
 
   switch (method) {
     case "power_threshold": {
-      const ftp =
-        profileMetrics.cycling_power_method === "power_threshold"
-          ? (profileMetrics.cycling_power_watts ?? null)
-          : (profileMetrics.ftp ?? null);
+      const usesCyclingPower = profileMetrics.cycling_power_method === "power_threshold";
+      const ftp = usesCyclingPower
+        ? (profileMetrics.cycling_power_watts ?? null)
+        : (profileMetrics.ftp ?? null);
+      const calibrationQuality = usesCyclingPower
+        ? (context.calibrationQuality?.cyclingPower ?? null)
+        : (context.calibrationQuality?.ftp ?? null);
       const measurement = resolveMeasurement(
         [activity.normalized_power, activity.avg_power],
         isInvalidPositiveValue,
@@ -232,9 +303,10 @@ function resolveTssMethod(input: {
             status: "resolved",
             value: {
               method,
-              intensityFactor,
+              intensityFactor: Math.max(0, Math.min(1.5, intensityFactor)),
+              rawIntensityFactor: intensityFactor,
               calibration: { type: "ftp_watts", value: ftp },
-              calibrationQuality: context.calibrationQuality?.ftp ?? null,
+              calibrationQuality,
             },
           }
         : { status: "invalid_data" };
@@ -263,7 +335,8 @@ function resolveTssMethod(input: {
             status: "resolved",
             value: {
               method,
-              intensityFactor,
+              intensityFactor: Math.max(0, Math.min(1.5, intensityFactor)),
+              rawIntensityFactor: intensityFactor,
               calibration: { type: "critical_power_watts", value: criticalPower },
               calibrationQuality: context.calibrationQuality?.cyclingPower ?? null,
             },
@@ -295,7 +368,8 @@ function resolveTssMethod(input: {
             status: "resolved",
             value: {
               method,
-              intensityFactor,
+              intensityFactor: Math.max(0, Math.min(1.5, intensityFactor)),
+              rawIntensityFactor: intensityFactor,
               calibration: {
                 type: "threshold_speed_mps",
                 value: thresholdSpeedMps,
@@ -333,7 +407,8 @@ function resolveTssMethod(input: {
             status: "resolved",
             value: {
               method,
-              intensityFactor,
+              intensityFactor: Math.max(0, Math.min(1.5, intensityFactor)),
+              rawIntensityFactor: intensityFactor,
               calibration: {
                 type: "swim_threshold_speed_mps",
                 value: thresholdSpeedMps,
@@ -344,7 +419,8 @@ function resolveTssMethod(input: {
         : { status: "invalid_data" };
     }
     case "heart_rate_threshold": {
-      const lthr = profileMetrics.lthr_by_sport?.[sport] ?? profileMetrics.lthr ?? null;
+      const lthrCalibration = resolveLthrCalibration(context, sport);
+      const lthr = lthrCalibration.value;
       const measurement = resolveMeasurement([activity.avg_heart_rate], isInvalidHeartRate);
       const unavailable = unresolvedMethod({
         threshold: lthr,
@@ -362,11 +438,9 @@ function resolveTssMethod(input: {
             value: {
               method,
               intensityFactor,
+              rawIntensityFactor: intensityFactor,
               calibration: { type: "lthr_bpm", value: lthr },
-              calibrationQuality:
-                context.calibrationQuality?.lthrBySport?.[sport] ??
-                context.calibrationQuality?.lthr ??
-                null,
+              calibrationQuality: lthrCalibration.quality,
             },
           }
         : { status: "invalid_data" };
@@ -384,6 +458,16 @@ function isInvalidHeartRate(value: number | null | undefined): boolean {
 
 function isInvalidLthr(value: number | null | undefined): boolean {
   return value != null && (!Number.isFinite(value) || value < 80 || value > 220);
+}
+
+function resolveEligibleDurationSeconds(activity: ActivitySummaryForAnalysis): number | null {
+  const movingSeconds = activity.moving_seconds;
+  if (movingSeconds == null) return activity.duration_seconds;
+  return Number.isFinite(movingSeconds) &&
+    movingSeconds > 0 &&
+    movingSeconds <= activity.duration_seconds
+    ? movingSeconds
+    : null;
 }
 
 function resolveTssSelection(input: {
@@ -477,10 +561,284 @@ function resolveTrimp(input: {
   return Number.isFinite(trimp) ? Math.round(trimp) : null;
 }
 
+type CompleteCommonProvenance = {
+  quality: ActivityCalibrationQuality;
+  thresholdEvidence: CommonThresholdEvidence;
+  evidenceFingerprint: string;
+  computedAsOf: string;
+};
+
+function unavailableCommonLoad(input: {
+  sport: CanonicalSport;
+  computedAsOf: string;
+  contributingDurationSeconds: number | null;
+  reason: Extract<CommonLoadResult, { status: "unavailable" }>["reason"];
+  method?: CommonLoadMethod | null;
+  provenance?: CompleteCommonProvenance | null;
+}): CommonLoadResult {
+  const provenance = input.provenance ?? null;
+  return commonLoadResultSchema.parse({
+    status: "unavailable",
+    model: COMMON_RELATIVE_LOAD_MODEL,
+    version: COMMON_RELATIVE_LOAD_VERSION,
+    sport: input.sport,
+    method: input.method ?? null,
+    quality: provenance?.quality ?? null,
+    thresholdEvidence: provenance?.thresholdEvidence ?? null,
+    evidenceFingerprint: provenance?.evidenceFingerprint ?? null,
+    computedAsOf: input.computedAsOf,
+    contributingDurationSeconds: input.contributingDurationSeconds,
+    reason: input.reason,
+  });
+}
+
+function completeCommonProvenance(input: {
+  quality: ActivityCalibrationQuality | null;
+  calibration: CurrentActivityTssIdentity["calibration"];
+  computedAsOf: string;
+}): CompleteCommonProvenance | null {
+  const qualityResult = activityCalibrationQualitySchema.safeParse(input.quality);
+  if (!qualityResult.success) return null;
+  const quality = qualityResult.data;
+  const rfc3339Schema = z.string().datetime({ offset: true });
+  const observedAtResult = rfc3339Schema.safeParse(quality.observed_at);
+  const validAtResult = rfc3339Schema.safeParse(quality.valid_at);
+  const computedAsOfResult = rfc3339Schema.safeParse(input.computedAsOf);
+  if (
+    !observedAtResult.success ||
+    !validAtResult.success ||
+    !computedAsOfResult.success ||
+    Date.parse(validAtResult.data) > Date.parse(computedAsOfResult.data) ||
+    !quality.evidence_fingerprint
+  ) {
+    return null;
+  }
+
+  const unit =
+    input.calibration.type === "ftp_watts" || input.calibration.type === "critical_power_watts"
+      ? "watts"
+      : input.calibration.type === "lthr_bpm"
+        ? "beats_per_minute"
+        : "meters_per_second";
+  if (input.calibration.type === "heart_rate_reserve_bpm") return null;
+
+  const thresholdEvidenceResult: CommonThresholdEvidence = commonThresholdEvidenceSchema.parse({
+    ...input.calibration,
+    unit,
+    source: quality.source,
+    observedAt: observedAtResult.data,
+    validAt: validAtResult.data,
+    freshness: quality.stale ? "stale" : "current",
+    calculationVersion: quality.calculation_version ?? null,
+    sourceFingerprint: quality.evidence_fingerprint,
+  });
+
+  return {
+    quality,
+    thresholdEvidence: thresholdEvidenceResult,
+    evidenceFingerprint: quality.evidence_fingerprint,
+    computedAsOf: input.computedAsOf,
+  };
+}
+
+function directCommonMethod(method: ActivityTssMethod): CommonLoadMethod | null {
+  return method === "heart_rate_threshold" ? null : method;
+}
+
+function resolveDirectCommonLoad(input: {
+  sport: CanonicalSport;
+  durationSeconds: number;
+  computedAsOf: string;
+  resolved: ResolvedTssMethod;
+}): CommonLoadResult {
+  const method = directCommonMethod(input.resolved.method);
+  if (!method) {
+    return unavailableCommonLoad({
+      sport: input.sport,
+      computedAsOf: input.computedAsOf,
+      contributingDurationSeconds: input.durationSeconds,
+      reason: "unsupported_modality",
+    });
+  }
+  const provenance = completeCommonProvenance({
+    quality: input.resolved.calibrationQuality,
+    calibration: input.resolved.calibration,
+    computedAsOf: input.computedAsOf,
+  });
+  if (!provenance) {
+    return unavailableCommonLoad({
+      sport: input.sport,
+      computedAsOf: input.computedAsOf,
+      contributingDurationSeconds: input.durationSeconds,
+      reason: "invalid_data",
+    });
+  }
+  if (provenance.quality.stale) {
+    return unavailableCommonLoad({
+      sport: input.sport,
+      computedAsOf: input.computedAsOf,
+      contributingDurationSeconds: input.durationSeconds,
+      reason: "stale_threshold",
+      method,
+      provenance,
+    });
+  }
+  if (input.resolved.rawIntensityFactor > 1.5 || input.resolved.rawIntensityFactor < 0) {
+    return unavailableCommonLoad({
+      sport: input.sport,
+      computedAsOf: input.computedAsOf,
+      contributingDurationSeconds: input.durationSeconds,
+      reason: "intensity_out_of_range",
+      method,
+      provenance,
+    });
+  }
+
+  return calculateAvailableCommonLoad({
+    sport: input.sport,
+    method,
+    intensity: input.resolved.rawIntensityFactor,
+    contributingDurationSeconds: input.durationSeconds,
+    ...provenance,
+    estimated: provenance.quality.estimate,
+  });
+}
+
+function resolveHeartRateCommonLoad(input: {
+  sport: CanonicalSport;
+  durationSeconds: number;
+  computedAsOf: string;
+  lthr: number | null;
+  quality: ActivityCalibrationQuality | null;
+  distribution: ActivityHeartRateDistribution | null | undefined;
+}): CommonLoadResult {
+  const method = "heart_rate_zones" as const;
+  if (isInvalidLthr(input.lthr)) {
+    return unavailableCommonLoad({
+      sport: input.sport,
+      computedAsOf: input.computedAsOf,
+      contributingDurationSeconds: input.durationSeconds,
+      reason: "invalid_data",
+    });
+  }
+  if (input.lthr === null) {
+    return unavailableCommonLoad({
+      sport: input.sport,
+      computedAsOf: input.computedAsOf,
+      contributingDurationSeconds: input.durationSeconds,
+      reason: "threshold_missing",
+      method,
+    });
+  }
+  const provenance = completeCommonProvenance({
+    quality: input.quality,
+    calibration: { type: "lthr_bpm", value: input.lthr },
+    computedAsOf: input.computedAsOf,
+  });
+  if (!provenance) {
+    return unavailableCommonLoad({
+      sport: input.sport,
+      computedAsOf: input.computedAsOf,
+      contributingDurationSeconds: input.durationSeconds,
+      reason: "invalid_data",
+    });
+  }
+  if (provenance.quality.stale) {
+    return unavailableCommonLoad({
+      sport: input.sport,
+      computedAsOf: input.computedAsOf,
+      contributingDurationSeconds: input.durationSeconds,
+      reason: "stale_threshold",
+      method,
+      provenance,
+    });
+  }
+  if (input.distribution == null) {
+    return unavailableCommonLoad({
+      sport: input.sport,
+      computedAsOf: input.computedAsOf,
+      contributingDurationSeconds: input.durationSeconds,
+      reason: "activity_data_missing",
+      method,
+      provenance,
+    });
+  }
+  const distributionResult = activityHeartRateDistributionSchema.safeParse(input.distribution);
+  if (
+    !distributionResult.success ||
+    distributionResult.data.coverageSeconds > input.durationSeconds
+  ) {
+    return unavailableCommonLoad({
+      sport: input.sport,
+      computedAsOf: input.computedAsOf,
+      contributingDurationSeconds: input.durationSeconds,
+      reason: "invalid_data",
+      method,
+      provenance,
+    });
+  }
+  const distribution = distributionResult.data;
+  const sourceTimeCoverage = distribution.coverageSeconds / input.durationSeconds;
+  if (sourceTimeCoverage < 0.5) {
+    return unavailableCommonLoad({
+      sport: input.sport,
+      computedAsOf: input.computedAsOf,
+      contributingDurationSeconds: distribution.coverageSeconds,
+      reason: "insufficient_coverage",
+      method,
+      provenance,
+    });
+  }
+  const zoneStress = calculateHeartRateZoneStress({
+    durationSeconds: input.durationSeconds,
+    lthrBpm: input.lthr,
+    distribution,
+  });
+  if (!zoneStress) {
+    return unavailableCommonLoad({
+      sport: input.sport,
+      computedAsOf: input.computedAsOf,
+      contributingDurationSeconds: distribution.coverageSeconds,
+      reason: "invalid_data",
+      method,
+      provenance,
+    });
+  }
+  if (distribution.coverageSeconds === input.durationSeconds) {
+    return calculateAvailableCommonLoad({
+      sport: input.sport,
+      method,
+      intensity: zoneStress.rawEquivalentIntensityFactor,
+      contributingDurationSeconds: distribution.coverageSeconds,
+      ...provenance,
+      estimated: provenance.quality.estimate,
+    });
+  }
+
+  const intensity = zoneStress.rawEquivalentIntensityFactor;
+  return commonLoadResultSchema.parse({
+    status: "partial",
+    model: COMMON_RELATIVE_LOAD_MODEL,
+    version: COMMON_RELATIVE_LOAD_VERSION,
+    sport: input.sport,
+    method,
+    quality: provenance.quality,
+    thresholdEvidence: provenance.thresholdEvidence,
+    evidenceFingerprint: provenance.evidenceFingerprint,
+    computedAsOf: input.computedAsOf,
+    load: zoneStress.rawTss,
+    intensity,
+    contributingDurationSeconds: distribution.coverageSeconds,
+    eligibleDurationSeconds: input.durationSeconds,
+    sourceTimeCoverage,
+    reason: "duration_partial",
+  });
+}
+
 export function analyzeActivityDerivedMetrics(
   input: AnalyzeActivityDerivedMetricsInput,
 ): ActivityDerivedMetrics {
-  const { activity, context, streams } = input;
+  const { activity, context, streams, heartRateDistribution } = input;
   const ftp = context.profileMetrics.ftp ?? null;
   const lthr = context.profileMetrics.lthr ?? null;
   const maxHr = context.profileMetrics.max_hr ?? null;
@@ -509,6 +867,50 @@ export function analyzeActivityDerivedMetrics(
       ? Math.round(calculateTrainingTSS(activity.duration_seconds, fullPrecisionIntensityFactor))
       : null;
 
+  const commonSport = sport ?? "other";
+  const hasValidDuration =
+    Number.isFinite(activity.duration_seconds) && activity.duration_seconds > 0;
+  const eligibleDurationSeconds = resolveEligibleDurationSeconds(activity);
+  const lthrCalibration = sport ? resolveLthrCalibration(context, sport) : null;
+  const commonLoad = !hasValidDuration
+    ? unavailableCommonLoad({
+        sport: commonSport,
+        computedAsOf: activity.started_at,
+        contributingDurationSeconds: null,
+        reason: "invalid_data",
+      })
+    : resolvedMethod && directCommonMethod(resolvedMethod.method)
+      ? eligibleDurationSeconds === null
+        ? unavailableCommonLoad({
+            sport: commonSport,
+            computedAsOf: activity.started_at,
+            contributingDurationSeconds: null,
+            reason: "invalid_data",
+          })
+        : resolveDirectCommonLoad({
+            sport: commonSport,
+            durationSeconds: eligibleDurationSeconds,
+            computedAsOf: activity.started_at,
+            resolved: resolvedMethod,
+          })
+      : sport === "run" || sport === "bike" || sport === "swim"
+        ? resolveHeartRateCommonLoad({
+            sport,
+            // Persisted HR distributions integrate active elapsed intervals and are not
+            // moving-time filtered, so their denominator is the activity's active duration.
+            durationSeconds: activity.duration_seconds,
+            computedAsOf: activity.started_at,
+            lthr: lthrCalibration?.value ?? null,
+            quality: lthrCalibration?.quality ?? null,
+            distribution: heartRateDistribution,
+          })
+        : unavailableCommonLoad({
+            sport: commonSport,
+            computedAsOf: activity.started_at,
+            contributingDurationSeconds: activity.duration_seconds,
+            reason: "unsupported_modality",
+          });
+
   const trimp = resolveTrimp({
     avgHeartRate: activity.avg_heart_rate,
     durationSeconds: activity.duration_seconds,
@@ -533,6 +935,7 @@ export function analyzeActivityDerivedMetrics(
       method: resolvedMethod?.method ?? null,
       unavailable_reason: resolvedMethod ? null : selection.reason,
       calibration_quality: resolvedMethod?.calibrationQuality ?? null,
+      common_load: commonLoad,
       trimp,
       trimp_source: trimp !== null ? "hr" : null,
       training_effect: resolveTrainingEffect(intensityFactor),
