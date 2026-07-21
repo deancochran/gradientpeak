@@ -60,6 +60,12 @@ vi.mock("../../lib/activity-analysis", async (importOriginal) => {
   return {
     ...actual,
     buildActivityDerivedSummaryMap: mockActivityAnalysis.buildActivityDerivedSummaryMap,
+    buildActivityDerivedSummaries: async (
+      input: Parameters<typeof actual.buildActivityDerivedSummaryMap>[0],
+    ) => ({
+      parent: await mockActivityAnalysis.buildActivityDerivedSummaryMap(input),
+      segments: await mockActivityAnalysis.buildActivitySegmentDerivedSummaries(input),
+    }),
     buildActivitySegmentDerivedSummaries: mockActivityAnalysis.buildActivitySegmentDerivedSummaries,
     loadActivitySegmentsByActivityId: mockActivityAnalysis.loadActivitySegmentsByActivityId,
     resolveActivityContextAsOf: mockActivityAnalysis.resolveActivityContextAsOf,
@@ -823,6 +829,7 @@ describe("activitiesRouter", () => {
         likes_count: 3,
         has_liked: true,
         derived,
+        segment_loads: [],
         activity_kind: "single",
         activity_segment_count: 1,
         activity_categories: ["run"],
@@ -904,6 +911,20 @@ describe("activitiesRouter", () => {
         tss: 50,
         tss_identity: RUN_TSS_IDENTITY,
       },
+      segment_loads: [
+        expect.objectContaining({
+          segment_id: segments[1]?.id,
+          category: "run",
+          tss: 20,
+          intensity_factor: 0.8,
+        }),
+        expect.objectContaining({
+          segment_id: segments[2]?.id,
+          category: "run",
+          tss: 30,
+          intensity_factor: 0.8,
+        }),
+      ],
     });
     const whereSql = toSql(db.__spies.selectWhere.mock.calls[0]?.[0]);
     expect(whereSql).toContain('"activity_segments"."category" =');
@@ -975,6 +996,10 @@ describe("activitiesRouter", () => {
         category: "run",
         tss: 30,
         tss_identity: RUN_TSS_IDENTITY,
+        intensity_factor: 0.8,
+        method: "run_pace_threshold",
+        unavailable_reason: null,
+        computed_as_of: "2026-01-10T09:00:00.000Z",
         load_stream_key: "run:pace",
       },
       {
@@ -983,6 +1008,10 @@ describe("activitiesRouter", () => {
         category: "run",
         tss: 10,
         tss_identity: RUN_TSS_IDENTITY,
+        intensity_factor: 0.7,
+        method: "run_pace_threshold",
+        unavailable_reason: null,
+        computed_as_of: "2026-01-10T09:00:00.000Z",
         load_stream_key: "run:pace",
       },
     ]);
@@ -1714,6 +1743,7 @@ describe("activitiesRouter", () => {
       },
       has_liked: true,
       derived: privateDerived,
+      segment_loads: [],
     });
     expect(mockActivityAnalysis.resolveActivityContextAsOf).not.toHaveBeenCalled();
     expect(mockActivityAnalysis.analyzeActivityDerivedMetrics).not.toHaveBeenCalled();

@@ -626,6 +626,7 @@ function ActivityDetailScreen() {
               derived: {
                 stress: activityCardStress,
               },
+              segment_loads: activityData.segment_loads,
             }}
             headerAccessory={
               <ResourceCardActionButton

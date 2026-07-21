@@ -301,8 +301,22 @@ export async function buildActivityDerivedSummaryMap(input: {
   profileId: string;
   activities: ActivityWithSegments[];
 }): Promise<Map<string, ActivityListDerivedSummary>> {
+  return (await buildActivityDerivedSummaries(input)).parent;
+}
+
+export async function buildActivityDerivedSummaries(input: {
+  store: ActivityAnalysisStore;
+  profileId: string;
+  activities: ActivityWithSegments[];
+}): Promise<{
+  parent: Map<string, ActivityListDerivedSummary>;
+  segments: SegmentDerivedSummary[];
+}> {
   const segments = await buildActivitySegmentDerivedSummaries(input);
-  return buildParentDerivedSummaryMap(input.activities, segments);
+  return {
+    parent: buildParentDerivedSummaryMap(input.activities, segments),
+    segments,
+  };
 }
 
 function buildParentDerivedSummaryMap(

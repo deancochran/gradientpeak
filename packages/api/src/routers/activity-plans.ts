@@ -279,6 +279,7 @@ type DiscoverListActivityPlan = SerializedActivityPlan &
       | "estimate_last_accessed_at"
       | "estimate_source"
       | "estimator_version"
+      | "category_loads"
       | "authoritative_metrics"
       | "route"
     >
@@ -598,6 +599,7 @@ export const activityPlansRouter = createTRPCRouter({
               estimated_zones: undefined,
               confidence: undefined,
               confidence_score: undefined,
+              category_loads: undefined,
               authoritative_metrics: undefined,
               route: undefined,
             })),

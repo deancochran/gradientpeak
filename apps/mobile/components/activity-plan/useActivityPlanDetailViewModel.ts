@@ -5,6 +5,7 @@ import {
   decodePolyline,
 } from "@repo/core";
 import { useMemo } from "react";
+import type { SportLoadMeasurement } from "@/components/shared/SportLoadBreakdown";
 import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
 
 type ActivityPlanLike = {
@@ -16,6 +17,7 @@ type ActivityPlanLike = {
     intensity_factor?: number | null;
     estimated_distance?: number | null;
   } | null;
+  category_loads?: readonly SportLoadMeasurement[];
   route?: {
     distance?: number | null;
     ascent?: number | null;

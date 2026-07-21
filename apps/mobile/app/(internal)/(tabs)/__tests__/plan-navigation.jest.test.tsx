@@ -763,6 +763,9 @@ jest.mock("@/lib/api", () => ({
       goals: { list: { invalidate: jest.fn() } },
     }),
     trainingPlans: {
+      getActualCurve: {
+        useQuery: () => ({ data: { dataPoints: [] }, isFetching: false, isLoading: false }),
+      },
       getActivePlan: {
         useQuery: (_input: unknown, options: QueryOptions) => {
           activePlanQueryOptionsRef.current = options;

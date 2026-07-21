@@ -128,7 +128,48 @@ describe("ActivityCard", () => {
       "Run, Bike",
     );
     expect(screen.getByText("Run")).toBeTruthy();
-    expect(screen.getByText("Bike")).toBeTruthy();
+    expect(screen.getAllByText("Bike").length).toBeGreaterThan(0);
+  });
+
+  it("shows sport-specific TSS and IF for multisport activity segments", () => {
+    renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-multisport-load",
+          name: "Brick workout",
+          activity_kind: "multisport",
+          activity_categories: ["bike", "run"],
+          distance_meters: 20_000,
+          elapsed_ms: 4_500_000,
+          derived: null,
+          segment_loads: [
+            {
+              segment_id: "segment-bike",
+              category: "bike",
+              tss: 52,
+              intensity_factor: 0.81,
+              method: "power_threshold",
+              unavailable_reason: null,
+            },
+            {
+              segment_id: "segment-run",
+              category: "run",
+              tss: 38,
+              intensity_factor: 0.76,
+              method: "run_pace_threshold",
+              unavailable_reason: null,
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Sport-specific load")).toBeTruthy();
+    expect(screen.getAllByText("Bike").length).toBeGreaterThan(0);
+    expect(screen.getByText("TSS ~52 · IF ~0.81")).toBeTruthy();
+    expect(screen.getAllByText("Run").length).toBeGreaterThan(0);
+    expect(screen.getByText("rTSS ~38 · Run IF ~0.76")).toBeTruthy();
+    expect(screen.queryByText("Load")).toBeNull();
   });
 
   it("shows activity summary metrics in list mode", () => {

@@ -172,6 +172,81 @@ describe("ActivityPlanCard", () => {
     expect(screen.queryByLabelText("Open activity plan Brick builder")).toBeNull();
   });
 
+  it("shows available sport-specific TSS and IF without inventing a parent aggregate", () => {
+    renderNative(
+      <ActivityPlanCard
+        activityPlan={{
+          id: "plan-multisport-load",
+          name: "Brick builder",
+          categories: ["bike", "run"],
+          primary_category: "bike",
+          authoritative_metrics: {
+            estimated_duration: 5400,
+            estimated_tss: null,
+            intensity_factor: null,
+          },
+          category_loads: [
+            {
+              category: "bike",
+              tss: 64,
+              intensity_factor: 0.84,
+              method: "power_threshold",
+            },
+            {
+              category: "run",
+              tss: null,
+              intensity_factor: null,
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Sport-specific load")).toBeTruthy();
+    expect(screen.getByText("TSS ~64 · IF ~0.84")).toBeTruthy();
+    expect(screen.getByText("Unavailable")).toBeTruthy();
+    expect(screen.queryAllByText("TSS")).toHaveLength(0);
+  });
+
+  it("does not duplicate aggregate metrics for a single-sport plan", () => {
+    renderNative(
+      <ActivityPlanCard
+        activityPlan={{
+          id: "plan-single-sport-load",
+          name: "Bike tempo",
+          categories: ["bike"],
+          primary_category: "bike",
+          structure: {
+            ...activityPlanStructure,
+            segments: activityPlanStructure.segments.map((segment) => ({
+              ...segment,
+              category: "bike",
+            })),
+          },
+          authoritative_metrics: {
+            estimated_duration: 3600,
+            estimated_tss: 64,
+            intensity_factor: 0.84,
+          },
+          category_loads: [
+            {
+              category: "bike",
+              tss: 64,
+              intensity_factor: 0.84,
+              method: "power_threshold",
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.queryByText("Sport-specific load")).toBeNull();
+    expect(screen.getAllByText("TSS")).toHaveLength(1);
+    expect(screen.getAllByText("~64")).toHaveLength(1);
+    expect(screen.getAllByText("Intensity")).toHaveLength(1);
+    expect(screen.getAllByText("~0.84")).toHaveLength(1);
+  });
+
   it("keeps compact cards visual, focused, and tappable", () => {
     const onPress = jest.fn();
 

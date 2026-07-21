@@ -16,8 +16,7 @@ import type { getRequiredDb } from "../../db";
 import { createActivityAnalysisStore } from "../../infrastructure/repositories";
 import {
   type ActivitySegmentReadRow,
-  buildActivityDerivedSummaryMap,
-  buildActivitySegmentDerivedSummaries,
+  buildActivityDerivedSummaries,
   loadActivitySegmentsByActivityId,
   mapActivityToDerivedResponse,
   mapActivityToListDerivedResponse,
@@ -201,20 +200,13 @@ export async function listActivitiesForProfile({
         }
 
         const analysisStore = createActivityAnalysisStore(snapshotDb);
-        const [derivedByActivityId, segmentDerived] = await Promise.all([
-          buildActivityDerivedSummaryMap({
-            store: analysisStore,
-            profileId,
-            activities: candidates.map(({ activity }) => activity),
-          }),
-          input.activity_category
-            ? buildActivitySegmentDerivedSummaries({
-                store: analysisStore,
-                profileId,
-                activities: candidates.map(({ activity }) => activity),
-              })
-            : Promise.resolve([]),
-        ]);
+        const analysis = await buildActivityDerivedSummaries({
+          store: analysisStore,
+          profileId,
+          activities: candidates.map(({ activity }) => activity),
+        });
+        const derivedByActivityId = analysis.parent;
+        const segmentDerived = analysis.segments;
         const segmentDerivedByActivityId = new Map<string, typeof segmentDerived>();
         for (const summary of segmentDerived) {
           segmentDerivedByActivityId.set(summary.activity_id, [
@@ -257,6 +249,7 @@ export async function listActivitiesForProfile({
             },
             has_liked: getLikeStats(likeStats, activity.id).has_liked,
             derived,
+            segment_loads: segmentDerivedByActivityId.get(activity.id) ?? [],
           }),
         );
         return {
@@ -313,20 +306,13 @@ export async function listActivitiesForProfile({
     segments: segments.get(activity.id) ?? [],
   }));
   const analysisStore = createActivityAnalysisStore(db);
-  const [derived, segmentDerived] = await Promise.all([
-    buildActivityDerivedSummaryMap({
-      store: analysisStore,
-      profileId,
-      activities: data,
-    }),
-    input.activity_category
-      ? buildActivitySegmentDerivedSummaries({
-          store: analysisStore,
-          profileId,
-          activities: data,
-        })
-      : Promise.resolve([]),
-  ]);
+  const analysis = await buildActivityDerivedSummaries({
+    store: analysisStore,
+    profileId,
+    activities: data,
+  });
+  const derived = analysis.parent;
+  const segmentDerived = analysis.segments;
   const segmentDerivedByActivityId = new Map<string, typeof segmentDerived>();
   for (const summary of segmentDerived) {
     segmentDerivedByActivityId.set(summary.activity_id, [
@@ -358,6 +344,7 @@ export async function listActivitiesForProfile({
       },
       has_liked: getLikeStats(likeStats, activity.id).has_liked,
       derived: derived.get(activity.id) ?? null,
+      segment_loads: derivedSegments ?? [],
     });
   });
   return {
@@ -484,15 +471,15 @@ export async function getActivityByIdForViewer({
     zones: { hr: [], power: [] },
     computed_as_of: activity.started_at.toISOString(),
   };
-  const ownedDerived =
+  const ownedAnalysis =
     activity.profile_id === viewerId
-      ? await buildActivityDerivedSummaryMap({
+      ? await buildActivityDerivedSummaries({
           store: createActivityAnalysisStore(db),
           profileId: activity.profile_id,
           activities: [activity],
         })
       : null;
-  const parentDerived = ownedDerived?.get(activity.id);
+  const parentDerived = ownedAnalysis?.parent.get(activity.id);
   const resolvedDerived: ActivityDerivedMetrics = parentDerived
     ? {
         stress: {
@@ -526,6 +513,7 @@ export async function getActivityByIdForViewer({
     },
     has_liked: getLikeStats(likeStats, activityId).has_liked,
     derived: resolvedDerived,
+    segment_loads: ownedAnalysis?.segments ?? [],
   });
   return {
     ...response,

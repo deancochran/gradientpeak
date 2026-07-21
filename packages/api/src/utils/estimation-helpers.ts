@@ -437,6 +437,12 @@ export type ActivityPlanWithEstimation<
   estimation_status: "estimated" | "partial" | "failed";
   estimation_warnings: string[];
   counts_toward_aggregation: boolean;
+  category_loads: Array<{
+    category: NonNullable<ReturnType<typeof estimateActivity>["categoryDoses"]>[number]["category"];
+    tss: number | null;
+    intensity_factor: number | null;
+    method: "power_threshold" | null;
+  }>;
   authoritative_metrics: ActivityPlanAuthoritativeMetrics;
   route: ActivityPlanRouteSummary | null;
 };
@@ -470,6 +476,12 @@ export function buildEstimatedPlan<TPlan extends EstimationActivityPlanInput>(
     estimation_status: complete ? "estimated" : "partial",
     estimation_warnings: estimation.warnings ?? [],
     counts_toward_aggregation: estimation.tss !== null,
+    category_loads: (estimation.categoryDoses ?? []).map((dose) => ({
+      category: dose.category,
+      tss: dose.tss,
+      intensity_factor: dose.intensityFactor,
+      method: dose.tss === null ? null : "power_threshold",
+    })),
     authoritative_metrics: {
       estimated_tss: estimation.tss,
       estimated_duration: estimation.duration,
@@ -498,6 +510,7 @@ export function buildFailedEstimationPlan<TPlan extends EstimationActivityPlanIn
     estimation_status: "failed",
     estimation_warnings: ["Estimation failed and was excluded from scheduled load."],
     counts_toward_aggregation: false,
+    category_loads: [],
     authoritative_metrics: {
       estimated_tss: null,
       estimated_duration: null,

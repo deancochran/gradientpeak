@@ -107,12 +107,20 @@ const activitySegmentReadSchema = publicActivitySegmentsRowSchema
   })
   .strict();
 
+const activitySegmentLoadSchema = activityListDerivedSummarySchema
+  .extend({
+    segment_id: z.string().uuid(),
+    category: publicActivityCategorySchema,
+  })
+  .strict();
+
 const activityListItemSchema = activityRowSchema
   .extend({
     ...activityCompositionSchema.shape,
     likes_count: z.number().int().nonnegative(),
     has_liked: z.boolean(),
     derived: activityListDerivedSummarySchema.nullable(),
+    segment_loads: activitySegmentLoadSchema.array(),
     ingestion: activityIngestionStatusSchema.nullable().optional(),
   })
   .strict();
@@ -146,6 +154,7 @@ const activityDerivedResponseSchema = z
     activity: activityWithPlanSchema,
     has_liked: z.boolean(),
     derived: activityDerivedMetricsSchema,
+    segment_loads: activitySegmentLoadSchema.array(),
   })
   .strict();
 

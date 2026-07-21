@@ -119,7 +119,9 @@ jest.mock("@/lib/hooks/useAuth", () => ({
 
 jest.mock("@/lib/server-config", () => ({
   __esModule: true,
+  getServerConfig: () => ({ apiUrl: "http://127.0.0.1:3000" }),
   getReachableSupabaseStorageUrl: (url: string) => url,
+  subscribeServerConfig: jest.fn(),
 }));
 
 jest.mock("@/lib/api", () => ({

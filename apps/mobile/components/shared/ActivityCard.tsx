@@ -23,6 +23,7 @@ import {
   ResourceMetricsRow,
   ResourceOwnerActionRow,
 } from "./ResourceCardPrimitives";
+import { SportLoadBreakdown, type SportLoadMeasurement } from "./SportLoadBreakdown";
 import { StaticRouteMapPreview } from "./StaticRouteMapPreview";
 
 type RouteCoordinate = { latitude: number; longitude: number };
@@ -67,6 +68,11 @@ export type ActivityCardActivity = {
       calibration_quality?: CalibrationQuality | null;
     } | null;
   } | null;
+  segment_loads?: Array<
+    SportLoadMeasurement & {
+      segment_id: string;
+    }
+  >;
   ingestion?: {
     status?: string | null;
     last_error_message?: string | null;
@@ -209,6 +215,8 @@ function ActivityMetricsRow({
   const intensityFactor = getDerivedValue(activity, "intensity_factor");
   const loadPresentation = getLoadPresentation(activity);
   const metrics: ResourceMetric[] = [];
+  const hasSegmentLoads =
+    activity.activity_kind === "multisport" && !!activity.segment_loads?.length;
 
   if (typeof activity.distance_meters === "number" && activity.distance_meters > 0) {
     metrics.push({
@@ -226,17 +234,19 @@ function ActivityMetricsRow({
     metrics.push({ label: "Elapsed", value: formatDurationSec(elapsedSeconds) });
   }
 
-  metrics.push({
-    label: loadPresentation.load,
-    value: formatEstimatedTss(tss, { includeUnit: false }) ?? loadPresentation.unavailableText,
-    tone: "primary",
-  });
+  if (!hasSegmentLoads) {
+    metrics.push({
+      label: loadPresentation.load,
+      value: formatEstimatedTss(tss, { includeUnit: false }) ?? loadPresentation.unavailableText,
+      tone: "primary",
+    });
 
-  metrics.push({
-    label: loadPresentation.intensity,
-    value: formatEstimatedIntensityFactor(intensityFactor) ?? "--",
-    tone: "primary",
-  });
+    metrics.push({
+      label: loadPresentation.intensity,
+      value: formatEstimatedIntensityFactor(intensityFactor) ?? "--",
+      tone: "primary",
+    });
+  }
 
   if (metrics.length === 0) {
     return null;
@@ -375,6 +385,13 @@ export function ActivityCard({
       />
 
       <ActivityMetricsRow activity={activity} compact={false} />
+
+      {activity.activity_kind === "multisport" && activity.segment_loads?.length ? (
+        <SportLoadBreakdown
+          loads={activity.segment_loads.map((load) => ({ ...load, key: load.segment_id }))}
+          testID={`activity-card-sport-loads-${activity.id}`}
+        />
+      ) : null}
 
       {calibrationText ? (
         <Text className="text-xs text-muted-foreground">{calibrationText}</Text>

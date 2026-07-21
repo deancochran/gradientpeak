@@ -39,11 +39,12 @@ export function initServerTelemetry() {
   const environment = process.env.APP_ENV ?? process.env.NODE_ENV ?? "development";
   const posthogKey = process.env.POSTHOG_KEY;
   if (posthogKey) {
+    const secretKey = process.env.POSTHOG_SECRET_KEY ?? process.env.POSTHOG_PERSONAL_API_KEY;
     posthogClient = new PostHog(posthogKey, {
       host: process.env.POSTHOG_HOST ?? "https://us.i.posthog.com",
       flushAt: 1,
       flushInterval: 0,
-      secretKey: process.env.POSTHOG_SECRET_KEY ?? process.env.POSTHOG_PERSONAL_API_KEY,
+      ...(secretKey !== undefined ? { secretKey } : {}),
     });
 
     posthogClient.capture({
@@ -170,7 +171,7 @@ export function captureApiEvent(
   posthogClient?.capture({
     distinctId,
     event,
-    properties,
+    ...(properties !== undefined ? { properties } : {}),
   });
 }
 

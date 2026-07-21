@@ -13,6 +13,18 @@ const estimateActivity = vi.hoisted(() =>
       tss: duration / 60 + routeDistance / 1000 + profileFactor,
       duration,
       intensityFactor: 0.8,
+      categoryDoses: [
+        {
+          category: "bike",
+          timedActiveSeconds: duration,
+          distanceMeters: 0,
+          repetitionCount: 1,
+          openOccurrenceCount: 0,
+          tss: 42,
+          intensityFactor: 0.8,
+          cyclingPowerEvidenceCoverage: 1,
+        },
+      ],
       confidence: "medium",
       confidenceScore: 75,
       estimatedPowerZones: [0, 61],
@@ -217,11 +229,15 @@ describe("on-demand activity plan estimation", () => {
       estimation_status: "estimated",
       estimation_warnings: ["fixture warning"],
       counts_toward_aggregation: true,
+      category_loads: [
+        { category: "bike", tss: 42, intensity_factor: 0.8, method: "power_threshold" },
+      ],
     });
     expect(result[1]).toMatchObject({
       estimation_status: "failed",
       estimate_source: "failed",
       counts_toward_aggregation: false,
+      category_loads: [],
       authoritative_metrics: { estimated_tss: null },
     });
   });

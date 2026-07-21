@@ -19,6 +19,7 @@ import {
   ResourceLikeButton,
   ResourceOwnerActionRow,
 } from "./ResourceCardPrimitives";
+import type { SportLoadMeasurement } from "./SportLoadBreakdown";
 
 // ============================================
 // TYPES
@@ -39,6 +40,7 @@ export interface ActivityPlan {
     intensity_factor?: number | null;
     estimated_distance?: number | null;
   } | null;
+  category_loads?: readonly SportLoadMeasurement[];
   route?: {
     distance?: number | null;
     ascent?: number | null;
@@ -95,6 +97,7 @@ export interface ActivityPlanCardData {
   estimatedDuration?: number; // in seconds
   estimatedTss?: number;
   intensityFactor?: number;
+  categoryLoads?: readonly SportLoadMeasurement[];
   estimatedDistance?: number; // meters
   routeId?: string;
   routeName?: string;
@@ -208,6 +211,7 @@ export function ActivityPlanCard({
 
       <ActivityPlanSummary
         activityCategory={activity.activityType}
+        categoryLoads={activity.categoryLoads}
         description={activity.description || activity.notes || null}
         estimatedDuration={activity.estimatedDuration}
         estimatedTss={activity.estimatedTss}
@@ -300,6 +304,7 @@ function transformToCardData(
     estimatedDuration: authoritativeMetrics.estimated_duration ?? undefined,
     estimatedTss: authoritativeMetrics.estimated_tss ?? undefined,
     intensityFactor: authoritativeMetrics.intensity_factor ?? undefined,
+    categoryLoads: plan.category_loads,
     estimatedDistance:
       authoritativeMetrics.estimated_distance === null
         ? undefined

@@ -15,9 +15,11 @@ import {
 import { ActivityPlanAttributionRow } from "./ActivityPlanAttributionRow";
 import type { EntityOwner } from "./EntityOwnerRow";
 import { ResourceMetricsRow } from "./ResourceCardPrimitives";
+import { SportLoadBreakdown, type SportLoadMeasurement } from "./SportLoadBreakdown";
 
 type ActivityPlanSummaryProps = {
   activityCategory?: string | null;
+  categoryLoads?: readonly SportLoadMeasurement[];
   description?: string | null;
   estimatedDuration?: number | null;
   estimatedDurationMinutes?: number | null;
@@ -137,6 +139,7 @@ export function ActivityPlanSummary({
   estimatedTss,
   headerAccessory,
   intensityFactor,
+  categoryLoads,
   owner,
   presentation,
   routeName,
@@ -150,6 +153,8 @@ export function ActivityPlanSummary({
   showAttribution = true,
 }: ActivityPlanSummaryProps) {
   const routeLabel = routeName?.trim() || (routeProvided ? "Route included" : null);
+  const showCategoryLoads =
+    categoryLoads != null && new Set(categoryLoads.map((load) => load.category)).size > 1;
 
   return (
     <View
@@ -190,6 +195,8 @@ export function ActivityPlanSummary({
         presentation={presentation}
         structure={structure}
       />
+
+      {showCategoryLoads ? <SportLoadBreakdown loads={categoryLoads} /> : null}
 
       {showAttribution ? (
         <ActivityPlanAttributionRow

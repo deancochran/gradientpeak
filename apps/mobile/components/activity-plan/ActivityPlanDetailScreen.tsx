@@ -392,6 +392,7 @@ export function ActivityPlanDetailScreen({
 
             <ActivityPlanSummary
               activityCategory={planCategory}
+              categoryLoads={activityPlan.category_loads}
               description={activityPlan.description}
               estimatedDuration={authoritativeMetrics.estimated_duration ?? null}
               estimatedTss={tss}
