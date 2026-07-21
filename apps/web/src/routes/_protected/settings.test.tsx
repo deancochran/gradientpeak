@@ -1,11 +1,12 @@
+// @vitest-environment jsdom
+
 import { describe, expect, it, vi } from "vitest";
 
-import { submitValidatedSettingsForm } from "./settings";
+import { submitValidatedSettingsForm } from "../../lib/profile/settings-form-submit";
 
 describe("settings profile submission", () => {
   it("captures the form before async validation releases the React event", async () => {
     const form = document.createElement("form");
-    let currentTarget: HTMLFormElement | null = form;
     const preventDefault = vi.fn();
     const submit = vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(() => {});
     let finishValidation: ((value: boolean) => void) | undefined;
@@ -14,13 +15,11 @@ describe("settings profile submission", () => {
     });
     const event = {
       preventDefault,
-      get currentTarget() {
-        return currentTarget;
-      },
-    } as React.FormEvent<HTMLFormElement>;
+      currentTarget: form,
+    };
 
     const pending = submitValidatedSettingsForm(event, () => validation);
-    currentTarget = null;
+    Object.defineProperty(event, "currentTarget", { value: null });
     finishValidation?.(true);
 
     await expect(pending).resolves.toBe(true);

@@ -919,7 +919,6 @@ describe("activityFilesRouter", () => {
       activityTimestamp: new Date("2026-03-01T10:00:00.000Z"),
       activityId,
       evidenceScope: "thresholds",
-      thresholdEvidence: "activity_efforts_only",
     });
   });
 

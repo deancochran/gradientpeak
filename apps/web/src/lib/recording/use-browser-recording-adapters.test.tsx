@@ -1,8 +1,26 @@
+// @vitest-environment jsdom
+
 import { render, screen, waitFor } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { useBrowserRecordingAdapters } from "./use-browser-recording-adapters";
+
+const secureContextDescriptor = Object.getOwnPropertyDescriptor(window, "isSecureContext");
+const bluetoothDescriptor = Object.getOwnPropertyDescriptor(navigator, "bluetooth");
+
+afterEach(() => {
+  if (secureContextDescriptor) {
+    Object.defineProperty(window, "isSecureContext", secureContextDescriptor);
+  } else {
+    Reflect.deleteProperty(window, "isSecureContext");
+  }
+  if (bluetoothDescriptor) {
+    Object.defineProperty(navigator, "bluetooth", bluetoothDescriptor);
+  } else {
+    Reflect.deleteProperty(navigator, "bluetooth");
+  }
+});
 
 function CapabilityProbe() {
   const browserBle = useBrowserRecordingAdapters().find((adapter) => adapter.id === "browser-ble");

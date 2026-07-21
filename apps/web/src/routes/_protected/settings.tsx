@@ -69,22 +69,12 @@ import {
   updateSettingsProfileAction,
   uploadProfileAvatarAction,
 } from "../../lib/profile/server-actions";
+import { submitValidatedSettingsForm } from "../../lib/profile/settings-form-submit";
 
 type AvatarFile = { file?: File; name: string };
 
 function isAbsoluteUrl(value: string) {
   return /^https?:\/\//i.test(value);
-}
-
-export async function submitValidatedSettingsForm(
-  event: React.FormEvent<HTMLFormElement>,
-  validate: () => Promise<boolean>,
-) {
-  event.preventDefault();
-  const formElement = event.currentTarget;
-  if (!(await validate())) return false;
-  HTMLFormElement.prototype.submit.call(formElement);
-  return true;
 }
 
 export const Route = createFileRoute("/_protected/settings")({
