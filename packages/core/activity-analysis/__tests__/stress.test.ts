@@ -1126,6 +1126,46 @@ describe("activity analysis", () => {
     expect(activityDerivedMetricsSchema.parse(derived)).toEqual(derived);
   });
 
+  it("preserves partial HR load and legacy TSS at sixty-percent active coverage", () => {
+    const derived = analyzeActivityDerivedMetrics({
+      activity: {
+        id: "paused-sixty-percent-hr-distribution",
+        type: "run",
+        ...timestamps,
+        duration_seconds: 3600,
+        moving_seconds: 1200,
+        avg_heart_rate: 150,
+      },
+      context: {
+        profileMetrics: { lthr: 150 },
+        calibrationQuality: { lthr: completeQuality("paused-sixty-percent-lthr") },
+        recentEfforts: [],
+        profile: {},
+      },
+      heartRateDistribution: {
+        coverageSeconds: 2160,
+        buckets: [{ bpm: 150, seconds: 2160 }],
+      },
+    });
+
+    expect(derived.stress.tss).toBe(100);
+    expect(derived.stress.intensity_factor).toBe(1);
+    expect(derived.stress.common_load).toMatchObject({
+      status: "partial",
+      method: "heart_rate_zones",
+      contributingDurationSeconds: 2160,
+      eligibleDurationSeconds: 3600,
+      sourceTimeCoverage: 0.6,
+      reason: "duration_partial",
+    });
+    if (derived.stress.common_load?.status !== "partial") {
+      throw new Error("Expected partial HR common Load");
+    }
+    expect(derived.stress.common_load.intensity).toBeCloseTo(1.05, 12);
+    expect(derived.stress.common_load.load).toBeCloseTo(66.15, 12);
+    expect(activityDerivedMetricsSchema.parse(derived)).toEqual(derived);
+  });
+
   it.each([
     { name: "missing", distribution: undefined, reason: "activity_data_missing" },
     {
