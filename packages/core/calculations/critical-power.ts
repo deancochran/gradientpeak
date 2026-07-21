@@ -142,7 +142,7 @@ export function calculateSeasonBestCurve<T extends BestEffort>(
     days?: number;
     now?: Date;
     activity_category?: CanonicalSport;
-    effort_type?: "power" | "speed";
+    effort_type?: "power" | "speed" | "heart_rate";
   } = {},
 ): T[] {
   const {

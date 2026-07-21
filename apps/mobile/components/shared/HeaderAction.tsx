@@ -37,7 +37,10 @@ export function HeaderTextAction({
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityRole="button"
       accessibilityState={{ busy: loading, disabled: isDisabled }}
-      className={cn("mr-2 rounded-full px-2 py-1", className)}
+      className={cn(
+        "mr-2 min-h-11 min-w-11 items-center justify-center rounded-full px-2 active:bg-muted disabled:opacity-50",
+        className,
+      )}
       disabled={isDisabled}
       onPress={onPress}
       testID={testID}
@@ -67,7 +70,10 @@ export function HeaderIconAction({
       accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
       accessibilityState={{ busy: loading, disabled: isDisabled }}
-      className={cn("mr-2 h-10 w-10 items-center justify-center", className)}
+      className={cn(
+        "mr-2 h-11 w-11 items-center justify-center rounded-full active:bg-muted disabled:opacity-50",
+        className,
+      )}
       disabled={isDisabled}
       onPress={onPress}
       testID={testID}

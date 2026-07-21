@@ -3,8 +3,10 @@ import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { createFileRoute } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
+import { useEffect } from "react";
 import { toast } from "sonner";
 import { api } from "../../lib/api/client";
+import { getIntegrationPollingInterval } from "../../lib/integrations/polling";
 
 export const Route = createFileRoute("/_protected/integrations")({
   component: IntegrationsPage,
@@ -22,8 +24,14 @@ function formatStatus(value: string) {
 function IntegrationsPage() {
   const utils = api.useUtils();
   const overviewQuery = api.integrations.getSyncOverview.useQuery(undefined, {
+    refetchInterval: (query) => {
+      return getIntegrationPollingInterval(query.state.data);
+    },
     refetchOnMount: "always",
     refetchOnReconnect: true,
+  });
+  const getAuthUrlMutation = api.integrations.getAuthUrl.useMutation({
+    onError: () => toast.error("Unable to start connection"),
   });
   const syncNowMutation = api.integrations.syncNow.useMutation({
     onSuccess: async () => {
@@ -48,7 +56,30 @@ function IntegrationsPage() {
     onError: () => toast.error("Unable to disconnect integration"),
   });
 
-  const integrations = overviewQuery.data?.filter((integration) => integration.configured) ?? [];
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const outcome = url.searchParams.get("integration");
+    if (!outcome) return;
+
+    if (outcome === "connected") toast.success("Integration connected");
+    else toast.error("Integration connection failed");
+    url.searchParams.delete("integration");
+    url.searchParams.delete("provider");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
+
+  const integrations = overviewQuery.data ?? [];
+  const hasCachedData = integrations.length > 0;
+
+  const connect = async (provider: (typeof integrations)[number]["provider"]) => {
+    const redirectUri = `${window.location.origin}/integrations`;
+    try {
+      const result = await getAuthUrlMutation.mutateAsync({ provider, redirectUri });
+      window.location.assign(result.url);
+    } catch {
+      // The mutation owns the sanitized user-visible error.
+    }
+  };
 
   return (
     <div className="container mx-auto max-w-4xl py-4">
@@ -60,22 +91,26 @@ function IntegrationsPage() {
           </p>
         </div>
 
-        {overviewQuery.isLoading ? (
-          <div className="flex min-h-[240px] items-center justify-center">
-            <Loader2 className="h-8 w-8 animate-spin" />
-          </div>
-        ) : overviewQuery.error ? (
-          <Card className="border-destructive/30">
+        {overviewQuery.error ? (
+          <Card className="border-destructive/30" role="alert">
             <CardHeader>
-              <CardTitle>Couldn’t load integrations</CardTitle>
+              <CardTitle>Couldn’t refresh integrations</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                Retry to check provider availability and sync status.
+                {hasCachedData
+                  ? "Showing the last known provider status. Retry when your connection recovers."
+                  : "Retry to check provider availability and sync status."}
               </p>
               <Button onClick={() => void overviewQuery.refetch()}>Retry</Button>
             </CardContent>
           </Card>
+        ) : null}
+
+        {overviewQuery.isLoading && !hasCachedData ? (
+          <div className="flex min-h-[240px] items-center justify-center">
+            <Loader2 aria-label="Checking integrations" className="h-8 w-8 animate-spin" />
+          </div>
         ) : integrations.length === 0 ? (
           <Card>
             <CardHeader>
@@ -91,15 +126,17 @@ function IntegrationsPage() {
           <div className="grid gap-4">
             {integrations.map((integration) => {
               const isMutating =
+                getAuthUrlMutation.isPending ||
                 syncNowMutation.isPending ||
                 refreshSetupMutation.isPending ||
                 disconnectMutation.isPending;
               const canSyncNow = integration.actions.includes("sync_now") && integration.connected;
               const canRefreshSetup =
                 integration.actions.includes("refresh_setup_data") && integration.connected;
-              const connectDeferred =
-                integration.primaryAction === "connect" ||
-                integration.primaryAction === "reconnect";
+              const canConnect =
+                integration.configured &&
+                (integration.primaryAction === "connect" ||
+                  integration.primaryAction === "reconnect");
 
               return (
                 <Card key={integration.provider}>
@@ -140,10 +177,13 @@ function IntegrationsPage() {
                     ) : null}
 
                     <div className="flex flex-wrap gap-2">
-                      {connectDeferred ? (
-                        <Button variant="outline" disabled title="Web OAuth return is deferred">
-                          {integration.primaryAction === "reconnect" ? "Reconnect" : "Connect"}{" "}
-                          deferred
+                      {canConnect ? (
+                        <Button
+                          variant="outline"
+                          disabled={isMutating}
+                          onClick={() => void connect(integration.provider)}
+                        >
+                          {integration.primaryAction === "reconnect" ? "Reconnect" : "Connect"}
                         </Button>
                       ) : null}
                       {canSyncNow ? (
@@ -185,10 +225,10 @@ function IntegrationsPage() {
                       ) : null}
                     </div>
 
-                    {connectDeferred ? (
+                    {!integration.configured ? (
                       <p className="text-xs text-muted-foreground">
-                        Web connect/reconnect is deferred because the current OAuth flow stores a
-                        mobile return URI only.
+                        This provider is not configured on this server. No credentials are required
+                        to view its availability.
                       </p>
                     ) : null}
                   </CardContent>

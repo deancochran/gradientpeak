@@ -27,7 +27,7 @@ function ActivityPlansListScreen() {
   const [includeMultisport, setIncludeMultisport] = useState(true);
   const [draftIncludeMultisport, setDraftIncludeMultisport] = useState(true);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
-  const { data, isLoading, error } = api.activityPlans.list.useQuery({
+  const { data, isFetching, isLoading, error, refetch } = api.activityPlans.list.useQuery({
     ownerScope: "own",
     includeOwnOnly: true,
     includeSystemTemplates: false,
@@ -38,6 +38,8 @@ function ActivityPlansListScreen() {
   });
 
   const plans = data?.items ?? [];
+  const hasActiveQuery =
+    searchQuery.trim().length > 0 || categoryFilter !== null || !includeMultisport;
 
   return (
     <View className="flex-1 bg-background" testID="activity-plans-list-screen">
@@ -73,6 +75,7 @@ function ActivityPlansListScreen() {
         ListHeaderComponent={
           <IndexResultsSummary
             count={plans.length}
+            countKind="loaded"
             singularLabel="activity plan"
             pluralLabel="activity plans"
           />
@@ -85,16 +88,18 @@ function ActivityPlansListScreen() {
             </Text>
           </View>
         }
-        errorDescription={error?.message}
+        errorDescription={error?.message ?? "Please try again."}
         errorTitle="Unable to load activity plans"
         isError={Boolean(error)}
         isLoading={isLoading}
+        isEmptyFiltered={hasActiveQuery}
+        isRetrying={isFetching}
+        onRetry={refetch}
         renderItem={(item) => (
           <ActivityPlanCard
             activityPlan={item}
             onPress={() => navigateTo(ROUTES.PLAN.PLAN_DETAIL(item.id))}
             testID={`activity-plan-list-item-${item.id}`}
-            variant="list"
           />
         )}
       />

@@ -90,8 +90,6 @@ export function useTrainingPlanBuilderController({
     ? builder.actions.getSessionById(selectedSessionId)
     : null;
   const isSaving = builder.derived.savePlan.isPending;
-  const extendChartEnd = useCallback(() => undefined, []);
-  const extendChartStart = useCallback(() => undefined, []);
   const selectWeekStart = useCallback((weekStart: string) => {
     setSelectedWeekStart(weekStart);
     setSelectedDate(weekStart);
@@ -144,16 +142,12 @@ export function useTrainingPlanBuilderController({
       selectedDate: resolvedSelectedDate,
       selectedDayOffset,
       selectedWeekStart: selectedWeek?.weekStart ?? null,
-      extendEnd: extendChartEnd,
-      extendStart: extendChartStart,
       selectDate,
       selectWeekStart,
     };
   }, [
     builder.derived.projection.chart,
     builder.state.scheduling.startDate,
-    extendChartEnd,
-    extendChartStart,
     selectDate,
     selectWeekStart,
     selectedDate,

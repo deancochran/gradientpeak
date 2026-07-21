@@ -374,14 +374,17 @@ export function resolveActivityContextFromEvidence(input: {
         }),
       ),
     },
-    recentEfforts: typedEfforts.slice(0, 50).map((effort) => ({
-      recorded_at: toIsoString(effort.recorded_at) ?? activityTimestampIso,
-      effort_type: effort.effort_type,
-      duration_seconds: effort.duration_seconds,
-      value: effort.value,
-      unit: effort.unit,
-      activity_category: effort.activity_category,
-    })),
+    recentEfforts: typedEfforts
+      .filter((effort) => effort.effort_type === "power" || effort.effort_type === "speed")
+      .slice(0, 50)
+      .map((effort) => ({
+        recorded_at: toIsoString(effort.recorded_at) ?? activityTimestampIso,
+        effort_type: effort.effort_type as "power" | "speed",
+        duration_seconds: effort.duration_seconds,
+        value: effort.value,
+        unit: effort.unit,
+        activity_category: effort.activity_category,
+      })),
     profile: {
       dob: toIsoString(snapshot.profile.dob ?? null),
       ...(gender !== undefined ? { gender } : {}),

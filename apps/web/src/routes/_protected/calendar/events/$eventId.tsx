@@ -45,7 +45,7 @@ export const Route = createFileRoute("/_protected/calendar/events/$eventId")({
       typeof search.month === "string" && isValidMonthKey(search.month)
         ? search.month
         : getMonthKey(new Date()),
-    view: search.view === "agenda" ? "agenda" : "month",
+    view: search.view === "agenda" || search.view === "week" ? search.view : "month",
   }),
   component: EventDetailPage,
 });
@@ -62,6 +62,17 @@ function EventDetailPage() {
   );
   if (eventQuery.isLoading) {
     return <p className="text-sm text-muted-foreground">Loading event...</p>;
+  }
+
+  if (eventQuery.isError) {
+    return (
+      <div role="alert" className="space-y-3">
+        <p className="text-sm">Event could not be loaded.</p>
+        <Button variant="outline" onClick={() => void eventQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
   }
 
   if (!event) {
@@ -134,13 +145,29 @@ function EventDetailPage() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete this event?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This first web slice deletes a single event instance only.
+                    {event.series_id || event.recurrence_rule
+                      ? "Choose whether to delete this occurrence, future occurrences, or the entire series."
+                      : "This removes the scheduled event."}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                   <form action={deleteCalendarEventAction.url} method="post">
                     <input type="hidden" name="event_id" value={event.id} />
+                    {event.series_id || event.recurrence_rule ? (
+                      <select
+                        name="scope"
+                        aria-label="Delete recurrence scope"
+                        defaultValue="single"
+                        className="mb-3 h-10 w-full rounded-md border bg-background px-3 text-sm"
+                      >
+                        <option value="single">This event only</option>
+                        <option value="future">This and future events</option>
+                        <option value="series">Entire series</option>
+                      </select>
+                    ) : (
+                      <input type="hidden" name="scope" value="single" />
+                    )}
                     <input
                       type="hidden"
                       name="redirectTo"

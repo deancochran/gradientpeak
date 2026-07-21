@@ -1,4 +1,11 @@
-import { activityPlans, contentAccessGrants, events, likes, profiles } from "@repo/db";
+import {
+  activityPlans,
+  activityRoutes,
+  contentAccessGrants,
+  events,
+  likes,
+  profiles,
+} from "@repo/db";
 import type { TRPCError } from "@trpc/server";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -79,7 +86,13 @@ vi.mock("../../infrastructure/repositories", () => ({
 import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
 import { activityPlansRouter } from "../activity-plans";
 
-type MockTableName = "activity_plans" | "content_access_grants" | "events" | "likes" | "profiles";
+type MockTableName =
+  | "activity_plans"
+  | "activity_routes"
+  | "content_access_grants"
+  | "events"
+  | "likes"
+  | "profiles";
 type MockOperation = "select" | "insert" | "update" | "delete";
 
 type MockRows = unknown[];
@@ -151,6 +164,7 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
     created_at: new Date("2026-03-01T10:00:00.000Z"),
     updated_at: new Date("2026-03-01T10:00:00.000Z"),
     profile_id: USER_ID,
+    route_id: null,
     name: "Tempo Builder",
     description: "Structured activity",
     notes: "Bring bottles",
@@ -165,9 +179,33 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function createActivityRouteRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "99999999-9999-4999-8999-999999999999",
+    created_at: new Date("2026-03-01T10:00:00.000Z"),
+    updated_at: new Date("2026-03-01T10:00:00.000Z"),
+    profile_id: USER_ID,
+    name: "River Loop",
+    description: "Rolling roads",
+    file_path: "routes/river-loop.fit",
+    total_distance: 12_000,
+    total_ascent: 180,
+    total_descent: 170,
+    elevation_polyline: null,
+    polyline: "encoded-polyline",
+    is_system_template: false,
+    is_public: false,
+    ...overrides,
+  };
+}
+
 function resolveTableName(table: unknown): MockTableName {
   if (table === activityPlans) {
     return "activity_plans";
+  }
+
+  if (table === activityRoutes) {
+    return "activity_routes";
   }
 
   if (table === likes) {
@@ -210,7 +248,8 @@ function createDbMock(state: MockDbState = {}) {
       },
       groupBy: async () => nextRows("select", table),
       orderBy: () => builder,
-      limit: async () => nextRows("select", table),
+      limit: () => builder,
+      offset: async () => nextRows("select", table),
       then: (onFulfilled: (value: unknown[]) => unknown) =>
         Promise.resolve(nextRows("select", table)).then(onFulfilled),
     };
@@ -383,6 +422,64 @@ describe("activityPlansRouter", () => {
     });
   });
 
+  it("list omits malformed persisted plans without truncating pagination", async () => {
+    const invalidStructure = structuredClone(sampleStructure);
+    invalidStructure.segments[0].intervals = [];
+    const invalidPlan = createActivityPlanRow({
+      id: "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      structure: invalidStructure,
+    });
+    const validPlan = createActivityPlanRow({
+      id: "22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    });
+    const laterPlan = createActivityPlanRow({
+      id: "33333333-cccc-4ccc-8ccc-cccccccccccc",
+      created_at: new Date("2026-02-28T10:00:00.000Z"),
+    });
+    const { caller } = createCaller({
+      state: {
+        "select:activity_plans": [[invalidPlan, validPlan], [laterPlan], [laterPlan]],
+        "select:likes": [[], []],
+        "select:profiles": [[createProfileRow()], [createProfileRow()]],
+      },
+    });
+
+    const result = await caller.list({ includeOwnOnly: true, limit: 1 });
+
+    expect(result.items.map((plan) => plan.id)).toEqual([validPlan.id]);
+    expect(result.nextCursor).toBe(`${validPlan.created_at.toISOString()}_${validPlan.id}`);
+
+    const nextPage = await caller.list({
+      includeOwnOnly: true,
+      limit: 1,
+      cursor: result.nextCursor,
+    });
+    expect(nextPage.items.map((plan) => plan.id)).toEqual([laterPlan.id]);
+  });
+
+  it("uses an index cursor when discovery requests persisted oldest-first sorting", async () => {
+    const firstPlan = createActivityPlanRow({
+      id: "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      created_at: new Date("2026-03-01T10:00:00.000Z"),
+    });
+    const secondPlan = createActivityPlanRow({
+      id: "22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      created_at: new Date("2026-03-02T10:00:00.000Z"),
+    });
+    const { caller } = createCaller({
+      state: {
+        "select:activity_plans": [[firstPlan, secondPlan]],
+        "select:likes": [[]],
+        "select:profiles": [[createProfileRow()]],
+      },
+    });
+
+    const result = await caller.list({ ownerScope: "discoverable", sort_by: "oldest", limit: 1 });
+
+    expect(result.items[0]?.id).toBe(firstPlan.id);
+    expect(result.nextCursor).toBe("index:1");
+  });
+
   it("filters by categories contained in V3 segments instead of the storage column", async () => {
     const runStructure = structuredClone(sampleStructure);
     runStructure.segments[0].category = "run";
@@ -534,6 +631,24 @@ describe("activityPlansRouter", () => {
     };
     expect(listResult.items[0]).toMatchObject(composition);
     expect(detailResult).toMatchObject(composition);
+  });
+
+  it("getById hydrates an attached route the caller can read", async () => {
+    const route = createActivityRouteRow();
+    const plan = createActivityPlanRow({ route_id: route.id });
+    const { caller } = createCaller({
+      state: {
+        "select:activity_plans": [[plan]],
+        "select:activity_routes": [[route]],
+        "select:likes": [[]],
+        "select:profiles": [[createProfileRow()]],
+      },
+    });
+
+    await expect(caller.getById({ id: plan.id })).resolves.toMatchObject({
+      route_id: route.id,
+      route: { id: route.id, name: route.name, distance: route.total_distance },
+    });
   });
 
   it("uses role-aware category containment SQL", async () => {
@@ -742,6 +857,49 @@ describe("activityPlansRouter", () => {
     });
   });
 
+  it("create authorizes, stores, and hydrates a selected route", async () => {
+    const route = createActivityRouteRow({ is_public: true, profile_id: OTHER_USER_ID });
+    const createdRow = createActivityPlanRow({ route_id: route.id });
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_routes": [[route]],
+        "insert:activity_plans": [[createdRow]],
+      },
+    });
+
+    const result = await caller.create({
+      name: "Route workout",
+      route_id: route.id,
+      structure: sampleStructure,
+    });
+
+    expect(callLog.find((call) => call.operation === "insert")?.payload).toMatchObject({
+      route_id: route.id,
+    });
+    expect(result).toMatchObject({
+      route_id: route.id,
+      route: {
+        id: route.id,
+        name: "River Loop",
+        distance: 12_000,
+        ascent: 180,
+        descent: 170,
+      },
+    });
+  });
+
+  it("create rejects a selected route the caller cannot use", async () => {
+    const routeId = "99999999-9999-4999-8999-999999999999";
+    const { caller, callLog } = createCaller({
+      state: { "select:activity_routes": [[]] },
+    });
+
+    await expect(
+      caller.create({ name: "Denied route", route_id: routeId, structure: sampleStructure }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" } as Partial<TRPCError>);
+    expect(callLog.some((call) => call.operation === "insert")).toBe(false);
+  });
+
   it("create rejects provider import provenance", async () => {
     const { caller, callLog } = createCaller();
 
@@ -800,6 +958,75 @@ describe("activityPlansRouter", () => {
       template_visibility: "public",
     });
     expect(result).toMatchObject({ id: existingRow.id, visibility: "public" });
+  });
+
+  it("update can set and hydrate an authorized route", async () => {
+    const route = createActivityRouteRow({ is_system_template: true, profile_id: null });
+    const existingRow = createActivityPlanRow();
+    const updatedRow = createActivityPlanRow({ route_id: route.id });
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [[existingRow]],
+        "select:activity_routes": [[route]],
+        "update:activity_plans": [[updatedRow]],
+      },
+    });
+
+    const result = await caller.update({
+      id: existingRow.id,
+      expectedStructureHash: existingRow.structure_hash,
+      route_id: route.id,
+    });
+
+    expect(callLog.find((call) => call.operation === "update")?.payload).toMatchObject({
+      route_id: route.id,
+    });
+    expect(result.route).toMatchObject({ id: route.id, name: route.name });
+  });
+
+  it("update rejects a selected route the caller cannot use", async () => {
+    const existingRow = createActivityPlanRow();
+    const routeId = "99999999-9999-4999-8999-999999999999";
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [[existingRow]],
+        "select:activity_routes": [[]],
+      },
+    });
+
+    await expect(
+      caller.update({
+        id: existingRow.id,
+        expectedStructureHash: existingRow.structure_hash,
+        route_id: routeId,
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" } as Partial<TRPCError>);
+    expect(callLog.some((call) => call.operation === "update")).toBe(false);
+  });
+
+  it("update can clear a linked route without a route lookup", async () => {
+    const existingRow = createActivityPlanRow({
+      route_id: "99999999-9999-4999-8999-999999999999",
+    });
+    const updatedRow = createActivityPlanRow({ route_id: null });
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [[existingRow]],
+        "update:activity_plans": [[updatedRow]],
+      },
+    });
+
+    const result = await caller.update({
+      id: existingRow.id,
+      expectedStructureHash: existingRow.structure_hash,
+      route_id: null,
+    });
+
+    expect(callLog.find((call) => call.operation === "update")?.payload).toMatchObject({
+      route_id: null,
+    });
+    expect(callLog.filter((call) => call.table === "activity_routes")).toHaveLength(0);
+    expect(result.route).toBeNull();
   });
 
   it("update republishes every owned future planned event after a material plan change", async () => {

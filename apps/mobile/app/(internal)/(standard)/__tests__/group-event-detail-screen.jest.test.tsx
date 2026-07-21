@@ -81,7 +81,13 @@ const detailVm: {
   isLoading: boolean;
   refetch: typeof refetchMock;
   seriesOccurrences: GroupEventFixture[];
-  seriesOccurrencesQuery: { isLoading: boolean };
+  seriesOccurrencesQuery: {
+    error: Error | null;
+    isError: boolean;
+    isFetching: boolean;
+    isLoading: boolean;
+    refetch: typeof refetchMock;
+  };
 } = {
   detailQuery: {},
   event: baseEvent,
@@ -90,7 +96,13 @@ const detailVm: {
   isLoading: false,
   refetch: refetchMock,
   seriesOccurrences: [],
-  seriesOccurrencesQuery: { isLoading: false },
+  seriesOccurrencesQuery: {
+    error: null,
+    isError: false,
+    isFetching: false,
+    isLoading: false,
+    refetch: refetchMock,
+  },
 };
 
 const groupVm = {
@@ -233,7 +245,13 @@ describe("group event detail route", () => {
     detailVm.isError = false;
     detailVm.isLoading = false;
     detailVm.seriesOccurrences = [];
-    detailVm.seriesOccurrencesQuery = { isLoading: false };
+    detailVm.seriesOccurrencesQuery = {
+      error: null,
+      isError: false,
+      isFetching: false,
+      isLoading: false,
+      refetch: refetchMock,
+    };
     groupVm.viewer = { canCreateGroupEvent: false };
   });
 
@@ -275,7 +293,7 @@ describe("group event detail route", () => {
     renderNative(<GroupEventDetailRoute />);
 
     expect(screen.getByText("Repeating event")).toBeTruthy();
-    expect(screen.queryByText("Next Occurrence")).toBeNull();
+    expect(screen.getByText("Next Occurrence")).toBeTruthy();
 
     fireEvent.press(screen.getByText("Apply to series"));
     fireEvent.press(screen.getByText("Going to series"));
@@ -287,6 +305,24 @@ describe("group event detail route", () => {
       });
     });
     expect(refetchMock).toHaveBeenCalled();
+  });
+
+  it("shows occurrence query failures and retries them", () => {
+    detailVm.event = { ...baseEvent, is_recurring_series: true };
+    detailVm.seriesOccurrencesQuery = {
+      error: new Error("Network unavailable"),
+      isError: true,
+      isFetching: false,
+      isLoading: false,
+      refetch: refetchMock,
+    };
+
+    renderNative(<GroupEventDetailRoute />);
+
+    expect(screen.getByText("Unable to load future dates")).toBeTruthy();
+    expect(screen.getByText("Network unavailable")).toBeTruthy();
+    fireEvent.press(screen.getByText("Try again"));
+    expect(refetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("shows the owning group avatar row and links to the group detail page", () => {

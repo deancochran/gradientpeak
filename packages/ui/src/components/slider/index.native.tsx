@@ -1,7 +1,8 @@
 import RNSlider from "@react-native-community/slider";
 import * as React from "react";
-import { Platform } from "react-native";
+import { Platform, useColorScheme } from "react-native";
 
+import { getResolvedNativeTheme } from "../../lib/native-theme";
 import { getNativeTestProps } from "../../lib/test-props";
 import type { SliderProps } from "./shared";
 
@@ -27,9 +28,10 @@ const Slider = React.forwardRef<RNSlider, SliderProps>(
     },
     ref,
   ) => {
-    const defaultMinimumTrackTintColor = minimumTrackTintColor || "#3b82f6";
-    const defaultMaximumTrackTintColor = maximumTrackTintColor || "#e5e7eb";
-    const defaultThumbTintColor = thumbTintColor || "#3b82f6";
+    const theme = getResolvedNativeTheme(useColorScheme());
+    const defaultMinimumTrackTintColor = minimumTrackTintColor || theme.primary;
+    const defaultMaximumTrackTintColor = maximumTrackTintColor || theme.input;
+    const defaultThumbTintColor = thumbTintColor || theme.primary;
     const { role: _nativeRole, ...nativeTestProps } = getNativeTestProps({
       accessibilityLabel,
       id,

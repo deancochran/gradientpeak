@@ -73,6 +73,18 @@
     {
       "version": "20260717211000",
       "name": "add_organization_authorization_foundation"
+    },
+    {
+      "version": "20260720211254",
+      "name": "add_heart_rate_activity_efforts"
+    },
+    {
+      "version": "20260721025436",
+      "name": "add_participant_messaging_read_cursor"
+    },
+    {
+      "version": "20260721042443",
+      "name": "add_activity_plan_route"
     }
   ]
 }

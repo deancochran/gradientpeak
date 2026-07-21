@@ -400,9 +400,12 @@ export async function getActivityByIdForViewer({
         `)
       : ({ rows: [] } as { rows: unknown[] });
   if (
-    access.profile_id !== viewerId &&
-    visibility !== "public" &&
-    (visibility !== "followers" || followResult.rows.length === 0)
+    !canViewActivityVisibility({
+      ownerId: access.profile_id,
+      viewerId,
+      visibility,
+      isAcceptedFollower: followResult.rows.length > 0,
+    })
   )
     throw new TRPCError({
       code: "FORBIDDEN",
@@ -533,4 +536,15 @@ export async function getActivityByIdForViewer({
       ingestion: ingestion ?? null,
     },
   };
+}
+
+export function canViewActivityVisibility(input: {
+  ownerId: string;
+  viewerId: string;
+  visibility: "private" | "followers" | "public";
+  isAcceptedFollower: boolean;
+}) {
+  if (input.ownerId === input.viewerId) return true;
+  if (input.visibility === "public") return true;
+  return input.visibility === "followers" && input.isAcceptedFollower;
 }

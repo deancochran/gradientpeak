@@ -137,9 +137,9 @@ describe("training plans list screen", () => {
     expect(screen.getByText("1 plan")).toBeTruthy();
   });
 
-  it("renders each training plan with the dense list card variant", () => {
+  it("renders each training plan with the rich default card", () => {
     renderNative(<TrainingPlansListScreenWithBoundary />);
 
-    expect(screen.getByTestId("mock-training-plan-card-plan-1").props.variant).toBe("list");
+    expect(screen.getByTestId("mock-training-plan-card-plan-1").props.variant).toBeUndefined();
   });
 });

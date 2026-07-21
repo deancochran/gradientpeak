@@ -242,7 +242,8 @@ export function buildActivityFileBestEffortRows(input: {
     | "powerTimestamps"
     | "altitudeTimestamps"
     | "speedTimestamps"
-  >;
+  > &
+    Partial<Pick<DerivedStreamMetadata, "hrStream" | "hrTimestamps">>;
 }): Array<typeof activityEfforts.$inferInsert> {
   const { powerStream, timestamps, speedStream } = input.streamMetadata;
   const powerTimestamps = resolveMetricTimestamps(
@@ -253,6 +254,12 @@ export function buildActivityFileBestEffortRows(input: {
   const speedTimestamps = resolveMetricTimestamps(
     speedStream,
     input.streamMetadata.speedTimestamps,
+    timestamps,
+  );
+  const heartRateStream = input.streamMetadata.hrStream ?? [];
+  const hrTimestamps = resolveMetricTimestamps(
+    heartRateStream,
+    input.streamMetadata.hrTimestamps,
     timestamps,
   );
   const effortsToInsert: Array<typeof activityEfforts.$inferInsert> = [];
@@ -289,7 +296,39 @@ export function buildActivityFileBestEffortRows(input: {
     }
   }
 
+  if (
+    heartRateStream.length > 0 &&
+    isSupportedActivityEffortCombination({
+      activityCategory: input.activityType,
+      effortType: "heart_rate",
+    })
+  ) {
+    for (const effort of calculateBestEfforts(heartRateStream, hrTimestamps).filter((candidate) =>
+      isBoundedHeartRateEffort(candidate, hrTimestamps),
+    )) {
+      effortsToInsert.push(
+        buildActivityFileBestEffortRow(input, effort, hrTimestamps, "heart_rate", "bpm"),
+      );
+    }
+  }
+
   return effortsToInsert;
+}
+
+function isBoundedHeartRateEffort(
+  effort: { duration: number; startIndex: number; endIndex: number },
+  timestamps: readonly number[],
+): boolean {
+  const windowTimestamps = timestamps.slice(effort.startIndex, effort.endIndex + 1);
+  const start = windowTimestamps[0];
+  const end = windowTimestamps.at(-1);
+  if (start === undefined || end === undefined || end - start > effort.duration + 1) return false;
+  if (windowTimestamps.length < Math.floor(effort.duration * 0.9)) return false;
+  return windowTimestamps.every((timestamp, index) => {
+    if (index === 0) return true;
+    const interval = timestamp - (windowTimestamps[index - 1] ?? timestamp);
+    return interval > 0 && interval <= 2;
+  });
 }
 
 function buildActivityFileBestEffortRow(
@@ -302,8 +341,8 @@ function buildActivityFileBestEffortRow(
   },
   effort: ReturnType<typeof calculateBestEfforts>[number],
   effortTimestamps: number[],
-  effortType: "power" | "speed",
-  unit: "watts" | "meters_per_second",
+  effortType: "power" | "speed" | "heart_rate",
+  unit: "watts" | "meters_per_second" | "bpm",
 ): typeof activityEfforts.$inferInsert {
   const { timestamps } = input.streamMetadata;
   const effortStartedAt = effortTimestamps[effort.startIndex];

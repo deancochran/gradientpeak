@@ -1,4 +1,4 @@
-import { useId, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { Button } from "../button/index.web";
 import { Input } from "../input/index.web";
 import { Label } from "../label/index.web";
@@ -68,12 +68,33 @@ function FileInput({
     }
   };
 
-  const updateFiles = (nextFiles: SelectedFile[]) => {
+  useEffect(() => {
+    const form = inputRef.current?.form;
+    if (!form || !name) return;
+
+    const synchronizeControlledFiles = (event: FormDataEvent) => {
+      event.formData.delete(name);
+      if (disabled) return;
+
+      for (const selected of files) {
+        if (selected.file) {
+          event.formData.append(name, selected.file, selected.name);
+        }
+      }
+    };
+
+    form.addEventListener("formdata", synchronizeControlledFiles);
+    return () => form.removeEventListener("formdata", synchronizeControlledFiles);
+  }, [disabled, files, name]);
+
+  const updateFiles = (nextFiles: SelectedFile[], resetSelection = false) => {
     if (disabled) {
       return;
     }
 
-    resetBrowserSelection();
+    if (resetSelection) {
+      resetBrowserSelection();
+    }
     onFilesChange?.(nextFiles);
   };
 
@@ -89,7 +110,7 @@ function FileInput({
         aria-describedby={associations || undefined}
         aria-invalid={Boolean(error) || ariaInvalid === true || ariaInvalid === "true"}
         aria-required={required}
-        className="sr-only"
+        className="!absolute !h-px !w-px overflow-hidden whitespace-nowrap !border-0 !p-0 [clip:rect(0,0,0,0)]"
         disabled={disabled}
         id={inputId}
         multiple={multiple}
@@ -126,7 +147,7 @@ function FileInput({
           <Button
             accessibilityLabel={clearLabel}
             disabled={disabled}
-            onClick={() => updateFiles([])}
+            onClick={() => updateFiles([], true)}
             testId={testId || testID ? `${testId ?? testID}-clear` : undefined}
             type="button"
             variant="outline"
@@ -149,7 +170,12 @@ function FileInput({
               <Button
                 accessibilityLabel={removeLabel(file, index)}
                 disabled={disabled}
-                onClick={() => updateFiles(files.filter((_, fileIndex) => fileIndex !== index))}
+                onClick={() =>
+                  updateFiles(
+                    files.filter((_, fileIndex) => fileIndex !== index),
+                    true,
+                  )
+                }
                 testId={testId || testID ? `${testId ?? testID}-remove-${index}` : undefined}
                 type="button"
                 variant="ghost"

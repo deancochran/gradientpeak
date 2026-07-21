@@ -14,7 +14,12 @@ const activitiesListUseInfiniteQueryMock = jest.fn((_input?: unknown, _options?:
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  FlatList: createHost("FlatList"),
+  FlatList: ({ data = [], ListEmptyComponent, ...props }: Record<string, unknown>) =>
+    React.createElement(
+      "FlatList",
+      props,
+      (data as unknown[]).length === 0 ? (ListEmptyComponent as React.ReactNode) : null,
+    ),
 }));
 
 jest.mock("expo-router", () => ({
@@ -46,7 +51,13 @@ jest.mock("@repo/ui/components/card", () => ({
 }));
 jest.mock("@repo/ui/components/empty-state-card", () => ({
   __esModule: true,
-  EmptyStateCard: createHost("EmptyStateCard"),
+  EmptyStateCard: ({ description, title }: { description?: string; title: string }) =>
+    React.createElement(
+      "View",
+      null,
+      React.createElement("Text", null, title),
+      description ? React.createElement("Text", null, description) : null,
+    ),
 }));
 jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: createHost("Icon") }));
 jest.mock("@repo/ui/components/loading-skeletons", () => ({
@@ -96,6 +107,21 @@ jest.mock("@/components/shared/IndexFilterSheet", () => ({
 jest.mock("@/components/shared/ActivityCard", () => ({
   __esModule: true,
   ActivityCard: createHost("ActivityCard"),
+}));
+jest.mock("@/components/shared/ResourceList", () => ({
+  __esModule: true,
+  ResourceList: ({
+    emptyComponent,
+    isEmptyFiltered,
+  }: {
+    emptyComponent?: React.ReactNode;
+    isEmptyFiltered?: boolean;
+  }) =>
+    React.createElement(
+      "View",
+      null,
+      isEmptyFiltered ? React.createElement("Text", null, "No matching results") : emptyComponent,
+    ),
 }));
 jest.mock("@/lib/hooks/useAuth", () => ({
   __esModule: true,
@@ -183,5 +209,28 @@ describe("activities list screen filters", () => {
       }),
       expect.any(Object),
     );
+  });
+
+  it("keeps a truly empty library state when only sort changes", () => {
+    renderNative(<ActivitiesListScreen />);
+
+    fireEvent.press(screen.getByTestId("activities-list-filter-button"));
+    fireEvent.press(screen.getByTestId("activities-list-filter-sort-distance"));
+    fireEvent.press(screen.getByTestId("activities-list-filter-sheet-apply"));
+
+    expect(screen.getByText("No activities yet")).toBeTruthy();
+    expect(screen.queryByText("No matching results")).toBeNull();
+    expect(screen.getByTestId("activities-list-filter-button-dot")).toBeTruthy();
+  });
+
+  it("shows filtered-empty copy when a category filter is active", () => {
+    renderNative(<ActivitiesListScreen />);
+
+    fireEvent.press(screen.getByTestId("activities-list-filter-button"));
+    fireEvent.press(screen.getByTestId("activities-list-filter-category-run"));
+    fireEvent.press(screen.getByTestId("activities-list-filter-sheet-apply"));
+
+    expect(screen.getByText("No matching results")).toBeTruthy();
+    expect(screen.queryByText("No activities yet")).toBeNull();
   });
 });

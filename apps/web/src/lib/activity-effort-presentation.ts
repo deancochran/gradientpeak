@@ -47,10 +47,17 @@ export function getEffortStatus(
 export function buildObservedDurationCurve(
   efforts: readonly ActivityEffortPresentationRow[],
 ): DurationCurvePoint[] {
+  return buildStatusDurationCurve(efforts, "observed");
+}
+
+export function buildStatusDurationCurve(
+  efforts: readonly ActivityEffortPresentationRow[],
+  status: ActivityEffortObservationStatus,
+): DurationCurvePoint[] {
   const bestByDuration = new Map<number, ActivityEffortPresentationRow>();
 
   for (const effort of efforts) {
-    if (getEffortStatus(effort) !== "observed") continue;
+    if (getEffortStatus(effort) !== status) continue;
     const current = bestByDuration.get(effort.duration_seconds);
     if (!current || effort.value > current.value)
       bestByDuration.set(effort.duration_seconds, effort);
@@ -64,6 +71,15 @@ export function buildObservedDurationCurve(
       label: formatEffortDuration(effort.duration_seconds),
       value: effort.value,
     }));
+}
+
+export function filterEffortsByRange<T extends ActivityEffortPresentationRow>(
+  efforts: readonly T[],
+  rangeDays: number,
+  now = new Date(),
+): T[] {
+  const cutoff = now.getTime() - rangeDays * 24 * 60 * 60 * 1_000;
+  return efforts.filter((effort) => new Date(effort.recorded_at).getTime() >= cutoff);
 }
 
 export function getEffortHistoryForDuration<T extends ActivityEffortPresentationRow>(
@@ -95,8 +111,9 @@ export function formatActivityEffortDisplayValue(
     return `${minutes}:${String(paceSeconds % 60).padStart(2, "0")} /${distanceUnitMeters === 100 ? "100m" : "km"}`;
   }
 
-  const unit = effort.effort_type === "power" ? "W" : "m/s";
-  const decimals = effort.effort_type === "power" ? 0 : 2;
+  const unit =
+    effort.effort_type === "power" ? "W" : effort.effort_type === "heart_rate" ? "bpm" : "m/s";
+  const decimals = effort.effort_type === "speed" ? 2 : 0;
   return `${Number(effort.value.toFixed(decimals))} ${unit}`;
 }
 

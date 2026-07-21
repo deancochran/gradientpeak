@@ -538,4 +538,92 @@ describe("DailyTrainingAdjustmentChart", () => {
 
     expect(screen.getByText("06/23", { includeHiddenElements: true })).toBeTruthy();
   });
+
+  it("restores the centered date after older dates are prepended", () => {
+    const buildPoints = (startDay: number, endDay: number) =>
+      Array.from({ length: endDay - startDay + 1 }, (_, index) => ({
+        date: `2026-06-${String(startDay + index).padStart(2, "0")}`,
+        targetLoadTss: 50,
+      }));
+
+    const { rerender } = render(
+      <DailyTrainingAdjustmentChart
+        maxVisiblePoints={10}
+        points={buildPoints(10, 19)}
+        selectedDate="2026-06-15"
+      />,
+    );
+    fireEvent(screen.getByTestId("daily-training-adjustment-chart-viewport"), "layout", {
+      nativeEvent: { layout: { height: 230, width: 240, x: 0, y: 0 } },
+    });
+    fireEvent(
+      screen.getByTestId("daily-training-adjustment-chart-scroll"),
+      "contentSizeChange",
+      600,
+      230,
+    );
+    mockScrollTo.mockClear();
+    fireEvent.scroll(screen.getByTestId("daily-training-adjustment-chart-scroll"), {
+      nativeEvent: { contentOffset: { x: 120, y: 0 } },
+    });
+    fireEvent(screen.getByTestId("daily-training-adjustment-chart-scroll"), "momentumScrollEnd", {
+      nativeEvent: { contentOffset: { x: 120, y: 0 } },
+    });
+    mockScrollTo.mockClear();
+
+    rerender(
+      <DailyTrainingAdjustmentChart
+        maxVisiblePoints={10}
+        points={buildPoints(5, 19)}
+        selectedDate="2026-06-15"
+      />,
+    );
+
+    expect(mockScrollTo).toHaveBeenCalledWith({ animated: false, x: 150, y: 0 });
+  });
+
+  it("preserves the final drag position when dates arrive during momentum", () => {
+    const buildPoints = (startDay: number, endDay: number) =>
+      Array.from({ length: endDay - startDay + 1 }, (_, index) => ({
+        date: `2026-06-${String(startDay + index).padStart(2, "0")}`,
+        targetLoadTss: 50,
+      }));
+    const { rerender } = render(
+      <DailyTrainingAdjustmentChart
+        maxVisiblePoints={10}
+        points={buildPoints(10, 19)}
+        selectedDate="2026-06-15"
+      />,
+    );
+    fireEvent(screen.getByTestId("daily-training-adjustment-chart-viewport"), "layout", {
+      nativeEvent: { layout: { height: 230, width: 240, x: 0, y: 0 } },
+    });
+    fireEvent(
+      screen.getByTestId("daily-training-adjustment-chart-scroll"),
+      "contentSizeChange",
+      600,
+      230,
+    );
+    fireEvent(screen.getByTestId("daily-training-adjustment-chart-scroll"), "scrollBeginDrag");
+    fireEvent.scroll(screen.getByTestId("daily-training-adjustment-chart-scroll"), {
+      nativeEvent: { contentOffset: { x: 120, y: 0 } },
+    });
+
+    rerender(
+      <DailyTrainingAdjustmentChart
+        maxVisiblePoints={10}
+        points={buildPoints(5, 19)}
+        selectedDate="2026-06-15"
+      />,
+    );
+    mockScrollTo.mockClear();
+    fireEvent.scroll(screen.getByTestId("daily-training-adjustment-chart-scroll"), {
+      nativeEvent: { contentOffset: { x: 180, y: 0 } },
+    });
+    fireEvent(screen.getByTestId("daily-training-adjustment-chart-scroll"), "momentumScrollEnd", {
+      nativeEvent: { contentOffset: { x: 180, y: 0 } },
+    });
+
+    expect(mockScrollTo).toHaveBeenCalledWith({ animated: false, x: 180, y: 0 });
+  });
 });

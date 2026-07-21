@@ -56,12 +56,12 @@ describe("useTrainingPlanBuilderController chart selection", () => {
     expect(result.current.chartReview.selectedWeekStart).toBe("2026-01-05");
   });
 
-  it("does not add weekly-only data when asked to extend the daily chart", () => {
+  it("exposes a finite projection without inactive date-extension controls", () => {
     const { result } = renderHook(() => useTrainingPlanBuilderController({ mode: "create" }));
-
-    act(() => result.current.chartReview.extendEnd());
 
     expect(result.current.chartReview.chart.weeks).toHaveLength(1);
     expect(result.current.chartReview.chart.dailyPoints).toHaveLength(1);
+    expect(result.current.chartReview).not.toHaveProperty("extendEnd");
+    expect(result.current.chartReview).not.toHaveProperty("extendStart");
   });
 });

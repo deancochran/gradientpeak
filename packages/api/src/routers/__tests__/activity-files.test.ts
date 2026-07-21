@@ -810,12 +810,40 @@ describe("activityFilesRouter", () => {
     mocks.parseActivityFile.mockReturnValue({
       metadata: { type: "cycling", startTime: new Date("2026-03-01T10:00:00.000Z") },
       records: [
-        { timestamp: new Date("2026-03-01T10:00:00.000Z"), power: 240, heartRate: 160 },
+        {
+          messageIndex: 0,
+          lapMessageIndex: 0,
+          timestamp: new Date("2026-03-01T10:00:00.000Z"),
+          distance: 0,
+          power: 240,
+          heartRate: 160,
+        },
         { timestamp: new Date("2026-03-01T10:00:10.000Z"), power: 300, heartRate: 180 },
       ],
       laps: [{ startTime: new Date("2026-03-01T10:00:00.000Z") }],
       lengths: [],
-      summary: { totalTime: 1800, totalDistance: 20000 },
+      summary: {
+        totalTime: 1800,
+        totalDistance: 20000,
+        totalDescent: 125,
+        poolLength: 25,
+        poolLengthUnit: "metric",
+        totalStrokes: 40,
+        avgStrokeDistance: 1.25,
+      },
+      semantics: {
+        segments: [
+          {
+            role: "activity",
+            category: "bike",
+            startOffsetMs: 0,
+            endOffsetMs: 1_800_000,
+            activeMs: 1_800_000,
+            distanceMeters: 20_000,
+          },
+        ],
+        totals: { elapsedMs: 1_800_000, activeMs: 1_800_000, distanceMeters: 20_000 },
+      },
     });
 
     const caller = createCaller({ db });
@@ -832,12 +860,27 @@ describe("activityFilesRouter", () => {
     );
     expect(result).toMatchObject({
       records: [
-        { timestamp: new Date("2026-03-01T10:00:00.000Z"), power: 240, heartRate: 160 },
+        {
+          messageIndex: 0,
+          lapMessageIndex: 0,
+          timestamp: new Date("2026-03-01T10:00:00.000Z"),
+          distance: 0,
+          power: 240,
+          heartRate: 160,
+        },
         { timestamp: new Date("2026-03-01T10:00:10.000Z"), power: 300, heartRate: 180 },
       ],
       laps: [{ startTime: new Date("2026-03-01T10:00:00.000Z") }],
       lengths: [],
-      summary: { totalTime: 1800, totalDistance: 20000 },
+      summary: {
+        totalTime: 1800,
+        totalDistance: 20000,
+        totalDescent: 125,
+        poolLength: 25,
+        poolLengthUnit: "metric",
+        totalStrokes: 40,
+        avgStrokeDistance: 1.25,
+      },
       analysis: {
         version: "2",
         sport: "bike",
@@ -876,6 +919,7 @@ describe("activityFilesRouter", () => {
       activityTimestamp: new Date("2026-03-01T10:00:00.000Z"),
       activityId,
       evidenceScope: "thresholds",
+      thresholdEvidence: "activity_efforts_only",
     });
   });
 
@@ -953,8 +997,9 @@ describe("activityFilesRouter", () => {
     const rejection: unknown = await result.catch((error: unknown) => error);
     expect(rejection).toMatchObject({
       message: "Failed to retrieve activity streams",
-      cause: undefined,
+      cause: { message: "Activity stream parsing failed", cause: parserError },
     });
+    expect(rejection).not.toMatchObject({ cause: parserError });
   });
 
   it("rejects stream access when an authorized activity has no activity file", async () => {

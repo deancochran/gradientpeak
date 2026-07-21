@@ -12,12 +12,17 @@ type ProviderOAuthConfigDefinition = {
 };
 
 export type ResolvedProviderOAuthConfig = {
+  adapter: "remote" | "local-test";
   authUrl: string;
   clientId: string;
   clientSecret: string;
   scopes: readonly string[];
   tokenUrl: string;
 };
+
+export function isLocalProviderOAuthTestAdapterEnabled(env: IntegrationEnv = process.env): boolean {
+  return env.NODE_ENV !== "production" && env.PROVIDER_OAUTH_TEST_ADAPTER === "1";
+}
 
 const providerOAuthRegistry = {
   strava: {
@@ -87,12 +92,23 @@ export function getProviderOAuthConfig(
   env: IntegrationEnv = process.env,
 ): ResolvedProviderOAuthConfig | null {
   const definition = providerOAuthRegistry[provider];
+  if (provider === "wahoo" && isLocalProviderOAuthTestAdapterEnabled(env)) {
+    return {
+      adapter: "local-test",
+      authUrl: "local-test://authorize",
+      clientId: "gradientpeak-local-test",
+      clientSecret: env.PROVIDER_OAUTH_TEST_SECRET || "gradientpeak-local-test-only",
+      scopes: definition.scopes,
+      tokenUrl: "local-test://token",
+    };
+  }
   const clientId = readEnvValue(env, definition.clientIdEnv);
   const clientSecret = readEnvValue(env, definition.clientSecretEnv);
 
   if (!clientId || !clientSecret) return null;
 
   return {
+    adapter: "remote",
     authUrl: definition.authUrl,
     clientId,
     clientSecret,

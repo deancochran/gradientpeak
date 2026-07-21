@@ -1,8 +1,9 @@
-import { Badge } from "@repo/ui/components/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { Activity, Clock, Heart, RouteIcon } from "lucide-react";
 import type { ReactNode } from "react";
+
+import { ActivityCategoryBadges } from "../../../components/activity-category-presentation";
 
 import {
   deriveActivityCategoryDisplay,
@@ -65,9 +66,9 @@ function PublicActivityPage() {
   return (
     <main className="mx-auto w-full max-w-4xl space-y-6 py-8">
       <header className="space-y-4">
-        <Badge variant="outline" className="w-fit">
-          {categoryDisplay.label}
-        </Badge>
+        <div className="flex flex-wrap gap-2">
+          <ActivityCategoryBadges categories={categoryDisplay.categories} />
+        </div>
         <div>
           <h1 className="text-4xl font-semibold tracking-tight">{activity.name}</h1>
           <p className="mt-2 text-muted-foreground">

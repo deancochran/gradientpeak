@@ -1,10 +1,11 @@
-export const canonicalEffortUnitValues = ["watts", "meters_per_second"] as const;
+export const canonicalEffortUnitValues = ["watts", "meters_per_second", "bpm"] as const;
 export type CanonicalEffortUnit = (typeof canonicalEffortUnitValues)[number];
-export type CanonicalEffortKind = "power" | "speed";
+export type CanonicalEffortKind = "power" | "speed" | "heart_rate";
 
 export const canonicalEffortUnitLabels: Record<CanonicalEffortUnit, string> = {
   watts: "W",
   meters_per_second: "m/s",
+  bpm: "bpm",
 };
 
 export const canonicalEffortUnitAliases: Record<CanonicalEffortKind, Record<string, number>> = {
@@ -22,6 +23,7 @@ export const canonicalEffortUnitAliases: Record<CanonicalEffortKind, Record<stri
     mph: 0.44704,
     milesperhour: 0.44704,
   },
+  heart_rate: { bpm: 1, beatsperminute: 1, beats_per_minute: 1 },
 };
 
 function normalizeUnitAlias(unit: string): string {
@@ -38,6 +40,6 @@ export function canonicalEffortValue(input: {
   if (multiplier === undefined) return null;
   return {
     value: input.value * multiplier,
-    unit: input.kind === "power" ? "watts" : "meters_per_second",
+    unit: input.kind === "power" ? "watts" : input.kind === "speed" ? "meters_per_second" : "bpm",
   };
 }

@@ -43,7 +43,13 @@ export const ACTIVITY_CATEGORY_CONFIGS = {
   },
 } as const satisfies Record<
   CanonicalSport,
-  { name: string; icon: typeof Activity; color: string; bgColor: string; borderColor: string }
+  {
+    name: string;
+    icon: typeof Activity;
+    color: string;
+    bgColor: string;
+    borderColor: string;
+  }
 >;
 
 /**
@@ -51,6 +57,19 @@ export const ACTIVITY_CATEGORY_CONFIGS = {
  */
 export function getActivityCategoryConfig(category: string) {
   return ACTIVITY_CATEGORY_CONFIGS[category as CanonicalSport] || ACTIVITY_CATEGORY_CONFIGS.other;
+}
+
+export function getUniqueActivityCategoryConfigs(
+  categories: readonly (string | null | undefined)[],
+) {
+  const uniqueCategories = [
+    ...new Set(categories.filter((category): category is string => !!category)),
+  ];
+  const resolvedCategories = uniqueCategories.length > 0 ? uniqueCategories : ["other"];
+  return resolvedCategories.map((category) => ({
+    category,
+    ...getActivityCategoryConfig(category),
+  }));
 }
 
 /**

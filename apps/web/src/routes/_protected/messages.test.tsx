@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Route } from "./messages";
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
+  createConversation: vi.fn(),
+  getOrCreateDM: vi.fn(),
+  sendMessage: vi.fn(),
   routeSearch: {
     compose: true,
     composeGroup: "Paceline",
@@ -15,6 +18,11 @@ const mocks = vi.hoisted(() => ({
     flash: undefined,
     flashType: undefined,
   },
+}));
+
+vi.mock("@repo/api/react", () => ({
+  invalidateConversationQueries: vi.fn(async () => undefined),
+  invalidateMessagingInboxQueries: vi.fn(async () => undefined),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -43,12 +51,22 @@ vi.mock("../../lib/api/client", () => ({
       getConversations: { useQuery: () => ({ data: [] }) },
       getMessages: { useQuery: () => ({ data: [] }) },
       markAsRead: { useMutation: () => ({ mutate: vi.fn() }) },
-      getOrCreateDM: { useMutation: () => ({ isPending: false, mutateAsync: vi.fn() }) },
-      createConversation: { useMutation: () => ({ isPending: false, mutateAsync: vi.fn() }) },
+      getOrCreateDM: {
+        useMutation: () => ({ isPending: false, mutateAsync: mocks.getOrCreateDM }),
+      },
+      createConversation: {
+        useMutation: () => ({ isPending: false, mutateAsync: mocks.createConversation }),
+      },
+      sendMessage: { useMutation: () => ({ isPending: false, mutateAsync: mocks.sendMessage }) },
     },
     social: {
       searchUsers: {
-        useQuery: () => ({ data: { users: [] }, isLoading: true }),
+        useQuery: () => ({
+          data: {
+            users: [{ id: "user-2", username: "second", is_public: true, avatar_url: null }],
+          },
+          isLoading: false,
+        }),
       },
     },
   },
@@ -57,7 +75,11 @@ vi.mock("../../lib/api/client", () => ({
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  mocks.routeSearch.composeGroup = "Paceline";
   mocks.routeSearch.composeQuery = "coach";
+  mocks.routeSearch.composeRecipients = [
+    { id: "user-1", username: "rider", is_public: true, avatar_url: null },
+  ];
 });
 
 describe("messages recipient GET form", () => {
@@ -69,7 +91,6 @@ describe("messages recipient GET form", () => {
     const form = input.closest("form");
     if (!form) throw new Error("Expected message recipient GET form");
     expect(input.getAttribute("name")).toBe("composeQuery");
-    expect(screen.getByRole("status", { name: "Searching people" })).toBeTruthy();
 
     fireEvent.click(screen.getByTestId("messages-compose-search-clear"));
     expect((input as HTMLInputElement).value).toBe("");
@@ -88,5 +109,43 @@ describe("messages recipient GET form", () => {
     mocks.routeSearch.composeQuery = "runner";
     rerender(<MessagesPage />);
     expect((input as HTMLInputElement).value).toBe("runner");
+  });
+
+  it("creates or reopens a direct conversation for one selected recipient", async () => {
+    mocks.getOrCreateDM.mockResolvedValue({ id: "conversation-dm" });
+    const MessagesPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<MessagesPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Start conversation" }));
+
+    await waitFor(() =>
+      expect(mocks.getOrCreateDM).toHaveBeenCalledWith({ target_user_id: "user-1" }),
+    );
+    expect(mocks.createConversation).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(mocks.navigate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: "/messages",
+          search: expect.objectContaining({ conversationId: "conversation-dm" }),
+        }),
+      ),
+    );
+  });
+
+  it("creates a named group for multiple selected recipients", async () => {
+    mocks.createConversation.mockResolvedValue({ id: "conversation-group" });
+    const MessagesPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<MessagesPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /@second/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Create conversation" }));
+
+    await waitFor(() =>
+      expect(mocks.createConversation).toHaveBeenCalledWith({
+        participant_ids: ["user-1", "user-2"],
+        group_name: "Paceline",
+      }),
+    );
+    expect(mocks.getOrCreateDM).not.toHaveBeenCalled();
   });
 });

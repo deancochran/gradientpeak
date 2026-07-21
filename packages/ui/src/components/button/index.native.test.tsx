@@ -68,4 +68,14 @@ describe("Button native", () => {
     expect(button.props.className).toContain("min-h-12");
     expect(button.props.className).toContain("min-w-12");
   });
+
+  it("uses the contrast-safe destructive surface token", () => {
+    const { getByLabelText } = renderNative(
+      <Button accessibilityLabel="Delete item" variant="destructive">
+        <Text>Delete</Text>
+      </Button>,
+    );
+
+    expect(getByLabelText("Delete item").props.className).toContain("bg-destructive-surface");
+  });
 });

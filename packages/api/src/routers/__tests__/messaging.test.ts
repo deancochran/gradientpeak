@@ -409,8 +409,10 @@ describe("messagingRouter", () => {
     expect(calls.updates[0]?.values.last_message_at).toBeInstanceOf(Date);
   });
 
-  it("markAsRead currently returns a success sentinel without mutating storage", async () => {
-    const { caller, calls } = createCaller();
+  it("marks a group conversation read for only the authenticated participant", async () => {
+    const { caller, calls } = createCaller({
+      executeRows: [[{ conversation_id: CONVERSATION_ID }]],
+    });
 
     await expect(caller.markAsRead({ conversation_id: CONVERSATION_ID })).resolves.toEqual({
       success: true,
@@ -418,12 +420,21 @@ describe("messagingRouter", () => {
 
     expect(calls.inserts).toHaveLength(0);
     expect(calls.updates).toHaveLength(0);
-    expect(calls.execute).toHaveLength(0);
+    expect(calls.execute).toHaveLength(1);
   });
 
-  it("getUnreadCount returns the joined unread-message count as a number", async () => {
+  it("does not reveal or mutate group read state for a non-participant", async () => {
+    const { caller, calls } = createCaller({ executeRows: [[]] }, THIRD_ID);
+
+    await expect(caller.markAsRead({ conversation_id: CONVERSATION_ID })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    expect(calls.execute).toHaveLength(1);
+  });
+
+  it("getUnreadCount returns the participant-cursor unread count as a number", async () => {
     const { caller } = createCaller({
-      unreadCountRows: [[{ unread_count: "3" }]],
+      executeRows: [[{ unread_count: "3" }]],
     });
 
     await expect(caller.getUnreadCount()).resolves.toBe(3);

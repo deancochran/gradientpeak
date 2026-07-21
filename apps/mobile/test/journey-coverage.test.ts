@@ -281,4 +281,27 @@ describe("mobile authoritative journey coverage", () => {
       expect(previewFlow).toContain(selector);
     }
   });
+
+  it("keeps the mobile card preview flow aligned with its deterministic matrix", () => {
+    const previewFlow = readFileSync(
+      path.join(mobileRoot, ".maestro/flows/smoke/mobile_card_preview.yaml"),
+      "utf8",
+    );
+    const selectors = [
+      "mobile-card-matrix",
+      "mobile-card-activity",
+      "mobile-card-activity-plan",
+      "mobile-card-training-plan",
+      "mobile-card-route",
+      "mobile-card-group",
+      "mobile-card-group-event",
+      "mobile-card-profile",
+      "mobile-card-calendar",
+    ];
+
+    expect(previewFlow).toContain("storybook?surface=mobile-cards");
+    for (const selector of selectors) {
+      expect(previewFlow).toContain(selector);
+    }
+  });
 });

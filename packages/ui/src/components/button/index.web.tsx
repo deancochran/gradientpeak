@@ -1,4 +1,5 @@
 import type * as React from "react";
+import { cn } from "../../lib/cn";
 import { getWebTestProps } from "../../lib/test-props";
 import { buttonVariants, Button as RegistryButton } from "../../registry/web/button";
 
@@ -9,9 +10,17 @@ type ButtonProps = React.ComponentProps<typeof RegistryButton> & {
   testId?: string;
 };
 
-function Button({ accessibilityLabel, id, role, testId, ...props }: ButtonProps) {
+function Button({ accessibilityLabel, className, id, role, testId, ...props }: ButtonProps) {
   return (
-    <RegistryButton {...getWebTestProps({ accessibilityLabel, id, role, testId })} {...props} />
+    <RegistryButton
+      {...getWebTestProps({ accessibilityLabel, id, role, testId })}
+      {...props}
+      className={cn(
+        props.variant === "destructive" &&
+          "bg-destructive-surface hover:bg-destructive-surface/90 dark:bg-destructive-surface",
+        className,
+      )}
+    />
   );
 }
 

@@ -11,6 +11,11 @@ type MockFlatListProps = {
   };
   data: { dateKey: string; type: string }[];
   onMomentumScrollEnd: (event: { nativeEvent: { contentOffset: { y: number } } }) => void;
+  onScrollToIndexFailed: (info: {
+    averageItemLength: number;
+    highestMeasuredFrameIndex: number;
+    index: number;
+  }) => void;
   onScroll: {
     onScroll: (event: { contentOffset: { y: number } }, context: Record<string, number>) => void;
   };
@@ -109,6 +114,12 @@ function layoutDayHeaders() {
 }
 
 describe("CalendarDayList scrolling", () => {
+  beforeEach(() => {
+    mockScrollToIndex.mockClear();
+    mockScrollToOffset.mockClear();
+    mockFlatListProps = undefined;
+  });
+
   it("settles the currently visible manual-scroll day without corrective movement", () => {
     const onVisibleDayChange = jest.fn();
     const onVisibleDaySettled = jest.fn();
@@ -154,5 +165,150 @@ describe("CalendarDayList scrolling", () => {
 
     expect(onVisibleDaySettled).toHaveBeenCalledWith(targetDayKey);
     expect(mockScrollToOffset).not.toHaveBeenCalled();
+  });
+
+  it("does not repeat explicit navigation when schedule rows hydrate", () => {
+    const props = createProps({ scrollTargetDateKey: targetDayKey, scrollTargetVersion: 1 });
+    const rendered = renderNative(<CalendarDayList {...props} />);
+    expect(mockScrollToIndex).toHaveBeenCalledTimes(1);
+
+    mockScrollToIndex.mockClear();
+    rendered.rerender(
+      <CalendarDayList
+        {...props}
+        goalsByDate={new Map([[middleDayKey, [{ id: "goal-1" } as never]]])}
+      />,
+    );
+
+    expect(mockScrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it("never requests an index outside the FlatList data after rows change", () => {
+    const props = createProps({ scrollTargetDateKey: targetDayKey, scrollTargetVersion: 1 });
+    const rendered = renderNative(<CalendarDayList {...props} />);
+
+    rendered.rerender(
+      <CalendarDayList
+        {...props}
+        goalsByDate={new Map([[middleDayKey, [{ id: "goal-1" } as never]]])}
+        scrollTargetVersion={2}
+      />,
+    );
+
+    const list = getMockFlatListProps();
+    const request = mockScrollToIndex.mock.calls.at(-1)?.[0] as { index: number } | undefined;
+    expect(request).toBeDefined();
+    expect(request?.index).toBeLessThan(list.data.length);
+  });
+
+  it("re-resolves a failed scroll target after rows change before retry", () => {
+    const queuedFrames: FrameRequestCallback[] = [];
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    globalThis.requestAnimationFrame = jest.fn((callback: FrameRequestCallback) => {
+      queuedFrames.push(callback);
+      return queuedFrames.length;
+    });
+
+    try {
+      const props = createProps({
+        scrollTargetDateKey: targetDayKey,
+        scrollTargetVersion: 1,
+        goalsByDate: new Map([[middleDayKey, [{ id: "goal-1" } as never]]]),
+      });
+      const rendered = renderNative(<CalendarDayList {...props} />);
+      const listWithGoal = getMockFlatListProps();
+      expect(mockScrollToIndex).toHaveBeenLastCalledWith({
+        index: 3,
+        animated: true,
+        viewPosition: 0,
+      });
+
+      act(() => {
+        listWithGoal.onScrollToIndexFailed({
+          averageItemLength: 100,
+          highestMeasuredFrameIndex: 1,
+          index: 3,
+        });
+      });
+      rendered.rerender(<CalendarDayList {...props} goalsByDate={new Map()} />);
+      mockScrollToIndex.mockClear();
+
+      act(() => queuedFrames.shift()?.(0));
+      expect(mockScrollToOffset).toHaveBeenCalledWith({ animated: false, offset: 100 });
+      act(() => queuedFrames.shift()?.(0));
+      expect(mockScrollToIndex).toHaveBeenCalledWith({
+        index: 2,
+        animated: true,
+        viewPosition: 0,
+      });
+    } finally {
+      globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+    }
+  });
+
+  it("does not let an older failed-scroll retry override newer navigation", () => {
+    const queuedFrames: FrameRequestCallback[] = [];
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    globalThis.requestAnimationFrame = jest.fn((callback: FrameRequestCallback) => {
+      queuedFrames.push(callback);
+      return queuedFrames.length;
+    });
+
+    try {
+      const props = createProps({ scrollTargetDateKey: middleDayKey, scrollTargetVersion: 1 });
+      const rendered = renderNative(<CalendarDayList {...props} />);
+      const list = getMockFlatListProps();
+
+      act(() => {
+        list.onScrollToIndexFailed({
+          averageItemLength: 100,
+          highestMeasuredFrameIndex: 1,
+          index: 1,
+        });
+      });
+      rendered.rerender(
+        <CalendarDayList {...props} scrollTargetDateKey={targetDayKey} scrollTargetVersion={2} />,
+      );
+      mockScrollToIndex.mockClear();
+
+      act(() => queuedFrames.shift()?.(0));
+      expect(mockScrollToOffset).not.toHaveBeenCalled();
+      expect(mockScrollToIndex).not.toHaveBeenCalled();
+    } finally {
+      globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+    }
+  });
+
+  it("cancels an initial-scroll retry when explicit navigation supersedes it", () => {
+    const queuedFrames: FrameRequestCallback[] = [];
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    globalThis.requestAnimationFrame = jest.fn((callback: FrameRequestCallback) => {
+      queuedFrames.push(callback);
+      return queuedFrames.length;
+    });
+
+    try {
+      const props = createProps();
+      const rendered = renderNative(<CalendarDayList {...props} />);
+      const list = getMockFlatListProps();
+
+      act(() => {
+        list.onScrollToIndexFailed({
+          averageItemLength: 100,
+          highestMeasuredFrameIndex: 0,
+          index: 0,
+        });
+      });
+      rendered.rerender(
+        <CalendarDayList {...props} scrollTargetDateKey={targetDayKey} scrollTargetVersion={1} />,
+      );
+      mockScrollToIndex.mockClear();
+
+      act(() => queuedFrames.shift()?.(0));
+      expect(mockScrollToOffset).not.toHaveBeenCalled();
+      expect(mockScrollToIndex).not.toHaveBeenCalled();
+    } finally {
+      globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+    }
   });
 });

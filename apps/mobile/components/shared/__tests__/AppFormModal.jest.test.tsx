@@ -1,6 +1,6 @@
 import { Text } from "@repo/ui/components/text";
 import { fireEvent, render } from "@testing-library/react-native";
-import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import { KeyboardAvoidingView, Modal, Platform, ScrollView, View } from "react-native";
 import { AppConfirmModal, AppFormModal } from "../AppFormModal";
 
 jest.mock("react-native-safe-area-context", () => ({
@@ -9,7 +9,7 @@ jest.mock("react-native-safe-area-context", () => ({
 
 describe("AppFormModal", () => {
   it("keeps footer actions above the bottom safe area and enables keyboard avoidance", () => {
-    const { UNSAFE_getAllByType, UNSAFE_getByType } = render(
+    const { UNSAFE_getAllByType, UNSAFE_getByType, getByRole } = render(
       <AppFormModal
         footerContent={<Text>Save actions</Text>}
         onClose={jest.fn()}
@@ -22,6 +22,8 @@ describe("AppFormModal", () => {
     expect(UNSAFE_getByType(KeyboardAvoidingView).props.behavior).toBe(
       Platform.OS === "ios" ? "padding" : "height",
     );
+    expect(UNSAFE_getByType(Modal).props.accessibilityViewIsModal).toBe(true);
+    expect(getByRole("header")).toHaveTextContent("Edit details");
 
     const footer = UNSAFE_getAllByType(View).find((view) => view.props.style?.paddingBottom === 50);
     expect(footer).toBeTruthy();

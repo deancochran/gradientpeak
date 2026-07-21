@@ -94,6 +94,36 @@ describe("planningContext", () => {
     expect(context.physiology.cssSecondsPer100m).toMatchObject({ value: null, source: "unknown" });
   });
 
+  it("accepts the canonical persisted watts unit for cycling threshold evidence", () => {
+    const context = createAthletePlanningContextFromSnapshot({
+      asOf: "2026-06-01T00:00:00.000Z",
+      profileMetrics: [],
+      activityEfforts: [
+        {
+          activity_category: "bike",
+          effort_type: "power",
+          duration_seconds: 1200,
+          value: 250,
+          unit: "watts",
+          recorded_at: "2026-05-30T00:00:00.000Z",
+          activity_id: "00000000-0000-4000-8000-000000000101",
+          source: "imported",
+          method: "activity_file_best_effort",
+          provenance: {
+            activity_id: "00000000-0000-4000-8000-000000000101",
+            derived_from: "activity_file_stream",
+          },
+        },
+      ],
+    });
+
+    expect(context.physiology.ftpWatts).toMatchObject({
+      value: 237.5,
+      source: "activity_effort",
+      unit: "W",
+    });
+  });
+
   it("maps simple planning preferences through canonical creation constraints", () => {
     expect(
       mapPlanningPreferencesToCreationConstraints({

@@ -1,6 +1,5 @@
 import { Text } from "@repo/ui/components/text";
 import { CalendarRange } from "lucide-react-native";
-import type { ReactNode } from "react";
 import { useMemo } from "react";
 import { View } from "react-native";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
@@ -10,6 +9,7 @@ import {
 } from "@/lib/trainingPlanVisual";
 import type { EntityOwner } from "./EntityOwnerRow";
 import {
+  type ResourceCardAccessory,
   ResourceCardHeader,
   ResourceCardShell,
   ResourceLikeButton,
@@ -40,7 +40,7 @@ export interface TrainingPlanCardPlan {
 type TrainingPlanCardProps = {
   plan: TrainingPlanCardPlan;
   onPress?: () => void;
-  headerAccessory?: ReactNode;
+  headerAccessory?: ResourceCardAccessory;
   showAttribution?: boolean;
   variant?: "default" | "compact" | "list";
 };
@@ -72,7 +72,36 @@ export function TrainingPlanCard({
   });
 
   return (
-    <ResourceCardShell compact={isCompact || isList} onPress={onPress}>
+    <ResourceCardShell
+      accessibilityLabel={`Open training plan ${plan.name || "Untitled training plan"}`}
+      actionRegion={
+        isList ? undefined : (
+          <ResourceOwnerActionRow
+            actions={
+              <>
+                {headerAccessory}
+                <ResourceLikeButton
+                  disabled={isLikePending}
+                  isLiked={isLiked}
+                  likeCount={likeCount}
+                  onPress={toggleLike}
+                  testID={`training-plan-card-like-button-${plan.id}`}
+                />
+              </>
+            }
+            categoryIcon={CalendarRange}
+            categoryIconClassName="text-primary"
+            categoryLabel="Training plan"
+            compact={isCompact}
+            fallbackLabel="GradientPeak"
+            owner={showAttribution ? (plan.owner ?? null) : null}
+            timestamp={showAttribution ? (plan.created_at ?? plan.updated_at ?? null) : null}
+          />
+        )
+      }
+      compact={isCompact || isList}
+      onPress={onPress}
+    >
       {isList ? (
         <>
           <ResourceCardHeader
@@ -95,28 +124,6 @@ export function TrainingPlanCard({
         </>
       ) : (
         <>
-          <ResourceOwnerActionRow
-            actions={
-              <>
-                {headerAccessory}
-                <ResourceLikeButton
-                  disabled={isLikePending}
-                  isLiked={isLiked}
-                  likeCount={likeCount}
-                  onPress={toggleLike}
-                  testID={`training-plan-card-like-button-${plan.id}`}
-                />
-              </>
-            }
-            categoryIcon={CalendarRange}
-            categoryIconClassName="text-primary"
-            categoryLabel="Training plan"
-            compact={isCompact}
-            fallbackLabel="GradientPeak"
-            owner={showAttribution ? (plan.owner ?? null) : null}
-            timestamp={showAttribution ? (plan.created_at ?? plan.updated_at ?? null) : null}
-          />
-
           <ResourceCardHeader
             compact={isCompact}
             description={plan.description}

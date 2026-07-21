@@ -47,6 +47,10 @@ export interface IntegrationsRepository {
     profileId: string;
     provider: PublicIntegrationProvider;
   }): Promise<IntegrationCredentialRow | null>;
+  findGrantByProfileIdAndProvider(input: {
+    profileId: string;
+    provider: PublicIntegrationProvider;
+  }): Promise<Pick<IntegrationCredentialRow, "expires_at" | "scope"> | null>;
   upsertByProfileIdAndProvider(input: IntegrationUpsertFields): Promise<IntegrationRow>;
   upsertFromOAuthState(input: OAuthIntegrationUpsertFields): Promise<IntegrationRow | null>;
   updateTokensByProfileIdAndProvider(input: IntegrationTokenUpdateFields): Promise<void>;

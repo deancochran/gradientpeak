@@ -3,6 +3,11 @@ import type {
   ActivityPlanIntervalStep,
   ActivityPlanTarget,
 } from "@repo/core";
+import {
+  getIntensityZone,
+  getIntensityZoneColor,
+  getIntensityZoneForegroundColor,
+} from "@repo/core/constants";
 import { Button } from "@repo/ui/components/button";
 import { Form, FormNumberField, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
@@ -164,13 +169,10 @@ export function IntervalWizard({
   const workPercent = workDurationSeconds / safeIntervalDuration;
   const restPercent = restDurationSeconds / safeIntervalDuration;
 
-  const getIntensityColor = (intensity: number): string => {
-    if (intensity >= 106) return "#dc2626"; // Z5 - Red
-    if (intensity >= 91) return "#ea580c"; // Z4 - Orange
-    if (intensity >= 76) return "#ca8a04"; // Z3 - Yellow
-    if (intensity >= 56) return "#16a34a"; // Z2 - Green
-    return "#06b6d4"; // Z1 - Light Blue
-  };
+  const getIntensityColor = (intensity: number): string =>
+    getIntensityZoneColor(getIntensityZone(intensity));
+  const getIntensityForegroundColor = (intensity: number): string =>
+    getIntensityZoneForegroundColor(getIntensityZone(intensity));
 
   const submitForm = useZodFormSubmit<IntervalWizardValues>({
     form,
@@ -401,7 +403,7 @@ export function IntervalWizard({
                   x={(previewWidth * workPercent) / 2}
                   y={previewHeight / 2}
                   fontSize="12"
-                  fill="white"
+                  fill={getIntensityForegroundColor(values.workIntensity)}
                   textAnchor="middle"
                   alignmentBaseline="middle"
                   fontWeight="600"
@@ -421,7 +423,7 @@ export function IntervalWizard({
                   x={previewWidth * workPercent + (previewWidth * restPercent) / 2}
                   y={previewHeight / 2}
                   fontSize="12"
-                  fill="white"
+                  fill={getIntensityForegroundColor(values.restIntensity)}
                   textAnchor="middle"
                   alignmentBaseline="middle"
                   fontWeight="600"

@@ -1,11 +1,5 @@
 import { Button } from "@repo/ui/components/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
+import { Card, CardContent, CardDescription, CardHeader } from "@repo/ui/components/card";
 import { Link } from "@tanstack/react-router";
 import { ShieldX } from "lucide-react";
 
@@ -17,7 +11,7 @@ export function CoachAccessDenied() {
           <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-slate-800">
             <ShieldX className="h-5 w-5 text-slate-300" />
           </div>
-          <CardTitle>Coaching access required</CardTitle>
+          <h1 className="font-semibold leading-none tracking-tight">Coaching access required</h1>
           <CardDescription className="text-slate-400">
             Your authenticated profile does not have an active coaching role in this organization.
           </CardDescription>

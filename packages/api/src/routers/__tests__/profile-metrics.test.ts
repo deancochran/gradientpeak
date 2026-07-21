@@ -3,6 +3,7 @@ import { profileMetricsRouter } from "../profile-metrics";
 
 type QueryPlan = {
   selectResult?: unknown[];
+  selectResults?: unknown[][];
   countResult?: unknown[];
   insertResult?: unknown[];
   insertResults?: unknown[][];
@@ -65,6 +66,7 @@ function createActivityEffortRow(overrides: Record<string, unknown> = {}) {
 function createDbMock(plan: QueryPlan = {}) {
   const callLog: DbCall[] = [];
   let insertIndex = 0;
+  let selectIndex = 0;
 
   const createSelectBuilder = (isCountSelect = false) => {
     const selectBuilder: any = {
@@ -88,10 +90,16 @@ function createDbMock(plan: QueryPlan = {}) {
         callLog.push({ operation: "select.offset", value });
         return selectBuilder;
       },
+      for: (strength: string) => {
+        callLog.push({ operation: "select.for", value: strength });
+        return selectBuilder;
+      },
       then: (onFulfilled: (value: unknown[]) => unknown) =>
-        Promise.resolve(isCountSelect ? (plan.countResult ?? []) : (plan.selectResult ?? [])).then(
-          onFulfilled,
-        ),
+        Promise.resolve(
+          isCountSelect
+            ? (plan.countResult ?? [])
+            : (plan.selectResults?.[selectIndex++] ?? plan.selectResult ?? []),
+        ).then(onFulfilled),
     };
 
     return selectBuilder;
@@ -323,6 +331,55 @@ describe("profileMetricsRouter", () => {
       }),
     );
     expect(result).toEqual(created);
+  });
+
+  it("rejects a metric reference to an activity the current profile does not own", async () => {
+    const { caller, callLog } = createCaller({ selectResult: [] });
+
+    await expect(
+      caller.create({
+        profile_id: "11111111-1111-4111-8111-111111111111",
+        metric_type: "weight_kg",
+        recorded_at: "2026-03-18T06:30:00.000Z",
+        reference_activity_id: "22222222-2222-4222-8222-222222222222",
+        value: 70.25,
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "Referenced activity is unavailable" });
+
+    expect(callLog.some((call) => call.operation === "insert.into")).toBe(false);
+    expect(callLog.map((call) => call.operation)).toEqual(
+      expect.arrayContaining(["transaction.begin", "select.for", "transaction.rollback"]),
+    );
+  });
+
+  it("creates an activity-linked metric only after confirming activity ownership", async () => {
+    const referenceActivityId = "22222222-2222-4222-8222-222222222222";
+    const created = createProfileMetricRow({ reference_activity_id: referenceActivityId });
+    const { caller, callLog } = createCaller({
+      selectResult: [{ id: referenceActivityId }],
+      insertResult: [created],
+    });
+
+    await expect(
+      caller.create({
+        profile_id: "11111111-1111-4111-8111-111111111111",
+        metric_type: "weight_kg",
+        recorded_at: "2026-03-18T06:30:00.000Z",
+        reference_activity_id: referenceActivityId,
+        value: 70.25,
+      }),
+    ).resolves.toEqual(created);
+
+    expect(callLog.map((call) => call.operation)).toEqual(
+      expect.arrayContaining([
+        "transaction.begin",
+        "select.where",
+        "select.limit",
+        "select.for",
+        "insert.into",
+        "transaction.commit",
+      ]),
+    );
   });
 
   it("fails when a returned db row does not match the public metric shape", async () => {

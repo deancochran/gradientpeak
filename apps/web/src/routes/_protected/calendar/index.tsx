@@ -10,7 +10,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
 import { cn } from "@repo/ui/lib/cn";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { CalendarDays, ChevronLeft, ChevronRight, List } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, List, Plus } from "lucide-react";
 import { useMemo } from "react";
 
 import { RouteFlashToast, type RouteFlashType } from "../../../components/route-flash-toast";
@@ -19,37 +19,56 @@ import {
   compareEventsByStart,
   formatEventTimeRange,
   formatMonthLabel,
+  formatShortDayLabel,
   getCalendarGrid,
   getEventTitle,
   getMonthKey,
   getMonthWindow,
   getTodayDateKey,
+  getWeekWindow,
+  isValidDateKey,
   isValidMonthKey,
   type PlanningEvent,
+  shiftDateKey,
   shiftMonthKey,
   toDateKey,
 } from "../../../lib/planning";
 
 export const Route = createFileRoute("/_protected/calendar/")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    flash: typeof search.flash === "string" ? search.flash : undefined,
-    flashType:
-      search.flashType === "success" || search.flashType === "error" || search.flashType === "info"
-        ? (search.flashType as RouteFlashType)
-        : undefined,
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): {
+    date?: string;
+    flash?: string;
+    flashType?: RouteFlashType;
+    month: string;
+    view: "agenda" | "month" | "week";
+  } => ({
+    ...(typeof search.flash === "string" ? { flash: search.flash } : {}),
+    ...(search.flashType === "success" ||
+    search.flashType === "error" ||
+    search.flashType === "info"
+      ? { flashType: search.flashType as RouteFlashType }
+      : {}),
     month:
       typeof search.month === "string" && isValidMonthKey(search.month)
         ? search.month
         : getMonthKey(new Date()),
-    view: search.view === "agenda" ? "agenda" : "month",
+    ...(typeof search.date === "string" && isValidDateKey(search.date)
+      ? { date: search.date }
+      : {}),
+    view: search.view === "agenda" || search.view === "week" ? search.view : "month",
   }),
   component: CalendarIndexPage,
 });
 
 function CalendarIndexPage() {
   const navigate = Route.useNavigate();
-  const { flash, flashType, month, view } = Route.useSearch();
-  const { startKey, endKey } = useMemo(() => getMonthWindow(month), [month]);
+  const { date: requestedDate, flash, flashType, month, view } = Route.useSearch();
+  const date = requestedDate ?? getTodayDateKey();
+  const monthWindow = useMemo(() => getMonthWindow(month), [month]);
+  const weekWindow = useMemo(() => getWeekWindow(date), [date]);
+  const { startKey, endKey } = view === "week" ? weekWindow : monthWindow;
   const todayKey = getTodayDateKey();
   const profileQuery = api.profiles.get.useQuery();
   const eventsQuery = api.events.list.useQuery({
@@ -91,12 +110,12 @@ function CalendarIndexPage() {
   return (
     <div className="space-y-6">
       <RouteFlashToast
-        message={flash}
-        type={flashType}
+        {...(flash !== undefined ? { message: flash } : {})}
+        {...(flashType !== undefined ? { type: flashType } : {})}
         clear={() =>
           void navigate({
             to: "/calendar",
-            search: { flash: undefined, flashType: undefined, month, view },
+            search: { date, month, view },
             replace: true,
           })
         }
@@ -109,6 +128,12 @@ function CalendarIndexPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button asChild>
+            <a href={`/calendar/new?date=${date}&type=custom`}>
+              <Plus className="mr-2 h-4 w-4" />
+              Create
+            </a>
+          </Button>
           <Button
             variant="outline"
             size="icon"
@@ -116,9 +141,11 @@ function CalendarIndexPage() {
               void navigate({
                 to: "/calendar",
                 search: {
-                  flash: undefined,
-                  flashType: undefined,
-                  month: shiftMonthKey(month, -1),
+                  date: view === "week" ? shiftDateKey(date, -7) : date,
+                  month:
+                    view === "week"
+                      ? getMonthKey(new Date(`${shiftDateKey(date, -7)}T12:00:00`))
+                      : shiftMonthKey(month, -1),
                   view,
                 },
               })
@@ -126,7 +153,11 @@ function CalendarIndexPage() {
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <div className="min-w-40 text-center text-sm font-medium">{formatMonthLabel(month)}</div>
+          <div className="min-w-40 text-center text-sm font-medium">
+            {view === "week"
+              ? `${weekWindow.startKey} – ${weekWindow.endKey}`
+              : formatMonthLabel(month)}
+          </div>
           <Button
             variant="outline"
             size="icon"
@@ -134,9 +165,11 @@ function CalendarIndexPage() {
               void navigate({
                 to: "/calendar",
                 search: {
-                  flash: undefined,
-                  flashType: undefined,
-                  month: shiftMonthKey(month, 1),
+                  date: view === "week" ? shiftDateKey(date, 7) : date,
+                  month:
+                    view === "week"
+                      ? getMonthKey(new Date(`${shiftDateKey(date, 7)}T12:00:00`))
+                      : shiftMonthKey(month, 1),
                   view,
                 },
               })
@@ -168,14 +201,31 @@ function CalendarIndexPage() {
         />
       </div>
 
+      {eventsQuery.isError || goalsQuery.isError ? (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/40 p-4"
+        >
+          <p className="text-sm">
+            Some calendar data could not be loaded. Existing results remain visible.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void Promise.all([eventsQuery.refetch(), goalsQuery.refetch()])}
+          >
+            Retry
+          </Button>
+        </div>
+      ) : null}
+
       <Tabs
         value={view}
         onValueChange={(nextView) =>
           void navigate({
             to: "/calendar",
             search: {
-              flash: undefined,
-              flashType: undefined,
+              date,
               month,
               view: nextView === "agenda" ? "agenda" : "month",
             },
@@ -190,6 +240,10 @@ function CalendarIndexPage() {
           <TabsTrigger value="agenda" className="gap-2">
             <List className="h-4 w-4" />
             Agenda
+          </TabsTrigger>
+          <TabsTrigger value="week" className="gap-2">
+            <CalendarDays className="h-4 w-4" />
+            Week
           </TabsTrigger>
         </TabsList>
 
@@ -247,6 +301,51 @@ function CalendarIndexPage() {
                   );
                 })}
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="week">
+          <Card>
+            <CardHeader>
+              <CardTitle>Week view</CardTitle>
+              <CardDescription>Open a day or create work in this seven-day window.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-7">
+              {weekWindow.days.map((dateKey) => {
+                const dayEvents = eventsByDate.get(dateKey) ?? [];
+                return (
+                  <div key={dateKey} className="min-h-40 rounded-xl border p-3">
+                    <Link
+                      to="/calendar/day/$date"
+                      params={{ date: dateKey }}
+                      search={{ month, view }}
+                      className="font-medium hover:underline"
+                    >
+                      {formatShortDayLabel(dateKey)}
+                    </Link>
+                    <div className="mt-3 space-y-2">
+                      {dayEvents.map((event) => (
+                        <Link
+                          key={event.id}
+                          to="/calendar/events/$eventId"
+                          params={{ eventId: event.id }}
+                          search={{ flash: undefined, flashType: undefined, month, view }}
+                          className="block rounded-md bg-muted p-2 text-xs hover:bg-accent"
+                        >
+                          {getEventTitle(event)}
+                        </Link>
+                      ))}
+                      <a
+                        href={`/calendar/new?date=${dateKey}&type=custom`}
+                        className="block text-xs text-primary hover:underline"
+                      >
+                        Add
+                      </a>
+                    </div>
+                  </div>
+                );
+              })}
             </CardContent>
           </Card>
         </TabsContent>

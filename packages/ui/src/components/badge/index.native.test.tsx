@@ -13,4 +13,14 @@ describe("Badge native", () => {
     expect(badge.props.testID).toBe(badgeFixtures.featured.testId);
     expect(badge.props.children).toBe(badgeFixtures.featured.children);
   });
+
+  it("uses the contrast-safe destructive surface token", () => {
+    const { getByTestId } = renderNative(
+      <Badge testId="destructive-badge" variant="destructive">
+        Failed
+      </Badge>,
+    );
+
+    expect(getByTestId("destructive-badge").props.className).toContain("bg-destructive-surface");
+  });
 });

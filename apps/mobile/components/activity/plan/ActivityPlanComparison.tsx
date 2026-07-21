@@ -1,12 +1,9 @@
-import {
-  activityPlanStructureSchemaV3,
-  calculateActivityPlanStats,
-  compileActivityPlanV3,
-} from "@repo/core";
+import { calculateActivityPlanStats, deriveActivityPlanPresentation } from "@repo/core";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { CheckCircle, XCircle } from "lucide-react-native";
+import { useMemo } from "react";
 import { Pressable, View } from "react-native";
 import { TimelineChart } from "@/components/activity-plan/workout/TimelineChart";
 import {
@@ -46,16 +43,14 @@ function formatDuration(seconds: number): string {
 }
 
 // Helper function to calculate estimated duration from structure
-function getPlanComparison(structure: unknown) {
-  const parsed = activityPlanStructureSchemaV3.safeParse(structure);
-  if (!parsed.success) return { duration: 0, tss: 0, compatibleLoad: false };
-  const compiled = compileActivityPlanV3(parsed.data);
-  const stats = calculateActivityPlanStats(compiled);
+function getPlanComparison(presentation: ReturnType<typeof deriveActivityPlanPresentation>) {
+  if (!presentation) return { duration: 0, tss: 0, compatibleLoad: false };
+  const stats = calculateActivityPlanStats(presentation.compiled);
   const cycling = stats.categoryDoses[0]?.cyclingPower;
   return {
     duration: stats.duration.exactElapsedSeconds ?? 0,
     tss: cycling?.complete ? cycling.estimatedTss : 0,
-    compatibleLoad: compiled.categories.length === 1 && Boolean(cycling?.complete),
+    compatibleLoad: presentation.categories.length === 1 && Boolean(cycling?.complete),
   };
 }
 
@@ -66,7 +61,11 @@ export function ActivityPlanComparison({
   onPress,
 }: ActivityPlanComparisonProps) {
   // Calculate estimated values from structure
-  const planComparison = getPlanComparison(activityPlan.structure);
+  const presentation = useMemo(
+    () => deriveActivityPlanPresentation(activityPlan.structure),
+    [activityPlan.structure],
+  );
+  const planComparison = getPlanComparison(presentation);
   const estimatedDuration = planComparison.duration;
   const estimatedTSS = planComparison.tss;
 
@@ -167,7 +166,7 @@ export function ActivityPlanComparison({
         {!compact && Boolean(activityPlan.structure) && (
           <View>
             <Text className="text-sm font-medium mb-2">Planned Intensity</Text>
-            <TimelineChart structure={activityPlan.structure} height={100} compact={true} />
+            <TimelineChart presentation={presentation} height={100} compact={true} />
           </View>
         )}
       </CardContent>

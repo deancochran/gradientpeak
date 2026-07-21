@@ -404,6 +404,42 @@ describe("activity efforts list", () => {
     expect(screen.getByText("10m 00s")).toBeTruthy();
   });
 
+  it("labels heart-rate curves and values in bpm", () => {
+    mockActivityEfforts = [
+      {
+        id: "bike-hr-effort",
+        ...trustedImportedObservation("activity-bike-hr"),
+        activity_category: "bike",
+        effort_type: "heart_rate",
+        recorded_at: "2026-03-01T00:00:00.000Z",
+        duration_seconds: 1200,
+        value: 165,
+        unit: "bpm",
+      },
+      {
+        id: "bike-hr-effort-short",
+        ...trustedImportedObservation("activity-bike-hr-short"),
+        activity_category: "bike",
+        effort_type: "heart_rate",
+        recorded_at: "2026-02-28T00:00:00.000Z",
+        duration_seconds: 300,
+        value: 175,
+        unit: "bpm",
+      },
+    ];
+
+    renderNative(<ActivityEffortsList />);
+    expect(screen.getByText("Best 175 bpm")).toBeTruthy();
+    fireEvent.press(screen.getByTestId("activity-effort-curve-bike_heart_rate"));
+
+    expect(screen.getByText("Heart rate (bpm)").props.transform).toContain("rotate(-90");
+    expect(
+      screen.getByLabelText(
+        /Bike heart rate curve\. X axis: duration\. Y axis: heart rate in beats per minute/,
+      ),
+    ).toBeTruthy();
+  });
+
   it("maps chart coordinates according to the selected modality orientation", () => {
     const points = [
       { effortId: "fast", label: "1m 00s", duration: 60, value: 5 },

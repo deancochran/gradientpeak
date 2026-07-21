@@ -69,18 +69,21 @@ export function ResourcePickerResultRow({
     item.presentation === "canonical" && isActivityPlan && "activityPlanCardData" in item ? (
       <ActivityPlanCard
         activity={{
+          activityCategories: item.activityPlanCardData.activityCategories,
           activityType: item.activityPlanCardData.activityType,
           createdAt: item.activityPlanCardData.createdAt ?? undefined,
           description: item.activityPlanCardData.description ?? undefined,
           estimatedDuration: item.activityPlanCardData.estimatedDuration ?? undefined,
           estimatedTss: item.activityPlanCardData.estimatedTss ?? undefined,
+          intensityFactor: item.activityPlanCardData.intensityFactor ?? undefined,
           has_liked: item.activityPlanCardData.hasLiked ?? undefined,
           id: item.activityPlanCardData.id,
           likes_count: item.activityPlanCardData.likesCount ?? undefined,
           name: item.activityPlanCardData.name,
+          structure: item.activityPlanCardData.structure,
           updatedAt: item.activityPlanCardData.updatedAt ?? undefined,
         }}
-        variant="list"
+        variant="compact"
       />
     ) : item.presentation === "canonical" && scope === "routes" && "routeCardData" in item ? (
       <RouteCard
@@ -188,15 +191,18 @@ export function mapActivityPlanToResourcePickerItem(
   return {
     activityCategory: primaryCategory,
     activityPlanCardData: {
+      activityCategories: plan.categories,
       activityType: primaryCategory,
       createdAt: plan.created_at,
       description: plan.description,
       estimatedDuration: metrics.estimated_duration,
       estimatedTss: metrics.estimated_tss,
+      intensityFactor: metrics.intensity_factor,
       hasLiked: plan.has_liked,
       id: plan.id,
       likesCount: plan.likes_count,
       name: plan.name,
+      structure: plan.structure,
       updatedAt: plan.updated_at,
     },
     createdAt: plan.created_at,

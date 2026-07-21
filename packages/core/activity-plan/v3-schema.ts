@@ -129,6 +129,11 @@ export const activityPlanStructureSchemaV3 = activityPlanStructureShapeSchemaV3
 
 /** Branded output available only after strict document-wide V3 validation. */
 export type ActivityPlanStructureV3 = z.output<typeof activityPlanStructureSchemaV3>;
+/** Mutable authoring shape validated and branded only when persisted or executed. */
+export type EditableActivityPlanStructure = {
+  version: 3;
+  segments: ActivityPlanSegmentV3[];
+};
 
 export function validateActivityPlanStructureV3(data: unknown) {
   return activityPlanStructureSchemaV3.safeParse(data);

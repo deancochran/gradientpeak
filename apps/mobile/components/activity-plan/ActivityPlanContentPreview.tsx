@@ -1,25 +1,18 @@
 import type {
   ActivityPlanDuration,
   ActivityPlanIntervalStep,
+  ActivityPlanPresentationModel,
   ActivityPlanStructureV3,
   ActivityPlanTarget,
 } from "@repo/core";
-import {
-  activityPlanStructureSchemaV3,
-  compileActivityPlanV3,
-  decodePolyline,
-  formatDurationSec,
-} from "@repo/core";
+import { decodePolyline, deriveActivityPlanPresentation, formatDurationSec } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { useMemo } from "react";
 import { Pressable, View } from "react-native";
 import { ElevationProfileChart } from "@/components/activity/charts/ElevationProfileChart";
 import { TimelineChart } from "@/components/activity-plan/workout/TimelineChart";
 import { StaticRouteMapPreview } from "@/components/shared/StaticRouteMapPreview";
-import {
-  getActivityPlanRoute,
-  getAuthoritativeActivityPlanMetrics,
-} from "@/lib/activityPlanMetrics";
+import { getActivityPlanRoute } from "@/lib/activityPlanMetrics";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 
 type ActivityPlanPreviewLike = {
@@ -54,16 +47,14 @@ type FullRouteLike = {
 
 type ActivityPlanContentPreviewProps = {
   compact?: boolean;
-  durationLabel?: string | null;
-  intensityFactor?: number | null;
   onRoutePress?: (() => void) | null;
   plan: ActivityPlanPreviewLike | null | undefined;
+  presentation?: ActivityPlanPresentationModel | null;
   route?: RouteLike | null;
   routeFull?: FullRouteLike | null;
   showRoutePreview?: boolean;
   size?: "small" | "medium" | "large";
   testIDPrefix?: string;
-  tss?: number | null;
 };
 
 function readMetric(value: unknown): number | null {
@@ -77,11 +68,6 @@ function readMetric(value: unknown): number | null {
   }
 
   return null;
-}
-
-function getStructure(structure: unknown): ActivityPlanStructureV3 | null {
-  const parsed = activityPlanStructureSchemaV3.safeParse(structure);
-  return parsed.success ? parsed.data : null;
 }
 
 function flattenSteps(structure: ActivityPlanStructureV3 | null): ActivityPlanIntervalStep[] {
@@ -119,7 +105,57 @@ function formatStepDuration(duration: ActivityPlanDuration): string | null {
 }
 
 function formatTarget(target: ActivityPlanTarget): string {
-  return `${target.intensity}${target.type}`;
+  switch (target.type) {
+    case "RPE":
+      return `RPE ${target.intensity}`;
+    case "%FTP":
+      return `${target.intensity}% FTP`;
+    case "%MaxHR":
+      return `${target.intensity}% max HR`;
+    case "%ThresholdHR":
+      return `${target.intensity}% threshold HR`;
+    case "watts":
+      return `${target.intensity} W`;
+    case "cadence":
+      return `${target.intensity} rpm`;
+    case "speed":
+      return `${target.intensity} km/h`;
+    default:
+      return `${target.intensity} ${target.type}`;
+  }
+}
+
+function normalizeLabel(value: string | null | undefined): string {
+  return (
+    value
+      ?.trim()
+      .normalize("NFKC")
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{M}\p{N}]+/gu, " ")
+      .trim() ?? ""
+  );
+}
+
+function getDistinctLabel(
+  value: string | null | undefined,
+  parentLabels: Array<string | null | undefined>,
+): string | null {
+  const normalizedValue = normalizeLabel(value);
+  if (!normalizedValue) return null;
+
+  const duplicatesParent = parentLabels.some(
+    (parentLabel) => normalizeLabel(parentLabel) === normalizedValue,
+  );
+  return duplicatesParent ? null : value?.trim() || null;
+}
+
+function labelContainsSemantic(value: string, semantic: string): boolean {
+  const labelWords = normalizeLabel(value).split(" ");
+  return labelWords.includes(normalizeLabel(semantic));
+}
+
+function formatSemanticLabel(value: string): string {
+  return value.charAt(0).toLocaleUpperCase() + value.slice(1);
 }
 
 function RouteMetricCell({ label, value }: { label: string; value: string }) {
@@ -198,27 +234,25 @@ function buildRouteStreams(
 
 export function ActivityPlanContentPreview({
   compact = false,
-  durationLabel,
-  intensityFactor,
   onRoutePress,
   plan,
+  presentation,
   route,
   routeFull,
   showRoutePreview = true,
   size,
   testIDPrefix,
-  tss,
 }: ActivityPlanContentPreviewProps) {
   const resolvedSize = size ?? (compact ? "small" : "large");
-  const authoritativeMetrics = getAuthoritativeActivityPlanMetrics(plan);
   const planRoute = getActivityPlanRoute(plan);
-  const estimatedDurationSeconds = readMetric(authoritativeMetrics.estimated_duration);
-  const estimatedDurationMinutes = readMetric(plan?.estimated_duration_minutes);
-  const estimatedTss = readMetric(authoritativeMetrics.estimated_tss);
   const routeDistanceMeters = readMetric(route?.total_distance ?? planRoute.distance);
   const routeAscentMeters = readMetric(route?.total_ascent ?? planRoute.ascent);
   const routeDescentMeters = readMetric(route?.total_descent ?? planRoute.descent);
-  const structure = useMemo(() => getStructure(plan?.structure), [plan?.structure]);
+  const presentationModel = useMemo(
+    () => presentation ?? deriveActivityPlanPresentation(plan?.structure),
+    [plan?.structure, presentation],
+  );
+  const structure = presentationModel?.structure ?? null;
   const steps = useMemo(() => flattenSteps(structure), [structure]);
   const routeCoordinates = useMemo(
     () =>
@@ -231,46 +265,37 @@ export function ActivityPlanContentPreview({
     () => buildRouteStreams(routeFull?.coordinates),
     [routeFull?.coordinates],
   );
-  const hasTimeline = Boolean(structure && compileActivityPlanV3(structure).occurrences.length > 0);
+  const hasTimeline = Boolean(presentationModel?.occurrences.length);
   const maxVisibleSteps = resolvedSize === "small" ? 2 : resolvedSize === "medium" ? 3 : 4;
   const visibleSteps = steps.slice(0, maxVisibleSteps);
-  const hasMetrics =
-    estimatedDurationSeconds !== null ||
-    estimatedDurationMinutes !== null ||
-    !!durationLabel ||
-    estimatedTss !== null ||
-    typeof tss === "number" ||
-    typeof intensityFactor === "number" ||
-    steps.length > 0 ||
-    routeDistanceMeters !== null ||
-    !!route?.name;
+  const hasRouteMap = Boolean(
+    showRoutePreview &&
+      route &&
+      routeCoordinates &&
+      routeCoordinates.length > 0 &&
+      resolvedSize !== "small",
+  );
+  const hasElevationProfile = Boolean(routeStreams);
+  const hasSessionFlow = visibleSteps.length > 0 && resolvedSize === "large";
 
-  if (
-    !plan ||
-    (!hasMetrics &&
-      !hasTimeline &&
-      visibleSteps.length === 0 &&
-      !(showRoutePreview && routeCoordinates))
-  ) {
+  if (!plan || (!hasTimeline && !hasRouteMap && !hasElevationProfile && !hasSessionFlow)) {
     return null;
   }
 
   return (
     <View className={resolvedSize === "small" ? "gap-3" : "gap-4"} testID={testIDPrefix}>
       {hasTimeline ? (
-        <View className="rounded-2xl bg-muted/30 px-3 py-3">
-          <View
-            className="overflow-hidden rounded-xl"
-            testID={testIDPrefix ? `${testIDPrefix}-timeline` : undefined}
-          >
-            {structure ? (
-              <TimelineChart
-                structure={structure}
-                height={resolvedSize === "small" ? 72 : resolvedSize === "medium" ? 92 : 104}
-                compact={resolvedSize !== "large"}
-              />
-            ) : null}
-          </View>
+        <View
+          className="overflow-hidden rounded-xl"
+          testID={testIDPrefix ? `${testIDPrefix}-timeline` : undefined}
+        >
+          {structure ? (
+            <TimelineChart
+              presentation={presentationModel}
+              height={resolvedSize === "small" ? 72 : resolvedSize === "medium" ? 92 : 104}
+              compact={resolvedSize !== "large"}
+            />
+          ) : null}
         </View>
       ) : routeStreams && resolvedSize !== "large" ? (
         <ElevationProfileChart
@@ -340,88 +365,104 @@ export function ActivityPlanContentPreview({
         />
       ) : null}
 
-      {visibleSteps.length > 0 && resolvedSize === "large" ? (
+      {hasSessionFlow ? (
         <View className="rounded-2xl bg-muted/30 px-3 py-3">
           <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
             Session Flow
           </Text>
-          <View className="mt-3 gap-2">
-            {structure?.segments.map((segment, index) => (
-              <View
-                key={segment.id}
-                className="rounded-xl border border-border/60 bg-background px-3 py-3"
-              >
-                <View className="flex-row items-start justify-between gap-3">
-                  <View className="flex-1 gap-1">
-                    <Text className="text-sm font-medium text-foreground">
-                      {segment.name || `Segment ${index + 1}`}
-                    </Text>
-                    <Text className="text-xs text-muted-foreground">
-                      {segment.role === "activity" ? segment.category : segment.role}
-                    </Text>
-                    {segment.notes ? (
-                      <Text className="text-xs leading-4 text-muted-foreground">
-                        {segment.notes}
+          <View className="mt-2">
+            {structure?.segments.map((segment, index) => {
+              const segmentTitle = segment.name?.trim() || `Segment ${index + 1}`;
+              const semantic = segment.role === "activity" ? segment.category : segment.role;
+              const showSemantic = !labelContainsSemantic(segmentTitle, semantic);
+
+              return (
+                <View
+                  key={segment.id}
+                  className={index === 0 ? "py-2" : "border-t border-border/60 py-3"}
+                >
+                  <View className="flex-row items-start justify-between gap-3">
+                    <View className="flex-1 gap-1">
+                      <Text className="text-sm font-semibold text-foreground">{segmentTitle}</Text>
+                      {showSemantic ? (
+                        <Text className="text-xs text-muted-foreground">
+                          {formatSemanticLabel(semantic)}
+                        </Text>
+                      ) : null}
+                      {segment.notes ? (
+                        <Text className="text-xs leading-4 text-muted-foreground">
+                          {segment.notes}
+                        </Text>
+                      ) : null}
+                    </View>
+                    {segment.role !== "activity" ? (
+                      <Text className="text-xs font-medium text-foreground/80">
+                        {formatStepDuration(segment.duration)}
                       </Text>
                     ) : null}
                   </View>
-                  {segment.role !== "activity" ? (
-                    <Text className="text-xs text-muted-foreground">
-                      {formatStepDuration(segment.duration)}
-                    </Text>
-                  ) : null}
-                </View>
-                {segment.role === "activity"
-                  ? segment.intervals.map((interval) => (
-                      <View key={interval.id} className="mt-3 gap-2.5">
-                        <Text className="text-xs font-semibold text-muted-foreground">
-                          {interval.name}
-                          {interval.repetitions > 1 ? ` · ${interval.repetitions}x` : ""}
-                        </Text>
-                        {interval.steps.map((step, stepIndex) => {
-                          const stepDurationLabel = formatStepDuration(step.duration);
-                          const targetSummary = step.targets?.length
-                            ? step.targets.map((target) => formatTarget(target)).join(" · ")
-                            : null;
+                  {segment.role === "activity"
+                    ? segment.intervals.map((interval) => {
+                        const intervalLabel = getDistinctLabel(interval.name, [segmentTitle]);
+                        const showIntervalHeader = Boolean(
+                          intervalLabel || interval.repetitions > 1,
+                        );
 
-                          return (
-                            <View
-                              key={step.id || `${interval.id}-${stepIndex}`}
-                              className="gap-1.5"
-                            >
-                              <View className="flex-row items-start justify-between gap-3">
-                                <Text className="flex-1 text-sm font-medium text-foreground">
-                                  {step.name || `Step ${stepIndex + 1}`}
-                                </Text>
-                                {stepDurationLabel ? (
-                                  <Text className="text-xs text-muted-foreground">
-                                    {stepDurationLabel}
-                                  </Text>
-                                ) : null}
-                              </View>
-                              {targetSummary ? (
-                                <Text className="text-xs font-medium text-foreground/80">
-                                  {targetSummary}
-                                </Text>
-                              ) : null}
-                              {step.description ? (
-                                <Text className="text-xs leading-4 text-muted-foreground">
-                                  {step.description}
-                                </Text>
-                              ) : null}
-                              {step.notes ? (
-                                <Text className="text-xs leading-4 text-muted-foreground">
-                                  {step.notes}
-                                </Text>
-                              ) : null}
-                            </View>
-                          );
-                        })}
-                      </View>
-                    ))
-                  : null}
-              </View>
-            ))}
+                        return (
+                          <View key={interval.id} className="mt-2 gap-2.5">
+                            {showIntervalHeader ? (
+                              <Text className="text-xs font-semibold text-muted-foreground">
+                                {intervalLabel}
+                                {interval.repetitions > 1 ? ` · ${interval.repetitions}x` : ""}
+                              </Text>
+                            ) : null}
+                            {interval.steps.map((step, stepIndex) => {
+                              const stepLabel = getDistinctLabel(step.name, [
+                                segmentTitle,
+                                interval.name,
+                              ]);
+                              const detailSummary = [
+                                ...(step.targets?.map((target) => formatTarget(target)) ?? []),
+                                formatStepDuration(step.duration),
+                              ]
+                                .filter((value): value is string => Boolean(value))
+                                .join(" · ");
+
+                              return (
+                                <View
+                                  key={step.id || `${interval.id}-${stepIndex}`}
+                                  className="gap-1.5"
+                                >
+                                  {stepLabel ? (
+                                    <Text className="text-sm font-medium text-foreground">
+                                      {stepLabel}
+                                    </Text>
+                                  ) : null}
+                                  {detailSummary ? (
+                                    <Text className="text-xs font-medium text-foreground/80">
+                                      {detailSummary}
+                                    </Text>
+                                  ) : null}
+                                  {step.description ? (
+                                    <Text className="text-xs leading-4 text-muted-foreground">
+                                      {step.description}
+                                    </Text>
+                                  ) : null}
+                                  {step.notes ? (
+                                    <Text className="text-xs leading-4 text-muted-foreground">
+                                      {step.notes}
+                                    </Text>
+                                  ) : null}
+                                </View>
+                              );
+                            })}
+                          </View>
+                        );
+                      })
+                    : null}
+                </View>
+              );
+            })}
           </View>
         </View>
       ) : null}

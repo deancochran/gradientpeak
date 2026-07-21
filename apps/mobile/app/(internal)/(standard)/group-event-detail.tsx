@@ -123,8 +123,13 @@ export default function GroupEventDetailRoute() {
         <GroupEventDetailScreen
           canManage={false}
           event={event}
+          {...(detailVm.seriesOccurrencesQuery.error?.message === undefined
+            ? {}
+            : { futureOccurrencesError: detailVm.seriesOccurrencesQuery.error.message })}
+          isErrorFutureOccurrences={detailVm.seriesOccurrencesQuery.isError}
           futureOccurrences={detailVm.seriesOccurrences}
           isLoadingFutureOccurrences={detailVm.seriesOccurrencesQuery.isLoading}
+          isRetryingFutureOccurrences={detailVm.seriesOccurrencesQuery.isFetching}
           isWorking={isWorking}
           onActivityPlanPress={(activityPlanId) =>
             router.push({ pathname: "/activity-plan-detail", params: { id: activityPlanId } })
@@ -138,6 +143,7 @@ export default function GroupEventDetailRoute() {
               params: { groupEventId: occurrence.id },
             })
           }
+          onRetryFutureOccurrences={() => void detailVm.seriesOccurrencesQuery.refetch()}
           onRsvp={async (status) => {
             try {
               await actions.rsvp(event.id, status);

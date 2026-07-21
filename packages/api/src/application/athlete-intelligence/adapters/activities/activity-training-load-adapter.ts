@@ -27,7 +27,7 @@ type EffortRow = {
   id: string;
   activityId: string | null;
   sport: string;
-  kind: "power" | "speed";
+  kind: "power" | "speed" | "heart_rate";
   durationSeconds: number;
   unit: string;
   value: number;
@@ -91,6 +91,7 @@ export function adaptActivityTrainingLoads(input: {
       value: effort.value,
       source: effort.source,
       method: effort.method,
+      calculation_version: null,
       provenance: effort.provenance,
     })),
   };

@@ -27,4 +27,10 @@ describe("Button web", () => {
       screen.getByRole("button", { name: buttonFixtures.moreActions.accessibilityLabel }),
     ).toHaveAttribute("data-testid", buttonFixtures.moreActions.testId);
   });
+
+  it("uses the contrast-safe destructive surface token", () => {
+    renderWeb(<Button variant="destructive">Delete</Button>);
+
+    expect(screen.getByRole("button", { name: "Delete" })).toHaveClass("bg-destructive-surface");
+  });
 });

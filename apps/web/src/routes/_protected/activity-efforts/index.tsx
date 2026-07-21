@@ -122,12 +122,15 @@ function ActivityEffortsPage() {
   const observedHistory = selectedRows.filter((row) => getEffortStatus(row) === "observed");
   const durationCurve = buildObservedDurationCurve(definitionRows);
   const isPaceCurve = activeDefinition.effortType === "speed";
+  const isHeartRateCurve = activeDefinition.effortType === "heart_rate";
   const curveLabel = isPaceCurve
     ? `${activeDefinition.activityCategory === "swim" ? "Swim" : "Run"} pace`
     : activeDefinition.label;
   const curveAxisLabel = isPaceCurve
     ? `Pace (/${activeDefinition.activityCategory === "swim" ? "100m" : "km"})`
-    : `Power (${activeDefinition.unit})`;
+    : isHeartRateCurve
+      ? "Heart rate (bpm)"
+      : `Power (${activeDefinition.unit})`;
 
   const updateMutation = api.activityEfforts.update.useMutation({
     onSuccess: async () => {

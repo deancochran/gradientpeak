@@ -1,3 +1,4 @@
+import { getIntensityZone, getIntensityZoneColor } from "../constants/zones";
 import type { ActivityTarget, ActivityTargetType } from "../targets";
 
 type TargetBearingStep = { targets?: readonly ActivityTarget[] };
@@ -341,26 +342,13 @@ export function getStepIntensityColor(step: TargetBearingStep): string {
 
   switch (target.type) {
     case "%FTP":
-      if (target.intensity >= 106) return "#dc2626";
-      if (target.intensity >= 91) return "#ea580c";
-      if (target.intensity >= 76) return "#ca8a04";
-      if (target.intensity >= 56) return "#16a34a";
-      return "#06b6d4";
     case "%MaxHR":
     case "%ThresholdHR":
-      if (target.intensity >= 95) return "#dc2626";
-      if (target.intensity >= 85) return "#ea580c";
-      if (target.intensity >= 75) return "#ca8a04";
-      if (target.intensity >= 65) return "#16a34a";
-      return "#06b6d4";
+      return getIntensityZoneColor(getIntensityZone(target.intensity));
     case "RPE":
-      if (target.intensity >= 9) return "#dc2626";
-      if (target.intensity >= 7) return "#ea580c";
-      if (target.intensity >= 5) return "#ca8a04";
-      if (target.intensity >= 3) return "#16a34a";
-      return "#06b6d4";
+      return getIntensityZoneColor(getIntensityZone(target.intensity * 10));
     default:
-      return "#06b6d4";
+      return getIntensityZoneColor("RECOVERY");
   }
 }
 

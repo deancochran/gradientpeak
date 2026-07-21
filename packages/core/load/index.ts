@@ -1,4 +1,5 @@
 export * from "./form";
+export * from "./heart-rate-zone-stress";
 export * from "./load-series";
 export * from "./progression";
 export * from "./ramp";

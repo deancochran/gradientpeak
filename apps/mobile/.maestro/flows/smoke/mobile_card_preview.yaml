@@ -1,0 +1,39 @@
+appId: ${MAESTRO_APP_ID}
+---
+- runFlow:
+    file: ../reusable/expo_dev_client_setup.yaml
+- openLink: "${MAESTRO_APP_SCHEME}://storybook?surface=mobile-cards"
+- assertVisible: "E2E_RUNTIME_ERRORS=0"
+- assertVisible:
+    id: "mobile-card-matrix"
+- assertVisible:
+    id: "mobile-card-activity"
+- scrollUntilVisible:
+    element:
+      id: "mobile-card-activity-plan"
+    direction: DOWN
+- scrollUntilVisible:
+    element:
+      id: "mobile-card-training-plan"
+    direction: DOWN
+- scrollUntilVisible:
+    element:
+      id: "mobile-card-route"
+    direction: DOWN
+- scrollUntilVisible:
+    element:
+      id: "mobile-card-group"
+    direction: DOWN
+- scrollUntilVisible:
+    element:
+      id: "mobile-card-group-event"
+    direction: DOWN
+- scrollUntilVisible:
+    element:
+      id: "mobile-card-profile"
+    direction: DOWN
+- scrollUntilVisible:
+    element:
+      id: "mobile-card-calendar"
+    direction: DOWN
+- assertVisible: "E2E_RUNTIME_ERRORS=0"

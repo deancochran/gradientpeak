@@ -3,7 +3,7 @@ import { canonicalSportSchema } from "../schemas/sport";
 import type { CanonicalEffortUnit } from "../units/effort";
 import { ACTIVITY_EFFORT_HARD_BOUNDS } from "./activity-effort-policy";
 
-export const activityEffortTypeSchema = z.enum(["power", "speed"]);
+export const activityEffortTypeSchema = z.enum(["power", "speed", "heart_rate"]);
 
 export type ActivityEffortType = z.infer<typeof activityEffortTypeSchema>;
 export type ActivityEffortCategory = z.infer<typeof canonicalSportSchema>;
@@ -109,6 +109,22 @@ export const activityEffortDefinitions = [
     durationPresets: [5, 60, 300, 1200, 3600],
   },
   {
+    id: "bike_heart_rate",
+    activityCategory: "bike",
+    effortType: "heart_rate",
+    label: "Bike heart rate",
+    valueLabel: "Heart rate",
+    unit: "bpm",
+    storageUnit: "bpm",
+    inputKind: "integer",
+    min: ACTIVITY_EFFORT_HARD_BOUNDS.heartRateBpm.min,
+    max: ACTIVITY_EFFORT_HARD_BOUNDS.heartRateBpm.max,
+    decimals: 0,
+    defaultValue: 160,
+    defaultDurationSeconds: 1200,
+    durationPresets: [60, 300, 600, 1200, 1800, 3600],
+  },
+  {
     id: "run_speed",
     activityCategory: "run",
     effortType: "speed",
@@ -125,6 +141,22 @@ export const activityEffortDefinitions = [
     durationPresets: [60, 300, 600, 1200, 3600],
   },
   {
+    id: "run_heart_rate",
+    activityCategory: "run",
+    effortType: "heart_rate",
+    label: "Run heart rate",
+    valueLabel: "Heart rate",
+    unit: "bpm",
+    storageUnit: "bpm",
+    inputKind: "integer",
+    min: ACTIVITY_EFFORT_HARD_BOUNDS.heartRateBpm.min,
+    max: ACTIVITY_EFFORT_HARD_BOUNDS.heartRateBpm.max,
+    decimals: 0,
+    defaultValue: 160,
+    defaultDurationSeconds: 1200,
+    durationPresets: [60, 300, 600, 1200, 1800, 3600],
+  },
+  {
     id: "swim_speed",
     activityCategory: "swim",
     effortType: "speed",
@@ -139,6 +171,22 @@ export const activityEffortDefinitions = [
     defaultValue: 1.2,
     defaultDurationSeconds: 300,
     durationPresets: [30, 60, 120, 300, 1200, 1800],
+  },
+  {
+    id: "swim_heart_rate",
+    activityCategory: "swim",
+    effortType: "heart_rate",
+    label: "Swim heart rate",
+    valueLabel: "Heart rate",
+    unit: "bpm",
+    storageUnit: "bpm",
+    inputKind: "integer",
+    min: ACTIVITY_EFFORT_HARD_BOUNDS.heartRateBpm.min,
+    max: ACTIVITY_EFFORT_HARD_BOUNDS.heartRateBpm.max,
+    decimals: 0,
+    defaultValue: 150,
+    defaultDurationSeconds: 1200,
+    durationPresets: [60, 300, 600, 1200, 1800, 3600],
   },
 ] as const satisfies readonly ActivityEffortDefinition[];
 
@@ -239,6 +287,7 @@ const activityEffortWritableFieldsSchema = z
       .int()
       .min(ACTIVITY_EFFORT_HARD_BOUNDS.durationSeconds.min)
       .max(ACTIVITY_EFFORT_HARD_BOUNDS.durationSeconds.max),
+    distance_meters: z.number().int().positive().max(1_000_000).optional().nullable(),
     effort_type: activityEffortTypeSchema,
     value: z
       .number()
@@ -331,6 +380,7 @@ export interface ActivityEffortUpdateExisting {
   activity_category: ActivityEffortCategory;
   effort_type: ActivityEffortType;
   duration_seconds: number;
+  distance_meters?: number | null;
   value: number;
   recorded_at: Date | string;
   activity_id?: string | null;
@@ -348,6 +398,10 @@ export function normalizeActivityEffortUpdate(
     segment_id: patch.segment_id === undefined ? (existing.segment_id ?? null) : patch.segment_id,
     activity_category: patch.activity_category ?? existing.activity_category,
     duration_seconds: patch.duration_seconds ?? existing.duration_seconds,
+    distance_meters:
+      patch.distance_meters === undefined
+        ? (existing.distance_meters ?? null)
+        : patch.distance_meters,
     effort_type: patch.effort_type ?? existing.effort_type,
     value: patch.value ?? existing.value,
     start_offset:
@@ -366,6 +420,7 @@ export function normalizeActivityEffortUpdate(
       patch.activity_category === undefined ? undefined : normalized.activity_category,
     duration_seconds:
       patch.duration_seconds === undefined ? undefined : normalized.duration_seconds,
+    distance_meters: patch.distance_meters === undefined ? undefined : normalized.distance_meters,
     effort_type: patch.effort_type === undefined ? undefined : normalized.effort_type,
     value: patch.value === undefined ? undefined : normalized.value,
     unit: normalized.unit,

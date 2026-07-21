@@ -40,7 +40,7 @@ type FlatListProps = {
 type ActivityPlanCardNode = {
   props: {
     activityPlan: ActivityPlan;
-    variant: "list";
+    variant?: string;
   };
 };
 
@@ -192,7 +192,7 @@ describe("activity plans list screen", () => {
     expect(pushMock).toHaveBeenCalledWith("/activity-plan-detail?id=plan-1");
   });
 
-  it("renders owner identity on each plan card", () => {
+  it("renders each plan with its owner and the rich default card", () => {
     const rendered = renderNative(<ActivityPlansListScreen />);
 
     const activityPlanCard = (rendered as unknown as UnsafeTypeQuery).UNSAFE_getByType(
@@ -205,6 +205,6 @@ describe("activity plans list screen", () => {
         username: "Owner",
       }),
     );
-    expect(activityPlanCard.props.variant).toBe("list");
+    expect(activityPlanCard.props.variant).toBeUndefined();
   });
 });

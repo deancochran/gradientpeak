@@ -2,7 +2,8 @@ import { Text } from "@repo/ui/components/text";
 import { Stack } from "expo-router";
 import { MapPin } from "lucide-react-native";
 import { useState } from "react";
-import { Pressable, View } from "react-native";
+import { View } from "react-native";
+import { HeaderTextAction } from "@/components/shared/HeaderAction";
 import { IndexFilterSheet } from "@/components/shared/IndexFilterSheet";
 import {
   FilterChip,
@@ -25,28 +26,37 @@ export default function RoutesLibraryScreen() {
   const [draftSortBy, setDraftSortBy] = useState<typeof sortBy>("newest");
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
 
-  const { data, isLoading, isFetchingNextPage, fetchNextPage, hasNextPage } =
-    api.routes.list.useInfiniteQuery(
-      { limit: 20, ownerScope: "own", search: searchQuery.trim() || undefined, sort_by: sortBy },
-      {
-        getNextPageParam: (lastPage) => lastPage.nextCursor,
-      },
-    );
+  const {
+    data,
+    error,
+    isError,
+    isFetching,
+    isLoading,
+    isFetchingNextPage,
+    fetchNextPage,
+    hasNextPage,
+    refetch,
+  } = api.routes.list.useInfiniteQuery(
+    { limit: 20, ownerScope: "own", search: searchQuery.trim() || undefined, sort_by: sortBy },
+    {
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
+    },
+  );
 
   const routes = data?.pages.flatMap((page) => page.items) ?? [];
+  const hasActiveFilter = searchQuery.trim().length > 0;
 
   return (
     <View className="flex-1 bg-background" testID="routes-list-screen">
       <Stack.Screen
         options={{
           headerRight: () => (
-            <Pressable
+            <HeaderTextAction
+              accessibilityLabel="Upload route"
+              label="Upload"
               onPress={() => navigateTo(ROUTES.ROUTES.UPLOAD)}
-              className="mr-2 rounded-full px-2 py-1"
               testID="routes-list-upload-trigger"
-            >
-              <Text className="text-sm font-medium text-primary">Upload</Text>
-            </Pressable>
+            />
           ),
         }}
       />
@@ -65,9 +75,13 @@ export default function RoutesLibraryScreen() {
       <ResourceList
         testID="routes-list-content"
         data={routes}
+        errorDescription={error?.message ?? "Please try again."}
+        errorTitle="Unable to load routes"
         keyExtractor={(item) => item.id}
         contentContainerClassName="gap-4 p-4 pb-6"
-        ListHeaderComponent={<IndexResultsSummary count={routes.length} singularLabel="route" />}
+        ListHeaderComponent={
+          <IndexResultsSummary count={routes.length} countKind="loaded" singularLabel="route" />
+        }
         emptyComponent={
           <View
             className="flex-1 items-center justify-center py-12"
@@ -82,9 +96,13 @@ export default function RoutesLibraryScreen() {
         }
         hasNextPage={hasNextPage}
         isFetchingNextPage={isFetchingNextPage}
+        isError={isError}
         isLoading={isLoading}
+        isEmptyFiltered={hasActiveFilter}
+        isRetrying={isFetching}
         loadingMoreLabel="Loading more routes..."
         onLoadMore={() => void fetchNextPage()}
+        onRetry={refetch}
         renderItem={(item) => {
           const { owner, ...routeWithoutOwner } = item;
           return (
@@ -93,7 +111,6 @@ export default function RoutesLibraryScreen() {
                 ...routeWithoutOwner,
                 ...(owner === undefined ? {} : { owner }),
               }}
-              variant="list"
               onPress={() => navigateTo(`/route-detail?id=${item.id}`)}
             />
           );

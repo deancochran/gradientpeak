@@ -321,6 +321,41 @@
       "packageJson": "packages/ui/package.json",
       "script": "check:testing-artifacts",
       "freshnessCommand": "pnpm --filter @repo/ui check:testing-artifacts"
+    },
+    {
+      "path": "tooling/tailwindcss/src/tokens.css",
+      "owner": "tailwind-theme-generator",
+      "packageJson": "tooling/tailwindcss/package.json",
+      "script": "check:theme",
+      "freshnessCommand": "pnpm --filter @repo/tailwindcss check:theme"
+    },
+    {
+      "path": "tooling/tailwindcss/src/web.css",
+      "owner": "tailwind-theme-generator",
+      "packageJson": "tooling/tailwindcss/package.json",
+      "script": "check:theme",
+      "freshnessCommand": "pnpm --filter @repo/tailwindcss check:theme"
+    },
+    {
+      "path": "tooling/tailwindcss/src/native.css",
+      "owner": "tailwind-theme-generator",
+      "packageJson": "tooling/tailwindcss/package.json",
+      "script": "check:theme",
+      "freshnessCommand": "pnpm --filter @repo/tailwindcss check:theme"
+    },
+    {
+      "path": "tooling/tailwindcss/src/native.ts",
+      "owner": "tailwind-theme-generator",
+      "packageJson": "tooling/tailwindcss/package.json",
+      "script": "check:theme",
+      "freshnessCommand": "pnpm --filter @repo/tailwindcss check:theme"
+    },
+    {
+      "path": "packages/ui/src/lib/native-theme.ts",
+      "owner": "tailwind-theme-generator",
+      "packageJson": "tooling/tailwindcss/package.json",
+      "script": "check:theme",
+      "freshnessCommand": "pnpm --filter @repo/tailwindcss check:theme"
     }
   ],
   "enumParity": [

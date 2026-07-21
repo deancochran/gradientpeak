@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { buildCalendarEventUpdatePatch, formatEventTimeRange } from "./planning";
+import {
+  buildCalendarEventUpdatePatch,
+  buildWeeklyRecurrence,
+  formatEventTimeRange,
+  getTrainingLoadPath,
+  getWeekWindow,
+  shiftDateKey,
+} from "./planning";
 
 describe("calendar event scheduling", () => {
   it("formats a timed event in its event timezone rather than the browser timezone", () => {
@@ -57,5 +64,76 @@ describe("calendar event scheduling", () => {
       starts_at: "2026-03-11T16:30:00.000Z",
       timezone: "America/Los_Angeles",
     });
+  });
+});
+
+describe("planning navigation and recurrence", () => {
+  it("builds stable Sunday-to-Saturday week windows and shifts canonical dates", () => {
+    expect(getWeekWindow("2026-07-20")).toEqual({
+      startKey: "2026-07-19",
+      endKey: "2026-07-25",
+      days: [
+        "2026-07-19",
+        "2026-07-20",
+        "2026-07-21",
+        "2026-07-22",
+        "2026-07-23",
+        "2026-07-24",
+        "2026-07-25",
+      ],
+    });
+    expect(shiftDateKey("2026-07-20", 7)).toBe("2026-07-27");
+  });
+
+  it("creates bounded weekly recurrence truth for the selected start day", () => {
+    expect(
+      buildWeeklyRecurrence({ count: 4, scheduledDate: "2026-07-20", timezone: "UTC" }),
+    ).toEqual({
+      rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=4;BYDAY=MO",
+      timezone: "UTC",
+    });
+    expect(
+      buildWeeklyRecurrence({ count: 1, scheduledDate: "2026-07-20", timezone: "UTC" }),
+    ).toBeNull();
+  });
+});
+
+describe("training load path", () => {
+  it("aggregates persisted scheduled activity estimates into daily and weekly load", () => {
+    const path = getTrainingLoadPath([
+      {
+        id: "event-1",
+        scheduled_date: "2026-07-20",
+        activity_plan: {
+          id: "plan-1",
+          authoritative_metrics: { estimated_tss: 42 },
+        },
+      },
+      {
+        id: "event-2",
+        scheduled_date: "2026-07-20",
+        activity_plan: {
+          id: "plan-2",
+          authoritative_metrics: { estimated_tss: 28 },
+        },
+      },
+      {
+        id: "event-3",
+        scheduled_date: "2026-07-26",
+        activity_plan: {
+          id: "plan-3",
+          authoritative_metrics: { estimated_tss: null },
+        },
+      },
+    ]);
+
+    expect(path.daily).toEqual([
+      { date: "2026-07-20", eventCount: 2, estimatedTss: 70 },
+      { date: "2026-07-26", eventCount: 1, estimatedTss: null },
+    ]);
+    expect(path.weekly).toEqual([
+      { weekStart: "2026-07-19", eventCount: 2, estimatedTss: 70 },
+      { weekStart: "2026-07-26", eventCount: 1, estimatedTss: null },
+    ]);
   });
 });

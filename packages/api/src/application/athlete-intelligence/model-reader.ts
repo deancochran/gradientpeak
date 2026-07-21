@@ -113,7 +113,7 @@ export interface AthleteIntelligenceRows {
     activityId: string | null;
     recordedAt: Date;
     sport: string;
-    kind: "power" | "speed";
+    kind: "power" | "speed" | "heart_rate";
     durationSeconds: number;
     startOffsetSeconds: number | null;
     unit: string;

@@ -39,6 +39,7 @@ function createDbMock(plan: DbPlan = {}) {
         where: () => builder,
         orderBy: () => builder,
         limit: () => builder,
+        for: () => Promise.resolve(selectQueue.shift() ?? []),
         then: (resolve: (rows: unknown[]) => unknown) =>
           Promise.resolve(selectQueue.shift() ?? []).then(resolve),
       };
@@ -442,7 +443,7 @@ describe("groupsRouter mutations", () => {
         [{ role: "owner", status: "active" }],
         [{ role: "member", status: "active" }],
       ],
-      updateReturning: [[targetOwner]],
+      updateReturning: [[buildGroupMembershipRow({ role: "admin" })], [targetOwner]],
     });
     const caller = createCaller(mock.db);
 

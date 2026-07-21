@@ -98,15 +98,17 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
 }: TrainingPathLoadChartSectionProps) {
   const [legendOpen, setLegendOpen] = useState(false);
   const [previewSelectedDate, setPreviewSelectedDate] = useState<string | null>(null);
-  const modelEmptyState = loading ? null : (model?.emptyState ?? null);
-  const resolvedEmptyState = loading
-    ? { title: "Loading training path…", tone: "loading" as const }
-    : (emptyState ??
-      (modelEmptyState
-        ? { title: modelEmptyStateCopy[modelEmptyState], tone: "empty" as const }
-        : undefined));
   const canRenderDailyChart = preferDailyChart && !!dailyPoints?.length;
   const canRenderWeeklyChart = !!model && !model.emptyState && !!onSelectedWeekChange;
+  const hasRenderableChart = canRenderDailyChart || canRenderWeeklyChart;
+  const modelEmptyState = loading && !hasRenderableChart ? null : (model?.emptyState ?? null);
+  const resolvedEmptyState =
+    loading && !hasRenderableChart
+      ? { title: "Loading training path…", tone: "loading" as const }
+      : (emptyState ??
+        (modelEmptyState
+          ? { title: modelEmptyStateCopy[modelEmptyState], tone: "empty" as const }
+          : undefined));
   const contextSelectedDate = previewSelectedDate ?? selectedDate;
 
   useEffect(() => {

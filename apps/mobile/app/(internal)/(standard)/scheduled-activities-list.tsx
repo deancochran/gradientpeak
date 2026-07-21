@@ -5,8 +5,10 @@ import { Text } from "@repo/ui/components/text";
 import { Stack, useRouter } from "expo-router";
 import { Calendar } from "lucide-react-native";
 import { useState } from "react";
-import { Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { RefreshControl, ScrollView, View } from "react-native";
 import { ActivityList } from "@/components/plan/calendar/ActivityList";
+import { HeaderTextAction } from "@/components/shared/HeaderAction";
+import { DefaultErrorState, ResourceListErrorNotice } from "@/components/shared/ResourceList";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
@@ -26,6 +28,9 @@ export default function ScheduledScreen() {
   // Query all scheduled activities
   const {
     data: scheduledData,
+    error,
+    isError,
+    isFetching,
     isLoading,
     refetch,
   } = api.events.list.useQuery(
@@ -55,48 +60,84 @@ export default function ScheduledScreen() {
     router.navigate(ROUTES.CALENDAR);
   };
 
-  if (isLoading) {
+  const screenHeader = (
+    <Stack.Screen
+      options={{
+        headerRight: () => (
+          <HeaderTextAction
+            accessibilityLabel="Open calendar"
+            label="Calendar"
+            onPress={handleScheduleNew}
+            testID="scheduled-activities-list-calendar-trigger"
+          />
+        ),
+      }}
+    />
+  );
+
+  if (isLoading && scheduledActivities.length === 0) {
     return (
-      <ScrollView className="flex-1 bg-background p-4">
-        <ListSkeleton count={8} />
-      </ScrollView>
+      <View className="flex-1 bg-background">
+        {screenHeader}
+        <ScrollView className="flex-1 p-4">
+          <ListSkeleton count={8} />
+        </ScrollView>
+      </View>
+    );
+  }
+
+  if (isError && scheduledActivities.length === 0) {
+    return (
+      <View className="flex-1 bg-background">
+        {screenHeader}
+        <View className="flex-1 items-center justify-center p-6">
+          <DefaultErrorState
+            description={error?.message ?? "Please try again."}
+            isRetrying={isFetching}
+            onRetry={refetch}
+            title="Unable to load scheduled activities"
+          />
+        </View>
+      </View>
     );
   }
 
   if (scheduledActivities.length === 0) {
     return (
-      <ScrollView
-        className="flex-1 bg-background"
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
-      >
-        <View className="flex-1 p-6 items-center justify-center min-h-[500px]">
-          <EmptyStateCard
-            icon={Calendar}
-            title="No scheduled activities"
-            description="Scheduled activities will appear here."
-            iconSize={64}
-            iconColor="text-primary"
-          />
-        </View>
-      </ScrollView>
+      <View className="flex-1 bg-background">
+        {screenHeader}
+        <ScrollView
+          className="flex-1"
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+        >
+          <View className="flex-1 p-6 items-center justify-center min-h-[500px]">
+            <EmptyStateCard
+              actionLabel="Open calendar"
+              icon={Calendar}
+              title="No scheduled activities"
+              description="Scheduled activities will appear here."
+              iconSize={64}
+              iconColor="text-primary"
+              onAction={handleScheduleNew}
+            />
+          </View>
+        </ScrollView>
+      </View>
     );
   }
 
   return (
     <View className="flex-1 bg-background">
-      <Stack.Screen
-        options={{
-          headerRight: () => (
-            <Pressable
-              onPress={handleScheduleNew}
-              className="mr-2 rounded-full px-2 py-1"
-              testID="scheduled-activities-list-calendar-trigger"
-            >
-              <Text className="text-sm font-medium text-primary">Calendar</Text>
-            </Pressable>
-          ),
-        }}
-      />
+      {screenHeader}
+      {isError ? (
+        <View className="px-4 pt-4">
+          <ResourceListErrorNotice
+            description={error?.message ?? "Some scheduled activities could not be refreshed."}
+            isRetrying={isFetching}
+            onRetry={refetch}
+          />
+        </View>
+      ) : null}
       {/* Activity Count */}
       <View className="px-4 pt-4 pb-3 border-b border-border bg-card">
         <Text className="text-sm text-muted-foreground">

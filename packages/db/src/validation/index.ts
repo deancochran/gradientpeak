@@ -108,7 +108,9 @@ export const publicActivitySegmentsRowSchema = createSelectSchema(activitySegmen
 export const publicActivitySegmentsInsertSchema = createInsertSchema(activitySegments);
 export const publicActivitySegmentsUpdateSchema = createUpdateSchema(activitySegments);
 
-export const publicActivityEffortsRowSchema = createSelectSchema(activityEfforts);
+export const publicActivityEffortsRowSchema = createSelectSchema(activityEfforts).extend({
+  distance_meters: z.number().int().nullable().optional(),
+});
 export const publicActivityEffortsInsertSchema = createInsertSchema(activityEfforts);
 export const publicActivityEffortsUpdateSchema = createUpdateSchema(activityEfforts);
 

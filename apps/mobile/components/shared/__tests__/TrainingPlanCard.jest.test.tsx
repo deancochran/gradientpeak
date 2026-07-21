@@ -141,9 +141,12 @@ describe("TrainingPlanCard", () => {
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
-  it("toggles likes using the training_plan entity type", () => {
+  it("keeps navigation and training plan likes independent", () => {
+    const onPress = jest.fn();
+
     renderNative(
       <TrainingPlanCard
+        onPress={onPress}
         plan={{
           id: "training-plan-1",
           name: "Half Marathon Build",
@@ -153,11 +156,17 @@ describe("TrainingPlanCard", () => {
       />,
     );
 
+    fireEvent.press(screen.getByLabelText("Open training plan Half Marathon Build"));
+
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(toggleLikeMutateMock).not.toHaveBeenCalled();
+
     fireEvent.press(screen.getByTestId("training-plan-card-like-button-training-plan-1"));
 
     expect(toggleLikeMutateMock).toHaveBeenCalledWith({
       entity_id: "training-plan-1",
       entity_type: "training_plan",
     });
+    expect(onPress).toHaveBeenCalledTimes(1);
   });
 });

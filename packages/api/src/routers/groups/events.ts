@@ -21,7 +21,7 @@ import {
   notifications,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, asc, eq, gt, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
+import { and, asc, eq, gt, gte, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { z } from "zod";
 import {
   type GroupEventRow,

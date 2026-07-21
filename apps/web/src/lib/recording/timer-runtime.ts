@@ -250,6 +250,46 @@ export function recoverTimerOnlyRecording(
   };
 }
 
+export function restoreFinishedTimerOnlyRecording(artifact: {
+  snapshot: RecordingSessionSnapshot;
+  startedAt: string;
+  finishedAt: string;
+  elapsedMs: number;
+  movingMs: number;
+}): TimerOnlyRecordingState {
+  let state = createInitialTimerOnlyRecordingState();
+  for (const command of [
+    { type: "create_session", snapshot: artifact.snapshot },
+    { type: "mark_ready" },
+    { type: "start" },
+    { type: "begin_finalization" },
+    { type: "finish" },
+  ] satisfies RecordingCommand[]) {
+    const transition = applyCoreCommand(state, command);
+    if (transition.rejectedReason) {
+      throw new Error(`Cannot restore finalized recording: ${transition.rejectedReason}`);
+    }
+    state = transition.state;
+  }
+
+  const activity = artifact.snapshot.activity;
+  return {
+    ...state,
+    configuration: {
+      category: activity.category,
+      ...(activity.eventId ? { eventId: activity.eventId } : {}),
+      ...(activity.activityPlanId ? { activityPlanId: activity.activityPlanId } : {}),
+      ...(activity.routeId ? { routeId: activity.routeId } : {}),
+    },
+    timer: {
+      startedAtMs: Date.parse(artifact.startedAt),
+      activeStartedAtMs: null,
+      accumulatedMovingMs: artifact.movingMs,
+      endedAtMs: Date.parse(artifact.finishedAt),
+    },
+  };
+}
+
 function applyCoreCommand(
   state: TimerOnlyRecordingState,
   command: RecordingCommand,

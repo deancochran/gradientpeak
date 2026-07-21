@@ -17,12 +17,14 @@ type EditableCalendarEvent = {
   starts_at?: string | null;
   timezone?: string | null;
   title?: string | null;
+  recurrence_rule?: string | null;
+  series_id?: string | null;
 };
 
 type CalendarEventFormProps = {
   event: EditableCalendarEvent;
   month: string;
-  view: "agenda" | "month";
+  view: "agenda" | "month" | "week";
 };
 
 const calendarEventDetailsSchema = z.object({
@@ -57,6 +59,8 @@ export function CalendarEventForm({ event, month, view }: CalendarEventFormProps
   const [date, setDate] = useState(event.scheduled_date ?? "");
   const [time, setTime] = useState("09:00");
   const [allDay, setAllDay] = useState(Boolean(event.all_day));
+  const recurring = Boolean(event.series_id || event.recurrence_rule);
+  const [scope, setScope] = useState<"single" | "future" | "series">("single");
   const form = useZodForm({
     defaultValues: {
       notes: event.notes ?? "",
@@ -83,6 +87,8 @@ export function CalendarEventForm({ event, month, view }: CalendarEventFormProps
     <Form {...form}>
       <form action={updateCalendarEventAction.url} method="post" className="space-y-4">
         <input type="hidden" name="event_id" value={event.id} />
+        <input type="hidden" name="scope" value={scope} />
+        {scope !== "single" ? <input type="hidden" name="scheduled_date" value={date} /> : null}
         <input
           type="hidden"
           name="redirectTo"
@@ -95,6 +101,7 @@ export function CalendarEventForm({ event, month, view }: CalendarEventFormProps
               directly to the server action; the shared RHF date/time fields do not emit names. */}
           <div>
             <DateInput
+              disabled={scope !== "single"}
               id="event-date"
               label="Date"
               name="scheduled_date"
@@ -104,7 +111,7 @@ export function CalendarEventForm({ event, month, view }: CalendarEventFormProps
           </div>
           <div>
             <TimeInput
-              disabled={allDay}
+              disabled={allDay || scope !== "single"}
               id="event-time"
               label="Time"
               name="time"
@@ -126,6 +133,30 @@ export function CalendarEventForm({ event, month, view }: CalendarEventFormProps
         </label>
 
         <FormTextareaField control={form.control} label="Notes" name="notes" />
+
+        {recurring ? (
+          <div className="space-y-3 rounded-xl border p-4">
+            <div className="space-y-2">
+              <label htmlFor="event-scope" className="text-sm font-medium">
+                Apply changes to
+              </label>
+              <select
+                id="event-scope"
+                value={scope}
+                onChange={(event) => setScope(event.target.value as typeof scope)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="single">This event only</option>
+                <option value="future">This and future events</option>
+                <option value="series">Entire series</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Rescheduling is instance-only. Future and series scopes update title and notes
+                without changing occurrence dates.
+              </p>
+            </div>
+          </div>
+        ) : null}
 
         <div className="flex gap-2">
           <Button type="submit" disabled={!title.trim() || !date}>

@@ -6,7 +6,9 @@ import { activityPlanCreateSchema, activityPlanUpdateSchema } from "@repo/core/s
 import {
   type ActivityPlanInsert,
   type ActivityPlanRow,
+  type ActivityRouteRow,
   activityPlans,
+  activityRoutes,
   events,
   profiles,
   publicActivityCategorySchema,
@@ -23,6 +25,7 @@ import { getRequiredDb } from "../db";
 import { createEventReadRepository } from "../infrastructure/repositories";
 import { createContentAccessPermissions } from "../permissions/content-access";
 import { getLikeStats, loadLikeStats } from "../repositories/like-stats";
+import { captureApiError } from "../telemetry";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import {
   type ActivityPlanWithDerivedMetrics,
@@ -75,6 +78,7 @@ const listActivityPlansSchema = z
     activityCategories: activityCategoryFiltersSchema.optional(),
     compositionMode: activityPlanCompositionModeSchema.default("include_multisport"),
     search: z.string().optional(),
+    sort_by: z.enum(["newest", "oldest"]).optional(),
     limit: z.number().min(1).max(100).default(20),
     cursor: activityPlanCursorSchema.optional(),
     direction: z.enum(["forward", "backward"]).optional(),
@@ -111,6 +115,17 @@ const activityPlanRowSchema = publicActivityPlansRowSchema
   })
   .strict();
 
+const attachedActivityPlanRouteSchema = z
+  .object({
+    id: uuidSchema,
+    name: z.string(),
+    description: z.string().nullable(),
+    distance: z.number().int().nonnegative(),
+    ascent: z.number().int().nonnegative().nullable(),
+    descent: z.number().int().nonnegative().nullable(),
+  })
+  .strict();
+
 const serializedActivityPlanSchema = activityPlanRowSchema.transform((row) => ({
   ...row,
   created_at: row.created_at.toISOString(),
@@ -125,13 +140,13 @@ function getEstimationStore(ctx: Context) {
   return createEventReadRepository(getRequiredDb(ctx));
 }
 
-const createActivityPlanInput = activityPlanCreateSchema.omit({ route_id: true }).safeExtend({
+const createActivityPlanInput = activityPlanCreateSchema.safeExtend({
   gps_recording_enabled: z.boolean().default(true),
   structure: activityPlanStructureSchemaV3,
   template_visibility: templateVisibilitySchema.optional(),
 });
 
-const updateActivityPlanInput = activityPlanUpdateSchema.omit({ route_id: true }).safeExtend({
+const updateActivityPlanInput = activityPlanUpdateSchema.safeExtend({
   gps_recording_enabled: z.boolean().optional(),
   structure: activityPlanStructureSchemaV3.optional(),
   template_visibility: templateVisibilitySchema.optional(),
@@ -179,6 +194,68 @@ function serializeActivityPlanRow(row: ActivityPlanRow | unknown) {
   }
 
   return serializedActivityPlanSchema.parse(row);
+}
+
+function serializeAttachedActivityPlanRoute(route: ActivityRouteRow) {
+  return attachedActivityPlanRouteSchema.parse({
+    id: route.id,
+    name: route.name,
+    description: route.description,
+    distance: route.total_distance,
+    ascent: route.total_ascent,
+    descent: route.total_descent,
+  });
+}
+
+function buildAccessibleRouteCondition(userId: string) {
+  return or(
+    eq(activityRoutes.profile_id, userId),
+    eq(activityRoutes.is_public, true),
+    eq(activityRoutes.is_system_template, true),
+    sql`exists (
+      select 1
+      from content_access_grants cag
+      where cag.content_type = 'activity_route'
+        and cag.content_id = ${activityRoutes.id}
+        and cag.grantee_profile_id = ${userId}::uuid
+        and cag.access_level = 'read'
+        and cag.revoked_at is null
+        and (cag.expires_at is null or cag.expires_at > now())
+    )`,
+  );
+}
+
+async function loadAccessibleActivityPlanRoute(
+  db: ReturnType<typeof getRequiredDb>,
+  routeId: string | null | undefined,
+  userId: string,
+) {
+  if (!routeId) return null;
+  const [route] = await db
+    .select()
+    .from(activityRoutes)
+    .where(and(eq(activityRoutes.id, routeId), buildAccessibleRouteCondition(userId)))
+    .limit(1);
+  return route ?? null;
+}
+
+async function requireActivityPlanRouteUse(
+  db: ReturnType<typeof getRequiredDb>,
+  routeId: string,
+  userId: string,
+) {
+  const route = await loadAccessibleActivityPlanRoute(db, routeId, userId);
+  if (!route) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Route not found" });
+  }
+  return route;
+}
+
+function withAttachedRoute<T>(plan: T, route: ActivityRouteRow | null) {
+  return {
+    ...plan,
+    route: route ? serializeAttachedActivityPlanRoute(route) : null,
+  };
 }
 
 function toPublicActivityPlan<T extends { structure: unknown }>(plan: T) {
@@ -354,6 +431,7 @@ function buildCreateValues(
     created_at: now,
     updated_at: now,
     profile_id: profileId,
+    route_id: input.route_id ?? null,
     name: input.name,
     description: input.description?.trim() ? input.description.trim() : null,
     notes: input.notes ?? null,
@@ -433,7 +511,9 @@ export const activityPlansRouter = createTRPCRouter({
 
     const offsetCursor = input.cursor?.startsWith("index:")
       ? Number.parseInt(input.cursor.slice(6), 10)
-      : null;
+      : input.sort_by
+        ? 0
+        : null;
 
     if (input.cursor && offsetCursor === null) {
       const [cursorDate, cursorId] = input.cursor.split("_");
@@ -448,25 +528,63 @@ export const activityPlansRouter = createTRPCRouter({
       }
     }
 
-    const rows =
-      offsetCursor !== null
-        ? await db
-            .select()
-            .from(activityPlans)
-            .where(and(...conditions))
-            .orderBy(desc(activityPlans.created_at), asc(activityPlans.id))
-            .limit(limit + 1)
-            .offset(offsetCursor)
-        : await db
-            .select()
-            .from(activityPlans)
-            .where(and(...conditions))
-            .orderBy(desc(activityPlans.created_at), asc(activityPlans.id))
-            .limit(limit + 1);
-    const pagedRows = z.array(activityPlanRowSchema).parse(rows);
+    const batchSize = limit + 1;
+    const maxScanBatches = 5;
+    const baseOffset = offsetCursor ?? 0;
+    const validEntries: Array<{
+      nextOffset: number;
+      row: z.infer<typeof activityPlanRowSchema>;
+    }> = [];
+    let exhaustedRows = false;
+    let invalidRowCount = 0;
+    let lastScannedRow: ActivityPlanRow | undefined;
+    let scannedRowCount = 0;
 
-    const hasMore = pagedRows.length > limit;
-    const pageRows = hasMore ? pagedRows.slice(0, limit) : pagedRows;
+    for (
+      let batchIndex = 0;
+      batchIndex < maxScanBatches && validEntries.length <= limit && !exhaustedRows;
+      batchIndex += 1
+    ) {
+      const rows = await db
+        .select()
+        .from(activityPlans)
+        .where(and(...conditions))
+        .orderBy(
+          input.sort_by === "oldest"
+            ? asc(activityPlans.created_at)
+            : desc(activityPlans.created_at),
+          asc(activityPlans.id),
+        )
+        .limit(batchSize)
+        .offset(baseOffset + scannedRowCount);
+
+      for (const [rowIndex, row] of rows.entries()) {
+        const parsed = activityPlanRowSchema.safeParse(row);
+        if (parsed.success) {
+          validEntries.push({
+            row: parsed.data,
+            nextOffset: baseOffset + scannedRowCount + rowIndex + 1,
+          });
+        } else {
+          invalidRowCount += 1;
+        }
+      }
+
+      scannedRowCount += rows.length;
+      lastScannedRow = rows.at(-1);
+      exhaustedRows = rows.length < batchSize;
+    }
+
+    if (invalidRowCount > 0) {
+      captureApiError(new Error("Stored activity plan validation failed"), {
+        invalidRowCount,
+        procedure: "activityPlans.list",
+      });
+    }
+
+    const hasMore = validEntries.length > limit || !exhaustedRows;
+    const pageEntries = validEntries.slice(0, limit);
+    const pageRows = pageEntries.map((entry) => entry.row);
     const items = pageRows.map(serializeActivityPlanRow);
 
     const planIds = items.map((plan) => plan.id);
@@ -500,11 +618,12 @@ export const activityPlansRouter = createTRPCRouter({
       profileIdentityMapPromise,
     ]);
     let nextCursor: string | undefined;
-    if (hasMore && pageRows.length > 0) {
+    if (hasMore) {
       if (offsetCursor !== null) {
-        nextCursor = `index:${offsetCursor + limit}`;
+        const nextOffset = pageEntries.at(-1)?.nextOffset ?? baseOffset + scannedRowCount;
+        nextCursor = `index:${nextOffset}`;
       } else {
-        const lastItem = pageRows[pageRows.length - 1];
+        const lastItem = pageRows.at(-1) ?? lastScannedRow;
         if (!lastItem) {
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Missing pagination row" });
         }
@@ -544,6 +663,7 @@ export const activityPlansRouter = createTRPCRouter({
     await requireActivityPlanReadForRow({ db, plan: planRow, userId });
 
     const plan = serializeActivityPlanRow(planRow);
+    const attachedRoute = await loadAccessibleActivityPlanRoute(db, plan.route_id, userId);
 
     try {
       if (plan.structure) {
@@ -575,7 +695,10 @@ export const activityPlansRouter = createTRPCRouter({
 
     return {
       ...toPublicActivityPlan(
-        withOwnerIdentity(withIdentityFields(planWithEstimation), profileIdentityMap),
+        withAttachedRoute(
+          withOwnerIdentity(withIdentityFields(planWithEstimation), profileIdentityMap),
+          attachedRoute,
+        ),
       ),
       ...getLikeStats(likeStats, input.id),
     };
@@ -648,6 +771,9 @@ export const activityPlansRouter = createTRPCRouter({
   create: protectedProcedure.input(createActivityPlanInput).mutation(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
     const estimationStore = createEventReadRepository(db);
+    const selectedRoute = input.route_id
+      ? await requireActivityPlanRouteUse(db, input.route_id, ctx.session.user.id)
+      : null;
 
     try {
       validateStructure(input.structure);
@@ -689,7 +815,9 @@ export const activityPlansRouter = createTRPCRouter({
       ctx.session.user.id,
     );
 
-    return toPublicActivityPlan(withIdentityFields(planWithEstimation));
+    return toPublicActivityPlan(
+      withAttachedRoute(withIdentityFields(planWithEstimation), selectedRoute),
+    );
   }),
 
   update: protectedProcedure
@@ -737,6 +865,13 @@ export const activityPlansRouter = createTRPCRouter({
         }
       }
 
+      const selectedRoute =
+        typeof updates.route_id === "string"
+          ? await requireActivityPlanRouteUse(db, updates.route_id, ctx.session.user.id)
+          : updates.route_id === null
+            ? null
+            : await loadAccessibleActivityPlanRoute(db, existingRow.route_id, ctx.session.user.id);
+
       const metricsUpdates: Partial<ActivityPlanInsert> = {};
       if (updates.structure) {
         await computePlanMetrics(
@@ -761,6 +896,7 @@ export const activityPlansRouter = createTRPCRouter({
           ? activityPlanStructureHash(updates.structure)
           : undefined,
         gps_recording_enabled: updates.gps_recording_enabled,
+        route_id: updates.route_id,
         template_visibility: updates.template_visibility,
         content_visibility: updates.template_visibility,
         ...metricsUpdates,
@@ -793,7 +929,8 @@ export const activityPlansRouter = createTRPCRouter({
         (updates.name !== undefined && updates.name !== existingRow.name) ||
         descriptionChanged ||
         (updates.structure !== undefined &&
-          !isDeepStrictEqual(updates.structure, existingRow.structure));
+          !isDeepStrictEqual(updates.structure, existingRow.structure)) ||
+        (updates.route_id !== undefined && updates.route_id !== existingRow.route_id);
 
       if (materialPlanChanged) {
         const linkedEvents = await db
@@ -836,7 +973,9 @@ export const activityPlansRouter = createTRPCRouter({
       );
 
       return {
-        ...toPublicActivityPlan(withIdentityFields(planWithEstimation)),
+        ...toPublicActivityPlan(
+          withAttachedRoute(withIdentityFields(planWithEstimation), selectedRoute),
+        ),
         plannedWorkoutSync,
         wahooSync: plannedWorkoutSync,
       };

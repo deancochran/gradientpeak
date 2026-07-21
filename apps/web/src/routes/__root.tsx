@@ -16,11 +16,44 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 
 import { AppProviders } from "../components/providers/app-providers";
 
 import "../styles.css";
+
+const VITE_PRELOAD_RELOAD_KEY = "gradientpeak:vite-preload-reload";
+const VITE_PRELOAD_RELOAD_COOLDOWN_MS = 30_000;
+
+type PreloadRecoveryRuntime = {
+  now: () => number;
+  reload: () => void;
+  storage: Pick<Storage, "getItem" | "setItem">;
+};
+
+export function recoverFromVitePreloadError(event: Event, runtime: PreloadRecoveryRuntime) {
+  const now = runtime.now();
+  let lastReloadAt: number;
+  try {
+    lastReloadAt = Number(runtime.storage.getItem(VITE_PRELOAD_RELOAD_KEY));
+  } catch {
+    return false;
+  }
+
+  if (Number.isFinite(lastReloadAt) && now - lastReloadAt < VITE_PRELOAD_RELOAD_COOLDOWN_MS) {
+    event.preventDefault();
+    return false;
+  }
+
+  try {
+    runtime.storage.setItem(VITE_PRELOAD_RELOAD_KEY, String(now));
+  } catch {
+    return false;
+  }
+  event.preventDefault();
+  runtime.reload();
+  return true;
+}
 
 export const Route = createRootRoute({
   head: () => ({
@@ -51,6 +84,19 @@ export const Route = createRootRoute({
 });
 
 function RootDocument({ children }: { children: ReactNode }) {
+  useEffect(() => {
+    const handlePreloadError = (event: Event) => {
+      recoverFromVitePreloadError(event, {
+        now: Date.now,
+        reload: () => window.location.reload(),
+        storage: window.sessionStorage,
+      });
+    };
+
+    window.addEventListener("vite:preloadError", handlePreloadError);
+    return () => window.removeEventListener("vite:preloadError", handlePreloadError);
+  }, []);
+
   return (
     <html lang="en">
       <head>

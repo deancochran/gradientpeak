@@ -7,11 +7,21 @@ export const NATIVE_THEME = {
     foreground: "#0a0a0a",
     mutedForeground: "#737373",
     primary: "#171717",
+    input: "#e5e5e5",
+    card: "#fff",
+    destructive: "#e40014",
+    successSubtleForeground: "#033816",
+    warningForeground: "#441c06",
   },
   dark: {
     foreground: "#fafafa",
     mutedForeground: "#a1a1a1",
     primary: "#e5e5e5",
+    input: "rgba(255, 255, 255, 0.15)",
+    card: "#171717",
+    destructive: "#ff6568",
+    successSubtleForeground: "#b9eec2",
+    warningForeground: "#fffcef",
   },
 } as const;
 

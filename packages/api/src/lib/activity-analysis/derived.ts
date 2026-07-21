@@ -51,6 +51,20 @@ export type SegmentDerivedSummary = ActivityListDerivedSummary & {
   load_stream_key: string | null;
 };
 
+export function summarizeSegmentTss(
+  summaries: readonly SegmentDerivedSummary[],
+  activityIds: ReadonlySet<string>,
+): { tss: number; complete: boolean } {
+  const selected = summaries.filter((summary) => activityIds.has(summary.activity_id));
+  const representedActivityIds = new Set(selected.map((summary) => summary.activity_id));
+  return {
+    tss: selected.reduce((total, summary) => total + (summary.tss ?? 0), 0),
+    complete:
+      representedActivityIds.size === activityIds.size &&
+      selected.every((summary) => summary.tss !== null),
+  };
+}
+
 export function orderedActivitySegments(segments: readonly ActivitySegmentReadRow[]) {
   return segments
     .filter(

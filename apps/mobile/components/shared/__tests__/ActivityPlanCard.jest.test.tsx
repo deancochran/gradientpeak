@@ -2,6 +2,35 @@ import { createHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 import { ActivityPlanCard } from "../ActivityPlanCard";
 
+const toggleLikeMutateMock = jest.fn();
+const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
+const activityPlanStructure = {
+  version: 3,
+  segments: [
+    {
+      id: id(1),
+      role: "activity",
+      category: "run",
+      name: "Tempo run",
+      intervals: [
+        {
+          id: id(2),
+          name: "Build",
+          repetitions: 1,
+          steps: [
+            {
+              id: id(3),
+              name: "Tempo",
+              duration: { type: "time", seconds: 300 },
+              targets: [{ type: "RPE", intensity: 7 }],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
@@ -50,29 +79,31 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
 
 jest.mock("@/components/activity-plan/ActivityPlanContentPreview", () => ({
   __esModule: true,
-  ActivityPlanContentPreview: createHost("ActivityPlanContentPreview"),
+  ActivityPlanContentPreview: ({
+    testIDPrefix,
+    ...props
+  }: Record<string, unknown> & { testIDPrefix?: string }) => {
+    const Preview = createHost("ActivityPlanContentPreview");
+    return <Preview {...props} testID={testIDPrefix} />;
+  },
 }));
 
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
-    routes: {
-      get: {
-        useQuery: () => ({ data: null }),
-      },
-      loadFull: {
-        useQuery: () => ({ data: null }),
-      },
-    },
     social: {
       toggleLike: {
-        useMutation: () => ({ mutate: jest.fn() }),
+        useMutation: () => ({ mutate: toggleLikeMutateMock }),
       },
     },
   },
 }));
 
 describe("ActivityPlanCard", () => {
+  beforeEach(() => {
+    toggleLikeMutateMock.mockReset();
+  });
+
   it("shows the footer on one justified row under the intensity chart", () => {
     const { getByTestId } = renderNative(
       <ActivityPlanCard
@@ -85,7 +116,6 @@ describe("ActivityPlanCard", () => {
           updated_at: "2026-03-21T08:00:00.000",
           owner: null,
         }}
-        variant="compact"
       />,
     );
 
@@ -114,7 +144,6 @@ describe("ActivityPlanCard", () => {
             avatar_url: null,
           },
         }}
-        variant="compact"
       />,
     );
 
@@ -123,7 +152,27 @@ describe("ActivityPlanCard", () => {
     expect(screen.queryByText("Updated Mar 21, 2026")).toBeNull();
   });
 
-  it("renders list cards as a dense, tappable identity and metrics scan", () => {
+  it("shows every unique category for a multisport activity plan", () => {
+    renderNative(
+      <ActivityPlanCard
+        activityPlan={{
+          id: "plan-multisport",
+          name: "Brick builder",
+          categories: ["run", "bike", "run"],
+          primary_category: "run",
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("resource-category-items").props.accessibilityLabel).toBe(
+      "Run, Bike",
+    );
+    expect(screen.getByText("Run")).toBeTruthy();
+    expect(screen.getByText("Bike")).toBeTruthy();
+    expect(screen.queryByLabelText("Open activity plan Brick builder")).toBeNull();
+  });
+
+  it("keeps compact cards visual, focused, and tappable", () => {
     const onPress = jest.fn();
 
     renderNative(
@@ -140,7 +189,7 @@ describe("ActivityPlanCard", () => {
             intensity_factor: 0.82,
           },
           route_id: "route-1",
-          structure: { route: { name: "River Loop" } },
+          structure: activityPlanStructure,
           created_at: "2026-03-21T08:00:00.000",
           owner: {
             id: "owner-1",
@@ -148,15 +197,15 @@ describe("ActivityPlanCard", () => {
             avatar_url: null,
           },
         }}
-        loadRoutePreview
         onPress={onPress}
-        showScheduleInfo
-        testID="activity-plan-list-card"
-        variant="list"
+        route={{ name: "River Loop" }}
+        testID="activity-plan-compact-card"
+        variant="compact"
       />,
     );
 
-    expect(screen.getByTestId("activity-plan-list-card")).toBeTruthy();
+    expect(screen.getByTestId("activity-plan-compact-card")).toBeTruthy();
+    expect(screen.getByTestId("activity-plan-card-preview-plan-list-1").props.size).toBe("small");
     expect(screen.getByText("Run")).toBeTruthy();
     expect(screen.getByText("Tempo Builder")).toBeTruthy();
     expect(screen.getByText("Duration")).toBeTruthy();
@@ -168,11 +217,77 @@ describe("ActivityPlanCard", () => {
     expect(screen.queryByTestId("resource-owner-action-row")).toBeNull();
     expect(screen.queryByText("Coach Kim")).toBeNull();
     expect(screen.queryByText("Like")).toBeNull();
-    expect(screen.queryByText("Progressive tempo with a strong finish.")).toBeNull();
-    expect(screen.queryByText("River Loop")).toBeNull();
-    expect(screen.queryByText("Mar 21, 2026 • 8:00 AM")).toBeNull();
+    expect(screen.getByText("Progressive tempo with a strong finish.")).toBeTruthy();
+    expect(screen.getByText("River Loop")).toBeTruthy();
 
-    fireEvent.press(screen.getByTestId("activity-plan-list-card"));
+    fireEvent.press(screen.getByTestId("activity-plan-compact-card"));
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses supplied route data in the default visual preview", () => {
+    renderNative(
+      <ActivityPlanCard
+        activityPlan={{
+          id: "plan-route-preview",
+          name: "River Tempo",
+          categories: ["run"],
+          route_id: "route-1",
+        }}
+        route={{
+          id: "route-1",
+          name: "River Loop",
+          distance: 5000,
+          ascent: 120,
+          descent: 100,
+        }}
+        routeFull={{ coordinates: [{ latitude: 35.1, longitude: -80.1 }] }}
+      />,
+    );
+
+    const preview = screen.getByTestId("activity-plan-card-preview-plan-route-preview");
+    expect(preview.props.size).toBe("medium");
+    expect(preview.props.route).toEqual({
+      id: "route-1",
+      name: "River Loop",
+      distance: 5000,
+      ascent: 120,
+      descent: 100,
+      total_distance: 5000,
+      total_ascent: 120,
+      total_descent: 100,
+    });
+    expect(preview.props.routeFull).toEqual({
+      coordinates: [{ latitude: 35.1, longitude: -80.1 }],
+    });
+  });
+
+  it("keeps navigation and the like action independent", () => {
+    const onPress = jest.fn();
+
+    renderNative(
+      <ActivityPlanCard
+        activityPlan={{
+          id: "plan-like-boundary",
+          name: "Tempo Builder",
+          categories: ["run"],
+          likes_count: 3,
+          has_liked: false,
+        }}
+        onPress={onPress}
+      />,
+    );
+
+    fireEvent.press(screen.getByLabelText("Open activity plan Tempo Builder"));
+
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(toggleLikeMutateMock).not.toHaveBeenCalled();
+
+    fireEvent.press(screen.getByLabelText("Like, 3 likes"));
+
+    expect(toggleLikeMutateMock).toHaveBeenCalledWith({
+      entity_id: "plan-like-boundary",
+      entity_type: "activity_plan",
+    });
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 });

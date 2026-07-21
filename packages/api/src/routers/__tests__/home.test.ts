@@ -5,6 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const homeMocks = vi.hoisted(() => ({
   buildDailyTssByDateSeries: vi.fn(),
   buildDynamicStressSeries: vi.fn(),
+  summarizeSegmentTss: vi.fn((summaries, activityIds) => ({
+    tss: summaries.reduce(
+      (total: number, summary: { activity_id: string; tss: number | null }) =>
+        activityIds.has(summary.activity_id) && summary.tss !== null ? total + summary.tss : total,
+      0,
+    ),
+    complete: true,
+  })),
   buildWorkloadEnvelopes: vi.fn(),
   calculateAge: vi.fn(),
   calculateRollingTrainingQuality: vi.fn(),
@@ -38,6 +46,7 @@ vi.mock("../../infrastructure/repositories", () => ({
 
 vi.mock("../../lib/activity-analysis", () => ({
   buildDynamicStressSeries: homeMocks.buildDynamicStressSeries,
+  summarizeSegmentTss: homeMocks.summarizeSegmentTss,
   loadActivitySegmentsByActivityId: homeMocks.loadActivitySegmentsByActivityId,
 }));
 
@@ -206,6 +215,11 @@ describe("homeRouter", () => {
         ["2026-04-02", 30],
         ["2026-04-03", 50],
       ]),
+      segmentSummaries: [
+        { activity_id: "activity-yesterday", tss: 30 },
+        { activity_id: "activity-today", tss: 20 },
+        { activity_id: "activity-today", tss: 30 },
+      ],
       complete: true,
       seriesIdentity: {
         sport: "bike",
@@ -388,7 +402,7 @@ describe("homeRouter", () => {
     });
     expect(result.consistency).toEqual({ streak: 2, weeklyCount: 2 });
     expect(result.weeklySummary).toEqual({
-      actual: { distance: 25, duration: 5400, tss: 80, count: 2 },
+      actual: { distance: 25, duration: 5400, tss: 80, tssComplete: true, count: 2 },
       planned: { distance: 32, duration: 6000, tss: 150, count: 2 },
       adherence: 53,
     });

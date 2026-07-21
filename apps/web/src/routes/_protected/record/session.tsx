@@ -7,9 +7,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
+import { Input } from "@repo/ui/components/input";
+import { Textarea } from "@repo/ui/components/textarea";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Pause, Play, RotateCcw, Timer, Trash2 } from "lucide-react";
+import { Pause, Play, Save, Square, Timer, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 
+import { uploadFileToSignedUrl } from "../../../lib/activity-route-upload";
+import { api } from "../../../lib/api/client";
+import { buildCreateFromRecordingSummaryInput } from "../../../lib/recording/finalized-artifact";
 import { useTimerOnlyRecording } from "../../../lib/recording/provider";
 
 export const Route = createFileRoute("/_protected/record/session")({
@@ -20,6 +26,62 @@ export function RecordSessionPage() {
   const recording = useTimerOnlyRecording();
   const { lifecycle, snapshot } = recording.state.reducer;
   const configuration = recording.state.configuration;
+  const getSignedUrl = api.activityFiles.getSignedUploadUrl.useMutation();
+  const createActivity = api.activities.createFromRecordingSummary.useMutation();
+  const [name, setName] = useState("");
+  const [notes, setNotes] = useState("");
+  const [perceivedEffort, setPerceivedEffort] = useState("");
+  const [distanceMeters, setDistanceMeters] = useState("0");
+  const [calories, setCalories] = useState("");
+
+  useEffect(() => {
+    if (!recording.artifact) return;
+    setName(recording.artifact.review.name);
+    setNotes(recording.artifact.review.notes ?? "");
+    setPerceivedEffort(recording.artifact.review.perceivedEffort?.toString() ?? "");
+    setDistanceMeters(recording.artifact.review.distanceMeters.toString());
+    setCalories(recording.artifact.review.calories?.toString() ?? "");
+  }, [recording.artifact]);
+
+  const submit = useCallback(
+    async (artifact: NonNullable<typeof recording.artifact>) => {
+      const file = new File([artifact.fileText], artifact.fileName, {
+        type: "application/vnd.garmin.tcx+xml",
+      });
+      const signed = await getSignedUrl.mutateAsync({
+        fileName: file.name,
+        fileSize: file.size,
+      });
+      await uploadFileToSignedUrl(file, signed.signedUrl);
+      const created = await createActivity.mutateAsync(
+        buildCreateFromRecordingSummaryInput(artifact, {
+          bucket: "activity-files",
+          path: signed.filePath,
+        }),
+      );
+      return { activityId: created.id };
+    },
+    [createActivity, getSignedUrl],
+  );
+
+  useEffect(() => {
+    if (
+      recording.submissionJob?.status !== "queued" &&
+      recording.submissionJob?.status !== "submitting"
+    )
+      return;
+    void recording.drainSubmissionQueue(submit);
+  }, [recording.drainSubmissionQueue, recording.submissionJob?.status, submit]);
+
+  useEffect(() => {
+    const drain = () => void recording.drainSubmissionQueue(submit);
+    window.addEventListener("online", drain);
+    const interval = window.setInterval(drain, 30_000);
+    return () => {
+      window.removeEventListener("online", drain);
+      window.clearInterval(interval);
+    };
+  }, [recording.drainSubmissionQueue, submit]);
 
   if (recording.hydrationStatus === "hydrating") {
     return (
@@ -51,6 +113,15 @@ export function RecordSessionPage() {
               <p className="mb-4 text-sm text-destructive" role="alert">
                 {recording.error}
               </p>
+            ) : null}
+            {recording.canTakeOver ? (
+              <Button
+                className="mb-4"
+                variant="destructive"
+                onClick={() => void recording.takeOver()}
+              >
+                Take over this recording
+              </Button>
             ) : null}
             <Button asChild>
               <Link to="/record" search={{ category: "run", gps: "off" }}>
@@ -124,9 +195,14 @@ export function RecordSessionPage() {
                 <Play className="h-5 w-5" /> Resume
               </Button>
             ) : null}
-            {lifecycle === "finished" ? (
-              <Button size="lg" variant="outline" onClick={recording.reset}>
-                <RotateCcw className="h-5 w-5" /> Reset
+            {lifecycle === "recording" || lifecycle === "paused" ? (
+              <Button
+                size="lg"
+                variant="destructive"
+                disabled={recording.busy}
+                onClick={recording.finish}
+              >
+                <Square className="h-5 w-5" /> {recording.busy ? "Finishing…" : "Finish"}
               </Button>
             ) : null}
           </div>
@@ -137,11 +213,134 @@ export function RecordSessionPage() {
             </p>
           ) : null}
 
+          {lifecycle === "finished" && recording.artifact ? (
+            <section
+              className="space-y-4 rounded-xl border p-4 text-left"
+              aria-labelledby="record-review-heading"
+            >
+              <div>
+                <h2 id="record-review-heading" className="text-lg font-semibold">
+                  Review recording
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  The finished artifact is durable locally. Save queues an idempotent server
+                  submission.
+                </p>
+              </div>
+              <label className="grid gap-1 text-sm" htmlFor="recording-name">
+                <span className="font-medium">Activity name</span>
+                <Input
+                  id="recording-name"
+                  value={name}
+                  maxLength={200}
+                  onChange={(event) => setName(event.target.value)}
+                />
+              </label>
+              <label className="grid gap-1 text-sm" htmlFor="recording-notes">
+                <span className="font-medium">Notes</span>
+                <Textarea
+                  id="recording-notes"
+                  value={notes}
+                  maxLength={4000}
+                  onChange={(event) => setNotes(event.target.value)}
+                />
+              </label>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <label className="grid gap-1 text-sm" htmlFor="recording-rpe">
+                  <span className="font-medium">Perceived effort (1–10)</span>
+                  <Input
+                    id="recording-rpe"
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={perceivedEffort}
+                    onChange={(event) => setPerceivedEffort(event.target.value)}
+                  />
+                </label>
+                <label className="grid gap-1 text-sm" htmlFor="recording-distance">
+                  <span className="font-medium">Distance (metres)</span>
+                  <Input
+                    id="recording-distance"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={distanceMeters}
+                    onChange={(event) => setDistanceMeters(event.target.value)}
+                  />
+                </label>
+                <label className="grid gap-1 text-sm" htmlFor="recording-calories">
+                  <span className="font-medium">Calories</span>
+                  <Input
+                    id="recording-calories"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={calories}
+                    onChange={(event) => setCalories(event.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  disabled={
+                    recording.busy ||
+                    !name.trim() ||
+                    recording.submissionJob?.status === "submitted"
+                  }
+                  onClick={() =>
+                    void recording.save({
+                      name: name.trim(),
+                      notes: notes.trim() || null,
+                      perceivedEffort: perceivedEffort ? Number(perceivedEffort) : null,
+                      distanceMeters: Number(distanceMeters || 0),
+                      calories: calories ? Number(calories) : null,
+                    })
+                  }
+                >
+                  <Save className="h-4 w-4" /> Save activity
+                </Button>
+                {recording.submissionJob?.status === "retry_wait" ? (
+                  <Button variant="outline" onClick={() => void recording.retrySubmission()}>
+                    Retry now
+                  </Button>
+                ) : null}
+                <Button
+                  variant="outline"
+                  disabled={recording.busy || recording.submissionJob?.status === "submitted"}
+                  onClick={() => void recording.discardFinalizedArtifact()}
+                >
+                  <Trash2 className="h-4 w-4" /> Discard
+                </Button>
+              </div>
+              {recording.submissionJob ? (
+                <p role="status" className="text-sm text-muted-foreground">
+                  Submission: {submissionLabel(recording.submissionJob.status)}
+                  {recording.submissionJob.lastError
+                    ? ` (${recording.submissionJob.lastError.replaceAll("_", " ")})`
+                    : ""}
+                </p>
+              ) : null}
+              {recording.submissionJob?.activityId ? (
+                <div className="flex flex-wrap gap-3">
+                  <Button asChild variant="outline">
+                    <Link
+                      to="/activities/$activityId"
+                      params={{ activityId: recording.submissionJob.activityId }}
+                    >
+                      Open saved activity
+                    </Link>
+                  </Button>
+                  <Button onClick={recording.reset}>Start a new recording</Button>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
           <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-            This slice records elapsed and moving time only. Pause before leaving so the timer can
-            be recovered safely. Finish remains unavailable until a finalized artifact can be saved
-            without deleting the only durable draft. GPS, BLE/FTMS sensors, FIT files, and
-            background recording are not available.
+            Browser recording captures foreground elapsed and moving time without GPS. Local
+            recovery, finalization, and submission are durable. BLE/FTMS is available only through
+            an active platform adapter; this browser workflow does not assume Chrome-only Web
+            Bluetooth.
           </div>
         </CardContent>
       </Card>
@@ -173,4 +372,12 @@ function lifecycleLabel(lifecycle: string): string {
   if (lifecycle === "paused") return "Paused";
   if (lifecycle === "finished") return "Finished";
   return lifecycle;
+}
+
+function submissionLabel(status: string): string {
+  if (status === "queued") return "queued locally";
+  if (status === "submitting") return "submitting";
+  if (status === "retry_wait") return "waiting to retry";
+  if (status === "submitted") return "saved on server";
+  return status;
 }

@@ -1,10 +1,10 @@
 import {
+  type ActivityPlanPresentationModel,
   type ActivityPlanStructureV3,
-  activityPlanStructureSchemaV3,
-  compileActivityPlanV3,
+  deriveActivityPlanPresentation,
 } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
-import type { ReactNode } from "react";
+import { type ReactNode, useMemo } from "react";
 import { View } from "react-native";
 import {
   formatEstimatedDurationMinutes,
@@ -25,6 +25,7 @@ type ActivityPlanSummaryProps = {
   headerAccessory?: ReactNode;
   intensityFactor?: number | null;
   owner?: EntityOwner | null;
+  presentation?: ActivityPlanPresentationModel | null;
   routeName?: string | null;
   routeProvided?: boolean;
   structure?: ActivityPlanStructureV3 | unknown;
@@ -48,8 +49,7 @@ export function formatActivityCategoryLabel(
 }
 
 export function countActivityPlanSteps(structure: ActivityPlanStructureV3 | unknown): number {
-  const parsed = activityPlanStructureSchemaV3.safeParse(structure);
-  return parsed.success ? compileActivityPlanV3(parsed.data).occurrences.length : 0;
+  return deriveActivityPlanPresentation(structure)?.stepCount ?? 0;
 }
 
 export function formatActivityPlanDuration(params: {
@@ -74,6 +74,7 @@ export function ActivityPlanMetricsRow({
   estimatedDurationMinutes,
   estimatedTss,
   intensityFactor,
+  presentation,
   structure,
 }: Pick<
   ActivityPlanSummaryProps,
@@ -81,12 +82,15 @@ export function ActivityPlanMetricsRow({
   | "estimatedDurationMinutes"
   | "estimatedTss"
   | "intensityFactor"
+  | "presentation"
   | "structure"
 >) {
-  const stepCount = countActivityPlanSteps(structure);
-  const parsedStructure = activityPlanStructureSchemaV3.safeParse(structure);
-  const hasCompatibleAggregate =
-    parsedStructure.success && compileActivityPlanV3(parsedStructure.data).categories.length === 1;
+  const presentationModel = useMemo(
+    () => presentation ?? deriveActivityPlanPresentation(structure),
+    [presentation, structure],
+  );
+  const stepCount = presentationModel?.stepCount ?? 0;
+  const hasCompatibleAggregate = presentationModel?.categories.length === 1;
   const durationLabel = formatActivityPlanDuration({ estimatedDuration, estimatedDurationMinutes });
 
   if (
@@ -134,6 +138,7 @@ export function ActivityPlanSummary({
   headerAccessory,
   intensityFactor,
   owner,
+  presentation,
   routeName,
   routeProvided,
   structure,
@@ -182,6 +187,7 @@ export function ActivityPlanSummary({
         estimatedDurationMinutes={estimatedDurationMinutes}
         estimatedTss={estimatedTss}
         intensityFactor={intensityFactor}
+        presentation={presentation}
         structure={structure}
       />
 

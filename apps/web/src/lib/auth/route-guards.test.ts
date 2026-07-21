@@ -7,7 +7,7 @@ const { getWebAuthSession } = vi.hoisted(() => ({
 
 vi.mock("./client", () => ({ getWebAuthSession }));
 
-import { resolveRouteAuthSession } from "./route-guards";
+import { getProtectedAccessRedirect, resolveRouteAuthSession } from "./route-guards";
 
 const authenticatedSession = {
   sessionId: "session-1",
@@ -41,5 +41,35 @@ describe("resolveRouteAuthSession", () => {
 
     await expect(resolveRouteAuthSession()).resolves.toBe(authenticatedSession);
     expect(getWebAuthSession).toHaveBeenCalledOnce();
+  });
+});
+
+describe("getProtectedAccessRedirect", () => {
+  it("sends anonymous users to login with their requested destination", () => {
+    expect(getProtectedAccessRedirect(null, null, "/calendar?view=week")).toEqual({
+      destination: "login",
+      redirectTo: "/calendar?view=week",
+    });
+  });
+
+  it("sends authenticated unverified users to verification", () => {
+    expect(
+      getProtectedAccessRedirect(
+        { ...authenticatedSession, user: { ...authenticatedSession.user, emailVerified: false } },
+        null,
+        "/settings",
+      ),
+    ).toEqual({ destination: "verify" });
+  });
+
+  it("sends verified incomplete users to onboarding", () => {
+    expect(getProtectedAccessRedirect(authenticatedSession, false, "/activity-plans")).toEqual({
+      destination: "onboarding",
+      redirectTo: "/activity-plans",
+    });
+  });
+
+  it("allows verified onboarded users into the protected shell", () => {
+    expect(getProtectedAccessRedirect(authenticatedSession, true, "/")).toBeNull();
   });
 });

@@ -19,7 +19,7 @@ export const Route = createFileRoute("/_protected/calendar/events/$eventId/edit"
       typeof search.month === "string" && isValidMonthKey(search.month)
         ? search.month
         : getMonthKey(new Date()),
-    view: search.view === "agenda" ? "agenda" : "month",
+    view: search.view === "agenda" || search.view === "week" ? search.view : "month",
   }),
   component: EventEditPage,
 });
@@ -32,6 +32,17 @@ function EventEditPage() {
 
   if (eventQuery.isLoading) {
     return <p className="text-sm text-muted-foreground">Loading event...</p>;
+  }
+
+  if (eventQuery.isError) {
+    return (
+      <div role="alert" className="space-y-3">
+        <p className="text-sm">Event could not be loaded for editing.</p>
+        <Button variant="outline" onClick={() => void eventQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
   }
 
   if (!event) {
@@ -69,7 +80,11 @@ function EventEditPage() {
           <CardDescription>This route updates one event instance at a time.</CardDescription>
         </CardHeader>
         <CardContent>
-          <CalendarEventForm event={event} month={month} view={view as "agenda" | "month"} />
+          <CalendarEventForm
+            event={event}
+            month={month}
+            view={view as "agenda" | "month" | "week"}
+          />
         </CardContent>
       </Card>
     </div>

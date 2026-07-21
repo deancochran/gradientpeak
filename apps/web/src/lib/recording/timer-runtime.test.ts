@@ -7,6 +7,7 @@ import {
   getTimerOnlyRecordingTimes,
   pauseTimerOnlyRecording,
   resetTimerOnlyRecording,
+  restoreFinishedTimerOnlyRecording,
   resumeTimerOnlyRecording,
   startTimerOnlyRecording,
 } from "./timer-runtime";
@@ -96,6 +97,34 @@ describe("timer-only web recording runtime", () => {
     expect(getTimerOnlyRecordingTimes(reset.state, 10_000)).toEqual({
       elapsedSeconds: 0,
       movingSeconds: 0,
+    });
+  });
+
+  it("restores a finalized artifact as immutable finished state after refresh", async () => {
+    let state = configure().state;
+    state = startTimerOnlyRecording(state, 2_000, "web-session-1").state;
+    state = finishTimerOnlyRecording(state, 5_000).state;
+    const snapshot = state.reducer.snapshot;
+    if (!snapshot) throw new Error("Expected locked snapshot");
+
+    const restored = restoreFinishedTimerOnlyRecording({
+      snapshot,
+      startedAt: new Date(2_000).toISOString(),
+      finishedAt: new Date(5_000).toISOString(),
+      elapsedMs: 3_000,
+      movingMs: 3_000,
+    });
+
+    expect(restored.reducer.lifecycle).toBe("finished");
+    expect(restored.reducer.snapshot).toEqual(snapshot);
+    expect(restored.configuration).toMatchObject({
+      category: "run",
+      eventId: "00000000-0000-4000-8000-000000000001",
+      routeId: "00000000-0000-4000-8000-000000000002",
+    });
+    expect(getTimerOnlyRecordingTimes(restored, 99_000)).toEqual({
+      elapsedSeconds: 3,
+      movingSeconds: 3,
     });
   });
 });

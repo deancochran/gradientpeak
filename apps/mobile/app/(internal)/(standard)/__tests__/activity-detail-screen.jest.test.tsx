@@ -424,6 +424,14 @@ describe("activity detail screen", () => {
     expect(screen.getByTestId("activity-detail-loading")).toBeTruthy();
   });
 
+  it("does not read ingestion from an unavailable activity after loading settles", () => {
+    activityQueryState = { data: undefined, isLoading: false };
+
+    renderNative(<ActivityDetailScreen />);
+
+    expect(screen.getByTestId("activity-detail-loading")).toBeTruthy();
+  });
+
   it("shows the new identity-first activity layout", () => {
     const rendered = renderNative(<ActivityDetailScreen />);
     const unsafeRendered = rendered as unknown as UnsafeTypeQuery;

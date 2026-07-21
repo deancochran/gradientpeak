@@ -18,6 +18,7 @@ export function redactPrivateProfileDetailFields<T extends Record<string, unknow
   return {
     ...profile,
     bio: null,
+    full_name: null,
     gender: null,
     followers_count: null,
     following_count: null,

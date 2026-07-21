@@ -93,7 +93,8 @@ function NotificationsPage() {
         <CardHeader>
           <CardTitle>Your Notifications</CardTitle>
           <CardDescription>
-            You have {unreadNotifications.length} unread notifications.
+            You have {unreadNotifications.length} unread{" "}
+            {unreadNotifications.length === 1 ? "notification" : "notifications"}.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">

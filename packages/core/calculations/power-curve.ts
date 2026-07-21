@@ -6,7 +6,7 @@
 
 export interface DerivedEffort {
   duration_seconds: number;
-  effort_type: "power" | "speed";
+  effort_type: "power" | "speed" | "heart_rate";
   value: number;
   unit: string;
   activity_category: "bike" | "run" | "swim";

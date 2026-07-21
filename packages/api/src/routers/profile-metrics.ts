@@ -17,7 +17,7 @@ import {
   updateProfileMetricInputSchema,
 } from "@repo/core/athlete-inputs";
 import { cssTestProtocolSchema } from "@repo/core/calculations";
-import { profileMetrics, publicProfileMetricsRowSchema } from "@repo/db";
+import { activities, profileMetrics, publicProfileMetricsRowSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, lte } from "drizzle-orm";
 import { z } from "zod";
@@ -197,7 +197,7 @@ export const profileMetricsRouter = createTRPCRouter({
             lte(profileMetrics.recorded_at, input.date),
           ),
         )
-        .orderBy(desc(profileMetrics.recorded_at))
+        .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.idx))
         .limit(1);
 
       return parseNullableProfileMetricRow(data && !isClearedProfileOverride(data) ? data : null);
@@ -241,30 +241,53 @@ export const profileMetricsRouter = createTRPCRouter({
       const normalizedMetric = normalizeProfileMetricCreate(metricInput);
       assertUserWritableMetric(normalizedMetric.metric_type);
 
-      const [data] = await db
-        .insert(profileMetrics)
-        .values({
-          id: randomUUID(),
-          profile_id: input.profile_id,
-          metric_type: normalizedMetric.metric_type,
-          value: normalizedMetric.value,
-          unit: normalizedMetric.unit,
-          reference_activity_id: normalizedMetric.reference_activity_id || null,
-          notes: normalizedMetric.notes || null,
-          source: "manual",
-          method: MANUAL_PROFILE_METRIC_METHOD,
-          provenance: MANUAL_PROFILE_METRIC_PROVENANCE,
-          created_at: new Date(),
-          updated_at: new Date(),
-          recorded_at: new Date(normalizedMetric.recorded_at || new Date().toISOString()),
-        })
-        .returning();
+      return db.transaction(async (tx) => {
+        if (normalizedMetric.reference_activity_id) {
+          const [ownedActivity] = await tx
+            .select({ id: activities.id })
+            .from(activities)
+            .where(
+              and(
+                eq(activities.id, normalizedMetric.reference_activity_id),
+                eq(activities.profile_id, ctx.session.user.id),
+              ),
+            )
+            .limit(1)
+            .for("update");
 
-      if (!data) {
-        throw new Error("Failed to create profile metric");
-      }
+          if (!ownedActivity) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Referenced activity is unavailable",
+            });
+          }
+        }
 
-      return parseProfileMetricRow(data);
+        const [data] = await tx
+          .insert(profileMetrics)
+          .values({
+            id: randomUUID(),
+            profile_id: input.profile_id,
+            metric_type: normalizedMetric.metric_type,
+            value: normalizedMetric.value,
+            unit: normalizedMetric.unit,
+            reference_activity_id: normalizedMetric.reference_activity_id || null,
+            notes: normalizedMetric.notes || null,
+            source: "manual",
+            method: MANUAL_PROFILE_METRIC_METHOD,
+            provenance: MANUAL_PROFILE_METRIC_PROVENANCE,
+            created_at: new Date(),
+            updated_at: new Date(),
+            recorded_at: new Date(normalizedMetric.recorded_at || new Date().toISOString()),
+          })
+          .returning();
+
+        if (!data) {
+          throw new Error("Failed to create profile metric");
+        }
+
+        return parseProfileMetricRow(data);
+      });
     }),
 
   /**

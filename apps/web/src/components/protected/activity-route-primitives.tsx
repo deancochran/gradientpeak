@@ -27,9 +27,9 @@ import {
   formatDuration,
   formatElevation,
   getActivityBadgeLabel,
-  getActivityEmoji,
   type RouteCoordinate,
 } from "../../lib/activity-route-helpers";
+import { ActivityCategoryBadges, ActivityCategoryIcons } from "../activity-category-presentation";
 
 type DetailMetricItem = {
   label: string;
@@ -39,12 +39,14 @@ type DetailMetricItem = {
 export function DetailPageIntro({
   actions,
   badges,
+  categories,
   description,
   eyebrow,
   title,
 }: {
   actions?: ReactNode;
   badges?: string[];
+  categories?: readonly string[];
   description?: string | null;
   eyebrow?: string;
   title: string;
@@ -61,9 +63,10 @@ export function DetailPageIntro({
             <p className="max-w-3xl text-sm text-muted-foreground">{description}</p>
           ) : null}
         </div>
-        {badges?.length ? (
+        {categories !== undefined || badges?.length ? (
           <div className="flex flex-wrap gap-2">
-            {badges.map((badge) => (
+            {categories !== undefined ? <ActivityCategoryBadges categories={categories} /> : null}
+            {badges?.map((badge) => (
               <Badge key={badge} variant="secondary">
                 {badge}
               </Badge>
@@ -200,7 +203,7 @@ export function LikeToggleButton({
 
 function deriveCategoryLabel(categories: string[]) {
   if (!categories || categories.length === 0) return null;
-  return categories.map(getActivityBadgeLabel).join(" → ");
+  return [...new Set(categories)].map(getActivityBadgeLabel).join(" • ");
 }
 
 export function ActivityListCard({ activity, onOpen }: { activity: any; onOpen: () => void }) {
@@ -231,9 +234,7 @@ export function ActivityListCard({ activity, onOpen }: { activity: any; onOpen: 
     <Card className="transition-colors hover:border-primary/30">
       <CardContent className="space-y-4 p-4">
         <div className="flex items-start gap-3">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xl">
-            {getActivityEmoji(firstCategory ?? "unknown")}
-          </div>
+          <ActivityCategoryIcons categories={categories ?? []} />
           <div className="min-w-0 flex-1 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-lg font-semibold text-foreground">{activity.name}</h3>

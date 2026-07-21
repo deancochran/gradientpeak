@@ -15,7 +15,6 @@ import { SearchField } from "@repo/ui/components/search-field";
 import { Separator } from "@repo/ui/components/separator";
 import { cn } from "@repo/ui/lib/cn";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { Loader2, Plus, Search, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -89,7 +88,7 @@ function serializeComposeRecipients(recipients: ComposeRecipient[]) {
 
 export const Route = createFileRoute("/_protected/messages")({
   validateSearch: (search: Record<string, unknown>) => ({
-    compose: search.compose === "true",
+    compose: search.compose === true || search.compose === "true",
     composeGroup: typeof search.composeGroup === "string" ? search.composeGroup : undefined,
     composeQuery: typeof search.composeQuery === "string" ? search.composeQuery : undefined,
     composeRecipients: parseComposeRecipients(search.composeRecipients),
@@ -106,7 +105,7 @@ export const Route = createFileRoute("/_protected/messages")({
 function MessagesPage() {
   const { user } = useAuth();
   const utils = api.useUtils();
-  const sendMessage = useServerFn(sendMessageAction);
+
   const navigate = Route.useNavigate();
   const {
     compose,
@@ -122,12 +121,10 @@ function MessagesPage() {
   });
   const selectedConversation = compose
     ? null
-    : (conversations.find((conversation) => conversation.id === conversationId) ??
-      conversations[0] ??
-      null);
+    : (conversations.find((conversation) => conversation.id === conversationId) ?? null);
   const selectedId = selectedConversation?.id ?? null;
   const { data: messages = [] } = api.messaging.getMessages.useQuery(
-    { conversation_id: selectedId! },
+    { conversation_id: selectedId ?? "" },
     { enabled: Boolean(selectedId), refetchInterval: 5000 },
   );
   const trimmedComposeQuery = composeQuery?.trim() ?? "";
@@ -153,6 +150,12 @@ function MessagesPage() {
     resolver: zodResolver(messageComposerSchema),
     defaultValues: {
       content: "",
+    },
+  });
+  const sendMessageMutation = api.messaging.sendMessage.useMutation({
+    onSuccess: async (_message, variables) => {
+      await invalidateConversationQueries(utils, variables.conversation_id);
+      form.reset({ content: "" });
     },
   });
 
@@ -202,12 +205,9 @@ function MessagesPage() {
     }
 
     try {
-      await sendMessage({
-        data: {
-          content: values.content,
-          conversation_id: selectedId,
-          redirectTo: `/messages?conversationId=${selectedId}`,
-        },
+      await sendMessageMutation.mutateAsync({
+        content: values.content,
+        conversation_id: selectedId,
       });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to send message");
@@ -333,7 +333,7 @@ function MessagesPage() {
           <div className="flex h-full flex-col">
             <div className="flex items-center justify-between gap-3 p-4">
               <div>
-                <div className="font-semibold">Messages</div>
+                <h1 className="font-semibold">Messages</h1>
                 <div className="text-xs text-muted-foreground">
                   {conversations.length}{" "}
                   {conversations.length === 1 ? "conversation" : "conversations"}
@@ -433,7 +433,29 @@ function MessagesPage() {
           </div>
         </div>
         <div className="flex-1">
-          {!compose && conversations.length > 1 ? (
+          {!compose ? (
+            <div className="flex items-center justify-between border-b p-4 xl:hidden">
+              <h1 className="font-semibold">Messages</h1>
+              <Button asChild size="sm" variant="outline">
+                <Link
+                  to="/messages"
+                  search={{
+                    compose: true,
+                    composeGroup: undefined,
+                    composeQuery: undefined,
+                    composeRecipients: [],
+                    conversationId: undefined,
+                    flash: undefined,
+                    flashType: undefined,
+                  }}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  New
+                </Link>
+              </Button>
+            </div>
+          ) : null}
+          {!compose && conversations.length > 0 ? (
             <div className="border-b p-3 xl:hidden">
               <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Conversations
@@ -469,7 +491,7 @@ function MessagesPage() {
             <div className="flex h-full flex-col">
               <div className="flex items-center justify-between border-b p-4">
                 <div>
-                  <div className="font-semibold">New message</div>
+                  <h1 className="font-semibold">New message</h1>
                   <div className="text-sm text-muted-foreground">
                     Search for athletes, coaches, or friends and start a conversation.
                   </div>
@@ -719,9 +741,14 @@ function MessagesPage() {
                         )}
                       />
                       <Button
+                        aria-label="Send message"
                         size="icon"
                         type="submit"
-                        disabled={!selectedId || form.formState.isSubmitting}
+                        disabled={
+                          !selectedId ||
+                          form.formState.isSubmitting ||
+                          sendMessageMutation.isPending
+                        }
                       >
                         <Send className="h-4 w-4" />
                       </Button>

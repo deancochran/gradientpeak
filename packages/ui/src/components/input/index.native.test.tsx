@@ -1,3 +1,4 @@
+import { StyleSheet } from "react-native";
 import { NATIVE_THEME } from "../../lib/native-theme";
 import { renderNative } from "../../test/render-native";
 import { inputFixtures } from "./fixtures";
@@ -23,8 +24,11 @@ describe("Input native", () => {
     expect(input.props.placeholderTextColor).toBe(NATIVE_THEME.light.mutedForeground);
     expect(input.props.selectionColor).toBe(NATIVE_THEME.light.primary);
     expect(input.props.cursorColor).toBe(NATIVE_THEME.light.primary);
-    expect(input.props.style).toEqual(
-      expect.arrayContaining([expect.objectContaining({ color: NATIVE_THEME.light.foreground })]),
+    expect(StyleSheet.flatten(input.props.style)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ color: NATIVE_THEME.light.foreground }),
+        expect.objectContaining({ minHeight: 48 }),
+      ]),
     );
   });
 });

@@ -1,12 +1,15 @@
 import React from "react";
 
 import { createHost } from "../../../../test/mock-components";
-import { renderNative, screen } from "../../../../test/render-native";
+import { act, fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
 const navigateMock = jest.fn();
 const eventsListUseQueryMock = jest.fn(() => ({
   data: { items: [] as Array<{ id: string }> },
+  error: null as Error | null,
+  isError: false,
+  isFetching: false,
   isLoading: false,
   refetch: jest.fn(async () => undefined),
 }));
@@ -49,7 +52,30 @@ jest.mock("@/components/plan/calendar/ActivityList", () => ({
 jest.mock("@/components/shared", () => ({ __esModule: true }));
 jest.mock("@repo/ui/components/empty-state-card", () => ({
   __esModule: true,
-  EmptyStateCard: createHost("EmptyStateCard"),
+  EmptyStateCard: ({
+    actionLabel,
+    description,
+    onAction,
+    title,
+  }: {
+    actionLabel?: string;
+    description: string;
+    onAction?: () => void;
+    title: string;
+  }) =>
+    React.createElement(
+      "View",
+      null,
+      React.createElement("Text", null, title),
+      React.createElement("Text", null, description),
+      actionLabel
+        ? React.createElement(
+            "Pressable",
+            { accessibilityLabel: actionLabel, accessibilityRole: "button", onPress: onAction },
+            actionLabel,
+          )
+        : null,
+    ),
 }));
 jest.mock("@repo/ui/components/loading-skeletons", () => ({
   __esModule: true,
@@ -90,11 +116,77 @@ describe("scheduled activities list", () => {
     const options = calls[0]?.[1];
     expect(options).not.toHaveProperty("staleTime");
     expect(options).not.toHaveProperty("refetchOnMount");
+    expect(screen.getByTestId("scheduled-activities-list-calendar-trigger")).toBeTruthy();
+  });
+
+  it("keeps the calendar action available while loading", () => {
+    eventsListUseQueryMock.mockReturnValueOnce({
+      data: { items: [] },
+      error: null,
+      isError: false,
+      isFetching: false,
+      isLoading: true,
+      refetch: jest.fn(async () => undefined),
+    });
+
+    renderNative(<ScheduledActivitiesListScreen />);
+
+    expect(screen.getByLabelText("Open calendar")).toBeTruthy();
+  });
+
+  it("keeps the calendar action available on errors", () => {
+    eventsListUseQueryMock.mockReturnValueOnce({
+      data: { items: [] },
+      error: new Error("Network unavailable"),
+      isError: true,
+      isFetching: false,
+      isLoading: false,
+      refetch: jest.fn(async () => undefined),
+    });
+
+    renderNative(<ScheduledActivitiesListScreen />);
+
+    expect(screen.getByLabelText("Open calendar")).toBeTruthy();
+    expect(screen.getByText("Unable to load scheduled activities")).toBeTruthy();
+  });
+
+  it("keeps cached activities visible with an inline retry warning", async () => {
+    const refetch = jest.fn(async () => undefined);
+    eventsListUseQueryMock.mockReturnValueOnce({
+      data: { items: [{ id: "event-1" }] },
+      error: new Error("Refresh failed"),
+      isError: true,
+      isFetching: false,
+      isLoading: false,
+      refetch,
+    });
+
+    renderNative(<ScheduledActivitiesListScreen />);
+
+    expect(screen.getByText("1 activity scheduled")).toBeTruthy();
+    expect(screen.getByText("Refresh failed")).toBeTruthy();
+    expect(screen.queryByText("Unable to load scheduled activities")).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByText("Retry"));
+      await Promise.resolve();
+    });
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the calendar from the empty-state first-entry action", () => {
+    renderNative(<ScheduledActivitiesListScreen />);
+
+    screen.getAllByLabelText("Open calendar")[1]?.props.onPress();
+
+    expect(navigateMock).toHaveBeenCalledWith("/(internal)/(tabs)/calendar");
   });
 
   it("switches to the calendar tab for schedule actions", () => {
     eventsListUseQueryMock.mockReturnValueOnce({
       data: { items: [{ id: "event-1" }] },
+      error: null,
+      isError: false,
+      isFetching: false,
       isLoading: false,
       refetch: jest.fn(async () => undefined),
     });

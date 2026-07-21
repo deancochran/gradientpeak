@@ -94,7 +94,45 @@ export const SEGMENT_SUMMARY_V1_LIMITS = {
   maxSwimCount: 1_000_000,
   maxStrokeRatePerMinute: 300,
   maxSwolf: 1_000,
+  minHeartRateBpm: 30,
+  maxHeartRateBpm: 250,
 } as const;
+
+const heartRateDistributionSchema = z
+  .object({
+    coverageSeconds: z.number().int().positive(),
+    buckets: z
+      .array(
+        z
+          .object({
+            bpm: z
+              .number()
+              .int()
+              .min(SEGMENT_SUMMARY_V1_LIMITS.minHeartRateBpm)
+              .max(SEGMENT_SUMMARY_V1_LIMITS.maxHeartRateBpm),
+            seconds: z.number().int().positive(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(
+        SEGMENT_SUMMARY_V1_LIMITS.maxHeartRateBpm - SEGMENT_SUMMARY_V1_LIMITS.minHeartRateBpm + 1,
+      ),
+  })
+  .strict()
+  .superRefine((distribution, context) => {
+    if (new Set(distribution.buckets.map(({ bpm }) => bpm)).size !== distribution.buckets.length) {
+      context.addIssue({ code: "custom", path: ["buckets"], message: "HR buckets must be unique" });
+    }
+    const bucketSeconds = distribution.buckets.reduce((sum, bucket) => sum + bucket.seconds, 0);
+    if (bucketSeconds !== distribution.coverageSeconds) {
+      context.addIssue({
+        code: "custom",
+        path: ["coverageSeconds"],
+        message: "HR coverage must equal the sum of bucket durations",
+      });
+    }
+  });
 
 const swimSegmentSummarySchema = z
   .object({
@@ -136,7 +174,9 @@ export const segmentSummarySchemaV1 = z
     descentMeters: z.number().nonnegative().optional(),
     caloriesKcal: z.number().nonnegative().optional(),
     averageHeartRateBpm: z.number().nonnegative().optional(),
+    heartRateDistribution: heartRateDistributionSchema.optional(),
     averagePowerWatts: z.number().nonnegative().optional(),
+    normalizedPowerWatts: z.number().positive().optional(),
     averageCadenceRpm: z
       .number()
       .nonnegative()
@@ -145,6 +185,16 @@ export const segmentSummarySchemaV1 = z
     averageSpeedMetersPerSecond: z
       .number()
       .nonnegative()
+      .max(SEGMENT_SUMMARY_V1_LIMITS.maxSpeedMetersPerSecond)
+      .optional(),
+    normalizedSpeedMetersPerSecond: z
+      .number()
+      .positive()
+      .max(SEGMENT_SUMMARY_V1_LIMITS.maxSpeedMetersPerSecond)
+      .optional(),
+    normalizedGradedSpeedMetersPerSecond: z
+      .number()
+      .positive()
       .max(SEGMENT_SUMMARY_V1_LIMITS.maxSpeedMetersPerSecond)
       .optional(),
     swim: swimSegmentSummarySchema.optional(),

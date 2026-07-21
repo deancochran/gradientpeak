@@ -10,7 +10,7 @@
     },
     {
       "name": "effort_type",
-      "values": ["power", "speed"]
+      "values": ["power", "speed", "heart_rate"]
     },
     {
       "name": "event_status",
@@ -1423,6 +1423,16 @@
       "generated": ""
     },
     {
+      "name": "distance_meters",
+      "type": "integer",
+      "table": "activity_efforts",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 20,
+      "generated": ""
+    },
+    {
       "name": "id",
       "type": "uuid",
       "table": "activity_file_ingestions",
@@ -1790,6 +1800,16 @@
       "notNull": true,
       "identity": "",
       "position": 19,
+      "generated": ""
+    },
+    {
+      "name": "route_id",
+      "type": "uuid",
+      "table": "activity_plans",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 20,
       "generated": ""
     },
     {
@@ -2500,6 +2520,26 @@
       "notNull": true,
       "identity": "",
       "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "last_read_at",
+      "type": "timestamp with time zone",
+      "table": "conversation_participants",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "last_read_message_id",
+      "type": "uuid",
+      "table": "conversation_participants",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 5,
       "generated": ""
     },
     {
@@ -6100,6 +6140,11 @@
       "definition": "CREATE INDEX idx_activity_plans_profile_id ON public.activity_plans USING btree (profile_id) WHERE (profile_id IS NOT NULL)"
     },
     {
+      "name": "idx_activity_plans_route_id",
+      "table": "activity_plans",
+      "definition": "CREATE INDEX idx_activity_plans_route_id ON public.activity_plans USING btree (route_id) WHERE (route_id IS NOT NULL)"
+    },
+    {
       "name": "idx_activity_plans_structure_categories",
       "table": "activity_plans",
       "definition": "CREATE INDEX idx_activity_plans_structure_categories ON public.activity_plans USING gin (structure jsonb_path_ops)"
@@ -7374,10 +7419,24 @@
     },
     {
       "kind": "c",
+      "name": "activity_efforts_distance_meters_bounds_check",
+      "table": "activity_efforts",
+      "validated": true,
+      "definition": "CHECK (distance_meters IS NULL OR distance_meters >= 1 AND distance_meters <= 1000000)"
+    },
+    {
+      "kind": "c",
       "name": "activity_efforts_duration_seconds_bounds_check",
       "table": "activity_efforts",
       "validated": false,
       "definition": "CHECK (duration_seconds >= 1 AND duration_seconds <= 14400) NOT VALID"
+    },
+    {
+      "kind": "c",
+      "name": "activity_efforts_heart_rate_bounds_check",
+      "table": "activity_efforts",
+      "validated": true,
+      "definition": "CHECK (effort_type::text <> 'heart_rate'::text OR value >= 30::double precision AND value <= 240::double precision)"
     },
     {
       "kind": "c",
@@ -7433,7 +7492,7 @@
       "name": "activity_efforts_supported_combination_check",
       "table": "activity_efforts",
       "validated": true,
-      "definition": "CHECK (activity_category = 'bike'::text AND effort_type = 'power'::effort_type OR (activity_category = ANY (ARRAY['run'::text, 'swim'::text])) AND effort_type = 'speed'::effort_type)"
+      "definition": "CHECK (activity_category = 'bike'::text AND effort_type = 'power'::effort_type OR (activity_category = ANY (ARRAY['run'::text, 'swim'::text])) AND effort_type = 'speed'::effort_type OR (activity_category = ANY (ARRAY['bike'::text, 'run'::text, 'swim'::text])) AND effort_type::text = 'heart_rate'::text)"
     },
     {
       "kind": "c",
@@ -7447,7 +7506,7 @@
       "name": "activity_efforts_unit_compatibility_check",
       "table": "activity_efforts",
       "validated": true,
-      "definition": "CHECK (activity_category = 'bike'::text AND effort_type = 'power'::effort_type AND (unit = ANY (ARRAY['watts'::text, 'W'::text])) OR (activity_category = ANY (ARRAY['run'::text, 'swim'::text])) AND effort_type = 'speed'::effort_type AND (unit = ANY (ARRAY['meters_per_second'::text, 'm/s'::text])))"
+      "definition": "CHECK (activity_category = 'bike'::text AND effort_type = 'power'::effort_type AND (unit = ANY (ARRAY['watts'::text, 'W'::text])) OR (activity_category = ANY (ARRAY['run'::text, 'swim'::text])) AND effort_type = 'speed'::effort_type AND (unit = ANY (ARRAY['meters_per_second'::text, 'm/s'::text])) OR effort_type::text = 'heart_rate'::text AND (unit = ANY (ARRAY['bpm'::text, 'beats_per_minute'::text])))"
     },
     {
       "kind": "c",
@@ -7553,6 +7612,13 @@
       "table": "activity_plans",
       "validated": true,
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "f",
+      "name": "activity_plans_route_id_activity_routes_id_fk",
+      "table": "activity_plans",
+      "validated": true,
+      "definition": "FOREIGN KEY (route_id) REFERENCES activity_routes(id) ON DELETE SET NULL"
     },
     {
       "kind": "c",
@@ -7882,6 +7948,13 @@
       "table": "conversation_participants",
       "validated": true,
       "definition": "PRIMARY KEY (conversation_id, user_id)"
+    },
+    {
+      "kind": "c",
+      "name": "conversation_participants_read_cursor_pair_check",
+      "table": "conversation_participants",
+      "validated": true,
+      "definition": "CHECK ((last_read_at IS NULL) = (last_read_message_id IS NULL))"
     },
     {
       "kind": "f",

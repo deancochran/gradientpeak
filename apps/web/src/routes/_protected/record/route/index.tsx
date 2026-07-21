@@ -13,6 +13,7 @@ import { Check, Loader2, Route as RouteIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useViewingUserPreferredUnitSystem } from "../../../../hooks/use-viewing-user-preferred-unit-system";
 import { api } from "../../../../lib/api/client";
+import { useTimerOnlyRecording } from "../../../../lib/recording/provider";
 import { formatDistance, validateRecordingSearch } from "../../../../lib/recording-web";
 
 export const Route = createFileRoute("/_protected/record/route/")({
@@ -23,6 +24,8 @@ export const Route = createFileRoute("/_protected/record/route/")({
 export function RecordRoutePage() {
   const navigate = Route.useNavigate();
   const launcher = Route.useSearch();
+  const recording = useTimerOnlyRecording();
+  const identityLocked = Boolean(recording.state.reducer.snapshot);
   const { unitSystem } = useViewingUserPreferredUnitSystem();
   const [searchText, setSearchText] = useState("");
   const routesQuery = api.routes.list.useInfiniteQuery(
@@ -49,6 +52,7 @@ export function RecordRoutePage() {
   }, [routes, searchText]);
 
   const detachRoute = () => {
+    if (identityLocked) return;
     void navigate({
       to: "/record",
       search: {
@@ -92,7 +96,12 @@ export function RecordRoutePage() {
             value={searchText}
           />
           {launcher.routeId ? (
-            <Button variant="ghost" className="px-0 text-destructive" onClick={detachRoute}>
+            <Button
+              disabled={identityLocked}
+              variant="ghost"
+              className="px-0 text-destructive"
+              onClick={detachRoute}
+            >
               Detach current route
             </Button>
           ) : null}

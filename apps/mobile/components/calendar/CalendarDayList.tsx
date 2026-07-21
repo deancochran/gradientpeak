@@ -60,6 +60,7 @@ export function CalendarDayList(props: CalendarDayListProps) {
   const latestOnVisibleDayChangeRef = useRef(props.onVisibleDayChange);
   const latestOnVisibleDaySettledRef = useRef(props.onVisibleDaySettled);
   const lastScrollRequestRef = useRef<{ dateKey: string; animated: boolean } | null>(null);
+  const scrollRequestGenerationRef = useRef(0);
   const latestScrollOffsetYRef = useRef(0);
   const programmaticScrollTargetRef = useRef<string | null>(null);
   const pendingScrollEndSettleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -88,6 +89,11 @@ export function CalendarDayList(props: CalendarDayListProps) {
       props.rangeStart,
     ],
   );
+
+  const latestRowsRef = useRef(rows);
+  useEffect(() => {
+    latestRowsRef.current = rows;
+  }, [rows]);
 
   const initialScrollIndex = useMemo(
     () =>
@@ -337,8 +343,10 @@ export function CalendarDayList(props: CalendarDayListProps) {
       highestMeasuredFrameIndex: number;
       index: number;
     }) => {
-      const safeIndex = Math.min(index, rows.length - 1);
-      if (safeIndex < 0) {
+      const retryGeneration = scrollRequestGenerationRef.current;
+      const scrollRequest = lastScrollRequestRef.current;
+      const requestedDateKey = scrollRequest?.dateKey ?? latestRowsRef.current[index]?.dateKey;
+      if (!requestedDateKey) {
         return;
       }
 
@@ -347,43 +355,62 @@ export function CalendarDayList(props: CalendarDayListProps) {
         ((callback: FrameRequestCallback) => setTimeout(callback, 0));
 
       scheduleFrame(() => {
-        const lastScrollRequest = lastScrollRequestRef.current;
+        if (scrollRequestGenerationRef.current !== retryGeneration) {
+          return;
+        }
+
         const list = listRef.current;
-        if (!list) {
+        const fallbackIndex = latestRowsRef.current.findIndex(
+          (row) => row.type === "day" && row.dateKey === requestedDateKey,
+        );
+        if (!list || fallbackIndex < 0) {
           return;
         }
 
         const measuredIndex = Math.max(0, highestMeasuredFrameIndex);
-        const fallbackIndex = Math.min(safeIndex, measuredIndex);
-        const estimatedOffset = Math.max(0, averageItemLength * fallbackIndex);
+        const estimatedOffset = Math.max(
+          0,
+          averageItemLength * Math.min(fallbackIndex, measuredIndex),
+        );
 
         list.scrollToOffset({ animated: false, offset: estimatedOffset });
         scheduleFrame(() => {
-          list.scrollToIndex({
-            index: safeIndex,
-            animated: lastScrollRequest?.animated ?? false,
+          if (scrollRequestGenerationRef.current !== retryGeneration) {
+            return;
+          }
+
+          const retryIndex = latestRowsRef.current.findIndex(
+            (row) => row.type === "day" && row.dateKey === requestedDateKey,
+          );
+          if (retryIndex < 0) {
+            return;
+          }
+
+          listRef.current?.scrollToIndex({
+            index: retryIndex,
+            animated: scrollRequest?.animated ?? false,
             viewPosition: 0,
           });
         });
       });
     },
-    [rows.length],
+    [],
   );
 
-  const scrollToDate = useCallback(
-    (dateKey: string, animated: boolean) => {
-      const targetIndex = rows.findIndex((row) => row.type === "day" && row.dateKey === dateKey);
-      if (targetIndex < 0) {
-        return false;
-      }
+  const scrollToDate = useCallback((dateKey: string, animated: boolean) => {
+    scrollRequestGenerationRef.current += 1;
+    const targetIndex = latestRowsRef.current.findIndex(
+      (row) => row.type === "day" && row.dateKey === dateKey,
+    );
+    if (targetIndex < 0) {
+      return false;
+    }
 
-      lastScrollRequestRef.current = { dateKey, animated };
-      programmaticScrollTargetRef.current = dateKey;
-      listRef.current?.scrollToIndex({ index: targetIndex, animated, viewPosition: 0 });
-      return true;
-    },
-    [rows],
-  );
+    lastScrollRequestRef.current = { dateKey, animated };
+    programmaticScrollTargetRef.current = dateKey;
+    listRef.current?.scrollToIndex({ index: targetIndex, animated, viewPosition: 0 });
+    return true;
+  }, []);
 
   const handleViewableItemsChangedRef = useRef(
     ({ viewableItems }: { viewableItems: ViewToken<CalendarTimelineRow>[] }) => {
@@ -452,7 +479,13 @@ export function CalendarDayList(props: CalendarDayListProps) {
       lastScrollRequestRef.current = { dateKey: props.scrollTargetDateKey, animated: true };
       programmaticScrollTargetRef.current = props.scrollTargetDateKey;
     }
-  }, [props.scrollTargetDateKey, props.scrollTargetVersion, scrollToDate]);
+  }, [
+    props.rangeEnd,
+    props.rangeStart,
+    props.scrollTargetDateKey,
+    props.scrollTargetVersion,
+    scrollToDate,
+  ]);
 
   return (
     <View className="flex-1">

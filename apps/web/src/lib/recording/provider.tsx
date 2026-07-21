@@ -1,3 +1,8 @@
+import type {
+  PortableWebRecordingArtifact,
+  PortableWebRecordingReview,
+  PortableWebRecordingSubmissionJob,
+} from "@repo/core";
 import { useBlocker } from "@tanstack/react-router";
 import {
   createContext,
@@ -13,17 +18,21 @@ import {
   checkpointTimerDraft,
   IndexedDbTimerDraftStorage,
   loadTimerDraft,
-  type TimerDraftStorage,
   TimerDraftStorageInUseError,
   TimerDraftStorageUnavailableError,
+  type WebRecordingStorage,
 } from "./draft-storage";
+import { finalizeTimerRecordingArtifact } from "./finalized-artifact";
+import { drainWebRecordingSubmissionQueue, type SubmitWebRecording } from "./submission-queue";
 import {
   configureTimerOnlyRecording,
   createInitialTimerOnlyRecordingState,
+  finishTimerOnlyRecording,
   getTimerOnlyRecordingTimes,
   pauseTimerOnlyRecording,
   recoverTimerOnlyRecording,
   resetTimerOnlyRecording,
+  restoreFinishedTimerOnlyRecording,
   resumeTimerOnlyRecording,
   startTimerOnlyRecording,
   type TimerOnlyRecordingConfiguration,
@@ -42,8 +51,19 @@ type TimerOnlyRecordingContextValue = {
   start: () => void;
   pause: () => void;
   resume: () => void;
+  finish: () => Promise<void>;
+  save: (review: PortableWebRecordingReview) => Promise<void>;
   reset: () => void;
   discardRecoveredDraft: () => void;
+  discardFinalizedArtifact: () => Promise<void>;
+  takeOver: () => Promise<void>;
+  retrySubmission: () => Promise<void>;
+  drainSubmissionQueue: (submit: SubmitWebRecording) => Promise<void>;
+  artifact: PortableWebRecordingArtifact | null;
+  submissionJob: PortableWebRecordingSubmissionJob | null;
+  history: PortableWebRecordingArtifact[];
+  busy: boolean;
+  canTakeOver: boolean;
 };
 
 type ProviderState = {
@@ -51,13 +71,18 @@ type ProviderState = {
   error: string | null;
   hydrationStatus: "hydrating" | "ready" | "error";
   hasRecoveredDraft: boolean;
+  artifact: PortableWebRecordingArtifact | null;
+  submissionJob: PortableWebRecordingSubmissionJob | null;
+  history: PortableWebRecordingArtifact[];
+  busy: boolean;
+  canTakeOver: boolean;
 };
 
 const TimerOnlyRecordingContext = createContext<TimerOnlyRecordingContextValue | null>(null);
 
 type TimerOnlyRecordingProviderProps = PropsWithChildren<{
   ownerId: string;
-  storage?: TimerDraftStorage;
+  storage?: WebRecordingStorage;
 }>;
 
 export function TimerOnlyRecordingProvider({
@@ -65,17 +90,26 @@ export function TimerOnlyRecordingProvider({
   ownerId,
   storage,
 }: TimerOnlyRecordingProviderProps) {
-  const [draftStorage] = useState<TimerDraftStorage>(
-    () => storage ?? new IndexedDbTimerDraftStorage(ownerId, createSessionId()),
+  const [draftStorage] = useState<WebRecordingStorage>(
+    () => storage ?? new IndexedDbTimerDraftStorage(ownerId, getRecordingInstanceId()),
   );
   const [providerState, setProviderState] = useState<ProviderState>(() => ({
     recording: createInitialTimerOnlyRecordingState(),
     error: null,
     hydrationStatus: "hydrating",
     hasRecoveredDraft: false,
+    artifact: null,
+    submissionJob: null,
+    history: [],
+    busy: false,
+    canTakeOver: false,
   }));
   const [nowMs, setNowMs] = useState(() => Date.now());
   const storageQueue = useRef<Promise<void>>(Promise.resolve());
+  const commandInFlight = useRef(false);
+  const drainInFlight = useRef(false);
+  const recordingRef = useRef(providerState.recording);
+  recordingRef.current = providerState.recording;
   const lifecycle = providerState.recording.reducer.lifecycle;
   const hasActiveSession =
     lifecycle === "recording" || lifecycle === "paused" || lifecycle === "finishing";
@@ -91,53 +125,67 @@ export function TimerOnlyRecordingProvider({
     },
   });
 
-  useEffect(() => {
-    let cancelled = false;
+  const hydrate = useCallback(async () => {
+    try {
+      const result = await loadTimerDraft(draftStorage, ownerId);
+      const history = await draftStorage.listArtifacts();
+      const artifact = await draftStorage.loadLatestArtifact();
+      const submissionJob = artifact
+        ? await draftStorage.getSubmissionJob(artifact.recordingSessionId)
+        : null;
+      const hydratedAtMs = Date.now();
+      setNowMs(hydratedAtMs);
 
-    void loadTimerDraft(draftStorage, ownerId)
-      .then((result) => {
-        if (cancelled) return;
-        const hydratedAtMs = Date.now();
-        setNowMs(hydratedAtMs);
+      if (result.draft) {
+        const recovered = recoverTimerOnlyRecording(result.draft, hydratedAtMs);
+        setProviderState({
+          recording: recovered.state,
+          error: recovered.rejectedReason,
+          hydrationStatus: recovered.rejectedReason ? "error" : "ready",
+          hasRecoveredDraft: !recovered.rejectedReason,
+          artifact: null,
+          submissionJob: null,
+          history,
+          busy: false,
+          canTakeOver: false,
+        });
+        return;
+      }
 
-        if (result.draft) {
-          const recovered = recoverTimerOnlyRecording(result.draft, hydratedAtMs);
-          setProviderState({
-            recording: recovered.state,
-            error: recovered.rejectedReason,
-            hydrationStatus: recovered.rejectedReason ? "error" : "ready",
-            hasRecoveredDraft: !recovered.rejectedReason,
-          });
-          return;
-        }
-
-        setProviderState((current) => ({
-          ...current,
-          hydrationStatus: "ready",
-          error:
-            result.status === "discarded-invalid"
-              ? "An invalid saved timer draft was discarded."
-              : current.error,
-        }));
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        setProviderState((current) => ({
-          ...current,
-          hydrationStatus: "error",
-          error:
-            error instanceof TimerDraftStorageInUseError
-              ? "This timer is open in another browser tab. Close that recorder before continuing here."
-              : error instanceof TimerDraftStorageUnavailableError
-                ? "This browser cannot provide durable timer recovery because IndexedDB is unavailable."
-                : "Saved timer recovery is unavailable.",
-        }));
-      });
-
-    return () => {
-      cancelled = true;
-    };
+      setProviderState((current) => ({
+        ...current,
+        recording: artifact
+          ? restoreFinishedTimerOnlyRecording(artifact)
+          : createInitialTimerOnlyRecordingState(),
+        artifact,
+        submissionJob,
+        history,
+        hasRecoveredDraft: false,
+        hydrationStatus: "ready",
+        canTakeOver: false,
+        error:
+          result.status === "discarded-invalid"
+            ? "An invalid saved timer draft was discarded."
+            : null,
+      }));
+    } catch (error) {
+      setProviderState((current) => ({
+        ...current,
+        hydrationStatus: "error",
+        canTakeOver: error instanceof TimerDraftStorageInUseError,
+        error:
+          error instanceof TimerDraftStorageInUseError
+            ? "This timer is active in another tab. Take over only if that tab is no longer recording."
+            : error instanceof TimerDraftStorageUnavailableError
+              ? "This browser cannot provide durable timer recovery because IndexedDB is unavailable."
+              : "Saved timer recovery is unavailable.",
+      }));
+    }
   }, [draftStorage, ownerId]);
+
+  useEffect(() => {
+    void hydrate();
+  }, [hydrate]);
 
   const enqueueStorage = useCallback((operation: () => Promise<void>) => {
     storageQueue.current = storageQueue.current
@@ -193,6 +241,7 @@ export function TimerOnlyRecordingProvider({
       return;
 
     const interval = window.setInterval(() => {
+      if (commandInFlight.current) return;
       enqueueStorage(() =>
         checkpointTimerDraft(draftStorage, providerState.recording, Date.now(), ownerId),
       );
@@ -241,6 +290,92 @@ export function TimerOnlyRecordingProvider({
     setProviderState((current) => ({ ...current, hasRecoveredDraft: false }));
     applyTransition(resumeTimerOnlyRecording);
   }, [applyTransition]);
+  const finish = useCallback(async () => {
+    if (commandInFlight.current) return;
+    commandInFlight.current = true;
+    setProviderState((current) => ({ ...current, busy: true, error: null }));
+    try {
+      const now = Date.now();
+      const finished = finishTimerOnlyRecording(recordingRef.current, now);
+      if (finished.rejectedReason) throw new Error(finished.rejectedReason);
+      const category = finished.state.reducer.snapshot?.activity.category ?? "other";
+      const artifact = await finalizeTimerRecordingArtifact({
+        state: finished.state,
+        ownerId,
+        segmentId: createSessionId(),
+        review: {
+          name: `${category[0]?.toUpperCase() ?? ""}${category.slice(1)} recording`,
+          notes: null,
+          perceivedEffort: null,
+          distanceMeters: 0,
+          calories: null,
+        },
+      });
+      await storageQueue.current;
+      await draftStorage.finalize(artifact);
+      const history = await draftStorage.listArtifacts();
+      setProviderState((current) => ({
+        ...current,
+        recording: finished.state,
+        artifact,
+        submissionJob: null,
+        history,
+        hasRecoveredDraft: false,
+        busy: false,
+        error: null,
+      }));
+    } catch (error) {
+      setProviderState((current) => ({
+        ...current,
+        busy: false,
+        error:
+          error instanceof TimerDraftStorageInUseError
+            ? "Another tab took over this timer. Finalization was fenced and the recovery draft was retained."
+            : error instanceof Error
+              ? error.message
+              : "The recording could not be finalized durably.",
+      }));
+    } finally {
+      commandInFlight.current = false;
+    }
+  }, [draftStorage, ownerId]);
+
+  const save = useCallback(
+    async (review: PortableWebRecordingReview) => {
+      if (commandInFlight.current || !providerState.artifact) return;
+      commandInFlight.current = true;
+      setProviderState((current) => ({ ...current, busy: true, error: null }));
+      try {
+        const artifact = await finalizeTimerRecordingArtifact({
+          state: recordingRef.current,
+          ownerId,
+          segmentId: providerState.artifact.segmentId,
+          review,
+        });
+        const submissionJob = await draftStorage.enqueueSubmission(
+          artifact,
+          new Date().toISOString(),
+        );
+        const history = await draftStorage.listArtifacts();
+        setProviderState((current) => ({
+          ...current,
+          artifact,
+          submissionJob,
+          history,
+          busy: false,
+        }));
+      } catch (error) {
+        setProviderState((current) => ({
+          ...current,
+          busy: false,
+          error: error instanceof Error ? error.message : "The recording could not be queued.",
+        }));
+      } finally {
+        commandInFlight.current = false;
+      }
+    },
+    [draftStorage, ownerId, providerState.artifact],
+  );
   const reset = useCallback(() => {
     const result = resetTimerOnlyRecording();
     setNowMs(Date.now());
@@ -249,6 +384,8 @@ export function TimerOnlyRecordingProvider({
       recording: result.state,
       error: result.rejectedReason,
       hasRecoveredDraft: false,
+      artifact: null,
+      submissionJob: null,
     }));
     enqueueStorage(() => draftStorage.remove());
   }, [draftStorage, enqueueStorage]);
@@ -263,6 +400,66 @@ export function TimerOnlyRecordingProvider({
     }));
     enqueueStorage(() => draftStorage.remove());
   }, [draftStorage, enqueueStorage]);
+  const discardFinalizedArtifact = useCallback(async () => {
+    const artifact = providerState.artifact;
+    if (!artifact || commandInFlight.current) return;
+    commandInFlight.current = true;
+    setProviderState((current) => ({ ...current, busy: true, error: null }));
+    try {
+      const discarded = await draftStorage.discardArtifact(artifact.recordingSessionId);
+      if (!discarded) throw new Error("A submitted recording is retained in local history.");
+      const history = await draftStorage.listArtifacts();
+      setProviderState((current) => ({
+        ...current,
+        recording: createInitialTimerOnlyRecordingState(),
+        artifact: null,
+        submissionJob: null,
+        history,
+        busy: false,
+      }));
+    } catch (error) {
+      setProviderState((current) => ({
+        ...current,
+        busy: false,
+        error: error instanceof Error ? error.message : "The recording could not be discarded.",
+      }));
+    } finally {
+      commandInFlight.current = false;
+    }
+  }, [draftStorage, providerState.artifact]);
+
+  const takeOver = useCallback(async () => {
+    await draftStorage.takeOver();
+    await hydrate();
+  }, [draftStorage, hydrate]);
+
+  const retrySubmission = useCallback(async () => {
+    if (!providerState.submissionJob) return;
+    const submissionJob = await draftStorage.retrySubmissionNow(
+      providerState.submissionJob.id,
+      new Date().toISOString(),
+    );
+    setProviderState((current) => ({ ...current, submissionJob }));
+  }, [draftStorage, providerState.submissionJob]);
+
+  const drainSubmissionQueue = useCallback(
+    async (submit: SubmitWebRecording) => {
+      if (drainInFlight.current) return;
+      drainInFlight.current = true;
+      try {
+        const updates = await drainWebRecordingSubmissionQueue(draftStorage, submit);
+        const currentId = providerState.artifact?.recordingSessionId;
+        const submissionJob = currentId
+          ? (updates.find((job) => job.id === currentId) ??
+            (await draftStorage.getSubmissionJob(currentId)))
+          : null;
+        setProviderState((current) => ({ ...current, submissionJob }));
+      } finally {
+        drainInFlight.current = false;
+      }
+    },
+    [draftStorage, providerState.artifact?.recordingSessionId],
+  );
   const times = getTimerOnlyRecordingTimes(providerState.recording, nowMs);
 
   return (
@@ -278,8 +475,19 @@ export function TimerOnlyRecordingProvider({
         start,
         pause,
         resume,
+        finish,
+        save,
         reset,
         discardRecoveredDraft,
+        discardFinalizedArtifact,
+        takeOver,
+        retrySubmission,
+        drainSubmissionQueue,
+        artifact: providerState.artifact,
+        submissionJob: providerState.submissionJob,
+        history: providerState.history,
+        busy: providerState.busy,
+        canTakeOver: providerState.canTakeOver,
       }}
     >
       {children}
@@ -297,4 +505,15 @@ export function useTimerOnlyRecording(): TimerOnlyRecordingContextValue {
 
 function createSessionId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `web-${Date.now().toString(36)}`;
+}
+
+const RECORDING_INSTANCE_STORAGE_KEY = "gradientpeak.recording.instance-id";
+
+function getRecordingInstanceId(): string {
+  if (typeof window === "undefined") return createSessionId();
+  const existing = window.sessionStorage.getItem(RECORDING_INSTANCE_STORAGE_KEY);
+  if (existing) return existing;
+  const instanceId = createSessionId();
+  window.sessionStorage.setItem(RECORDING_INSTANCE_STORAGE_KEY, instanceId);
+  return instanceId;
 }

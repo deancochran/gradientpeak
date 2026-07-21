@@ -73,6 +73,8 @@ export const athleteContextProfileMetricSourceSchema = z
       .nullable()
       .optional(),
     method: z.string().nullable().optional(),
+    calculation_version: z.string().nullable().optional(),
+    quality_score: z.number().min(0).max(1).nullable().optional(),
     provenance: z.record(z.string(), z.unknown()).nullable().optional(),
   })
   .strict();
@@ -91,6 +93,8 @@ export const athleteContextActivityEffortSourceSchema = z
       .nullable()
       .optional(),
     method: z.string().nullable().optional(),
+    calculation_version: z.string().nullable().optional(),
+    quality_score: z.number().min(0).max(1).nullable().optional(),
     provenance: z.record(z.string(), z.unknown()).nullable().optional(),
   })
   .strict();
@@ -568,6 +572,9 @@ function resolvedThresholdEvidenceValue(input: {
         value: metric.value,
         observedAt: toIsoDateTime(metric.recorded_at),
         source: thresholdMetricSource(metric.source),
+        ...(metric.calculation_version !== undefined
+          ? { calculationVersion: metric.calculation_version }
+          : {}),
         locked:
           metric.provenance?.manual_override === true ||
           (metric.provenance?.manual_override as { locked?: boolean } | undefined)?.locked ===
@@ -577,7 +584,8 @@ function resolvedThresholdEvidenceValue(input: {
     activityEfforts: input.snapshot.activityEfforts
       .filter(
         (effort) =>
-          effort.unit === (effort.effort_type === "power" ? "W" : "meters_per_second") ||
+          effort.unit === (effort.effort_type === "power" ? "watts" : "meters_per_second") ||
+          (effort.effort_type === "power" && effort.unit === "W") ||
           (effort.effort_type === "speed" && effort.unit === "m/s"),
       )
       .map((effort) => ({

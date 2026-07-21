@@ -123,11 +123,21 @@ function looksLikeReconnectError(error: string | null | undefined): boolean {
 function getCompactProviderSummary(input: {
   activityStatus: "idle" | "queued" | "importing" | "synced" | "failed" | "unsupported";
   connected: boolean;
+  configured: boolean;
   label: string;
   plannedStatus: "automatic" | "queued" | "syncing" | "failed" | "unsupported";
   providerHealthStatus: "connected" | "needs_reconnect" | "unsupported";
   setupStatus: "idle" | "refreshing" | "refreshed" | "failed" | "unsupported";
 }) {
+  if (!input.configured) {
+    return {
+      badge: "Unavailable",
+      health: "unavailable" as const,
+      subtitle: "Server configuration required",
+      title: input.label,
+    };
+  }
+
   if (!input.connected) {
     return {
       badge: "Ready",
@@ -187,11 +197,42 @@ function getCompactProviderSummary(input: {
 
 function getPrimaryProviderAction(input: {
   connected: boolean;
+  configured: boolean;
   providerHealthStatus: "connected" | "needs_reconnect" | "unsupported";
-}): "connect" | "disconnect" | "reconnect" {
+}): "connect" | "disconnect" | "reconnect" | null {
+  if (!input.configured) return input.connected ? "disconnect" : null;
   if (!input.connected) return "connect";
   if (input.providerHealthStatus === "needs_reconnect") return "reconnect";
   return "disconnect";
+}
+
+function getGrantedScopes(scope: string | null | undefined): Set<string> {
+  return new Set((scope ?? "").split(/[\s,]+/).filter(Boolean));
+}
+
+function getAllowedActions(input: {
+  configured: boolean;
+  connected: boolean;
+  grantedScope: string | null | undefined;
+  provider: PublicIntegrationProvider;
+  providerHealthStatus: "connected" | "needs_reconnect" | "unsupported";
+}) {
+  if (!input.connected) return [];
+  if (!input.configured || input.providerHealthStatus !== "connected")
+    return ["disconnect"] as const;
+
+  const actions = getConfigurableProviderActions(input.provider);
+  const grantedScopes = getGrantedScopes(input.grantedScope);
+  return actions.filter((action) => {
+    if (action === "disconnect") return true;
+    if (input.provider === "wahoo" && action === "sync_now") {
+      return grantedScopes.has("workouts_read") && grantedScopes.has("offline_data");
+    }
+    if (input.provider === "wahoo" && action === "refresh_setup_data") {
+      return grantedScopes.has("user_read") && grantedScopes.has("power_zones_read");
+    }
+    return false;
+  });
 }
 
 export async function getProviderSyncOverview(input: { db: DrizzleDbClient; profileId: string }) {
@@ -211,145 +252,160 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
     integrations.map((integration) => [integration.provider, integration]),
   );
 
-  return providerCapabilityRegistry
-    .filter(
-      (definition) =>
-        isProviderRuntimeEnabled(definition.id) && isProviderOAuthConfigured(definition.id),
-    )
-    .map((definition) => {
-      const integration = integrationsByProvider.get(definition.id);
-      const activityState = integration
-        ? syncStates.find(
-            (candidate) =>
-              candidate.integrationId === integration.id &&
-              candidate.resource === activityHistoryResource,
-          )
-        : null;
-      const setupState = integration
-        ? syncStates.find(
-            (candidate) =>
-              candidate.integrationId === integration.id &&
-              candidate.resource === profileEnrichmentResource,
-          )
-        : null;
-      const plannedState = integration
-        ? syncStates.find(
-            (candidate) =>
-              candidate.integrationId === integration.id &&
-              candidate.resource === plannedWorkoutsResource,
-          )
-        : null;
-      const activeActivityJob = integration
-        ? activeJobs.find(
-            (job) =>
-              job.integrationId === integration.id && job.jobType === wahooActivityHistoryJobType,
-          )
-        : null;
-      const activePlannedJob = integration
-        ? activeJobs.find(
-            (job) =>
-              job.integrationId === integration.id && wahooPlannedWorkoutJobTypes.has(job.jobType),
-          )
-        : null;
-      const activityHistorySupported = supportsActivityHistorySync(definition.id);
-      const setupSupported = providerHasCapability(definition.id, "profile_enrichment_read");
-      const plannedSupported = providerHasCapability(definition.id, "planned_activity_push");
-      const activityLastError = getCurrentSyncError({
-        integrationUpdatedAt: integration?.updated_at,
-        lastError: activityState?.lastError,
-        lastSyncFailedAt: activityState?.lastSyncFailedAt,
-      });
-      const setupLastError = getCurrentSyncError({
-        integrationUpdatedAt: integration?.updated_at,
-        lastError: setupState?.lastError,
-        lastSyncFailedAt: setupState?.lastSyncFailedAt,
-      });
-      const plannedLastError = getCurrentSyncError({
-        integrationUpdatedAt: integration?.updated_at,
-        lastError: plannedState?.lastError,
-        lastSyncFailedAt: plannedState?.lastSyncFailedAt,
-      });
-      const activityHistoryStatus = !activityHistorySupported
-        ? "unsupported"
-        : activeActivityJob?.status === "running"
-          ? "importing"
-          : activeActivityJob?.status === "queued"
-            ? "queued"
-            : activityLastError
+  return Promise.all(
+    providerCapabilityRegistry
+      .filter((definition) => isProviderRuntimeEnabled(definition.id))
+      .map(async (definition) => {
+        const configured = isProviderOAuthConfigured(definition.id);
+        const integration = integrationsByProvider.get(definition.id);
+        const grant = integration
+          ? await repositories.integrations.findGrantByProfileIdAndProvider({
+              profileId: input.profileId,
+              provider: definition.id,
+            })
+          : null;
+        const activityState = integration
+          ? syncStates.find(
+              (candidate) =>
+                candidate.integrationId === integration.id &&
+                candidate.resource === activityHistoryResource,
+            )
+          : null;
+        const setupState = integration
+          ? syncStates.find(
+              (candidate) =>
+                candidate.integrationId === integration.id &&
+                candidate.resource === profileEnrichmentResource,
+            )
+          : null;
+        const plannedState = integration
+          ? syncStates.find(
+              (candidate) =>
+                candidate.integrationId === integration.id &&
+                candidate.resource === plannedWorkoutsResource,
+            )
+          : null;
+        const activeActivityJob = integration
+          ? activeJobs.find(
+              (job) =>
+                job.integrationId === integration.id && job.jobType === wahooActivityHistoryJobType,
+            )
+          : null;
+        const activePlannedJob = integration
+          ? activeJobs.find(
+              (job) =>
+                job.integrationId === integration.id &&
+                wahooPlannedWorkoutJobTypes.has(job.jobType),
+            )
+          : null;
+        const activityHistorySupported = supportsActivityHistorySync(definition.id);
+        const setupSupported = providerHasCapability(definition.id, "profile_enrichment_read");
+        const plannedSupported = providerHasCapability(definition.id, "planned_activity_push");
+        const activityLastError = getCurrentSyncError({
+          integrationUpdatedAt: integration?.updated_at,
+          lastError: activityState?.lastError,
+          lastSyncFailedAt: activityState?.lastSyncFailedAt,
+        });
+        const setupLastError = getCurrentSyncError({
+          integrationUpdatedAt: integration?.updated_at,
+          lastError: setupState?.lastError,
+          lastSyncFailedAt: setupState?.lastSyncFailedAt,
+        });
+        const plannedLastError = getCurrentSyncError({
+          integrationUpdatedAt: integration?.updated_at,
+          lastError: plannedState?.lastError,
+          lastSyncFailedAt: plannedState?.lastSyncFailedAt,
+        });
+        const activityHistoryStatus = !activityHistorySupported
+          ? "unsupported"
+          : activeActivityJob?.status === "running"
+            ? "importing"
+            : activeActivityJob?.status === "queued"
+              ? "queued"
+              : activityLastError
+                ? "failed"
+                : activityState?.lastSyncSucceededAt
+                  ? "synced"
+                  : "idle";
+        const setupStatus = !setupSupported
+          ? "unsupported"
+          : getSyncMetadataStatus(setupState?.metadata) === "running"
+            ? "refreshing"
+            : setupLastError
               ? "failed"
-              : activityState?.lastSyncSucceededAt
-                ? "synced"
+              : setupState?.lastSyncSucceededAt
+                ? "refreshed"
                 : "idle";
-      const setupStatus = !setupSupported
-        ? "unsupported"
-        : getSyncMetadataStatus(setupState?.metadata) === "running"
-          ? "refreshing"
-          : setupLastError
-            ? "failed"
-            : setupState?.lastSyncSucceededAt
-              ? "refreshed"
-              : "idle";
-      const plannedStatus = !plannedSupported
-        ? "unsupported"
-        : activePlannedJob?.status === "running"
-          ? "syncing"
-          : activePlannedJob?.status === "queued"
-            ? "queued"
-            : plannedLastError
-              ? "failed"
-              : "automatic";
-      const providerHealthLastError = activityLastError ?? setupLastError ?? plannedLastError;
-      const providerHealthStatus = !integration
-        ? "unsupported"
-        : looksLikeReconnectError(providerHealthLastError)
-          ? "needs_reconnect"
-          : "connected";
-      const label = getProviderCapabilityDefinition(definition.id).label;
-      const summary = getCompactProviderSummary({
-        activityStatus: activityHistoryStatus,
-        connected: Boolean(integration),
-        label,
-        plannedStatus,
-        providerHealthStatus,
-        setupStatus,
-      });
-
-      return {
-        actions: integration ? getConfigurableProviderActions(definition.id) : [],
-        activityHistory: {
-          lastError: activityLastError,
-          lastFailedAt: activityState?.lastSyncFailedAt ?? null,
-          lastSucceededAt: activityState?.lastSyncSucceededAt ?? null,
-          queuedJobId: activeActivityJob?.id ?? null,
-          status: activityHistoryStatus,
-        },
-        plannedWorkouts: {
-          lastError: plannedLastError,
-          lastFailedAt: plannedState?.lastSyncFailedAt ?? null,
-          lastSucceededAt: plannedState?.lastSyncSucceededAt ?? null,
-          queuedJobId: activePlannedJob?.id ?? null,
-          status: plannedStatus,
-        },
-        providerHealth: {
-          lastError: providerHealthLastError,
-          status: providerHealthStatus,
-        },
-        configured: true,
-        setupData: {
-          lastError: setupLastError,
-          lastFailedAt: setupState?.lastSyncFailedAt ?? null,
-          lastSucceededAt: setupState?.lastSyncSucceededAt ?? null,
-          status: setupStatus,
-        },
-        connected: Boolean(integration),
-        integrationId: integration?.id ?? null,
-        label,
-        primaryAction: getPrimaryProviderAction({
+        const plannedStatus = !plannedSupported
+          ? "unsupported"
+          : activePlannedJob?.status === "running"
+            ? "syncing"
+            : activePlannedJob?.status === "queued"
+              ? "queued"
+              : plannedLastError
+                ? "failed"
+                : "automatic";
+        const providerHealthLastError = activityLastError ?? setupLastError ?? plannedLastError;
+        const providerHealthStatus = !integration
+          ? "unsupported"
+          : looksLikeReconnectError(providerHealthLastError)
+            ? "needs_reconnect"
+            : "connected";
+        const label = getProviderCapabilityDefinition(definition.id).label;
+        const summary = getCompactProviderSummary({
+          activityStatus: activityHistoryStatus,
           connected: Boolean(integration),
+          configured,
+          label,
+          plannedStatus,
           providerHealthStatus,
-        }),
-        provider: definition.id,
-        summary,
-      };
-    });
+          setupStatus,
+        });
+
+        return {
+          actions: getAllowedActions({
+            configured,
+            connected: Boolean(integration),
+            grantedScope: grant?.scope,
+            provider: definition.id,
+            providerHealthStatus,
+          }),
+          activityHistory: {
+            lastError: activityLastError,
+            lastFailedAt: activityState?.lastSyncFailedAt ?? null,
+            lastSucceededAt: activityState?.lastSyncSucceededAt ?? null,
+            queuedJobId: activeActivityJob?.id ?? null,
+            status: activityHistoryStatus,
+          },
+          plannedWorkouts: {
+            lastError: plannedLastError,
+            lastFailedAt: plannedState?.lastSyncFailedAt ?? null,
+            lastSucceededAt: plannedState?.lastSyncSucceededAt ?? null,
+            queuedJobId: activePlannedJob?.id ?? null,
+            status: plannedStatus,
+          },
+          providerHealth: {
+            lastError: providerHealthLastError,
+            status: providerHealthStatus,
+          },
+          configured,
+          setupData: {
+            lastError: setupLastError,
+            lastFailedAt: setupState?.lastSyncFailedAt ?? null,
+            lastSucceededAt: setupState?.lastSyncSucceededAt ?? null,
+            status: setupStatus,
+          },
+          connected: Boolean(integration),
+          integrationId: integration?.id ?? null,
+          label,
+          primaryAction: getPrimaryProviderAction({
+            connected: Boolean(integration),
+            configured,
+            providerHealthStatus,
+          }),
+          provider: definition.id,
+          summary,
+        };
+      }),
+  );
 }

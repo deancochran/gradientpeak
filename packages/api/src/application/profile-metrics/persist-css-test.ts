@@ -116,6 +116,7 @@ export async function persistCssTest(
           activity_category: "swim" as const,
           effort_type: "speed" as const,
           duration_seconds: effort.durationSeconds,
+          distance_meters: effort.distanceMeters,
           start_offset: null,
           unit: "meters_per_second",
           value: effort.speedMetersPerSecond,

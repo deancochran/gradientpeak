@@ -12,7 +12,9 @@ const queryResult = {
   data: { items: [] },
   dataUpdatedAt: 0,
   isError: false,
+  isFetching: false,
   isLoading: false,
+  isPlaceholderData: false,
   refetch: jest.fn(async () => undefined),
 };
 const paginatedQueryResult = {
@@ -20,6 +22,7 @@ const paginatedQueryResult = {
   data: { pages: [{ items: [] as Array<Record<string, unknown>> }] },
   fetchNextPage: jest.fn(),
   hasNextPage: false,
+  isFetchNextPageError: false,
   isFetchingNextPage: false,
 };
 const mockEventsListUseQuery = jest.fn(
@@ -58,6 +61,12 @@ let mockDailyTssObservations: Array<
 > = [];
 const mockDailyTssRefetch = jest.fn(async () => undefined);
 const mockActivePlanRefetch = jest.fn(async () => undefined);
+const mockExpandedActualCurveRefetch = jest.fn(async () => undefined);
+const mockExpandedActualCurveUseQuery = jest.fn((_input?: unknown, _options?: unknown) => ({
+  ...queryResult,
+  data: { dataPoints: [] },
+  refetch: mockExpandedActualCurveRefetch,
+}));
 const mockDailyTssUseQuery = jest.fn((_input?: unknown, _options?: unknown) => ({
   ...queryResult,
   refetch: mockDailyTssRefetch,
@@ -89,6 +98,10 @@ jest.mock("@/lib/api", () => ({
           data: { id: "plan-123" },
           refetch: mockActivePlanRefetch,
         }),
+      },
+      getActualCurve: {
+        useQuery: (input: unknown, options: unknown) =>
+          mockExpandedActualCurveUseQuery(input, options),
       },
     },
     events: {
@@ -182,6 +195,18 @@ jest.mock("./trainingPathPlanningTime", () => ({
             startsAfter: "2025-04-06T07:00:00.000Z",
             startsBefore: "2025-04-07T07:00:00.000Z",
           },
+          "2025-10-06": {
+            startsAfter: "2025-10-06T07:00:00.000Z",
+            startsBefore: "2025-10-07T07:00:00.000Z",
+          },
+          "2024-01-01": {
+            startsAfter: "2024-01-01T08:00:00.000Z",
+            startsBefore: "2024-01-02T08:00:00.000Z",
+          },
+          "2023-01-01": {
+            startsAfter: "2023-01-01T08:00:00.000Z",
+            startsBefore: "2023-01-02T08:00:00.000Z",
+          },
           "2026-03-30": {
             startsAfter: "2026-03-30T07:00:00.000Z",
             startsBefore: "2026-03-31T07:00:00.000Z",
@@ -197,6 +222,38 @@ jest.mock("./trainingPathPlanningTime", () => ({
           "2027-04-06": {
             startsAfter: "2027-04-06T07:00:00.000Z",
             startsBefore: "2027-04-07T07:00:00.000Z",
+          },
+          "2026-10-05": {
+            startsAfter: "2026-10-05T07:00:00.000Z",
+            startsBefore: "2026-10-06T07:00:00.000Z",
+          },
+          "2027-07-03": {
+            startsAfter: "2027-07-03T07:00:00.000Z",
+            startsBefore: "2027-07-04T07:00:00.000Z",
+          },
+          "2028-07-01": {
+            startsAfter: "2028-07-01T07:00:00.000Z",
+            startsBefore: "2028-07-02T07:00:00.000Z",
+          },
+          "2023-07-03": {
+            startsAfter: "2023-07-03T07:00:00.000Z",
+            startsBefore: "2023-07-04T07:00:00.000Z",
+          },
+          "2024-07-01": {
+            startsAfter: "2024-07-01T07:00:00.000Z",
+            startsBefore: "2024-07-02T07:00:00.000Z",
+          },
+          "2028-12-31": {
+            startsAfter: "2028-12-31T08:00:00.000Z",
+            startsBefore: "2029-01-01T08:00:00.000Z",
+          },
+          "2028-01-01": {
+            startsAfter: "2028-01-01T08:00:00.000Z",
+            startsBefore: "2028-01-02T08:00:00.000Z",
+          },
+          "2029-01-01": {
+            startsAfter: "2029-01-01T08:00:00.000Z",
+            startsBefore: "2029-01-02T08:00:00.000Z",
           },
         }[dateKey] ?? null)
       : null,
@@ -263,6 +320,8 @@ describe("usePlanTrainingPathData", () => {
     mockDailyTssObservations = [];
     mockDailyTssRefetch.mockClear();
     mockActivePlanRefetch.mockClear();
+    mockExpandedActualCurveRefetch.mockClear();
+    mockExpandedActualCurveUseQuery.mockClear();
     snapshot.refetchAll.mockClear();
     mockDailyTssUseQuery.mockClear();
     mockEventsListUseQuery.mockReset();
@@ -343,6 +402,221 @@ describe("usePlanTrainingPathData", () => {
     ]);
   });
 
+  it("retains the current dated query pages while an expanded window loads", () => {
+    renderHook(() => usePlanTrainingPathData());
+
+    for (const [, options] of mockEventsListUseQuery.mock.calls) {
+      expect(options).toEqual(expect.objectContaining({ placeholderData: expect.any(Function) }));
+    }
+    expect(mockGroupEventsUseQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ placeholderData: expect.any(Function) }),
+    );
+    expect(mockCompletedActivitiesUseInfiniteQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ placeholderData: expect.any(Function) }),
+    );
+  });
+
+  it("queries a bounded data chunk inside the complete expanded chart window", () => {
+    mockResolvedWeekWindow = { start: "2024-01-01", end: "2028-12-31" };
+
+    const { result } = renderHook(() => usePlanTrainingPathData());
+
+    expect(mockEventsListUseQuery).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        date_from: "2026-04-06",
+        date_to: "2026-10-06T06:59:59.999Z",
+      }),
+      expect.anything(),
+    );
+    expect(mockEventsListUseQuery).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ date_from: "2025-10-06" }),
+      expect.anything(),
+    );
+    expect(mockBuildTrainingPreferencesLoadTimeline).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scheduledWindowStart: "2024-01-01",
+        scheduledWindowEnd: "2028-12-31",
+      }),
+    );
+    expect(mockExpandedActualCurveUseQuery).toHaveBeenCalledWith(
+      { start_date: "2025-10-06", end_date: "2026-04-06" },
+      expect.objectContaining({ enabled: true, placeholderData: expect.any(Function) }),
+    );
+
+    act(() => result.current.handleSelectedDateChange("2028-01-01"));
+
+    expect(mockEventsListUseQuery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        date_from: "2027-07-03",
+        date_to: "2028-07-02T06:59:59.999Z",
+      }),
+      expect.objectContaining({ enabled: true }),
+    );
+
+    act(() => result.current.handleSelectedDateChange("2024-01-01"));
+
+    expect(mockEventsListUseQuery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        date_from: "2024-01-01",
+        date_to: "2024-07-02T06:59:59.999Z",
+      }),
+      expect.objectContaining({ enabled: true }),
+    );
+  });
+
+  it("merges settled pages with the first page of an expanded range", () => {
+    const settledEvents = [
+      { id: "event-existing-1", all_day: true, scheduled_date: "2026-04-01" },
+      { id: "event-existing-2", all_day: true, scheduled_date: "2026-04-02" },
+    ];
+    mockEventsListUseQuery.mockReturnValue({
+      ...paginatedQueryResult,
+      data: { pages: [{ items: settledEvents }] },
+      isFetching: false,
+      isPlaceholderData: false,
+    });
+    const { rerender } = renderHook(() => usePlanTrainingPathData());
+
+    mockEventsListUseQuery.mockReturnValue({
+      ...paginatedQueryResult,
+      data: {
+        pages: [
+          {
+            items: [{ id: "event-new-edge", all_day: true, scheduled_date: "2026-03-31" }],
+          },
+        ],
+      },
+      hasNextPage: true,
+      isFetching: false,
+      isPlaceholderData: false,
+    });
+    rerender({});
+
+    expect(mockBuildTrainingPreferencesLoadTimeline).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        scheduledEvents: expect.arrayContaining([
+          expect.objectContaining({ id: "event-existing-1" }),
+          expect.objectContaining({ id: "event-existing-2" }),
+          expect.objectContaining({ id: "event-new-edge" }),
+        ]),
+      }),
+    );
+  });
+
+  it("retains settled pages when an expanded range fails before its first page", () => {
+    const settledEvent = {
+      id: "event-existing",
+      all_day: true,
+      scheduled_date: "2026-04-01",
+    };
+    mockEventsListUseQuery.mockReturnValue({
+      ...paginatedQueryResult,
+      data: { pages: [{ items: [settledEvent] }] },
+    });
+    const { rerender } = renderHook(() => usePlanTrainingPathData());
+
+    mockEventsListUseQuery.mockReturnValue({
+      ...paginatedQueryResult,
+      data: { pages: [] },
+      isError: true,
+    });
+    rerender({});
+
+    expect(mockBuildTrainingPreferencesLoadTimeline).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        scheduledEvents: expect.arrayContaining([
+          expect.objectContaining({ id: "event-existing" }),
+        ]),
+      }),
+    );
+  });
+
+  it("clears retained pages when the planning identity changes", () => {
+    mockEventsListUseQuery.mockReturnValue({
+      ...paginatedQueryResult,
+      data: {
+        pages: [
+          {
+            items: [{ id: "event-old-timezone", all_day: true, scheduled_date: "2026-04-01" }],
+          },
+        ],
+      },
+    });
+    const { rerender } = renderHook(() => usePlanTrainingPathData());
+
+    mockPlanningTimezone = "UTC";
+    mockEventsListUseQuery.mockReturnValue({
+      ...paginatedQueryResult,
+      isFetching: true,
+      isPlaceholderData: true,
+      data: {
+        pages: [
+          {
+            items: [{ id: "event-old-timezone", all_day: true, scheduled_date: "2026-04-01" }],
+          },
+        ],
+      },
+    });
+    rerender({});
+
+    expect(mockBuildTrainingPreferencesLoadTimeline).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        scheduledEvents: expect.not.arrayContaining([
+          expect.objectContaining({ id: "event-old-timezone" }),
+        ]),
+      }),
+    );
+  });
+
+  it("replaces a settled chunk so deleted events do not remain retained", () => {
+    mockEventsListUseQuery.mockReturnValue({
+      ...paginatedQueryResult,
+      data: {
+        pages: [
+          {
+            items: [{ id: "event-deleted", all_day: true, scheduled_date: "2026-04-01" }],
+          },
+        ],
+      },
+    });
+    const { rerender } = renderHook(() => usePlanTrainingPathData());
+
+    mockEventsListUseQuery.mockReturnValue(paginatedQueryResult);
+    rerender({});
+
+    expect(mockBuildTrainingPreferencesLoadTimeline).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        scheduledEvents: expect.not.arrayContaining([
+          expect.objectContaining({ id: "event-deleted" }),
+        ]),
+      }),
+    );
+  });
+
+  it("returns the data anchor to today when the chart window resets", async () => {
+    mockResolvedWeekWindow = { start: "2024-01-01", end: "2028-12-31" };
+    const { result } = renderHook(() => usePlanTrainingPathData());
+
+    act(() => result.current.handleSelectedDateChange("2028-01-01"));
+    mockEventsListUseQuery.mockClear();
+
+    await act(async () => {
+      await result.current.handleRefresh();
+    });
+
+    expect(mockEventsListUseQuery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        date_from: "2026-04-06",
+        date_to: "2026-10-06T06:59:59.999Z",
+      }),
+      expect.objectContaining({ enabled: true }),
+    );
+  });
+
   it("deduplicates events returned by overlapping recent and upcoming queries", () => {
     const sharedEvent = {
       id: "event-today",
@@ -363,7 +637,7 @@ describe("usePlanTrainingPathData", () => {
     );
   });
 
-  it("bounds backend query dates while retaining a multi-year visual window", () => {
+  it("loads a bounded data chunk while retaining a multi-year visual window", () => {
     mockResolvedWeekWindow = { start: "2024-01-01", end: "2028-01-01" };
 
     renderHook(() => usePlanTrainingPathData());
@@ -371,34 +645,34 @@ describe("usePlanTrainingPathData", () => {
     expect(mockEventsListUseQuery).toHaveBeenCalledWith(
       expect.objectContaining({
         date_from: "2026-04-06",
-        date_to: "2027-04-07T06:59:59.999Z",
+        date_to: "2026-10-06T06:59:59.999Z",
       }),
       expect.anything(),
     );
     expect(mockEventsListUseQuery).toHaveBeenCalledWith(
       expect.objectContaining({
-        date_from: "2025-04-06",
+        date_from: "2025-10-06",
         date_to: "2026-04-07T06:59:59.999Z",
       }),
       expect.anything(),
     );
     expect(mockGroupEventsUseQuery).toHaveBeenCalledWith(
       expect.objectContaining({
-        startsAfter: "2025-04-06T07:00:00.000Z",
-        startsBefore: "2027-04-07T06:59:59.999Z",
+        startsAfter: "2025-10-06T07:00:00.000Z",
+        startsBefore: "2026-10-06T06:59:59.999Z",
       }),
       expect.anything(),
     );
     expect(mockCompletedActivitiesUseInfiniteQuery).toHaveBeenCalledWith(
       expect.objectContaining({
-        date_from: "2025-04-06T07:00:00.000Z",
+        date_from: "2025-10-06T07:00:00.000Z",
         date_to: "2026-04-07T06:59:59.999Z",
       }),
       expect.anything(),
     );
     expect(mockDailyTssUseQuery).toHaveBeenCalledWith(
       expect.objectContaining({
-        start_date: "2025-04-07",
+        start_date: "2025-10-06",
         end_date: "2026-04-06",
       }),
       expect.objectContaining({ enabled: true }),
@@ -411,7 +685,7 @@ describe("usePlanTrainingPathData", () => {
     );
   });
 
-  it("keeps wholly future query intervals valid and capped around today", () => {
+  it("keeps wholly future visual intervals valid with a bounded chunk from today", () => {
     mockResolvedWeekWindow = { start: "2028-01-01", end: "2029-01-01" };
 
     renderHook(() => usePlanTrainingPathData());
@@ -419,7 +693,7 @@ describe("usePlanTrainingPathData", () => {
     expect(mockEventsListUseQuery).toHaveBeenCalledWith(
       expect.objectContaining({
         date_from: "2026-04-06",
-        date_to: "2027-04-07T06:59:59.999Z",
+        date_to: "2026-10-06T06:59:59.999Z",
       }),
       expect.objectContaining({ enabled: true }),
     );
@@ -433,7 +707,7 @@ describe("usePlanTrainingPathData", () => {
     expect(mockGroupEventsUseQuery).toHaveBeenCalledWith(
       expect.objectContaining({
         startsAfter: "2026-04-06T07:00:00.000Z",
-        startsBefore: "2027-04-07T06:59:59.999Z",
+        startsBefore: "2026-10-06T06:59:59.999Z",
       }),
       expect.objectContaining({ enabled: true }),
     );
@@ -453,7 +727,7 @@ describe("usePlanTrainingPathData", () => {
     );
   });
 
-  it("keeps wholly historical query intervals valid and capped around today", () => {
+  it("keeps wholly historical visual intervals valid with a bounded chunk ending today", () => {
     mockResolvedWeekWindow = { start: "2023-01-01", end: "2024-01-01" };
 
     renderHook(() => usePlanTrainingPathData());
@@ -467,54 +741,66 @@ describe("usePlanTrainingPathData", () => {
     );
     expect(mockEventsListUseQuery).toHaveBeenCalledWith(
       expect.objectContaining({
-        date_from: "2025-04-06",
+        date_from: "2025-10-06",
         date_to: "2026-04-07T06:59:59.999Z",
       }),
       expect.objectContaining({ enabled: true }),
     );
     expect(mockGroupEventsUseQuery).toHaveBeenCalledWith(
       expect.objectContaining({
-        startsAfter: "2025-04-06T07:00:00.000Z",
+        startsAfter: "2025-10-06T07:00:00.000Z",
         startsBefore: "2026-04-07T06:59:59.999Z",
       }),
       expect.objectContaining({ enabled: true }),
     );
     expect(mockCompletedActivitiesUseInfiniteQuery).toHaveBeenCalledWith(
       expect.objectContaining({
-        date_from: "2025-04-06T07:00:00.000Z",
+        date_from: "2025-10-06T07:00:00.000Z",
         date_to: "2026-04-07T06:59:59.999Z",
       }),
       expect.objectContaining({ enabled: true }),
     );
     expect(mockDailyTssUseQuery).toHaveBeenCalledWith(
       expect.objectContaining({
-        start_date: "2025-04-07",
+        start_date: "2025-10-06",
         end_date: "2026-04-06",
       }),
       expect.objectContaining({ enabled: true }),
     );
   });
 
-  it("stops automatic pagination after the explicit page cap", () => {
+  it("continues automatic pagination while the API returns another cursor", () => {
     const fetchNextPage = jest.fn();
-    const cappedPages = Array.from({ length: 20 }, () => ({ items: [] }));
+    const loadedPages = Array.from({ length: 20 }, () => ({ items: [] }));
     mockEventsListUseQuery.mockReturnValue({
       ...paginatedQueryResult,
-      data: { pages: cappedPages },
+      data: { pages: loadedPages },
       fetchNextPage,
       hasNextPage: true,
     });
 
     renderHook(() => usePlanTrainingPathData());
 
-    expect(fetchNextPage).not.toHaveBeenCalled();
+    expect(fetchNextPage).toHaveBeenCalled();
     const options = mockEventsListUseQuery.mock.calls[0]?.[1] as {
-      getNextPageParam: (
-        lastPage: { nextCursor?: string },
-        allPages: Array<{ items: never[] }>,
-      ) => string | undefined;
+      getNextPageParam: (lastPage: { nextCursor?: string }) => string | undefined;
     };
-    expect(options.getNextPageParam({ nextCursor: "next" }, cappedPages)).toBeUndefined();
+    expect(options.getNextPageParam({ nextCursor: "next" })).toBe("next");
+  });
+
+  it("does not restart a failed next-page request", () => {
+    const fetchNextPage = jest.fn();
+    mockEventsListUseQuery.mockReturnValue({
+      ...paginatedQueryResult,
+      fetchNextPage,
+      hasNextPage: true,
+      isFetchNextPageError: true,
+    });
+
+    const { result } = renderHook(() => usePlanTrainingPathData());
+
+    expect(fetchNextPage).not.toHaveBeenCalled();
+    expect(result.current.selectedWeekLoading).toBe(false);
   });
 
   it("keeps selected review disclosure loading while group and completed data are delayed", () => {

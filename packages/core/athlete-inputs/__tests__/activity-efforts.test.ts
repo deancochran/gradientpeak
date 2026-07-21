@@ -21,7 +21,10 @@ import {
 
 describe("activity effort definitions", () => {
   it("filters supported efforts by activity category", () => {
-    expect(getActivityEffortDefinitionsForCategory("bike")).toHaveLength(1);
+    expect(getActivityEffortDefinitionsForCategory("bike")).toHaveLength(2);
+    expect(
+      getActivityEffortDefinition({ activityCategory: "bike", effortType: "heart_rate" }),
+    ).toMatchObject({ storageUnit: "bpm", min: 30, max: 240 });
     expect(
       getActivityEffortDefinition({ activityCategory: "run", effortType: "speed" }),
     ).toMatchObject({
@@ -187,6 +190,7 @@ describe("activity effort plausibility policy", () => {
       bikePowerWatts: { min: 1, max: 3_000 },
       runSpeedMetersPerSecond: { min: 0.3, max: 13 },
       swimSpeedMetersPerSecond: { min: 0.1, max: 3 },
+      heartRateBpm: { min: 30, max: 240 },
     });
   });
 

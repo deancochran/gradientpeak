@@ -25,6 +25,14 @@ function ControlledFileInput({ initialFiles = [] }: { initialFiles?: SelectedFil
   );
 }
 
+function getSynchronizedFormData(form: HTMLFormElement) {
+  const formData = new FormData(form);
+  const event = new Event("formdata");
+  Object.defineProperty(event, "formData", { value: formData });
+  form.dispatchEvent(event);
+  return formData;
+}
+
 describe("FileInput web", () => {
   it("selects multiple files and exposes accessible metadata without a browser path", () => {
     renderWeb(<ControlledFileInput />);
@@ -40,6 +48,7 @@ describe("FileInput web", () => {
     expect(input).not.toHaveAttribute("required");
     expect(input).toHaveAttribute("aria-required", "true");
     expect(input).toHaveAttribute("aria-describedby", "activity-file-helper");
+    expect(input).not.toHaveClass("hidden");
     expect(screen.getByTestId("activity-file-input-pick")).toBeInTheDocument();
 
     fireEvent.change(input, { target: { files: [fit, gpx] } });
@@ -65,12 +74,12 @@ describe("FileInput web", () => {
     const replacement = new File(["new"], "new.fit", { type: "application/octet-stream" });
 
     fireEvent.change(input, { target: { files: [selected] } });
-    expect(input.value).toBe("");
+    expect(new FormData(form).getAll("activity_files")).toEqual([selected]);
     form.requestSubmit();
     expect(onSubmit).toHaveBeenCalledTimes(1);
 
     fireEvent.change(input, { target: { files: [replacement] } });
-    expect(input.value).toBe("");
+    expect(new FormData(form).getAll("activity_files")).toEqual([replacement]);
     expect(screen.queryByText(/selected\.fit/)).not.toBeInTheDocument();
     expect(screen.getByText(/new\.fit/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
@@ -87,18 +96,26 @@ describe("FileInput web", () => {
   });
 
   it("removes and clears selected files", () => {
-    renderWeb(<ControlledFileInput initialFiles={[{ name: "old.fit", size: 1024 }]} />);
+    renderWeb(
+      <form data-testid="file-form">
+        <ControlledFileInput initialFiles={[{ name: "old.fit", size: 1024 }]} />
+      </form>,
+    );
+    const form = screen.getByTestId("file-form") as HTMLFormElement;
     const input = screen.getByTestId("activity-file-input") as HTMLInputElement;
     const replacement = new File(["new"], "new.fit", { type: "application/octet-stream" });
+    const retained = new File(["retained"], "retained.gpx", { type: "application/gpx+xml" });
 
-    fireEvent.change(input, { target: { files: [replacement] } });
+    fireEvent.change(input, { target: { files: [replacement, retained] } });
 
     fireEvent.click(screen.getByTestId("activity-file-input-remove-0"));
     expect(screen.queryByText(/new\.fit/)).not.toBeInTheDocument();
+    expect(getSynchronizedFormData(form).getAll("activity_files")).toEqual([retained]);
 
     fireEvent.change(input, { target: { files: [replacement] } });
     fireEvent.click(screen.getByTestId("activity-file-input-clear"));
     expect(screen.queryByText(/new\.fit/)).not.toBeInTheDocument();
+    expect(getSynchronizedFormData(form).getAll("activity_files")).toEqual([]);
     expect(input.value).toBe("");
   });
 
@@ -122,13 +139,16 @@ describe("FileInput web", () => {
   it("disables picking, clearing, and removal", () => {
     const onFilesChange = vi.fn();
     renderWeb(
-      <FileInput
-        disabled
-        files={[{ name: "locked.fit", size: 100 }]}
-        label="Locked file"
-        onFilesChange={onFilesChange}
-        testId="locked-file"
-      />,
+      <form data-testid="disabled-file-form">
+        <FileInput
+          disabled
+          files={[{ file: new File(["locked"], "locked.fit"), name: "locked.fit", size: 6 }]}
+          label="Locked file"
+          name="locked_file"
+          onFilesChange={onFilesChange}
+          testId="locked-file"
+        />
+      </form>,
     );
 
     expect(screen.getByTestId("locked-file")).toBeDisabled();
@@ -140,6 +160,11 @@ describe("FileInput web", () => {
     });
     fireEvent.click(screen.getByTestId("locked-file-clear"));
     expect(onFilesChange).not.toHaveBeenCalled();
+    expect(
+      getSynchronizedFormData(screen.getByTestId("disabled-file-form") as HTMLFormElement).getAll(
+        "locked_file",
+      ),
+    ).toEqual([]);
   });
 
   it("associates helper and error text with the input", () => {

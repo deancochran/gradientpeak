@@ -23,9 +23,15 @@ import {
 } from "../infrastructure/repositories";
 import { IcalSyncError, IcalSyncService } from "../lib/integrations/ical/sync-service";
 import {
+  isLocalProviderOAuthTestAdapterEnabled,
   isProviderOAuthConfigured,
   requireProviderOAuthConfig,
 } from "../lib/integrations/oauth-config";
+import {
+  createOAuthCodeChallenge,
+  deriveOAuthCodeVerifier,
+  issueLocalOAuthAuthorizationCode,
+} from "../lib/integrations/oauth-pkce";
 import { createWahooRouteStorage, WahooSyncService } from "../lib/integrations/wahoo/sync-service";
 import { logger } from "../lib/logger";
 import { WahooSyncJobService } from "../lib/provider-sync/wahoo-job-service";
@@ -432,10 +438,23 @@ const getAuthUrlInputSchema = z
   })
   .strict();
 
-function requireAllowedMobileRedirect(redirectUri?: string): string {
+function requireAllowedOAuthReturn(redirectUri?: string): string {
   const target = redirectUri ?? getDefaultMobileRedirect();
-  const allowed = new Set([getDefaultMobileRedirect()]);
-  if (!allowed.has(target)) {
+  const appOrigin = new URL(getApplicationBaseUrl()).origin;
+  const parsedTarget = new URL(target);
+  const isConfiguredWebReturn =
+    parsedTarget.origin === appOrigin &&
+    parsedTarget.pathname === "/integrations" &&
+    parsedTarget.search === "" &&
+    parsedTarget.hash === "";
+  const isLocalAdapterWebReturn =
+    isLocalProviderOAuthTestAdapterEnabled() &&
+    ["127.0.0.1", "localhost"].includes(parsedTarget.hostname) &&
+    parsedTarget.pathname === "/integrations" &&
+    parsedTarget.search === "" &&
+    parsedTarget.hash === "";
+
+  if (target !== getDefaultMobileRedirect() && !isConfiguredWebReturn && !isLocalAdapterWebReturn) {
     throw new TRPCError({
       code: "BAD_REQUEST",
       message: "OAuth redirect URI is not allowed",
@@ -546,13 +565,18 @@ export const integrationsRouter = createTRPCRouter({
       state,
       profileId: ctx.session.user.id,
       provider: input.provider,
-      mobileRedirectUri: requireAllowedMobileRedirect(input.redirectUri),
+      mobileRedirectUri: requireAllowedOAuthReturn(input.redirectUri),
       createdAt: now,
       expiresAt: new Date(now.getTime() + 10 * 60 * 1000),
     });
 
     // Build OAuth URL based on provider
-    const authUrl = buildOAuthUrl(input.provider, state, callbackUrl);
+    const authUrl = buildOAuthUrl(
+      input.provider,
+      state,
+      callbackUrl,
+      requireAllowedOAuthReturn(input.redirectUri),
+    );
 
     return parseBoundaryValue(
       authUrlResultSchema,
@@ -1048,12 +1072,18 @@ export const integrationsRouter = createTRPCRouter({
 });
 
 // Helper functions (will be implemented in separate files)
-function getCallbackUrl(provider: PublicIntegrationProvider): string {
-  const baseUrl =
+function getApplicationBaseUrl(): string {
+  return (
     process.env.OAUTH_CALLBACK_BASE_URL ||
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
+    process.env.APP_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
-    "http://localhost:3000";
+    "http://localhost:3000"
+  );
+}
+
+function getCallbackUrl(provider: PublicIntegrationProvider): string {
+  const baseUrl = getApplicationBaseUrl();
 
   return `${baseUrl}/api/integrations/callback/${provider}`;
 }
@@ -1066,8 +1096,27 @@ function buildOAuthUrl(
   provider: PublicIntegrationProvider,
   state: string,
   callbackUrl: string,
+  returnUri: string,
 ): string {
   const config = requireProviderOAuthConfig(provider);
+  const verifier = deriveOAuthCodeVerifier({
+    clientSecret: config.clientSecret,
+    provider,
+    state,
+  });
+  const challenge = createOAuthCodeChallenge(verifier);
+
+  if (config.adapter === "local-test") {
+    const callback = new URL(callbackUrl);
+    callback.searchParams.set(
+      "code",
+      issueLocalOAuthAuthorizationCode({ challenge, config, provider }),
+    );
+    callback.searchParams.set("state", state);
+    if (new URL(returnUri).protocol.startsWith("http"))
+      callback.searchParams.set("test_return", "web");
+    return callback.toString();
+  }
 
   const params = new URLSearchParams({
     client_id: config.clientId,
@@ -1075,6 +1124,8 @@ function buildOAuthUrl(
     response_type: "code",
     scope: config.scopes.join(" "),
     state,
+    code_challenge: challenge,
+    code_challenge_method: "S256",
   });
 
   return `${config.authUrl}?${params.toString()}`;

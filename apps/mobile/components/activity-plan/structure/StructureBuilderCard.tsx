@@ -1,9 +1,14 @@
-import type { ActivityPlanInterval, ActivityPlanSegmentV3 } from "@repo/core";
+import {
+  type ActivityPlanInterval,
+  type ActivityPlanSegmentV3,
+  deriveActivityPlanPresentation,
+} from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Info, Plus, X } from "lucide-react-native";
+import { useMemo } from "react";
 import { Pressable, View } from "react-native";
 import { TimelineChart } from "@/components/activity-plan/workout/TimelineChart";
 import { markEstimated } from "@/lib/estimatedMetrics";
@@ -38,6 +43,7 @@ export function StructureBuilderCard({
   onDismissChartCoachmark,
   onTimelineIntervalPress,
 }: StructureBuilderCardProps) {
+  const presentation = useMemo(() => deriveActivityPlanPresentation(structure), [structure]);
   const durationMinutes = Math.round(structureStats.durationMs / 60000);
   const distanceKm = structureStats.distanceMeters / 1000;
   const formattedDistance =
@@ -70,7 +76,7 @@ export function StructureBuilderCard({
         {intervals.length > 0 ? (
           <View className="gap-0.5">
             <TimelineChart
-              structure={structure}
+              presentation={presentation}
               height={220}
               compact
               selectedIntervalId={selectedIntervalId}

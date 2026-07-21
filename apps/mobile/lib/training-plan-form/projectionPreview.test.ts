@@ -87,4 +87,19 @@ describe("buildTrainingPreferencesLoadTimeline", () => {
     expect(timeline.map((point) => point.date)).toEqual(["2026-01-05", "2026-01-06"]);
     expect(timeline[1]?.recommended_load_tss).toBe(42);
   });
+
+  it("keeps an expanded chart window available beyond projection and schedule data", () => {
+    const timeline = buildTrainingPreferencesLoadTimeline({
+      snapshot: { insightTimeline: { timeline: [] } } as unknown as TimelineInput["snapshot"],
+      projectionChart: null,
+      scheduledWindowStart: "2024-01-01",
+      scheduledWindowEnd: "2028-12-31",
+    });
+
+    expect(timeline.map((point) => point.date)).toEqual(["2024-01-01", "2028-12-31"]);
+    expect(timeline).toEqual([
+      expect.objectContaining({ scheduled_load_tss: 0 }),
+      expect.objectContaining({ scheduled_load_tss: 0 }),
+    ]);
+  });
 });

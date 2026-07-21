@@ -40,6 +40,7 @@ export function EntityOwnerRow({
   const ownerId = typeof owner?.id === "string" && owner.id.length > 0 ? owner.id : null;
   const canOpenProfile = ownerId !== null;
   const canPress = Boolean(onPress) || canOpenProfile;
+  const className = `flex-row items-center ${compact ? "gap-1.5" : "gap-3"}`;
 
   const handlePress = () => {
     if (onPress) {
@@ -62,13 +63,8 @@ export function EntityOwnerRow({
     });
   };
 
-  return (
-    <Pressable
-      onPress={handlePress}
-      disabled={!canPress}
-      className={`flex-row items-center ${compact ? "gap-1.5" : "gap-3"}`}
-      testID={testID}
-    >
+  const content = (
+    <>
       <Avatar alt={displayName} className={compact ? "h-6 w-6" : minimal ? "h-7 w-7" : "h-10 w-10"}>
         {owner?.avatar_url ? <AvatarImage source={{ uri: owner.avatar_url }} /> : null}
         <AvatarFallback className={fallbackClassName}>
@@ -102,6 +98,26 @@ export function EntityOwnerRow({
           subtitle
         )}
       </View>
+    </>
+  );
+
+  if (!canPress) {
+    return (
+      <View className={className} testID={testID}>
+        {content}
+      </View>
+    );
+  }
+
+  return (
+    <Pressable
+      accessibilityLabel={`Open profile for ${displayName}`}
+      accessibilityRole="button"
+      className={`min-h-11 min-w-11 ${className}`}
+      onPress={handlePress}
+      testID={testID}
+    >
+      {content}
     </Pressable>
   );
 }

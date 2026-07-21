@@ -7,7 +7,7 @@ import {
 } from "@repo/core/route-files";
 import { type ActivityRouteRow, activityRoutes, events, groupEvents } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, desc, eq, gt, gte, ilike, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   serializeActivityRouteRow,
@@ -36,39 +36,11 @@ const routeOwnerScopeSchema = z.enum(["own", "system", "public", "all"]);
 
 const routeIdSchema = z.string().uuid();
 
-const routeCursorSchema = z.string().superRefine((value, ctx) => {
-  if (/^index:\d+$/.test(value)) {
-    return;
-  }
-
-  const separatorIndex = value.indexOf("_");
-  if (separatorIndex <= 0) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Cursor must be in '<iso-date>_<uuid>' format",
-    });
-    return;
-  }
-
-  const createdAt = value.slice(0, separatorIndex);
-  const id = value.slice(separatorIndex + 1);
-
-  if (!z.string().datetime().safeParse(createdAt).success) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Cursor timestamp must be a valid ISO datetime",
-      path: ["created_at"],
-    });
-  }
-
-  if (!routeIdSchema.safeParse(id).success) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Cursor id must be a valid UUID",
-      path: ["id"],
-    });
-  }
-});
+// Route library sorting spans multiple nullable columns. An explicit offset cursor keeps every
+// supported sort deterministic and prevents applying a created-at cursor to distance/ascent sorts.
+const routeCursorSchema = z
+  .string()
+  .regex(/^index:\d+$/, "Cursor must be in 'index:<offset>' format");
 
 const activityRouteWithLikeSchema = serializedActivityRouteSchema
   .extend({
@@ -220,7 +192,12 @@ export const routesRouter = createTRPCRouter({
       const trimmedSearch = input.search?.trim();
 
       if (trimmedSearch) {
-        conditions.push(ilike(activityRoutes.name, `%${trimmedSearch}%`));
+        const searchPattern = `%${trimmedSearch}%`;
+        const searchCondition = or(
+          ilike(activityRoutes.name, searchPattern),
+          ilike(activityRoutes.description, searchPattern),
+        );
+        if (searchCondition) conditions.push(searchCondition);
       }
 
       if (typeof input.min_distance_m === "number") {
@@ -241,22 +218,9 @@ export const routesRouter = createTRPCRouter({
 
       const offsetCursor = input.cursor?.startsWith("index:")
         ? Number.parseInt(input.cursor.slice(6), 10)
-        : null;
-
-      if (input.cursor && offsetCursor === null) {
-        const [cursorDate, cursorId] = input.cursor.split("_");
-        if (cursorDate && cursorId) {
-          const cursorCreatedAt = new Date(cursorDate);
-          const cursorCondition = or(
-            lt(activityRoutes.created_at, cursorCreatedAt),
-            and(eq(activityRoutes.created_at, cursorCreatedAt), gt(activityRoutes.id, cursorId)),
-          );
-
-          if (cursorCondition) {
-            conditions.push(cursorCondition);
-          }
-        }
-      }
+        : input.sort_by
+          ? 0
+          : null;
 
       const sortOrder =
         input.sort_by === "oldest"
@@ -309,13 +273,7 @@ export const routesRouter = createTRPCRouter({
 
       let nextCursor: string | undefined;
       if (hasMore && pageRows.length > 0) {
-        if (offsetCursor !== null) {
-          nextCursor = `index:${offsetCursor + limit}`;
-        } else {
-          const lastItem = pageRows[pageRows.length - 1];
-          if (!lastItem) throw new Error("Unexpected error");
-          nextCursor = `${lastItem.created_at.toISOString()}_${lastItem.id}`;
-        }
+        nextCursor = `index:${(offsetCursor ?? 0) + limit}`;
       }
 
       const routeIds = items.map((route) => route.id);
@@ -585,7 +543,7 @@ export const routesRouter = createTRPCRouter({
 
       if (linkedEventsCount > 0) {
         throw new TRPCError({
-          code: "BAD_REQUEST",
+          code: "CONFLICT",
           message: `Cannot delete route because it is used by ${linkedEventsCount} event${linkedEventsCount > 1 ? "s" : ""}. Please remove the route from those events first.`,
         });
       }

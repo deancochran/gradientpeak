@@ -3,6 +3,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { ActivityCategoryBadges } from "../activity-category-presentation";
 import { ActivityListCard } from "./activity-route-primitives";
 
 vi.mock("../../hooks/use-viewing-user-preferred-unit-system", () => ({
@@ -40,7 +41,19 @@ describe("ActivityListCard", () => {
     );
 
     expect(screen.getByText("Brick workout")).toBeTruthy();
-    expect(screen.getByText("Run → Ride → Run")).toBeTruthy();
+    expect(screen.getByText("Run • Ride")).toBeTruthy();
+    expect(screen.getByText("Run, Ride")).toBeTruthy();
     expect(screen.getByText("1h 30m")).toBeTruthy();
+  });
+});
+
+describe("ActivityCategoryBadges", () => {
+  it("renders one icon and label for every unique category", () => {
+    render(<ActivityCategoryBadges categories={["run", "bike", "run"]} />);
+
+    expect(screen.getByText("Run")).toBeTruthy();
+    expect(screen.getByText("Ride")).toBeTruthy();
+    expect(screen.getAllByText("🏃")).toHaveLength(1);
+    expect(screen.getAllByText("🚴")).toHaveLength(1);
   });
 });

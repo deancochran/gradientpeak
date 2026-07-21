@@ -21,7 +21,11 @@ export const Route = createFileRoute("/api/integrations/callback/$provider")({
         });
         const caller = appRouter.createCaller(ctx);
         const fallbackRedirect =
-          process.env.NEXT_PUBLIC_MOBILE_REDIRECT_FALLBACK || "gradientpeak://integrations";
+          process.env.NODE_ENV !== "production" &&
+          process.env.PROVIDER_OAUTH_TEST_ADAPTER === "1" &&
+          searchParams.get("test_return") === "web"
+            ? `${new URL(request.url).origin}/integrations?integration=failed`
+            : process.env.NEXT_PUBLIC_MOBILE_REDIRECT_FALLBACK || "gradientpeak://integrations";
         const result = await handleOAuthCallback({
           caller,
           code,

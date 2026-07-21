@@ -40,6 +40,8 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-surface: var(--destructive-surface);
+  --color-destructive-surface-foreground: var(--destructive-surface-foreground);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-success-subtle: var(--success-subtle);
@@ -93,6 +95,8 @@
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
   --destructive-foreground: oklch(0.985 0 0);
+  --destructive-surface: oklch(0.577 0.245 27.325);
+  --destructive-surface-foreground: oklch(0.985 0 0);
   --success: oklch(0.52 0.14 150);
   --success-foreground: oklch(0.985 0.01 150);
   --success-subtle: oklch(0.96 0.04 150);
@@ -139,6 +143,8 @@
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
   --destructive-foreground: oklch(0.985 0 0);
+  --destructive-surface: oklch(0.577 0.245 27.325);
+  --destructive-surface-foreground: oklch(0.985 0 0);
   --success: oklch(0.44 0.11 150);
   --success-foreground: oklch(0.985 0.015 150);
   --success-subtle: oklch(0.25 0.05 150);

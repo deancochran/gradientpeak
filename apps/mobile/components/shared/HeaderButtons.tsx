@@ -48,8 +48,8 @@ export function MessagesHeaderButton({ className }: HeaderButtonProps = {}) {
     >
       <Icon as={MessageSquare} size={24} className="text-foreground" />
       {unreadCount > 0 && (
-        <View className="absolute top-1 right-1 bg-destructive w-4 h-4 rounded-full items-center justify-center">
-          <Text className="text-[10px] font-bold text-destructive-foreground">
+        <View className="absolute top-1 right-1 bg-destructive-surface w-4 h-4 rounded-full items-center justify-center">
+          <Text className="text-[10px] font-bold text-destructive-surface-foreground">
             {unreadCount > 9 ? "9+" : unreadCount}
           </Text>
         </View>
@@ -79,8 +79,8 @@ export function NotificationsHeaderButton({ className }: HeaderButtonProps = {})
     >
       <Icon as={Bell} size={24} className="text-foreground" />
       {unreadCount > 0 && (
-        <View className="absolute top-1 right-1 bg-destructive w-4 h-4 rounded-full items-center justify-center">
-          <Text className="text-[10px] font-bold text-destructive-foreground">
+        <View className="absolute top-1 right-1 bg-destructive-surface w-4 h-4 rounded-full items-center justify-center">
+          <Text className="text-[10px] font-bold text-destructive-surface-foreground">
             {unreadCount > 9 ? "9+" : unreadCount}
           </Text>
         </View>

@@ -2,6 +2,16 @@ import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 import { GroupCard } from "../GroupCards";
 
+jest.mock("@/lib/navigation/useAppNavigate", () => ({
+  __esModule: true,
+  useAppNavigate: () => jest.fn(),
+}));
+
+jest.mock("@/lib/stores/auth-store", () => ({
+  __esModule: true,
+  useAuthStore: (selector: (state: { user: null }) => unknown) => selector({ user: null }),
+}));
+
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
@@ -67,6 +77,16 @@ describe("GroupCard", () => {
     expect(screen.getByTestId("selected-group-card").props.accessibilityState).toEqual({
       disabled: true,
       selected: true,
+    });
+  });
+
+  it("renders the rich default identity and access badges through the canonical shell", () => {
+    renderNative(<GroupCard group={group} onPress={jest.fn()} testID="default-group-card" />);
+
+    expect(screen.getByLabelText("View group Sunday Riders")).toBeTruthy();
+    expect(screen.getByText("@sunday-riders")).toBeTruthy();
+    expect(screen.getByTestId("default-group-card").props.accessibilityState).toEqual({
+      disabled: false,
     });
   });
 });

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   type ActivityEffortPresentationRow,
   buildObservedDurationCurve,
+  buildStatusDurationCurve,
+  filterEffortsByRange,
   formatActivityEffortDisplayValue,
   getActivityEffortCurveValue,
   getEffortHistoryForDuration,
@@ -67,6 +69,44 @@ describe("activity effort presentation", () => {
     ).toEqual(["newer", "older"]);
   });
 
+  it("builds a requested evidence-status curve without mixing modeled and observed rows", () => {
+    expect(
+      buildStatusDurationCurve(
+        [
+          effort({ id: "observed", value: 350 }),
+          effort({
+            duration_seconds: 300,
+            id: "modeled-lower",
+            method: "onboarding_modeled_curve",
+            provenance: { observation_type: "modeled" },
+            source: "estimated",
+            value: 250,
+          }),
+          effort({
+            duration_seconds: 300,
+            id: "modeled-best",
+            method: "onboarding_modeled_curve",
+            provenance: { observation_type: "modeled" },
+            source: "estimated",
+            value: 275,
+          }),
+        ],
+        "modeled",
+      ),
+    ).toEqual([{ durationSeconds: 300, id: "modeled-best", label: "5m 00s", value: 275 }]);
+  });
+
+  it("filters by a deterministic evidence range without changing row provenance", () => {
+    const recent = effort({ id: "recent", source: "provider" });
+    const old = effort({ id: "old", recorded_at: "2026-06-01T12:00:00.000Z" });
+
+    expect(filterEffortsByRange([recent, old], 30, new Date("2026-07-20T12:00:00.000Z"))).toEqual([
+      recent,
+    ]);
+    expect(recent.source).toBe("provider");
+    expect(recent.provenance).toBe(observedProvenance);
+  });
+
   it("formats swim speed as pace per 100 metres", () => {
     expect(
       formatActivityEffortDisplayValue(
@@ -88,5 +128,13 @@ describe("activity effort presentation", () => {
     expect(getActivityEffortCurveValue("run", "speed", 4)).toBe(250);
     expect(getActivityEffortCurveValue("swim", "speed", 1.25)).toBe(80);
     expect(getActivityEffortCurveValue("bike", "power", 320)).toBe(320);
+  });
+
+  it("formats heart-rate effort values in bpm", () => {
+    expect(
+      formatActivityEffortDisplayValue(
+        effort({ activity_category: "bike", effort_type: "heart_rate", unit: "bpm", value: 165 }),
+      ),
+    ).toBe("165 bpm");
   });
 });

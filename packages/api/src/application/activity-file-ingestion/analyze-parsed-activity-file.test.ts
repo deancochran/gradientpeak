@@ -129,11 +129,16 @@ describe("analyzeParsedActivityFile", () => {
     });
     expect(result.segmentSet.segments[0]).toMatchObject({
       category: "run",
-      summary: { averageSpeedMetersPerSecond: expect.any(Number) },
+      summary: {
+        averageSpeedMetersPerSecond: expect.any(Number),
+      },
     });
     expect(result.segmentSet.segments[2]).toMatchObject({
       category: "bike",
-      summary: { averagePowerWatts: expect.any(Number) },
+      summary: {
+        averagePowerWatts: expect.any(Number),
+        normalizedPowerWatts: expect.any(Number),
+      },
     });
     expect(result.segmentSet.segments[3]).toMatchObject({ role: "unknown" });
   });
@@ -270,6 +275,21 @@ describe("analyzeParsedActivityFile", () => {
     });
 
     expect(result.detectedLTHR).toBe(162);
+    expect(result.segmentSet.segments[0]?.summary).toMatchObject({
+      heartRateDistribution: {
+        coverageSeconds: 1200,
+        buckets: [{ bpm: 170, seconds: 1200 }],
+      },
+    });
+    expect(result.effortsToInsert).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          segment_id: expect.any(String),
+          effort_type: "heart_rate",
+          unit: "bpm",
+        }),
+      ]),
+    );
   });
 
   it("keeps the same-sport LTHR high-water behavior", async () => {

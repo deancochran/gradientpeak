@@ -243,6 +243,7 @@ export function useInstantChartSelection<Point extends SelectableChartPoint>({
     previewDate,
     previewNearestFromScrollEvent,
     scrollRef,
+    scrollToDate,
     selectRelative,
     selectedPoint,
   };

@@ -3,10 +3,20 @@ import { z } from "zod";
 export const parityPolicySchema = z.enum(["required_on_web", "web_only"]);
 export type ParityPolicy = z.infer<typeof parityPolicySchema>;
 
-export const parityFeatureStatusSchema = z.enum(["implemented", "partial", "scaffold", "missing"]);
+export const parityFeatureStatusSchema = z.enum([
+  "implemented",
+  "implemented-unverified",
+  "partial",
+  "scaffold",
+  "missing",
+]);
 export type ParityFeatureStatus = z.infer<typeof parityFeatureStatusSchema>;
 
-export const parityBackendOperationStatusSchema = z.enum(["implemented", "missing"]);
+export const parityBackendOperationStatusSchema = z.enum([
+  "implemented",
+  "implemented-unverified",
+  "missing",
+]);
 export type ParityBackendOperationStatus = z.infer<typeof parityBackendOperationStatusSchema>;
 
 export const parityFeatureSchema = z.object({

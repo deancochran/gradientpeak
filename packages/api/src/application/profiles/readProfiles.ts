@@ -29,6 +29,7 @@ const uuidSchema = z.string().uuid();
 const nullableAvatarUrlSchema = z.string().nullable();
 const nullableCoverUrlSchema = z.string().nullable();
 const nullableUsernameSchema = z.string().nullable();
+const nullableFullNameSchema = z.string().nullable();
 const nullableBioSchema = z.string().nullable();
 const nullableGenderSchema = z.string().nullable();
 const nullablePreferredUnitsSchema = preferredUnitSystemSchema.nullable();
@@ -38,6 +39,7 @@ const nullableFollowStatusSchema = z.enum(["pending", "accepted"]).nullable();
 const publicProfileSchema = z
   .object({
     id: uuidSchema,
+    full_name: nullableFullNameSchema,
     username: nullableUsernameSchema,
     avatar_url: nullableAvatarUrlSchema,
     cover_url: nullableCoverUrlSchema,
@@ -55,6 +57,7 @@ const publicProfileSchema = z
 const publicProfileRowSchema = z
   .object({
     id: uuidSchema,
+    full_name: nullableFullNameSchema,
     username: nullableUsernameSchema,
     avatar_url: nullableAvatarUrlSchema,
     cover_url: nullableCoverUrlSchema,
@@ -438,6 +441,7 @@ export async function getPublicProfileById(
   const [profile] = await db
     .select({
       id: profiles.id,
+      full_name: profiles.full_name,
       username: profiles.username,
       avatar_url: profiles.avatar_url,
       cover_url: profiles.cover_url,
@@ -457,6 +461,7 @@ export async function getPublicProfileById(
 
   const parsedProfile = publicProfileRowSchema.parse({
     id: profile.id,
+    full_name: profile.full_name,
     username: profile.username,
     avatar_url: profile.avatar_url,
     cover_url: profile.cover_url,

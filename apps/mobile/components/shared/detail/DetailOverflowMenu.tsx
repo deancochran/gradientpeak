@@ -7,6 +7,7 @@ import {
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Ellipsis } from "lucide-react-native";
+import { useState } from "react";
 import { View } from "react-native";
 
 export type DetailOverflowMenuAction = {
@@ -18,11 +19,17 @@ export type DetailOverflowMenuAction = {
 };
 
 type DetailOverflowMenuProps = {
+  accessibilityLabel?: string;
   actions: DetailOverflowMenuAction[];
   testID: string;
 };
 
-export function DetailOverflowMenu({ actions, testID }: DetailOverflowMenuProps) {
+export function DetailOverflowMenu({
+  accessibilityLabel = "Open actions menu",
+  actions,
+  testID,
+}: DetailOverflowMenuProps) {
+  const [isOpen, setIsOpen] = useState(false);
   const visibleActions = actions.filter(Boolean);
 
   if (visibleActions.length === 0) {
@@ -30,9 +37,15 @@ export function DetailOverflowMenu({ actions, testID }: DetailOverflowMenuProps)
   }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger testID={testID}>
-        <View className="rounded-full p-2">
+    <DropdownMenu onOpenChange={setIsOpen}>
+      <DropdownMenuTrigger
+        accessibilityLabel={accessibilityLabel}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: isOpen }}
+        className="min-h-11 min-w-11 items-center justify-center rounded-full"
+        testID={testID}
+      >
+        <View>
           <Icon as={Ellipsis} size={18} className="text-foreground" />
         </View>
       </DropdownMenuTrigger>

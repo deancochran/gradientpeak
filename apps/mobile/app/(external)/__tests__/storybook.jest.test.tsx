@@ -2,9 +2,12 @@ import React from "react";
 
 import { renderNative, screen } from "../../../test/render-native";
 
+let searchParams: { surface?: string } = {};
+
 jest.mock("expo-router", () => ({
   __esModule: true,
   router: { replace: jest.fn() },
+  useLocalSearchParams: () => searchParams,
 }));
 
 jest.mock("@repo/ui/testing/ui-preview", () => ({
@@ -15,6 +18,12 @@ jest.mock("@repo/ui/testing/ui-preview", () => ({
 jest.mock("../../../.rnstorybook", () => ({
   __esModule: true,
   default: () => React.createElement("StorybookRoot", { testID: "storybook-root" }),
+}));
+
+jest.mock("@/components/dev/MobileCardPreviewSurface", () => ({
+  __esModule: true,
+  MobileCardPreviewSurface: () =>
+    React.createElement("MobileCardPreviewSurface", { testID: "mobile-card-matrix" }),
 }));
 
 const StorybookScreen = require("../storybook").default;
@@ -37,6 +46,7 @@ function restoreEnv(
 describe("Storybook developer route", () => {
   beforeEach(() => {
     runtimeGlobal.__DEV__ = true;
+    searchParams = {};
     delete process.env.EXPO_PUBLIC_MAESTRO_E2E;
     delete process.env.EXPO_PUBLIC_STORYBOOK_ENABLED;
   });
@@ -66,6 +76,16 @@ describe("Storybook developer route", () => {
     renderNative(<StorybookScreen />);
 
     expect(screen.getByTestId("storybook-root")).toBeTruthy();
+    expect(screen.queryByTestId("ui-preview-surface")).toBeNull();
+  });
+
+  it("selects the deterministic mobile card matrix for E2E", () => {
+    process.env.EXPO_PUBLIC_MAESTRO_E2E = "1";
+    searchParams = { surface: "mobile-cards" };
+
+    renderNative(<StorybookScreen />);
+
+    expect(screen.getByTestId("mobile-card-matrix")).toBeTruthy();
     expect(screen.queryByTestId("ui-preview-surface")).toBeNull();
   });
 

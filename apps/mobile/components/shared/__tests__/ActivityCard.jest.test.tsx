@@ -112,6 +112,25 @@ describe("ActivityCard", () => {
     expect(screen.getByTestId("activity-card-like-button-activity-1")).toBeTruthy();
   });
 
+  it("shows an icon and label for every unique multisport category", () => {
+    renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-multisport",
+          name: "Brick workout",
+          activity_kind: "multisport",
+          activity_categories: ["run", "bike", "run"],
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("resource-category-items").props.accessibilityLabel).toBe(
+      "Run, Bike",
+    );
+    expect(screen.getByText("Run")).toBeTruthy();
+    expect(screen.getByText("Bike")).toBeTruthy();
+  });
+
   it("shows activity summary metrics in list mode", () => {
     renderNative(
       <ActivityCard
@@ -286,6 +305,83 @@ describe("ActivityCard", () => {
       entity_id: "activity-1",
       entity_type: "activity",
     });
+  });
+
+  it("keeps navigation, comment, and like actions independent", () => {
+    const onCommentPress = jest.fn();
+    const onLikePress = jest.fn();
+    const onPress = jest.fn();
+
+    renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-boundaries",
+          name: "Boundary Run",
+          comments_count: 4,
+          likes_count: 2,
+          has_liked: false,
+        }}
+        isLiked={false}
+        likeCount={2}
+        onCommentPress={onCommentPress}
+        onLikePress={onLikePress}
+        onPress={onPress}
+        showLike
+        testID="activity-boundary-card"
+        variant="list"
+      />,
+    );
+
+    const navigation = screen.getByLabelText("Open activity Boundary Run");
+    const comment = screen.getByLabelText("Comment, 4 comments");
+    const like = screen.getByLabelText("Like, 2 likes");
+
+    expect(navigation.props.accessibilityRole).toBe("button");
+    expect(comment.props.accessibilityRole).toBe("button");
+    expect(comment.props.className).toContain("min-h-11");
+    expect(comment.props.className).toContain("min-w-11");
+    expect(like.props.accessibilityRole).toBe("button");
+
+    fireEvent.press(navigation);
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(onCommentPress).not.toHaveBeenCalled();
+    expect(onLikePress).not.toHaveBeenCalled();
+
+    fireEvent.press(comment);
+    expect(onCommentPress).toHaveBeenCalledTimes(1);
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(onLikePress).not.toHaveBeenCalled();
+
+    fireEvent.press(like);
+    expect(onLikePress).toHaveBeenCalledTimes(1);
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(onCommentPress).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps owner profile and card navigation independent", () => {
+    const onOwnerPress = jest.fn();
+    const onPress = jest.fn();
+
+    renderNative(
+      <ActivityCard
+        activity={{ id: "activity-owner-boundary", name: "Owner Run" }}
+        onOwnerPress={onOwnerPress}
+        onPress={onPress}
+        owner={{ id: "owner-1", username: "Coach Kim" }}
+        showLike={false}
+      />,
+    );
+
+    const owner = screen.getByLabelText("Open profile for Coach Kim");
+    const navigation = screen.getByLabelText("Open activity Owner Run");
+
+    fireEvent.press(owner);
+    expect(onOwnerPress).toHaveBeenCalledTimes(1);
+    expect(onPress).not.toHaveBeenCalled();
+
+    fireEvent.press(navigation);
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(onOwnerPress).toHaveBeenCalledTimes(1);
   });
 
   it("renders the shared static map preview for list route thumbnails", () => {

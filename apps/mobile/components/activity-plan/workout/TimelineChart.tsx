@@ -1,42 +1,95 @@
 import {
-  type ActivityPlanStructureV3,
-  activityPlanStructureSchemaV3,
-  compileActivityPlanV3,
-  extractActivityProfile,
-} from "@repo/core";
+  type ActivityPlanPresentationModel,
+  deriveActivityPlanPresentation,
+} from "@repo/core/activity-plan";
+import { getIntensityZone, INTENSITY_ZONES } from "@repo/core/constants";
+import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
+import { ArrowRight } from "lucide-react-native";
 import { useMemo } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, View } from "react-native";
+import { getActivityCategoryConfig } from "@/lib/constants/activities";
 
 interface TimelineChartProps {
-  structure: ActivityPlanStructureV3 | unknown;
+  presentation?: ActivityPlanPresentationModel | null;
+  structure?: unknown;
   height?: number;
   compact?: boolean;
   selectedIntervalId?: string | null;
   onIntervalPress?: (intervalId: string) => void;
 }
 
-function targetHeight(targets: readonly { intensity: number }[]): number {
-  const intensity = targets[0]?.intensity ?? 20;
-  return Math.max(12, Math.min(64, intensity > 10 ? intensity * 0.5 : intensity * 8));
+function intensityHeight(normalizedIntensity: number | null, chartHeight: number): number {
+  const minimumHeight = Math.min(24, chartHeight);
+  if (normalizedIntensity === null) return minimumHeight;
+  return minimumHeight + normalizedIntensity * Math.max(0, chartHeight - minimumHeight);
+}
+
+function intensityColor(normalizedIntensity: number | null): string | undefined {
+  if (normalizedIntensity === null) return undefined;
+  return INTENSITY_ZONES[getIntensityZone(normalizedIntensity * 100)].color;
+}
+
+function occurrenceWeight(
+  duration: ActivityPlanPresentationModel["occurrences"][number]["duration"],
+): number {
+  switch (duration.type) {
+    case "time":
+      return Math.max(1, Math.min(4, duration.seconds / 60));
+    case "distance":
+      return Math.max(1, Math.min(4, duration.meters / 500));
+    case "repetitions":
+      return Math.max(1, Math.min(4, duration.count / 5));
+    case "untilFinished":
+      return 1;
+  }
+}
+
+function durationLabel(
+  duration: ActivityPlanPresentationModel["occurrences"][number]["duration"],
+): string {
+  switch (duration.type) {
+    case "time":
+      return `${duration.seconds} seconds`;
+    case "distance":
+      return `${duration.meters} meters`;
+    case "repetitions":
+      return `${duration.count} repetitions`;
+    case "untilFinished":
+      return "until finished";
+  }
+}
+
+function adjacentTransitionCategories(
+  timeline: ActivityPlanPresentationModel["occurrences"],
+  transitionIndex: number,
+) {
+  const previous = timeline
+    .slice(0, transitionIndex)
+    .reverse()
+    .find((occurrence) => occurrence.role === "activity")?.category;
+  const next = timeline
+    .slice(transitionIndex + 1)
+    .find((occurrence) => occurrence.role === "activity")?.category;
+  return {
+    from: getActivityCategoryConfig(previous ?? "other"),
+    to: getActivityCategoryConfig(next ?? "other"),
+  };
 }
 
 export function TimelineChart({
   structure,
+  presentation,
   height = 120,
   compact = false,
   selectedIntervalId,
   onIntervalPress,
 }: TimelineChartProps) {
-  const timeline = useMemo(() => {
-    const parsed = activityPlanStructureSchemaV3.safeParse(structure);
-    if (!parsed.success) return [];
-    const compiled = compileActivityPlanV3(parsed.data);
-    return extractActivityProfile(compiled).map((point) => {
-      const occurrence = compiled.occurrences[point.globalOrdinal];
-      return { point, occurrence };
-    });
-  }, [structure]);
+  const model = useMemo(
+    () => presentation ?? deriveActivityPlanPresentation(structure),
+    [presentation, structure],
+  );
+  const timeline = model?.occurrences ?? [];
 
   if (timeline.length === 0) {
     return (
@@ -47,33 +100,87 @@ export function TimelineChart({
   }
 
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ height }}>
-      <View className="flex-row items-end gap-1 px-2 py-2">
-        {timeline.map(({ point, occurrence }, index) => {
-          const isBoundary = point.role !== "activity";
-          const selected = occurrence?.intervalId === selectedIntervalId;
+    <View style={{ height, width: "100%" }} testID="timeline-chart">
+      <View className="h-full w-full flex-row items-end">
+        {timeline.map((occurrence, index) => {
+          const isBoundary = occurrence.role !== "activity";
+          const isTransition = occurrence.role === "transition";
+          const selected = occurrence.intervalId === selectedIntervalId;
+          const transitionCategories = isTransition
+            ? adjacentTransitionCategories(timeline, index)
+            : null;
+          const label = [
+            `${occurrence.role} segment ${occurrence.globalOrdinal + 1}`,
+            transitionCategories
+              ? `${transitionCategories.from.name} to ${transitionCategories.to.name}`
+              : null,
+            occurrence.category,
+            occurrence.intensityLabel,
+            durationLabel(occurrence.duration),
+          ]
+            .filter(Boolean)
+            .join(", ");
           return (
             <Pressable
-              key={point.occurrenceId}
+              key={occurrence.occurrenceId}
               testID={`timeline-occurrence-${index}`}
-              onPress={() => occurrence?.intervalId && onIntervalPress?.(occurrence.intervalId)}
-              disabled={!occurrence?.intervalId || !onIntervalPress}
-              accessibilityLabel={`${point.role} segment ${point.globalOrdinal + 1}`}
-              className={`justify-end rounded-md border ${selected ? "border-primary" : "border-border"} ${isBoundary ? "bg-muted" : "bg-primary/20"}`}
+              onPress={() => occurrence.intervalId && onIntervalPress?.(occurrence.intervalId)}
+              disabled={!occurrence.intervalId || !onIntervalPress}
+              accessibilityLabel={label}
+              accessibilityRole={occurrence.intervalId && onIntervalPress ? "button" : undefined}
+              accessibilityState={selected ? { selected: true } : undefined}
+              className={`justify-end rounded-md ${isTransition ? "" : `border ${selected ? "border-primary" : "border-border"} ${isBoundary || occurrence.normalizedIntensity === null ? "bg-muted" : ""}`}`}
               style={{
-                height: isBoundary ? 28 : targetHeight(point.targets) + (compact ? 12 : 28),
-                width: Math.max(34, Math.min(110, (point.durationSeconds ?? 60) / 8)),
+                backgroundColor: isBoundary
+                  ? undefined
+                  : intensityColor(occurrence.normalizedIntensity),
+                height: isBoundary
+                  ? isTransition
+                    ? 52
+                    : 28
+                  : intensityHeight(occurrence.normalizedIntensity, height),
+                flexBasis: 0,
+                flexGrow: isTransition ? 1 : occurrenceWeight(occurrence.duration),
+                minWidth: 0,
               }}
             >
-              {!compact ? (
+              {transitionCategories ? (
+                <>
+                  <View
+                    accessible={false}
+                    className="mb-1 max-w-full flex-row items-center justify-center overflow-hidden"
+                    testID={`timeline-transition-${index}`}
+                  >
+                    <Icon
+                      as={transitionCategories.from.icon}
+                      className={transitionCategories.from.color}
+                      size={14}
+                      testID={`timeline-transition-${index}-from`}
+                    />
+                    <Icon
+                      as={ArrowRight}
+                      className="text-muted-foreground"
+                      size={12}
+                      testID={`timeline-transition-${index}-arrow`}
+                    />
+                    <Icon
+                      as={transitionCategories.to.icon}
+                      className={transitionCategories.to.color}
+                      size={14}
+                      testID={`timeline-transition-${index}-to`}
+                    />
+                  </View>
+                  <View className="h-5 rounded-md border border-border bg-muted" />
+                </>
+              ) : !compact && isBoundary ? (
                 <Text className="px-1 pb-1 text-[9px] text-foreground" numberOfLines={1}>
-                  {isBoundary ? point.role : point.category}
+                  {occurrence.role}
                 </Text>
               ) : null}
             </Pressable>
           );
         })}
       </View>
-    </ScrollView>
+    </View>
   );
 }

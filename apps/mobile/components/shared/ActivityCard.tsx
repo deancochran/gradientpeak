@@ -2,7 +2,6 @@ import { decodePolyline, formatDurationSec } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { MessageCircle, Route } from "lucide-react-native";
-import type { ReactNode } from "react";
 import { useMemo } from "react";
 import { Pressable, View } from "react-native";
 import {
@@ -10,12 +9,13 @@ import {
   getActivityLoadLabels,
   getThresholdNextAction,
 } from "@/lib/activity-load-presentation";
-import { getActivityCategoryConfig } from "@/lib/constants/activities";
+import { getUniqueActivityCategoryConfigs } from "@/lib/constants/activities";
 import { formatDistanceMeters } from "@/lib/display/formatters";
 import { formatEstimatedIntensityFactor, formatEstimatedTss } from "@/lib/estimatedMetrics";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
 import {
+  type ResourceCardAccessory,
   ResourceCardHeader,
   ResourceCardShell,
   ResourceLikeButton,
@@ -99,8 +99,8 @@ type ActivityCardProps = {
   activity: ActivityCardActivity;
   commentCount?: number | null;
   dateMode?: "absolute" | "none" | "relative";
-  footerAccessory?: ReactNode;
-  headerAccessory?: ReactNode;
+  footerAccessory?: ResourceCardAccessory;
+  headerAccessory?: ResourceCardAccessory;
   isLiked?: boolean | null;
   likeCount?: number | null;
   likePending?: boolean;
@@ -147,6 +147,16 @@ function getActivityCategory(activity: ActivityCardActivity): string {
     activity.segments?.find((segment) => segment.role === "activity")?.category ??
     "other"
   );
+}
+
+function getActivityCategories(activity: ActivityCardActivity): string[] {
+  const categories = activity.activity_categories?.length
+    ? activity.activity_categories
+    : activity.segments
+        ?.filter((segment) => segment.role === "activity")
+        .map((segment) => segment.category)
+        .filter((category): category is string => !!category);
+  return [...new Set(categories?.length ? categories : ["other"])];
 }
 
 function getLoadPresentation(activity: ActivityCardActivity) {
@@ -259,8 +269,13 @@ export function ActivityCard({
   const detail = variant === "detail";
   const list = variant === "list";
   const resolvedShowLike = showLike ?? list;
-  const activityType = getActivityCategory(activity);
-  const activityConfig = getActivityCategoryConfig(activityType);
+  const categoryItems = getUniqueActivityCategoryConfigs(getActivityCategories(activity)).map(
+    (category) => ({
+      icon: category.icon,
+      iconClassName: category.color,
+      label: category.name,
+    }),
+  );
   const owner = ownerProp ?? activity.profile ?? null;
   const resolvedDateMode = dateMode ?? "relative";
   const resolvedCommentCount = commentCount ?? activity.comments_count ?? 0;
@@ -304,49 +319,52 @@ export function ActivityCard({
   const hasHeaderAccessory = Boolean(headerAccessory);
 
   return (
-    <ResourceCardShell contentClassName="gap-3 px-3" onPress={onPress} testID={testID}>
-      <ResourceOwnerActionRow
-        actions={
-          hasCommentAction || hasFooterAccessory || resolvedShowLike || hasHeaderAccessory ? (
-            <>
-              {onCommentPress ? (
-                <Pressable
-                  className="flex-row items-center gap-1.5"
-                  onPress={(event) => {
-                    event?.stopPropagation?.();
-                    onCommentPress();
-                  }}
-                >
-                  <Icon as={MessageCircle} size={18} className="text-muted-foreground" />
-                  <Text className="text-sm text-muted-foreground">{resolvedCommentCount}</Text>
-                </Pressable>
-              ) : null}
+    <ResourceCardShell
+      accessibilityLabel={`Open activity ${activity.name || "Untitled activity"}`}
+      actionRegion={
+        <ResourceOwnerActionRow
+          actions={
+            hasCommentAction || hasFooterAccessory || resolvedShowLike || hasHeaderAccessory ? (
+              <>
+                {onCommentPress ? (
+                  <Pressable
+                    accessibilityLabel={`Comment, ${resolvedCommentCount} comments`}
+                    accessibilityRole="button"
+                    className="min-h-11 min-w-11 flex-row items-center justify-center gap-1.5 px-1"
+                    onPress={onCommentPress}
+                  >
+                    <Icon as={MessageCircle} size={18} className="text-muted-foreground" />
+                    <Text className="text-sm text-muted-foreground">{resolvedCommentCount}</Text>
+                  </Pressable>
+                ) : null}
 
-              {footerAccessory}
+                {footerAccessory}
 
-              {resolvedShowLike ? (
-                <ResourceLikeButton
-                  disabled={displayLikePending}
-                  isLiked={displayLiked}
-                  likeCount={displayLikeCount}
-                  onPress={onLikePress ?? toggleLike}
-                  testID={`activity-card-like-button-${activity.id}`}
-                />
-              ) : null}
+                {resolvedShowLike ? (
+                  <ResourceLikeButton
+                    disabled={displayLikePending}
+                    isLiked={displayLiked}
+                    likeCount={displayLikeCount}
+                    onPress={onLikePress ?? toggleLike}
+                    testID={`activity-card-like-button-${activity.id}`}
+                  />
+                ) : null}
 
-              {headerAccessory}
-            </>
-          ) : null
-        }
-        categoryIcon={activityConfig.icon}
-        categoryIconClassName={activityConfig.color}
-        categoryLabel={activityConfig.name}
-        fallbackLabel="GradientPeak"
-        onOwnerPress={onOwnerPress}
-        owner={attributionOwner}
-        timestamp={resolvedDateMode === "none" ? null : activity.started_at}
-      />
-
+                {headerAccessory}
+              </>
+            ) : null
+          }
+          categoryItems={categoryItems}
+          fallbackLabel="GradientPeak"
+          onOwnerPress={onOwnerPress}
+          owner={attributionOwner}
+          timestamp={resolvedDateMode === "none" ? null : activity.started_at}
+        />
+      }
+      contentClassName="gap-3 px-3"
+      onPress={onPress}
+      testID={testID}
+    >
       <ResourceCardHeader
         description={showNotes ? activity.notes : null}
         descriptionNumberOfLines={detail ? undefined : 2}

@@ -692,22 +692,13 @@ export default function DiscoverPage() {
         <ActivityPlanCard
           activityPlan={result.item}
           onPress={() => handleTemplatePress(result.item)}
-          variant="list"
         />
       ) : null}
       {result.type === "trainingPlans" ? (
-        <TrainingPlanCard
-          plan={result.item}
-          onPress={() => handleTrainingPlanPress(result.item)}
-          variant="list"
-        />
+        <TrainingPlanCard plan={result.item} onPress={() => handleTrainingPlanPress(result.item)} />
       ) : null}
       {result.type === "routes" ? (
-        <RouteCard
-          route={result.item}
-          onPress={() => handleRoutePress(result.item)}
-          variant="list"
-        />
+        <RouteCard route={result.item} onPress={() => handleRoutePress(result.item)} />
       ) : null}
       {result.type === "groups" ? (
         <GroupCard group={result.item} onPress={() => handleGroupPress(result.item)} />

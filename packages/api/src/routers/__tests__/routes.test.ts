@@ -215,7 +215,7 @@ describe("routesRouter", () => {
           owner: { id: OWNER_ID, username: "Owner", avatar_url: "https://example.com/avatar.png" },
         },
       ],
-      nextCursor: "2026-01-31T10:00:00.000Z_33333333-3333-4333-8333-333333333333",
+      nextCursor: "index:2",
     });
   });
 
@@ -271,6 +271,30 @@ describe("routesRouter", () => {
       items: [],
       nextCursor: undefined,
     });
+  });
+
+  it("uses an index offset for explicitly sorted discovery pages", async () => {
+    const offset = vi.fn().mockResolvedValue([]);
+    const db = {
+      select: vi.fn().mockImplementationOnce(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            orderBy: vi.fn(() => ({
+              limit: vi.fn(() => ({ offset })),
+            })),
+          })),
+        })),
+      })),
+    };
+    const caller = createCaller(db);
+
+    await expect(
+      caller.list({ limit: 20, ownerScope: "all", sort_by: "distance_desc" }),
+    ).resolves.toEqual({
+      items: [],
+      nextCursor: undefined,
+    });
+    expect(offset).toHaveBeenCalledWith(0);
   });
 
   it("gets a single owned route with like state", async () => {
@@ -722,6 +746,29 @@ describe("routesRouter", () => {
 
     expect(result).toEqual({ success: true });
     expect(mockStorage.remove).toHaveBeenCalledWith([`${OWNER_ID}/route.gpx`]);
+  });
+
+  it("returns a conflict without deleting when events still link the route", async () => {
+    const db = {
+      select: vi
+        .fn()
+        .mockImplementationOnce(() => createSelectWithLimit([createRouteRow()]))
+        .mockImplementationOnce(() => ({
+          from: vi.fn(() => ({ where: vi.fn().mockResolvedValue([{ value: 1 }]) })),
+        }))
+        .mockImplementationOnce(() => ({
+          from: vi.fn(() => ({ where: vi.fn().mockResolvedValue([{ value: 1 }]) })),
+        })),
+      delete: vi.fn(),
+    };
+
+    await expect(createCaller(db).delete({ id: ROUTE_ID })).rejects.toMatchObject({
+      code: "CONFLICT",
+      message:
+        "Cannot delete route because it is used by 2 events. Please remove the route from those events first.",
+    });
+    expect(db.delete).not.toHaveBeenCalled();
+    expect(mockStorage.remove).not.toHaveBeenCalled();
   });
 
   it("updates owned route metadata and returns serialized timestamps", async () => {

@@ -39,6 +39,13 @@ import { useTrainingPlanCreationQueries } from "./useTrainingPlanCreationQueries
 
 const createLocalId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
+function toProvenanceRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return Object.fromEntries(Object.entries(value));
+}
+
 function toBuilderGoalTargetOffset(anchorDate: string, targetDate: string | null) {
   if (!targetDate) {
     return null;
@@ -148,16 +155,31 @@ export function useTrainingPlanCreationService({
           recorded_at: metric.recorded_at,
           notes: metric.notes,
           reference_activity_id: metric.reference_activity_id,
+          source: metric.source,
+          method: metric.method,
+          calculation_version: metric.calculation_version,
+          quality_score: metric.quality_score,
+          provenance: toProvenanceRecord(metric.provenance),
         })),
-        activityEfforts: activityEffortsQuery.data.map((effort) => ({
-          activity_category: effort.activity_category,
-          effort_type: effort.effort_type,
-          duration_seconds: effort.duration_seconds,
-          value: effort.value,
-          unit: effort.unit,
-          recorded_at: effort.recorded_at,
-          activity_id: effort.activity_id,
-        })),
+        activityEfforts: activityEffortsQuery.data
+          .filter(
+            (effort): effort is typeof effort & { effort_type: "power" | "speed" } =>
+              effort.effort_type === "power" || effort.effort_type === "speed",
+          )
+          .map((effort) => ({
+            activity_category: effort.activity_category,
+            effort_type: effort.effort_type,
+            duration_seconds: effort.duration_seconds,
+            value: effort.value,
+            unit: effort.unit,
+            recorded_at: effort.recorded_at,
+            activity_id: effort.activity_id,
+            source: effort.source,
+            method: effort.method,
+            calculation_version: effort.calculation_version,
+            quality_score: effort.quality_score,
+            provenance: toProvenanceRecord(effort.provenance),
+          })),
         currentFitness: currentTrainingStatusQuery.data
           ? {
               ctl: currentTrainingStatusQuery.data.ctl,

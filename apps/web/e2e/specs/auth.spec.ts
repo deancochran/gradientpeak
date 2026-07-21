@@ -1,68 +1,89 @@
-import { expect, test } from "../fixtures";
+import { expect, test } from "../lane-support/auth/lane-test";
+import {
+  expiredVerificationUrl,
+  login,
+  signUp,
+  uniqueAuthActor,
+  waitForAuthMail,
+} from "../lane-support/auth/mailbox";
 
-const requiresSeededUsers =
-  Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY) ||
-  Boolean(process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY);
+test("sign-up verification rejects expiry and replay while preserving responsive onboarding", async ({
+  page,
+}) => {
+  const actor = uniqueAuthActor("verify");
+  const mail = await signUp(page, actor);
+  await expect(page).toHaveURL(/\/auth\/sign-up-success/);
 
-const authUserTest = requiresSeededUsers ? test : test.skip;
+  const expired = await page.request.get(expiredVerificationUrl(mail.actionUrl), {
+    maxRedirects: 0,
+  });
+  expect(expired.status()).toBe(302);
+  expect(expired.headers().location).toContain("TOKEN_EXPIRED");
 
-authUserTest(
-  "protected routes redirect through login and return after authentication",
-  async ({ page }) => {
-    await page.goto("/settings");
+  await page.goto(mail.actionUrl);
+  await expect(page).toHaveURL(/\/auth\/verification-success/);
 
-    await expect(page).toHaveURL(/\/auth\/login\?redirect=/);
+  const replay = await page.request.get(mail.actionUrl, { maxRedirects: 0 });
+  expect(replay.status()).toBeGreaterThanOrEqual(400);
 
-    await page.getByLabel("Email *").fill("athlete@test.com");
-    await page.getByLabel("Password *").fill("TestPass123!");
-    await page.getByRole("button", { name: /^login$/i }).click();
-
-    await expect(page).toHaveURL(/\/settings$/);
-    await expect(page.getByRole("heading", { name: /^settings$/i })).toBeVisible();
-  },
-);
-
-test("forgot password submits without leaking email into the URL", async ({ page }) => {
-  await page.goto("/auth/forgot-password");
-
-  const email = "athlete@test.com";
-  await page.getByLabel("Email *").fill(email);
-  await page.getByRole("button", { name: /send reset email/i }).click();
-
-  await expect(page).not.toHaveURL(new RegExp(encodeURIComponent(email)));
-  await expect(page).toHaveURL(/(\/auth\/forgot-password(\?submitted=true)?$)|(_serverFn\/)/);
+  await login(page, actor);
+  await expect(page).toHaveURL(/\/onboarding/);
+  const viewport = page.viewportSize();
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
+  expect(viewport?.width).toBeGreaterThan(0);
 });
 
-test("reset password submit does not leak password values into the URL", async ({ page }) => {
-  await page.goto("/auth/update-password?token=test-reset-token");
+test("real password reset changes the credential and revokes a second session", async ({
+  browser,
+  page,
+}) => {
+  const actor = uniqueAuthActor("recovery");
+  const verification = await signUp(page, actor);
+  await page.goto(verification.actionUrl);
 
-  const password = "SafePass123!";
-  await page.getByLabel("New password *").fill(password);
-  await page.getByLabel("Confirm password *").fill(password);
-  await page.getByRole("button", { name: /save new password/i }).click();
+  const firstContext = await browser.newContext();
+  const secondContext = await browser.newContext();
+  const firstSession = await firstContext.newPage();
+  const secondSession = await secondContext.newPage();
+  try {
+    await login(firstSession, actor);
+    await login(secondSession, actor);
 
-  await expect(page).not.toHaveURL(new RegExp(encodeURIComponent(password)));
-  await expect(page).toHaveURL(/(\/auth\/update-password\?token=test-reset-token$)|(_serverFn\/)/);
+    const after = Date.now();
+    await firstSession.goto("/auth/forgot-password");
+    await firstSession.getByLabel(/^email/i).fill(actor.email);
+    await firstSession.getByRole("button", { name: /send reset email/i }).click();
+    const resetMail = await waitForAuthMail({ to: actor.email, kind: "reset-password", after });
+
+    const nextPassword = "ChangedPass456!";
+    await firstSession.goto(resetMail.actionUrl);
+    await firstSession.getByLabel(/^new password/i).fill(nextPassword);
+    await firstSession.getByLabel(/^confirm password/i).fill(nextPassword);
+    await firstSession.getByRole("button", { name: /save new password/i }).click();
+    await expect(firstSession).toHaveURL(/\/auth\/login/);
+
+    await secondSession.goto("/settings");
+    await expect(secondSession).toHaveURL(/\/auth\/login\?redirect=/);
+
+    await firstSession.goto("/auth/login");
+    await firstSession.getByLabel(/^email/i).fill(actor.email);
+    await firstSession.getByLabel(/^password/i).fill(actor.password);
+    await firstSession.getByRole("button", { name: /^login$/i }).click();
+    await expect(firstSession.getByText(/invalid email or password/i)).toBeVisible();
+
+    await login(firstSession, { ...actor, password: nextPassword });
+    await expect(firstSession).toHaveURL(/\/onboarding/);
+
+    await firstSession.goto(resetMail.actionUrl);
+    await firstSession.getByLabel(/^new password/i).fill("ReplayPass789!");
+    await firstSession.getByLabel(/^confirm password/i).fill("ReplayPass789!");
+    await firstSession.getByRole("button", { name: /save new password/i }).click();
+    await expect(firstSession.getByText(/invalid|expired|used/i)).toBeVisible();
+  } finally {
+    await firstContext.close();
+    await secondContext.close();
+  }
 });
-
-authUserTest("authenticated user can sign out and return to login", async ({ athletePage }) => {
-  await athletePage.getByRole("button", { name: /open user menu/i }).click();
-  await athletePage.getByRole("menuitem", { name: /log out/i }).click();
-
-  await expect(athletePage).toHaveURL(/\/auth\/login$/);
-  await expect(athletePage.getByRole("heading", { name: /^login$/i })).toBeVisible();
-});
-
-authUserTest(
-  "settings profile form redirects back to settings after update",
-  async ({ athletePage }) => {
-    await athletePage.goto("/settings");
-
-    const usernameInput = athletePage.getByLabel("Username");
-    await usernameInput.fill("athlete_user");
-    await athletePage.getByRole("button", { name: /update profile/i }).click();
-
-    await expect(athletePage).toHaveURL(/\/settings\?updated=profile$/);
-    await expect(athletePage.getByText(/profile updated successfully/i)).toBeVisible();
-  },
-);

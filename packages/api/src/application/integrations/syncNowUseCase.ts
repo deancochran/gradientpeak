@@ -89,6 +89,21 @@ export async function syncIntegrationNow(input: {
     throw new TRPCError({ code: "NOT_FOUND", message: "Integration not found" });
   }
 
+  const grant = await repositories.integrations.findGrantByProfileIdAndProvider({
+    profileId: input.profileId,
+    provider: input.provider,
+  });
+  const grantedScopes = new Set((grant?.scope ?? "").split(/[\s,]+/).filter(Boolean));
+  if (
+    input.provider === "wahoo" &&
+    (!grantedScopes.has("workouts_read") || !grantedScopes.has("offline_data"))
+  ) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Reconnect this integration to grant the scopes required for history sync",
+    });
+  }
+
   const setupRefresh = await refreshProviderSetupForSyncNow({
     profileId: input.profileId,
     provider: input.provider,

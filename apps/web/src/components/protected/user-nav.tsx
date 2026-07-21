@@ -10,7 +10,23 @@ import {
 } from "@repo/ui/components/dropdown-menu";
 import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { Bell, Home, LogOut, MessageSquare, Settings, UserRound } from "lucide-react";
+import {
+  Activity,
+  Bell,
+  CalendarDays,
+  ClipboardList,
+  Gauge,
+  Home,
+  LogOut,
+  MessageSquare,
+  Plug,
+  Settings,
+  SlidersHorizontal,
+  Target,
+  TrendingUp,
+  UserRound,
+  Users,
+} from "lucide-react";
 import { useState } from "react";
 
 import { signOutAction } from "../../lib/auth/server-actions";
@@ -29,12 +45,36 @@ export function UserNav() {
   type AccountLink = {
     icon: typeof Home;
     label: string;
-    to: "/" | "/messages" | "/notifications" | "/settings";
+    to:
+      | "/"
+      | "/activity-efforts"
+      | "/activity-plans"
+      | "/goals"
+      | "/groups"
+      | "/integrations"
+      | "/messages"
+      | "/notifications"
+      | "/profile-metrics"
+      | "/scheduled-activities"
+      | "/training-plans"
+      | "/training-preferences"
+      | "/trends"
+      | "/settings";
   };
   const accountLinks: AccountLink[] = [
     { to: "/", label: "Dashboard", icon: Home },
     { to: "/messages", label: "Messages", icon: MessageSquare },
     { to: "/notifications", label: "Notifications", icon: Bell },
+    { to: "/activity-plans", label: "Activity plans", icon: ClipboardList },
+    { to: "/training-plans", label: "Training plans", icon: ClipboardList },
+    { to: "/scheduled-activities", label: "Scheduled activities", icon: CalendarDays },
+    { to: "/goals", label: "Goals", icon: Target },
+    { to: "/groups", label: "Groups", icon: Users },
+    { to: "/trends", label: "Trends", icon: TrendingUp },
+    { to: "/activity-efforts", label: "Activity efforts", icon: Activity },
+    { to: "/profile-metrics", label: "Profile metrics", icon: Gauge },
+    { to: "/training-preferences", label: "Training preferences", icon: SlidersHorizontal },
+    { to: "/integrations", label: "Integrations", icon: Plug },
     { to: "/settings", label: "Settings", icon: Settings },
   ];
 

@@ -332,11 +332,8 @@ function ActivityDetailPage() {
             ) : null}
           </>
         }
-        badges={[
-          categoryDisplay.label,
-          getVisibilityLabel(contentVisibility),
-          formatDateTime(activity.started_at),
-        ]}
+        badges={[getVisibilityLabel(contentVisibility), formatDateTime(activity.started_at)]}
+        categories={categoryDisplay.categories}
         description={activity.notes || "No notes attached to this activity."}
         eyebrow="Activity detail"
         title={activity.name}
@@ -393,12 +390,6 @@ function ActivityDetailPage() {
       />
       {calibrationText || thresholdAction ? (
         <p className="text-sm text-muted-foreground">{calibrationText ?? thresholdAction}</p>
-      ) : null}
-      {loadMethod === "heart_rate_threshold" ? (
-        <p className="text-xs text-muted-foreground">
-          Estimated HR Load uses summary average heart rate and LTHR; it is separate from Stream HR
-          Load.
-        </p>
       ) : null}
       {loadMethod === "critical_power_threshold" ? (
         <p className="text-xs text-muted-foreground">

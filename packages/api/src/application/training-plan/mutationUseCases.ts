@@ -33,6 +33,12 @@ type TrainingPlanUpdateInput = z.infer<typeof trainingPlanUpdateInputSchema> & {
   template_visibility?: "private" | "followers" | "public";
 };
 
+export type TrainingPlanWorkoutDateChange = {
+  event_id: string;
+  expected_scheduled_date: string;
+  requested_scheduled_date: string;
+};
+
 function getSqlRows<T>(result: unknown) {
   return ((result as { rows?: T[] }).rows ?? []) as T[];
 }
@@ -375,6 +381,86 @@ export async function updateTrainingPlanUseCase(input: {
   }
 
   return data;
+}
+
+export async function reorderTrainingPlanWorkoutsUseCase(input: {
+  changes: TrainingPlanWorkoutDateChange[];
+  db: DrizzleDbClient;
+  profileId: string;
+  trainingPlanId: string;
+}) {
+  const updatedEventIds = await input.db.transaction(async (tx) => {
+    const ownedPlan = await tx.execute(sql<{ id: string }>`
+      select id
+      from training_plans
+      where id = ${input.trainingPlanId}::uuid
+        and profile_id = ${input.profileId}::uuid
+        and is_system_template = false
+      for update
+    `);
+
+    if (getSqlRows<{ id: string }>(ownedPlan).length !== 1) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Training plan not found or you don't have permission to reorder it",
+      });
+    }
+
+    const updateResult = await tx.execute(sql<{ id: string }>`
+      with requested_changes as (
+        select *
+        from jsonb_to_recordset(${JSON.stringify(input.changes)}::jsonb) as change(
+          event_id uuid,
+          expected_scheduled_date text,
+          requested_scheduled_date text
+        )
+      )
+      update events as event
+      set
+        scheduled_date = change.requested_scheduled_date,
+        starts_at = event.starts_at
+          + ((change.requested_scheduled_date::date - change.expected_scheduled_date::date) * interval '1 day'),
+        ends_at = case
+          when event.ends_at is null then null
+          else event.ends_at
+            + ((change.requested_scheduled_date::date - change.expected_scheduled_date::date) * interval '1 day')
+        end,
+        updated_at = now()
+      from requested_changes as change
+      where event.id = change.event_id
+        and event.profile_id = ${input.profileId}::uuid
+        and event.training_plan_id = ${input.trainingPlanId}::uuid
+        and event.event_type = 'planned'
+        and event.activity_plan_id is not null
+        and event.status <> 'completed'
+        and event.linked_activity_id is null
+        and event.read_only is not true
+        and event.scheduled_date = change.expected_scheduled_date
+      returning event.id
+    `);
+    const updatedRows = getSqlRows<{ id: string }>(updateResult);
+
+    if (updatedRows.length !== input.changes.length) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: "Scheduled workouts changed or are no longer eligible; reload and try again",
+      });
+    }
+
+    return updatedRows.map((row) => row.id);
+  });
+
+  await enqueuePlannedWorkoutSyncForCalendarWrite({
+    db: input.db,
+    eventIds: updatedEventIds,
+    operation: "publish",
+    profileId: input.profileId,
+  });
+
+  return {
+    affected_count: updatedEventIds.length,
+    affected_event_ids: updatedEventIds,
+  };
 }
 
 export async function deleteTrainingPlanUseCase(input: {

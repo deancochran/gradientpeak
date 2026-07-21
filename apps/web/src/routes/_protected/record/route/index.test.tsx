@@ -23,6 +23,10 @@ vi.mock("../../../../lib/api/client", () => ({
   api: { routes: { list: { useInfiniteQuery: () => mocks.list() } } },
 }));
 
+vi.mock("../../../../lib/recording/provider", () => ({
+  useTimerOnlyRecording: () => ({ state: { reducer: { snapshot: null } } }),
+}));
+
 vi.mock("../../../../hooks/use-viewing-user-preferred-unit-system", () => ({
   useViewingUserPreferredUnitSystem: () => ({ isLoading: false, unitSystem: mocks.unitSystem }),
 }));

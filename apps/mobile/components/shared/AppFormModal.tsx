@@ -53,7 +53,13 @@ export function AppFormModal({
   };
 
   return (
-    <Modal animationType="slide" presentationStyle="pageSheet" visible onRequestClose={handleClose}>
+    <Modal
+      accessibilityViewIsModal
+      animationType="slide"
+      presentationStyle="pageSheet"
+      visible
+      onRequestClose={handleClose}
+    >
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         className="flex-1 bg-background"
@@ -62,7 +68,9 @@ export function AppFormModal({
         <View className="flex-1 bg-background">
           <View className="flex-row items-start justify-between border-b border-border px-4 py-4">
             <View className="flex-1 pr-3">
-              <Text className="text-xl font-semibold text-foreground">{title}</Text>
+              <Text accessibilityRole="header" className="text-xl font-semibold text-foreground">
+                {title}
+              </Text>
               {description ? (
                 <Text className="mt-1 text-sm text-muted-foreground">{description}</Text>
               ) : null}
@@ -150,11 +158,11 @@ function renderConfirmButton(action: AppConfirmAction, fill = false) {
   const variant = action.variant === "destructive" ? "default" : (action.variant ?? "default");
   const textClassName =
     action.variant === "destructive"
-      ? "text-destructive-foreground font-semibold"
+      ? "text-destructive-surface-foreground font-semibold"
       : fill
         ? "text-primary-foreground font-semibold"
         : "text-foreground font-medium";
-  const buttonClassName = action.variant === "destructive" ? "bg-destructive" : undefined;
+  const buttonClassName = action.variant === "destructive" ? "bg-destructive-surface" : undefined;
 
   return (
     <LoadingButton

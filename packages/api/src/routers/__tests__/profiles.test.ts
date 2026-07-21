@@ -302,8 +302,6 @@ describe("profilesRouter", () => {
 
     const result = await caller.update({
       bio: "Updated bio",
-      avatar_url: null,
-      cover_url: "https://example.com/updated-cover.png",
       is_public: false,
       dob: "1991-02-03",
       full_name: "Updated Athlete",
@@ -321,8 +319,6 @@ describe("profilesRouter", () => {
     expect(calls.updates[0]).toMatchObject({
       table: "profiles",
       values: {
-        avatar_url: null,
-        cover_url: "https://example.com/updated-cover.png",
         bio: "Updated bio",
         full_name: "Updated Athlete",
         is_public: false,

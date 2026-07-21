@@ -1,3 +1,5 @@
+import { formatDuration } from "./activity-route-helpers";
+
 function humanizeRole(value: string | null | undefined) {
   return String(value ?? "unknown").replaceAll("_", " ");
 }
@@ -55,6 +57,49 @@ export function describeTrainingPlanSessions(structure: unknown) {
   if (sessions.length === 0) return "No sessions specified";
 
   return `${sessions.length} session${sessions.length === 1 ? "" : "s"}`;
+}
+
+type ActivityPlanMetrics = {
+  estimated_distance?: number | null;
+  estimated_duration?: number | null;
+  estimated_tss?: number | null;
+  intensity_factor?: number | null;
+};
+
+const CATEGORY_LABELS: Record<string, string> = {
+  bike: "Cycling",
+  other: "Other",
+  run: "Running",
+  strength: "Strength",
+  swim: "Swimming",
+};
+
+export function formatActivityPlanCategory(category: string | null | undefined) {
+  if (!category) return CATEGORY_LABELS.other;
+  return CATEGORY_LABELS[category] ?? category.replaceAll("_", " ");
+}
+
+export function getActivityPlanMetricSummary(metrics: ActivityPlanMetrics | null | undefined) {
+  if (!metrics) return [];
+
+  const summary: string[] = [];
+  if (isPositiveFinite(metrics.estimated_duration)) {
+    summary.push(formatDuration(metrics.estimated_duration));
+  }
+  if (isPositiveFinite(metrics.estimated_distance)) {
+    summary.push(`${(metrics.estimated_distance / 1_000).toFixed(1)} km`);
+  }
+  if (isPositiveFinite(metrics.estimated_tss)) {
+    summary.push(`${Math.round(metrics.estimated_tss)} TSS`);
+  }
+  if (isPositiveFinite(metrics.intensity_factor)) {
+    summary.push(`${metrics.intensity_factor.toFixed(2)} IF`);
+  }
+  return summary;
+}
+
+function isPositiveFinite(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
 function collectTrainingPlanSessions(value: unknown): unknown[] {

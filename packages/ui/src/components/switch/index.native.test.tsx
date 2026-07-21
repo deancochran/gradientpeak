@@ -10,6 +10,7 @@ jest.mock("@rn-primitives/switch", () => {
 import { fireEvent, renderNative } from "../../test/render-native";
 import { switchFixtures } from "./fixtures";
 import { Switch } from "./index.native";
+import { SWITCH_NATIVE_MINIMUM_HIT_SLOP } from "./shared";
 
 describe("Switch native", () => {
   it("maps normalized test props for the native-only switch", () => {
@@ -23,6 +24,7 @@ describe("Switch native", () => {
 
     expect(switchRoot.props.testID).toBe(switchFixtures.notifications.testId);
     expect(switchRoot.props.nativeID).toBe(switchFixtures.notifications.id);
+    expect(switchRoot.props.hitSlop).toEqual(SWITCH_NATIVE_MINIMUM_HIT_SLOP);
 
     fireEvent(switchRoot, "onCheckedChange", false);
     expect(onCheckedChange).toHaveBeenCalledWith(false);

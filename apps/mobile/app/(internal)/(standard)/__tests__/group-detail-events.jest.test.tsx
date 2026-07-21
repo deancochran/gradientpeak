@@ -69,8 +69,6 @@ jest.mock("@/components/shared/detail", () => ({
 
 jest.mock("@/components/groups", () => ({
   __esModule: true,
-  CurrentGroupEventPlanCard: ({ event }: { event: GroupEventSummary }) =>
-    React.createElement("View", { testID: `current-event-${event.id}` }, event.title),
   GroupAccessLevelBadge: createHost("GroupAccessLevelBadge"),
   GroupEventCard: ({ event }: { event: GroupEventSummary }) =>
     React.createElement("View", { testID: `group-event-card-${event.id}` }, event.title),

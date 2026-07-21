@@ -144,21 +144,37 @@ describe("mobile-to-web parity registry", () => {
     ).toEqual([]);
   });
 
-  it("keeps known in-progress web parity statuses honest", () => {
+  it("keeps reconciled web parity statuses honest", () => {
     const expectedFeatureStatuses = {
+      "account.onboarding": "implemented-unverified",
       "auth.verify_email": "implemented",
-      "messaging.detail": "partial",
-      "messaging.new": "partial",
+      "activity_plans.create": "implemented-unverified",
+      "activity_plans.detail": "implemented-unverified",
+      "activity_plans.list": "implemented-unverified",
+      "discover.browse": "implemented-unverified",
+      "goals.detail": "implemented-unverified",
+      "messaging.detail": "implemented-unverified",
+      "messaging.new": "implemented-unverified",
       "notifications.list": "implemented",
       "planning.calendar_tab": "implemented",
-      "planning.plan_tab": "partial",
-      "profile.settings": "partial",
+      "planning.plan_tab": "implemented-unverified",
+      "profile.settings": "implemented-unverified",
+      "profile.training_preferences": "implemented-unverified",
       "record.launcher": "implemented",
-      "record.plan": "partial",
+      "record.plan": "implemented-unverified",
       "record.route": "implemented",
       "record.route_preview": "implemented",
+      "record.session": "implemented-unverified",
+      "record.sensors": "missing",
+      "record.ftms": "missing",
       "record.submit": "implemented",
-      "scheduled_activities.event_detail": "partial",
+      "scheduled_activities.event_detail": "implemented-unverified",
+      "scheduled_activities.list": "implemented-unverified",
+      "training_plans.create": "implemented-unverified",
+      "training_plans.detail": "implemented-unverified",
+      "training_plans.edit": "implemented-unverified",
+      "training_plans.list": "implemented-unverified",
+      "training_plans.reorder_workouts": "implemented-unverified",
     } as const;
 
     const mismatches = Object.entries(expectedFeatureStatuses)

@@ -4,6 +4,10 @@ import {
   getProviderOAuthConfig,
   isSupportedOAuthProvider,
 } from "../../lib/integrations/oauth-config";
+import {
+  deriveOAuthCodeVerifier,
+  redeemLocalOAuthAuthorizationCode,
+} from "../../lib/integrations/oauth-pkce";
 
 type ValidatedOAuthState = {
   userId: string;
@@ -81,11 +85,26 @@ function buildRedirectUrl(baseUrl: string, params: Record<string, string | null 
 async function exchangeCodeForTokens(
   provider: PublicIntegrationProvider,
   code: string,
+  state: string,
 ): Promise<OAuthTokenResponse> {
   const config = getProviderOAuthConfig(provider);
 
   if (!config) {
     throw new OAuthTokenExchangeError("OAuth credentials are not configured", "not_configured");
+  }
+
+  const codeVerifier = deriveOAuthCodeVerifier({
+    clientSecret: config.clientSecret,
+    provider,
+    state,
+  });
+
+  if (config.adapter === "local-test") {
+    try {
+      return redeemLocalOAuthAuthorizationCode({ code, config, provider, verifier: codeVerifier });
+    } catch {
+      throw new OAuthTokenExchangeError("Local token exchange failed", "invalid_grant");
+    }
   }
 
   const baseUrl =
@@ -96,39 +115,22 @@ async function exchangeCodeForTokens(
     "http://localhost:3000";
   const redirectUri = `${baseUrl}/api/integrations/callback/${provider}`;
 
-  const requestToken = async (useBasicAuth: boolean) => {
-    const body = new URLSearchParams({
-      code,
-      grant_type: "authorization_code",
-      redirect_uri: redirectUri,
-      ...(useBasicAuth
-        ? {}
-        : {
-            client_id: config.clientId,
-            client_secret: config.clientSecret,
-          }),
-    });
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/x-www-form-urlencoded",
+  const body = new URLSearchParams({
+    client_id: config.clientId,
+    code,
+    code_verifier: codeVerifier,
+    grant_type: "authorization_code",
+    redirect_uri: redirectUri,
+  });
+  const response = await fetch(config.tokenUrl, {
+    method: "POST",
+    headers: {
       Accept: "application/json",
-    };
-
-    if (useBasicAuth) {
-      headers.Authorization = `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString("base64")}`;
-    }
-
-    return fetch(config.tokenUrl, {
-      method: "POST",
-      headers,
-      body: body.toString(),
-    });
-  };
-
-  let response = await requestToken(true);
-  if (!response.ok) {
-    response = await requestToken(false);
-  }
+      Authorization: `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString("base64")}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: body.toString(),
+  });
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
@@ -138,7 +140,7 @@ async function exchangeCodeForTokens(
       (typeof errorData?.message === "string" && errorData.message) ||
       `http_${response.status}`;
 
-    console.error("Token exchange failed", { detail, provider, status: response.status });
+    console.error("Token exchange failed", { provider, status: response.status });
     throw new OAuthTokenExchangeError(`Token exchange failed: ${response.status}`, detail);
   }
 
@@ -214,10 +216,18 @@ export async function handleOAuthCallback({
 
   const { userId, mobileRedirectUri } = storedState;
 
+  if (storedState.provider !== provider) {
+    await caller.integrations.deleteOAuthState({ state });
+    return {
+      redirectUrl: buildRedirectUrl(mobileRedirectUri, { error: "invalid_state" }),
+      status: 302,
+    };
+  }
+
   if (error) {
     await caller.integrations.deleteOAuthState({ state });
     return {
-      redirectUrl: buildRedirectUrl(mobileRedirectUri, { error }),
+      redirectUrl: buildRedirectUrl(mobileRedirectUri, { error: "authorization_denied" }),
       status: 302,
     };
   }
@@ -231,7 +241,7 @@ export async function handleOAuthCallback({
   }
 
   try {
-    const tokens = await exchangeCodeForTokens(provider, code);
+    const tokens = await exchangeCodeForTokens(provider, code, state);
     const externalId = await resolveExternalId(provider, tokens);
 
     try {
@@ -250,14 +260,13 @@ export async function handleOAuthCallback({
     } catch (storeError) {
       console.error("Failed to store integration", {
         provider,
-        userId,
-        externalId,
         errorName: storeError instanceof Error ? storeError.name : "unknown",
       });
       await caller.integrations.deleteOAuthState({ state });
       return {
         redirectUrl: buildRedirectUrl(mobileRedirectUri, {
           error: "store_integration_failed",
+          integration: "failed",
           provider,
         }),
         status: 302,
@@ -265,23 +274,23 @@ export async function handleOAuthCallback({
     }
 
     return {
-      redirectUrl: buildRedirectUrl(mobileRedirectUri, { provider, success: "true" }),
+      redirectUrl: buildRedirectUrl(mobileRedirectUri, {
+        integration: "connected",
+        provider,
+        success: "true",
+      }),
       status: 302,
     };
   } catch (caughtError) {
-    const detail =
-      caughtError instanceof OAuthTokenExchangeError ? caughtError.detail || "unknown" : "unknown";
-
     console.error("OAuth callback error", {
       provider,
-      detail,
       errorName: caughtError instanceof Error ? caughtError.name : "unknown",
     });
     await caller.integrations.deleteOAuthState({ state });
     return {
       redirectUrl: buildRedirectUrl(mobileRedirectUri, {
         error: "token_exchange_failed",
-        error_detail: detail,
+        integration: "failed",
         provider,
       }),
       status: 302,

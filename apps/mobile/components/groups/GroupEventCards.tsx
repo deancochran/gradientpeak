@@ -4,7 +4,7 @@ import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
 import { CalendarDays, MapPin } from "lucide-react-native";
 import { type GestureResponderEvent, Pressable, TouchableOpacity, View } from "react-native";
-import type { CurrentGroupEventPlan, GroupEventListItem } from "@/lib/groups";
+import type { GroupEventListItem } from "@/lib/groups";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 
 type GroupEventOwner = NonNullable<GroupEventListItem["group"]>;
@@ -215,37 +215,5 @@ export function GroupEventPreviewHeader({
         </Button>
       ) : null}
     </View>
-  );
-}
-
-export function CurrentGroupEventPlanCard({
-  event,
-  onGroupPress,
-  onPress,
-}: {
-  event: CurrentGroupEventPlan;
-  onGroupPress?: (group: GroupEventOwner) => void;
-  onPress?: (event: CurrentGroupEventPlan) => void;
-}) {
-  const hasActivityPlan = Boolean(event.activity_plan_id);
-
-  return (
-    <TouchableOpacity activeOpacity={0.85} disabled={!onPress} onPress={() => onPress?.(event)}>
-      <View
-        className={`gap-2 rounded-2xl border p-4 ${hasActivityPlan ? "border-primary/30 bg-primary/5" : "border-border bg-card"}`}
-      >
-        {event.group ? <GroupEventOwnerRow group={event.group} onPress={onGroupPress} /> : null}
-        <Text className="text-xs font-semibold uppercase tracking-wide text-primary">
-          {hasActivityPlan ? "Current / next plan" : "Current / next event"}
-        </Text>
-        <Text className="text-base font-semibold text-foreground" numberOfLines={2}>
-          {event.title}
-        </Text>
-        <Text className="text-xs text-muted-foreground">{formatGroupEventDateRange(event)}</Text>
-        {hasActivityPlan ? (
-          <Text className="text-xs text-muted-foreground">Activity plan</Text>
-        ) : null}
-      </View>
-    </TouchableOpacity>
   );
 }

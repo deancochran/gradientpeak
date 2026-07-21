@@ -7,14 +7,6 @@ import { useAuth } from "../../../../components/providers/auth-provider";
 import { RouteFlashToast, type RouteFlashType } from "../../../../components/route-flash-toast";
 import { api } from "../../../../lib/api/client";
 
-type FollowingProfile = {
-  avatar_url: string | null;
-  follow_status?: string | null;
-  id: string;
-  is_public: boolean | null;
-  username: string | null;
-};
-
 export const Route = createFileRoute("/_protected/user/$userId/following")({
   validateSearch: (search: Record<string, unknown>) => ({
     cursor: typeof search.cursor === "string" ? search.cursor : undefined,
@@ -73,6 +65,7 @@ function FollowingPage() {
         title="{count} following"
         total={total}
         emptyMessage="Not following anyone yet"
+        {...(followingQuery.error ? { errorMessage: "Unable to load following" } : {})}
         users={users}
         isLoading={followingQuery.isLoading}
         hasMore={hasMore}
@@ -93,6 +86,7 @@ function FollowingPage() {
             </Button>
           ) : undefined
         }
+        onRetry={() => void followingQuery.refetch()}
         getProfileLink={(profileUserId) => ({
           to: "/user/$userId",
           params: { userId: profileUserId },
@@ -121,6 +115,19 @@ function FollowingPage() {
           );
         }}
       />
+      {cursor ? (
+        <div className="text-center">
+          <Button asChild variant="ghost">
+            <Link
+              to="/user/$userId/following"
+              params={{ userId }}
+              search={{ cursor: undefined, flash: undefined, flashType: undefined }}
+            >
+              Back to first page
+            </Link>
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

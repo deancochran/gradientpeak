@@ -441,6 +441,7 @@ export const activityPlans = pgTable(
     structure: jsonb("structure").notNull(),
     structure_hash: text("structure_hash").notNull(),
     gps_recording_enabled: boolean("gps_recording_enabled").notNull().default(true),
+    route_id: uuid("route_id").references(() => activityRoutes.id, { onDelete: "set null" }),
     template_visibility: text("template_visibility", { enum: ["private", "followers", "public"] })
       .notNull()
       .default("private"),
@@ -492,6 +493,9 @@ export const activityPlans = pgTable(
       .where(sql`${table.is_system_template} = true`),
     index("idx_activity_plans_visibility").on(table.template_visibility),
     index("idx_activity_plans_content_visibility").on(table.content_visibility),
+    index("idx_activity_plans_route_id")
+      .on(table.route_id)
+      .where(sql`${table.route_id} is not null`),
     index("idx_activity_plans_structure_categories").using(
       "gin",
       table.structure.op("jsonb_path_ops"),
@@ -1395,6 +1399,7 @@ export const activityEfforts = pgTable(
       .references(() => canonicalActivityCategories.code, { onDelete: "restrict" }),
     effort_type: effortTypeEnum("effort_type").notNull(),
     duration_seconds: integer("duration_seconds").notNull(),
+    distance_meters: integer("distance_meters"),
     start_offset: integer("start_offset"),
     unit: text("unit").notNull(),
     value: real("value").notNull(),
@@ -1427,16 +1432,20 @@ export const activityEfforts = pgTable(
       sql`${table.duration_seconds} between 1 and 14400`,
     ),
     check(
+      "activity_efforts_distance_meters_bounds_check",
+      sql`${table.distance_meters} is null or ${table.distance_meters} between 1 and 1000000`,
+    ),
+    check(
       "activity_efforts_value_finite_positive_check",
       sql`coalesce((${table.value} > 0 and ${table.value} not in ('NaN'::real, 'Infinity'::real, '-Infinity'::real)) or (${table.value} = 0 and ${table.activity_id} is null and ${table.activity_category} = 'bike' and ${table.effort_type} = 'power' and ${table.source} = 'manual' and ${table.method} = 'profile_update_override' and ${table.provenance} ->> 'override_state' = 'cleared'), false)`,
     ),
     check(
       "activity_efforts_supported_combination_check",
-      sql`(${table.activity_category} = 'bike' and ${table.effort_type} = 'power') or (${table.activity_category} in ('run', 'swim') and ${table.effort_type} = 'speed')`,
+      sql`(${table.activity_category} = 'bike' and ${table.effort_type} = 'power') or (${table.activity_category} in ('run', 'swim') and ${table.effort_type} = 'speed') or (${table.activity_category} in ('bike', 'run', 'swim') and ${table.effort_type}::text = 'heart_rate')`,
     ),
     check(
       "activity_efforts_unit_compatibility_check",
-      sql`(${table.activity_category} = 'bike' and ${table.effort_type} = 'power' and ${table.unit} in ('watts', 'W')) or (${table.activity_category} in ('run', 'swim') and ${table.effort_type} = 'speed' and ${table.unit} in ('meters_per_second', 'm/s'))`,
+      sql`(${table.activity_category} = 'bike' and ${table.effort_type} = 'power' and ${table.unit} in ('watts', 'W')) or (${table.activity_category} in ('run', 'swim') and ${table.effort_type} = 'speed' and ${table.unit} in ('meters_per_second', 'm/s')) or (${table.effort_type}::text = 'heart_rate' and ${table.unit} in ('bpm', 'beats_per_minute'))`,
     ),
     check(
       "activity_efforts_bike_power_max_check",
@@ -1449,6 +1458,10 @@ export const activityEfforts = pgTable(
     check(
       "activity_efforts_swim_speed_bounds_check",
       sql`${table.activity_category} <> 'swim' or ${table.effort_type} <> 'speed' or (${table.value} >= 0.1 and ${table.value} <= 3)`,
+    ),
+    check(
+      "activity_efforts_heart_rate_bounds_check",
+      sql`${table.effort_type}::text <> 'heart_rate' or ${table.value} between 30 and 240`,
     ),
     check(
       "activity_efforts_method_not_blank_check",
@@ -1853,10 +1866,16 @@ export const conversationParticipants = pgTable(
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
+    last_read_at: timestamp("last_read_at", { withTimezone: true, mode: "date" }),
+    last_read_message_id: uuid("last_read_message_id"),
   },
   (table) => [
     primaryKey({ columns: [table.conversation_id, table.user_id] }),
     index("idx_conversation_participants_user_id").on(table.user_id),
+    check(
+      "conversation_participants_read_cursor_pair_check",
+      sql`(${table.last_read_at} is null) = (${table.last_read_message_id} is null)`,
+    ),
   ],
 );
 

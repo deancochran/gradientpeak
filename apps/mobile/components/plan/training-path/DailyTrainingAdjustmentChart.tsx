@@ -160,6 +160,8 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   const [hasMounted, setHasMounted] = useState(false);
   const [hasViewportLayout, setHasViewportLayout] = useState(false);
   const windowAnchorDateRef = useRef<string | null>(null);
+  const previousSourceRangeRef = useRef<string | null>(null);
+  const pendingViewportRestoreDateRef = useRef<string | null>(null);
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
   const slotWidth = density === "compact" ? 28 : density === "detail" ? 34 : 30;
@@ -195,8 +197,10 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
     endMomentum,
     previewNearestFromScrollEvent,
     scrollRef,
+    scrollToDate,
     selectRelative,
     selectedPoint,
+    phase,
   } = useInstantChartSelection({
     isScrollReady: hasViewportLayout && hasContentMeasurement,
     onPreviewSelectedDateChange,
@@ -245,6 +249,27 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
     setHasMounted(true);
   }, []);
 
+  const sourceRangeKey = `${points[0]?.date ?? ""}:${points[points.length - 1]?.date ?? ""}:${points.length}`;
+  useEffect(() => {
+    const previousSourceRange = previousSourceRangeRef.current;
+    previousSourceRangeRef.current = sourceRangeKey;
+    if (!previousSourceRange || previousSourceRange === sourceRangeKey) return;
+
+    const anchorDate = windowAnchorDateRef.current;
+    if (anchorDate && visiblePoints.some((point) => point.date === anchorDate)) {
+      pendingViewportRestoreDateRef.current = anchorDate;
+    }
+  }, [sourceRangeKey, visiblePoints]);
+
+  useEffect(() => {
+    const restoreDate = pendingViewportRestoreDateRef.current;
+    if (!restoreDate || phase === "previewing" || !hasViewportLayout || !hasContentMeasurement) {
+      return;
+    }
+    pendingViewportRestoreDateRef.current = null;
+    scrollToDate(restoreDate, false);
+  }, [hasContentMeasurement, hasViewportLayout, phase, scrollToDate]);
+
   const onChartLayout = useCallback((event: LayoutChangeEvent) => {
     const measuredWidth = Math.floor(event.nativeEvent.layout.width);
     if (measuredWidth >= 220)
@@ -271,8 +296,11 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
         slotWidth,
         visiblePoints.length,
       );
-      windowAnchorDateRef.current =
-        visiblePoints[nearestIndex]?.date ?? windowAnchorDateRef.current;
+      const nextAnchorDate = visiblePoints[nearestIndex]?.date ?? windowAnchorDateRef.current;
+      windowAnchorDateRef.current = nextAnchorDate;
+      if (pendingViewportRestoreDateRef.current && nextAnchorDate) {
+        pendingViewportRestoreDateRef.current = nextAnchorDate;
+      }
       previewNearestFromScrollEvent(event);
       prefetchNearEdge(offsetX);
     },

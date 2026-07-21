@@ -12,6 +12,7 @@ import { Loader2, MapPin, Route as RouteIcon } from "lucide-react";
 import { RoutePreviewMap } from "../../../../components/recording/route-preview-map";
 import { useViewingUserPreferredUnitSystem } from "../../../../hooks/use-viewing-user-preferred-unit-system";
 import { api } from "../../../../lib/api/client";
+import { useTimerOnlyRecording } from "../../../../lib/recording/provider";
 import { formatDistance, validateRecordingSearch } from "../../../../lib/recording-web";
 
 export const Route = createFileRoute("/_protected/record/route-preview/$routeId")({
@@ -23,12 +24,15 @@ export function RecordRoutePreviewPage() {
   const navigate = Route.useNavigate();
   const launcher = Route.useSearch();
   const { routeId } = Route.useParams();
+  const recording = useTimerOnlyRecording();
+  const lockedRouteId = recording.state.reducer.snapshot?.activity.routeId ?? null;
+  const identityLocked = Boolean(recording.state.reducer.snapshot);
   const { unitSystem } = useViewingUserPreferredUnitSystem();
   const routeQuery = api.routes.get.useQuery({ id: routeId });
   const fullRouteQuery = api.routes.loadFull.useQuery({ id: routeId });
 
   const attachRoute = () => {
-    if (!routeQuery.data) {
+    if (!routeQuery.data || identityLocked) {
       return;
     }
 
@@ -71,7 +75,7 @@ export function RecordRoutePreviewPage() {
 
   const route = routeQuery.data;
   const fullRoute = fullRouteQuery.data;
-  const isAttached = launcher.routeId === route.id;
+  const isAttached = (lockedRouteId ?? launcher.routeId) === route.id;
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 py-4">
@@ -129,7 +133,13 @@ export function RecordRoutePreviewPage() {
           </div>
 
           <div className="flex flex-wrap gap-3">
-            <Button onClick={attachRoute}>{isAttached ? "Keep attached" : "Attach route"}</Button>
+            <Button disabled={identityLocked} onClick={attachRoute}>
+              {identityLocked
+                ? "Locked for session"
+                : isAttached
+                  ? "Keep attached"
+                  : "Attach route"}
+            </Button>
             <Button asChild variant="outline">
               <Link to="/record/route" search={launcher}>
                 Cancel

@@ -394,19 +394,19 @@ describe("discover screen", () => {
     expect(screen.queryByTestId("discover-feed-item-routes-route-1")).toBeNull();
   });
 
-  it("uses list cards for activity plans, training plans, and routes", async () => {
+  it("uses visually rich cards for activity plans, training plans, and routes", async () => {
     renderNative(<DiscoverScreen />);
 
-    expect(screen.getByTestId("activity-plan-ap-1").props.variant).toBe("list");
+    expect(screen.getByTestId("activity-plan-ap-1").props.variant).toBeUndefined();
 
     fireEvent.press(screen.getByTestId("discover-scope-trainingPlans"));
     await waitFor(() => {
-      expect(screen.getByTestId("training-plan-tp-1").props.variant).toBe("list");
+      expect(screen.getByTestId("training-plan-tp-1").props.variant).toBeUndefined();
     });
 
     fireEvent.press(screen.getByTestId("discover-scope-routes"));
     await waitFor(() => {
-      expect(screen.getByTestId("route-route-1").props.variant).toBe("list");
+      expect(screen.getByTestId("route-route-1").props.variant).toBeUndefined();
     });
   });
 

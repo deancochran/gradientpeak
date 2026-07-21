@@ -219,4 +219,42 @@ describe("group onboarding concurrency against PostgreSQL", () => {
       new Set([nullGroupId, futureGroupId]),
     );
   });
+
+  it("serializes concurrent ownership transfers and preserves exactly one active owner", async () => {
+    const creatorId = await seedProfile("transfer-owner");
+    const firstTargetId = await seedProfile("transfer-first");
+    const secondTargetId = await seedProfile("transfer-second");
+    const groupId = await seedGroup(creatorId, "invite_only");
+    await db.insert(groupMemberships).values([
+      { group_id: groupId, profile_id: creatorId, role: "owner", status: "active" },
+      { group_id: groupId, profile_id: firstTargetId, role: "member", status: "active" },
+      { group_id: groupId, profile_id: secondTargetId, role: "member", status: "active" },
+    ]);
+    const caller = createRouterCaller(groupsRouter, { db, userId: creatorId });
+
+    const outcomes = await Promise.allSettled([
+      caller.transferOwnership({
+        groupId,
+        targetProfileId: firstTargetId,
+        previousOwnerRole: "admin",
+      }),
+      caller.transferOwnership({
+        groupId,
+        targetProfileId: secondTargetId,
+        previousOwnerRole: "admin",
+      }),
+    ]);
+    const memberships = await db
+      .select()
+      .from(groupMemberships)
+      .where(eq(groupMemberships.group_id, groupId));
+
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+    expect(outcomes.filter((outcome) => outcome.status === "rejected")).toHaveLength(1);
+    expect(
+      memberships.filter(
+        (membership) => membership.status === "active" && membership.role === "owner",
+      ),
+    ).toHaveLength(1);
+  });
 });

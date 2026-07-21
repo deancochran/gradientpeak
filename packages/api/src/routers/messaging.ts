@@ -10,7 +10,7 @@ import {
   publicConversationsRowSchema,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, count, eq, isNull, ne, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   getConversationMessagesForViewer,
@@ -23,7 +23,17 @@ const timestampSchema = z.union([z.date(), z.string()]);
 
 const getOrCreateDMInputSchema = z.object({ target_user_id: z.string().uuid() }).strict();
 
-const createConversationInputSchema = CreateConversationSchema.strict();
+const createConversationInputSchema = CreateConversationSchema.strict().superRefine(
+  (input, ctx) => {
+    if (new Set(input.participant_ids).size < 2) {
+      ctx.addIssue({
+        code: "custom",
+        message: "A group conversation requires at least two other participants.",
+        path: ["participant_ids"],
+      });
+    }
+  },
+);
 
 const getMessagesInputSchema = z.object({ conversation_id: z.string().uuid() }).strict();
 
@@ -83,6 +93,13 @@ export const messagingRouter = createTRPCRouter({
       const db = getRequiredDb(ctx);
 
       try {
+        if (input.target_user_id === ctx.session.user.id) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "A direct-message recipient must be another profile.",
+          });
+        }
+
         const existingConversationResult = await db.execute(sql`
           select c.id, c.is_group, c.group_name, c.created_at, c.last_message_at
           from conversations c
@@ -165,6 +182,12 @@ export const messagingRouter = createTRPCRouter({
 
       try {
         const participantIds = [...new Set([...input.participant_ids, ctx.session.user.id])];
+        if (participantIds.length < 3) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "A group conversation requires at least two other participants.",
+          });
+        }
 
         return await db.transaction(async (tx) => {
           const [createdConversation] = await tx
@@ -257,12 +280,19 @@ export const messagingRouter = createTRPCRouter({
           where m.conversation_id = c.id
             and m.sender_id <> ${ctx.session.user.id}::uuid
             and m.deleted_at is null
+            and (
+              membership.last_read_at is null
+              or (m.created_at, m.id) > (
+                membership.last_read_at,
+                membership.last_read_message_id
+              )
+            )
         ) unread_counts on true
         left join lateral (
           select m.id, m.conversation_id, m.sender_id, m.content, m.created_at, m.deleted_at
           from messages m
           where m.conversation_id = c.id
-          order by m.created_at desc
+          order by m.created_at desc, m.id desc
           limit 1
         ) lm on true
         left join lateral (
@@ -382,28 +412,97 @@ export const messagingRouter = createTRPCRouter({
     }),
 
   markAsRead: protectedProcedure.input(markAsReadInputSchema).mutation(async ({ ctx, input }) => {
-    void input;
-    void ctx;
-    return { success: true };
+    const db = getRequiredDb(ctx);
+
+    try {
+      const result = await db.execute(sql`
+        with target as (
+          select
+            participant.conversation_id,
+            participant.user_id,
+            latest.created_at as latest_created_at,
+            latest.id as latest_message_id
+          from conversation_participants participant
+          left join lateral (
+            select message.created_at, message.id
+            from messages message
+            where message.conversation_id = participant.conversation_id
+              and message.sender_id <> participant.user_id
+              and message.deleted_at is null
+            order by message.created_at desc, message.id desc
+            limit 1
+          ) latest on true
+          where participant.conversation_id = ${input.conversation_id}::uuid
+            and participant.user_id = ${ctx.session.user.id}::uuid
+        )
+        update conversation_participants participant
+        set
+          last_read_at = case
+            when target.latest_message_id is not null and (
+              participant.last_read_at is null
+              or (target.latest_created_at, target.latest_message_id) > (
+                participant.last_read_at,
+                participant.last_read_message_id
+              )
+            ) then target.latest_created_at
+            else participant.last_read_at
+          end,
+          last_read_message_id = case
+            when target.latest_message_id is not null and (
+              participant.last_read_at is null
+              or (target.latest_created_at, target.latest_message_id) > (
+                participant.last_read_at,
+                participant.last_read_message_id
+              )
+            ) then target.latest_message_id
+            else participant.last_read_message_id
+          end
+        from target
+        where participant.conversation_id = target.conversation_id
+          and participant.user_id = target.user_id
+        returning participant.conversation_id
+      `);
+
+      if (!result.rows[0]) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found." });
+      }
+
+      return { success: true };
+    } catch (error) {
+      if (error instanceof TRPCError) {
+        throw error;
+      }
+
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to mark conversation as read.",
+        cause: error,
+      });
+    }
   }),
 
   getUnreadCount: protectedProcedure.query(async ({ ctx }) => {
     const db = getRequiredDb(ctx);
 
     try {
-      const [result] = await db
-        .select({ unread_count: count() })
-        .from(messages)
-        .innerJoin(
-          conversationParticipants,
-          and(
-            eq(conversationParticipants.conversation_id, messages.conversation_id),
-            eq(conversationParticipants.user_id, ctx.session.user.id),
-          ),
-        )
-        .where(and(ne(messages.sender_id, ctx.session.user.id), isNull(messages.deleted_at)));
+      const result = await db.execute(sql`
+        select count(*)::int as unread_count
+        from conversation_participants participant
+        inner join messages message
+          on message.conversation_id = participant.conversation_id
+        where participant.user_id = ${ctx.session.user.id}::uuid
+          and message.sender_id <> participant.user_id
+          and message.deleted_at is null
+          and (
+            participant.last_read_at is null
+            or (message.created_at, message.id) > (
+              participant.last_read_at,
+              participant.last_read_message_id
+            )
+          )
+      `);
 
-      return Number(result?.unread_count ?? 0);
+      return Number(result.rows[0]?.unread_count ?? 0);
     } catch (error) {
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",

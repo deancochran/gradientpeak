@@ -1,9 +1,9 @@
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
-import { Text } from "@repo/ui/components/text";
 import { Stack } from "expo-router";
 import { useMemo, useState } from "react";
-import { TouchableOpacity, View } from "react-native";
+import { View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { HeaderTextAction } from "@/components/shared/HeaderAction";
 import { IndexFilterSheet } from "@/components/shared/IndexFilterSheet";
 import {
   FilterChip,
@@ -27,23 +27,33 @@ function TrainingPlansListScreen() {
   const [draftVisibilityFilter, setDraftVisibilityFilter] = useState<typeof visibilityFilter>(null);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
 
-  const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, refetch } =
-    api.trainingPlans.list.useInfiniteQuery(
-      {
-        ownerScope: "own",
-        includeOwnOnly: true,
-        includeSystemTemplates: false,
-        search: searchQuery.trim() || undefined,
-        visibility: visibilityFilter ?? undefined,
-        limit: 25,
-      },
-      {
-        getNextPageParam: (lastPage) => lastPage.nextCursor,
-      },
-    );
+  const {
+    data,
+    error,
+    isError,
+    isFetching,
+    isLoading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+    refetch,
+  } = api.trainingPlans.list.useInfiniteQuery(
+    {
+      ownerScope: "own",
+      includeOwnOnly: true,
+      includeSystemTemplates: false,
+      search: searchQuery.trim() || undefined,
+      visibility: visibilityFilter ?? undefined,
+      limit: 25,
+    },
+    {
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
+    },
+  );
 
   const sortedPlans = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data]);
   const planCount = data?.pages[0]?.total ?? sortedPlans.length;
+  const hasActiveQuery = searchQuery.trim().length > 0 || visibilityFilter !== null;
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -56,13 +66,12 @@ function TrainingPlansListScreen() {
       <Stack.Screen
         options={{
           headerRight: () => (
-            <TouchableOpacity
+            <HeaderTextAction
+              accessibilityLabel="Create training plan"
+              label="Create"
               onPress={() => navigateTo(ROUTES.PLAN.TRAINING_PLAN.CREATE)}
-              className="mr-2 rounded-full px-2 py-1"
               testID="training-plans-list-create-trigger"
-            >
-              <Text className="text-sm font-medium text-primary">Create</Text>
-            </TouchableOpacity>
+            />
           ),
         }}
       />
@@ -81,6 +90,8 @@ function TrainingPlansListScreen() {
       <ResourceList
         testID="training-plans-list-content"
         data={sortedPlans}
+        errorDescription={error?.message ?? "Please try again."}
+        errorTitle="Unable to load training plans"
         contentContainerClassName="gap-4 p-4 pb-6"
         emptyComponent={
           <View testID="training-plans-list-empty-state">
@@ -92,7 +103,10 @@ function TrainingPlansListScreen() {
         }
         hasNextPage={hasNextPage}
         isFetchingNextPage={isFetchingNextPage}
+        isError={isError}
         isLoading={isLoading}
+        isEmptyFiltered={hasActiveQuery}
+        isRetrying={isFetching}
         keyExtractor={(plan) => plan.id}
         ListHeaderComponent={
           <IndexResultsSummary
@@ -104,13 +118,13 @@ function TrainingPlansListScreen() {
         loadingMoreLabel="Loading more plans..."
         onLoadMore={() => void fetchNextPage()}
         onRefresh={handleRefresh}
+        onRetry={refetch}
         refreshing={refreshing}
         renderItem={(plan) => (
           <View testID={`training-plans-list-item-${plan.id}`}>
             <TrainingPlanCard
               plan={plan}
               onPress={() => navigateTo(ROUTES.PLAN.TRAINING_PLAN.DETAIL(plan.id))}
-              variant="list"
             />
           </View>
         )}

@@ -31,7 +31,7 @@ export async function listProfileMetricHistory(
       .select()
       .from(profileMetrics)
       .where(whereClause)
-      .orderBy(desc(profileMetrics.recorded_at))
+      .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.idx))
       .limit(input.limit)
       .offset(offset),
     db.select({ total: count() }).from(profileMetrics).where(whereClause),

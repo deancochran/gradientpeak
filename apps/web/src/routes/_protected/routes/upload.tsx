@@ -18,18 +18,32 @@ function RouteUploadPage() {
       <div className="space-y-2">
         <h1 className="text-3xl font-semibold tracking-tight">Upload route</h1>
         <p className="text-sm text-muted-foreground">
-          Import one GPX or TCX route into your personal route library for reuse in planning and
-          route preview flows.
+          Import one GPX, TCX, or XML route into your personal route library. If an upload fails,
+          correct the file or details and try again without losing the form.
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>GPX or TCX route file</CardTitle>
+          <CardTitle>GPX, TCX, or XML route file</CardTitle>
         </CardHeader>
         <CardContent>
           <RouteUploadForm
-            onCancel={() => void navigate({ to: "/routes" })}
+            onCancel={() =>
+              void navigate({
+                to: "/routes",
+                search: {
+                  search: "",
+                  ownerScope: "own",
+                  sort: "newest",
+                  minDistanceKm: "",
+                  maxDistanceKm: "",
+                  minAscentM: "",
+                  maxAscentM: "",
+                  page: 1,
+                },
+              })
+            }
             onSubmit={(values) =>
               uploadMutation.mutateAsync({
                 description: values.description ?? undefined,

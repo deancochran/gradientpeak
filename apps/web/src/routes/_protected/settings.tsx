@@ -36,13 +36,28 @@ import {
 import { Label } from "@repo/ui/components/label";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { createFileRoute } from "@tanstack/react-router";
-import { Calendar, Camera, Loader2, Mail, Trash2, UserRound } from "lucide-react";
+import {
+  Calendar,
+  Camera,
+  ImageIcon,
+  Loader2,
+  Mail,
+  Shield,
+  Trash2,
+  UserRound,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type UseFormReturn, useForm } from "react-hook-form";
 import { useAuth } from "../../components/providers/auth-provider";
+import { useTheme } from "../../components/providers/theme-provider";
 import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
 import { api } from "../../lib/api/client";
 import { signOutAction } from "../../lib/auth/server-actions";
+import {
+  changePasswordAction,
+  resendVerificationFromSettingsAction,
+  revokeOtherSessionsAction,
+} from "../../lib/profile/account-settings";
 import {
   getSettingsProfileFormDefaults,
   type SettingsProfileFormInput,
@@ -50,6 +65,7 @@ import {
   settingsProfileFormSchema,
 } from "../../lib/profile/form-schemas";
 import {
+  removeProfileImageAction,
   updateSettingsProfileAction,
   uploadProfileAvatarAction,
 } from "../../lib/profile/server-actions";
@@ -58,6 +74,17 @@ type AvatarFile = { file?: File; name: string };
 
 function isAbsoluteUrl(value: string) {
   return /^https?:\/\//i.test(value);
+}
+
+export async function submitValidatedSettingsForm(
+  event: React.FormEvent<HTMLFormElement>,
+  validate: () => Promise<boolean>,
+) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  if (!(await validate())) return false;
+  HTMLFormElement.prototype.submit.call(formElement);
+  return true;
 }
 
 export const Route = createFileRoute("/_protected/settings")({
@@ -75,21 +102,21 @@ function SettingsPage() {
   const { user, isLoading: authLoading } = useAuth();
   const navigate = Route.useNavigate();
   const { flash, flashType } = Route.useSearch();
-  const {
-    data: profile,
-    isLoading: profileLoading,
-    refetch: refetchProfile,
-  } = api.profiles.get.useQuery(undefined, {
+  const { data: profile, isLoading: profileLoading } = api.profiles.get.useQuery(undefined, {
     enabled: Boolean(user),
   });
 
   const [avatarBlobUrl, setAvatarBlobUrl] = useState<string | null>(null);
   const [avatarFiles, setAvatarFiles] = useState<Array<{ file?: File; name: string }>>([]);
-  const [uploadingAvatar, _setUploadingAvatar] = useState(false);
-  const profileSubmitValidatedRef = useRef(false);
+  const [coverBlobUrl, setCoverBlobUrl] = useState<string | null>(null);
+  const [coverFiles, setCoverFiles] = useState<Array<{ file?: File; name: string }>>([]);
+  const [submittingProfile, setSubmittingProfile] = useState(false);
+  const profileSubmitPendingRef = useRef(false);
   const loading = authLoading || profileLoading;
   const avatarFilePath =
     profile?.avatar_url && !isAbsoluteUrl(profile.avatar_url) ? profile.avatar_url : null;
+  const coverFilePath =
+    profile?.cover_url && !isAbsoluteUrl(profile.cover_url) ? profile.cover_url : null;
 
   const form = useForm<SettingsProfileFormInput, undefined, SettingsProfileFormValues>({
     resolver: zodResolver(settingsProfileFormSchema),
@@ -106,6 +133,10 @@ function SettingsPage() {
     { filePath: avatarFilePath || "" },
     { enabled: Boolean(avatarFilePath), refetchOnWindowFocus: false },
   );
+  const { data: coverUrlData } = api.storage.getSignedUrl.useQuery(
+    { filePath: coverFilePath || "" },
+    { enabled: Boolean(coverFilePath), refetchOnWindowFocus: false },
+  );
 
   useEffect(() => {
     setAvatarBlobUrl(
@@ -113,19 +144,27 @@ function SettingsPage() {
     );
   }, [avatarFilePath, avatarUrlData?.signedUrl, profile?.avatar_url]);
 
+  useEffect(() => {
+    setCoverBlobUrl(
+      coverFilePath ? (coverUrlData?.signedUrl ?? null) : (profile?.cover_url ?? null),
+    );
+  }, [coverFilePath, coverUrlData?.signedUrl, profile?.cover_url]);
+
   const handleProfileSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    if (profileSubmitValidatedRef.current) {
-      profileSubmitValidatedRef.current = false;
-      return;
+    if (profileSubmitPendingRef.current) return;
+    profileSubmitPendingRef.current = true;
+    setSubmittingProfile(true);
+
+    try {
+      if (await submitValidatedSettingsForm(event, form.trigger)) return;
+    } catch (error) {
+      profileSubmitPendingRef.current = false;
+      setSubmittingProfile(false);
+      throw error;
     }
 
-    event.preventDefault();
-    const valid = await form.trigger();
-
-    if (valid) {
-      profileSubmitValidatedRef.current = true;
-      event.currentTarget.requestSubmit();
-    }
+    profileSubmitPendingRef.current = false;
+    setSubmittingProfile(false);
   };
 
   if (loading) {
@@ -165,17 +204,25 @@ function SettingsPage() {
         <ProfileInformationCard
           avatarBlobUrl={avatarBlobUrl}
           avatarFiles={avatarFiles}
+          coverBlobUrl={coverBlobUrl}
+          coverFiles={coverFiles}
           form={form}
           profileUsername={profile?.username}
-          uploadingAvatar={uploadingAvatar}
+          submittingProfile={submittingProfile}
           userEmail={user?.email}
           onAvatarFilesChange={setAvatarFiles}
+          onCoverFilesChange={setCoverFiles}
           onProfileSubmit={handleProfileSubmit}
         />
         <AccountInformationCard
           createdAt={createdAt}
           email={user?.email}
           emailVerified={user?.emailVerified}
+        />
+        <AppearanceCard />
+        <SecurityCard
+          {...(user?.email !== undefined ? { email: user.email } : {})}
+          {...(user?.emailVerified !== undefined ? { emailVerified: user.emailVerified } : {})}
         />
         <DangerZoneCard />
       </div>
@@ -186,20 +233,26 @@ function SettingsPage() {
 function ProfileInformationCard({
   avatarBlobUrl,
   avatarFiles,
+  coverBlobUrl,
+  coverFiles,
   form,
   profileUsername,
-  uploadingAvatar,
+  submittingProfile,
   userEmail,
   onAvatarFilesChange,
+  onCoverFilesChange,
   onProfileSubmit,
 }: {
   avatarBlobUrl: string | null;
   avatarFiles: AvatarFile[];
+  coverBlobUrl: string | null;
+  coverFiles: AvatarFile[];
   form: UseFormReturn<SettingsProfileFormInput, undefined, SettingsProfileFormValues>;
   profileUsername?: string | null;
-  uploadingAvatar: boolean;
+  submittingProfile: boolean;
   userEmail?: string | null;
   onAvatarFilesChange: (files: AvatarFile[]) => void;
+  onCoverFilesChange: (files: AvatarFile[]) => void;
   onProfileSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 }) {
   const publicValue = form.watch("is_public");
@@ -215,6 +268,45 @@ function ProfileInformationCard({
         <CardDescription>Update your profile information and avatar.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        <div className="overflow-hidden rounded-xl border bg-muted/30">
+          {coverBlobUrl ? (
+            <img src={coverBlobUrl} alt="Profile cover" className="h-40 w-full object-cover" />
+          ) : (
+            <div className="flex h-40 items-center justify-center gap-2 text-muted-foreground">
+              <ImageIcon className="h-6 w-6" />
+              <span>No cover photo</span>
+            </div>
+          )}
+          <div className="flex flex-col gap-3 border-t bg-background p-3 sm:flex-row sm:items-end">
+            <form
+              action={uploadProfileAvatarAction.url}
+              method="post"
+              encType="multipart/form-data"
+              className="flex-1 space-y-2"
+            >
+              <input type="hidden" name="field" value="cover_url" />
+              <FileInput
+                accept="image/*"
+                buttonLabel="Choose cover"
+                label="Cover photo upload"
+                name="profile_image"
+                files={coverFiles}
+                onFilesChange={onCoverFilesChange}
+              />
+              <Button type="submit" variant="outline" disabled={coverFiles.length === 0}>
+                Upload Cover
+              </Button>
+            </form>
+            {coverBlobUrl ? (
+              <form action={removeProfileImageAction.url} method="post">
+                <input type="hidden" name="field" value="cover_url" />
+                <Button type="submit" variant="ghost">
+                  Remove Cover
+                </Button>
+              </form>
+            ) : null}
+          </div>
+        </div>
         <div className="flex items-center gap-6">
           <div className="group relative">
             <Avatar className="h-20 w-20 transition-all duration-200 group-hover:opacity-90">
@@ -224,11 +316,7 @@ function ProfileInformationCard({
               </AvatarFallback>
             </Avatar>
             <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-              {uploadingAvatar ? (
-                <Loader2 className="h-6 w-6 animate-spin text-white" />
-              ) : (
-                <Camera className="h-6 w-6 text-white" />
-              )}
+              <Camera className="h-6 w-6 text-white" />
             </div>
           </div>
           <div>
@@ -249,19 +337,23 @@ function ProfileInformationCard({
             accept="image/*"
             buttonLabel="Upload avatar"
             label="Avatar upload"
-            name="avatar"
+            name="profile_image"
             files={avatarFiles}
             onFilesChange={onAvatarFilesChange}
           />
-          <Button
-            type="submit"
-            variant="outline"
-            disabled={uploadingAvatar || avatarFiles.length === 0}
-          >
-            {uploadingAvatar ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+          <input type="hidden" name="field" value="avatar_url" />
+          <Button type="submit" variant="outline" disabled={avatarFiles.length === 0}>
             Upload Avatar
           </Button>
         </form>
+        {avatarBlobUrl ? (
+          <form action={removeProfileImageAction.url} method="post">
+            <input type="hidden" name="field" value="avatar_url" />
+            <Button type="submit" variant="ghost">
+              Remove Avatar
+            </Button>
+          </form>
+        ) : null}
         <Form {...form}>
           <form
             action={updateSettingsProfileAction.url}
@@ -271,6 +363,13 @@ function ProfileInformationCard({
             }}
             className="space-y-4"
           >
+            <FormTextField
+              control={form.control}
+              description="Displayed as your profile name."
+              label="Full name"
+              name="full_name"
+              placeholder="Enter your full name"
+            />
             <FormTextField
               control={form.control}
               description="This is the username that will be displayed on your profile."
@@ -352,8 +451,8 @@ function ProfileInformationCard({
             />
             <LoadingButton
               type="submit"
-              disabled={form.formState.isSubmitting || !form.formState.isDirty}
-              loading={form.formState.isSubmitting}
+              disabled={submittingProfile || !form.formState.isDirty}
+              loading={submittingProfile}
               loadingLabel="Updating..."
             >
               Update Profile
@@ -410,6 +509,135 @@ function AccountInformationCard({
             Sign Out
           </Button>
         </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AppearanceCard() {
+  const { theme, setTheme } = useTheme();
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Theme</CardTitle>
+        <CardDescription>Choose a light, dark, or system-matched appearance.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <fieldset className="grid grid-cols-3 gap-2" aria-label="Theme preference">
+          {(["light", "dark", "system"] as const).map((option) => (
+            <Button
+              key={option}
+              type="button"
+              variant={theme === option ? "default" : "outline"}
+              aria-pressed={theme === option}
+              onClick={() => setTheme(option)}
+              className="capitalize"
+            >
+              {option}
+            </Button>
+          ))}
+        </fieldset>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SecurityCard({
+  email,
+  emailVerified,
+}: {
+  email?: string | null;
+  emailVerified?: boolean | null;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Shield className="h-5 w-5" />
+          Password and sessions
+        </CardTitle>
+        <CardDescription>
+          Password changes keep this session active and revoke every other session.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {!emailVerified && email ? (
+          <div className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-medium">Verify your email</p>
+              <p className="text-sm text-muted-foreground">
+                Confirm {email} to secure account recovery.
+              </p>
+            </div>
+            <form action={resendVerificationFromSettingsAction.url} method="post">
+              <input type="hidden" name="email" value={email} />
+              <Button type="submit" variant="outline">
+                Resend verification
+              </Button>
+            </form>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Your email address is verified.</p>
+        )}
+
+        <form action={changePasswordAction.url} method="post" className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="space-y-2">
+              <Label htmlFor="current-password">Current password</Label>
+              <input
+                id="current-password"
+                name="currentPassword"
+                type="password"
+                autoComplete="current-password"
+                required
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-password">New password</Label>
+              <input
+                id="new-password"
+                name="newPassword"
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                required
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirm-password">Confirm password</Label>
+              <input
+                id="confirm-password"
+                name="confirmPassword"
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                required
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Use at least 8 characters, one uppercase letter, and one number.
+          </p>
+          <Button type="submit">Update password</Button>
+        </form>
+
+        <div className="flex flex-col gap-3 border-t pt-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-medium">Other signed-in devices</p>
+            <p className="text-sm text-muted-foreground">
+              Revoke all sessions except the browser you are using now.
+            </p>
+          </div>
+          <form action={revokeOtherSessionsAction.url} method="post">
+            <Button type="submit" variant="outline">
+              Sign out other sessions
+            </Button>
+          </form>
+        </div>
       </CardContent>
     </Card>
   );

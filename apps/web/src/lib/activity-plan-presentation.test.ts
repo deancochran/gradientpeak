@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   describeActivityPlanSegments,
   describeTrainingPlanSessions,
+  formatActivityPlanCategory,
+  getActivityPlanMetricSummary,
   summarizeActivityPlanSegments,
 } from "./activity-plan-presentation";
 
@@ -34,5 +36,33 @@ describe("activity plan presentation", () => {
   it("summarizes canonical training plan sessions", () => {
     expect(describeTrainingPlanSessions({ sessions: [{}, {}] })).toBe("2 sessions");
     expect(describeTrainingPlanSessions({ phases: [] })).toBe("No sessions specified");
+  });
+
+  it("formats canonical activity categories for people", () => {
+    expect(formatActivityPlanCategory("bike")).toBe("Cycling");
+    expect(formatActivityPlanCategory("strength")).toBe("Strength");
+    expect(formatActivityPlanCategory(undefined)).toBe("Other");
+  });
+
+  it("builds a compact metric summary from authoritative estimates", () => {
+    expect(
+      getActivityPlanMetricSummary({
+        estimated_distance: 12_500,
+        estimated_duration: 4_500,
+        estimated_tss: 72,
+        intensity_factor: 0.84,
+      }),
+    ).toEqual(["1h 15m", "12.5 km", "72 TSS", "0.84 IF"]);
+  });
+
+  it("omits unavailable and invalid estimates", () => {
+    expect(
+      getActivityPlanMetricSummary({
+        estimated_distance: null,
+        estimated_duration: 0,
+        estimated_tss: Number.NaN,
+        intensity_factor: null,
+      }),
+    ).toEqual([]);
   });
 });

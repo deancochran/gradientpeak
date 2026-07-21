@@ -1,3 +1,4 @@
+import { authRequiredPasswordSchema, authStrongPasswordSchema } from "@repo/auth/forms";
 import type { ContentVisibility, ProfilePatchInput } from "@repo/core";
 import { contentVisibilitySchema } from "@repo/core";
 import {
@@ -7,6 +8,29 @@ import {
 } from "@repo/core/units";
 import { z } from "zod";
 
+export const changePasswordFormSchema = z
+  .object({
+    currentPassword: authRequiredPasswordSchema,
+    newPassword: authStrongPasswordSchema,
+    confirmPassword: authRequiredPasswordSchema,
+  })
+  .superRefine(({ confirmPassword, currentPassword, newPassword }, context) => {
+    if (newPassword !== confirmPassword) {
+      context.addIssue({
+        code: "custom",
+        message: "Passwords do not match",
+        path: ["confirmPassword"],
+      });
+    }
+    if (currentPassword === newPassword) {
+      context.addIssue({
+        code: "custom",
+        message: "New password must be different from current password",
+        path: ["newPassword"],
+      });
+    }
+  });
+
 export const settingsProfileFormSchema = z.object({
   bio: z.string().trim().max(500, "Bio must be 500 characters or fewer").optional(),
   default_content_visibility: contentVisibilitySchema.optional(),
@@ -14,6 +38,7 @@ export const settingsProfileFormSchema = z.object({
     .union([z.boolean(), z.enum(["true", "false"]).transform((value) => value === "true")])
     .optional(),
   language: z.string().trim().max(10, "Language must be 10 characters or fewer").optional(),
+  full_name: z.string().trim().min(1, "Full name is required").max(100),
   preferred_units: preferredUnitSystemSchema.optional(),
   username: z
     .string()
@@ -33,6 +58,7 @@ export type SettingsProfileFormValues = z.infer<typeof settingsProfileFormSchema
 export function toProfilePatchInput(values: SettingsProfileFormValues): ProfilePatchInput {
   return {
     bio: values.bio?.trim() ? values.bio.trim() : null,
+    full_name: values.full_name.trim(),
     default_content_visibility: values.default_content_visibility,
     is_public: values.is_public,
     language: values.language?.trim() ? values.language.trim() : null,
@@ -43,6 +69,7 @@ export function toProfilePatchInput(values: SettingsProfileFormValues): ProfileP
 
 export function getSettingsProfileFormDefaults(profile?: {
   bio?: string | null;
+  full_name?: string | null;
   default_content_visibility?: ContentVisibility | null;
   is_public?: boolean | null;
   language?: string | null;
@@ -51,6 +78,7 @@ export function getSettingsProfileFormDefaults(profile?: {
 }): SettingsProfileFormValues {
   return {
     bio: profile?.bio ?? "",
+    full_name: profile?.full_name ?? "",
     default_content_visibility: profile?.default_content_visibility ?? "private",
     is_public: profile?.is_public ?? false,
     language: profile?.language ?? "",

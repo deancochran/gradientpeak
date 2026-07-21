@@ -1,7 +1,8 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Text } from "@repo/ui/components/text";
 import { Users } from "lucide-react-native";
-import { TouchableOpacity, View } from "react-native";
+import { View } from "react-native";
+import { ResourceCardShell } from "@/components/shared/ResourceCardPrimitives";
 import type { DisplayGroupViewerState, GroupListItem } from "@/lib/groups";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 import { GroupAccessLevelBadge, GroupJoinPolicyBadge, GroupRelationshipBadge } from "./GroupBadges";
@@ -54,20 +55,21 @@ export function GroupCard({
   viewer,
 }: GroupCardProps) {
   const isDisabled = disabled ?? !onPress;
+  const handlePress = onPress ? () => onPress(group) : undefined;
 
   return (
-    <TouchableOpacity
-      activeOpacity={0.85}
+    <ResourceCardShell
       accessibilityLabel={`View group ${group.name?.trim() || "Group"}`}
-      accessibilityRole="button"
-      accessibilityState={{ disabled: isDisabled, selected }}
-      className="min-h-[44px]"
+      accessibilityState={{ selected }}
+      cardClassName={variant === "compact" ? "rounded-xl py-3" : "rounded-2xl py-4"}
+      compact={variant === "compact"}
+      contentClassName={variant === "compact" ? "px-3" : "gap-3 px-4"}
       disabled={isDisabled}
-      onPress={() => onPress?.(group)}
-      testID={testID}
+      {...(handlePress ? { onPress: handlePress } : {})}
+      {...(testID !== undefined ? { testID } : {})}
     >
       {variant === "compact" ? (
-        <View className="flex-row items-center gap-3 rounded-xl border border-border bg-card p-3">
+        <View className="min-h-11 flex-row items-center gap-3">
           <GroupAvatar group={group} size="sm" />
           <View className="min-w-0 flex-1 gap-0.5">
             <Text className="text-base font-semibold text-foreground" numberOfLines={1}>
@@ -83,7 +85,7 @@ export function GroupCard({
           {viewer ? <GroupRelationshipBadge relationshipState={viewer.relationshipState} /> : null}
         </View>
       ) : (
-        <View className="gap-3 rounded-2xl border border-border bg-card p-4">
+        <View className="gap-3">
           <View className="flex-row items-start gap-3">
             <GroupAvatar group={group} />
             <View className="min-w-0 flex-1 gap-1">
@@ -111,13 +113,8 @@ export function GroupCard({
           </View>
         </View>
       )}
-    </TouchableOpacity>
+    </ResourceCardShell>
   );
-}
-
-/** @deprecated Use GroupCard with variant="compact". */
-export function GroupCompactCard(props: Omit<GroupCardProps, "variant">) {
-  return <GroupCard {...props} variant="compact" />;
 }
 
 function formatCompactPolicy(joinPolicy: GroupListItem["join_policy"]) {

@@ -114,6 +114,7 @@ import {
   loadOwnedActivityPlansForScheduleGap,
   previewCreationConfigUseCase,
   removeAppliedScheduleUseCase,
+  reorderTrainingPlanWorkoutsUseCase,
   resolveCanonicalTrainingPlan,
   resolveScheduleGapActivityPlanMatchTarget,
   type ScheduleRecommendation,
@@ -137,6 +138,7 @@ import {
   deriveActivityDurations,
   loadActivitySegmentsByActivityId,
   orderedActivitySegments,
+  summarizeSegmentTss,
 } from "../../../lib/activity-analysis";
 import { featureFlags } from "../../../lib/features";
 import { createContentAccessPermissions } from "../../../permissions/content-access";
@@ -176,6 +178,39 @@ const applyQuickAdjustmentInputSchema = z
     adjustedStructure: trainingPlanSchema,
   })
   .strict();
+const reorderTrainingPlanWorkoutsInputSchema = z
+  .object({
+    training_plan_id: z.string().uuid(),
+    changes: z
+      .array(
+        z
+          .object({
+            event_id: z.string().uuid(),
+            expected_scheduled_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+            requested_scheduled_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          })
+          .strict()
+          .refine((change) => change.expected_scheduled_date !== change.requested_scheduled_date, {
+            message: "Requested workout date must differ from the expected date",
+          }),
+      )
+      .min(1)
+      .max(100),
+  })
+  .strict()
+  .superRefine((input, ctx) => {
+    const eventIds = new Set<string>();
+    input.changes.forEach((change, index) => {
+      if (eventIds.has(change.event_id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Workout event IDs must be unique",
+          path: ["changes", index, "event_id"],
+        });
+      }
+      eventIds.add(change.event_id);
+    });
+  });
 const plannedEventType = "planned" as const;
 const conservativeStarterWeeklyTss = 140;
 const conservativeStarterDailyTss = conservativeStarterWeeklyTss / 7;
@@ -2500,7 +2535,7 @@ export async function deriveProfileAwareCreationContext(input: {
           input.db
             .select({
               id: schema.activityEfforts.id,
-              activity_id: schema.activityEfforts.segment_id,
+              activity_id: schema.activityEfforts.activity_id,
               recorded_at: schema.activityEfforts.recorded_at,
               effort_type: schema.activityEfforts.effort_type,
               duration_seconds: schema.activityEfforts.duration_seconds,
@@ -2509,6 +2544,8 @@ export async function deriveProfileAwareCreationContext(input: {
               unit: schema.activityEfforts.unit,
               source: schema.activityEfforts.source,
               method: schema.activityEfforts.method,
+              calculation_version: schema.activityEfforts.calculation_version,
+              quality_score: schema.activityEfforts.quality_score,
               provenance: schema.activityEfforts.provenance,
             })
             .from(schema.activityEfforts)
@@ -2531,6 +2568,8 @@ export async function deriveProfileAwareCreationContext(input: {
               unit: schema.profileMetrics.unit,
               source: schema.profileMetrics.source,
               method: schema.profileMetrics.method,
+              calculation_version: schema.profileMetrics.calculation_version,
+              quality_score: schema.profileMetrics.quality_score,
               provenance: schema.profileMetrics.provenance,
             })
             .from(schema.profileMetrics)
@@ -2567,7 +2606,7 @@ export async function deriveProfileAwareCreationContext(input: {
           input.supabase
             ?.from("activity_efforts")
             .select(
-              "id, segment_id, recorded_at, effort_type, duration_seconds, value, activity_category, unit, source, method, provenance",
+              "id, activity_id, recorded_at, effort_type, duration_seconds, value, activity_category, unit, source, method, calculation_version, quality_score, provenance",
             )
             .eq("profile_id", input.profileId)
             .gte("recorded_at", recentEffortsCutoff.toISOString())
@@ -2577,7 +2616,9 @@ export async function deriveProfileAwareCreationContext(input: {
             .limit(200),
           input.supabase
             ?.from("profile_metrics")
-            .select("id, metric_type, value, recorded_at, unit, source, method, provenance")
+            .select(
+              "id, metric_type, value, recorded_at, unit, source, method, calculation_version, quality_score, provenance",
+            )
             .eq("profile_id", input.profileId)
             .in("metric_type", ["ftp", "lthr", "weight_kg"])
             .lte("recorded_at", asOf.toISOString())
@@ -4206,18 +4247,17 @@ const trainingPlansProcedures = {
       );
 
     const weekActivitiesWithSegments = await attachActivitySegments(db, weekActivities);
-    const weekActivitiesDerivedMap = await buildActivityDerivedSummaryMap({
+    const weekActivitySegments = await buildActivitySegmentDerivedSummaries({
       store: createActivityAnalysisStore(db),
       profileId: ctx.session.user.id,
       activities: weekActivitiesWithSegments,
     });
 
-    const completedWeeklyTSS =
-      weekActivities.reduce(
-        (sum: number, act: { id: string }) =>
-          sum + (weekActivitiesDerivedMap.get(act.id)?.tss ?? 0),
-        0,
-      ) || 0;
+    const completedWeeklyLoad = summarizeSegmentTss(
+      weekActivitySegments,
+      new Set(weekActivities.map((activity) => activity.id)),
+    );
+    const completedWeeklyTSS = completedWeeklyLoad.tss;
 
     // Get planned activities this week with their activity plans
     const weekStartDate = startOfWeek.toISOString().split("T")[0] || "";
@@ -4363,6 +4403,7 @@ const trainingPlansProcedures = {
       form,
       weekProgress: {
         completedTSS: Math.round(completedWeeklyTSS * 10) / 10,
+        tssComplete: completedWeeklyLoad.complete,
         plannedTSS: Math.round(plannedWeeklyTSS * 10) / 10,
         targetTSS: Math.round(targetTSS * 10) / 10,
         completedActivities: completedActivitiesCount || 0,
@@ -4749,7 +4790,7 @@ const trainingPlansProcedures = {
         );
 
       const completedActivitiesWithSegments = await attachActivitySegments(db, completedActivities);
-      const completedDerivedMap = await buildActivityDerivedSummaryMap({
+      const completedSegments = await buildActivitySegmentDerivedSummaries({
         store: createActivityAnalysisStore(db),
         profileId: ctx.session.user.id,
         activities: completedActivitiesWithSegments,
@@ -4786,10 +4827,11 @@ const trainingPlansProcedures = {
             return date >= weekStart && date < weekEnd;
           }) || [];
 
-        const completedTSS = weekCompleted.reduce(
-          (sum: number, act: { id: string }) => sum + (completedDerivedMap.get(act.id)?.tss || 0),
-          0,
+        const completedLoad = summarizeSegmentTss(
+          completedSegments,
+          new Set(weekCompleted.map((activity: { id: string }) => activity.id)),
         );
+        const completedTSS = completedLoad.tss;
 
         const targetWeeklyTSS = plannedTSS;
         const targetActivities =
@@ -4803,7 +4845,9 @@ const trainingPlansProcedures = {
 
         // Determine status
         let status: "good" | "warning" | "poor" = "good";
-        if (tssPercentage < 70 || activityPercentage < 70) {
+        if (!completedLoad.complete) {
+          status = "warning";
+        } else if (tssPercentage < 70 || activityPercentage < 70) {
           status = "poor";
         } else if (tssPercentage < 90 || activityPercentage < 90) {
           status = "warning";
@@ -4814,6 +4858,7 @@ const trainingPlansProcedures = {
           weekEnd: weekEnd.toISOString().split("T")[0],
           plannedTSS: Math.round(plannedTSS),
           completedTSS: Math.round(completedTSS),
+          tssComplete: completedLoad.complete,
           tssPercentage: Math.round(tssPercentage),
           plannedActivities: weekPlanned.length,
           completedActivities: weekCompleted.length,
@@ -5349,6 +5394,18 @@ const trainingPlansProcedures = {
       });
     }),
 
+  reorderWorkouts: protectedProcedure
+    .input(reorderTrainingPlanWorkoutsInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
+      return reorderTrainingPlanWorkoutsUseCase({
+        changes: input.changes,
+        db,
+        profileId: ctx.session.user.id,
+        trainingPlanId: input.training_plan_id,
+      });
+    }),
+
   getActivePlan: protectedProcedure.query(async ({ ctx }) => {
     return getActivePlanUseCase({
       profileId: ctx.session.user.id,
@@ -5388,6 +5445,7 @@ export const trainingPlansCrudProcedures = {
   update: trainingPlansProcedures.update,
   getActivePlan: trainingPlansProcedures.getActivePlan,
   removeAppliedSchedule: trainingPlansProcedures.removeAppliedSchedule,
+  reorderWorkouts: trainingPlansProcedures.reorderWorkouts,
   delete: trainingPlansProcedures.delete,
   duplicate: trainingPlansProcedures.duplicate,
   getById: trainingPlansProcedures.getById,

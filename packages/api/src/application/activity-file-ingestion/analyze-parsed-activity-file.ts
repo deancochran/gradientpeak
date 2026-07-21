@@ -86,6 +86,39 @@ function average(values: Array<number | undefined>): number | undefined {
     : undefined;
 }
 
+function buildHeartRateDistribution(
+  records: Array<{ timestamp?: Date; heartRate?: number }>,
+): { coverageSeconds: number; buckets: Array<{ bpm: number; seconds: number }> } | undefined {
+  const secondsByBpm = new Map<number, number>();
+  for (let index = 0; index < records.length; index += 1) {
+    const record = records[index];
+    if (
+      !record?.timestamp ||
+      !record.heartRate ||
+      record.heartRate < 30 ||
+      record.heartRate > 250
+    ) {
+      continue;
+    }
+    const nextTimestamp = records[index + 1]?.timestamp;
+    if (!nextTimestamp) continue;
+    const observedSeconds = (nextTimestamp.getTime() - record.timestamp.getTime()) / 1000;
+    if (!Number.isFinite(observedSeconds) || observedSeconds <= 0) continue;
+    const seconds = Math.min(10, Math.round(observedSeconds));
+    if (seconds <= 0) continue;
+    const bpm = Math.round(record.heartRate);
+    secondsByBpm.set(bpm, (secondsByBpm.get(bpm) ?? 0) + seconds);
+  }
+  const buckets = [...secondsByBpm.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([bpm, seconds]) => ({ bpm, seconds }));
+  if (buckets.length === 0) return undefined;
+  return {
+    coverageSeconds: buckets.reduce((sum, bucket) => sum + bucket.seconds, 0),
+    buckets,
+  };
+}
+
 function toNumberOrNull(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined) return null;
   const numericValue = Number(value);
@@ -405,6 +438,7 @@ export async function analyzeParsedActivityFile(
         startTime,
         initialSegmentSet.elapsedMs,
       );
+      const heartRateDistribution = buildHeartRateDistribution(segmentRecords);
       return {
         ...segment,
         summary: {
@@ -412,6 +446,7 @@ export async function analyzeParsedActivityFile(
           ...(average(segmentRecords.map((record) => record.heartRate)) === undefined
             ? {}
             : { averageHeartRateBpm: average(segmentRecords.map((record) => record.heartRate)) }),
+          ...(heartRateDistribution ? { heartRateDistribution } : {}),
           ...(average(segmentRecords.map((record) => record.power)) === undefined
             ? {}
             : { averagePowerWatts: average(segmentRecords.map((record) => record.power)) }),
@@ -476,10 +511,30 @@ export async function analyzeParsedActivityFile(
         calculation,
         efforts: calculation.effortsToInsert.map((effort) => ({
           ...effort,
+          segment_id: segment.id,
           start_offset: (effort.start_offset ?? 0) + segment.startOffsetMs / 1000,
         })),
       };
     });
+  const persistedSegmentSet = completedActivitySegmentSetSchemaV1.parse({
+    ...segmentSet,
+    segments: segmentSet.segments.map((segment) => {
+      const analysis = segmentAnalyses.find((candidate) => candidate.segment.id === segment.id);
+      if (!analysis) return segment;
+      const { normalizedPower, normalizedSpeed, normalizedGradedSpeed } = analysis.calculation;
+      return {
+        ...segment,
+        summary: {
+          ...segment.summary,
+          ...(normalizedPower ? { normalizedPowerWatts: normalizedPower } : {}),
+          ...(normalizedSpeed ? { normalizedSpeedMetersPerSecond: normalizedSpeed } : {}),
+          ...(normalizedGradedSpeed
+            ? { normalizedGradedSpeedMetersPerSecond: normalizedGradedSpeed }
+            : {}),
+        },
+      };
+    }),
+  });
   const soleActivityAnalysis = segmentAnalyses.length === 1 ? segmentAnalyses[0] : undefined;
   const normalizedPower = soleActivityAnalysis?.calculation.normalizedPower ?? null;
   const normalizedSpeed = soleActivityAnalysis?.calculation.normalizedSpeed ?? null;
@@ -569,7 +624,7 @@ export async function analyzeParsedActivityFile(
       avg_temperature: resolvedAvgTemperature ? Math.round(resolvedAvgTemperature) : null,
       updated_at: new Date(),
     },
-    segmentSet,
+    segmentSet: persistedSegmentSet,
     startedAt: startTime,
   };
 }

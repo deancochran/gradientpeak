@@ -189,6 +189,9 @@ describe("completed activity segment contract", () => {
         timing: { timingCoverage: "unavailable" },
         averageCadenceRpm: 90,
         averageSpeedMetersPerSecond: 5.2,
+        normalizedPowerWatts: 250,
+        normalizedSpeedMetersPerSecond: 5.4,
+        normalizedGradedSpeedMetersPerSecond: 5.5,
         swim: {
           poolLengthMeters: 25,
           lengthCount: 40,
@@ -204,6 +207,7 @@ describe("completed activity segment contract", () => {
         timing: { timingCoverage: "unavailable" },
         averageCadenceRpm: SEGMENT_SUMMARY_V1_LIMITS.maxCadenceRpm + 1,
         averageSpeedMetersPerSecond: SEGMENT_SUMMARY_V1_LIMITS.maxSpeedMetersPerSecond + 1,
+        normalizedSpeedMetersPerSecond: SEGMENT_SUMMARY_V1_LIMITS.maxSpeedMetersPerSecond + 1,
         swim: { poolLengthMeters: SEGMENT_SUMMARY_V1_LIMITS.maxPoolLengthMeters + 1 },
       }).success,
     ).toBe(false);

@@ -23,7 +23,7 @@ export const activityFileIngestionStatusEnum = pgEnum("activity_file_ingestion_s
   "failed",
 ]);
 
-export const effortTypeEnum = pgEnum("effort_type", ["power", "speed"]);
+export const effortTypeEnum = pgEnum("effort_type", ["power", "speed", "heart_rate"]);
 
 export const integrationProviderEnum = pgEnum("integration_provider", [
   "strava",

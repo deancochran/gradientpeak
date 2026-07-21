@@ -86,6 +86,28 @@ export function createIntegrationsRepositories(db: DrizzleDbClient): Integration
         };
       },
 
+      async findGrantByProfileIdAndProvider({ profileId, provider }) {
+        const [row] = await db
+          .select({
+            expires_at: schema.integrationCredentials.expires_at,
+            scope: schema.integrationCredentials.scope,
+          })
+          .from(schema.integrations)
+          .innerJoin(
+            schema.integrationCredentials,
+            eq(schema.integrationCredentials.integration_id, schema.integrations.id),
+          )
+          .where(
+            and(
+              eq(schema.integrations.profile_id, profileId),
+              eq(schema.integrations.provider, provider),
+            ),
+          )
+          .limit(1);
+
+        return row ?? null;
+      },
+
       async upsertByProfileIdAndProvider({
         profileId,
         provider,

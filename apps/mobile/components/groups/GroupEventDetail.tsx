@@ -254,18 +254,44 @@ export function GroupEventSeriesRsvpPanel({
 }
 
 export function GroupEventFutureOccurrencesSection({
+  errorDescription,
+  isError,
   isLoading,
+  isRetrying,
   occurrences,
   onGroupPress,
   onOccurrencePress,
+  onRetry,
 }: {
+  errorDescription?: string;
+  isError?: boolean;
   isLoading?: boolean;
+  isRetrying?: boolean;
   occurrences: GroupEventSeriesOccurrence[];
   onGroupPress?: (group: NonNullable<GroupEventDetail["group"]>) => void;
   onOccurrencePress?: (event: GroupEventSeriesOccurrence) => void;
+  onRetry?: () => void;
 }) {
   if (isLoading) {
     return <Text className="text-sm text-muted-foreground">Loading future dates...</Text>;
+  }
+
+  if (isError) {
+    return (
+      <View className="gap-3 rounded-2xl border border-destructive/30 bg-destructive/10 p-4">
+        <Text className="text-base font-semibold text-destructive">
+          Unable to load future dates
+        </Text>
+        <Text className="text-sm text-muted-foreground">
+          {errorDescription ?? "Please try again."}
+        </Text>
+        {onRetry ? (
+          <Button disabled={isRetrying} onPress={onRetry} size="sm" variant="outline">
+            <Text className="text-foreground">{isRetrying ? "Retrying" : "Try again"}</Text>
+          </Button>
+        ) : null}
+      </View>
+    );
   }
 
   if (occurrences.length === 0) {
@@ -290,27 +316,40 @@ export function GroupEventFutureOccurrencesSection({
 export function GroupEventDetailScreen({
   canManage = false,
   event,
+  futureOccurrencesError,
+  isErrorFutureOccurrences = false,
+  futureOccurrences,
+  isLoadingFutureOccurrences = false,
+  isRetryingFutureOccurrences = false,
   isWorking = false,
   onActivityPlanPress,
   onCancel,
   onEdit,
   onGroupPress,
+  onOccurrencePress,
+  onRetryFutureOccurrences,
   onRsvp,
   onRsvpSeries,
 }: {
   canManage?: boolean;
   event: GroupEventDetail;
+  futureOccurrencesError?: string;
+  isErrorFutureOccurrences?: boolean;
   futureOccurrences?: GroupEventSeriesOccurrence[];
   isLoadingFutureOccurrences?: boolean;
+  isRetryingFutureOccurrences?: boolean;
   isWorking?: boolean;
   onActivityPlanPress?: (activityPlanId: string) => void;
   onCancel?: () => void;
   onEdit?: () => void;
   onGroupPress?: (group: NonNullable<GroupEventDetail["group"]>) => void;
   onOccurrencePress?: (event: GroupEventSeriesOccurrence) => void;
+  onRetryFutureOccurrences?: () => void;
   onRsvp?: (status: GroupEventRsvpStatus | null) => void;
   onRsvpSeries?: (status: GroupEventRsvpStatus | null) => void;
 }) {
+  if (!event) return null;
+
   return (
     <View className="gap-4">
       <View className="gap-4 rounded-3xl bg-card p-5">
@@ -370,16 +409,32 @@ export function GroupEventDetailScreen({
         ) : null}
       </View>
 
+      <GroupEventActivityPlanOptionsSection
+        event={event}
+        onActivityPlanPress={onActivityPlanPress}
+      />
       <GroupEventRsvpPanel event={event} isSubmitting={isWorking} onRsvp={onRsvp} />
       <GroupEventSeriesRsvpPanel
         event={event}
         isSubmitting={isWorking}
         onRsvpSeries={onRsvpSeries}
       />
-      <GroupEventActivityPlanOptionsSection
-        event={event}
-        onActivityPlanPress={onActivityPlanPress}
-      />
+      {event.is_recurring_series || event.is_recurring_occurrence ? (
+        <GroupEventFutureOccurrencesSection
+          {...(futureOccurrencesError === undefined
+            ? {}
+            : { errorDescription: futureOccurrencesError })}
+          isError={isErrorFutureOccurrences}
+          isLoading={isLoadingFutureOccurrences}
+          isRetrying={isRetryingFutureOccurrences}
+          occurrences={(futureOccurrences ?? [])
+            .filter((occurrence) => occurrence.id !== event.id)
+            .sort((left, right) => left.starts_at.localeCompare(right.starts_at))}
+          {...(onGroupPress === undefined ? {} : { onGroupPress })}
+          {...(onOccurrencePress === undefined ? {} : { onOccurrencePress })}
+          {...(onRetryFutureOccurrences === undefined ? {} : { onRetry: onRetryFutureOccurrences })}
+        />
+      ) : null}
     </View>
   );
 }

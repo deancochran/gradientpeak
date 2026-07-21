@@ -58,6 +58,50 @@ describe("buildActivityFileBestEffortRows", () => {
     });
   });
 
+  it("persists maximum sustained HR curve points without inventing trial semantics", () => {
+    const longTimestamps = Array.from({ length: 1801 }, (_, index) => index);
+    const rows = buildActivityFileBestEffortRows({
+      ...base,
+      activityType: "bike",
+      streamMetadata: {
+        timestamps: longTimestamps,
+        powerStream: [],
+        speedStream: [],
+        altitudeStream: [],
+        hrStream: longTimestamps.map((second) => (second < 600 ? 140 : 170)),
+        hrTimestamps: longTimestamps,
+      },
+    });
+
+    expect(rows).toContainEqual(
+      expect.objectContaining({
+        effort_type: "heart_rate",
+        duration_seconds: 1200,
+        value: 170,
+        unit: "bpm",
+        method: "activity_file_best_effort",
+        calculation_version: "activity-file-best-effort-v1",
+      }),
+    );
+  });
+
+  it("does not promote sparse HR samples into sustained curve evidence", () => {
+    const rows = buildActivityFileBestEffortRows({
+      ...base,
+      activityType: "bike",
+      streamMetadata: {
+        timestamps: [0, 2000],
+        powerStream: [],
+        speedStream: [],
+        altitudeStream: [],
+        hrStream: [160, 170],
+        hrTimestamps: [0, 2000],
+      },
+    });
+
+    expect(rows.filter((row) => row.effort_type === "heart_rate")).toEqual([]);
+  });
+
   it.each([
     ["bike", "power"],
     ["swim", "speed"],

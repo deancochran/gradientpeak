@@ -1,4 +1,5 @@
 import { invalidateActivityPlanQueries } from "@repo/api/react";
+import { deriveActivityPlanPresentation } from "@repo/core/activity-plan";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useQueryClient } from "@tanstack/react-query";
@@ -30,7 +31,7 @@ import {
   getAuthoritativeActivityPlanMetrics,
 } from "@/lib/activityPlanMetrics";
 import { api } from "@/lib/api";
-import { getActivityCategoryConfig } from "@/lib/constants/activities";
+import { getUniqueActivityCategoryConfigs } from "@/lib/constants/activities";
 import { ROUTES } from "@/lib/constants/routes";
 import { useRecordingLifecycle } from "@/lib/hooks/useActivityRecorder";
 import { useAuth } from "@/lib/hooks/useAuth";
@@ -154,10 +155,20 @@ export function ActivityPlanDetailScreen({
   });
 
   const activityPlan = vm.activityPlan;
+  const presentation = React.useMemo(
+    () => deriveActivityPlanPresentation(activityPlan?.structure),
+    [activityPlan?.structure],
+  );
   const planCategory = activityPlan?.primary_category ?? activityPlan?.categories?.[0] ?? "other";
   const authoritativeMetrics = getAuthoritativeActivityPlanMetrics(activityPlan);
   const planRoute = getActivityPlanRoute(activityPlan);
-  const activityConfig = getActivityCategoryConfig(planCategory);
+  const categoryItems = getUniqueActivityCategoryConfigs(
+    presentation?.categories ?? activityPlan?.categories ?? [planCategory],
+  ).map((category) => ({
+    icon: category.icon,
+    iconClassName: category.color,
+    label: category.name,
+  }));
 
   const recordingCandidate = React.useMemo<RecordingObjectActionCandidate | null>(() => {
     if (!activityPlan) return null;
@@ -354,9 +365,7 @@ export function ActivityPlanDetailScreen({
                   testID="activity-plan-like-button"
                 />
               }
-              categoryIcon={activityConfig.icon}
-              categoryIconClassName={activityConfig.color}
-              categoryLabel={activityConfig.name}
+              categoryItems={categoryItems}
               fallbackLabel="GradientPeak"
               owner={
                 (
@@ -387,6 +396,7 @@ export function ActivityPlanDetailScreen({
               estimatedDuration={authoritativeMetrics.estimated_duration ?? null}
               estimatedTss={tss}
               intensityFactor={intensityFactor}
+              presentation={presentation}
               routeName={route?.name}
               routeProvided={!!routeId}
               structure={activityPlan.structure}
@@ -457,6 +467,7 @@ export function ActivityPlanDetailScreen({
           <ActivityPlanContentPreview
             size="large"
             plan={activityPlan}
+            presentation={presentation}
             route={
               route
                 ? route
@@ -479,8 +490,6 @@ export function ActivityPlanDetailScreen({
                     } as never)
                 : null
             }
-            intensityFactor={intensityFactor}
-            tss={tss}
             testIDPrefix="activity-plan-content-preview"
           />
           <EntityCommentsSection

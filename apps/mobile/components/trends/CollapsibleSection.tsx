@@ -24,8 +24,11 @@ export function CollapsibleSection({
   return (
     <View className="mb-4 gap-3">
       <Pressable
+        accessibilityLabel={title}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: isOpen }}
         onPress={() => setIsOpen(!isOpen)}
-        className="flex-row items-center justify-between p-4 bg-card rounded-lg border border-border active:opacity-70"
+        className="min-h-11 flex-row items-center justify-between p-4 bg-card rounded-lg border border-border active:opacity-70"
       >
         <View className="flex-row items-center gap-3">
           <Icon size={24} className={iconColor} />

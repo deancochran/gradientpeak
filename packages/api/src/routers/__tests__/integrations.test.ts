@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => {
       listByProfileId: vi.fn(),
       findByProfileIdAndProvider: vi.fn(),
       findCredentialsByProfileIdAndProvider: vi.fn(),
+      findGrantByProfileIdAndProvider: vi.fn(),
       updateTokensByProfileIdAndProvider: vi.fn(),
       deleteByProfileIdAndProvider: vi.fn(),
       upsertByProfileIdAndProvider: vi.fn(),
@@ -234,6 +235,11 @@ describe("integrationsRouter", () => {
     process.env.GARMIN_CLIENT_SECRET = "garmin-client-secret";
     process.env.ZWIFT_CLIENT_ID = "zwift-client-id";
     process.env.ZWIFT_CLIENT_SECRET = "zwift-client-secret";
+    delete process.env.PROVIDER_OAUTH_TEST_ADAPTER;
+    mocks.repositories.integrations.findGrantByProfileIdAndProvider.mockResolvedValue({
+      expires_at: null,
+      scope: "workouts_read offline_data user_read power_zones_read",
+    });
   });
 
   afterAll(() => {
@@ -417,7 +423,7 @@ describe("integrationsRouter", () => {
     );
   });
 
-  it("getSyncOverview hides providers without server OAuth credentials", async () => {
+  it("getSyncOverview reports enabled providers without server OAuth credentials as unavailable", async () => {
     const caller = createCaller();
     delete process.env.WAHOO_CLIENT_ID;
     delete process.env.WAHOO_CLIENT_SECRET;
@@ -427,8 +433,16 @@ describe("integrationsRouter", () => {
 
     const result = await caller.getSyncOverview();
 
-    expect(result.some((provider) => provider.provider === "wahoo")).toBe(false);
-    expect(result).toEqual([]);
+    expect(result).toEqual([
+      expect.objectContaining({
+        actions: [],
+        configured: false,
+        connected: false,
+        primaryAction: null,
+        provider: "wahoo",
+        summary: expect.objectContaining({ badge: "Unavailable", health: "unavailable" }),
+      }),
+    ]);
   });
 
   it("getAuthUrl rejects unconfigured providers before storing OAuth state", async () => {
@@ -556,6 +570,7 @@ describe("integrationsRouter", () => {
       expect.arrayContaining([
         expect.objectContaining({
           activityHistory: expect.objectContaining({ status: "failed" }),
+          actions: ["disconnect"],
           provider: "wahoo",
           providerHealth: expect.objectContaining({ status: "needs_reconnect" }),
           setupData: expect.objectContaining({ status: "failed" }),
@@ -686,6 +701,43 @@ describe("integrationsRouter", () => {
     expect(mocks.providerSyncRepository.enqueueJob).not.toHaveBeenCalled();
   });
 
+  it("scope-gates history actions and direct sync attempts", async () => {
+    const caller = createCaller();
+    mocks.repositories.integrations.listByProfileId.mockResolvedValue([
+      {
+        id: "77777777-7777-4777-8777-777777777777",
+        profile_id: SESSION_USER_ID,
+        provider: "wahoo",
+        external_id: "77",
+        created_at: new Date("2026-04-01T10:00:00.000Z"),
+        updated_at: new Date("2026-04-01T11:00:00.000Z"),
+      },
+    ]);
+    mocks.repositories.integrations.findByProfileIdAndProvider.mockResolvedValue({
+      id: "77777777-7777-4777-8777-777777777777",
+      profile_id: SESSION_USER_ID,
+      provider: "wahoo",
+      external_id: "77",
+      created_at: new Date("2026-04-01T10:00:00.000Z"),
+      updated_at: new Date("2026-04-01T11:00:00.000Z"),
+    });
+    mocks.repositories.integrations.findGrantByProfileIdAndProvider.mockResolvedValue({
+      expires_at: null,
+      scope: "workouts_read",
+    });
+    mocks.providerSyncRepository.listSyncStateByIntegrationIds.mockResolvedValue([]);
+    mocks.providerSyncRepository.listJobs.mockResolvedValue([]);
+
+    await expect(caller.getSyncOverview()).resolves.toEqual([
+      expect.objectContaining({ actions: ["disconnect"], provider: "wahoo" }),
+    ]);
+    await expect(caller.syncNow({ provider: "wahoo" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      message: expect.stringContaining("grant the scopes"),
+    });
+    expect(mocks.providerSyncRepository.enqueueJob).not.toHaveBeenCalled();
+  });
+
   it("refreshSetupData delegates to the provider setup refresh service", async () => {
     const caller = createCaller();
     mocks.setupRefresh.refreshSetupData.mockResolvedValue({
@@ -735,6 +787,8 @@ describe("integrationsRouter", () => {
     );
     expect(url.searchParams.get("scope")).toContain("workouts_read");
     expect(url.searchParams.get("state")).toBe(STATE_ID);
+    expect(url.searchParams.get("code_challenge_method")).toBe("S256");
+    expect(url.searchParams.get("code_challenge")).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(mocks.repositories.oauthStates.create).toHaveBeenCalledWith({
       state: STATE_ID,
       profileId: SESSION_USER_ID,
@@ -743,6 +797,43 @@ describe("integrationsRouter", () => {
       createdAt: expect.any(Date),
       expiresAt: expect.any(Date),
     });
+  });
+
+  it("uses the explicit non-production local adapter without provider credentials", async () => {
+    const caller = createCaller();
+    process.env.NODE_ENV = "test";
+    process.env.PROVIDER_OAUTH_TEST_ADAPTER = "1";
+    delete process.env.WAHOO_CLIENT_ID;
+    delete process.env.WAHOO_CLIENT_SECRET;
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(STATE_ID);
+
+    const result = await caller.getAuthUrl({
+      provider: "wahoo",
+      redirectUri: "http://127.0.0.1:3000/integrations",
+    });
+    const url = new URL(result.url);
+
+    expect(`${url.origin}${url.pathname}`).toBe(
+      "https://app.example.com/api/integrations/callback/wahoo",
+    );
+    expect(url.searchParams.get("code")).toBeTruthy();
+    expect(url.searchParams.get("state")).toBe(STATE_ID);
+    expect(url.searchParams.get("test_return")).toBe("web");
+    expect(result.url).not.toContain("local-test-access-token");
+  });
+
+  it("never enables the local adapter in production", async () => {
+    const caller = createCaller();
+    process.env.NODE_ENV = "production";
+    process.env.PROVIDER_OAUTH_TEST_ADAPTER = "1";
+    delete process.env.WAHOO_CLIENT_ID;
+    delete process.env.WAHOO_CLIENT_SECRET;
+
+    await expect(caller.getAuthUrl({ provider: "wahoo" })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Integration is not configured on this server",
+    } satisfies Partial<TRPCError>);
+    expect(mocks.repositories.oauthStates.create).not.toHaveBeenCalled();
   });
 
   it("getAuthUrl rejects scaffold providers even when credentials are configured", async () => {

@@ -287,7 +287,7 @@ export function ActivityEffortForm({
             </Button>
           ))}
         </fieldset>
-        {selectedCategory === "swim" ? (
+        {selectedCategory === "swim" && selectedEffortType === "speed" ? (
           <FormField
             control={form.control}
             name="value"
@@ -325,7 +325,9 @@ export function ActivityEffortForm({
         <div className="space-y-1">
           <p className="text-sm font-medium">Unit</p>
           <p className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
-            {selectedCategory === "swim" ? "/100m display · m/s stored" : activeDefinition.unit}
+            {selectedCategory === "swim" && selectedEffortType === "speed"
+              ? "/100m display · m/s stored"
+              : activeDefinition.unit}
           </p>
         </div>
         <FormDateTimeField control={form.control} label="Recorded at" name="recorded_at" />

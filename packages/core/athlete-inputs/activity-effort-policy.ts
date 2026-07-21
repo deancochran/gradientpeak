@@ -6,6 +6,7 @@ export const ACTIVITY_EFFORT_HARD_BOUNDS = {
   bikePowerWatts: { min: 1, max: 3_000 },
   runSpeedMetersPerSecond: { min: 0.3, max: 13 },
   swimSpeedMetersPerSecond: { min: 0.1, max: 3 },
+  heartRateBpm: { min: 30, max: 240 },
 } as const;
 
 interface PlausibilityBand {
@@ -92,7 +93,11 @@ export function isSupportedActivityEffortCombination(input: {
   return (
     (input.activityCategory === "bike" && input.effortType === "power") ||
     ((input.activityCategory === "run" || input.activityCategory === "swim") &&
-      input.effortType === "speed")
+      input.effortType === "speed") ||
+    ((input.activityCategory === "bike" ||
+      input.activityCategory === "run" ||
+      input.activityCategory === "swim") &&
+      input.effortType === "heart_rate")
   );
 }
 
@@ -104,7 +109,12 @@ export function canonicalizeActivityEffortObservation(input: {
   if (!input.unit) {
     return {
       value: input.value,
-      unit: input.effortType === "power" ? "watts" : "meters_per_second",
+      unit:
+        input.effortType === "power"
+          ? "watts"
+          : input.effortType === "speed"
+            ? "meters_per_second"
+            : "bpm",
     };
   }
   return canonicalEffortValue({ kind: input.effortType, value: input.value, unit: input.unit });
@@ -218,13 +228,15 @@ export function classifyActivityEffortPlausibility(
   if (!supportedCombination) reasons.push("unsupported-sport-effort-combination");
 
   const valueBounds =
-    input.activityCategory === "bike" && input.effortType === "power"
-      ? ACTIVITY_EFFORT_HARD_BOUNDS.bikePowerWatts
-      : input.activityCategory === "run" && input.effortType === "speed"
-        ? ACTIVITY_EFFORT_HARD_BOUNDS.runSpeedMetersPerSecond
-        : input.activityCategory === "swim" && input.effortType === "speed"
-          ? ACTIVITY_EFFORT_HARD_BOUNDS.swimSpeedMetersPerSecond
-          : null;
+    input.effortType === "heart_rate"
+      ? ACTIVITY_EFFORT_HARD_BOUNDS.heartRateBpm
+      : input.activityCategory === "bike" && input.effortType === "power"
+        ? ACTIVITY_EFFORT_HARD_BOUNDS.bikePowerWatts
+        : input.activityCategory === "run" && input.effortType === "speed"
+          ? ACTIVITY_EFFORT_HARD_BOUNDS.runSpeedMetersPerSecond
+          : input.activityCategory === "swim" && input.effortType === "speed"
+            ? ACTIVITY_EFFORT_HARD_BOUNDS.swimSpeedMetersPerSecond
+            : null;
   if (
     !valueBounds ||
     !Number.isFinite(input.value) ||

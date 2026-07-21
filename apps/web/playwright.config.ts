@@ -1,15 +1,21 @@
 import { defineConfig, devices } from "@playwright/test";
+import { loadEnv } from "vite";
+
+const env = loadEnv("test", process.cwd(), "");
+for (const [key, value] of Object.entries(env)) {
+  process.env[key] ??= value;
+}
 
 const PORT = process.env.PORT || 3000;
 const baseURL = `http://127.0.0.1:${PORT}`;
+// biome-ignore lint/security/noSecrets: Supabase's documented local-only database URL.
 const localDatabaseUrl = "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
 
 export default defineConfig({
   timeout: 30 * 1000,
   testDir: "./e2e/specs",
-  retries: 1,
+  retries: process.env.CI ? 2 : 0,
   outputDir: "test-results/",
-  globalSetup: "./e2e/setup.ts",
   webServer: {
     command: "pnpm test:serve",
     env: {
@@ -23,9 +29,33 @@ export default defineConfig({
   },
   use: {
     baseURL,
-    trace: "on-first-retry",
-    screenshot: "only-on-failure",
-    video: "retain-on-failure",
+    trace: process.env.E2E_ARTIFACTS === "1" ? "on-first-retry" : "off",
+    screenshot: process.env.E2E_ARTIFACTS === "1" ? "only-on-failure" : "off",
+    video: process.env.E2E_ARTIFACTS === "1" ? "retain-on-failure" : "off",
   },
-  projects: [{ name: "Desktop Chrome", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    {
+      name: "Desktop Chrome",
+      testIgnore: /auth\.setup\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "Desktop Firefox",
+      testIgnore: /auth\.setup\.ts/,
+      use: { ...devices["Desktop Firefox"] },
+    },
+    {
+      name: "Narrow Firefox",
+      testIgnore: /auth\.setup\.ts/,
+      use: {
+        ...devices["Desktop Firefox"],
+        viewport: { width: 390, height: 844 },
+      },
+    },
+    {
+      name: "Mobile Chrome",
+      testIgnore: /auth\.setup\.ts/,
+      use: { ...devices["Pixel 7"] },
+    },
+  ],
 });

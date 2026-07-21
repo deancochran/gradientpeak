@@ -15,7 +15,10 @@ import {
   canonicalSportSchema,
   contentVisibilitySchema,
 } from "@repo/core";
-import { decodedActivityArtifactSchema } from "@repo/core/activity-artifacts";
+import {
+  activityArtifactSemanticsSchema,
+  decodedActivityArtifactSchema,
+} from "@repo/core/activity-artifacts";
 import {
   type ActivityFileType,
   inferActivityFileType,
@@ -107,7 +110,10 @@ const blobLikeSchema = z
 
 const activityFileParserRecordSchema = z
   .object({
+    messageIndex: z.number().int().nonnegative().optional(),
+    lapMessageIndex: z.number().int().nonnegative().optional(),
     timestamp: z.date().optional(),
+    distance: z.number().finite().optional(),
     power: z.number().finite().optional(),
     heartRate: z.number().finite().optional(),
     cadence: z.number().finite().optional(),
@@ -126,6 +132,11 @@ const activityFileParserSummarySchema = z
     totalDistance: z.number().finite(),
     calories: z.number().finite().optional(),
     totalAscent: z.number().finite().optional(),
+    totalDescent: z.number().finite().optional(),
+    poolLength: z.number().finite().optional(),
+    poolLengthUnit: z.string().optional(),
+    totalStrokes: z.number().finite().optional(),
+    avgStrokeDistance: z.number().finite().optional(),
     avgHeartRate: z.number().finite().optional(),
     maxHeartRate: z.number().finite().optional(),
     avgPower: z.number().finite().optional(),
@@ -154,6 +165,7 @@ const parsedActivityFileSchema = z
     segments: z.custom<ActivitySegment[]>().optional(),
     sessions: z.custom<ActivitySession[]>().optional(),
     decodedArtifact: decodedActivityArtifactSchema.optional(),
+    semantics: activityArtifactSemanticsSchema.optional(),
   })
   .strict();
 
@@ -1219,6 +1231,7 @@ export const activityFilesRouter = createTRPCRouter({
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to retrieve activity streams",
+          cause: new Error("Activity stream parsing failed", { cause: error }),
         });
       }
     }),

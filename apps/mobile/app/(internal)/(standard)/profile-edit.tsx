@@ -40,7 +40,6 @@ import {
   toProfilePatchInput,
 } from "@/lib/profile/profile-edit-form";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
-import { useAuthStore } from "@/lib/stores/auth-store";
 import { useTheme } from "@/lib/stores/theme-store";
 import { handleSubmitFormError } from "@/lib/utils/formErrors";
 
@@ -59,6 +58,23 @@ function isAbsoluteUrl(value: string) {
   return /^https?:\/\//i.test(value);
 }
 
+function getOwnedProfileMediaPath(value: string | null, userId: string | undefined) {
+  if (!value || !userId || isAbsoluteUrl(value)) {
+    return null;
+  }
+
+  const segments = value.split("/");
+  if (
+    segments[0] !== userId ||
+    segments.length < 2 ||
+    segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")
+  ) {
+    return null;
+  }
+
+  return value;
+}
+
 function ProfileEditScreen() {
   const { resolvedTheme } = useTheme();
   const router = useRouter();
@@ -75,7 +91,9 @@ function ProfileEditScreen() {
   const utils = api.useUtils();
 
   const updateProfileMutation = api.profiles.update.useMutation();
+  const compareAndSwapMediaMutation = api.profiles.compareAndSwapMedia.useMutation();
   const createAvatarUploadUrlMutation = api.storage.createSignedUploadUrl.useMutation();
+  const deleteFileMutation = api.storage.deleteFile.useMutation();
   const avatarFilePath =
     profile?.avatar_url && !isAbsoluteUrl(profile.avatar_url) ? profile.avatar_url : null;
   const { data: avatarUrlData } = api.storage.getSignedUrl.useQuery(
@@ -136,28 +154,56 @@ function ProfileEditScreen() {
     submittingLabel: "Saving...",
   });
 
-  const syncProfileImage = async (fieldName: ProfileImageFieldName, value: string | null) => {
-    const updatedProfile = await updateProfileMutation.mutateAsync({ [fieldName]: value });
-
-    useAuthStore.getState().setProfile(updatedProfile);
+  const syncProfileImage = async (
+    fieldName: ProfileImageFieldName,
+    expected: string | null,
+    next: string | null,
+  ) => {
+    await compareAndSwapMediaMutation.mutateAsync({ field: fieldName, expected, next });
     await Promise.all([utils.profiles.invalidate(), refreshProfile()]);
+  };
+
+  const deleteFileWithoutMaskingError = async (filePath: string) => {
+    try {
+      await deleteFileMutation.mutateAsync({ filePath });
+    } catch {
+      // Preserve the upload or CAS failure that prompted this cleanup.
+    }
+  };
+
+  const deletePreviousOwnedImage = async (
+    fieldName: ProfileImageFieldName,
+    previousValue: string | null,
+    nextPath: string | null,
+  ) => {
+    const previousPath = getOwnedProfileMediaPath(previousValue, profile?.id);
+    const otherFieldName = fieldName === "avatar_url" ? "cover_url" : "avatar_url";
+    if (!previousPath || previousPath === nextPath || profile?.[otherFieldName] === previousValue) {
+      return;
+    }
+
+    try {
+      await deleteFileMutation.mutateAsync({ filePath: previousPath });
+    } catch (error) {
+      console.error(`Failed to clean up previous ${fieldName}:`, error);
+    }
   };
 
   const uploadProfileImage = async (fieldName: ProfileImageFieldName, uri: string) => {
     try {
       setUploadingImageField(fieldName);
+      const expected = profile?.[fieldName] ?? null;
 
       const ext = uri.split(".").pop()?.toLowerCase() || "jpg";
       const fileName = `profile-${fieldName.replace("_url", "")}-${Date.now()}.${ext}`;
       const fileType: AvatarMimeType =
         AVATAR_MIME_TYPES[ext as keyof typeof AVATAR_MIME_TYPES] ?? "image/jpeg";
 
-      const { signedUrl, publicUrl } = await createAvatarUploadUrlMutation.mutateAsync({
+      const { signedUrl, path } = await createAvatarUploadUrlMutation.mutateAsync({
         fileName,
         fileType,
       });
       const reachableSignedUrl = getReachableSupabaseStorageUrl(signedUrl);
-      const reachablePublicUrl = getReachableSupabaseStorageUrl(publicUrl);
 
       // Create ExpoFile instance and ensure it exists before upload
       const file = new ExpoFile(uri);
@@ -181,7 +227,14 @@ function ProfileEditScreen() {
         throw new Error(`Upload failed: ${uploadResponse.statusText}`);
       }
 
-      await syncProfileImage(fieldName, reachablePublicUrl);
+      try {
+        await syncProfileImage(fieldName, expected, path);
+      } catch (error) {
+        await deleteFileWithoutMaskingError(path);
+        throw error;
+      }
+
+      await deletePreviousOwnedImage(fieldName, expected, path);
     } catch (error) {
       console.error("Profile image upload error:", error);
       setStatusModal({
@@ -244,7 +297,9 @@ function ProfileEditScreen() {
   const clearProfileImage = async (fieldName: ProfileImageFieldName) => {
     try {
       setUploadingImageField(fieldName);
-      await syncProfileImage(fieldName, null);
+      const expected = profile?.[fieldName] ?? null;
+      await syncProfileImage(fieldName, expected, null);
+      await deletePreviousOwnedImage(fieldName, expected, null);
     } catch (error) {
       setStatusModal({
         title: "Update Failed",

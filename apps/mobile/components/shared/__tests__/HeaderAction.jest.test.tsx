@@ -30,6 +30,7 @@ describe("header actions", () => {
 
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("create-goal").props.accessibilityLabel).toBe("Create goal");
+    expect(screen.getByTestId("create-goal").props.className).toContain("min-h-11 min-w-11");
   });
 
   it("disables an icon action while loading", () => {
@@ -51,5 +52,6 @@ describe("header actions", () => {
       busy: true,
       disabled: true,
     });
+    expect(screen.getByTestId("add-item").props.className).toContain("h-11 w-11");
   });
 });

@@ -4,14 +4,12 @@ import type {
   ActivityPlanIntervalStep,
   ActivityPlanSegmentV3,
   CanonicalSport,
+  EditableActivityPlanStructure,
 } from "@repo/core";
 import { randomUUID } from "expo-crypto";
 import { create } from "zustand";
 
-export type EditableActivityPlanStructure = {
-  version: 3;
-  segments: ActivityPlanSegmentV3[];
-};
+export type { EditableActivityPlanStructure } from "@repo/core";
 
 interface ActivityPlanCreationState {
   name: string;

@@ -6,6 +6,18 @@ import { Input } from "../input/index.native";
 import { Spinner } from "../loading/index.native";
 import type { SearchFieldProps } from "./shared";
 
+export function getSearchFieldInputClassName({
+  className,
+  hasValue,
+  loading,
+}: {
+  className?: string;
+  hasValue: boolean;
+  loading: boolean;
+}) {
+  return cn("pl-10 pr-10", hasValue && (loading ? "pr-24" : "pr-16"), className);
+}
+
 function SearchField({
   accessibilityLabel,
   className,
@@ -30,7 +42,11 @@ function SearchField({
         accessibilityState={{ busy: loading, disabled }}
         autoCapitalize="none"
         autoCorrect={false}
-        className={cn("pl-10 pr-10", loading && value.length > 0 && "pr-16", className)}
+        className={getSearchFieldInputClassName({
+          hasValue: value.length > 0,
+          loading,
+          ...(className === undefined ? {} : { className }),
+        })}
         editable={!disabled}
         maxLength={maxLength}
         onChangeText={onValueChange}
@@ -47,7 +63,7 @@ function SearchField({
             accessibilityLabel={`Clear ${accessibilityLabel}`}
             accessibilityRole="button"
             accessibilityState={{ disabled }}
-            className="h-5 w-5 items-center justify-center disabled:opacity-50"
+            className="h-11 w-11 items-center justify-center rounded-full active:bg-muted disabled:opacity-50"
             disabled={disabled}
             onPress={() => {
               if (!disabled) onValueChange("");

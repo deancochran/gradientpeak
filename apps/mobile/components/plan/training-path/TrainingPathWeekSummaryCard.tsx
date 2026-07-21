@@ -1,6 +1,10 @@
-import { getAuthoritativeActivityPlanMetrics } from "@repo/core/activity-plan";
+import {
+  deriveActivityPlanPresentation,
+  getAuthoritativeActivityPlanMetrics,
+} from "@repo/core/activity-plan";
 import { Text } from "@repo/ui/components/text";
 import { CalendarDays, Users } from "lucide-react-native";
+import { useMemo } from "react";
 import { View } from "react-native";
 import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
 import { CalendarEventCard } from "@/components/calendar/CalendarEventCard";
@@ -110,8 +114,18 @@ function ScheduledRecordPlanCard({
   type,
   testID,
 }: ScheduledRecordPlanCardProps) {
+  const presentation = useMemo(
+    () => deriveActivityPlanPresentation(activity.structure),
+    [activity.structure],
+  );
+
   return (
-    <ResourceCardShell contentClassName="gap-3 px-3" onPress={onPress} testID={testID}>
+    <ResourceCardShell
+      accessibilityLabel={`Open ${recordLabel} ${activity.name || "Untitled activity plan"}`}
+      contentClassName="gap-3 px-3"
+      onPress={onPress}
+      testID={testID}
+    >
       <ResourceOwnerActionRow
         actions={statusLabel ? <RecordStatusPill label={statusLabel} /> : null}
         categoryIcon={type === "groupEvent" ? Users : CalendarDays}
@@ -128,6 +142,7 @@ function ScheduledRecordPlanCard({
         estimatedTss={activity.estimatedTss}
         intensityFactor={activity.intensityFactor}
         owner={activity.owner}
+        presentation={presentation}
         routeName={activity.routeName}
         routeProvided={!!activity.routeId}
         showAttribution
@@ -139,7 +154,6 @@ function ScheduledRecordPlanCard({
 
       <ActivityPlanContentPreview
         compact
-        intensityFactor={activity.intensityFactor}
         plan={{
           authoritative_metrics: {
             estimated_duration: activity.estimatedDuration,
@@ -153,9 +167,9 @@ function ScheduledRecordPlanCard({
           route_id: activity.routeId,
           structure: activity.structure,
         }}
+        presentation={presentation}
         size="small"
         testIDPrefix={`${testID}-preview`}
-        tss={activity.estimatedTss}
       />
     </ResourceCardShell>
   );

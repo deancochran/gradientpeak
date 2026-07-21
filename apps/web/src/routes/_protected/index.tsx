@@ -7,7 +7,7 @@ import {
 } from "@repo/ui/components/card";
 import { createFileRoute } from "@tanstack/react-router";
 import { Activity, CalendarDays, Target } from "lucide-react";
-
+import { ActivityFeed } from "../../components/feed/activity-feed";
 import { SearchLauncher } from "../../components/protected/search-launcher";
 import { useAuth } from "../../components/providers/auth-provider";
 import { api } from "../../lib/api/client";
@@ -65,6 +65,8 @@ function DashboardPage() {
           icon={<CalendarDays className="h-4 w-4" />}
         />
       </section>
+
+      <ActivityFeed />
 
       <section className="grid gap-6 lg:grid-cols-[1.7fr_1fr]">
         <Card>

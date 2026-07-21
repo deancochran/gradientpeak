@@ -13,4 +13,14 @@ describe("MetricCard web", () => {
     expect(screen.getByText(metricCardFixtures.distance.value)).toBeInTheDocument();
     expect(screen.getByText(metricCardFixtures.distance.comparisonValue!)).toBeInTheDocument();
   });
+
+  it("uses semantic status colors", () => {
+    const { container } = renderWeb(
+      <MetricCard {...metricCardFixtures.distance} variant="warning" />,
+    );
+
+    expect(container.querySelector(".text-warning-foreground")).toHaveTextContent(
+      String(metricCardFixtures.distance.value),
+    );
+  });
 });

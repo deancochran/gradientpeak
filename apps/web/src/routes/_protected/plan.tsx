@@ -15,14 +15,19 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@repo/ui/components/dialog";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { CalendarDays, Flag, Target } from "lucide-react";
 import { useMemo } from "react";
-
+import { TrainingLoadPath } from "../../components/planning/training-load-path";
 import { PlanGoalForm } from "../../components/protected/plan-goal-form";
 import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
 import { api } from "../../lib/api/client";
-import { formatShortDayLabel, getTodayDateKey, type PlanningEvent } from "../../lib/planning";
+import {
+  formatShortDayLabel,
+  getMonthKey,
+  getTodayDateKey,
+  type PlanningEvent,
+} from "../../lib/planning";
 
 export const Route = createFileRoute("/_protected/plan")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -92,6 +97,26 @@ function PlanPage() {
           Active training context, goal anchors, and upcoming scheduled work.
         </p>
       </div>
+
+      {upcomingEventsQuery.isError || goalsQuery.isError ? (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/40 p-4"
+        >
+          <p className="text-sm">
+            Some planning data could not be refreshed. Available data remains visible.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void Promise.all([upcomingEventsQuery.refetch(), goalsQuery.refetch()])}
+          >
+            Retry
+          </Button>
+        </div>
+      ) : null}
+
+      <TrainingLoadPath events={upcomingEvents} />
 
       <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
         <Card>
@@ -219,6 +244,9 @@ function PlanPage() {
                   <PlanGoalForm profileId={profileQuery.data?.id} />
                 </DialogContent>
               </Dialog>
+              <Button asChild size="sm" variant="outline">
+                <a href="/goals">All goals</a>
+              </Button>
             </div>
           </CardHeader>
           <CardContent>
@@ -271,6 +299,23 @@ function PlanPage() {
           )}
         </CardContent>
       </Card>
+
+      <div className="flex flex-wrap gap-2">
+        <Button asChild variant="outline">
+          <Link
+            to="/calendar"
+            search={{
+              month: getMonthKey(new Date()),
+              view: "month",
+            }}
+          >
+            Open calendar
+          </Link>
+        </Button>
+        <Button asChild variant="outline">
+          <a href="/scheduled-activities">Scheduled activities</a>
+        </Button>
+      </div>
     </div>
   );
 }

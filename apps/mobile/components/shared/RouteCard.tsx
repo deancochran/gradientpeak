@@ -1,9 +1,9 @@
 import { decodePolyline } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
-import type { ReactNode } from "react";
 import { useMemo } from "react";
 import { View } from "react-native";
 import {
+  type ResourceCardAccessory,
   ResourceCardHeader,
   ResourceCardShell,
   ResourceLikeButton,
@@ -47,7 +47,7 @@ type RouteCardFullRoute = {
 };
 
 type RouteCardProps = {
-  headerAccessory?: ReactNode;
+  headerAccessory?: ResourceCardAccessory;
   isLiked?: boolean | null;
   likeCount?: number | null;
   likePending?: boolean;
@@ -96,6 +96,7 @@ export function RouteCard({
   const resolvedLiked = isLiked ?? internalLiked;
   const resolvedLikesCount = likeCount ?? internalLikesCount;
   const resolvedLikePending = likePending ?? internalLikePending;
+  const hasListActions = isList && Boolean(headerAccessory || shouldShowLike);
 
   const handleLikePress = () => {
     if (onLikePress) {
@@ -115,52 +116,56 @@ export function RouteCard({
   }, [route.polyline, routeFull?.coordinates]);
 
   return (
-    <ResourceCardShell compact={isDense} onPress={onPress}>
-      {!isList || shouldShowAttribution ? (
-        <ResourceOwnerActionRow
-          actions={
-            isList ? undefined : (
-              <>
-                {headerAccessory}
-                {shouldShowLike ? (
-                  <ResourceLikeButton
-                    disabled={resolvedLikePending}
-                    isLiked={resolvedLiked}
-                    likeCount={resolvedLikesCount}
-                    onPress={handleLikePress}
-                    testID={`route-card-like-button-${route.id}`}
-                  />
-                ) : null}
-              </>
-            )
-          }
-          categoryIcon={activityConfig.icon}
-          categoryIconClassName={activityConfig.color}
-          categoryLabel={activityConfig.name}
-          compact={isDense}
-          fallbackLabel="GradientPeak"
-          owner={shouldShowAttribution ? (route.owner ?? null) : null}
-          timestamp={shouldShowAttribution ? (route.created_at ?? route.updated_at ?? null) : null}
-        />
-      ) : null}
-
+    <ResourceCardShell
+      accessibilityLabel={onPress ? `Open route ${route.name || "Untitled route"}` : undefined}
+      actionRegion={
+        !isList || shouldShowAttribution ? (
+          <ResourceOwnerActionRow
+            actions={
+              !isList || hasListActions ? (
+                <>
+                  {headerAccessory}
+                  {shouldShowLike ? (
+                    <ResourceLikeButton
+                      disabled={resolvedLikePending}
+                      isLiked={resolvedLiked}
+                      likeCount={resolvedLikesCount}
+                      onPress={handleLikePress}
+                      testID={`route-card-like-button-${route.id}`}
+                    />
+                  ) : null}
+                </>
+              ) : undefined
+            }
+            categoryIcon={activityConfig.icon}
+            categoryIconClassName={activityConfig.color}
+            categoryLabel={activityConfig.name}
+            compact={isDense}
+            fallbackLabel="GradientPeak"
+            owner={shouldShowAttribution ? (route.owner ?? null) : null}
+            timestamp={
+              shouldShowAttribution ? (route.created_at ?? route.updated_at ?? null) : null
+            }
+          />
+        ) : hasListActions ? (
+          <View className="flex-row items-center justify-end gap-2">
+            {headerAccessory}
+            {shouldShowLike ? (
+              <ResourceLikeButton
+                disabled={resolvedLikePending}
+                isLiked={resolvedLiked}
+                likeCount={resolvedLikesCount}
+                onPress={handleLikePress}
+                testID={`route-card-like-button-${route.id}`}
+              />
+            ) : null}
+          </View>
+        ) : undefined
+      }
+      compact={isDense}
+      onPress={onPress}
+    >
       <ResourceCardHeader
-        accessory={
-          isList ? (
-            <>
-              {headerAccessory}
-              {shouldShowLike ? (
-                <ResourceLikeButton
-                  disabled={resolvedLikePending}
-                  isLiked={resolvedLiked}
-                  likeCount={resolvedLikesCount}
-                  onPress={handleLikePress}
-                  testID={`route-card-like-button-${route.id}`}
-                />
-              ) : null}
-            </>
-          ) : undefined
-        }
         compact={isDense}
         description={isList ? undefined : route.description}
         descriptionFallback={isList ? undefined : `${activityConfig.name} route`}

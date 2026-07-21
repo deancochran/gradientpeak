@@ -24,6 +24,7 @@ import {
 import {
   buildDynamicStressSeries,
   loadActivitySegmentsByActivityId,
+  summarizeSegmentTss,
 } from "../lib/activity-analysis";
 import { featureFlags } from "../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
@@ -191,6 +192,7 @@ const dashboardResponseSchema = z
             distance: z.number(),
             duration: z.number(),
             tss: z.number(),
+            tssComplete: z.boolean(),
             count: z.number(),
           })
           .strict(),
@@ -486,6 +488,7 @@ export const homeRouter = createTRPCRouter({
       const {
         byActivityId: derivedActivityMap,
         byDate: tssByDate,
+        segmentSummaries = [],
         complete: hasCompleteTssSeries = false,
         seriesIdentity = null,
       } = dynamicStressSeries as typeof dynamicStressSeries & {
@@ -645,6 +648,10 @@ export const homeRouter = createTRPCRouter({
         const d = new Date(activity.started_at);
         return d >= startOfWeek && d <= endOfWeek;
       });
+      const weeklyActualLoad = summarizeSegmentTss(
+        segmentSummaries,
+        new Set(weeklyActuals.map((activity) => activity.id)),
+      );
 
       const weeklyActualStats = {
         distance:
@@ -653,12 +660,8 @@ export const homeRouter = createTRPCRouter({
           (sum, activity) => sum + (activity.active_ms ?? 0) / 1000,
           0,
         ),
-        tss: Math.round(
-          weeklyActuals.reduce(
-            (sum, activity) => sum + (derivedActivityMap.get(activity.id)?.tss || 0),
-            0,
-          ),
-        ),
+        tss: Math.round(weeklyActualLoad.tss),
+        tssComplete: weeklyActualLoad.complete,
         count: weeklyActuals.length,
       };
 
@@ -887,7 +890,7 @@ export const homeRouter = createTRPCRouter({
 
       // --- 13. Calculate Plan Adherence ---
       const adherence =
-        weeklyPlannedStats.tss > 0
+        weeklyActualStats.tssComplete && weeklyPlannedStats.tss > 0
           ? Math.round((weeklyActualStats.tss / weeklyPlannedStats.tss) * 100)
           : null;
 

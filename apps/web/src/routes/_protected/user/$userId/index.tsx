@@ -1,4 +1,3 @@
-import { normalizePublicProfileView } from "@repo/core/profile";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -36,8 +35,15 @@ function UserProfilePage() {
     { id: userId },
     { enabled: Boolean(userId) },
   );
-  const profile = normalizePublicProfileView(profileQuery.data);
+  const profile = profileQuery.data;
   const isSelf = user?.id === userId;
+  const canViewDetails = Boolean(
+    profile && (isSelf || profile.is_public !== false || profile.follow_status === "accepted"),
+  );
+  const groupsQuery = api.groups.forProfile.useQuery(
+    { profileId: userId, limit: 6 },
+    { enabled: Boolean(userId) && isSelf },
+  );
 
   if (profileQuery.isLoading) {
     return (
@@ -63,9 +69,7 @@ function UserProfilePage() {
   const isPrivate = profile.is_public === false;
   const isAcceptedFollower = profile.follow_status === "accepted";
   const isPendingFollower = profile.follow_status === "pending";
-  const canViewDetails = isSelf || !isPrivate || isAcceptedFollower;
-
-  const profileInitials = (profile.username || "GP").slice(0, 2).toUpperCase();
+  const profileInitials = (profile.full_name || profile.username || "GP").slice(0, 2).toUpperCase();
   const redirectTo = `/user/${userId}`;
 
   return (
@@ -83,6 +87,13 @@ function UserProfilePage() {
         }
       />
       <Card>
+        {profile.cover_url && canViewDetails ? (
+          <img
+            src={profile.cover_url}
+            alt={`${profile.full_name || profile.username || "User"} cover`}
+            className="h-44 w-full rounded-t-xl object-cover"
+          />
+        ) : null}
         <CardContent className="pt-6">
           <div className="flex flex-col items-center gap-6 md:flex-row">
             <Avatar className="h-24 w-24">
@@ -92,12 +103,17 @@ function UserProfilePage() {
 
             <div className="flex-1 space-y-2 text-center md:text-left">
               <div className="flex items-center justify-center gap-2 md:justify-start">
-                <h1 className="text-2xl font-bold">{profile.username || "Anonymous"}</h1>
+                <h1 className="text-2xl font-bold">
+                  {profile.full_name || profile.username || "Anonymous"}
+                </h1>
                 {isPrivate ? <Lock className="h-4 w-4 text-muted-foreground" /> : null}
               </div>
 
               {canViewDetails && profile.bio ? (
                 <p className="text-muted-foreground">{profile.bio}</p>
+              ) : null}
+              {canViewDetails && profile.full_name && profile.username ? (
+                <p className="text-sm text-muted-foreground">@{profile.username}</p>
               ) : null}
 
               {canViewDetails ? (
@@ -174,26 +190,115 @@ function UserProfilePage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Activities</CardTitle>
-              <CardDescription>Activities will appear here</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">No recent activities found.</p>
-            </CardContent>
-          </Card>
+        <div className="space-y-4">
+          {isSelf ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Groups</CardTitle>
+                <CardDescription>Active community memberships</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {groupsQuery.isLoading ? (
+                  <p className="text-sm text-muted-foreground">Loading groups...</p>
+                ) : groupsQuery.error ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm text-destructive">Unable to load groups.</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void groupsQuery.refetch()}
+                    >
+                      Try again
+                    </Button>
+                  </div>
+                ) : groupsQuery.data?.items.length ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {groupsQuery.data.items.map((group) => (
+                      <div key={group.id} className="rounded-lg border p-3">
+                        <p className="font-medium">{group.name}</p>
+                        {group.description ? (
+                          <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                            {group.description}
+                          </p>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No groups yet.</p>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Stats</CardTitle>
-              <CardDescription>Training stats will appear here</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">No stats available.</p>
-            </CardContent>
-          </Card>
+          {isSelf ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Your library</CardTitle>
+                <CardDescription>Open your training and activity collections.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <Button asChild variant="outline">
+                  <Link to="/activities">Activities</Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link to="/plan" search={{ flash: undefined, flashType: undefined }}>
+                    Plans
+                  </Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link
+                    to="/routes"
+                    search={{
+                      maxAscentM: "",
+                      maxDistanceKm: "",
+                      minAscentM: "",
+                      minDistanceKm: "",
+                      ownerScope: "own",
+                      page: 1,
+                      search: "",
+                      sort: "newest",
+                    }}
+                  >
+                    Routes
+                  </Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link to="/profile-metrics">Profile metrics</Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link to="/activity-efforts">Activity efforts</Link>
+                </Button>
+                <Button asChild>
+                  <Link to="/settings" search={{ flash: undefined, flashType: undefined }}>
+                    Edit profile
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Recent Activities</CardTitle>
+                <CardDescription>Activities will appear here</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">No recent activities found.</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Stats</CardTitle>
+                <CardDescription>Training stats will appear here</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">No stats available.</p>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       )}
     </div>

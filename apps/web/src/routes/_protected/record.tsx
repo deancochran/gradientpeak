@@ -1,6 +1,5 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 
-import { useAuth } from "../../components/providers/auth-provider";
 import { TimerOnlyRecordingProvider } from "../../lib/recording/provider";
 
 export const Route = createFileRoute("/_protected/record")({
@@ -8,12 +7,14 @@ export const Route = createFileRoute("/_protected/record")({
 });
 
 function RecordLayout() {
-  const { user } = useAuth();
+  const { authUserId } = Route.useRouteContext();
 
-  if (!user) return null;
+  if (!authUserId) {
+    throw new Error("The protected recording route requires an authenticated user.");
+  }
 
   return (
-    <TimerOnlyRecordingProvider key={user.id} ownerId={user.id}>
+    <TimerOnlyRecordingProvider key={authUserId} ownerId={authUserId}>
       <Outlet />
     </TimerOnlyRecordingProvider>
   );

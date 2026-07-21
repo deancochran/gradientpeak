@@ -36,7 +36,12 @@ function Button({
         ...accessibilityState,
         disabled: Boolean(disabled || accessibilityState?.disabled),
       }}
-      className={cn("min-h-12 min-w-12", className)}
+      className={cn(
+        "min-h-12 min-w-12",
+        props.variant === "destructive" &&
+          "bg-destructive-surface active:bg-destructive-surface/90 dark:bg-destructive-surface",
+        className,
+      )}
       disabled={disabled}
     />
   );

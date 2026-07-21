@@ -17,8 +17,13 @@ export type PlanningEvent = {
     name?: string | null;
     description?: string | null;
     activity_category?: string | null;
+    authoritative_metrics?: {
+      estimated_tss?: number | null;
+    } | null;
   } | null;
 };
+
+const recurrenceWeekdays = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as const;
 
 export function toDateKey(value: Date) {
   const year = value.getFullYear();
@@ -90,6 +95,94 @@ export function getMonthWindow(monthKey: string) {
 export function shiftMonthKey(monthKey: string, offset: number) {
   const base = parseMonthKey(monthKey);
   return getMonthKey(new Date(base.getFullYear(), base.getMonth() + offset, 1, 12, 0, 0, 0));
+}
+
+export function shiftDateKey(dateKey: string, offset: number) {
+  const value = new Date(`${dateKey}T12:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + offset);
+  return value.toISOString().slice(0, 10);
+}
+
+export function getWeekWindow(dateKey: string) {
+  const value = new Date(`${dateKey}T12:00:00.000Z`);
+  const startKey = shiftDateKey(dateKey, -value.getUTCDay());
+  const days = Array.from({ length: 7 }, (_, index) => shiftDateKey(startKey, index));
+
+  return {
+    startKey,
+    endKey: days[6] ?? startKey,
+    days,
+  };
+}
+
+export function buildWeeklyRecurrence({
+  count,
+  scheduledDate,
+  timezone,
+}: {
+  count: number;
+  scheduledDate: string;
+  timezone: string;
+}) {
+  if (!Number.isInteger(count) || count <= 1) return null;
+
+  const weekday = recurrenceWeekdays[new Date(`${scheduledDate}T12:00:00.000Z`).getUTCDay()];
+  if (!weekday) return null;
+
+  return {
+    rule: `FREQ=WEEKLY;INTERVAL=1;COUNT=${count};BYDAY=${weekday}`,
+    timezone,
+  };
+}
+
+export function getTrainingLoadPath(events: PlanningEvent[]) {
+  const dailyBuckets = new Map<
+    string,
+    { date: string; eventCount: number; estimatedTss: number | null }
+  >();
+
+  for (const event of events) {
+    if (!event.scheduled_date) continue;
+    const estimate = event.activity_plan?.authoritative_metrics?.estimated_tss;
+    const bucket = dailyBuckets.get(event.scheduled_date) ?? {
+      date: event.scheduled_date,
+      eventCount: 0,
+      estimatedTss: null,
+    };
+    bucket.eventCount += 1;
+    if (typeof estimate === "number" && Number.isFinite(estimate)) {
+      bucket.estimatedTss = (bucket.estimatedTss ?? 0) + estimate;
+    }
+    dailyBuckets.set(event.scheduled_date, bucket);
+  }
+
+  const daily = [...dailyBuckets.values()].sort((left, right) =>
+    left.date.localeCompare(right.date),
+  );
+  const weeklyBuckets = new Map<
+    string,
+    { weekStart: string; eventCount: number; estimatedTss: number | null }
+  >();
+  for (const day of daily) {
+    const weekStart = getWeekWindow(day.date).startKey;
+    const bucket = weeklyBuckets.get(weekStart) ?? {
+      weekStart,
+      eventCount: 0,
+      estimatedTss: null,
+    };
+    bucket.eventCount += day.eventCount;
+    if (day.estimatedTss !== null) {
+      bucket.estimatedTss = (bucket.estimatedTss ?? 0) + day.estimatedTss;
+    }
+    weeklyBuckets.set(weekStart, bucket);
+  }
+
+  return {
+    daily,
+    weekly: [...weeklyBuckets.values()].sort((left, right) =>
+      left.weekStart.localeCompare(right.weekStart),
+    ),
+  };
 }
 
 export function getCalendarGrid(monthKey: string) {

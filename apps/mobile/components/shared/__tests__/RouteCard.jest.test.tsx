@@ -1,6 +1,7 @@
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { createHost as mockCreateHost } from "../../../test/mock-components";
-import { renderNative, screen } from "../../../test/render-native";
+import { fireEvent, renderNative, screen } from "../../../test/render-native";
+import { ResourceCardActionButton } from "../ResourceCardPrimitives";
 import { RouteCard } from "../RouteCard";
 
 jest.mock("react-native", () => ({
@@ -203,5 +204,48 @@ describe("RouteCard", () => {
 
     expect(screen.getByTestId("route-card-like-button-route-4")).toBeTruthy();
     expect(screen.queryByText("Coach Rey")).toBeNull();
+  });
+
+  it("keeps list likes and standalone accessories independent from navigation", () => {
+    const onAccessoryPress = jest.fn();
+    const onLikePress = jest.fn();
+    const onPress = jest.fn();
+
+    renderNative(
+      <RouteCard
+        headerAccessory={
+          <ResourceCardActionButton accessibilityLabel="Route options" onPress={onAccessoryPress}>
+            {null}
+          </ResourceCardActionButton>
+        }
+        isLiked={false}
+        likeCount={3}
+        onLikePress={onLikePress}
+        onPress={onPress}
+        route={{
+          id: "route-boundaries",
+          name: "City Run",
+          activity_category: "outdoor_run",
+          total_distance: 5000,
+        }}
+        showLike
+        variant="list"
+      />,
+    );
+
+    fireEvent.press(screen.getByLabelText("Route options"));
+    expect(onAccessoryPress).toHaveBeenCalledTimes(1);
+    expect(onPress).not.toHaveBeenCalled();
+    expect(onLikePress).not.toHaveBeenCalled();
+
+    fireEvent.press(screen.getByLabelText("Like, 3 likes"));
+    expect(onLikePress).toHaveBeenCalledTimes(1);
+    expect(onPress).not.toHaveBeenCalled();
+    expect(onAccessoryPress).toHaveBeenCalledTimes(1);
+
+    fireEvent.press(screen.getByLabelText("Open route City Run"));
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(onLikePress).toHaveBeenCalledTimes(1);
+    expect(onAccessoryPress).toHaveBeenCalledTimes(1);
   });
 });

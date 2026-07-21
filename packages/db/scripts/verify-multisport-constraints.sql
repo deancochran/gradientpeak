@@ -58,6 +58,61 @@ begin
   exception when others then
     if sqlerrm='effort category mismatch was accepted' then raise; end if;
   end;
+  insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
+    effort_type,duration_seconds,distance_meters,unit,value)
+  values
+    (gen_random_uuid(),now(),profile,now(),'bike','heart_rate',60,null,'bpm',30),
+    (gen_random_uuid(),now(),profile,now(),'run','heart_rate',300,null,'beats_per_minute',240),
+    (gen_random_uuid(),now(),profile,now(),'swim','heart_rate',600,400,'bpm',150),
+    (gen_random_uuid(),now(),profile,now(),'swim','speed',300,1000000,'meters_per_second',1.5);
+  begin
+    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
+      effort_type,duration_seconds,unit,value)
+    values(gen_random_uuid(),now(),profile,now(),'strength','heart_rate',60,'bpm',150);
+    raise exception 'unsupported heart-rate category was accepted';
+  exception when others then
+    if sqlerrm='unsupported heart-rate category was accepted' then raise; end if;
+  end;
+  begin
+    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
+      effort_type,duration_seconds,unit,value)
+    values(gen_random_uuid(),now(),profile,now(),'run','heart_rate',60,'watts',150);
+    raise exception 'incompatible heart-rate unit was accepted';
+  exception when others then
+    if sqlerrm='incompatible heart-rate unit was accepted' then raise; end if;
+  end;
+  begin
+    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
+      effort_type,duration_seconds,unit,value)
+    values(gen_random_uuid(),now(),profile,now(),'run','heart_rate',60,'bpm',29);
+    raise exception 'below-bound heart-rate effort was accepted';
+  exception when others then
+    if sqlerrm='below-bound heart-rate effort was accepted' then raise; end if;
+  end;
+  begin
+    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
+      effort_type,duration_seconds,unit,value)
+    values(gen_random_uuid(),now(),profile,now(),'run','heart_rate',60,'bpm',241);
+    raise exception 'above-bound heart-rate effort was accepted';
+  exception when others then
+    if sqlerrm='above-bound heart-rate effort was accepted' then raise; end if;
+  end;
+  begin
+    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
+      effort_type,duration_seconds,distance_meters,unit,value)
+    values(gen_random_uuid(),now(),profile,now(),'swim','speed',300,0,'meters_per_second',1.5);
+    raise exception 'zero effort distance was accepted';
+  exception when others then
+    if sqlerrm='zero effort distance was accepted' then raise; end if;
+  end;
+  begin
+    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
+      effort_type,duration_seconds,distance_meters,unit,value)
+    values(gen_random_uuid(),now(),profile,now(),'swim','speed',300,1000001,'meters_per_second',1.5);
+    raise exception 'above-bound effort distance was accepted';
+  exception when others then
+    if sqlerrm='above-bound effort distance was accepted' then raise; end if;
+  end;
   if (
     select count(*) from public.activity_efforts
     where id in (

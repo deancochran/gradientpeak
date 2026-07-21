@@ -2,6 +2,9 @@
 
 `@repo/db` owns the relational database contract and local database tooling.
 
+The semantic usage contract for athlete observations and effort curves is documented in
+[`ACTIVITY_EVIDENCE_CONTRACT.md`](./ACTIVITY_EVIDENCE_CONTRACT.md).
+
 ## Exports
 
 - `@repo/db`: package-level convenience export for client helpers, schema, and validation.

@@ -43,8 +43,6 @@ export function BuilderTrainingPathReviewSection({
       }
       model={chartReview.chart}
       onDisplayedWeekChange={chartReview.selectWeekStart}
-      onScrollNearEnd={chartReview.extendEnd}
-      onScrollNearStart={chartReview.extendStart}
       renderBelowChart={renderBelowChart}
       selectedDate={chartReview.selectedDate}
       selectionMode="day"

@@ -9,10 +9,18 @@ import {
 describe("settings profile form", () => {
   it("accepts Core preferred-unit values and rejects unsupported values", () => {
     expect(
-      settingsProfileFormSchema.safeParse({ preferred_units: "imperial", username: "" }).success,
+      settingsProfileFormSchema.safeParse({
+        full_name: "Athlete",
+        preferred_units: "imperial",
+        username: "",
+      }).success,
     ).toBe(true);
     expect(
-      settingsProfileFormSchema.safeParse({ preferred_units: "customary", username: "" }).success,
+      settingsProfileFormSchema.safeParse({
+        full_name: "Athlete",
+        preferred_units: "customary",
+        username: "",
+      }).success,
     ).toBe(false);
   });
 
@@ -26,6 +34,7 @@ describe("settings profile form", () => {
   it("preserves FormData parsing and maps web blanks to the canonical patch", () => {
     const formData = new FormData();
     formData.set("bio", "  ");
+    formData.set("full_name", " Riley Chen ");
     formData.set("default_content_visibility", "followers");
     formData.set("is_public", "false");
     formData.set("language", " en ");
@@ -36,6 +45,7 @@ describe("settings profile form", () => {
 
     expect(toProfilePatchInput(values)).toEqual({
       bio: null,
+      full_name: "Riley Chen",
       default_content_visibility: "followers",
       is_public: false,
       language: "en",

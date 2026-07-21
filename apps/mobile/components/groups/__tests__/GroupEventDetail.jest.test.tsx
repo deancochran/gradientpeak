@@ -1,7 +1,7 @@
 import React, { type ComponentProps } from "react";
 import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
-import { CurrentGroupEventPlanCard, GroupEventCard } from "../GroupEventCards";
+import { GroupEventCard } from "../GroupEventCards";
 import { GroupEventDetailScreen } from "../GroupEventDetail";
 
 const activityPlanPressMock = jest.fn();
@@ -240,14 +240,7 @@ describe("GroupEventDetailScreen", () => {
     expect(rsvpMock).toHaveBeenCalledWith(null);
   });
 
-  it("does not label current group events as plans without activity plan options", () => {
-    renderNative(<CurrentGroupEventPlanCard event={createGroupEvent()} />);
-
-    expect(screen.getByText("Current / next event")).toBeTruthy();
-    expect(screen.queryByText("Current / next plan")).toBeNull();
-  });
-
-  it("shows accepted RSVP counts on the detail header without future dates", () => {
+  it("shows accepted RSVP counts and renders future dates from passed occurrences", () => {
     renderNative(
       <GroupEventDetailScreen
         event={createGroupEvent({ acceptedRsvpCount: 3, is_recurring_series: true })}
@@ -264,7 +257,56 @@ describe("GroupEventDetailScreen", () => {
     );
 
     expect(screen.getByText("3 going")).toBeTruthy();
-    expect(screen.queryByText("1 going")).toBeNull();
+    expect(screen.getByText("Future dates")).toBeTruthy();
+    expect(screen.getByText("1 going")).toBeTruthy();
+
+    fireEvent.press(screen.getByText("Next Saturday long run"));
+    expect(occurrencePressMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "occurrence-2" }),
+    );
+  });
+
+  it("does not render future-date state for one-off events", () => {
+    renderNative(<GroupEventDetailScreen event={createGroupEvent()} futureOccurrences={[]} />);
+
+    expect(screen.queryByText("Future dates")).toBeNull();
+    expect(screen.queryByText("No future dates.")).toBeNull();
+  });
+
+  it("renders an empty future-date state for recurring events", () => {
+    renderNative(
+      <GroupEventDetailScreen
+        event={createGroupEvent({ is_recurring_series: true })}
+        futureOccurrences={[]}
+      />,
+    );
+
+    expect(screen.getByText("No future dates.")).toBeTruthy();
+  });
+
+  it("excludes the viewed occurrence and orders remaining future dates chronologically", () => {
+    const rendered = renderNative(
+      <GroupEventDetailScreen
+        event={createGroupEvent({ id: "occurrence-current", is_recurring_occurrence: true })}
+        futureOccurrences={[
+          createGroupEvent({
+            id: "occurrence-later",
+            starts_at: "2026-06-07T13:00:00.000Z",
+            title: "Later occurrence",
+          }),
+          createGroupEvent({ id: "occurrence-current", title: "Current occurrence duplicate" }),
+          createGroupEvent({
+            id: "occurrence-next",
+            starts_at: "2026-05-28T13:00:00.000Z",
+            title: "Next occurrence",
+          }),
+        ]}
+      />,
+    );
+    const tree = JSON.stringify(rendered.toJSON());
+
+    expect(screen.queryByText("Current occurrence duplicate")).toBeNull();
+    expect(tree.indexOf("Next occurrence")).toBeLessThan(tree.indexOf("Later occurrence"));
   });
 
   it("renders the singular activity plan when it is visible to the viewer", () => {
@@ -285,6 +327,20 @@ describe("GroupEventDetailScreen", () => {
     fireEvent.press(screen.getByTestId("activity-plan-card-plan-visible"));
 
     expect(activityPlanPressMock).toHaveBeenCalledWith("plan-visible");
+  });
+
+  it("places the linked activity plan before RSVP actions", () => {
+    activityPlanItems = [{ id: "plan-visible", name: "Visible tempo plan" }];
+
+    const rendered = renderNative(
+      <GroupEventDetailScreen
+        event={createGroupEvent({ activity_plan_id: "plan-visible" })}
+        onRsvp={rsvpMock}
+      />,
+    );
+    const tree = JSON.stringify(rendered.toJSON());
+
+    expect(tree.indexOf("Visible tempo plan")).toBeLessThan(tree.indexOf("Your RSVP"));
   });
 
   it("omits the retired occurrence plan copy action for event managers", () => {

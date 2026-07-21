@@ -1,3 +1,4 @@
+import { getIntensityZoneColor } from "@repo/core/constants";
 import { Text } from "@repo/ui/components/text";
 import { useMemo } from "react";
 import { View } from "react-native";
@@ -40,13 +41,13 @@ type ZoneChartDatum = Record<string, unknown> &
   };
 
 const zoneColors: Record<ZoneKey, string> = {
-  recovery: "#22c55e",
-  endurance: "#3b82f6",
-  tempo: "#eab308",
-  threshold: "#f97316",
-  vo2max: "#ef4444",
-  anaerobic: "#dc2626",
-  neuromuscular: "#991b1b",
+  recovery: getIntensityZoneColor("RECOVERY"),
+  endurance: getIntensityZoneColor("ENDURANCE"),
+  tempo: getIntensityZoneColor("TEMPO"),
+  threshold: getIntensityZoneColor("THRESHOLD"),
+  vo2max: getIntensityZoneColor("VO2MAX"),
+  anaerobic: getIntensityZoneColor("ANAEROBIC"),
+  neuromuscular: getIntensityZoneColor("NEUROMUSCULAR"),
 };
 
 const zoneLabels: Record<ZoneKey, string> = {

@@ -206,6 +206,8 @@ export function buildTrainingPreferencesLoadTimeline(input: {
   for (const date of dailyRecommendedLoadByDate.keys()) dates.add(date);
   const scheduledLoadAggregation = aggregateScheduledLoadByDate(input);
   for (const date of scheduledLoadAggregation.dates) dates.add(date);
+  if (input.scheduledWindowStart) dates.add(input.scheduledWindowStart);
+  if (input.scheduledWindowEnd) dates.add(input.scheduledWindowEnd);
 
   const hasCalendarScheduleForDate = (date: string) =>
     !!input.scheduledWindowStart &&

@@ -254,12 +254,17 @@ export const activityRoutesRelations = relations(activityRoutes, ({ one, many })
   }),
   events: many(events),
   groupEvents: many(groupEvents),
+  activityPlans: many(activityPlans),
 }));
 
 export const activityPlansRelations = relations(activityPlans, ({ one, many }) => ({
   profile: one(profiles, {
     fields: [activityPlans.profile_id],
     references: [profiles.id],
+  }),
+  route: one(activityRoutes, {
+    fields: [activityPlans.route_id],
+    references: [activityRoutes.id],
   }),
   activities: many(activities),
   events: many(events),

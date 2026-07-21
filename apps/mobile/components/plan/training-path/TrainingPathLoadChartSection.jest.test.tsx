@@ -27,6 +27,20 @@ jest.mock("@/components/shared/AppFormModal", () => {
 });
 
 describe("TrainingPathLoadChartSection", () => {
+  it("keeps an existing chart mounted while a wider date range loads", () => {
+    const props = {
+      dailyPoints: [{ date: "2026-06-02", targetLoadTss: 50 }],
+    };
+    const { rerender } = render(<TrainingPathLoadChartSection {...props} />);
+
+    expect(screen.getByTestId("training-path-daily-adjustment-chart")).toBeTruthy();
+
+    rerender(<TrainingPathLoadChartSection {...props} loading />);
+
+    expect(screen.getByTestId("training-path-daily-adjustment-chart")).toBeTruthy();
+    expect(screen.queryByText("Loading training path…")).toBeNull();
+  });
+
   it("prefers an explicit unavailable state over the model empty state", () => {
     const emptyModel = {
       domains: { fitness: [0, 1] as [number, number], load: [0, 1] as [number, number] },

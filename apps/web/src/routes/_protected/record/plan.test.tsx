@@ -60,6 +60,10 @@ vi.mock("../../../lib/api/client", () => ({
   api: { events: { getToday: { useQuery: () => mocks.getToday() } } },
 }));
 
+vi.mock("../../../lib/recording/provider", () => ({
+  useTimerOnlyRecording: () => ({ state: { reducer: { snapshot: null } } }),
+}));
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();

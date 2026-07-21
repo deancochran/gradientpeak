@@ -1,9 +1,10 @@
 import { compileActivityPlanV3 } from "@repo/core/activity-plan";
-import { Badge } from "@repo/ui/components/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { Dumbbell } from "lucide-react";
 
+import { ActivityCategoryBadges } from "../../../components/activity-category-presentation";
+import { getActivityBadgeLabel } from "../../../lib/activity-route-helpers";
 import { describeStructure, loadPublicWorkout } from "../../../lib/public-share";
 
 export const Route = createFileRoute("/share/workouts/$workoutId")({
@@ -44,11 +45,7 @@ function PublicWorkoutPage() {
     <main className="mx-auto w-full max-w-3xl space-y-6 py-8">
       <header className="space-y-4">
         <div className="flex flex-wrap gap-2">
-          {compiledWorkout.categories.map((category) => (
-            <Badge key={category} variant="outline" className="capitalize">
-              {category}
-            </Badge>
-          ))}
+          <ActivityCategoryBadges categories={compiledWorkout.categories} />
         </div>
         <div>
           <h1 className="text-4xl font-semibold tracking-tight">{workout.name}</h1>
@@ -69,7 +66,10 @@ function PublicWorkoutPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
-            <Detail label="Categories" value={compiledWorkout.categories.join(" → ")} />
+            <Detail
+              label="Categories"
+              value={compiledWorkout.categories.map(getActivityBadgeLabel).join(" → ")}
+            />
             <Detail label="Structure" value={describeStructure(workout.structure)} />
             <Detail label="Version" value={`V${compiledWorkout.structureVersion}`} />
             <Detail label="Template" value={workout.is_system_template ? "System" : "Athlete"} />

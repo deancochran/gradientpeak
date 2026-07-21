@@ -1,11 +1,11 @@
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
-import { Text } from "@repo/ui/components/text";
 import { Stack } from "expo-router";
 import { Activity } from "lucide-react-native";
 import { useState } from "react";
-import { TouchableOpacity, View } from "react-native";
+import { View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { ActivityCard } from "@/components/shared/ActivityCard";
+import { HeaderTextAction } from "@/components/shared/HeaderAction";
 import { IndexFilterSheet } from "@/components/shared/IndexFilterSheet";
 import {
   FilterChip,
@@ -38,6 +38,9 @@ function ActivitiesScreen() {
   // Query paginated activities
   const {
     data: activitiesData,
+    error,
+    isError,
+    isFetching,
     isLoading,
     isFetchingNextPage,
     fetchNextPage,
@@ -66,6 +69,8 @@ function ActivitiesScreen() {
     : null;
   const hasMore = activitiesData?.pages[activitiesData.pages.length - 1]?.hasMore || false;
   const total = activitiesData?.pages[0]?.total || 0;
+  const hasActiveFilter =
+    searchQuery.trim().length > 0 || categoryFilter !== null || !includeMultisport;
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -88,13 +93,12 @@ function ActivitiesScreen() {
       <Stack.Screen
         options={{
           headerRight: () => (
-            <TouchableOpacity
+            <HeaderTextAction
+              accessibilityLabel="Import activity"
+              label="Import"
               onPress={() => navigateTo(ROUTES.ACTIVITIES.IMPORT)}
-              className="mr-2 rounded-full px-2 py-1"
               testID="activities-list-import-trigger"
-            >
-              <Text className="text-sm font-medium text-primary">Import</Text>
-            </TouchableOpacity>
+            />
           ),
         }}
       />
@@ -131,13 +135,19 @@ function ActivitiesScreen() {
           </View>
         }
         hasNextPage={hasMore}
+        errorDescription={error?.message ?? "Please try again."}
+        errorTitle="Unable to load activities"
+        isError={isError}
         isFetchingNextPage={isFetchingNextPage}
         isLoading={isLoading}
+        isEmptyFiltered={hasActiveFilter}
+        isRetrying={isFetching}
         keyExtractor={(activity) => activity.id}
         ListHeaderComponent={<IndexResultsSummary count={total} singularLabel="activity" />}
         loadingSkeletonCount={8}
         onLoadMore={handleLoadMore}
         onRefresh={handleRefresh}
+        onRetry={refetch}
         refreshing={refreshing}
         renderItem={(activity) => {
           const { derived, ingestion, ...activityWithoutDerivedOrIngestion } = activity;

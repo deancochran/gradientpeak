@@ -1,7 +1,12 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 
 import { ProtectedHeader } from "../components/protected/protected-header";
-import { authSessionMiddleware, resolveRouteAuthSession } from "../lib/auth/route-guards";
+import {
+  authSessionMiddleware,
+  getProtectedAccessRedirect,
+  resolveRouteAuthSession,
+  resolveRouteProfileState,
+} from "../lib/auth/route-guards";
 
 export const Route = createFileRoute("/_protected")({
   server: {
@@ -9,13 +14,39 @@ export const Route = createFileRoute("/_protected")({
   },
   beforeLoad: async ({ location, serverContext }) => {
     const session = await resolveRouteAuthSession(serverContext);
+    const initialDecision = getProtectedAccessRedirect(session, true, location.href);
 
-    if (!session?.user) {
+    if (initialDecision?.destination === "login") {
       throw redirect({
         to: "/auth/login",
         search: { flash: undefined, flashType: undefined, redirect: location.href },
       });
     }
+    if (initialDecision?.destination === "verify") {
+      throw redirect({
+        to: "/auth/verify",
+        search: {
+          email: undefined,
+          flash: undefined,
+          flashType: undefined,
+          source: undefined,
+        },
+      });
+    }
+
+    const decision = getProtectedAccessRedirect(
+      session,
+      await resolveRouteProfileState(serverContext),
+      location.href,
+    );
+    if (decision?.destination === "onboarding") {
+      throw redirect({
+        to: "/onboarding",
+        search: { flash: undefined, flashType: undefined, redirect: decision.redirectTo },
+      });
+    }
+
+    return { authUserId: session?.user.id };
   },
   component: ProtectedLayout,
 });

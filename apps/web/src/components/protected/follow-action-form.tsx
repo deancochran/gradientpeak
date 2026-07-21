@@ -58,12 +58,12 @@ export function FollowActionForm({
         {isFollowing ? (
           <>
             <UserCheck className="mr-2 h-4 w-4" />
-            Following
+            Unfollow
           </>
         ) : isPending ? (
           <>
             <UserMinus className="mr-2 h-4 w-4" />
-            Requested
+            Cancel request
           </>
         ) : (
           <>

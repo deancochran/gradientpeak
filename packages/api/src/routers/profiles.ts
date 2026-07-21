@@ -24,6 +24,7 @@ import {
 import { getRequiredDb } from "../db";
 import { createActivityAnalysisStore } from "../infrastructure/repositories/drizzle-activity-analysis-repository";
 import { resolveActivityContextAsOf } from "../lib/activity-analysis/context";
+import { compareAndSwapOwnedProfileMedia } from "../repositories/profile-update-repository";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { indexCursorSchema } from "../utils/index-cursor";
 import {
@@ -54,6 +55,17 @@ const trainingZonesUpdateSchema = z
   .strict();
 
 const uuidSchema = z.string().uuid();
+const nonMediaProfilePatchInputSchema = profilePatchInputSchema
+  .omit({ avatar_url: true, cover_url: true })
+  .strict();
+const profileMediaCompareAndSwapInputSchema = z
+  .object({
+    field: z.enum(["avatar_url", "cover_url"]),
+    expected: z.string().nullable(),
+    next: z.string().nullable(),
+  })
+  .strict();
+const profileMediaCompareAndSwapResultSchema = z.object({ success: z.literal(true) }).strict();
 
 export const profilesRouter = createTRPCRouter({
   get: protectedProcedure.query(async ({ ctx }) => {
@@ -130,67 +142,96 @@ export const profilesRouter = createTRPCRouter({
       }
     }),
 
-  update: protectedProcedure.input(profilePatchInputSchema).mutation(async ({ ctx, input }) => {
-    const db = getRequiredDb(ctx);
+  update: protectedProcedure
+    .input(nonMediaProfilePatchInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
 
-    if (input.ftp !== undefined || input.threshold_hr !== undefined) {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "Training thresholds are calculated from trusted activity evidence.",
-      });
-    }
-
-    try {
-      await updateProfile(db, {
-        profileId: ctx.session.user.id,
-        avatar_url: input.avatar_url,
-        cover_url: input.cover_url,
-        default_content_visibility: input.default_content_visibility,
-        bio: input.bio,
-        dob:
-          input.dob === undefined
-            ? undefined
-            : input.dob === null
-              ? null
-              : parseDateOfBirth(input.dob),
-        full_name: input.full_name,
-        is_public: input.is_public,
-        username: input.username == null ? input.username : input.username.toLowerCase(),
-        language: input.language,
-        planning_timezone: input.planning_timezone,
-        preferred_units: input.preferred_units,
-        weight_kg: input.weight_kg,
-        threshold_hr: input.threshold_hr,
-        ftp: input.ftp,
-      });
-
-      const profile = await getSerializedProfile(db, ctx.session.user.id);
-
-      if (!profile) {
+      if (input.ftp !== undefined || input.threshold_hr !== undefined) {
         throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Profile not found",
+          code: "FORBIDDEN",
+          message: "Training thresholds are calculated from trusted activity evidence.",
         });
       }
 
-      return profile;
-    } catch (error) {
-      if (error instanceof TRPCError) {
-        throw error;
-      }
-      if (error instanceof ProfileUpdateNotFoundError) {
-        throw new TRPCError({ code: "NOT_FOUND", message: error.message });
-      }
-      if (error instanceof ProfileUsernameConflictError) {
-        throw new TRPCError({ code: "CONFLICT", message: error.message });
-      }
+      try {
+        await updateProfile(db, {
+          profileId: ctx.session.user.id,
+          default_content_visibility: input.default_content_visibility,
+          bio: input.bio,
+          dob:
+            input.dob === undefined
+              ? undefined
+              : input.dob === null
+                ? null
+                : parseDateOfBirth(input.dob),
+          full_name: input.full_name,
+          is_public: input.is_public,
+          username: input.username == null ? input.username : input.username.toLowerCase(),
+          language: input.language,
+          planning_timezone: input.planning_timezone,
+          preferred_units: input.preferred_units,
+          weight_kg: input.weight_kg,
+          threshold_hr: input.threshold_hr,
+          ftp: input.ftp,
+        });
 
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Failed to update profile",
-      });
-    }
-  }),
+        const profile = await getSerializedProfile(db, ctx.session.user.id);
+
+        if (!profile) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Profile not found",
+          });
+        }
+
+        return profile;
+      } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+        if (error instanceof ProfileUpdateNotFoundError) {
+          throw new TRPCError({ code: "NOT_FOUND", message: error.message });
+        }
+        if (error instanceof ProfileUsernameConflictError) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message });
+        }
+
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to update profile",
+        });
+      }
+    }),
+
+  compareAndSwapMedia: protectedProcedure
+    .input(profileMediaCompareAndSwapInputSchema)
+    .output(profileMediaCompareAndSwapResultSchema)
+    .mutation(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
+      try {
+        const updated = await compareAndSwapOwnedProfileMedia(db, {
+          profileId: ctx.session.user.id,
+          field: input.field,
+          expected: input.expected,
+          next: input.next,
+          now: new Date(),
+        });
+        if (!updated) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Profile image changed. Please retry.",
+          });
+        }
+        return { success: true };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to update profile image",
+        });
+      }
+    }),
 
   list: protectedProcedure.input(profileListFiltersSchema).query(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);

@@ -132,6 +132,7 @@ export function useHomeData() {
         actual: 0,
         target: 0,
         percentage: 0,
+        complete: true,
         unit: "TSS",
       };
     }
@@ -140,12 +141,13 @@ export function useHomeData() {
       actual: data.weeklySummary.actual.tss,
       target: data.weeklySummary.planned.tss,
       percentage:
-        data.weeklySummary.planned.tss > 0
+        data.weeklySummary.actual.tssComplete && data.weeklySummary.planned.tss > 0
           ? Math.min(
               100,
               Math.round((data.weeklySummary.actual.tss / data.weeklySummary.planned.tss) * 100),
             )
-          : 0,
+          : null,
+      complete: data.weeklySummary.actual.tssComplete,
       unit: "TSS",
     };
   }, [data?.weeklySummary]);

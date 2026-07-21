@@ -39,6 +39,8 @@
   --sidebar-border: #e5e5e5;
   --sidebar-ring: #a1a1a1;
   --destructive-foreground: #fafafa;
+  --destructive-surface: #e40014;
+  --destructive-surface-foreground: #fafafa;
   --success: #0a7e3a;
   --success-foreground: #f6fcf7;
   --success-subtle: #e0fae4;
@@ -86,6 +88,8 @@
     --sidebar-border: rgba(255, 255, 255, 0.1);
     --sidebar-ring: #737373;
     --destructive-foreground: #fafafa;
+    --destructive-surface: #e40014;
+    --destructive-surface-foreground: #fafafa;
     --success: #15632f;
     --success-foreground: #f3fdf5;
     --success-subtle: #0d2814;
@@ -132,6 +136,8 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-surface: var(--destructive-surface);
+  --color-destructive-surface-foreground: var(--destructive-surface-foreground);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-success-subtle: var(--success-subtle);

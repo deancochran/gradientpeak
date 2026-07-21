@@ -17,7 +17,6 @@ import {
   ActivityIndicator,
   Alert,
   InteractionManager,
-  Pressable,
   ScrollView,
   Share,
   View,
@@ -33,6 +32,7 @@ import {
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { ActivityCard } from "@/components/shared/ActivityCard";
 import { DetailDeleteConfirmModal, DetailOverflowMenu } from "@/components/shared/detail";
+import { ResourceCardActionButton } from "@/components/shared/ResourceCardPrimitives";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
 import {
   formatCalibrationQuality,
@@ -628,35 +628,34 @@ function ActivityDetailScreen() {
               },
             }}
             headerAccessory={
-              <Pressable
-                onPress={handleLikeToggle}
+              <ResourceCardActionButton
+                accessibilityLabel={activityLike.isLiked ? "Unlike activity" : "Like activity"}
+                contentClassName="flex-row items-center gap-1.5 rounded-full border border-border bg-background px-3 py-2"
                 disabled={activityLike.isPending}
+                onPress={handleLikeToggle}
                 testID="activity-detail-like-button"
-                className="rounded-full border border-border bg-background px-3 py-2"
               >
-                <View className="flex-row items-center gap-1.5">
-                  <Heart
-                    size={16}
-                    className={
-                      activityLike.isLiked ? "fill-red-500 text-red-500" : "text-muted-foreground"
-                    }
-                    color={activityLike.isLiked ? "#ef4444" : undefined}
-                  />
-                  <Text
-                    className={
-                      activityLike.isLiked
-                        ? "text-red-500 text-sm font-medium"
-                        : "text-muted-foreground text-sm"
-                    }
-                  >
-                    {activityLike.likeCount > 0
-                      ? activityLike.likeCount
-                      : activityLike.isLiked
-                        ? "Liked"
-                        : "Like"}
-                  </Text>
-                </View>
-              </Pressable>
+                <Heart
+                  size={16}
+                  className={
+                    activityLike.isLiked ? "fill-red-500 text-red-500" : "text-muted-foreground"
+                  }
+                  color={activityLike.isLiked ? "#ef4444" : undefined}
+                />
+                <Text
+                  className={
+                    activityLike.isLiked
+                      ? "text-red-500 text-sm font-medium"
+                      : "text-muted-foreground text-sm"
+                  }
+                >
+                  {activityLike.likeCount > 0
+                    ? activityLike.likeCount
+                    : activityLike.isLiked
+                      ? "Liked"
+                      : "Like"}
+                </Text>
+              </ResourceCardActionButton>
             }
             owner={{
               id: activity.profile_id,
@@ -827,12 +826,6 @@ function ActivityDetailScreen() {
                 )}
                 {calibrationText ? (
                   <Text className="mt-3 text-xs text-muted-foreground">{calibrationText}</Text>
-                ) : null}
-                {loadMethod === "heart_rate_threshold" ? (
-                  <Text className="mt-2 text-xs text-muted-foreground">
-                    Estimated HR Load uses summary average heart rate and LTHR; it is separate from
-                    Stream HR Load.
-                  </Text>
                 ) : null}
                 {loadMethod === "critical_power_threshold" ? (
                   <Text className="mt-2 text-xs text-muted-foreground">

@@ -289,6 +289,7 @@ function EffortDetailChart({
   const height = 260;
   const colors = getEffortChartColors(useColorScheme() === "dark");
   const paceDistanceMeters = getPaceDistanceMeters(curve.id);
+  const isHeartRateCurve = curve.unit === "bpm";
   const presentPoints = getCurveDisplayPoints(buildBestActivityEffortCurve(records), curve.id);
   const earliestPoints = getCurveDisplayPoints(buildEarliestComparableCurve(records), curve.id);
   const allPoints = [...presentPoints, ...earliestPoints];
@@ -330,7 +331,7 @@ function EffortDetailChart({
           `${point.label}: ${paceDistanceMeters ? formatPaceAxisValue(point.value, paceDistanceMeters) : formatAxisValue(point.value, curve.unit)}`,
       )
       .join("; ");
-  const chartAccessibilityLabel = `${curve.title}. X axis: duration. Y axis: ${paceDistanceMeters ? `pace per ${paceDistanceMeters === 100 ? "100 meters" : "kilometer"}` : `power in ${curve.unit}`}. First records: ${describePoints(earliestPoints)}. Best so far: ${describePoints(presentPoints)}.`;
+  const chartAccessibilityLabel = `${curve.title}. X axis: duration. Y axis: ${paceDistanceMeters ? `pace per ${paceDistanceMeters === 100 ? "100 meters" : "kilometer"}` : isHeartRateCurve ? "heart rate in beats per minute" : `power in ${curve.unit}`}. First records: ${describePoints(earliestPoints)}. Best so far: ${describePoints(presentPoints)}.`;
 
   return (
     <View className="gap-4">
@@ -450,7 +451,9 @@ function EffortDetailChart({
             >
               {paceDistanceMeters
                 ? `Pace (/${paceDistanceMeters === 100 ? "100m" : "km"})`
-                : `Power (${curve.unit})`}
+                : isHeartRateCurve
+                  ? "Heart rate (bpm)"
+                  : `Power (${curve.unit})`}
             </SvgText>
             <Path
               d={buildPath(earliestCoordinates)}

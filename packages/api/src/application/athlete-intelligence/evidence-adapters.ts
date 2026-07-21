@@ -159,9 +159,9 @@ export function temporalOverlayValue<T>(input: {
 }
 
 export function canonicalEffortValue(
-  kind: "power" | "speed",
+  kind: "power" | "speed" | "heart_rate",
   value: number,
   unit: string,
-): { value: number; unit: "watts" | "meters_per_second" } | null {
+): { value: number; unit: "watts" | "meters_per_second" | "bpm" } | null {
   return normalizeCanonicalEffortValue({ kind, value, unit });
 }

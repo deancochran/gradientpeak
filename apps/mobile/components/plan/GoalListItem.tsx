@@ -58,7 +58,12 @@ export function GoalListItem({
   const meta = [formatGoalTargetDate(goal.target_date), status].filter(Boolean).join(" · ");
 
   return (
-    <ResourceCardShell compact onPress={onPress} testID={testID}>
+    <ResourceCardShell
+      accessibilityLabel={`Open goal ${goal.title || "Untitled goal"}`}
+      compact
+      onPress={onPress}
+      testID={testID}
+    >
       <ResourceCardHeader
         compact
         accessory={

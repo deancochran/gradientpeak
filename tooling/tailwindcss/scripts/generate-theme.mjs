@@ -22,6 +22,8 @@ const checkOnly = process.argv.includes("--check");
 const colorExtensions = {
   light: {
     "destructive-foreground": "oklch(0.985 0 0)",
+    "destructive-surface": "oklch(0.577 0.245 27.325)",
+    "destructive-surface-foreground": "oklch(0.985 0 0)",
     success: "oklch(0.52 0.14 150)",
     "success-foreground": "oklch(0.985 0.01 150)",
     "success-subtle": "oklch(0.96 0.04 150)",
@@ -35,6 +37,8 @@ const colorExtensions = {
   },
   dark: {
     "destructive-foreground": "oklch(0.985 0 0)",
+    "destructive-surface": "oklch(0.577 0.245 27.325)",
+    "destructive-surface-foreground": "oklch(0.985 0 0)",
     success: "oklch(0.44 0.11 150)",
     "success-foreground": "oklch(0.985 0.015 150)",
     "success-subtle": "oklch(0.25 0.05 150)",
@@ -146,7 +150,16 @@ const formatNativeThemeScale = (entries) =>
   entries.map(([name, value]) => `    ${toCamelCase(name)}: ${JSON.stringify(value)},`).join("\n");
 const formatNativeThemeVariables = (entries) =>
   entries.map(([name, value]) => `    "--${name}": ${JSON.stringify(value)},`).join("\n");
-const uiNativeThemeTokenNames = ["foreground", "muted-foreground", "primary"];
+const uiNativeThemeTokenNames = [
+  "foreground",
+  "muted-foreground",
+  "primary",
+  "input",
+  "card",
+  "destructive",
+  "success-subtle-foreground",
+  "warning-foreground",
+];
 const formatUiNativeThemeScale = (entries) =>
   uiNativeThemeTokenNames
     .map((name) => {

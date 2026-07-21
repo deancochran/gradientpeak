@@ -1,5 +1,6 @@
 // apps/mobile/app/(internal)/(tabs)/trends/components/charts/IntensityDistributionChart.tsx
 
+import { getIntensityZoneColor } from "@repo/core/constants";
 import { Text } from "@repo/ui/components/text";
 import { Dimensions, Pressable, View } from "react-native";
 import Svg, { Circle, G, Path } from "react-native-svg";
@@ -12,7 +13,6 @@ export interface IntensityZone {
   label: string;
   description: string;
   color: string;
-  emoji: string;
   percentage: number;
   tss: number;
 }
@@ -49,8 +49,7 @@ export function IntensityDistributionChart({
       key: "recovery",
       label: "Recovery",
       description: "< 0.55 IF",
-      color: "#3b82f6", // blue-500
-      emoji: "🔵",
+      color: getIntensityZoneColor("RECOVERY"),
       percentage: data.recovery || 0,
       tss: Math.round((totalTSS * (data.recovery || 0)) / 100),
     },
@@ -58,8 +57,7 @@ export function IntensityDistributionChart({
       key: "endurance",
       label: "Endurance",
       description: "0.55-0.75 IF",
-      color: "#10b981", // green-500
-      emoji: "🟢",
+      color: getIntensityZoneColor("ENDURANCE"),
       percentage: data.endurance || 0,
       tss: Math.round((totalTSS * (data.endurance || 0)) / 100),
     },
@@ -67,8 +65,7 @@ export function IntensityDistributionChart({
       key: "tempo",
       label: "Tempo",
       description: "0.75-0.85 IF",
-      color: "#f59e0b", // yellow-500
-      emoji: "🟡",
+      color: getIntensityZoneColor("TEMPO"),
       percentage: data.tempo || 0,
       tss: Math.round((totalTSS * (data.tempo || 0)) / 100),
     },
@@ -76,8 +73,7 @@ export function IntensityDistributionChart({
       key: "threshold",
       label: "Threshold",
       description: "0.85-0.95 IF",
-      color: "#f97316", // orange-500
-      emoji: "🟠",
+      color: getIntensityZoneColor("THRESHOLD"),
       percentage: data.threshold || 0,
       tss: Math.round((totalTSS * (data.threshold || 0)) / 100),
     },
@@ -85,8 +81,7 @@ export function IntensityDistributionChart({
       key: "vo2max",
       label: "VO2max",
       description: "0.95-1.05 IF",
-      color: "#ef4444", // red-500
-      emoji: "🔴",
+      color: getIntensityZoneColor("VO2MAX"),
       percentage: data.vo2max || 0,
       tss: Math.round((totalTSS * (data.vo2max || 0)) / 100),
     },
@@ -94,8 +89,7 @@ export function IntensityDistributionChart({
       key: "anaerobic",
       label: "Anaerobic",
       description: "1.05-1.15 IF",
-      color: "#dc2626", // red-600
-      emoji: "🔥",
+      color: getIntensityZoneColor("ANAEROBIC"),
       percentage: data.anaerobic || 0,
       tss: Math.round((totalTSS * (data.anaerobic || 0)) / 100),
     },
@@ -103,8 +97,7 @@ export function IntensityDistributionChart({
       key: "neuromuscular",
       label: "Sprint",
       description: "> 1.15 IF",
-      color: "#7c3aed", // purple-600
-      emoji: "⚡",
+      color: getIntensityZoneColor("NEUROMUSCULAR"),
       percentage: data.neuromuscular || 0,
       tss: Math.round((totalTSS * (data.neuromuscular || 0)) / 100),
     },
@@ -215,7 +208,11 @@ export function IntensityDistributionChart({
               height: 60,
             }}
           >
-            <Text className="text-2xl mb-1">{dominantZone.emoji}</Text>
+            <View
+              accessibilityLabel={`${dominantZone.label} intensity color`}
+              className="mb-1 h-5 w-5 rounded-full"
+              style={{ backgroundColor: dominantZone.color }}
+            />
             <Text className="text-xs font-semibold text-foreground text-center">
               {dominantZone.label}
             </Text>

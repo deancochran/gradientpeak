@@ -11,6 +11,11 @@ jest.mock("@repo/ui/components/text", () => ({
   Text: createHost("Text"),
 }));
 
+jest.mock("@repo/ui/components/icon", () => ({
+  __esModule: true,
+  Icon: createHost("Icon"),
+}));
+
 const { TimelineChart } = require("./TimelineChart");
 
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
@@ -113,13 +118,13 @@ describe("TimelineChart", () => {
     expect(
       Array.from({ length: 7 }, (_, index) => occurrence(index).props.accessibilityLabel),
     ).toEqual([
-      "rest segment 1",
-      "activity segment 2",
-      "activity segment 3",
-      "transition segment 4",
-      "activity segment 5",
-      "rest segment 6",
-      "activity segment 7",
+      "rest segment 1, 30 seconds",
+      "activity segment 2, run, RPE 3, 60 seconds",
+      "activity segment 3, run, RPE 3, 60 seconds",
+      "transition segment 4, Run to Bike, 45 seconds",
+      "activity segment 5, bike, RPE 8, 120 seconds",
+      "rest segment 6, 20 seconds",
+      "activity segment 7, run, RPE 10, 240 seconds",
     ]);
   });
 
@@ -128,22 +133,43 @@ describe("TimelineChart", () => {
 
     // Boundary segments have fixed height 28
     expect(occurrence(0).props.style.height).toBe(28);
-    expect(occurrence(3).props.style.height).toBe(28);
+    expect(occurrence(3).props.style.height).toBe(52);
     expect(occurrence(5).props.style.height).toBe(28);
 
-    // Activity heights: targetHeight(intensity) + 28
-    // RPE 3: max(12, min(64, 24)) + 28 = 52
-    expect(occurrence(1).props.style.height).toBe(52);
-    expect(occurrence(2).props.style.height).toBe(52);
-    // RPE 8: max(12, min(64, 64)) + 28 = 92
-    expect(occurrence(4).props.style.height).toBe(92);
-    // RPE 10: max(12, min(64, 64)) + 28 = 92
-    expect(occurrence(6).props.style.height).toBe(92);
+    // Activity heights use the normalized 0-1 effort model.
+    expect(occurrence(1).props.style.height).toBeCloseTo(52.8);
+    expect(occurrence(2).props.style.height).toBeCloseTo(52.8);
+    expect(occurrence(4).props.style.height).toBeCloseTo(100.8);
+    expect(occurrence(6).props.style.height).toBe(120);
 
-    // Width is clamped to minimum 34 for typical workout durations
+    expect(screen.getByTestId("timeline-chart").props.style.width).toBe("100%");
     for (let i = 0; i < 7; i++) {
-      expect(occurrence(i).props.style.width).toBeGreaterThanOrEqual(34);
+      expect(occurrence(i).props.style.flexBasis).toBe(0);
+      expect(occurrence(i).props.style.flexGrow).toBeGreaterThan(0);
+      expect(occurrence(i).props.style.minWidth).toBe(0);
     }
+  });
+
+  it("uses Core intensity colors without category labels or category stripes", () => {
+    renderNative(<TimelineChart compact structure={structure} />);
+
+    expect(occurrence(1).props.style.backgroundColor).toBe("#38bdf8");
+    expect(occurrence(4).props.style.backgroundColor).toBe("#eab308");
+    expect(occurrence(6).props.style.backgroundColor).toBe("#ef4444");
+    expect(screen.queryByText("run")).toBeNull();
+    expect(screen.queryByText("bike")).toBeNull();
+    expect(screen.queryByTestId("timeline-occurrence-1-category")).toBeNull();
+  });
+
+  it("shows the adjacent sport icons and direction above transitions", () => {
+    renderNative(<TimelineChart structure={structure} />);
+
+    const transition = screen.getByTestId("timeline-transition-3");
+    expect(transition.props.accessible).toBe(false);
+    expect(occurrence(3).props.accessibilityLabel).toContain("Run to Bike");
+    expect(screen.getByTestId("timeline-transition-3-from")).toBeTruthy();
+    expect(screen.getByTestId("timeline-transition-3-arrow")).toBeTruthy();
+    expect(screen.getByTestId("timeline-transition-3-to")).toBeTruthy();
   });
 
   it("presses the interval represented by an expanded occurrence", () => {
@@ -152,8 +178,16 @@ describe("TimelineChart", () => {
 
     fireEvent.press(occurrence(1));
 
+    expect(occurrence(1).props.accessibilityRole).toBe("button");
     expect(onIntervalPress).toHaveBeenCalledWith(id(3));
     expect(onIntervalPress).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks the selected interval for assistive technology", () => {
+    renderNative(<TimelineChart structure={structure} selectedIntervalId={id(3)} />);
+
+    expect(occurrence(1).props.accessibilityState).toEqual({ selected: true });
+    expect(occurrence(2).props.accessibilityState).toEqual({ selected: true });
   });
 
   it("does not call onIntervalPress for boundary segments", () => {
@@ -219,16 +253,13 @@ describe("TimelineChart", () => {
     expect(occurrence(0)).toBeTruthy();
     expect(occurrence(3)).toBeTruthy();
 
-    // Heights scale with intensity within each target type
-    // watts 100: max(12, min(64, 50)) + 28 = 78
-    expect(occurrence(0).props.style.height).toBe(78);
-    // watts 300: max(12, min(64, 150)) + 28 = 92
-    expect(occurrence(1).props.style.height).toBe(92);
+    // Absolute targets scale relative to matching targets in this plan.
+    expect(occurrence(0).props.style.height).toBeCloseTo(43.2);
+    expect(occurrence(1).props.style.height).toBe(120);
     expect(occurrence(0).props.style.height).toBeLessThan(occurrence(1).props.style.height);
 
-    // bpm 100: 78, bpm 180: 92
-    expect(occurrence(2).props.style.height).toBe(78);
-    expect(occurrence(3).props.style.height).toBe(92);
+    expect(occurrence(2).props.style.height).toBeCloseTo(43.2);
+    expect(occurrence(3).props.style.height).toBe(120);
     expect(occurrence(2).props.style.height).toBeLessThan(occurrence(3).props.style.height);
   });
 });

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { activityEfforts, profileMetrics, profiles } from "@repo/db";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../db";
 import {
   isClearedProfileOverride,
@@ -28,6 +28,30 @@ export type ProfileFields = Partial<
     | "username"
   >
 >;
+
+export type ProfileMediaField = "avatar_url" | "cover_url";
+
+export async function compareAndSwapOwnedProfileMedia(
+  db: DbClient,
+  input: {
+    profileId: string;
+    field: ProfileMediaField;
+    expected: string | null;
+    next: string | null;
+    now: Date;
+  },
+) {
+  const column = profiles[input.field];
+  const [updated] = await db
+    .update(profiles)
+    .set({ [input.field]: input.next, updated_at: input.now })
+    .where(
+      and(eq(profiles.id, input.profileId), sql`${column} IS NOT DISTINCT FROM ${input.expected}`),
+    )
+    .returning({ id: profiles.id });
+
+  return Boolean(updated);
+}
 
 const MANUAL_FTP_UNIT = "watts";
 

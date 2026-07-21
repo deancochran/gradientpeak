@@ -1,17 +1,26 @@
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { UiPreviewSurface } from "@repo/ui/testing/ui-preview";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import * as React from "react";
 import { View } from "react-native";
+import { MobileCardPreviewSurface } from "@/components/dev/MobileCardPreviewSurface";
 
 type StorybookModule = {
   default: React.ComponentType;
 };
 
-function getDeveloperRoot() {
+function getDeveloperRoot(surface?: string) {
   if (!__DEV__) {
     return null;
+  }
+
+  const developerSurfaceEnabled =
+    process.env.EXPO_PUBLIC_MAESTRO_E2E === "1" ||
+    process.env.EXPO_PUBLIC_STORYBOOK_ENABLED === "1";
+
+  if (surface === "mobile-cards" && developerSurfaceEnabled) {
+    return MobileCardPreviewSurface;
   }
 
   if (process.env.EXPO_PUBLIC_MAESTRO_E2E === "1") {
@@ -38,7 +47,11 @@ function UnavailableRoute({ title, description }: { title: string; description: 
 }
 
 export default function StorybookScreen() {
-  const DeveloperRoot = React.useMemo(() => getDeveloperRoot(), []);
+  const { surface } = useLocalSearchParams<{ surface?: string }>();
+  const DeveloperRoot = React.useMemo(
+    () => getDeveloperRoot(Array.isArray(surface) ? surface[0] : surface),
+    [surface],
+  );
 
   if (!__DEV__) {
     return (

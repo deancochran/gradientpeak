@@ -22,6 +22,7 @@ export type ActivityAnalysisEffortSnapshot = Omit<
   "value"
 > & {
   value: number;
+  distance_meters?: number | null;
   id?: string;
   activity_id?: string | null;
   method?: string | null;

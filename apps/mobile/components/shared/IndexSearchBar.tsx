@@ -113,11 +113,13 @@ export function FilterSection({ title, children }: { title: string; children: Re
 
 export function IndexResultsSummary({
   count,
+  countKind = "total",
   singularLabel,
   pluralLabel,
   testID,
 }: {
   count: number;
+  countKind?: "loaded" | "total";
   singularLabel: string;
   pluralLabel?: string;
   testID?: string;
@@ -130,6 +132,7 @@ export function IndexResultsSummary({
     <View className="rounded-2xl border border-border bg-muted/20 px-4 py-3" testID={testID}>
       <Text className="text-sm text-muted-foreground">
         {count} {count === 1 ? singularLabel : (pluralLabel ?? `${singularLabel}s`)}
+        {countKind === "loaded" ? " loaded" : ""}
       </Text>
     </View>
   );

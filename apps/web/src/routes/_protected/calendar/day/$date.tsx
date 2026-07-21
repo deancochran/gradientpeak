@@ -30,7 +30,7 @@ export const Route = createFileRoute("/_protected/calendar/day/$date")({
       typeof search.month === "string" && isValidMonthKey(search.month)
         ? search.month
         : getMonthKey(new Date()),
-    view: search.view === "agenda" ? "agenda" : "month",
+    view: search.view === "agenda" || search.view === "week" ? search.view : "month",
   }),
   component: CalendarDayPage,
 });
@@ -67,7 +67,13 @@ function CalendarDayPage() {
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <Button asChild variant="outline" size="sm">
-          <Link to="/calendar" search={{ flash: undefined, flashType: undefined, month, view }}>
+          <Link
+            to="/calendar"
+            search={{
+              month,
+              view: view as "agenda" | "month" | "week",
+            }}
+          >
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to calendar
           </Link>
@@ -100,6 +106,22 @@ function CalendarDayPage() {
             ))}
           </CardContent>
         </Card>
+      ) : null}
+
+      {eventsQuery.isError || goalsQuery.isError ? (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/40 p-4"
+        >
+          <p className="text-sm">The day agenda could not be fully loaded.</p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void Promise.all([eventsQuery.refetch(), goalsQuery.refetch()])}
+          >
+            Retry
+          </Button>
+        </div>
       ) : null}
 
       <Card>

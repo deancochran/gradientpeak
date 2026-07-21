@@ -13,6 +13,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { CalendarDays, Check, Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { api } from "../../../lib/api/client";
+import { useTimerOnlyRecording } from "../../../lib/recording/provider";
 import {
   formatScheduledTime,
   normalizeRecordingActivityCategory,
@@ -28,6 +29,8 @@ export const Route = createFileRoute("/_protected/record/plan")({
 export function RecordPlanPage() {
   const navigate = Route.useNavigate();
   const launcher = Route.useSearch();
+  const recording = useTimerOnlyRecording();
+  const identityLocked = Boolean(recording.state.reducer.snapshot);
   const [searchText, setSearchText] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<"all" | typeof launcher.category>("all");
   const { data: events = [], isLoading, error } = api.events.getToday.useQuery();
@@ -52,6 +55,7 @@ export function RecordPlanPage() {
   }, [categoryFilter, events, searchText]);
 
   const attachPlan = (eventId: string) => {
+    if (identityLocked) return;
     const event = events.find((candidate) => candidate.id === eventId);
     const plan = event?.activity_plan;
     const category = normalizeRecordingActivityCategory(
@@ -70,6 +74,7 @@ export function RecordPlanPage() {
   };
 
   const detachPlan = () => {
+    if (identityLocked) return;
     void navigate({
       to: "/record",
       search: {
@@ -131,7 +136,12 @@ export function RecordPlanPage() {
             ))}
           </div>
           {launcher.eventId ? (
-            <Button variant="ghost" className="px-0 text-destructive" onClick={detachPlan}>
+            <Button
+              disabled={identityLocked}
+              variant="ghost"
+              className="px-0 text-destructive"
+              onClick={detachPlan}
+            >
               Detach current plan
             </Button>
           ) : null}
@@ -203,9 +213,9 @@ export function RecordPlanPage() {
                     ? "Attached to the launcher. Choosing it again keeps this activity selected."
                     : "Attach this activity to carry its category back to the launcher."}
                 </p>
-                <Button onClick={() => attachPlan(event.id)}>
+                <Button disabled={identityLocked} onClick={() => attachPlan(event.id)}>
                   {isSelected ? <Check className="mr-2 h-4 w-4" /> : null}
-                  {isSelected ? "Attached" : "Attach plan"}
+                  {identityLocked ? "Locked for session" : isSelected ? "Attached" : "Attach plan"}
                 </Button>
               </CardContent>
             </Card>

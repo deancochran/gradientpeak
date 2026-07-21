@@ -14,6 +14,7 @@ interface Status {
   tsb: number;
   weekProgress: {
     completedTSS: number;
+    tssComplete: boolean;
     targetTSS: number;
     completedActivities: number;
     totalPlannedActivities: number;
@@ -141,11 +142,19 @@ export function OverviewTab({
         <Text className="text-base font-semibold text-foreground">This Week&apos;s Progress</Text>
         <ProgressRow
           label="Weekly TSS"
-          value={`${status.weekProgress.completedTSS} / ${status.weekProgress.targetTSS}`}
-          progress={Math.min(
-            (status.weekProgress.completedTSS / status.weekProgress.targetTSS) * 100,
-            100,
-          )}
+          value={
+            status.weekProgress.tssComplete
+              ? `${status.weekProgress.completedTSS} / ${status.weekProgress.targetTSS}`
+              : "Partial load"
+          }
+          progress={
+            status.weekProgress.tssComplete && status.weekProgress.targetTSS > 0
+              ? Math.min(
+                  (status.weekProgress.completedTSS / status.weekProgress.targetTSS) * 100,
+                  100,
+                )
+              : 0
+          }
           indicatorClassName="bg-blue-500"
         />
         <ProgressRow
