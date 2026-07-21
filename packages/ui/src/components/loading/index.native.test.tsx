@@ -33,4 +33,14 @@ describe("Loading native", () => {
     expect(status.props.accessibilityLiveRegion).toBe("polite");
     expect(getAllByRole("progressbar")).toHaveLength(1);
   });
+
+  it("keeps loading labels aligned with the button variant", () => {
+    const { getByText } = renderNative(
+      <LoadingButton loading loadingLabel="Saving" variant="outline">
+        Save
+      </LoadingButton>,
+    );
+
+    expect(getByText("Saving").props.className).not.toContain("text-primary-foreground");
+  });
 });

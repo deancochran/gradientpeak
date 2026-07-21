@@ -53,11 +53,7 @@ export function LoadingButton({
           />
         ) : null}
         {typeof content === "string" ? (
-          <Text
-            className={cn("text-sm font-semibold text-primary-foreground", loadingTextClassName)}
-          >
-            {content}
-          </Text>
+          <Text className={cn("text-sm font-semibold", loadingTextClassName)}>{content}</Text>
         ) : (
           content
         )}
