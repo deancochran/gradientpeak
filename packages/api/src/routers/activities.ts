@@ -7,6 +7,8 @@ import {
   ianaTimezoneSchema,
   recordingExecutionManifestSchema,
 } from "@repo/core";
+import { commonLoadHistoryResultSchema } from "@repo/core/load";
+import { getScheduledDateKey } from "@repo/core/utils/schedule-date";
 import {
   activities,
   activityFileIngestions,
@@ -29,6 +31,7 @@ import {
   getActivityByIdForViewer,
   listActivitiesForProfile,
 } from "../application/activities/activity-reads";
+import { getCommonLoadHistory } from "../application/activities/common-load-history";
 import {
   DailyTssActivityLimitExceededError,
   getDailyTssObservations,
@@ -229,6 +232,13 @@ const dailyTssObservationsOutputSchema = z
           .strict(),
       ]),
     ),
+  })
+  .strict();
+
+const commonLoadHistoryInputSchema = z
+  .object({
+    current_planning_date: z.iso.date(),
+    planning_timezone: ianaTimezoneSchema,
   })
   .strict();
 
@@ -443,6 +453,28 @@ function _parseActivityRows(value: unknown[]) {
 }
 
 export const activitiesRouter = createTRPCRouter({
+  commonLoadHistory: protectedProcedure
+    .input(commonLoadHistoryInputSchema)
+    .output(commonLoadHistoryResultSchema)
+    .query(({ ctx, input }) => {
+      const serverPlanningDate = getScheduledDateKey(
+        new Date().toISOString(),
+        input.planning_timezone,
+      );
+      if (input.current_planning_date !== serverPlanningDate) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Current planning date must match the server-derived profile-local date",
+        });
+      }
+      return getCommonLoadHistory({
+        db: getRequiredDb(ctx),
+        profileId: ctx.session.user.id,
+        currentPlanningDate: input.current_planning_date,
+        planningTimezone: input.planning_timezone,
+      });
+    }),
+
   dailyTssObservations: protectedProcedure
     .input(dailyTssObservationsInputSchema)
     .output(dailyTssObservationsOutputSchema)

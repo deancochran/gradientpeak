@@ -3,13 +3,9 @@ import {
   analyzeActivityDerivedMetrics,
   segmentSummarySchemaV1,
 } from "@repo/core";
-import {
-  type ActivityRow,
-  type ActivitySegmentRow,
-  activitySegments,
-  type DrizzleDbClient,
-} from "@repo/db";
+import { type ActivityRow, type ActivitySegmentRow, activitySegments } from "@repo/db";
 import { asc, inArray } from "drizzle-orm";
+import type { DrizzleQueryExecutor } from "../../db";
 import type { ActivityAnalysisStore } from "../../repositories";
 import { resolveActivityContextFromEvidence } from "./context";
 
@@ -108,7 +104,7 @@ export function deriveActivityDurations(
 }
 
 export async function loadActivitySegmentsByActivityId(
-  db: DrizzleDbClient,
+  db: DrizzleQueryExecutor,
   activityIds: readonly string[],
 ): Promise<Map<string, ActivitySegmentReadRow[]>> {
   if (activityIds.length === 0) return new Map();

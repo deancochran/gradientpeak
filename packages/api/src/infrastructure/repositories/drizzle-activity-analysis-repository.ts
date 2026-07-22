@@ -1,6 +1,7 @@
 import { CRITICAL_POWER_CANONICAL_DURATIONS } from "@repo/core/calculations";
-import { type DrizzleDbClient, schema } from "@repo/db";
+import { schema } from "@repo/db";
 import { and, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
+import type { DrizzleQueryExecutor } from "../../db";
 import type { ActivityAnalysisContextSnapshot, ActivityAnalysisStore } from "../../repositories";
 
 const metricTypes = [
@@ -19,7 +20,7 @@ function toNumber(value: string | number | null): number {
   return Number(value ?? 0);
 }
 
-export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalysisStore {
+export function createActivityAnalysisStore(db: DrizzleQueryExecutor): ActivityAnalysisStore {
   const loadContextEvidence: NonNullable<ActivityAnalysisStore["loadContextEvidence"]> = async ({
     requests,
     evidenceScope,

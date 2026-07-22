@@ -797,6 +797,58 @@ describe("activitiesRouter", () => {
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
   });
 
+  it("returns authenticated profile-scoped common Load history through the Core output contract", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-21T16:00:00.000Z"));
+    try {
+      const result = await createCaller(createDbMock({})).commonLoadHistory({
+        current_planning_date: "2026-07-21",
+        planning_timezone: "America/New_York",
+      });
+
+      expect(result.status).toBe("available");
+      if (result.status !== "available") throw new Error("Available common Load history expected");
+      expect(result.points).toHaveLength(84);
+      expect(result.points.at(-1)).toMatchObject({ date: "2026-07-20", dailyLoad: 0 });
+      expect(mockActivityAnalysis.buildActivitySegmentDerivedSummaries).toHaveBeenCalledWith({
+        store: { kind: "activity-analysis-store" },
+        profileId: OWNER_ID,
+        activities: [],
+      });
+
+      const unauthenticatedCaller = activitiesRouter.createCaller({
+        db: createDbMock({}),
+        session: null,
+        headers: new Headers(),
+        clientType: "test",
+        trpcSource: "vitest",
+      } as any);
+      await expect(
+        unauthenticatedCaller.commonLoadHistory({
+          current_planning_date: "2026-07-21",
+          planning_timezone: "America/New_York",
+        }),
+      ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects a planning date that differs from the server-derived profile-local date", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-21T16:00:00.000Z"));
+    try {
+      await expect(
+        createCaller(createDbMock({})).commonLoadHistory({
+          current_planning_date: "2026-07-22",
+          planning_timezone: "America/New_York",
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("lists paginated owned activities with like and derived summaries", async () => {
     const rows = [buildActivityRow()];
     const derived = {
