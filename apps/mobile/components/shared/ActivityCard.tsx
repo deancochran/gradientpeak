@@ -6,12 +6,11 @@ import { useMemo } from "react";
 import { Pressable, View } from "react-native";
 import {
   formatCalibrationQuality,
-  getActivityLoadLabels,
+  getCommonLoadPresentation,
   getThresholdNextAction,
 } from "@/lib/activity-load-presentation";
 import { getUniqueActivityCategoryConfigs } from "@/lib/constants/activities";
 import { formatDistanceMeters } from "@/lib/display/formatters";
-import { formatEstimatedIntensityFactor, formatEstimatedTss } from "@/lib/estimatedMetrics";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
 import {
@@ -23,7 +22,6 @@ import {
   ResourceMetricsRow,
   ResourceOwnerActionRow,
 } from "./ResourceCardPrimitives";
-import { SportLoadBreakdown, type SportLoadMeasurement } from "./SportLoadBreakdown";
 import { StaticRouteMapPreview } from "./StaticRouteMapPreview";
 
 type RouteCoordinate = { latitude: number; longitude: number };
@@ -55,12 +53,14 @@ export type ActivityCardActivity = {
   comments_count?: number | null;
   has_liked?: boolean | null;
   derived?: {
+    common_load?: unknown;
     tss?: number | null;
     intensity_factor?: number | null;
     method?: string | null;
     unavailable_reason?: string | null;
     calibration_quality?: CalibrationQuality | null;
     stress?: {
+      common_load?: unknown;
       tss?: number | null;
       intensity_factor?: number | null;
       method?: string | null;
@@ -68,11 +68,14 @@ export type ActivityCardActivity = {
       calibration_quality?: CalibrationQuality | null;
     } | null;
   } | null;
-  segment_loads?: Array<
-    SportLoadMeasurement & {
-      segment_id: string;
-    }
-  >;
+  segment_loads?: Array<{
+    segment_id: string;
+    category: string;
+    tss?: number | null;
+    intensity_factor?: number | null;
+    method?: string | null;
+    unavailable_reason?: string | null;
+  }>;
   ingestion?: {
     status?: string | null;
     last_error_message?: string | null;
@@ -143,10 +146,6 @@ function CompactRoutePreview({ coordinates }: { coordinates: RouteCoordinate[] }
   );
 }
 
-function getDerivedValue(activity: ActivityCardActivity, key: "tss" | "intensity_factor") {
-  return activity.derived?.[key] ?? activity.derived?.stress?.[key] ?? null;
-}
-
 function getActivityCategory(activity: ActivityCardActivity): string {
   return (
     activity.activity_categories?.[0] ??
@@ -166,21 +165,9 @@ function getActivityCategories(activity: ActivityCardActivity): string[] {
 }
 
 function getLoadPresentation(activity: ActivityCardActivity) {
-  const method = activity.derived?.method ?? activity.derived?.stress?.method ?? null;
-  const unavailableReason =
-    activity.derived?.unavailable_reason ?? activity.derived?.stress?.unavailable_reason ?? null;
-  const labels = getActivityLoadLabels(method);
-  const unavailableText =
-    unavailableReason === "private_data"
-      ? "Private"
-      : unavailableReason === "threshold_missing"
-        ? "No prior threshold"
-        : unavailableReason === "invalid_data"
-          ? "Invalid data"
-          : unavailableReason === "activity_data_missing"
-            ? "Missing activity data"
-            : "--";
-  return { ...labels, unavailableText };
+  return getCommonLoadPresentation(
+    activity.derived?.common_load ?? activity.derived?.stress?.common_load,
+  );
 }
 
 function getCalibrationText(activity: ActivityCardActivity): string | null {
@@ -211,12 +198,8 @@ function ActivityMetricsRow({
   compact: boolean;
 }) {
   const preferredUnitSystem = usePreferredUnitSystem();
-  const tss = getDerivedValue(activity, "tss");
-  const intensityFactor = getDerivedValue(activity, "intensity_factor");
   const loadPresentation = getLoadPresentation(activity);
   const metrics: ResourceMetric[] = [];
-  const hasSegmentLoads =
-    activity.activity_kind === "multisport" && !!activity.segment_loads?.length;
 
   if (typeof activity.distance_meters === "number" && activity.distance_meters > 0) {
     metrics.push({
@@ -234,16 +217,21 @@ function ActivityMetricsRow({
     metrics.push({ label: "Elapsed", value: formatDurationSec(elapsedSeconds) });
   }
 
-  if (!hasSegmentLoads) {
+  if (loadPresentation?.load && loadPresentation.intensity) {
     metrics.push({
-      label: loadPresentation.load,
-      value: formatEstimatedTss(tss, { includeUnit: false }) ?? loadPresentation.unavailableText,
+      label: "Load",
+      value: loadPresentation.load,
       tone: "primary",
     });
-
     metrics.push({
-      label: loadPresentation.intensity,
-      value: formatEstimatedIntensityFactor(intensityFactor) ?? "--",
+      label: "Intensity",
+      value: loadPresentation.intensity,
+      tone: "primary",
+    });
+  } else {
+    metrics.push({
+      label: "Load",
+      value: loadPresentation?.unavailableText ?? "Unavailable",
       tone: "primary",
     });
   }
@@ -385,13 +373,6 @@ export function ActivityCard({
       />
 
       <ActivityMetricsRow activity={activity} compact={false} />
-
-      {activity.activity_kind === "multisport" && activity.segment_loads?.length ? (
-        <SportLoadBreakdown
-          loads={activity.segment_loads.map((load) => ({ ...load, key: load.segment_id }))}
-          testID={`activity-card-sport-loads-${activity.id}`}
-        />
-      ) : null}
 
       {calibrationText ? (
         <Text className="text-xs text-muted-foreground">{calibrationText}</Text>

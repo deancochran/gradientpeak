@@ -40,6 +40,7 @@ export interface ActivityPlan {
     intensity_factor?: number | null;
     estimated_distance?: number | null;
   } | null;
+  common_load?: unknown;
   category_loads?: readonly SportLoadMeasurement[];
   route?: {
     distance?: number | null;
@@ -97,6 +98,7 @@ export interface ActivityPlanCardData {
   estimatedDuration?: number; // in seconds
   estimatedTss?: number;
   intensityFactor?: number;
+  commonLoad?: unknown;
   categoryLoads?: readonly SportLoadMeasurement[];
   estimatedDistance?: number; // meters
   routeId?: string;
@@ -216,6 +218,7 @@ export function ActivityPlanCard({
         estimatedDuration={activity.estimatedDuration}
         estimatedTss={activity.estimatedTss}
         intensityFactor={activity.intensityFactor}
+        commonLoad={activity.commonLoad}
         owner={activity.owner}
         presentation={presentation}
         routeName={route?.name || activity.routeName}
@@ -304,6 +307,7 @@ function transformToCardData(
     estimatedDuration: authoritativeMetrics.estimated_duration ?? undefined,
     estimatedTss: authoritativeMetrics.estimated_tss ?? undefined,
     intensityFactor: authoritativeMetrics.intensity_factor ?? undefined,
+    commonLoad: plan.common_load,
     categoryLoads: plan.category_loads,
     estimatedDistance:
       authoritativeMetrics.estimated_distance === null

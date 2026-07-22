@@ -33,6 +33,7 @@ interface GroupSectionProps {
 type PlannedActivity = {
   activity_plan?: {
     activity_category?: string | null;
+    common_load?: unknown;
     authoritative_metrics?: {
       estimated_distance?: number | null;
       estimated_duration?: number | null;
@@ -61,6 +62,7 @@ function transformToCardData(plannedActivity: PlannedActivity): ActivityPlanCard
     structure: plan?.structure,
     estimatedDuration: planMetrics.estimated_duration ?? undefined,
     estimatedTss: planMetrics.estimated_tss ?? undefined,
+    commonLoad: plan?.common_load,
     estimatedDistance:
       planMetrics.estimated_distance === null
         ? undefined

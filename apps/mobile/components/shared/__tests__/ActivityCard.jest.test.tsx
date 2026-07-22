@@ -40,6 +40,7 @@ jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: mockCreat
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
+  ...jest.requireActual("@repo/core"),
   decodePolyline: jest.fn(() => []),
   formatDurationSec: jest.fn(() => "60 min"),
 }));
@@ -84,6 +85,58 @@ jest.mock("@/lib/hooks/usePreferredUnitSystem", () => ({
 }));
 
 const mockUsePreferredUnitSystem = jest.mocked(usePreferredUnitSystem);
+
+const availableCommonLoad = {
+  status: "available" as const,
+  model: "gradientpeak_relative_load" as const,
+  version: "1" as const,
+  sport: "run" as const,
+  method: "run_pace_threshold" as const,
+  load: 64,
+  intensity: 0.8,
+  contributingDurationSeconds: 3600,
+  quality: {
+    source: "validated_test" as const,
+    observed_at: "2026-07-20T12:00:00.000Z",
+    confidence: "high" as const,
+    stale: false,
+    estimate: false,
+    calculation_version: "threshold-v1",
+    evidence_fingerprint: "quality-run",
+  },
+  thresholdEvidence: {
+    type: "threshold_speed_mps" as const,
+    value: 4,
+    unit: "meters_per_second" as const,
+    source: "validated_test" as const,
+    observedAt: "2026-07-20T12:00:00.000Z",
+    validAt: "2026-07-20T12:00:00.000Z",
+    freshness: "current" as const,
+    calculationVersion: "threshold-v1",
+    sourceFingerprint: "threshold-run",
+  },
+  evidenceFingerprint: "activity-run",
+  computedAsOf: "2026-07-21T12:00:00.000Z",
+  estimated: false,
+};
+const {
+  status: _status,
+  load: _load,
+  intensity: _intensity,
+  contributingDurationSeconds: _duration,
+  estimated: _estimated,
+  ...commonLoadProvenance
+} = availableCommonLoad;
+const partialCommonLoad = {
+  status: "partial" as const,
+  ...commonLoadProvenance,
+  load: 32,
+  intensity: 0.8,
+  contributingDurationSeconds: 1800,
+  eligibleDurationSeconds: 3600,
+  sourceTimeCoverage: 0.5,
+  reason: "activity_data_partial" as const,
+};
 
 describe("ActivityCard", () => {
   beforeEach(() => {
@@ -131,7 +184,7 @@ describe("ActivityCard", () => {
     expect(screen.getAllByText("Bike").length).toBeGreaterThan(0);
   });
 
-  it("shows sport-specific TSS and IF for multisport activity segments", () => {
+  it("does not show the legacy sport-specific breakdown for multisport activities", () => {
     renderNative(
       <ActivityCard
         activity={{
@@ -164,12 +217,10 @@ describe("ActivityCard", () => {
       />,
     );
 
-    expect(screen.getByText("Sport-specific load")).toBeTruthy();
-    expect(screen.getAllByText("Bike").length).toBeGreaterThan(0);
-    expect(screen.getByText("TSS ~52 · IF ~0.81")).toBeTruthy();
-    expect(screen.getAllByText("Run").length).toBeGreaterThan(0);
-    expect(screen.getByText("rTSS ~38 · Run IF ~0.76")).toBeTruthy();
-    expect(screen.queryByText("Load")).toBeNull();
+    expect(screen.queryByText("Sport-specific load")).toBeNull();
+    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("Unavailable")).toBeTruthy();
+    expect(screen.queryByText(/TSS|IF/)).toBeNull();
   });
 
   it("shows activity summary metrics in list mode", () => {
@@ -186,6 +237,7 @@ describe("ActivityCard", () => {
           avg_power: 240,
           avg_heart_rate: 148,
           derived: {
+            common_load: availableCommonLoad,
             stress: {
               tss: 72,
               intensity_factor: 0.82,
@@ -202,13 +254,29 @@ describe("ActivityCard", () => {
     expect(screen.getByText("10.0 km")).toBeTruthy();
     expect(screen.getByText("Elapsed")).toBeTruthy();
     expect(screen.getByText("60 min")).toBeTruthy();
-    expect(screen.getByText("TSS")).toBeTruthy();
-    expect(screen.getByText("~72")).toBeTruthy();
-    expect(screen.getByText("IF")).toBeTruthy();
-    expect(screen.getByText("~0.82")).toBeTruthy();
+    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("64")).toBeTruthy();
+    expect(screen.getByText("Intensity")).toBeTruthy();
+    expect(screen.getByText("Tempo · 0.80")).toBeTruthy();
+    expect(screen.queryByText(/TSS|IF/)).toBeNull();
     expect(screen.queryByText("Avg Pace")).toBeNull();
     expect(screen.queryByText("Avg Power")).toBeNull();
     expect(screen.queryByText("Avg HR")).toBeNull();
+  });
+
+  it("marks partial common Load and Intensity incomplete", () => {
+    renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-partial",
+          name: "Partial Run",
+          derived: { common_load: partialCommonLoad },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("32 · Incomplete")).toBeTruthy();
+    expect(screen.getByText("Tempo · 0.80 · Incomplete")).toBeTruthy();
   });
 
   it("formats activity distance in the viewer's imperial units", () => {
@@ -247,11 +315,11 @@ describe("ActivityCard", () => {
     );
 
     expect(screen.getByText("Load")).toBeTruthy();
-    expect(screen.getByText("Intensity")).toBeTruthy();
-    expect(screen.getAllByText("--")).toHaveLength(2);
+    expect(screen.getByText("Unavailable")).toBeTruthy();
+    expect(screen.queryByText("0")).toBeNull();
   });
 
-  it("labels heart-rate load and explains a missing threshold", () => {
+  it("does not fall back to compatibility TSS and IF fields", () => {
     const { rerender } = renderNative(
       <ActivityCard
         activity={{
@@ -271,8 +339,9 @@ describe("ActivityCard", () => {
       />,
     );
 
-    expect(screen.getByText("Estimated HR Load")).toBeTruthy();
-    expect(screen.getByText("HR IF")).toBeTruthy();
+    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("Unavailable")).toBeTruthy();
+    expect(screen.queryByText(/HR IF|Estimated HR Load|32|0.80/)).toBeNull();
 
     rerender(
       <ActivityCard
@@ -283,6 +352,19 @@ describe("ActivityCard", () => {
           activity_categories: ["strength"],
           elapsed_ms: 1_800_000,
           derived: {
+            common_load: {
+              status: "unavailable",
+              model: "gradientpeak_relative_load",
+              version: "1",
+              sport: "strength",
+              method: null,
+              quality: null,
+              thresholdEvidence: null,
+              evidenceFingerprint: null,
+              computedAsOf: "2026-07-21T12:00:00.000Z",
+              contributingDurationSeconds: 1800,
+              reason: "unsupported_modality",
+            },
             tss: null,
             intensity_factor: null,
             method: null,
@@ -293,7 +375,7 @@ describe("ActivityCard", () => {
       />,
     );
 
-    expect(screen.getByText("No prior threshold")).toBeTruthy();
+    expect(screen.getByText("Unavailable")).toBeTruthy();
     expect(screen.getByText("Establish a sport-specific LTHR.")).toBeTruthy();
   });
 

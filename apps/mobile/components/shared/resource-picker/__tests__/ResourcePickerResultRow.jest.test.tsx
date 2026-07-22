@@ -162,11 +162,13 @@ describe("ResourcePickerResultRow", () => {
         name: "Endurance",
         categories: ["bike", "run"],
         primary_category: "bike",
+        common_load: { status: "unavailable" },
         structure: { version: 3, segments: [] },
       }),
     ).toMatchObject({
       activityPlanCardData: {
         activityCategories: ["bike", "run"],
+        commonLoad: { status: "unavailable" },
         id: "plan-2",
         name: "Endurance",
         structure: { version: 3, segments: [] },

@@ -6,20 +6,20 @@ import {
 import { Text } from "@repo/ui/components/text";
 import { type ReactNode, useMemo } from "react";
 import { View } from "react-native";
+import { getCommonLoadPresentation } from "@/lib/activity-load-presentation";
 import {
   formatEstimatedDurationMinutes,
   formatEstimatedDurationSeconds,
-  formatEstimatedIntensityFactor,
-  formatEstimatedTss,
 } from "@/lib/estimatedMetrics";
 import { ActivityPlanAttributionRow } from "./ActivityPlanAttributionRow";
 import type { EntityOwner } from "./EntityOwnerRow";
 import { ResourceMetricsRow } from "./ResourceCardPrimitives";
-import { SportLoadBreakdown, type SportLoadMeasurement } from "./SportLoadBreakdown";
+import type { SportLoadMeasurement } from "./SportLoadBreakdown";
 
 type ActivityPlanSummaryProps = {
   activityCategory?: string | null;
   categoryLoads?: readonly SportLoadMeasurement[];
+  commonLoad?: unknown;
   description?: string | null;
   estimatedDuration?: number | null;
   estimatedDurationMinutes?: number | null;
@@ -74,14 +74,14 @@ export function formatActivityPlanDuration(params: {
 export function ActivityPlanMetricsRow({
   estimatedDuration,
   estimatedDurationMinutes,
-  estimatedTss,
-  intensityFactor,
+  commonLoad,
   presentation,
   structure,
 }: Pick<
   ActivityPlanSummaryProps,
   | "estimatedDuration"
   | "estimatedDurationMinutes"
+  | "commonLoad"
   | "estimatedTss"
   | "intensityFactor"
   | "presentation"
@@ -92,19 +92,33 @@ export function ActivityPlanMetricsRow({
     [presentation, structure],
   );
   const stepCount = presentationModel?.stepCount ?? 0;
-  const hasCompatibleAggregate = presentationModel?.categories.length === 1;
   const durationLabel = formatActivityPlanDuration({ estimatedDuration, estimatedDurationMinutes });
+  const loadPresentation = getCommonLoadPresentation(commonLoad);
+  const commonLoadMetrics =
+    loadPresentation?.load && loadPresentation.intensity
+      ? [
+          {
+            label: "Load",
+            value: loadPresentation.load,
+            tone: "primary" as const,
+          },
+          {
+            label: "Intensity",
+            value: loadPresentation.intensity,
+            tone: "primary" as const,
+          },
+        ]
+      : loadPresentation?.unavailableText
+        ? [
+            {
+              label: "Load",
+              value: loadPresentation.unavailableText,
+              tone: "primary" as const,
+            },
+          ]
+        : [];
 
-  if (
-    !durationLabel &&
-    !(typeof estimatedTss === "number" && Number.isFinite(estimatedTss) && estimatedTss > 0) &&
-    !(
-      typeof intensityFactor === "number" &&
-      Number.isFinite(intensityFactor) &&
-      intensityFactor > 0
-    ) &&
-    stepCount === 0
-  ) {
+  if (!durationLabel && commonLoadMetrics.length === 0 && stepCount === 0) {
     return null;
   }
 
@@ -112,20 +126,7 @@ export function ActivityPlanMetricsRow({
     <ResourceMetricsRow
       metrics={[
         { label: "Duration", value: durationLabel || "--" },
-        ...(hasCompatibleAggregate
-          ? [
-              {
-                label: "TSS",
-                value: formatEstimatedTss(estimatedTss, { includeUnit: false }) ?? "--",
-                tone: "primary" as const,
-              },
-              {
-                label: "Intensity",
-                value: formatEstimatedIntensityFactor(intensityFactor) ?? "--",
-                tone: "primary" as const,
-              },
-            ]
-          : []),
+        ...commonLoadMetrics,
         { label: "Steps", value: `${stepCount}` },
       ]}
     />
@@ -139,7 +140,7 @@ export function ActivityPlanSummary({
   estimatedTss,
   headerAccessory,
   intensityFactor,
-  categoryLoads,
+  commonLoad,
   owner,
   presentation,
   routeName,
@@ -153,8 +154,6 @@ export function ActivityPlanSummary({
   showAttribution = true,
 }: ActivityPlanSummaryProps) {
   const routeLabel = routeName?.trim() || (routeProvided ? "Route included" : null);
-  const showCategoryLoads =
-    categoryLoads != null && new Set(categoryLoads.map((load) => load.category)).size > 1;
 
   return (
     <View
@@ -188,6 +187,7 @@ export function ActivityPlanSummary({
       </View>
 
       <ActivityPlanMetricsRow
+        commonLoad={commonLoad}
         estimatedDuration={estimatedDuration}
         estimatedDurationMinutes={estimatedDurationMinutes}
         estimatedTss={estimatedTss}
@@ -195,8 +195,6 @@ export function ActivityPlanSummary({
         presentation={presentation}
         structure={structure}
       />
-
-      {showCategoryLoads ? <SportLoadBreakdown loads={categoryLoads} /> : null}
 
       {showAttribution ? (
         <ActivityPlanAttributionRow

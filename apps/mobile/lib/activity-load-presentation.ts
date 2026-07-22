@@ -1,3 +1,9 @@
+import {
+  type CommonLoadResult,
+  commonLoadResultSchema,
+  getTrainingIntensityZone,
+} from "@repo/core";
+
 type CalibrationQuality = {
   source:
     | "manual"
@@ -24,6 +30,70 @@ export function getActivityLoadLabels(method?: string | null) {
     return { load: "Estimated CP Load", intensity: "CP IF" };
   }
   return { load: "Load", intensity: "Intensity" };
+}
+
+const intensityLabels = {
+  recovery: "Recovery",
+  endurance: "Endurance",
+  tempo: "Tempo",
+  threshold: "Threshold",
+  vo2max: "VO2 Max",
+  anaerobic: "Anaerobic",
+  neuromuscular: "Neuromuscular",
+} as const;
+
+export type CommonLoadPresentation = {
+  status: CommonLoadResult["status"];
+  load: string | null;
+  intensity: string | null;
+  unavailableText: string | null;
+};
+
+function formatCommonLoad(value: number): string {
+  return Math.round(value).toString();
+}
+
+function formatCommonIntensity(value: number): string {
+  return `${intensityLabels[getTrainingIntensityZone(value)]} · ${value.toFixed(2)}`;
+}
+
+export function getCommonLoadPresentation(value: unknown): CommonLoadPresentation | null {
+  const parsed = commonLoadResultSchema.safeParse(value);
+  if (!parsed.success) return null;
+
+  const result = parsed.data;
+  if (result.status === "available") {
+    return {
+      status: result.status,
+      load: formatCommonLoad(result.load),
+      intensity: formatCommonIntensity(result.intensity),
+      unavailableText: null,
+    };
+  }
+
+  if (result.status === "partial") {
+    return {
+      status: result.status,
+      load: result.load === null ? null : `${formatCommonLoad(result.load)} · Incomplete`,
+      intensity:
+        result.intensity === null
+          ? null
+          : `${formatCommonIntensity(result.intensity)} · Incomplete`,
+      unavailableText: result.load === null ? "Incomplete" : null,
+    };
+  }
+
+  return {
+    status: result.status,
+    load: null,
+    intensity: null,
+    unavailableText:
+      result.reason === "unsupported_modality"
+        ? null
+        : result.reason === "private_data"
+          ? "Private"
+          : "Unavailable",
+  };
 }
 
 export function getThresholdNextAction(activityType?: string | null): string {

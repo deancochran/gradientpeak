@@ -7,7 +7,7 @@ import { RouteCard } from "@/components/shared/RouteCard";
 import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
 import { getActivityCategoryConfig } from "@/lib/constants/activities";
 import { formatDistanceMeters, formatElevationMeters } from "@/lib/display/formatters";
-import { formatEstimatedDurationSeconds, formatEstimatedTss } from "@/lib/estimatedMetrics";
+import { formatEstimatedDurationSeconds } from "@/lib/estimatedMetrics";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import type { ResourcePickerItem, ResourcePickerScope } from "./resourcePickerTypes";
 
@@ -15,6 +15,7 @@ type ActivityPlanPickerSource = NonNullable<
   Parameters<typeof getAuthoritativeActivityPlanMetrics>[0]
 > & {
   categories?: readonly string[];
+  common_load?: unknown;
   primary_category?: string | null;
   structure?: unknown;
   created_at?: string | null;
@@ -73,6 +74,7 @@ export function ResourcePickerResultRow({
           activityType: item.activityPlanCardData.activityType,
           createdAt: item.activityPlanCardData.createdAt ?? undefined,
           description: item.activityPlanCardData.description ?? undefined,
+          commonLoad: item.activityPlanCardData.commonLoad,
           estimatedDuration: item.activityPlanCardData.estimatedDuration ?? undefined,
           estimatedTss: item.activityPlanCardData.estimatedTss ?? undefined,
           intensityFactor: item.activityPlanCardData.intensityFactor ?? undefined,
@@ -133,11 +135,7 @@ export function ResourcePickerResultRow({
             ? `${formatElevationMeters(item.totalAscent, { preferredUnitSystem })} climb`
             : null,
         ]
-      : [
-          activityConfig.name,
-          formatEstimatedDurationSeconds(item.estimatedDuration),
-          formatEstimatedTss(item.estimatedTss),
-        ];
+      : [activityConfig.name, formatEstimatedDurationSeconds(item.estimatedDuration)];
   const accessibilityLabel = ["Select", item.name || "resource", ...metadata]
     .filter(Boolean)
     .join(", ");
@@ -195,6 +193,7 @@ export function mapActivityPlanToResourcePickerItem(
       activityType: primaryCategory,
       createdAt: plan.created_at,
       description: plan.description,
+      commonLoad: plan.common_load,
       estimatedDuration: metrics.estimated_duration,
       estimatedTss: metrics.estimated_tss,
       intensityFactor: metrics.intensity_factor,

@@ -4,6 +4,7 @@ export type ResourcePickerActivityPlanCardData = {
   activityCategories?: readonly string[];
   activityType: string;
   createdAt?: string | null;
+  commonLoad?: unknown;
   description?: string | null;
   estimatedDuration?: number | null;
   estimatedTss?: number | null;
