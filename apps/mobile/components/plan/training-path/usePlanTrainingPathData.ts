@@ -17,6 +17,7 @@ import { useProfileSettings } from "@/lib/hooks/useProfileSettings";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { refreshPlanTabData } from "@/lib/scheduling/refreshScheduleViews";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { buildEffectivePlanMetricSummary } from "@/lib/training-path/effectivePlanLoad";
 import {
   buildDailyTrainingAdjustmentPointsFromTimelineWindow,
   buildEffectiveCompletedObservationsByDate,
@@ -58,32 +59,49 @@ const DATA_QUERY_DAY_RADIUS = 182;
 const MAX_RETAINED_DATA_CHUNKS = 12;
 
 function useTrainingPathTodayKey(planningTimezone: string | null) {
-  const [todayState, setTodayState] = useState(() => ({
-    planningTimezone,
-    todayKey: planningTimezone ? getTrainingPathTodayKey(new Date(), planningTimezone) : null,
-  }));
+  const [todayState, setTodayState] = useState(() => {
+    const now = new Date();
+    return {
+      planningTimezone,
+      todayKey: planningTimezone ? getTrainingPathTodayKey(now, planningTimezone) : null,
+      asOfInstant: now.toISOString(),
+    };
+  });
   const todayStateRef = useRef(todayState);
   todayStateRef.current = todayState;
-  const todayKey =
+  const currentState =
     todayState.planningTimezone === planningTimezone
-      ? todayState.todayKey
+      ? todayState
       : planningTimezone
-        ? getTrainingPathTodayKey(new Date(), planningTimezone)
-        : null;
+        ? (() => {
+            const now = new Date();
+            return {
+              planningTimezone,
+              todayKey: getTrainingPathTodayKey(now, planningTimezone),
+              asOfInstant: now.toISOString(),
+            };
+          })()
+        : { planningTimezone, todayKey: null, asOfInstant: new Date().toISOString() };
+  const todayKey = currentState.todayKey;
 
   useEffect(() => {
     if (!planningTimezone) {
-      const nextState = { planningTimezone, todayKey: null };
+      const nextState = { planningTimezone, todayKey: null, asOfInstant: new Date().toISOString() };
       todayStateRef.current = nextState;
       setTodayState(nextState);
       return;
     }
 
     const refreshToday = () => {
-      const nextTodayKey = getTrainingPathTodayKey(new Date(), planningTimezone);
+      const now = new Date();
+      const nextTodayKey = getTrainingPathTodayKey(now, planningTimezone);
       const current = todayStateRef.current;
       if (current.planningTimezone !== planningTimezone || current.todayKey !== nextTodayKey) {
-        const nextState = { planningTimezone, todayKey: nextTodayKey };
+        const nextState = {
+          planningTimezone,
+          todayKey: nextTodayKey,
+          asOfInstant: now.toISOString(),
+        };
         todayStateRef.current = nextState;
         setTodayState(nextState);
       }
@@ -112,7 +130,7 @@ function useTrainingPathTodayKey(planningTimezone: string | null) {
     };
   }, [planningTimezone]);
 
-  return todayKey;
+  return { todayKey, asOfInstant: currentState.asOfInstant };
 }
 
 function toInclusiveQueryEnd(range: { startsBefore: string } | null) {
@@ -193,7 +211,8 @@ export function usePlanTrainingPathData() {
   const [pendingSelectedWeekStart, setPendingSelectedWeekStart] = useState<string | null>(null);
   const lastProjectionRefreshKeyRef = useRef<string | null>(null);
   const planningTimezone = profile?.planning_timezone ?? null;
-  const planningTodayKey = useTrainingPathTodayKey(planningTimezone);
+  const { todayKey: planningTodayKey, asOfInstant: effectiveAsOfInstant } =
+    useTrainingPathTodayKey(planningTimezone);
   const planningTimezoneState = profileLoading
     ? "loading"
     : planningTodayKey
@@ -716,6 +735,122 @@ export function usePlanTrainingPathData() {
 
   const selectedWeekRangeStart = trainingPath.selectedWeekSummary?.weekStart ?? null;
   const selectedWeekRangeEnd = trainingPath.selectedWeekSummary?.weekEnd ?? null;
+  const effectiveScheduledEvents = useMemo(
+    () => [
+      ...planningPlannedEvents,
+      ...planningGroupScheduledActivityPlanEvents.map((event) => ({
+        ...event,
+        id: `group:${event.id}`,
+      })),
+    ],
+    [planningGroupScheduledActivityPlanEvents, planningPlannedEvents],
+  );
+  const completedSourceComplete =
+    recentQueryEnabled &&
+    !completedActivitiesQuery.isError &&
+    !completedActivitiesQuery.isLoading &&
+    !completedActivitiesQuery.hasNextPage &&
+    !completedActivitiesQuery.isPlaceholderData;
+  const scheduledSourceComplete =
+    scheduleQueriesEnabled &&
+    (!upcomingQueryEnabled ||
+      (!upcomingPlannedEventsQuery.isError &&
+        !upcomingPlannedEventsQuery.isLoading &&
+        !upcomingPlannedEventsQuery.hasNextPage &&
+        !upcomingPlannedEventsQuery.isPlaceholderData)) &&
+    (!recentQueryEnabled ||
+      (!recentPlannedEventsQuery.isError &&
+        !recentPlannedEventsQuery.isLoading &&
+        !recentPlannedEventsQuery.hasNextPage &&
+        !recentPlannedEventsQuery.isPlaceholderData)) &&
+    !groupCalendarEventsQuery.isError &&
+    !groupCalendarEventsQuery.isLoading &&
+    !groupCalendarEventsQuery.hasNextPage &&
+    !groupCalendarEventsQuery.isPlaceholderData &&
+    !selectedGroupActivityPlansQuery.isError &&
+    !selectedGroupActivityPlansQuery.isLoading &&
+    !selectedGroupActivityPlansQuery.isPlaceholderData;
+  const effectiveSelectedDaySummary = useMemo(() => {
+    const date = selectedDate ?? todayKey;
+    if (!date || !planningTimezone) return null;
+    return buildEffectivePlanMetricSummary({
+      asOfInstant: effectiveAsOfInstant,
+      completedActivities,
+      completedSourceComplete,
+      endDate: date,
+      planningTimezone,
+      scheduledEvents: effectiveScheduledEvents,
+      scheduledSourceComplete,
+      startDate: date,
+    });
+  }, [
+    completedActivities,
+    completedSourceComplete,
+    effectiveAsOfInstant,
+    effectiveScheduledEvents,
+    planningTimezone,
+    scheduledSourceComplete,
+    selectedDate,
+    todayKey,
+  ]);
+  const effectiveSelectedWeekSummary = useMemo(() => {
+    if (!selectedWeekRangeStart || !selectedWeekRangeEnd || !planningTimezone) return null;
+    return buildEffectivePlanMetricSummary({
+      asOfInstant: effectiveAsOfInstant,
+      completedActivities,
+      completedSourceComplete,
+      endDate: selectedWeekRangeEnd,
+      planningTimezone,
+      scheduledEvents: effectiveScheduledEvents,
+      scheduledSourceComplete,
+      startDate: selectedWeekRangeStart,
+    });
+  }, [
+    completedActivities,
+    completedSourceComplete,
+    effectiveAsOfInstant,
+    effectiveScheduledEvents,
+    planningTimezone,
+    scheduledSourceComplete,
+    selectedWeekRangeEnd,
+    selectedWeekRangeStart,
+  ]);
+  const effectiveDailyTrainingPathPoints = useMemo(() => {
+    const effectiveDate = selectedDate ?? todayKey;
+    if (!effectiveSelectedDaySummary || !effectiveDate) return dailyTrainingPathPoints;
+    return dailyTrainingPathPoints.map((point) =>
+      point.date === effectiveDate
+        ? {
+            ...point,
+            effectiveLoadStatus: effectiveSelectedDaySummary.status,
+            effectiveLoad: effectiveSelectedDaySummary.load,
+            effectiveIntensity: effectiveSelectedDaySummary.intensity,
+            effectiveCompletedLoad: effectiveSelectedDaySummary.completedLoad,
+            effectiveRemainingLoad: effectiveSelectedDaySummary.remainingLoad,
+            hasCompletedActivityWithoutLoad:
+              effectiveSelectedDaySummary.hasUnavailableCompletedLoad ||
+              point.hasCompletedActivityWithoutLoad,
+          }
+        : point,
+    );
+  }, [dailyTrainingPathPoints, effectiveSelectedDaySummary, selectedDate, todayKey]);
+  const effectiveTrainingPath = useMemo(() => {
+    if (!effectiveSelectedWeekSummary || !trainingPath.selectedWeekSummary) return trainingPath;
+    return {
+      ...trainingPath,
+      selectedWeekSummary: {
+        ...trainingPath.selectedWeekSummary,
+        effectiveLoadStatus: effectiveSelectedWeekSummary.status,
+        effectiveLoad: effectiveSelectedWeekSummary.load,
+        effectiveIntensity: effectiveSelectedWeekSummary.intensity,
+        effectiveCompletedLoad: effectiveSelectedWeekSummary.completedLoad,
+        effectiveRemainingLoad: effectiveSelectedWeekSummary.remainingLoad,
+        completedLoadUnavailable:
+          effectiveSelectedWeekSummary.hasUnavailableCompletedLoad ||
+          trainingPath.selectedWeekSummary.completedLoadUnavailable,
+      },
+    };
+  }, [effectiveSelectedWeekSummary, trainingPath]);
   const activityOwner = useMemo<ActivityOwner | null>(
     () =>
       user?.id
@@ -975,8 +1110,9 @@ export function usePlanTrainingPathData() {
   return {
     refreshing,
     handleRefresh,
-    trainingPath,
-    dailyTrainingPathPoints: planningTimezoneState === "ready" ? dailyTrainingPathPoints : [],
+    trainingPath: effectiveTrainingPath,
+    dailyTrainingPathPoints:
+      planningTimezoneState === "ready" ? effectiveDailyTrainingPathPoints : [],
     chartLoading: profileLoading || (planningTimezoneState === "ready" && chartLoading),
     chartUnavailable:
       planningTimezoneState === "unavailable" ||

@@ -27,6 +27,16 @@ export interface ParsedCscMeasurement extends BleParserMetrics {
   nextState: CscParserState;
 }
 
+export interface CyclingPowerParserState {
+  lastCrankRevolutions?: number;
+  lastCrankEventTime1024?: number;
+}
+
+export interface ParsedCyclingPowerMeasurement extends BleParserMetrics {
+  nextState: CyclingPowerParserState;
+  truncated: boolean;
+}
+
 export interface ParsedFtmsIndoorBikeData extends BleParserMetrics {
   truncated: boolean;
 }
@@ -245,6 +255,80 @@ export function parseHeartRateMeasurement(data: ArrayBuffer | Uint8Array): BlePa
  * Parses BLE Cycling Power Measurement characteristic (0x2A63).
  */
 export function parseCyclingPowerMeasurement(data: ArrayBuffer | Uint8Array): BleParserMetrics {
+  return parseCyclingPowerMeasurementWithState(data);
+}
+
+/**
+ * Parses Cycling Power Measurement and derives cadence from optional crank
+ * revolution data. Cadence is emitted only after two valid samples.
+ */
+export function parseCyclingPowerMeasurementWithState(
+  data: ArrayBuffer | Uint8Array,
+  prevState?: CyclingPowerParserState,
+): ParsedCyclingPowerMeasurement {
+  const metrics = createEmptyMetrics();
+  const view = toDataView(data);
+  const nextState: CyclingPowerParserState = { ...prevState };
+
+  if (view.byteLength < 4) {
+    return { ...metrics, nextState, truncated: true };
+  }
+
+  const flags = view.getUint16(0, true);
+  metrics.powerWatts = view.getInt16(2, true);
+  let offset = 4;
+
+  if ((flags & (1 << 0)) !== 0) offset += 1;
+  if ((flags & (1 << 2)) !== 0) offset += 2;
+  if ((flags & (1 << 4)) !== 0) offset += 6;
+
+  if ((flags & (1 << 5)) !== 0) {
+    if (view.byteLength < offset + 4) {
+      return { ...metrics, nextState, truncated: true };
+    }
+
+    const crankRevolutions = view.getUint16(offset, true);
+    const crankEventTime1024 = view.getUint16(offset + 2, true);
+
+    if (
+      typeof prevState?.lastCrankRevolutions === "number" &&
+      typeof prevState.lastCrankEventTime1024 === "number"
+    ) {
+      const deltaRevolutions = unsignedDeltaWithWrap(
+        crankRevolutions,
+        prevState.lastCrankRevolutions,
+        16,
+      );
+      const deltaTimeTicks = unsignedDeltaWithWrap(
+        crankEventTime1024,
+        prevState.lastCrankEventTime1024,
+        16,
+      );
+
+      if (deltaRevolutions > 0 && deltaTimeTicks > 0) {
+        metrics.cadenceRpm = safeRound((deltaRevolutions * 60 * 1024) / deltaTimeTicks, 2);
+      }
+    }
+
+    nextState.lastCrankRevolutions = crankRevolutions;
+    nextState.lastCrankEventTime1024 = crankEventTime1024;
+    offset += 4;
+  }
+
+  if ((flags & (1 << 6)) !== 0) offset += 4;
+  if ((flags & (1 << 7)) !== 0) offset += 4;
+  if ((flags & (1 << 8)) !== 0) offset += 3;
+  if ((flags & (1 << 9)) !== 0) offset += 2;
+  if ((flags & (1 << 10)) !== 0) offset += 2;
+  if ((flags & (1 << 11)) !== 0) offset += 2;
+
+  return { ...metrics, nextState, truncated: view.byteLength < offset };
+}
+
+/** Parses the mandatory fields of Running Speed and Cadence Measurement (0x2A53). */
+export function parseRunningSpeedAndCadenceMeasurement(
+  data: ArrayBuffer | Uint8Array,
+): BleParserMetrics {
   const metrics = createEmptyMetrics();
   const view = toDataView(data);
 
@@ -252,7 +336,8 @@ export function parseCyclingPowerMeasurement(data: ArrayBuffer | Uint8Array): Bl
     return metrics;
   }
 
-  metrics.powerWatts = view.getInt16(2, true);
+  metrics.speedMps = safeRound(view.getUint16(1, true) / 256, 3);
+  metrics.cadenceRpm = view.getUint8(3);
   return metrics;
 }
 

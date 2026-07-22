@@ -71,6 +71,7 @@ export type EstimationSnapshot = Readonly<{
    */
   asOf: Date;
   profile: Awaited<ReturnType<typeof getEstimationProfileInputsFromData>>;
+  thresholds: ReturnType<typeof resolveEstimationThresholds>;
   getRoute(id: string): Readonly<Record<string, any>> | undefined;
   getRouteSummary(id: string): Readonly<ActivityPlanRouteSummary> | undefined;
 }>;
@@ -150,6 +151,12 @@ export async function loadEstimationSnapshot(
     profileId,
     routeIds: [...new Set(routeIds)],
   });
+  const thresholds = resolveEstimationThresholds(
+    data.efforts,
+    data.metrics,
+    asOf.toISOString(),
+    true,
+  );
   const routes = new Map(
     data.routes.map((route) => [route.id, Object.freeze({ ...route })] as const),
   );
@@ -166,6 +173,7 @@ export async function loadEstimationSnapshot(
   return Object.freeze({
     asOf: new Date(asOf),
     profile: Object.freeze(getEstimationProfileInputsFromData(data, asOf)),
+    thresholds: Object.freeze(thresholds),
     getRoute: (id: string) => routes.get(id),
     getRouteSummary: (id: string) => routeSummaries.get(id),
   });
@@ -325,10 +333,12 @@ function resolveEstimationThresholds(
   }>,
   metrics: Array<{ metric_type: string; unit?: string; value: number; recorded_at?: string }>,
   now: string,
+  allowDirectMetricEvidence = false,
 ) {
   return resolveCanonicalThresholds({
     now,
     freshnessWindowMs: 90 * 24 * 60 * 60 * 1000,
+    allowDirectMetricEvidence,
     directMetrics: [
       ...metrics.flatMap((metric) =>
         metric.metric_type === "ftp" && metric.unit === "W" && Number.isFinite(Number(metric.value))

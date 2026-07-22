@@ -48,6 +48,11 @@ export type TrainingPathWeekSummary = {
   body: string | null;
   completedLoad: number | null;
   completedLoadUnavailable?: boolean;
+  effectiveLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
+  effectiveLoad?: number | null;
+  effectiveIntensity?: number | null;
+  effectiveCompletedLoad?: number | null;
+  effectiveRemainingLoad?: number | null;
   plannedLoad: number;
   tentativePlannedLoad: number;
   targetLoad: number | null;

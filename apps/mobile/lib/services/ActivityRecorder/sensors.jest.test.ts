@@ -16,6 +16,13 @@ jest.mock("@repo/core", () => ({
     RUNNING_SPEED_AND_CADENCE: "running-speed-and-cadence",
     FITNESS_MACHINE: "fitness-machine",
   },
+  BLE_CHARACTERISTIC_UUIDS: {
+    HEART_RATE_MEASUREMENT: "00002a37-0000-1000-8000-00805f9b34fb",
+    CYCLING_POWER_MEASUREMENT: "00002a63-0000-1000-8000-00805f9b34fb",
+    CYCLING_SPEED_AND_CADENCE_MEASUREMENT: "00002a5b-0000-1000-8000-00805f9b34fb",
+    RUNNING_SPEED_AND_CADENCE_MEASUREMENT: "00002a53-0000-1000-8000-00805f9b34fb",
+    BATTERY_LEVEL: "00002a19-0000-1000-8000-00805f9b34fb",
+  },
   FTMS_CHARACTERISTICS: {
     FEATURE: "ftms-feature",
     STATUS: "ftms-status",
@@ -202,8 +209,18 @@ jest.mock("@repo/core", () => ({
       })),
     },
   ]),
+  listStandardBleProfileDefinitions: jest.fn(() => []),
+  matchStandardBleProfiles: jest.fn(() => []),
   parseCscMeasurement: jest.fn(() => null),
   parseCyclingPowerMeasurement: jest.fn(() => null),
+  parseCyclingPowerMeasurementWithState: jest.fn(() => ({
+    powerWatts: null,
+    cadenceRpm: null,
+    speedMps: null,
+    hrBpm: null,
+    nextState: {},
+    truncated: false,
+  })),
   parseFtmsIndoorBikeData: jest.fn(() => ({
     speedMps: 8.5,
     cadenceRpm: 91,
@@ -212,6 +229,12 @@ jest.mock("@repo/core", () => ({
     truncated: false,
   })),
   parseHeartRateMeasurement: jest.fn(() => null),
+  parseRunningSpeedAndCadenceMeasurement: jest.fn(() => ({
+    powerWatts: null,
+    cadenceRpm: null,
+    speedMps: null,
+    hrBpm: null,
+  })),
 }));
 
 jest.mock("react-native-ble-plx", () => ({
@@ -257,6 +280,7 @@ interface SensorsManagerInternals {
   cancelReconnectionAttempts(sensorId: string): void;
   stopConnectionMonitoring(): void;
   setupFTMSRuntime(sensor: ConnectedSensor): Promise<void>;
+  monitorKnownCharacteristics(sensor: ConnectedSensor): Promise<void>;
   monitorFTMSStreams(sensor: ConnectedSensor): Promise<void>;
 }
 
@@ -666,6 +690,165 @@ describe("SensorsManager QA regressions", () => {
     getManagerInternals(manager).stopConnectionMonitoring();
   });
 
+  it("tracks a matched standard profile from waiting to flowing", async () => {
+    const core = jest.requireMock("@repo/core") as {
+      listStandardBleProfileDefinitions: jest.Mock;
+      parseCyclingPowerMeasurementWithState: jest.Mock;
+    };
+    const profile = {
+      id: "cycling_power",
+      name: "Cycling Power",
+      serviceUuid: "cycling-power",
+      measurementCharacteristicUuid: "00002a63-0000-1000-8000-00805f9b34fb",
+      metrics: [
+        { metric: "power", requirement: "required" },
+        { metric: "cadence", requirement: "optional" },
+      ],
+    } as const;
+    core.listStandardBleProfileDefinitions.mockReturnValue([profile]);
+    core.parseCyclingPowerMeasurementWithState.mockReturnValue({
+      powerWatts: 247,
+      cadenceRpm: 89,
+      speedMps: null,
+      hrBpm: null,
+      nextState: { lastCrankRevolutions: 2, lastCrankEventTime1024: 1024 },
+      truncated: false,
+    });
+
+    let monitorCallback:
+      | ((error: Error | null, characteristic: { value: string } | null) => void)
+      | undefined;
+    const characteristic = {
+      uuid: profile.measurementCharacteristicUuid,
+      isNotifiable: true,
+      isIndicatable: false,
+      monitor: jest.fn((callback) => {
+        monitorCallback = callback;
+        return { remove: jest.fn() };
+      }),
+    };
+    const service = {
+      uuid: profile.serviceUuid,
+      characteristics: jest.fn(async () => [characteristic]),
+    };
+    const sensor = createSensor({
+      id: "stages-console",
+      name: "Stages IC 000",
+      connectionState: "connected",
+      services: [profile.serviceUuid],
+      profiles: [
+        {
+          id: profile.id,
+          name: profile.name,
+          metrics: profile.metrics,
+          streamState: "subscribing",
+        },
+      ],
+      device: {
+        id: "stages-console",
+        services: jest.fn(async () => [service]),
+      } as never,
+      characteristics: new Map([[profile.measurementCharacteristicUuid, profile.serviceUuid]]),
+    });
+    const readings: unknown[] = [];
+    const manager = new SensorsManager();
+    getManagerInternals(manager).connectedSensors = new Map([[sensor.id, sensor]]);
+    manager.subscribe((reading) => readings.push(reading));
+
+    await getManagerInternals(manager).monitorKnownCharacteristics(sensor);
+    expect(sensor.profiles?.[0]?.streamState).toBe("waiting_for_data");
+
+    monitorCallback?.(null, { value: Buffer.from([0, 0, 0, 0]).toString("base64") });
+
+    expect(sensor.profiles?.[0]?.streamState).toBe("flowing");
+    expect(sensor.profiles?.[0]?.metricLastDataTimestamps).toEqual({
+      power: expect.any(Number),
+      cadence: expect.any(Number),
+    });
+    expect(sensor.observedMetrics).toEqual(new Set(["power", "cadence"]));
+    expect(readings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ metric: "power", value: 247 }),
+        expect.objectContaining({ metric: "cadence", value: 89 }),
+      ]),
+    );
+
+    core.listStandardBleProfileDefinitions.mockReturnValue([]);
+    getManagerInternals(manager).stopConnectionMonitoring();
+  });
+
+  it("retires a failed monitor before retrying with a unique transaction", async () => {
+    const core = jest.requireMock("@repo/core") as {
+      listStandardBleProfileDefinitions: jest.Mock;
+      parseHeartRateMeasurement: jest.Mock;
+    };
+    const profile = {
+      id: "heart_rate",
+      name: "Heart Rate",
+      serviceUuid: "heart-rate",
+      measurementCharacteristicUuid: "00002a37-0000-1000-8000-00805f9b34fb",
+      metrics: [{ metric: "heart_rate", requirement: "required" }],
+    } as const;
+    core.listStandardBleProfileDefinitions.mockReturnValue([profile]);
+    core.parseHeartRateMeasurement.mockReturnValue({ hrBpm: 120 });
+
+    const callbacks: Array<(error: Error | null, value: { value: string } | null) => void> = [];
+    const removers = [jest.fn(), jest.fn()];
+    const transactionIds: string[] = [];
+    const characteristic = {
+      uuid: profile.measurementCharacteristicUuid,
+      isNotifiable: true,
+      isIndicatable: false,
+      monitor: jest.fn((callback, transactionId) => {
+        callbacks.push(callback);
+        transactionIds.push(transactionId);
+        return { remove: removers[transactionIds.length - 1] };
+      }),
+    };
+    const service = {
+      uuid: profile.serviceUuid,
+      characteristics: jest.fn(async () => [characteristic]),
+    };
+    const sensor = createSensor({
+      id: "retrying-strap",
+      name: "Retrying Strap",
+      connectionState: "connected",
+      profiles: [
+        {
+          id: profile.id,
+          name: profile.name,
+          metrics: profile.metrics,
+          streamState: "subscribing",
+        },
+      ],
+      device: { services: jest.fn(async () => [service]) } as never,
+    });
+    const manager = new SensorsManager();
+    const readings: unknown[] = [];
+    getManagerInternals(manager).connectedSensors = new Map([[sensor.id, sensor]]);
+    manager.subscribe((reading) => readings.push(reading));
+
+    await getManagerInternals(manager).monitorKnownCharacteristics(sensor);
+    callbacks[0]?.(new Error("notify failed"), null);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(removers[0]).toHaveBeenCalledTimes(1);
+    expect(transactionIds).toEqual([
+      "sensor:retrying-strap:profile:heart_rate:0",
+      "sensor:retrying-strap:profile:heart_rate:1",
+    ]);
+    expect(sensor.profiles?.[0]?.streamState).toBe("waiting_for_data");
+
+    sensor.connectionState = "disconnected";
+    callbacks[1]?.(null, { value: Buffer.from([0, 120]).toString("base64") });
+    expect(readings).toEqual([]);
+    expect(sensor.connectionState).toBe("disconnected");
+
+    core.listStandardBleProfileDefinitions.mockReturnValue([]);
+    core.parseHeartRateMeasurement.mockReturnValue(null);
+    getManagerInternals(manager).stopConnectionMonitoring();
+  });
+
   it("subscribes to all present FTMS registry streams and emits parsed readings", async () => {
     const manager = new SensorsManager();
     const monitorCallbacks = new Map<
@@ -733,6 +916,13 @@ describe("SensorsManager QA regressions", () => {
       ]),
     );
     expect(trainer.observedMetrics).toEqual(new Set(["speed", "cadence", "power", "heartrate"]));
+    expect(trainer.ftmsStreamState).toBe("flowing");
+    expect(trainer.ftmsMetricLastDataTimestamps).toEqual({
+      speed: expect.any(Number),
+      cadence: expect.any(Number),
+      power: expect.any(Number),
+      heartrate: expect.any(Number),
+    });
 
     getManagerInternals(manager).stopConnectionMonitoring();
   });

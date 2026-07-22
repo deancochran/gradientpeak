@@ -128,6 +128,7 @@ describe("on-demand activity plan estimation", () => {
     const routeFact = snapshot.getRoute("route-1");
     const summary = snapshot.getRouteSummary("route-1");
     expect(snapshot.asOf).toEqual(asOf);
+    expect(snapshot.thresholds.cycling_ftp).toMatchObject({ value: 250, source: "provider" });
     expect(routeFact).toEqual(route);
     expect(summary).toEqual({ distance: 10_000, ascent: 100, descent: 90 });
     expect(Object.isFrozen(routeFact)).toBe(true);
@@ -164,6 +165,18 @@ describe("on-demand activity plan estimation", () => {
     expect(estimateActivity).toHaveBeenCalledOnce();
     expect(result.map((item) => item.estimate_source)).toEqual(["computed", "computed"]);
     expect(result[0]?.estimate_computed_at).toBe(asOf.toISOString());
+    expect(result[0]?.common_load).toMatchObject({
+      status: "available",
+      method: "power_threshold",
+      sport: "bike",
+      contributingDurationSeconds: 1800,
+      intensity: 0.8,
+      estimated: true,
+    });
+    if (result[0]?.common_load.status !== "available") {
+      throw new Error("Expected available planned common Load");
+    }
+    expect(result[0].common_load.load).toBeCloseTo(32, 12);
   });
 
   it("memoizes a duplicate-heavy batch by normalized plan and route content", async () => {
@@ -239,6 +252,24 @@ describe("on-demand activity plan estimation", () => {
       counts_toward_aggregation: false,
       category_loads: [],
       authoritative_metrics: { estimated_tss: null },
+      common_load: { status: "unavailable", reason: "activity_data_missing" },
+    });
+  });
+
+  it("abstains from planned common Load when threshold provenance is unavailable", async () => {
+    const [result] = await getActivityPlansDerivedMetrics(
+      [plan()],
+      {} as any,
+      store({ metrics: [] }) as any,
+      "profile-1",
+      { asOf },
+    );
+
+    expect(result?.common_load).toMatchObject({
+      status: "unavailable",
+      method: "power_threshold",
+      reason: "threshold_missing",
+      contributingDurationSeconds: 1800,
     });
   });
 

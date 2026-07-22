@@ -41,6 +41,7 @@ import {
   type RecordingTrainerIntentSource,
   type RecordingTrainerMachineType,
   resolveMetricSources as resolveCoreMetricSources,
+  type StandardBleMetric,
 } from "@repo/core";
 import { EventEmitter } from "expo";
 import type { LocationObject } from "expo-location";
@@ -86,7 +87,7 @@ import {
 } from "./routeController";
 import type { SimplifiedMetrics } from "./SimplifiedMetrics";
 import { type DurableStreamReplay, StreamBuffer } from "./StreamBuffer";
-import { type ConnectedSensor, SensorsManager } from "./sensors";
+import { type ConnectedSensor, SENSOR_READING_STALE_AFTER_MS, SensorsManager } from "./sensors";
 import { RecordingSessionController } from "./sessionController";
 import { inferTrainerMachineType, TrainerControl } from "./trainerControl";
 import type {
@@ -1071,7 +1072,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private buildMetricSourceCandidates(): MetricSourceCandidate[] {
     const connectedSensors = this.sensorsManager.getConnectedSensors();
     const disabledSources = this.getSessionOverrideState().disabledSources;
-    const candidates: MetricSourceCandidate[] = connectedSensors.flatMap((sensor) =>
+    const sensorCandidates: MetricSourceCandidate[] = connectedSensors.flatMap((sensor) =>
       this.getMetricSourceTypesForSensor(sensor)
         .filter((sourceType) => this.shouldUseMetricSourceType(sourceType))
         .flatMap((sourceType) =>
@@ -1082,10 +1083,27 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
             provenance: "actual" as const,
             isAvailable:
               sensor.connectionState === "connected" &&
+              this.isSensorMetricObserved(sensor, metricFamily) &&
+              this.isSensorMetricFlowing(sensor, metricFamily, sourceType) &&
               !(disabledSources[metricFamily] ?? []).includes(sensor.id),
           })),
         ),
     );
+    const candidatesByMetricAndDevice = new Map<string, MetricSourceCandidate>();
+    for (const candidate of sensorCandidates) {
+      const key = `${candidate.metricFamily}:${candidate.sourceId}`;
+      const existing = candidatesByMetricAndDevice.get(key);
+      if (
+        !existing ||
+        (candidate.isAvailable && !existing.isAvailable) ||
+        (candidate.isAvailable === existing.isAvailable &&
+          this.isTrainerMetricSourceType(candidate.sourceType) &&
+          !this.isTrainerMetricSourceType(existing.sourceType))
+      ) {
+        candidatesByMetricAndDevice.set(key, candidate);
+      }
+    }
+    const candidates = [...candidatesByMetricAndDevice.values()];
 
     if (this._gpsRecordingEnabled) {
       candidates.push(
@@ -1151,7 +1169,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       case "trainer_passthrough":
         return ["heart_rate"];
       case "power_meter":
-        return ["power", "cadence"];
+        return ["power"];
       case "trainer_power":
         return ["power"];
       case "cadence_sensor":
@@ -1513,30 +1531,26 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private getMetricSourceTypesForSensor(sensor: ConnectedSensor): MetricSourceType[] {
     const sourceTypes = new Set<MetricSourceType>();
     const observedMetrics = sensor.observedMetrics ?? new Set();
+    const profileIds = new Set(sensor.profiles?.map(({ id }) => id) ?? []);
 
-    if (observedMetrics.has("heartrate")) {
+    if (profileIds.has("heart_rate")) {
       sourceTypes.add("chest_strap");
     }
-    if (observedMetrics.has("power")) {
+    if (profileIds.has("cycling_power")) {
       sourceTypes.add("power_meter");
     }
-    if (sensor.characteristics.has("00002a5b-0000-1000-8000-00805f9b34fb")) {
-      if (observedMetrics.has("cadence")) {
-        sourceTypes.add("cadence_sensor");
-      }
-      if (observedMetrics.has("speed")) {
-        sourceTypes.add("speed_sensor");
-      }
+    if (profileIds.has("cycling_power") && observedMetrics.has("cadence")) {
+      sourceTypes.add("cadence_sensor");
     }
-    if (sensor.characteristics.has("00002a53-0000-1000-8000-00805f9b34fb")) {
-      if (observedMetrics.has("speed")) {
-        sourceTypes.add("speed_sensor");
-      }
-      if (observedMetrics.has("cadence")) {
-        sourceTypes.add("cadence_sensor");
-      }
+    if (profileIds.has("cycling_speed_and_cadence")) {
+      if (observedMetrics.has("cadence")) sourceTypes.add("cadence_sensor");
+      if (observedMetrics.has("speed")) sourceTypes.add("speed_sensor");
     }
-    if (sensor.characteristics.has("00002ad2-0000-1000-8000-00805f9b34fb")) {
+    if (profileIds.has("running_speed_and_cadence")) {
+      sourceTypes.add("speed_sensor");
+      sourceTypes.add("cadence_sensor");
+    }
+    if (sensor.isTrainer) {
       if (observedMetrics.has("power")) {
         sourceTypes.add("trainer_power");
       }
@@ -1552,6 +1566,65 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     }
 
     return [...sourceTypes];
+  }
+
+  private isSensorMetricObserved(sensor: ConnectedSensor, metricFamily: MetricFamily): boolean {
+    const observedMetrics = sensor.observedMetrics ?? new Set();
+
+    switch (metricFamily) {
+      case "heart_rate":
+        return observedMetrics.has("heartrate");
+      case "power":
+        return observedMetrics.has("power");
+      case "cadence":
+        return observedMetrics.has("cadence");
+      case "speed":
+      case "distance":
+        return observedMetrics.has("speed") || observedMetrics.has("distance");
+      case "position":
+        return observedMetrics.has("latlng");
+      case "elevation":
+        return observedMetrics.has("altitude");
+    }
+  }
+
+  private isSensorMetricFlowing(
+    sensor: ConnectedSensor,
+    metricFamily: MetricFamily,
+    sourceType: MetricSourceType,
+  ): boolean {
+    const profileMetric: StandardBleMetric | null =
+      metricFamily === "heart_rate"
+        ? "heart_rate"
+        : metricFamily === "distance"
+          ? "speed"
+          : metricFamily === "power" || metricFamily === "cadence" || metricFamily === "speed"
+            ? metricFamily
+            : null;
+    if (!profileMetric) return true;
+
+    if (this.isTrainerMetricSourceType(sourceType)) {
+      const sensorMetric = profileMetric === "heart_rate" ? "heartrate" : profileMetric;
+      const timestamp = sensor.ftmsMetricLastDataTimestamps?.[sensorMetric];
+      return (
+        typeof timestamp === "number" && Date.now() - timestamp <= SENSOR_READING_STALE_AFTER_MS
+      );
+    }
+    const profilesForMetric = (sensor.profiles ?? []).filter((profile) =>
+      profile.metrics.some(({ metric }) => metric === profileMetric),
+    );
+
+    if (profilesForMetric.length === 0) {
+      return true;
+    }
+
+    const now = Date.now();
+    return profilesForMetric.some(
+      ({ streamState, metricLastDataTimestamps }) =>
+        streamState === "flowing" &&
+        typeof metricLastDataTimestamps?.[profileMetric] === "number" &&
+        now - metricLastDataTimestamps[profileMetric] <= SENSOR_READING_STALE_AFTER_MS,
+    );
   }
 
   private buildProfileSnapshot(): RecordingSessionSnapshot["profileSnapshot"] {

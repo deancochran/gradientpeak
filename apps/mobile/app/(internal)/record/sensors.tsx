@@ -23,7 +23,11 @@ import {
   useSessionView,
 } from "@/lib/hooks/useActivityRecorder";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
-import type { ConnectedSensor, PersistedSensor } from "@/lib/services/ActivityRecorder/sensors";
+import {
+  type ConnectedSensor,
+  type PersistedSensor,
+  SENSOR_READING_STALE_AFTER_MS,
+} from "@/lib/services/ActivityRecorder/sensors";
 import {
   type AllPermissionsStatus,
   checkAllPermissions,
@@ -599,6 +603,8 @@ function ConnectedSensorCard({
         </View>
       </View>
 
+      <SensorStreamStatus sensor={sensor} />
+
       <MetricSourceRows
         sensor={sensor}
         candidates={candidates}
@@ -611,6 +617,104 @@ function ConnectedSensorCard({
       />
     </View>
   );
+}
+
+function SensorStreamStatus({ sensor }: { sensor: ConnectedSensor }) {
+  const status = getSensorStreamStatus(sensor);
+  return (
+    <Text className={`mt-2 text-xs ${status.isError ? "text-red-700" : "text-muted-foreground"}`}>
+      {status.label}
+    </Text>
+  );
+}
+
+function getSensorStreamStatus(sensor: ConnectedSensor): { label: string; isError: boolean } {
+  const profiles = sensor.profiles ?? [];
+  const observedMetrics = [...(sensor.observedMetrics ?? new Set())];
+  const failedProfiles = profiles.filter(({ streamState }) => streamState === "failed");
+  const now = Date.now();
+  const receivingLabels = new Set<string>();
+
+  for (const profile of profiles) {
+    if (profile.streamState !== "flowing") continue;
+    for (const [metric, timestamp] of Object.entries(profile.metricLastDataTimestamps ?? {})) {
+      if (typeof timestamp === "number" && now - timestamp <= SENSOR_READING_STALE_AFTER_MS) {
+        receivingLabels.add(getStandardMetricLabel(metric));
+      }
+    }
+  }
+
+  if (sensor.ftmsMetricLastDataTimestamps) {
+    for (const [metric, timestamp] of Object.entries(sensor.ftmsMetricLastDataTimestamps ?? {})) {
+      if (typeof timestamp === "number" && now - timestamp <= SENSOR_READING_STALE_AFTER_MS) {
+        receivingLabels.add(getObservedMetricLabel(metric));
+      }
+    }
+  }
+
+  if (
+    profiles.length === 0 &&
+    sensor.ftmsStreamState === undefined &&
+    sensor.lastDataTimestamp &&
+    now - sensor.lastDataTimestamp <= SENSOR_READING_STALE_AFTER_MS
+  ) {
+    observedMetrics.forEach((metric) => {
+      receivingLabels.add(getObservedMetricLabel(metric));
+    });
+  }
+
+  if (failedProfiles.length > 0) {
+    const receiving =
+      receivingLabels.size > 0 ? ` Receiving ${[...receivingLabels].join(", ")}.` : "";
+    return {
+      label: `Reading setup failed for ${failedProfiles.map(({ name }) => name).join(", ")}.${receiving}`,
+      isError: true,
+    };
+  }
+
+  if (sensor.ftmsStreamState === "failed") {
+    const receiving =
+      receivingLabels.size > 0 ? ` Receiving ${[...receivingLabels].join(", ")}.` : "";
+    return { label: `Trainer reading stream failed.${receiving}`, isError: true };
+  }
+
+  if (receivingLabels.size > 0) {
+    return {
+      label: `Receiving ${[...receivingLabels].join(", ")}`,
+      isError: false,
+    };
+  }
+
+  if (profiles.length > 0 || sensor.isTrainer) {
+    return { label: "Connected, waiting for sensor data", isError: false };
+  }
+
+  return { label: "Connected, no supported sensor profile", isError: true };
+}
+
+function getStandardMetricLabel(metric: string): string {
+  return metric === "heart_rate" ? "heart rate" : metric;
+}
+
+function getObservedMetricLabel(metric: string): string {
+  switch (metric) {
+    case "heartrate":
+      return "heart rate";
+    case "power":
+      return "power";
+    case "cadence":
+      return "cadence";
+    case "speed":
+      return "speed";
+    case "distance":
+      return "distance";
+    case "altitude":
+      return "elevation";
+    case "latlng":
+      return "position";
+    default:
+      return metric;
+  }
 }
 
 function MetricSourceRows({
@@ -633,9 +737,7 @@ function MetricSourceRows({
   onEnable: (metricFamily: MetricFamily, sourceId: string) => void;
 }) {
   if (candidates.length === 0) {
-    return (
-      <Text className="mt-2 text-xs text-muted-foreground">Connected, no supported readings</Text>
-    );
+    return null;
   }
 
   return (
@@ -652,8 +754,12 @@ function MetricSourceRows({
             size="sm"
             variant={isAuthoritative ? "default" : "outline"}
             accessibilityRole="switch"
-            accessibilityState={{ checked: isAuthoritative && !isDisabled }}
+            accessibilityState={{
+              checked: isAuthoritative && !isDisabled,
+              disabled: !candidate.isAvailable && !isDisabled,
+            }}
             accessibilityLabel={`${getMetricLabel(candidate.metricFamily)} source for ${sensor.name}`}
+            disabled={!candidate.isAvailable && !isDisabled}
             onPress={() => {
               if (isDisabled) {
                 onEnable(candidate.metricFamily, sensor.id);
@@ -673,7 +779,11 @@ function MetricSourceRows({
               className={`text-xs ${isAuthoritative && !isDisabled ? "text-primary-foreground" : "text-foreground"}`}
             >
               {getShortMetricLabel(candidate.metricFamily)}{" "}
-              {isAuthoritative && !isDisabled ? "on" : "off"}
+              {!candidate.isAvailable && !isDisabled
+                ? "waiting"
+                : isAuthoritative && !isDisabled
+                  ? "on"
+                  : "off"}
             </Text>
           </Button>
         );

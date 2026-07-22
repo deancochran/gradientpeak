@@ -66,4 +66,47 @@ describe("buildTrainingPathLoadMetrics", () => {
       { label: "Planned", value: "80 TSS" },
     ]);
   });
+
+  it("leads selected summaries with effective Load and RMS Intensity", () => {
+    expect(
+      buildTrainingPathLoadMetrics({
+        effectiveLoadStatus: "complete",
+        effectiveLoad: 86.4,
+        effectiveIntensity: 0.78,
+        effectiveCompletedLoad: 42,
+        effectiveRemainingLoad: 44.4,
+        targetLoadTss: 80,
+      }),
+    ).toEqual([
+      { label: "Load", value: "86" },
+      { label: "Intensity", value: "Moderate · 0.78" },
+      { label: "Completed", value: "42" },
+      { label: "Remaining", value: "44" },
+    ]);
+  });
+
+  it("announces partial and unavailable effective values without converting them to zero", () => {
+    expect(
+      buildTrainingPathLoadMetrics({
+        effectiveLoadStatus: "partial",
+        effectiveLoad: 42,
+        effectiveIntensity: 0.7,
+        hasCompletedActivityWithoutLoad: true,
+      }),
+    ).toEqual([
+      { label: "Load", value: "42 incomplete" },
+      { label: "Intensity", value: "Moderate · 0.70 incomplete" },
+      { label: "Completed", value: "Unavailable" },
+    ]);
+    expect(
+      buildTrainingPathLoadMetrics({
+        effectiveLoadStatus: "unavailable",
+        effectiveLoad: null,
+        effectiveIntensity: null,
+      }),
+    ).toEqual([
+      { label: "Load", value: "Unavailable" },
+      { label: "Intensity", value: "Unavailable" },
+    ]);
+  });
 });

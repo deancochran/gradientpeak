@@ -318,8 +318,32 @@ export function TrainingPathWeekSummaryCard({
     return <WeekReviewLoadingState dateLabel={loadingDateLabel ?? summary.dateLabel} />;
   }
 
+  const metrics = buildTrainingPathLoadMetrics({
+    effectiveLoadStatus: summary.effectiveLoadStatus,
+    effectiveLoad: summary.effectiveLoad,
+    effectiveIntensity: summary.effectiveIntensity,
+    effectiveCompletedLoad: summary.effectiveCompletedLoad,
+    effectiveRemainingLoad: summary.effectiveRemainingLoad,
+    hasCompletedActivityWithoutLoad: summary.completedLoadUnavailable,
+    hasTargetLoad: summary.targetLoad !== null,
+    targetLoadTss: summary.targetLoad,
+  });
+
   return (
     <TrainingPathWeekReviewShell body={summary.body} dateLabel={summary.dateLabel}>
+      {metrics.length > 0 ? (
+        <View className="flex-row flex-wrap items-center gap-x-4 gap-y-1.5">
+          {metrics.map((metric) => (
+            <View
+              className="flex-row items-baseline gap-1.5"
+              key={`${metric.label}-${metric.value}`}
+            >
+              <Text className="text-[10px] font-medium text-muted-foreground">{metric.label}</Text>
+              <Text className="text-xs font-semibold text-foreground">{metric.value}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
       {goals.length > 0 ? (
         <TrainingPathWeekReviewSection title="Goals this week">
           {goals.map((goal) => (

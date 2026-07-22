@@ -5,6 +5,7 @@ import {
   getFtmsParserDefinition,
   parseCscMeasurement,
   parseCyclingPowerMeasurement,
+  parseCyclingPowerMeasurementWithState,
   parseFtmsCrossTrainerData,
   parseFtmsIndoorBikeData,
   parseFtmsRowerData,
@@ -13,6 +14,7 @@ import {
   parseFtmsTreadmillData,
   parseHeartRateMeasurement,
   parseRegisteredFtmsPayload,
+  parseRunningSpeedAndCadenceMeasurement,
   unsignedDeltaWithWrap,
 } from "..";
 
@@ -39,6 +41,55 @@ describe("bluetooth parsers", () => {
 
       expect(result.powerWatts).toBe(250);
       expect(result.cadenceRpm).toBeNull();
+    });
+
+    it("derives cadence from optional crank revolution deltas", () => {
+      const first = parseCyclingPowerMeasurementWithState(
+        toArrayBuffer([0x20, 0x00, 0xfa, 0x00, 0xe8, 0x03, 0x00, 0x08]),
+      );
+      const second = parseCyclingPowerMeasurementWithState(
+        toArrayBuffer([0x20, 0x00, 0x04, 0x01, 0xed, 0x03, 0x00, 0x18]),
+        first.nextState,
+      );
+
+      expect(first.powerWatts).toBe(250);
+      expect(first.cadenceRpm).toBeNull();
+      expect(second.powerWatts).toBe(260);
+      expect(second.cadenceRpm).toBe(75);
+      expect(second.truncated).toBe(false);
+    });
+
+    it("honors optional fields before crank data and reports truncation", () => {
+      const parsed = parseCyclingPowerMeasurementWithState(
+        toArrayBuffer([0x25, 0x00, 0xfa, 0x00, 0x32, 0x10, 0x00, 0xe8, 0x03, 0x00, 0x08]),
+      );
+      const truncated = parseCyclingPowerMeasurementWithState(
+        toArrayBuffer([0x20, 0x00, 0xfa, 0x00, 0xe8]),
+      );
+      const truncatedPedalBalance = parseCyclingPowerMeasurementWithState(
+        toArrayBuffer([0x01, 0x00, 0xfa, 0x00]),
+      );
+      const truncatedExtremeForce = parseCyclingPowerMeasurementWithState(
+        toArrayBuffer([0x40, 0x00, 0xfa, 0x00]),
+      );
+
+      expect(parsed.nextState.lastCrankRevolutions).toBe(1000);
+      expect(parsed.truncated).toBe(false);
+      expect(truncated.powerWatts).toBe(250);
+      expect(truncated.truncated).toBe(true);
+      expect(truncatedPedalBalance.truncated).toBe(true);
+      expect(truncatedExtremeForce.truncated).toBe(true);
+    });
+  });
+
+  describe("parseRunningSpeedAndCadenceMeasurement", () => {
+    it("parses mandatory speed and cadence independently of optional-field flags", () => {
+      const result = parseRunningSpeedAndCadenceMeasurement(
+        toArrayBuffer([0x00, 0x00, 0x05, 0x58]),
+      );
+
+      expect(result.speedMps).toBe(5);
+      expect(result.cadenceRpm).toBe(88);
     });
   });
 

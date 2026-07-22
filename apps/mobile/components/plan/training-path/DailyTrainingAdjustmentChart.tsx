@@ -37,6 +37,11 @@ export type DailyTrainingAdjustmentPoint = {
   date: string;
   hasCompletedActivityWithoutLoad?: boolean;
   hasTargetLoad?: boolean;
+  effectiveLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
+  effectiveLoad?: number | null;
+  effectiveIntensity?: number | null;
+  effectiveCompletedLoad?: number | null;
+  effectiveRemainingLoad?: number | null;
   plannedLoadTss?: number | null;
   tentativePlannedLoadTss?: number | null;
   completedLoadTss?: number | null;

@@ -7,6 +7,39 @@ const mockTssIdentity = {
   version: "1" as const,
   calibration: { type: "ftp_watts" as const, value: 250 },
 };
+const mockCommonLoad = {
+  status: "available" as const,
+  model: "gradientpeak_relative_load" as const,
+  version: "1" as const,
+  sport: "bike" as const,
+  method: "power_threshold" as const,
+  load: 50,
+  intensity: 1,
+  contributingDurationSeconds: 1800,
+  quality: {
+    source: "validated_test" as const,
+    observed_at: "2026-04-01T12:00:00.000Z",
+    confidence: "high" as const,
+    stale: false,
+    estimate: false,
+    calculation_version: "threshold-v1",
+    evidence_fingerprint: "quality-power",
+  },
+  thresholdEvidence: {
+    type: "ftp_watts" as const,
+    value: 250,
+    unit: "watts" as const,
+    source: "validated_test" as const,
+    observedAt: "2026-04-01T12:00:00.000Z",
+    validAt: "2026-04-01T12:00:00.000Z",
+    freshness: "current" as const,
+    calculationVersion: "threshold-v1",
+    sourceFingerprint: "threshold-power",
+  },
+  evidenceFingerprint: "activity-power",
+  computedAsOf: "2026-04-06T12:00:00.000Z",
+  estimated: false,
+};
 
 const queryResult = {
   data: { items: [] },
@@ -38,6 +71,7 @@ let mockPlanningTimezone: string | null = "America/Los_Angeles";
 let mockProfileLoading = false;
 const mockRefreshProfile = jest.fn(async () => undefined);
 let mockResolvedWeekWindow = { start: "2026-03-30", end: "2026-04-12" };
+let mockSelectedWeekSummary: Record<string, unknown> | null = null;
 const mockGetTrainingPathTodayKey = jest.fn<string | null, []>(() =>
   mockPlanningTimezone ? "2026-04-06" : null,
 );
@@ -174,7 +208,10 @@ jest.mock("./useScrollableTrainingPathWindow", () => ({
   }),
 }));
 jest.mock("./useTrainingPathViewModel", () => ({
-  useTrainingPathViewModel: (input: unknown) => ({ selectedWeekSummary: null, input }),
+  useTrainingPathViewModel: (input: unknown) => ({
+    selectedWeekSummary: mockSelectedWeekSummary,
+    input,
+  }),
 }));
 jest.mock("./trainingPathUtils", () => ({
   addDays: (date: string, days: number) => {
@@ -263,6 +300,8 @@ jest.mock("@/lib/training-path/trainingTimelineAdapters", () => ({
   ...jest.requireActual("@/lib/training-path/trainingTimelineAdapters"),
 }));
 jest.mock("@repo/core/training-timeline", () => ({
+  composeEffectivePlanLoad: jest.requireActual("@repo/core/training-timeline")
+    .composeEffectivePlanLoad,
   buildTrainingTimelineWindowFromLoadTimeline: ({
     endDate,
     startDate,
@@ -315,6 +354,7 @@ describe("usePlanTrainingPathData", () => {
     mockProfileLoading = false;
     mockRefreshProfile.mockClear();
     mockResolvedWeekWindow = { start: "2026-03-30", end: "2026-04-12" };
+    mockSelectedWeekSummary = null;
     mockGetTrainingPathTodayKey.mockClear();
     mockMillisecondsUntilNextTrainingPathDay.mockClear();
     mockDailyTssObservations = [];
@@ -400,6 +440,80 @@ describe("usePlanTrainingPathData", () => {
     expect(result.current.dailyTrainingPathPoints).toEqual([
       expect.objectContaining({ date: "2026-04-01", completedLoadTss: 35 }),
     ]);
+  });
+
+  it("wires effective common Load and Intensity into selected day and week summaries", () => {
+    mockSelectedWeekSummary = {
+      weekStart: "2026-04-06",
+      weekEnd: "2026-04-12",
+      dateLabel: "Apr 6–12",
+      completedLoad: 0,
+      plannedLoad: 50,
+      tentativePlannedLoad: 0,
+      targetLoad: 70,
+    };
+    const linkedEvent = {
+      id: "event-1",
+      scheduled_date: "2026-04-06",
+      status: "completed",
+      completed: true,
+      linked_activity_id: "activity-1",
+      tentative: false,
+      activity_plan: {
+        common_load: { ...mockCommonLoad, load: 100, contributingDurationSeconds: 3600 },
+      },
+    };
+    mockEventsListUseQuery.mockImplementation(() => ({
+      ...paginatedQueryResult,
+      data: { pages: [{ items: [linkedEvent] }] },
+    }));
+    mockCompletedActivitiesUseInfiniteQuery.mockImplementation(() => ({
+      ...paginatedQueryResult,
+      data: {
+        pages: [
+          {
+            items: [
+              {
+                id: "activity-1",
+                started_at: "2026-04-06T16:00:00.000Z",
+                activity_type: "bike",
+                derived: { stress: { common_load: mockCommonLoad } },
+              },
+            ],
+          },
+        ],
+      },
+    }));
+    mockBuildTrainingPreferencesLoadTimeline.mockReturnValue([
+      {
+        date: "2026-04-06",
+        completed_load_tss: 0,
+        recommended_load_tss: 70,
+        scheduled_load_tss: 100,
+      },
+    ]);
+
+    const { result } = renderHook(() => usePlanTrainingPathData());
+
+    expect(result.current.dailyTrainingPathPoints).toEqual([
+      expect.objectContaining({
+        date: "2026-04-06",
+        effectiveLoadStatus: "complete",
+        effectiveLoad: 50,
+        effectiveIntensity: 1,
+        effectiveCompletedLoad: 50,
+        effectiveRemainingLoad: null,
+      }),
+    ]);
+    expect(result.current.trainingPath.selectedWeekSummary).toEqual(
+      expect.objectContaining({
+        effectiveLoadStatus: "complete",
+        effectiveLoad: 50,
+        effectiveIntensity: 1,
+        effectiveCompletedLoad: 50,
+        effectiveRemainingLoad: null,
+      }),
+    );
   });
 
   it("retains the current dated query pages while an expanded window loads", () => {
