@@ -11,11 +11,9 @@ export type CalendarActivity = {
   distance_meters?: number | null;
   duration_seconds?: number | null;
   derived?: {
-    tss?: number | null;
-    intensity_factor?: number | null;
+    common_load?: unknown;
     stress?: {
-      tss?: number | null;
-      intensity_factor?: number | null;
+      common_load?: unknown;
     } | null;
   } | null;
 };

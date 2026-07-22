@@ -1,6 +1,7 @@
 import { toDateKey } from "@/lib/calendar/dateMath";
 
 export interface CalendarEventActivityPlan {
+  common_load?: unknown;
   id?: string | null;
   name?: string | null;
   description?: string | null;
@@ -32,6 +33,7 @@ export interface CalendarEventOwner {
 }
 
 export interface CalendarEvent {
+  common_load?: unknown;
   id: string;
   event_type?: string | null;
   title?: string | null;

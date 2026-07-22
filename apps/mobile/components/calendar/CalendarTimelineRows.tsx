@@ -7,16 +7,13 @@ import { differenceInCalendarDays, format } from "date-fns";
 import { Target, Users } from "lucide-react-native";
 import { memo } from "react";
 import { TouchableOpacity, View } from "react-native";
+import { getCommonLoadPresentation } from "@/lib/activity-load-presentation";
 import { parseDateKey } from "@/lib/calendar/dateMath";
 import type { CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import { getActivityCategoryConfig } from "@/lib/constants/activities";
 import { formatDistanceMeters } from "@/lib/display/formatters";
-import {
-  formatEstimatedDurationSeconds,
-  formatEstimatedIntensityFactor,
-  formatEstimatedTss,
-} from "@/lib/estimatedMetrics";
+import { formatEstimatedDurationSeconds } from "@/lib/estimatedMetrics";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import type { CalendarActivity, CalendarScheduleObject, DayRow } from "./CalendarTimelineModel";
 
@@ -92,8 +89,18 @@ function formatDuration(seconds: number | null) {
   return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
 }
 
-function getActivityDerivedMetric(activity: CalendarActivity, key: "tss" | "intensity_factor") {
-  return activity.derived?.[key] ?? activity.derived?.stress?.[key] ?? null;
+function getCommonLoadMetricLabels(value: unknown, unavailableByDefault: boolean) {
+  const presentation = getCommonLoadPresentation(value);
+  const availableLabels = [
+    presentation?.load ? `Load ${presentation.load}` : null,
+    presentation?.intensity ? `Intensity ${presentation.intensity}` : null,
+  ].filter((label): label is string => label !== null);
+  if (availableLabels.length > 0) return availableLabels;
+  if (presentation?.unavailableText) {
+    return [`Load ${presentation.unavailableText}`];
+  }
+
+  return unavailableByDefault && presentation?.status !== "unavailable" ? ["Load Unavailable"] : [];
 }
 
 function getCompletedActivityMetricLabels(
@@ -105,15 +112,11 @@ function getCompletedActivityMetricLabels(
     preferredUnitSystem,
   });
   const duration = formatDuration(activity.duration_seconds ?? null);
-  const tss = getActivityDerivedMetric(activity, "tss");
-  const intensityFactor = getActivityDerivedMetric(activity, "intensity_factor");
+  const commonLoad = activity.derived?.common_load ?? activity.derived?.stress?.common_load;
 
-  return [
-    distance,
-    duration,
-    formatEstimatedTss(tss) ?? "-- TSS",
-    formatEstimatedIntensityFactor(intensityFactor, { includeLabel: true }) ?? "IF --",
-  ].filter((label): label is string => Boolean(label));
+  return [distance, duration, ...getCommonLoadMetricLabels(commonLoad, true)].filter(
+    (label): label is string => Boolean(label),
+  );
 }
 
 function formatEventTime(event: CalendarEvent) {
@@ -232,13 +235,11 @@ function getActivityPlanMetricLabels(event: CalendarEvent) {
 
   const metrics = getAuthoritativeActivityPlanMetrics(plan);
   const duration = readMetric(metrics.estimated_duration);
-  const tss = readMetric(metrics.estimated_tss);
-  const intensityFactor = readMetric(metrics.intensity_factor);
+  const commonLoad = plan.common_load ?? event.common_load;
 
   return [
     formatEstimatedDurationSeconds(duration),
-    formatEstimatedTss(tss),
-    formatEstimatedIntensityFactor(intensityFactor, { includeLabel: true }),
+    ...getCommonLoadMetricLabels(commonLoad, true),
   ].filter((label): label is string => Boolean(label));
 }
 

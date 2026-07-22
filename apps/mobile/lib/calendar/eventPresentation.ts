@@ -1,6 +1,7 @@
 import { format } from "date-fns";
+import { getCommonLoadPresentation } from "@/lib/activity-load-presentation";
 import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
-import { formatEstimatedDurationSeconds, formatEstimatedTss } from "@/lib/estimatedMetrics";
+import { formatEstimatedDurationSeconds } from "@/lib/estimatedMetrics";
 import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
 import { formatEventTime } from "./eventSchedule";
 import type { CalendarEvent } from "./normalizeEvents";
@@ -32,6 +33,20 @@ function trimText(value: string | null | undefined): string | null {
 
 function hasActivityPlan(event: CalendarEvent): boolean {
   return Boolean(event.activity_plan?.id);
+}
+
+function getEventCommonLoad(event: CalendarEvent): unknown {
+  return event.activity_plan?.common_load ?? event.common_load;
+}
+
+export function getEventCommonLoadMeta(event: CalendarEvent): string[] {
+  const presentation = getCommonLoadPresentation(getEventCommonLoad(event));
+  const availableLabels = [
+    presentation?.load ? `Load ${presentation.load}` : null,
+    presentation?.intensity ? `Intensity ${presentation.intensity}` : null,
+  ].filter((label): label is string => label !== null);
+  if (availableLabels.length > 0) return availableLabels;
+  return presentation?.unavailableText ? [`Load ${presentation.unavailableText}`] : [];
 }
 
 export function isEditableEvent(event: CalendarEvent): boolean {
@@ -70,11 +85,10 @@ export function getEventPrimaryMeta(event: CalendarEvent): string[] {
   if (event.event_type === "planned" && hasActivityPlan(event)) {
     const metrics = getAuthoritativeActivityPlanMetrics(event.activity_plan);
     const duration = formatEstimatedDurationSeconds(readMetric(metrics.estimated_duration));
-    const tss = readMetric(metrics.estimated_tss);
     return [
       formatCategoryLabel(event.activity_plan?.activity_category),
       duration,
-      duration ? null : formatEstimatedTss(tss),
+      ...getEventCommonLoadMeta(event),
     ].filter(Boolean) as string[];
   }
 

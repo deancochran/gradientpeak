@@ -2,7 +2,6 @@ import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { CalendarDays, Lock, Play, Target, Zap } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
-import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
 import {
   getEventPrimaryMeta,
   getEventStatusLabel,
@@ -11,7 +10,6 @@ import {
   getEventTitle,
 } from "@/lib/calendar/eventPresentation";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
-import { formatEstimatedTss } from "@/lib/estimatedMetrics";
 import { getActivityColor } from "@/lib/utils/plan/colors";
 
 function getPlannedStepCount(event: CalendarEvent): number {
@@ -30,19 +28,6 @@ function getPlannedStepCount(event: CalendarEvent): number {
     const stepCount = Array.isArray(interval.steps) ? interval.steps.length : 0;
     return total + repetitions * stepCount;
   }, 0);
-}
-
-function readMetric(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string" && value.trim().length > 0) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  return null;
 }
 
 type CalendarEventCardProps = {
@@ -65,13 +50,8 @@ export function CalendarEventCard({
   const activityColor = getActivityColor(event.activity_plan?.activity_category ?? undefined);
   const timeLabel = getEventTimeLabel(event);
   const planned = event.event_type === "planned" && hasActivityPlan;
-  const estimatedTss = readMetric(
-    getAuthoritativeActivityPlanMetrics(event.activity_plan).estimated_tss,
-  );
   const plannedStepCount = getPlannedStepCount(event);
   const hasRoute = hasActivityPlan && !!event.activity_plan?.route_id;
-  const intensityLevel =
-    estimatedTss === null ? 0 : estimatedTss >= 90 ? 3 : estimatedTss >= 55 ? 2 : 1;
 
   const leadingIcon =
     event.event_type === "planned"
@@ -139,7 +119,7 @@ export function CalendarEventCard({
                   ) : null}
                 </View>
               ) : null}
-              {planned && (meta.length > 0 || estimatedTss !== null) ? (
+              {planned && meta.length > 0 ? (
                 <View className="mt-1 rounded-2xl bg-muted/30 px-3 py-3">
                   <View className="flex-row flex-wrap items-center gap-2">
                     {meta.map((item) => (
@@ -153,26 +133,6 @@ export function CalendarEventCard({
                       </View>
                     ))}
                   </View>
-                  {estimatedTss !== null ? (
-                    <View className="mt-2.5">
-                      <View className="flex-row items-center justify-between">
-                        <Text className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                          Intensity
-                        </Text>
-                        <Text className="text-[10px] font-medium text-muted-foreground">
-                          {formatEstimatedTss(estimatedTss)}
-                        </Text>
-                      </View>
-                      <View className="mt-2 flex-row gap-1.5">
-                        {["low", "medium", "high"].map((segment, index) => (
-                          <View
-                            key={`${event.id}-intensity-${segment}`}
-                            className={`h-2 flex-1 rounded-full ${index < intensityLevel ? activityColor.bg : "bg-muted"}`}
-                          />
-                        ))}
-                      </View>
-                    </View>
-                  ) : null}
                 </View>
               ) : null}
             </View>

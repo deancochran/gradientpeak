@@ -12,6 +12,7 @@ const replaceMock = jest.fn();
 const eventsListUseQueryMock = jest.fn();
 const activitiesListUseQueryMock = jest.fn();
 const groupEventsListUseQueryMock = jest.fn();
+const activityPlansGetManyUseQueryMock = jest.fn();
 const mockFlatListScrollToIndex = jest.fn();
 const mockFlatListScrollToOffset = jest.fn();
 const utilsEventsInvalidateMock = jest.fn(async () => undefined);
@@ -19,6 +20,46 @@ let mockAuthReady = true;
 const fixedNow = new Date("2026-03-23T12:00:00.000Z");
 const today = fixedNow.toISOString().slice(0, 10);
 let mockTodayKey = today;
+
+const commonLoadProvenance = {
+  model: "gradientpeak_relative_load",
+  version: "1",
+  sport: "run",
+  method: "run_pace_threshold",
+  quality: {
+    source: "validated_test",
+    observed_at: "2026-03-22T12:00:00.000Z",
+    confidence: "high",
+    stale: false,
+    estimate: false,
+    calculation_version: "threshold-v1",
+    evidence_fingerprint: "calendar-quality",
+  },
+  thresholdEvidence: {
+    type: "threshold_speed_mps",
+    value: 4,
+    unit: "meters_per_second",
+    source: "validated_test",
+    observedAt: "2026-03-22T12:00:00.000Z",
+    validAt: "2026-03-22T12:00:00.000Z",
+    freshness: "current",
+    calculationVersion: "threshold-v1",
+    sourceFingerprint: "calendar-threshold",
+  },
+  evidenceFingerprint: "calendar-activity",
+  computedAsOf: "2026-03-23T12:00:00.000Z",
+};
+
+function availableCommonLoad(load: number, intensity: number) {
+  return {
+    status: "available",
+    ...commonLoadProvenance,
+    load,
+    intensity,
+    contributingDurationSeconds: 3600,
+    estimated: false,
+  };
+}
 
 type CalendarStoreState = {
   hydrated: boolean;
@@ -67,7 +108,9 @@ type AuthStoreFixture = { ready: boolean; session: { user: { id: string } } };
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
+  commonLoadResultSchema: jest.requireActual("@repo/core").commonLoadResultSchema,
   formatGoalTypeLabel: () => "Race Day",
+  getTrainingIntensityZone: jest.requireActual("@repo/core").getTrainingIntensityZone,
   getGoalObjectiveSummary: () => "Run your A race",
 }));
 
@@ -359,6 +402,7 @@ jest.mock("@/lib/api", () => ({
                         estimated_duration: 3600,
                         estimated_tss: 72,
                         intensity_factor: 0.82,
+                        common_load: availableCommonLoad(67.24, 0.82),
                         structure: {
                           version: 3,
                           segments: [
@@ -457,13 +501,14 @@ jest.mock("@/lib/api", () => ({
     },
     activityPlans: {
       getManyByIds: {
-        useQuery: () => ({
-          data: { items: [] },
-          isError: false,
-          isLoading: false,
-          error: null,
-          refetch: jest.fn(async () => undefined),
-        }),
+        useQuery: (input?: unknown, options?: unknown) =>
+          activityPlansGetManyUseQueryMock(input, options) ?? {
+            data: { items: [] },
+            isError: false,
+            isLoading: false,
+            error: null,
+            refetch: jest.fn(async () => undefined),
+          },
       },
     },
     activities: {
@@ -496,6 +541,7 @@ jest.mock("@/lib/api", () => ({
                       derived: {
                         tss: 64,
                         intensity_factor: 0.78,
+                        common_load: availableCommonLoad(64, 0.8),
                         computed_as_of: `${today}T11:45:00.000Z`,
                       },
                     },
@@ -558,6 +604,7 @@ describe("calendar day timeline screen", () => {
     eventsListUseQueryMock.mockReset();
     activitiesListUseQueryMock.mockReset();
     groupEventsListUseQueryMock.mockReset();
+    activityPlansGetManyUseQueryMock.mockReset();
     mockFlatListScrollToIndex.mockClear();
     mockFlatListScrollToOffset.mockClear();
   });
@@ -624,9 +671,16 @@ describe("calendar day timeline screen", () => {
     expect(screen.getByText("Today")).toBeTruthy();
     expect(screen.getByTestId("calendar-goal-row-goal-1")).toBeTruthy();
     expect(screen.getByTestId("calendar-activity-row-activity-1")).toBeTruthy();
-    expect(screen.getByText("8.0 km · 45 min · ~64 TSS · ~IF 0.78")).toBeTruthy();
+    expect(screen.getByText("8.0 km · 45 min · Load 64 · Intensity Tempo · 0.80")).toBeTruthy();
     expect(screen.getByTestId("calendar-event-row-event-2")).toBeTruthy();
-    expect(screen.getByText("~1h · ~72 TSS · ~IF 0.82")).toBeTruthy();
+    expect(screen.getByText("~1h · Load 67 · Intensity Tempo · 0.82")).toBeTruthy();
+    expect(screen.queryByText(/TSS|\bIF\b/)).toBeNull();
+    expect(
+      screen.getByTestId("calendar-activity-row-activity-1").props.accessibilityLabel,
+    ).toContain("Load 64, Intensity Tempo · 0.80");
+    expect(screen.getByTestId("calendar-event-row-event-2").props.accessibilityLabel).toContain(
+      "Load 67 · Intensity Tempo · 0.82",
+    );
     expect(screen.queryByTestId("calendar-summary-card")).toBeNull();
     expect(screen.queryByTestId("calendar-month-page-2026-03-01")).toBeNull();
     expect(screen.queryByTestId("calendar-month-marker-2026-04-01")).toBeNull();
@@ -798,7 +852,10 @@ describe("calendar day timeline screen", () => {
                 started_at: `${today}T13:00:00.000Z`,
                 duration_seconds: 1800,
                 distance_meters: 9000,
-                derived: null,
+                derived: {
+                  tss: 91,
+                  intensity_factor: 0.93,
+                },
               },
             ],
           },
@@ -813,7 +870,114 @@ describe("calendar day timeline screen", () => {
 
     renderNative(<CalendarScreenWithErrorBoundary />);
 
-    expect(screen.getByText("9.0 km · 30 min · -- TSS · IF --")).toBeTruthy();
+    expect(screen.getByText("9.0 km · 30 min · Load Unavailable")).toBeTruthy();
+    expect(screen.queryByText(/91|0\.93|TSS|\bIF\b/)).toBeNull();
+    expect(
+      screen.getByTestId("calendar-activity-row-activity-missing-load").props.accessibilityLabel,
+    ).toContain("Load Unavailable");
+  });
+
+  it("marks partial completed common Load and Intensity as incomplete", () => {
+    activitiesListUseQueryMock.mockReturnValue({
+      data: {
+        pages: [
+          {
+            items: [
+              {
+                id: "activity-partial-load",
+                name: "Patchy tempo",
+                type: "run",
+                started_at: `${today}T13:00:00.000Z`,
+                duration_seconds: 3600,
+                derived: {
+                  common_load: {
+                    status: "partial",
+                    ...commonLoadProvenance,
+                    load: 32,
+                    intensity: 0.8,
+                    contributingDurationSeconds: 1800,
+                    eligibleDurationSeconds: 3600,
+                    sourceTimeCoverage: 0.5,
+                    reason: "activity_data_partial",
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      },
+      fetchNextPage: jest.fn(async () => undefined),
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(async () => undefined),
+    });
+
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    expect(
+      screen.getByText("1h · Load 32 · Incomplete · Intensity Tempo · 0.80 · Incomplete"),
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId("calendar-activity-row-activity-partial-load").props.accessibilityLabel,
+    ).toContain("Incomplete");
+  });
+
+  it("renders selected group activity-plan common Load without legacy estimates", () => {
+    groupEventsListUseQueryMock.mockReturnValue({
+      data: {
+        pages: [
+          {
+            items: [
+              {
+                id: "group-event-load",
+                title: "Club tempo",
+                starts_at: `${today}T15:00:00.000Z`,
+                activity_plan_id: "group-plan-load",
+                viewerRsvp: { status: "accepted" },
+                group: { name: "Tuesday crew" },
+              },
+            ],
+            nextCursor: undefined,
+          },
+        ],
+      },
+      fetchNextPage: jest.fn(async () => undefined),
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(async () => undefined),
+    });
+    activityPlansGetManyUseQueryMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: "group-plan-load",
+            name: "Group tempo plan",
+            activity_category: "run",
+            estimated_duration: 3600,
+            estimated_tss: 99,
+            intensity_factor: 0.99,
+            common_load: availableCommonLoad(56.25, 0.75),
+          },
+        ],
+      },
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(async () => undefined),
+    });
+
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    expect(
+      screen.getByText("Tuesday crew · Group tempo plan · ~1h · Load 56 · Intensity Tempo · 0.75"),
+    ).toBeTruthy();
+    expect(screen.queryByText(/99|0\.99|TSS|\bIF\b/)).toBeNull();
+    expect(
+      screen.getByTestId("calendar-group-event-row-group-event-load").props.accessibilityLabel,
+    ).toContain("Load 56 · Intensity Tempo · 0.75");
   });
 
   it("keeps horizontal week paging passive until a day is selected", () => {
