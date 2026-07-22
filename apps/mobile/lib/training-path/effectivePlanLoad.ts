@@ -1,10 +1,11 @@
 import {
+  aggregateCommonLoad,
   COMMON_RELATIVE_LOAD_MODEL,
   COMMON_RELATIVE_LOAD_VERSION,
   type CommonLoadResult,
   commonLoadResultSchema,
   composeEffectivePlanLoad,
-  type EffectiveCompositionResult,
+  type EffectiveCompositionItem,
 } from "@repo/core";
 import { z } from "zod";
 
@@ -33,8 +34,15 @@ export type EffectivePlanMetricSummary = {
   intensity: number | null;
   completedLoad: number | null;
   remainingLoad: number | null;
+  tentativeLoad: number | null;
   hasUnavailableCompletedLoad: boolean;
   reason: string | null;
+};
+
+export type EffectivePlanMetricPeriod = {
+  key: string;
+  startDate: string;
+  endDate: string;
 };
 
 const activityPlanLoadSourceSchema = z
@@ -103,54 +111,67 @@ function sumKnownLoads(results: readonly CommonLoadResult[]): number | null {
   return values.length === 0 ? null : values.reduce((sum, value) => sum + value, 0);
 }
 
-function summarize(
-  result: EffectiveCompositionResult,
-  sourcesComplete: boolean,
-): EffectivePlanMetricSummary {
-  if (result.status === "integrity_unavailable") {
-    return {
-      status: "unavailable",
-      load: null,
-      intensity: null,
-      completedLoad: null,
-      remainingLoad: null,
-      hasUnavailableCompletedLoad: false,
-      reason: result.reason,
-    };
-  }
-
-  const completedResults = result.items.flatMap((item) =>
+function summarizeItems(input: {
+  items: readonly EffectiveCompositionItem[];
+  tentativeItems: readonly Extract<EffectiveCompositionItem, { kind: "scheduled" }>[];
+  completedSourceComplete: boolean;
+  scheduledSourceComplete: boolean;
+}): EffectivePlanMetricSummary {
+  const completedResults = input.items.flatMap((item) =>
     item.kind === "completed" ? [item.commonLoad] : [],
   );
-  const remainingResults = result.items.flatMap((item) =>
+  const remainingResults = input.items.flatMap((item) =>
     item.kind === "scheduled" ? [item.commonLoad] : [],
   );
   const hasUnavailableCompletedLoad = completedResults.some(
     (load) => load.status === "unavailable" || load.load === null,
   );
-  if (result.aggregate.status === "known_zero") {
-    return {
-      status: "known_zero",
-      load: 0,
-      intensity: null,
-      completedLoad: null,
-      remainingLoad: null,
-      hasUnavailableCompletedLoad,
-      reason: null,
-    };
+  const tentativeAggregate = aggregateCommonLoad(
+    input.tentativeItems.map((item) => item.commonLoad),
+  );
+  const hasIncompleteTentativeLoad =
+    input.tentativeItems.length > 0 && tentativeAggregate.status !== "complete";
+  const tentativeLoad =
+    tentativeAggregate.status === "unavailable" ? null : tentativeAggregate.load;
+  const sourcesComplete = input.completedSourceComplete && input.scheduledSourceComplete;
+  if (input.items.length === 0) {
+    if (hasIncompleteTentativeLoad) {
+      return {
+        status: "unavailable",
+        load: null,
+        intensity: null,
+        completedLoad: null,
+        remainingLoad: null,
+        tentativeLoad: null,
+        hasUnavailableCompletedLoad,
+        reason: "common_load_unavailable",
+      };
+    }
+    return sourcesComplete
+      ? {
+          status: "known_zero",
+          load: 0,
+          intensity: null,
+          completedLoad: null,
+          remainingLoad: null,
+          tentativeLoad,
+          hasUnavailableCompletedLoad,
+          reason: null,
+        }
+      : {
+          status: "unavailable",
+          load: null,
+          intensity: null,
+          completedLoad: null,
+          remainingLoad: null,
+          tentativeLoad,
+          hasUnavailableCompletedLoad,
+          reason: input.scheduledSourceComplete
+            ? "completed_source_incomplete"
+            : "scheduled_source_incomplete",
+        };
   }
-  if (result.aggregate.status === "unavailable") {
-    return {
-      status: "unavailable",
-      load: null,
-      intensity: null,
-      completedLoad: sumKnownLoads(completedResults),
-      remainingLoad: sumKnownLoads(remainingResults),
-      hasUnavailableCompletedLoad,
-      reason: result.aggregate.reason,
-    };
-  }
-  const aggregate = result.aggregate.commonLoad;
+  const aggregate = aggregateCommonLoad(input.items.map((item) => item.commonLoad));
   if (aggregate.status === "unavailable") {
     return {
       status: "unavailable",
@@ -158,31 +179,163 @@ function summarize(
       intensity: null,
       completedLoad: sumKnownLoads(completedResults),
       remainingLoad: sumKnownLoads(remainingResults),
+      tentativeLoad,
       hasUnavailableCompletedLoad,
-      reason: aggregate.reason,
+      reason: "common_load_unavailable",
     };
   }
   return {
-    status: sourcesComplete && result.aggregate.status === "complete" ? "complete" : "partial",
+    status:
+      sourcesComplete && aggregate.status === "complete" && !hasIncompleteTentativeLoad
+        ? "complete"
+        : "partial",
     load: aggregate.load,
     intensity: aggregate.intensity,
     completedLoad: sumKnownLoads(completedResults),
     remainingLoad: sumKnownLoads(remainingResults),
+    tentativeLoad,
     hasUnavailableCompletedLoad,
-    reason: result.aggregate.status === "partial" ? "incomplete_common_load" : null,
+    reason:
+      sourcesComplete && aggregate.status === "complete" && !hasIncompleteTentativeLoad
+        ? null
+        : "incomplete_common_load",
   };
 }
 
-export function buildEffectivePlanMetricSummary(input: {
+/** Parses and composes the bounded source range once, then aggregates requested periods by date. */
+export function buildEffectivePlanMetricSummaries(input: {
+  asOfInstant: string;
+  completedActivities: readonly CompletedActivitySource[];
+  completedSourceComplete: boolean;
+  coverageEndDate?: string;
+  coverageStartDate?: string;
+  periods: readonly EffectivePlanMetricPeriod[];
+  planningTimezone: string;
+  scheduledEvents: readonly ScheduledPlanSource[];
+  scheduledSourceComplete: boolean;
+}): Map<string, EffectivePlanMetricSummary> {
+  if (input.periods.length === 0) return new Map();
+  const startDate = input.periods.reduce(
+    (earliest, period) => (period.startDate < earliest ? period.startDate : earliest),
+    input.periods[0]?.startDate ?? "",
+  );
+  const endDate = input.periods.reduce(
+    (latest, period) => (period.endDate > latest ? period.endDate : latest),
+    input.periods[0]?.endDate ?? "",
+  );
+  const coverageStartDate = input.coverageStartDate ?? startDate;
+  const coverageEndDate = input.coverageEndDate ?? endDate;
+  const scheduledEvents = input.scheduledEvents.filter(
+    (event) =>
+      typeof event.scheduled_date !== "string" ||
+      (event.scheduled_date >= coverageStartDate && event.scheduled_date <= coverageEndDate),
+  );
+  const linkedCompletedActivityIds = new Set(
+    scheduledEvents.flatMap((event) => {
+      const linkedId = event.linked_activity_id?.trim();
+      return linkedId ? [linkedId] : [];
+    }),
+  );
+  let compositionStartDate = coverageStartDate;
+  let compositionEndDate = coverageEndDate;
+  const completedActivities = input.completedActivities.filter((activity) => {
+    const completedDate = dateKey(activity.started_at, input.planningTimezone);
+    const isLinkedReplacement =
+      typeof activity.id === "string" && linkedCompletedActivityIds.has(activity.id);
+    if (isLinkedReplacement && completedDate !== null) {
+      if (completedDate < compositionStartDate) compositionStartDate = completedDate;
+      if (completedDate > compositionEndDate) compositionEndDate = completedDate;
+    }
+    return (
+      completedDate === null ||
+      isLinkedReplacement ||
+      (completedDate >= coverageStartDate && completedDate <= coverageEndDate)
+    );
+  });
+  const prepared = prepareEffectivePlanSources({
+    ...input,
+    completedActivities,
+    scheduledEvents,
+    startDate: compositionStartDate,
+    endDate: compositionEndDate,
+  });
+  const result = composeEffectivePlanLoad({
+    ...prepared.sources,
+    planningTimezone: input.planningTimezone,
+    asOfInstant: input.asOfInstant,
+  });
+  if (result.status === "integrity_unavailable") {
+    return new Map(
+      input.periods.map((period) => [
+        period.key,
+        {
+          status: "unavailable" as const,
+          load: null,
+          intensity: null,
+          completedLoad: null,
+          remainingLoad: null,
+          tentativeLoad: null,
+          hasUnavailableCompletedLoad: false,
+          reason: result.reason,
+        },
+      ]),
+    );
+  }
+  const itemsByDate = groupByDate(result.items);
+  const tentativeItemsByDate = groupByDate(result.tentativeItems);
+  return new Map(
+    input.periods.map((period) => {
+      const items: EffectiveCompositionItem[] = [];
+      const tentativeItems: Extract<EffectiveCompositionItem, { kind: "scheduled" }>[] = [];
+      for (let date = period.startDate; date <= period.endDate; date = nextDate(date)) {
+        items.push(...(itemsByDate.get(date) ?? []));
+        tentativeItems.push(...(tentativeItemsByDate.get(date) ?? []));
+      }
+      return [
+        period.key,
+        summarizeItems({
+          items,
+          tentativeItems,
+          completedSourceComplete:
+            prepared.completedSourceComplete &&
+            period.startDate >= coverageStartDate &&
+            period.endDate <= coverageEndDate,
+          scheduledSourceComplete:
+            prepared.scheduledSourceComplete &&
+            period.startDate >= coverageStartDate &&
+            period.endDate <= coverageEndDate,
+        }),
+      ];
+    }),
+  );
+}
+
+function groupByDate<T extends { date: string }>(items: readonly T[]): Map<string, T[]> {
+  const grouped = new Map<string, T[]>();
+  for (const item of items) {
+    const dateItems = grouped.get(item.date) ?? [];
+    dateItems.push(item);
+    grouped.set(item.date, dateItems);
+  }
+  return grouped;
+}
+
+function nextDate(date: string): string {
+  const instant = new Date(`${date}T00:00:00.000Z`);
+  instant.setUTCDate(instant.getUTCDate() + 1);
+  return instant.toISOString().slice(0, 10);
+}
+
+function prepareEffectivePlanSources(input: {
   asOfInstant: string;
   completedActivities: readonly CompletedActivitySource[];
   completedSourceComplete: boolean;
   endDate: string;
-  planningTimezone: string;
   scheduledEvents: readonly ScheduledPlanSource[];
   scheduledSourceComplete: boolean;
   startDate: string;
-}): EffectivePlanMetricSummary {
+  planningTimezone: string;
+}) {
   let invalidCompletedActivityCount = 0;
   const completedActivities = input.completedActivities.flatMap((activity) => {
     if (!activity.id) {
@@ -210,6 +363,9 @@ export function buildEffectivePlanMetricSummary(input: {
       },
     ];
   });
+  const completedActivityIds = new Set(
+    completedActivities.map((activity) => activity.completedActivityId),
+  );
   let invalidScheduledEventCount = 0;
   const scheduledItems = input.scheduledEvents.flatMap((event) => {
     if (!event.id || !event.scheduled_date) {
@@ -219,7 +375,23 @@ export function buildEffectivePlanMetricSummary(input: {
     const activityPlan = activityPlanLoadSourceSchema.safeParse(event.activity_plan);
     const activityPlanData = activityPlan.success ? activityPlan.data : null;
     const normalizedStatus = event.status?.trim().toLowerCase();
+    const isCancelled = normalizedStatus === "cancelled" || normalizedStatus === "canceled";
     const linkedCompletedActivityId = event.linked_activity_id?.trim() || null;
+    if (
+      !isCancelled &&
+      linkedCompletedActivityId &&
+      !completedActivityIds.has(linkedCompletedActivityId)
+    ) {
+      completedActivities.push({
+        completedActivityId: linkedCompletedActivityId,
+        completedDate: event.scheduled_date,
+        commonLoad: unavailableLoad({
+          asOfInstant: input.asOfInstant,
+          sport: activityPlanData?.activity_category,
+        }),
+      });
+      completedActivityIds.add(linkedCompletedActivityId);
+    }
     const completedWithoutEvidence =
       linkedCompletedActivityId === null &&
       (event.completed === true || normalizedStatus === "completed");
@@ -238,10 +410,7 @@ export function buildEffectivePlanMetricSummary(input: {
       {
         scheduledItemId: event.id,
         scheduledDate: event.scheduled_date,
-        status:
-          normalizedStatus === "cancelled" || normalizedStatus === "canceled"
-            ? ("cancelled" as const)
-            : ("active" as const),
+        status: isCancelled ? ("cancelled" as const) : ("active" as const),
         tentative: event.tentative === true,
         linkedCompletedActivityId,
         commonLoad: parsedLoad(
@@ -257,27 +426,55 @@ export function buildEffectivePlanMetricSummary(input: {
   const completedSourceComplete =
     input.completedSourceComplete && invalidCompletedActivityCount === 0;
   const scheduledSourceComplete = input.scheduledSourceComplete && invalidScheduledEventCount === 0;
-  const result = composeEffectivePlanLoad({
-    scheduledItems,
-    completedActivities,
-    scheduledSource: scheduledSourceComplete
-      ? { status: "complete", startDate: input.startDate, endDate: input.endDate }
-      : {
-          status: "incomplete",
-          reason: "fetch_partial",
-          startDate: input.startDate,
-          endDate: input.endDate,
-        },
-    completedSource: completedSourceComplete
-      ? { status: "complete", startDate: input.startDate, endDate: input.endDate }
-      : {
-          status: "incomplete",
-          reason: "fetch_partial",
-          startDate: input.startDate,
-          endDate: input.endDate,
-        },
-    planningTimezone: input.planningTimezone,
-    asOfInstant: input.asOfInstant,
-  });
-  return summarize(result, scheduledSourceComplete && completedSourceComplete);
+  return {
+    completedSourceComplete,
+    scheduledSourceComplete,
+    sources: {
+      scheduledItems,
+      completedActivities,
+      scheduledSource: scheduledSourceComplete
+        ? ({ status: "complete", startDate: input.startDate, endDate: input.endDate } as const)
+        : ({
+            status: "incomplete",
+            reason: "fetch_partial",
+            startDate: input.startDate,
+            endDate: input.endDate,
+          } as const),
+      completedSource: completedSourceComplete
+        ? ({ status: "complete", startDate: input.startDate, endDate: input.endDate } as const)
+        : ({
+            status: "incomplete",
+            reason: "fetch_partial",
+            startDate: input.startDate,
+            endDate: input.endDate,
+          } as const),
+    },
+  };
+}
+
+export function buildEffectivePlanMetricSummary(input: {
+  asOfInstant: string;
+  completedActivities: readonly CompletedActivitySource[];
+  completedSourceComplete: boolean;
+  endDate: string;
+  planningTimezone: string;
+  scheduledEvents: readonly ScheduledPlanSource[];
+  scheduledSourceComplete: boolean;
+  startDate: string;
+}): EffectivePlanMetricSummary {
+  return (
+    buildEffectivePlanMetricSummaries({
+      ...input,
+      periods: [{ key: "summary", startDate: input.startDate, endDate: input.endDate }],
+    }).get("summary") ?? {
+      status: "unavailable",
+      load: null,
+      intensity: null,
+      completedLoad: null,
+      remainingLoad: null,
+      tentativeLoad: null,
+      hasUnavailableCompletedLoad: false,
+      reason: "common_load_unavailable",
+    }
+  );
 }

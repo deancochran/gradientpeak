@@ -8,27 +8,10 @@ export type DailyTrainingAdjustmentTrayProps = {
   testID?: string;
 };
 
-function valueOrZero(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
-function formatSignedTss(value: number) {
-  const rounded = Math.round(value);
-  if (rounded === 0) return "On target";
-  return `${rounded > 0 ? "+" : ""}${rounded} TSS`;
-}
-
 export function DailyTrainingAdjustmentTray({
   point,
   testID = "daily-training-adjustment-tray",
 }: DailyTrainingAdjustmentTrayProps) {
-  const hasTarget =
-    point.hasTargetLoad !== false &&
-    typeof point.targetLoadTss === "number" &&
-    Number.isFinite(point.targetLoadTss);
-  const target = hasTarget ? valueOrZero(point.targetLoadTss) : null;
-  const actual = valueOrZero(point.actualOrScheduledLoadTss);
-  const delta = hasTarget ? valueOrZero(point.loadDeltaTss ?? actual - (target ?? 0)) : null;
   const loadMetrics = buildTrainingPathLoadMetrics(point);
 
   return (
@@ -38,9 +21,6 @@ export function DailyTrainingAdjustmentTray({
           <Text className="text-sm font-semibold text-foreground">{point.date}</Text>
           <Text className="text-xs text-muted-foreground">Daily adjustment</Text>
         </View>
-        {delta == null ? null : (
-          <Text className="text-sm font-semibold text-foreground">{formatSignedTss(delta)}</Text>
-        )}
       </View>
       <View className="flex-row flex-wrap items-center gap-x-4 gap-y-1">
         {loadMetrics.map((metric) => (

@@ -151,14 +151,22 @@ describe("DailyTrainingAdjustmentChart", () => {
       <DailyTrainingAdjustmentChart
         selectedDate="2026-06-02"
         points={[
-          { date: "2026-06-01", targetLoadTss: 40, actualOrScheduledLoadTss: 35 },
-          { date: "2026-06-02", targetLoadTss: 50, actualOrScheduledLoadTss: 65 },
+          { date: "2026-06-01", effectiveLoadStatus: "complete", effectiveLoad: 35 },
+          {
+            date: "2026-06-02",
+            effectiveLoadStatus: "complete",
+            effectiveLoad: 65,
+            effectiveIntensity: 0.9,
+          },
         ]}
       />,
     );
 
     expect(screen.getByText("2026-06-02")).toBeTruthy();
-    expect(screen.getByText("+15 TSS")).toBeTruthy();
+    expect(screen.getByText("65")).toBeTruthy();
+    expect(screen.getByText("Hard · 0.90")).toBeTruthy();
+    expect(screen.queryByText(/TSS/)).toBeNull();
+    expect(screen.queryByText("Target")).toBeNull();
   });
 
   it("omits recommendation and target-comparison copy when target load is unavailable", () => {
@@ -185,9 +193,14 @@ describe("DailyTrainingAdjustmentChart", () => {
     render(
       <DailyTrainingAdjustmentChart
         points={[
-          { date: "2026-06-01", targetLoadTss: 40 },
-          { date: "2026-06-02", targetLoadTss: 50 },
-          { date: "2026-06-03", targetLoadTss: 60 },
+          { date: "2026-06-01", effectiveLoadStatus: "complete", effectiveLoad: 40 },
+          {
+            date: "2026-06-02",
+            effectiveLoadStatus: "complete",
+            effectiveLoad: 50,
+            effectiveIntensity: 0.75,
+          },
+          { date: "2026-06-03", effectiveLoadStatus: "complete", effectiveLoad: 60 },
         ]}
         selectedDate="2026-06-03"
       />,
@@ -264,9 +277,14 @@ describe("DailyTrainingAdjustmentChart", () => {
       <DailyTrainingAdjustmentChart
         onSelectedDateChange={onSelectedDateChange}
         points={[
-          { date: "2026-06-01", targetLoadTss: 40 },
-          { date: "2026-06-02", targetLoadTss: 50 },
-          { date: "2026-06-03", targetLoadTss: 60 },
+          { date: "2026-06-01", effectiveLoadStatus: "complete", effectiveLoad: 40 },
+          {
+            date: "2026-06-02",
+            effectiveLoadStatus: "complete",
+            effectiveLoad: 50,
+            effectiveIntensity: 0.75,
+          },
+          { date: "2026-06-03", effectiveLoadStatus: "complete", effectiveLoad: 60 },
         ]}
       />,
     );
@@ -421,9 +439,14 @@ describe("DailyTrainingAdjustmentChart", () => {
       <DailyTrainingAdjustmentChart
         onSelectedDateChange={onSelectedDateChange}
         points={[
-          { date: "2026-06-01", targetLoadTss: 40 },
-          { date: "2026-06-02", targetLoadTss: 50 },
-          { date: "2026-06-03", targetLoadTss: 60 },
+          { date: "2026-06-01", effectiveLoadStatus: "complete", effectiveLoad: 40 },
+          {
+            date: "2026-06-02",
+            effectiveLoadStatus: "complete",
+            effectiveLoad: 50,
+            effectiveIntensity: 0.75,
+          },
+          { date: "2026-06-03", effectiveLoadStatus: "complete", effectiveLoad: 60 },
         ]}
         selectedDate="2026-06-02"
       />,
@@ -432,7 +455,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     const adjustable = screen.getByLabelText("Daily training adjustment chart");
     expect(adjustable.props.accessibilityRole).toBe("adjustable");
     expect(adjustable.props.accessibilityValue).toEqual({
-      text: "Selected date 2026-06-02. Target load 50 TSS",
+      text: "Selected date 2026-06-02. Load 50. Intensity 0.75",
     });
     expect(adjustable.props.accessibilityHint).toBe("Adjust to select the next or previous date");
 
@@ -450,9 +473,12 @@ describe("DailyTrainingAdjustmentChart", () => {
           {
             date: "2026-06-02",
             hasCompletedActivityWithoutLoad: true,
-            plannedLoadTss: 40,
-            tentativePlannedLoadTss: 5,
-            targetLoadTss: 50,
+            effectiveLoadStatus: "partial",
+            effectiveLoad: 40,
+            effectiveIntensity: 0.7,
+            effectiveCompletedLoad: 15,
+            effectiveRemainingLoad: 25,
+            effectiveTentativeLoad: 5,
             fitnessCtl: 31.4,
             scheduledFitnessCtl: 33.2,
             targetFitnessCtl: 35.1,
@@ -467,10 +493,12 @@ describe("DailyTrainingAdjustmentChart", () => {
     ).toEqual({
       text: [
         "Selected date 2026-06-02",
+        "Load 40 incomplete",
+        "Intensity 0.70 incomplete",
+        "Completed load 15",
         "Completed activity, load unavailable",
-        "Planned load 40 TSS",
-        "Tentative planned load 5 TSS",
-        "Target load 50 TSS",
+        "Remaining load 25",
+        "Tentative load 5",
         "Actual fitness 31",
         "Projected fitness 33",
         "Target fitness 35",

@@ -85,10 +85,6 @@ type PlanWithCardMetadata = NonNullable<CalendarEvent["activity_plan"]> & {
   updated_at?: string | null;
 };
 
-function formatLoad(value: number) {
-  return `${Math.round(value)} TSS`;
-}
-
 function formatFullDateLabel(dateKey: string | null) {
   if (!dateKey) return "Selected day";
   const date = new Date(`${dateKey}T12:00:00.000Z`);
@@ -141,8 +137,8 @@ function ScheduledRecordPlanCard({
         commonLoad={activity.commonLoad}
         description={activity.description || activity.notes || null}
         estimatedDuration={activity.estimatedDuration}
-        estimatedTss={activity.estimatedTss}
-        intensityFactor={activity.intensityFactor}
+        estimatedTss={undefined}
+        intensityFactor={undefined}
         owner={activity.owner}
         presentation={presentation}
         routeName={activity.routeName}
@@ -159,8 +155,8 @@ function ScheduledRecordPlanCard({
         plan={{
           authoritative_metrics: {
             estimated_duration: activity.estimatedDuration,
-            estimated_tss: activity.estimatedTss,
-            intensity_factor: activity.intensityFactor,
+            estimated_tss: null,
+            intensity_factor: null,
             estimated_distance: activity.estimatedDistance,
           },
           route: {
@@ -328,13 +324,12 @@ export function TrainingPathWeekSummaryCard({
     effectiveIntensity: summary.effectiveIntensity,
     effectiveCompletedLoad: summary.effectiveCompletedLoad,
     effectiveRemainingLoad: summary.effectiveRemainingLoad,
+    effectiveTentativeLoad: summary.effectiveTentativeLoad,
     hasCompletedActivityWithoutLoad: summary.completedLoadUnavailable,
-    hasTargetLoad: summary.targetLoad !== null,
-    targetLoadTss: summary.targetLoad,
   });
 
   return (
-    <TrainingPathWeekReviewShell body={summary.body} dateLabel={summary.dateLabel}>
+    <TrainingPathWeekReviewShell dateLabel={summary.dateLabel}>
       {metrics.length > 0 ? (
         <View className="flex-row flex-wrap items-center gap-x-4 gap-y-1.5">
           {metrics.map((metric) => (
@@ -404,11 +399,7 @@ export function TrainingPathWeekSummaryCard({
                 <Text className="flex-1 text-xs font-medium text-foreground" numberOfLines={1}>
                   {item.title}
                 </Text>
-                <Text className="text-xs text-muted-foreground">
-                  {typeof item.estimatedLoad === "number"
-                    ? formatLoad(item.estimatedLoad)
-                    : item.date}
-                </Text>
+                <Text className="text-xs text-muted-foreground">{item.date}</Text>
               </View>
             );
           })}
@@ -482,9 +473,7 @@ export function TrainingPathWeekSummaryCard({
                 <Text className="flex-1 text-xs font-medium text-foreground" numberOfLines={1}>
                   {activity.title}
                 </Text>
-                <Text className="text-xs text-muted-foreground">
-                  {typeof activity.load === "number" ? formatLoad(activity.load) : activity.date}
-                </Text>
+                <Text className="text-xs text-muted-foreground">{activity.date}</Text>
               </View>
             ),
           )}
@@ -584,11 +573,7 @@ export function TrainingPathSelectedDaySummaryCard({
                 <Text className="flex-1 text-xs font-medium text-foreground" numberOfLines={1}>
                   {item.title}
                 </Text>
-                <Text className="text-xs text-muted-foreground">
-                  {typeof item.estimatedLoad === "number"
-                    ? formatLoad(item.estimatedLoad)
-                    : item.date}
-                </Text>
+                <Text className="text-xs text-muted-foreground">{item.date}</Text>
               </View>
             );
           })}
@@ -653,9 +638,7 @@ export function TrainingPathSelectedDaySummaryCard({
                 <Text className="flex-1 text-xs font-medium text-foreground" numberOfLines={1}>
                   {activity.title}
                 </Text>
-                <Text className="text-xs text-muted-foreground">
-                  {typeof activity.load === "number" ? formatLoad(activity.load) : activity.date}
-                </Text>
+                <Text className="text-xs text-muted-foreground">{activity.date}</Text>
               </View>
             ),
           )}

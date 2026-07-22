@@ -17,7 +17,7 @@ import { useProfileSettings } from "@/lib/hooks/useProfileSettings";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { refreshPlanTabData } from "@/lib/scheduling/refreshScheduleViews";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { buildEffectivePlanMetricSummary } from "@/lib/training-path/effectivePlanLoad";
+import { buildEffectivePlanMetricSummaries } from "@/lib/training-path/effectivePlanLoad";
 import {
   buildDailyTrainingAdjustmentPointsFromTimelineWindow,
   buildEffectiveCompletedObservationsByDate,
@@ -770,74 +770,103 @@ export function usePlanTrainingPathData() {
     !selectedGroupActivityPlansQuery.isError &&
     !selectedGroupActivityPlansQuery.isLoading &&
     !selectedGroupActivityPlansQuery.isPlaceholderData;
-  const effectiveSelectedDaySummary = useMemo(() => {
-    const date = selectedDate ?? todayKey;
-    if (!date || !planningTimezone) return null;
-    return buildEffectivePlanMetricSummary({
-      asOfInstant: effectiveAsOfInstant,
+  const effectiveMetricPeriods = useMemo(
+    () => [
+      ...dailyTrainingPathPoints.map((point) => ({
+        key: `day:${point.date}`,
+        startDate: point.date,
+        endDate: point.date,
+      })),
+      ...(trainingPath.weeks ?? []).map((week) => ({
+        key: `week:${week.weekStart}`,
+        startDate: week.weekStart,
+        endDate: week.weekEnd,
+      })),
+      ...(trainingPath.selectedWeekSummary &&
+      !(trainingPath.weeks ?? []).some(
+        (week) => week.weekStart === trainingPath.selectedWeekSummary?.weekStart,
+      )
+        ? [
+            {
+              key: `week:${trainingPath.selectedWeekSummary.weekStart}`,
+              startDate: trainingPath.selectedWeekSummary.weekStart,
+              endDate: trainingPath.selectedWeekSummary.weekEnd,
+            },
+          ]
+        : []),
+    ],
+    [dailyTrainingPathPoints, trainingPath.selectedWeekSummary, trainingPath.weeks],
+  );
+  const effectiveMetricSummaries = useMemo(
+    () =>
+      planningTimezone
+        ? buildEffectivePlanMetricSummaries({
+            asOfInstant: effectiveAsOfInstant,
+            completedActivities,
+            completedSourceComplete,
+            coverageEndDate: dataWindowEnd,
+            coverageStartDate: dataWindowStart,
+            periods: effectiveMetricPeriods,
+            planningTimezone,
+            scheduledEvents: effectiveScheduledEvents,
+            scheduledSourceComplete,
+          })
+        : new Map(),
+    [
       completedActivities,
       completedSourceComplete,
-      endDate: date,
+      dataWindowEnd,
+      dataWindowStart,
+      effectiveAsOfInstant,
+      effectiveMetricPeriods,
+      effectiveScheduledEvents,
       planningTimezone,
-      scheduledEvents: effectiveScheduledEvents,
       scheduledSourceComplete,
-      startDate: date,
-    });
-  }, [
-    completedActivities,
-    completedSourceComplete,
-    effectiveAsOfInstant,
-    effectiveScheduledEvents,
-    planningTimezone,
-    scheduledSourceComplete,
-    selectedDate,
-    todayKey,
-  ]);
-  const effectiveSelectedWeekSummary = useMemo(() => {
-    if (!selectedWeekRangeStart || !selectedWeekRangeEnd || !planningTimezone) return null;
-    return buildEffectivePlanMetricSummary({
-      asOfInstant: effectiveAsOfInstant,
-      completedActivities,
-      completedSourceComplete,
-      endDate: selectedWeekRangeEnd,
-      planningTimezone,
-      scheduledEvents: effectiveScheduledEvents,
-      scheduledSourceComplete,
-      startDate: selectedWeekRangeStart,
-    });
-  }, [
-    completedActivities,
-    completedSourceComplete,
-    effectiveAsOfInstant,
-    effectiveScheduledEvents,
-    planningTimezone,
-    scheduledSourceComplete,
-    selectedWeekRangeEnd,
-    selectedWeekRangeStart,
-  ]);
+    ],
+  );
+  const effectiveSelectedWeekSummary = selectedWeekRangeStart
+    ? (effectiveMetricSummaries.get(`week:${selectedWeekRangeStart}`) ?? null)
+    : null;
   const effectiveDailyTrainingPathPoints = useMemo(() => {
-    const effectiveDate = selectedDate ?? todayKey;
-    if (!effectiveSelectedDaySummary || !effectiveDate) return dailyTrainingPathPoints;
-    return dailyTrainingPathPoints.map((point) =>
-      point.date === effectiveDate
-        ? {
-            ...point,
-            effectiveLoadStatus: effectiveSelectedDaySummary.status,
-            effectiveLoad: effectiveSelectedDaySummary.load,
-            effectiveIntensity: effectiveSelectedDaySummary.intensity,
-            effectiveCompletedLoad: effectiveSelectedDaySummary.completedLoad,
-            effectiveRemainingLoad: effectiveSelectedDaySummary.remainingLoad,
-            hasCompletedActivityWithoutLoad:
-              effectiveSelectedDaySummary.hasUnavailableCompletedLoad ||
-              point.hasCompletedActivityWithoutLoad,
-          }
-        : point,
-    );
-  }, [dailyTrainingPathPoints, effectiveSelectedDaySummary, selectedDate, todayKey]);
+    return dailyTrainingPathPoints.map((point) => {
+      const summary = effectiveMetricSummaries.get(`day:${point.date}`);
+      if (!summary) return point;
+      return {
+        ...point,
+        effectiveLoadStatus: summary.status,
+        effectiveLoad: summary.load,
+        effectiveIntensity: summary.intensity,
+        effectiveCompletedLoad: summary.completedLoad,
+        effectiveRemainingLoad: summary.remainingLoad,
+        effectiveTentativeLoad: summary.tentativeLoad,
+        hasCompletedActivityWithoutLoad:
+          summary.hasUnavailableCompletedLoad || point.hasCompletedActivityWithoutLoad,
+      };
+    });
+  }, [dailyTrainingPathPoints, effectiveMetricSummaries]);
   const effectiveTrainingPath = useMemo(() => {
-    if (!effectiveSelectedWeekSummary || !trainingPath.selectedWeekSummary) return trainingPath;
+    const weeks = (trainingPath.weeks ?? []).map((week) => {
+      const summary = effectiveMetricSummaries.get(`week:${week.weekStart}`);
+      return summary
+        ? {
+            ...week,
+            effectiveLoadStatus: summary.status,
+            effectiveLoad: summary.load,
+            effectiveIntensity: summary.intensity,
+            effectiveCompletedLoad: summary.completedLoad,
+            effectiveRemainingLoad: summary.remainingLoad,
+            effectiveTentativeLoad: summary.tentativeLoad,
+            completedLoadUnavailable:
+              summary.hasUnavailableCompletedLoad || week.completedLoadUnavailable,
+          }
+        : week;
+    });
+    if (!effectiveSelectedWeekSummary || !trainingPath.selectedWeekSummary) {
+      return { ...trainingPath, weeks };
+    }
     return {
       ...trainingPath,
+      weeks,
       selectedWeekSummary: {
         ...trainingPath.selectedWeekSummary,
         effectiveLoadStatus: effectiveSelectedWeekSummary.status,
@@ -845,12 +874,13 @@ export function usePlanTrainingPathData() {
         effectiveIntensity: effectiveSelectedWeekSummary.intensity,
         effectiveCompletedLoad: effectiveSelectedWeekSummary.completedLoad,
         effectiveRemainingLoad: effectiveSelectedWeekSummary.remainingLoad,
+        effectiveTentativeLoad: effectiveSelectedWeekSummary.tentativeLoad,
         completedLoadUnavailable:
           effectiveSelectedWeekSummary.hasUnavailableCompletedLoad ||
           trainingPath.selectedWeekSummary.completedLoadUnavailable,
       },
     };
-  }, [effectiveSelectedWeekSummary, trainingPath]);
+  }, [effectiveMetricSummaries, effectiveSelectedWeekSummary, trainingPath]);
   const activityOwner = useMemo<ActivityOwner | null>(
     () =>
       user?.id

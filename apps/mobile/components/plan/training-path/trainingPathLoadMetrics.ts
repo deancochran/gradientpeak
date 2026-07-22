@@ -8,6 +8,7 @@ type TrainingPathLoadMetricPoint = {
   effectiveIntensity?: number | null;
   effectiveCompletedLoad?: number | null;
   effectiveRemainingLoad?: number | null;
+  effectiveTentativeLoad?: number | null;
   plannedLoadTss?: number | null;
   targetLoadTss?: number | null;
   tentativePlannedLoadTss?: number | null;
@@ -24,21 +25,13 @@ export type TrainingPathLoadMetric = {
   value: string;
 };
 
-function finiteValue(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
-function formatTss(value: number) {
-  return `${Math.round(value)} TSS`;
-}
-
 function formatLoad(value: number) {
   return String(Math.round(value));
 }
 
 export function buildTrainingPathLoadMetrics(
   point: TrainingPathLoadMetricPoint | null | undefined,
-  options: { includeCompleted?: boolean } = {},
+  _options: { includeCompleted?: boolean } = {},
 ): TrainingPathLoadMetric[] {
   const metrics: TrainingPathLoadMetric[] = [];
   if (point?.effectiveLoadStatus) {
@@ -60,14 +53,6 @@ export function buildTrainingPathLoadMetrics(
             : `${formatIntensity(point.effectiveIntensity)}${incomplete ? " incomplete" : ""}`,
     });
   }
-  if (
-    !point?.effectiveLoadStatus &&
-    point?.hasTargetLoad !== false &&
-    typeof point?.targetLoadTss === "number" &&
-    Number.isFinite(point.targetLoadTss)
-  ) {
-    metrics.push({ label: "Target", value: formatTss(point.targetLoadTss) });
-  }
   if (point?.effectiveLoadStatus) {
     if (
       point.effectiveCompletedLoad != null ||
@@ -85,31 +70,10 @@ export function buildTrainingPathLoadMetrics(
     if (point.effectiveRemainingLoad != null) {
       metrics.push({ label: "Remaining", value: formatLoad(point.effectiveRemainingLoad) });
     }
+    if (point.effectiveTentativeLoad != null) {
+      metrics.push({ label: "Tentative", value: formatLoad(point.effectiveTentativeLoad) });
+    }
     return metrics;
   }
-  metrics.push({ label: "Planned", value: formatTss(finiteValue(point?.plannedLoadTss)) });
-  const tentative = finiteValue(point?.tentativePlannedLoadTss);
-  if (tentative > 0) metrics.push({ label: "Tentative", value: formatTss(tentative) });
-
-  if (options.includeCompleted !== false) {
-    const completed = finiteValue(point?.completedLoadTss);
-    if (
-      completed > 0 ||
-      point?.hasCompletedActivityWithoutLoad ||
-      point?.completedLoadUnavailable
-    ) {
-      metrics.push({
-        label: "Completed",
-        value: point?.completedLoadUnavailable
-          ? "Unavailable"
-          : point?.hasCompletedActivityWithoutLoad
-            ? completed > 0
-              ? `${formatTss(completed)} + unavailable`
-              : "Unavailable"
-            : formatTss(completed),
-      });
-    }
-  }
-
   return metrics;
 }

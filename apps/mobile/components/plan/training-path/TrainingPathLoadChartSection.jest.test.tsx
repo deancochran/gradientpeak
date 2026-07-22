@@ -29,7 +29,9 @@ jest.mock("@/components/shared/AppFormModal", () => {
 describe("TrainingPathLoadChartSection", () => {
   it("keeps an existing chart mounted while a wider date range loads", () => {
     const props = {
-      dailyPoints: [{ date: "2026-06-02", targetLoadTss: 50 }],
+      dailyPoints: [
+        { date: "2026-06-02", effectiveLoadStatus: "complete" as const, effectiveLoad: 50 },
+      ],
     };
     const { rerender } = render(<TrainingPathLoadChartSection {...props} />);
 
@@ -71,15 +73,16 @@ describe("TrainingPathLoadChartSection", () => {
   it("keeps the primary legend visible and exposes 44-point chart controls", () => {
     render(
       <TrainingPathLoadChartSection
-        dailyPoints={[{ date: "2026-06-02", targetLoadTss: 50 }]}
+        dailyPoints={[{ date: "2026-06-02", effectiveLoadStatus: "complete", effectiveLoad: 50 }]}
         onOpenSettings={jest.fn()}
       />,
     );
 
     expect(screen.getByTestId("training-path-primary-legend")).toBeTruthy();
+    expect(screen.getByText("Load")).toBeTruthy();
     expect(screen.getByText("Completed")).toBeTruthy();
-    expect(screen.getByText("Planned")).toBeTruthy();
-    expect(screen.getByText("Target")).toBeTruthy();
+    expect(screen.getByText("Tentative")).toBeTruthy();
+    expect(screen.queryByText("Target")).toBeNull();
     expect(screen.queryByText("Completed, load unavailable")).toBeNull();
     expect(screen.queryByText("Actual fitness")).toBeNull();
 
@@ -106,7 +109,8 @@ describe("TrainingPathLoadChartSection", () => {
         dailyPoints={[
           {
             date: "2026-06-02",
-            targetLoadTss: 50,
+            effectiveLoadStatus: "unavailable",
+            effectiveLoad: null,
             hasCompletedActivityWithoutLoad: true,
           },
         ]}

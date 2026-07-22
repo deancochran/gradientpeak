@@ -140,6 +140,12 @@ const model: TrainingPathViewModel = {
       plannedLoad: 40,
       tentativePlannedLoad: 0,
       targetLoad: 80,
+      effectiveLoadStatus: "complete",
+      effectiveLoad: 60,
+      effectiveIntensity: 0.8,
+      effectiveCompletedLoad: 20,
+      effectiveRemainingLoad: 40,
+      effectiveTentativeLoad: null,
       fitness: 40,
       scheduledFitness: 42,
       targetFitness: 45,
@@ -157,6 +163,12 @@ const model: TrainingPathViewModel = {
       plannedLoad: 60,
       tentativePlannedLoad: 20,
       targetLoad: 90,
+      effectiveLoadStatus: "complete",
+      effectiveLoad: 60,
+      effectiveIntensity: 0.7,
+      effectiveCompletedLoad: null,
+      effectiveRemainingLoad: 60,
+      effectiveTentativeLoad: 20,
       fitness: null,
       scheduledFitness: 44,
       targetFitness: 46,
@@ -214,7 +226,10 @@ describe("TrainingPathChart interactions", () => {
 
     const adjustable = screen.getByLabelText("Weekly training path chart");
     expect(adjustable.props.accessibilityRole).toBe("adjustable");
-    expect(adjustable.props.accessibilityValue.text).toContain("Completed load 20 TSS");
+    expect(adjustable.props.accessibilityValue.text).toContain("Load 60");
+    expect(adjustable.props.accessibilityValue.text).toContain("Intensity 0.80");
+    expect(adjustable.props.accessibilityValue.text).not.toContain("TSS");
+    expect(adjustable.props.accessibilityValue.text).not.toContain("Target load");
     expect(adjustable.props.accessibilityValue.text).toContain("Projected fitness 42");
 
     fireEvent(adjustable, "accessibilityAction", {
@@ -268,7 +283,7 @@ describe("TrainingPathChart interactions", () => {
     expect(scrollView.props.disableIntervalMomentum).toBe(false);
     expect(scrollView.props.snapToInterval).toBeUndefined();
     expect(renderedLines).toHaveLength(2);
-    expect(renderedRects).toHaveLength(2);
+    expect(renderedRects).toHaveLength(0);
   });
 
   it("renders tentative load as borderless dotted fill", () => {
@@ -313,7 +328,7 @@ describe("TrainingPathChart interactions", () => {
     expect(screen.getByText("Actual fitness")).toBeTruthy();
     expect(screen.getByText("Projected fitness")).toBeTruthy();
     expect(screen.getByText("Target fitness")).toBeTruthy();
-    expect(screen.getByText("Target")).toBeTruthy();
+    expect(screen.queryByText("Target")).toBeNull();
     expect(screen.getByText("Completed, load unavailable")).toBeTruthy();
     expect(screen.getByText("✓")).toBeTruthy();
     expect(legendDottedSwatch?.props.style).toEqual(
@@ -321,7 +336,7 @@ describe("TrainingPathChart interactions", () => {
     );
   });
 
-  it("renders planned and recommended bars independently when completed load is absent", () => {
+  it("renders canonical Load without a legacy target bar", () => {
     const sparseModel: TrainingPathViewModel = {
       ...model,
       weeks: [
@@ -330,6 +345,7 @@ describe("TrainingPathChart interactions", () => {
           completedLoad: null,
           plannedLoad: 40,
           targetLoad: 80,
+          effectiveLoad: 40,
           isSelected: true,
         },
       ],
@@ -345,10 +361,12 @@ describe("TrainingPathChart interactions", () => {
     );
 
     const renderedRects = getHostNodes("SkiaRect");
-    expect(renderedRects.length).toBeGreaterThanOrEqual(2);
+    const chart = getHostNode("CartesianChart");
+    expect(renderedRects).toHaveLength(2);
+    expect(chart.props.data[0]).toEqual(expect.objectContaining({ completedLoad: 20 }));
   });
 
-  it("renders sparse two-week planned bars without completed load anchors", () => {
+  it("renders sparse two-week common Load bars without completed load anchors", () => {
     const sparseModel: TrainingPathViewModel = {
       ...model,
       weeks: model.weeks.map((week) => ({
@@ -370,14 +388,14 @@ describe("TrainingPathChart interactions", () => {
     );
 
     const renderedRects = getHostNodes("SkiaRect");
-    expect(renderedRects.length).toBeGreaterThanOrEqual(4);
+    expect(renderedRects.length).toBeGreaterThanOrEqual(2);
     const loadBarWidths = renderedRects
       .map((rect: ReactTestInstance) => rect.props.width)
       .filter((width: unknown): width is number => typeof width === "number" && width > 0);
-    expect(loadBarWidths).toEqual(expect.arrayContaining([28, 28, 28, 28]));
+    expect(loadBarWidths).toEqual(expect.arrayContaining([28, 28]));
   });
 
-  it("expands the load domain to fit recommended load bars", () => {
+  it("expands the load domain to fit common Load bars", () => {
     const highTargetModel: TrainingPathViewModel = {
       ...model,
       domains: { ...model.domains, load: [0, 100] },
@@ -387,6 +405,7 @@ describe("TrainingPathChart interactions", () => {
           completedLoad: 20,
           plannedLoad: 40,
           targetLoad: 240,
+          effectiveLoad: 240,
         },
       ],
     };

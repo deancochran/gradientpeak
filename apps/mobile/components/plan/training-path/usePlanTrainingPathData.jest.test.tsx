@@ -475,7 +475,13 @@ describe("usePlanTrainingPathData", () => {
             items: [
               {
                 id: "activity-1",
-                started_at: "2026-04-06T16:00:00.000Z",
+                started_at: "2026-04-07T16:00:00.000Z",
+                activity_type: "bike",
+                derived: { stress: { common_load: mockCommonLoad } },
+              },
+              {
+                id: "activity-2",
+                started_at: "2026-04-07T18:00:00.000Z",
                 activity_type: "bike",
                 derived: { stress: { common_load: mockCommonLoad } },
               },
@@ -491,6 +497,12 @@ describe("usePlanTrainingPathData", () => {
         recommended_load_tss: 70,
         scheduled_load_tss: 100,
       },
+      {
+        date: "2026-04-07",
+        completed_load_tss: 0,
+        recommended_load_tss: 70,
+        scheduled_load_tss: 0,
+      },
     ]);
 
     const { result } = renderHook(() => usePlanTrainingPathData());
@@ -504,13 +516,21 @@ describe("usePlanTrainingPathData", () => {
         effectiveCompletedLoad: 50,
         effectiveRemainingLoad: null,
       }),
-    ]);
-    expect(result.current.trainingPath.selectedWeekSummary).toEqual(
       expect.objectContaining({
+        date: "2026-04-07",
         effectiveLoadStatus: "complete",
         effectiveLoad: 50,
         effectiveIntensity: 1,
         effectiveCompletedLoad: 50,
+        effectiveRemainingLoad: null,
+      }),
+    ]);
+    expect(result.current.trainingPath.selectedWeekSummary).toEqual(
+      expect.objectContaining({
+        effectiveLoadStatus: "complete",
+        effectiveLoad: 100,
+        effectiveIntensity: 1,
+        effectiveCompletedLoad: 100,
         effectiveRemainingLoad: null,
       }),
     );

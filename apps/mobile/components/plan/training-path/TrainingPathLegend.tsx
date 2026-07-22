@@ -31,9 +31,9 @@ export function TrainingPathLegend({
     shape: "check",
   };
   const loadItems = [
+    { label: "Load", color: colors.planned, shape: "fill" },
     { label: "Completed", color: colors.completed, shape: "fill" },
-    { label: "Planned", color: colors.planned, shape: "fill" },
-    { label: "Target", color: colors.target, shape: "fill" },
+    { label: "Tentative", color: colors.target, shape: "fill" },
   ];
   const pathItems = [
     { label: "Actual fitness", color: colors.completed, shape: "line" },

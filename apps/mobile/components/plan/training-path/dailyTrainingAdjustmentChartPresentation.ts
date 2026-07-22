@@ -70,17 +70,20 @@ export function buildDailyTrainingAdjustmentAccessibilityValue(
 ) {
   if (!point) return "No date selected";
 
-  const completedLoad = formatMetric("Completed load", point.completedLoadTss, " TSS");
-  const plannedLoad = formatMetric("Planned load", point.plannedLoadTss, " TSS");
-  const tentativeLoad = formatMetric(
-    "Tentative planned load",
-    point.tentativePlannedLoadTss,
-    " TSS",
-  );
-  const targetLoad =
-    point.hasTargetLoad === false
-      ? "Target load unavailable"
-      : formatMetric("Target load", point.targetLoadTss, " TSS");
+  const incomplete = point.effectiveLoadStatus === "partial" ? " incomplete" : "";
+  const load =
+    point.effectiveLoadStatus === "unavailable" || point.effectiveLoad == null
+      ? "Load unavailable"
+      : `Load ${Math.round(point.effectiveLoad)}${incomplete}`;
+  const intensity =
+    point.effectiveLoadStatus === "known_zero"
+      ? "Intensity not applicable"
+      : point.effectiveIntensity == null
+        ? "Intensity unavailable"
+        : `Intensity ${point.effectiveIntensity.toFixed(2)}${incomplete}`;
+  const completedLoad = formatMetric("Completed load", point.effectiveCompletedLoad);
+  const remainingLoad = formatMetric("Remaining load", point.effectiveRemainingLoad);
+  const tentativeLoad = formatMetric("Tentative load", point.effectiveTentativeLoad);
   const actualFitness = formatMetric("Actual fitness", point.fitnessCtl);
   const projectedFitness = formatMetric("Projected fitness", point.scheduledFitnessCtl);
   const targetFitness = formatMetric("Target fitness", point.targetFitnessCtl);
@@ -90,11 +93,12 @@ export function buildDailyTrainingAdjustmentAccessibilityValue(
 
   return [
     `Selected date ${point.date}`,
+    load,
+    intensity,
     completedLoad,
     completedState,
-    plannedLoad,
+    remainingLoad,
     tentativeLoad,
-    targetLoad,
     actualFitness,
     projectedFitness,
     targetFitness,
@@ -131,14 +135,14 @@ export function useDailyTrainingAdjustmentChartPresentation({
   const chartData = useMemo<DailyTrainingAdjustmentChartDatum[]>(
     () =>
       points.map((point, index) => {
-        const planned = valueOrZero(point.plannedLoadTss);
-        const tentative = valueOrZero(point.tentativePlannedLoadTss);
+        const load = valueOrNull(point.effectiveLoad);
+        const tentative = valueOrNull(point.effectiveTentativeLoad);
         return {
           index,
-          completedLoad: valueOrNull(point.completedLoadTss),
-          plannedLoad: planned > 0 ? planned : null,
-          plannedLoadWithTentative: planned + tentative > 0 ? planned + tentative : null,
-          targetLoad: point.hasTargetLoad === false ? null : valueOrNull(point.targetLoadTss),
+          completedLoad: valueOrNull(point.effectiveCompletedLoad),
+          plannedLoad: load,
+          plannedLoadWithTentative: load !== null && tentative !== null ? load + tentative : load,
+          targetLoad: null,
           actualFitness: valueOrNull(point.fitnessCtl),
           projectedFitness: valueOrNull(point.scheduledFitnessCtl),
           recommendedFitness: valueOrNull(point.targetFitnessCtl),

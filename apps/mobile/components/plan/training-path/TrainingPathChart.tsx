@@ -520,13 +520,14 @@ export function TrainingPathChart({
     () =>
       model.weeks.map((week, index) => ({
         index,
-        completedLoad: week.completedLoad,
-        plannedLoad: week.plannedLoad,
+        completedLoad: week.effectiveCompletedLoad ?? null,
+        plannedLoad:
+          week.effectiveLoadStatus === "unavailable" ? null : (week.effectiveLoad ?? null),
         plannedLoadWithTentative:
-          typeof week.plannedLoad === "number" || typeof week.tentativePlannedLoad === "number"
-            ? (week.plannedLoad ?? 0) + (week.tentativePlannedLoad ?? 0)
+          week.effectiveLoadStatus !== "unavailable" && typeof week.effectiveLoad === "number"
+            ? week.effectiveLoad + (week.effectiveTentativeLoad ?? 0)
             : null,
-        targetLoad: week.targetLoad,
+        targetLoad: null,
         fitness: week.fitness,
         scheduledFitness: week.scheduledFitness,
         targetFitness: week.targetFitness,
@@ -723,10 +724,24 @@ export function TrainingPathChart({
   const accessibilityValue = accessibilityWeek
     ? [
         `Selected week ${accessibilityWeek.label}, ${accessibilityWeek.weekStart} to ${accessibilityWeek.weekEnd}`,
-        formatAccessibleMetric("Completed load", accessibilityWeek.completedLoad, " TSS"),
+        accessibilityWeek.effectiveLoadStatus === "unavailable"
+          ? "Load unavailable"
+          : `${formatAccessibleMetric("Load", accessibilityWeek.effectiveLoad ?? null)}${accessibilityWeek.effectiveLoadStatus === "partial" ? " incomplete" : ""}`,
+        accessibilityWeek.effectiveLoadStatus === "known_zero"
+          ? "Intensity not applicable"
+          : accessibilityWeek.effectiveIntensity == null
+            ? "Intensity unavailable"
+            : `Intensity ${accessibilityWeek.effectiveIntensity.toFixed(2)}${accessibilityWeek.effectiveLoadStatus === "partial" ? " incomplete" : ""}`,
+        accessibilityWeek.effectiveCompletedLoad == null
+          ? null
+          : formatAccessibleMetric("Completed load", accessibilityWeek.effectiveCompletedLoad),
         accessibilityWeek.completedLoadUnavailable ? "Completed activity load unavailable" : null,
-        formatAccessibleMetric("Planned load", accessibilityWeek.plannedLoad, " TSS"),
-        formatAccessibleMetric("Target load", accessibilityWeek.targetLoad, " TSS"),
+        accessibilityWeek.effectiveRemainingLoad == null
+          ? null
+          : formatAccessibleMetric("Remaining load", accessibilityWeek.effectiveRemainingLoad),
+        accessibilityWeek.effectiveTentativeLoad == null
+          ? null
+          : formatAccessibleMetric("Tentative load", accessibilityWeek.effectiveTentativeLoad),
         formatAccessibleMetric("Actual fitness", accessibilityWeek.fitness),
         formatAccessibleMetric("Projected fitness", accessibilityWeek.scheduledFitness),
         formatAccessibleMetric("Target fitness", accessibilityWeek.targetFitness),
@@ -1136,7 +1151,7 @@ export function TrainingPathChart({
   return (
     <View style={{ height }} onLayout={onChartLayout} testID="training-path-chart">
       <View className="flex-row items-center justify-between px-2 pb-1">
-        <Text className="text-[10px] font-medium text-muted-foreground">Load (TSS)</Text>
+        <Text className="text-[10px] font-medium text-muted-foreground">Load</Text>
         <Text className="text-[10px] font-medium text-muted-foreground">Fitness</Text>
       </View>
       {reviewWeeks && onSelectedWeekChange ? (

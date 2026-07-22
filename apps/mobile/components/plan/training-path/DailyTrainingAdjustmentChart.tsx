@@ -42,6 +42,7 @@ export type DailyTrainingAdjustmentPoint = {
   effectiveIntensity?: number | null;
   effectiveCompletedLoad?: number | null;
   effectiveRemainingLoad?: number | null;
+  effectiveTentativeLoad?: number | null;
   plannedLoadTss?: number | null;
   tentativePlannedLoadTss?: number | null;
   completedLoadTss?: number | null;
@@ -336,7 +337,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
     <View className="gap-3" testID={testID}>
       <View className="gap-2 rounded-2xl bg-card px-2 py-3">
         <View className="flex-row items-center justify-between px-1">
-          <Text className="text-[10px] font-medium text-muted-foreground">Load (TSS)</Text>
+          <Text className="text-[10px] font-medium text-muted-foreground">Load</Text>
           <Text className="text-[10px] font-medium text-muted-foreground">Fitness</Text>
         </View>
         <View style={{ height: chartAreaHeight }} onLayout={onChartLayout}>
