@@ -11,6 +11,7 @@ import {
   Zap,
 } from "lucide-react-native";
 import type React from "react";
+import { parseDateKey } from "@/lib/calendar/dateMath";
 import type { CompactInsightLayout } from "@/lib/insights/visualPolicy";
 import {
   getActivityInsightVisualPolicy,
@@ -89,23 +90,22 @@ type VolumeTrendInput =
 
 type LoadPoint = {
   date: string;
-  atl: number;
-  ctl: number;
-  tsb: number;
+  dailyLoad: number;
+  loadBalance: number;
+  longTermLoad: number;
+  recentLoad: number;
 };
 
 type TrainingLoadInput =
   | {
-      currentStatus?: {
-        atl: number;
-        ctl: number;
-        loadBalanceStatus: string;
-        tsb: number;
-      } | null;
-      dataPoints?: LoadPoint[];
+      status: "available";
+      data: { points: LoadPoint[] };
     }
-  | null
-  | undefined;
+  | {
+      status: "unavailable";
+      reason: string;
+    }
+  | { status: "loading" | "error" };
 
 type ConsistencyInput =
   | {
@@ -235,7 +235,8 @@ function formatDistance(meters: number) {
 }
 
 function formatDate(value: string | Date) {
-  return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const date = typeof value === "string" ? parseDateKey(value) : value;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function getDirection(current: number | null, previous: number | null): TrendDirection {
@@ -318,7 +319,7 @@ export function buildActivityInsights({
   const volumePoints = volume?.dataPoints ?? [];
   const currentVolume = volumePoints.at(-1)?.totalTime ?? null;
   const previousVolume = volumePoints.at(-2)?.totalTime ?? null;
-  const loadPoints = load?.dataPoints ?? [];
+  const loadPoints = load.status === "available" ? load.data.points : [];
   const latestLoad = loadPoints.at(-1) ?? null;
   const previousLoad = loadPoints.at(-2) ?? null;
   const performancePoints = (performance?.dataPoints ?? []).filter(
@@ -333,67 +334,93 @@ export function buildActivityInsights({
       (weeklyZones.zones.anaerobic ?? 0)
     : 0;
   const topPower = peakPower?.performances?.[0] ?? null;
+  const trainingLoadPolicy = getActivityInsightVisualPolicy("trainingLoad");
 
   return [
     {
       id: "training-load",
       title: "Training Load",
       category: "Training",
-      ...getActivityInsightVisualPolicy("trainingLoad"),
-      value: load?.currentStatus ? formatNumber(load.currentStatus.ctl, 1) : "--",
-      summary: load?.currentStatus
-        ? `${load.currentStatus.loadBalanceStatus} form`
-        : "Record activities to build load",
-      detail: "CTL, ATL, and TSB summarize accumulated training stress and recovery balance.",
-      direction: getDirection(latestLoad?.ctl ?? null, previousLoad?.ctl ?? null),
+      source: trainingLoadPolicy.source,
+      visualType: trainingLoadPolicy.visualType,
+      compactLayout: trainingLoadPolicy.compactLayout,
+      value: latestLoad ? formatNumber(latestLoad.dailyLoad, 1) : "--",
+      summary: latestLoad
+        ? `Daily Load through ${formatDate(latestLoad.date)}`
+        : load.status === "loading"
+          ? "Loading common load history"
+          : load.status === "unavailable" && load.reason === "missing_planning_timezone"
+            ? "Set a planning timezone to view load history"
+            : load.status === "unavailable"
+              ? "Common load history is unavailable"
+              : "Unable to load common load history",
+      detail: latestLoad
+        ? "Common load history uses completed activities and ends on the previous planning day."
+        : load.status === "unavailable" && load.reason === "insufficient_history"
+          ? "There is not yet enough complete history to calculate common load. No zero value is assumed."
+          : "Common load is shown only when complete history is available. No zero value is assumed.",
+      direction: getDirection(latestLoad?.dailyLoad ?? null, previousLoad?.dailyLoad ?? null),
       tone: "orange",
       icon: Flame,
-      points: loadPoints.slice(-60).map((point) => ({
+      points: loadPoints.map((point) => ({
         label: formatDate(point.date),
-        value: point.ctl,
-        date: new Date(point.date),
+        value: point.dailyLoad,
+        date: parseDateKey(point.date),
       })),
       series: [
         {
-          label: "CTL",
+          label: "Daily Load",
           tone: "orange",
-          points: loadPoints.slice(-60).map((point) => ({
+          points: loadPoints.map((point) => ({
             label: formatDate(point.date),
-            value: point.ctl,
-            date: new Date(point.date),
+            value: point.dailyLoad,
+            date: parseDateKey(point.date),
           })),
         },
         {
-          label: "ATL",
+          label: "Long-term Load",
           tone: "blue",
-          points: loadPoints.slice(-60).map((point) => ({
+          points: loadPoints.map((point) => ({
             label: formatDate(point.date),
-            value: point.atl,
-            date: new Date(point.date),
+            value: point.longTermLoad,
+            date: parseDateKey(point.date),
           })),
         },
         {
-          label: "TSB",
+          label: "Recent Load",
           tone: "green",
-          points: loadPoints.slice(-60).map((point) => ({
+          points: loadPoints.map((point) => ({
             label: formatDate(point.date),
-            value: point.tsb,
-            date: new Date(point.date),
+            value: point.recentLoad,
+            date: parseDateKey(point.date),
+          })),
+        },
+        {
+          label: "Load Balance",
+          tone: "purple",
+          points: loadPoints.map((point) => ({
+            label: formatDate(point.date),
+            value: point.loadBalance,
+            date: parseDateKey(point.date),
           })),
         },
       ],
       rows: [
         {
-          label: "CTL",
-          value: load?.currentStatus ? formatNumber(load.currentStatus.ctl, 1) : "--",
+          label: "Daily Load",
+          value: latestLoad ? formatNumber(latestLoad.dailyLoad, 1) : "--",
         },
         {
-          label: "ATL",
-          value: load?.currentStatus ? formatNumber(load.currentStatus.atl, 1) : "--",
+          label: "Long-term Load",
+          value: latestLoad ? formatNumber(latestLoad.longTermLoad, 1) : "--",
         },
         {
-          label: "TSB",
-          value: load?.currentStatus ? formatNumber(load.currentStatus.tsb, 1) : "--",
+          label: "Recent Load",
+          value: latestLoad ? formatNumber(latestLoad.recentLoad, 1) : "--",
+        },
+        {
+          label: "Load Balance",
+          value: latestLoad ? formatNumber(latestLoad.loadBalance, 1) : "--",
         },
       ],
     },

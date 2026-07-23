@@ -35,8 +35,13 @@ jest.mock("react-native-svg", () => ({
   Path: () => null,
 }));
 
-const { getTrendNativeVisualTokens, getTrendsLoadState, TREND_CUSTOM_RANGE_SNAP_POINTS } =
-  require("../trends");
+const {
+  getTrendNativeVisualTokens,
+  getTrendsLoadState,
+  hasResolvedCommonLoad,
+  refetchTrendsSources,
+  TREND_CUSTOM_RANGE_SNAP_POINTS,
+} = require("../trends");
 
 describe("getTrendNativeVisualTokens", () => {
   it.each(["light", "dark"] as const)("resolves %s native props from semantic tokens", (mode) => {
@@ -53,6 +58,33 @@ describe("getTrendNativeVisualTokens", () => {
 });
 
 describe("getTrendsLoadState", () => {
+  it("counts successful common-load abstention as resolved but not transport errors", () => {
+    expect(hasResolvedCommonLoad("available")).toBe(true);
+    expect(hasResolvedCommonLoad("unavailable")).toBe(true);
+    expect(hasResolvedCommonLoad("error")).toBe(false);
+    expect(hasResolvedCommonLoad("loading")).toBe(false);
+  });
+
+  it("keeps initial loading visible until any source, including common load, resolves", () => {
+    expect(
+      getTrendsLoadState({
+        hasError: false,
+        hasLoadedSource: false,
+        insightCount: 0,
+        isLoading: true,
+      }),
+    ).toEqual({ showInitialLoading: true, showFullError: false, showPartialError: false });
+
+    expect(
+      getTrendsLoadState({
+        hasError: false,
+        hasLoadedSource: true,
+        insightCount: 3,
+        isLoading: true,
+      }).showInitialLoading,
+    ).toBe(false);
+  });
+
   it("retains independent insight cards when another query fails", () => {
     expect(
       getTrendsLoadState({
@@ -73,6 +105,29 @@ describe("getTrendsLoadState", () => {
         isLoading: false,
       }).showFullError,
     ).toBe(true);
+  });
+});
+
+describe("trend source refresh", () => {
+  it("refetches common load history with every preserved trend source", async () => {
+    const sources = Object.fromEntries(
+      [
+        "commonLoad",
+        "consistency",
+        "peakPower",
+        "performance",
+        "profileMetrics",
+        "volume",
+        "zones",
+      ].map((name) => [name, { refetch: jest.fn(async () => name) }]),
+    );
+
+    await refetchTrendsSources(sources);
+
+    expect(sources.commonLoad.refetch).toHaveBeenCalledTimes(1);
+    expect(Object.values(sources).every(({ refetch }) => refetch.mock.calls.length === 1)).toBe(
+      true,
+    );
   });
 });
 

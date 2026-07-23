@@ -16,6 +16,7 @@ import Svg, { Circle, Line, Path } from "react-native-svg";
 import { CompactInsightCard } from "@/components/shared";
 import { AppBottomSheet } from "@/components/shared/AppBottomSheet";
 import { api } from "@/lib/api";
+import { useCommonLoadHistory } from "@/lib/hooks/useCommonLoadHistory";
 import { useTheme } from "@/lib/stores/theme-store";
 import { getResolvedThemeScale, type ResolvedThemeMode } from "@/lib/theme";
 import { buildActivityCalendarCells } from "@/lib/trends/activityCalendar";
@@ -59,6 +60,32 @@ export function getTrendsLoadState({
     showFullError: hasError && insightCount === 0 && !showInitialLoading,
     showPartialError: hasError && insightCount > 0,
   };
+}
+
+export function hasResolvedCommonLoad(status: string): boolean {
+  return status === "available" || status === "unavailable";
+}
+
+type RefetchableTrendSource = { refetch: () => Promise<unknown> };
+
+export function refetchTrendsSources(sources: {
+  commonLoad: RefetchableTrendSource;
+  consistency: RefetchableTrendSource;
+  peakPower: RefetchableTrendSource;
+  performance: RefetchableTrendSource;
+  profileMetrics: RefetchableTrendSource;
+  volume: RefetchableTrendSource;
+  zones: RefetchableTrendSource;
+}) {
+  return Promise.all([
+    sources.profileMetrics.refetch(),
+    sources.volume.refetch(),
+    sources.commonLoad.refetch(),
+    sources.consistency.refetch(),
+    sources.performance.refetch(),
+    sources.zones.refetch(),
+    sources.peakPower.refetch(),
+  ]);
 }
 
 function getInsightPointKey(point: InsightPoint) {
@@ -1084,6 +1111,19 @@ function TrendInsightDetailModal({
               />
             </CardContent>
           </Card>
+          <View className="mt-4 gap-2" accessibilityRole="summary">
+            {insight.rows.map((row) => (
+              <View
+                key={row.label}
+                accessible
+                accessibilityLabel={`${row.label}: ${row.value}`}
+                className="flex-row items-center justify-between gap-4 rounded-xl bg-muted/30 px-3 py-2"
+              >
+                <Text className="text-sm text-muted-foreground">{row.label}</Text>
+                <Text className="text-sm font-medium text-foreground">{row.value}</Text>
+              </View>
+            ))}
+          </View>
         </ScrollView>
 
         <CustomRangeSheet
@@ -1132,10 +1172,7 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
     end_date: range.end_date,
     groupBy: "week",
   });
-  const load = api.trends.getTrainingLoadTrends.useQuery({
-    start_date: range.start_date,
-    end_date: range.end_date,
-  });
+  const commonLoad = useCommonLoadHistory();
   const consistency = api.trends.getConsistencyMetrics.useQuery({
     start_date: range.start_date,
     end_date: range.end_date,
@@ -1154,24 +1191,24 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
   const handleRefresh = React.useCallback(async () => {
     setRefreshing(true);
     try {
-      await Promise.all([
-        profileMetrics.refetch(),
-        volume.refetch(),
-        load.refetch(),
-        consistency.refetch(),
-        performance.refetch(),
-        zones.refetch(),
-        peakPower.refetch(),
-      ]);
+      await refetchTrendsSources({
+        commonLoad,
+        consistency,
+        peakPower,
+        performance,
+        profileMetrics,
+        volume,
+        zones,
+      });
     } finally {
       setRefreshing(false);
     }
-  }, [profileMetrics, volume, load, consistency, performance, zones, peakPower]);
+  }, [profileMetrics, volume, commonLoad, consistency, performance, zones, peakPower]);
 
   const isLoading =
     profileMetrics.isLoading ||
     volume.isLoading ||
-    load.isLoading ||
+    commonLoad.isLoading ||
     consistency.isLoading ||
     performance.isLoading ||
     zones.isLoading ||
@@ -1179,7 +1216,7 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
   const hasError =
     profileMetrics.error ||
     volume.error ||
-    load.error ||
+    commonLoad.error ||
     consistency.error ||
     performance.error ||
     zones.error ||
@@ -1189,7 +1226,12 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
     const metricInsights = buildProfileInsights(profileMetrics.data?.items ?? []);
     const activityInsights = buildActivityInsights({
       volume: volume.data,
-      load: load.data,
+      load:
+        commonLoad.status === "available"
+          ? { status: commonLoad.status, data: commonLoad.data }
+          : commonLoad.status === "unavailable"
+            ? { status: commonLoad.status, reason: commonLoad.reason }
+            : { status: commonLoad.status },
       consistency: consistency.data,
       performance: performance.data,
       zones: zones.data,
@@ -1199,25 +1241,26 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
   }, [
     profileMetrics.data?.items,
     volume.data,
-    load.data,
+    commonLoad,
     consistency.data,
     performance.data,
     zones.data,
     peakPower.data,
   ]);
-  const hasLoadedSource = [
+  const resolvedSourceCount = [
     profileMetrics.data,
     volume.data,
-    load.data,
+    hasResolvedCommonLoad(commonLoad.status) ? commonLoad.status : undefined,
     consistency.data,
     performance.data,
     zones.data,
     peakPower.data,
-  ].some((data) => data !== undefined);
+  ].filter((data) => data !== undefined).length;
+  const hasLoadedSource = resolvedSourceCount > 0;
   const { showInitialLoading, showFullError, showPartialError } = getTrendsLoadState({
     hasError: Boolean(hasError),
     hasLoadedSource,
-    insightCount: insights.length,
+    insightCount: hasLoadedSource ? insights.length : 0,
     isLoading,
   });
 
