@@ -176,6 +176,7 @@ export {
   type CanonicalThresholdType,
   canonicalThresholdTypes,
   type DirectThresholdMetricObservation,
+  getEligibleThresholdValue,
   type ResolveCanonicalThresholdsInput,
   type ResolvedCanonicalThreshold,
   resolveCanonicalThresholds,

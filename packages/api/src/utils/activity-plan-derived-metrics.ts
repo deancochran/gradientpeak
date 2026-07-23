@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
+import { compileActivityPlanV3 } from "@repo/core/activity-plan";
 import { buildEstimationContext, estimateActivity, estimateMetrics } from "@repo/core/estimation";
 import {
+  adaptPlannedCommonLoadDoses,
   COMMON_RELATIVE_LOAD_MODEL,
   COMMON_RELATIVE_LOAD_VERSION,
+  type CommonLoadAggregate,
   type CommonLoadResult,
-  calculateAvailableCommonLoad,
+  type CommonThresholdEvidence,
 } from "@repo/core/load";
 import type { ActivityPlanRow, DrizzleDbClient } from "@repo/db";
 import {
@@ -27,7 +30,7 @@ type SupportedActivityPlan = EstimationActivityPlanInput &
 
 export type ActivityPlanWithDerivedMetrics<TPlan extends EstimationActivityPlanInput> =
   ActivityPlanWithEstimation<TPlan> & {
-    common_load: CommonLoadResult;
+    common_load: CommonLoadResult | CommonLoadAggregate;
     estimate_computed_at: string | null;
     estimate_last_accessed_at: string | null;
     estimate_source: "cache" | "computed" | "failed";
@@ -44,9 +47,7 @@ type MemoizedEstimate = {
   metrics: ReturnType<typeof estimateMetrics>;
 };
 
-type PlannedCommonLoadThreshold = Awaited<
-  ReturnType<typeof loadEstimationSnapshot>
->["thresholds"]["cycling_ftp"];
+type PlannedCommonLoadThresholds = Awaited<ReturnType<typeof loadEstimationSnapshot>>["thresholds"];
 
 function fingerprint(kind: string, values: readonly unknown[]): string {
   const digest = createHash("sha256").update(JSON.stringify(values)).digest("hex");
@@ -55,116 +56,122 @@ function fingerprint(kind: string, values: readonly unknown[]): string {
 
 function plannedCommonLoad(input: {
   asOf: Date;
-  estimation: ReturnType<typeof estimateActivity>;
   planId: string;
-  threshold: PlannedCommonLoadThreshold;
-}): CommonLoadResult {
+  structure: unknown;
+  thresholds: PlannedCommonLoadThresholds;
+}): CommonLoadResult | CommonLoadAggregate {
   const computedAsOf = input.asOf.toISOString();
-  const soleDose =
-    input.estimation.categoryDoses?.length === 1
-      ? (input.estimation.categoryDoses[0] ?? null)
-      : null;
-  const sport = soleDose?.category ?? "other";
-  const durationSeconds = soleDose?.timedActiveSeconds ?? input.estimation.duration;
-  const unavailable = (
-    reason: Extract<CommonLoadResult, { status: "unavailable" }>["reason"],
-    options: Partial<
-      Pick<
-        Extract<CommonLoadResult, { status: "unavailable" }>,
-        "method" | "quality" | "thresholdEvidence" | "evidenceFingerprint"
-      >
-    > = {},
-  ): CommonLoadResult => ({
-    status: "unavailable",
-    model: COMMON_RELATIVE_LOAD_MODEL,
-    version: COMMON_RELATIVE_LOAD_VERSION,
-    sport,
-    method: null,
-    quality: null,
-    thresholdEvidence: null,
-    evidenceFingerprint: null,
-    computedAsOf,
-    contributingDurationSeconds:
-      typeof durationSeconds === "number" && Number.isFinite(durationSeconds) && durationSeconds > 0
-        ? durationSeconds
-        : null,
-    reason,
-    ...options,
+  const compiled = compileActivityPlanV3(input.structure);
+  const thresholdForSport = (sport: "bike" | "run" | "swim") => {
+    const threshold =
+      sport === "bike"
+        ? input.thresholds.cycling_ftp
+        : sport === "run"
+          ? input.thresholds.running_threshold_pace
+          : input.thresholds.swimming_css;
+    const value =
+      threshold.value === null
+        ? null
+        : sport === "bike"
+          ? threshold.value
+          : sport === "run"
+            ? 1000 / threshold.value
+            : 100 / threshold.value;
+    const method =
+      sport === "bike"
+        ? ("power_threshold" as const)
+        : sport === "run"
+          ? ("run_pace_threshold" as const)
+          : ("swim_pace_threshold" as const);
+    if (value === null || threshold.observedAt === null) {
+      return { method, quality: null, thresholdEvidence: null };
+    }
+    const sourceFingerprint = fingerprint("planned-threshold", [
+      threshold.threshold,
+      threshold.value,
+      threshold.unit,
+      threshold.source,
+      threshold.observedAt,
+      threshold.calculationVersion,
+    ]);
+    const thresholdEvidence = {
+      type:
+        sport === "bike"
+          ? ("ftp_watts" as const)
+          : sport === "run"
+            ? ("threshold_speed_mps" as const)
+            : ("swim_threshold_speed_mps" as const),
+      value,
+      unit: sport === "bike" ? ("watts" as const) : ("meters_per_second" as const),
+      source: threshold.source,
+      observedAt: threshold.observedAt,
+      validAt: threshold.observedAt,
+      freshness: threshold.stale ? ("stale" as const) : ("current" as const),
+      calculationVersion: threshold.calculationVersion,
+      sourceFingerprint,
+    } as CommonThresholdEvidence;
+    return {
+      method,
+      thresholdEvidence,
+      quality: {
+        source: threshold.source,
+        observed_at: threshold.observedAt,
+        valid_at: threshold.observedAt,
+        confidence: threshold.confidence,
+        stale: threshold.stale,
+        estimate: threshold.estimate,
+        calculation_version: threshold.calculationVersion,
+        evidence_fingerprint: sourceFingerprint,
+      },
+    };
+  };
+  const doses = compiled.occurrences.flatMap((occurrence) => {
+    if (occurrence.role !== "activity") return [];
+    const sport = occurrence.category;
+    const provenance =
+      sport === "bike" || sport === "run" || sport === "swim"
+        ? thresholdForSport(sport)
+        : { method: null, quality: null, thresholdEvidence: null };
+    const supportedTarget = occurrence.targets.find((target) =>
+      sport === "bike"
+        ? target.type === "%FTP" || target.type === "watts"
+        : sport === "run" || sport === "swim"
+          ? target.type === "speed"
+          : false,
+    );
+    const target =
+      supportedTarget?.type === "%FTP"
+        ? ({ type: "percent_threshold", value: supportedTarget.intensity / 100 } as const)
+        : supportedTarget?.type === "watts"
+          ? ({ type: "power_watts", value: supportedTarget.intensity } as const)
+          : supportedTarget?.type === "speed"
+            ? ({ type: "speed_mps", value: supportedTarget.intensity / 3.6 } as const)
+            : null;
+    const durationSeconds =
+      occurrence.duration.type === "time" ? occurrence.duration.seconds : null;
+    return [
+      {
+        sport,
+        durationSeconds,
+        target,
+        ...provenance,
+        evidenceFingerprint:
+          provenance.thresholdEvidence === null
+            ? null
+            : fingerprint("planned-common-load", [
+                input.planId,
+                occurrence.occurrenceId,
+                durationSeconds,
+                target,
+                provenance.thresholdEvidence.sourceFingerprint,
+              ]),
+      },
+    ];
   });
-
-  if (
-    typeof durationSeconds !== "number" ||
-    !Number.isFinite(durationSeconds) ||
-    durationSeconds <= 0
-  ) {
-    return unavailable("duration_missing");
-  }
-  if (sport !== "bike" || soleDose === null) return unavailable("unsupported_modality");
-  if (
-    soleDose.tss === null ||
-    soleDose.intensityFactor === null ||
-    soleDose.cyclingPowerEvidenceCoverage !== 1
-  ) {
-    return unavailable("activity_data_missing");
-  }
-  if (input.threshold.value === null || input.threshold.observedAt === null) {
-    return unavailable("threshold_missing", { method: "power_threshold" });
-  }
-
-  const sourceFingerprint = fingerprint("planned-threshold", [
-    input.threshold.threshold,
-    input.threshold.value,
-    input.threshold.unit,
-    input.threshold.source,
-    input.threshold.observedAt,
-    input.threshold.calculationVersion,
-  ]);
-  const thresholdEvidence = {
-    type: "ftp_watts" as const,
-    value: input.threshold.value,
-    unit: "watts" as const,
-    source: input.threshold.source,
-    observedAt: input.threshold.observedAt,
-    validAt: input.threshold.observedAt,
-    freshness: input.threshold.stale ? ("stale" as const) : ("current" as const),
-    calculationVersion: input.threshold.calculationVersion,
-    sourceFingerprint,
-  };
-  const quality = {
-    source: input.threshold.source,
-    observed_at: input.threshold.observedAt,
-    valid_at: input.threshold.observedAt,
-    confidence: input.threshold.confidence,
-    stale: input.threshold.stale,
-    estimate: input.threshold.estimate,
-    calculation_version: input.threshold.calculationVersion,
-    evidence_fingerprint: sourceFingerprint,
-  };
-  const evidenceFingerprint = fingerprint("planned-common-load", [
-    input.planId,
-    sourceFingerprint,
-    durationSeconds,
-    soleDose.intensityFactor,
-  ]);
-  const provenance = {
-    method: "power_threshold" as const,
-    quality,
-    thresholdEvidence,
-    evidenceFingerprint,
-  };
-  if (input.threshold.stale) return unavailable("stale_threshold", provenance);
-  if (soleDose.intensityFactor < 0 || soleDose.intensityFactor > 1.5) {
-    return unavailable("intensity_out_of_range", provenance);
-  }
-
-  return calculateAvailableCommonLoad({
-    sport: "bike",
-    ...provenance,
-    computedAsOf,
-    estimated: true,
-    contributingDurationSeconds: durationSeconds,
-    intensity: soleDose.intensityFactor,
-  });
+  const envelope = adaptPlannedCommonLoadDoses({ computedAsOf, doses });
+  return envelope.doses.length === 1
+    ? (envelope.doses[0] ?? envelope.aggregate)
+    : envelope.aggregate;
 }
 
 function estimationMemoKey(plan: SupportedActivityPlan, route: unknown): string {
@@ -231,9 +238,9 @@ export async function getActivityPlansDerivedMetrics<TPlan extends SupportedActi
         }),
         common_load: plannedCommonLoad({
           asOf,
-          estimation: estimated.estimation,
           planId: plan.id,
-          threshold: snapshot.thresholds.cycling_ftp,
+          structure: plan.structure,
+          thresholds: snapshot.thresholds,
         }),
         estimate_computed_at: asOf.toISOString(),
         estimate_last_accessed_at: asOf.toISOString(),

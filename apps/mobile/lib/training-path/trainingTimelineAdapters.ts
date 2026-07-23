@@ -1,6 +1,9 @@
-import type { ActivityTssIdentity } from "@repo/core";
+import type { DailyCommonLoadObservation } from "@repo/core/load";
 import type { TrainingTimelineWindow } from "@repo/core/training-timeline";
-import { type CompletedObservationMetadata, sameTssIdentity } from "./completedTssObservation";
+import {
+  type CompletedObservationMetadata,
+  sameCommonLoadIdentity,
+} from "./completedCommonLoadObservation";
 import {
   type DailyTrainingAdjustmentPoint,
   normalizeDailyTrainingAdjustmentPoints,
@@ -8,28 +11,11 @@ import {
   type TrainingPathDailyLoadInput,
 } from "./dailyTrainingPathModel";
 
-export { sameTssIdentity } from "./completedTssObservation";
+export { sameCommonLoadIdentity } from "./completedCommonLoadObservation";
 
-export type TrainingTimelineDailyTssObservation = {
-  activity_count?: number;
-  date: string;
-  unavailable_activity_count: number;
-} & (
-  | {
-      state: "calculated";
-      tss_identity: ActivityTssIdentity;
-      value: number;
-    }
-  | {
-      state: "unavailable";
-      tss_identity: null;
-      value: null;
-    }
-);
-
-export type DailyTssObservationsResponse = {
+export type DailyCommonLoadObservationsResponse = {
   end_date: string;
-  observations: readonly TrainingTimelineDailyTssObservation[];
+  observations: readonly DailyCommonLoadObservation[];
   start_date: string;
   timezone: string;
 };
@@ -64,7 +50,7 @@ export function buildEffectiveCompletedObservationsByDate(input: {
   return effective;
 }
 
-export type CompletedTssObservationMerge = {
+export type CompletedCommonLoadObservationMerge = {
   completedObservationsByDate: Map<string, CompletedObservationMetadata>;
   completedActivityDatesWithoutLoad: string[];
   timeline: Array<
@@ -85,7 +71,7 @@ export type CompletedTssObservationMerge = {
 
 function normalizeCompletedLoadTimeline(
   points: readonly TrainingPathDailyLoadInput[],
-): CompletedTssObservationMerge["timeline"] {
+): CompletedCommonLoadObservationMerge["timeline"] {
   return points
     .map((point) => ({
       ...point,
@@ -112,11 +98,11 @@ function normalizeCompletedLoadTimeline(
 }
 
 /** Applies authoritative API local-day observations without collapsing unavailable load to zero. */
-export function mergeCompletedTssObservations(input: {
+export function mergeCompletedCommonLoadObservations(input: {
   requestedRange?: { end_date: string; start_date: string; timezone: string } | null;
-  response?: DailyTssObservationsResponse | null;
+  response?: DailyCommonLoadObservationsResponse | null;
   timeline?: readonly TrainingPathDailyLoadInput[] | null;
-}): CompletedTssObservationMerge {
+}): CompletedCommonLoadObservationMerge {
   const timelineByDate = new Map((input.timeline ?? []).map((point) => [point.date, { ...point }]));
   const completedObservationsByDate = new Map<string, CompletedObservationMetadata>();
   if (!input.requestedRange) {
@@ -164,13 +150,18 @@ export function mergeCompletedTssObservations(input: {
       }
       const existing = timelineByDate.get(observation.date) ?? { date: observation.date };
       const existingMetadata = completedObservationsByDate.get(observation.date);
-      const calculated = observation.state === "calculated";
+      const aggregate = observation.aggregate;
+      const knownAggregate = aggregate.status === "complete" || aggregate.status === "partial";
       const existingObserved = existingMetadata?.state === "observed";
       const identitiesCompatible =
-        !existingObserved || sameTssIdentity(existingMetadata.identity, observation.tss_identity);
+        !existingObserved ||
+        sameCommonLoadIdentity(existingMetadata.identity, {
+          model: aggregate.model,
+          version: aggregate.version,
+        });
       const completedLoad =
-        calculated && identitiesCompatible
-          ? (existingObserved ? (existing.completed_load_tss ?? 0) : 0) + observation.value
+        knownAggregate && identitiesCompatible
+          ? (existingObserved ? (existing.completed_load_tss ?? 0) : 0) + aggregate.load
           : existingObserved
             ? (existing.completed_load_tss ?? 0)
             : 0;
@@ -182,16 +173,16 @@ export function mergeCompletedTssObservations(input: {
       completedObservationsByDate.set(observation.date, {
         hasUnavailableCompletedActivity:
           existingMetadata?.hasUnavailableCompletedActivity === true ||
-          !calculated ||
+          !knownAggregate ||
           !identitiesCompatible ||
-          observation.unavailable_activity_count > 0,
+          aggregate.status !== "complete",
         identity:
-          calculated && identitiesCompatible
-            ? observation.tss_identity
+          knownAggregate && identitiesCompatible
+            ? { model: aggregate.model, version: aggregate.version }
             : existingObserved
               ? existingMetadata.identity
               : null,
-        state: calculated || existingObserved ? "observed" : "unavailable",
+        state: knownAggregate || existingObserved ? "observed" : "unavailable",
       });
     }
   }
@@ -233,7 +224,7 @@ export function buildDailyTrainingAdjustmentPointsFromTimelineWindow(input: {
       return {
         date: day.date,
         completedObservationState: completedObservation?.state,
-        completedTssIdentity: completedObservation?.identity ?? null,
+        completedCommonLoadIdentity: completedObservation?.identity ?? null,
         hasCompletedActivityWithoutLoad:
           completedObservation?.hasUnavailableCompletedActivity === true,
         hasTargetLoad: input.targetLoadDates?.has(day.date) === true,

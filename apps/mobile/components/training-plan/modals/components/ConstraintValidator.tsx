@@ -115,13 +115,13 @@ export function ConstraintValidator({ validation, isLoading = false }: Constrain
 
       {/* Weekly TSS Constraint */}
       <ConstraintIndicator
-        label="Weekly TSS"
+        label="Weekly Load"
         status={constraints.weeklyTSS.status}
         currentValue={constraints.weeklyTSS.current}
         newValue={constraints.weeklyTSS.withNew}
         limit={constraints.weeklyTSS.limit}
-        unit="TSS"
-        description="Total Training Stress Score for this week"
+        unit="Load"
+        description="Total training Load for this week"
       />
 
       {/* Activities Per Week Constraint */}

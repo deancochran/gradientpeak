@@ -123,6 +123,8 @@ export type ActivityHeartRateDistribution = z.infer<typeof activityHeartRateDist
 type AnalyzeActivityDerivedMetricsInput = {
   activity: ActivitySummaryForAnalysis;
   context: ActivityAnalysisContext;
+  /** Instant at which this projection was calculated; activity evidence remains resolved at started_at. */
+  computedAsOf?: string;
   streams?: ActivityAnalysisStreams | null;
   heartRateDistribution?: ActivityHeartRateDistribution | null;
 };
@@ -650,6 +652,7 @@ function resolveDirectCommonLoad(input: {
   durationSeconds: number;
   computedAsOf: string;
   resolved: ResolvedTssMethod;
+  evidenceFingerprint: string;
 }): CommonLoadResult {
   const method = directCommonMethod(input.resolved.method);
   if (!method) {
@@ -673,6 +676,7 @@ function resolveDirectCommonLoad(input: {
       reason: "invalid_data",
     });
   }
+  provenance.evidenceFingerprint = input.evidenceFingerprint;
   if (provenance.quality.stale) {
     return unavailableCommonLoad({
       sport: input.sport,
@@ -711,6 +715,7 @@ function resolveHeartRateCommonLoad(input: {
   lthr: number | null;
   quality: ActivityCalibrationQuality | null;
   distribution: ActivityHeartRateDistribution | null | undefined;
+  evidenceFingerprint: string;
 }): CommonLoadResult {
   const method = "heart_rate_zones" as const;
   if (isInvalidLthr(input.lthr)) {
@@ -743,6 +748,7 @@ function resolveHeartRateCommonLoad(input: {
       reason: "invalid_data",
     });
   }
+  provenance.evidenceFingerprint = input.evidenceFingerprint;
   if (provenance.quality.stale) {
     return unavailableCommonLoad({
       sport: input.sport,
@@ -839,6 +845,7 @@ export function analyzeActivityDerivedMetrics(
   input: AnalyzeActivityDerivedMetricsInput,
 ): ActivityDerivedMetrics {
   const { activity, context, streams, heartRateDistribution } = input;
+  const computedAsOf = input.computedAsOf ?? activity.started_at;
   const ftp = context.profileMetrics.ftp ?? null;
   const lthr = context.profileMetrics.lthr ?? null;
   const maxHr = context.profileMetrics.max_hr ?? null;
@@ -875,7 +882,7 @@ export function analyzeActivityDerivedMetrics(
   const commonLoad = !hasValidDuration
     ? unavailableCommonLoad({
         sport: commonSport,
-        computedAsOf: activity.started_at,
+        computedAsOf,
         contributingDurationSeconds: null,
         reason: "invalid_data",
       })
@@ -883,15 +890,27 @@ export function analyzeActivityDerivedMetrics(
       ? eligibleDurationSeconds === null
         ? unavailableCommonLoad({
             sport: commonSport,
-            computedAsOf: activity.started_at,
+            computedAsOf,
             contributingDurationSeconds: null,
             reason: "invalid_data",
           })
         : resolveDirectCommonLoad({
             sport: commonSport,
             durationSeconds: eligibleDurationSeconds,
-            computedAsOf: activity.started_at,
+            computedAsOf,
             resolved: resolvedMethod,
+            evidenceFingerprint: `activity-common-load:v1:${JSON.stringify([
+              activity.id,
+              sport,
+              resolvedMethod.method,
+              activity.duration_seconds,
+              activity.normalized_power ?? null,
+              activity.avg_power ?? null,
+              activity.normalized_graded_speed_mps ?? null,
+              activity.normalized_speed_mps ?? null,
+              activity.avg_speed_mps ?? null,
+              resolvedMethod.calibrationQuality?.evidence_fingerprint ?? null,
+            ])}`,
           })
       : sport === "run" || sport === "bike" || sport === "swim"
         ? resolveHeartRateCommonLoad({
@@ -899,14 +918,21 @@ export function analyzeActivityDerivedMetrics(
             // Persisted HR distributions integrate active elapsed intervals and are not
             // moving-time filtered, so their denominator is the activity's active duration.
             durationSeconds: activity.duration_seconds,
-            computedAsOf: activity.started_at,
+            computedAsOf,
             lthr: lthrCalibration?.value ?? null,
             quality: lthrCalibration?.quality ?? null,
             distribution: heartRateDistribution,
+            evidenceFingerprint: `activity-common-load:v1:${JSON.stringify([
+              activity.id,
+              sport,
+              activity.duration_seconds,
+              heartRateDistribution ?? null,
+              lthrCalibration?.quality?.evidence_fingerprint ?? null,
+            ])}`,
           })
         : unavailableCommonLoad({
             sport: commonSport,
-            computedAsOf: activity.started_at,
+            computedAsOf,
             contributingDurationSeconds: activity.duration_seconds,
             reason: "unsupported_modality",
           });
@@ -944,6 +970,6 @@ export function analyzeActivityDerivedMetrics(
       hr: hrZones,
       power: powerZones,
     },
-    computed_as_of: activity.started_at,
+    computed_as_of: computedAsOf,
   };
 }

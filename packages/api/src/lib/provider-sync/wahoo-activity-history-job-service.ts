@@ -163,12 +163,14 @@ export class WahooActivityHistoryJobService {
             });
             const providerUserId = Number.parseInt(resolvedIntegration.externalId, 10);
             const windowMonths = job.payload.windowMonths ?? DEFAULT_HISTORY_WINDOW_MONTHS;
+            const historyStart = subtractMonths(now, windowMonths);
+            const historyEnd = now;
             const client = (this.deps.wahooClientFactory ?? createDefaultWahooClient)(
               resolvedIntegration,
             );
             const summaries = await this.listAllSummaries(client, {
-              endDate: now,
-              startDate: subtractMonths(now, windowMonths),
+              endDate: historyEnd,
+              startDate: historyStart,
             });
 
             const importErrors: string[] = [];
@@ -214,17 +216,21 @@ export class WahooActivityHistoryJobService {
               );
             }
 
-            const finalized = await this.deps.providerSyncRepository.markJobSucceeded(
-              job.id,
-              workerId,
-            );
-            if (finalized === false) return "failed";
-            await this.deps.providerSyncRepository.updateSyncStateAfterRun({
+            const finalized = await this.deps.providerSyncRepository.completeJobWithSyncState({
+              highWatermark: historyEnd,
+              id: job.id,
               integrationId: job.integrationId,
+              metadata: {
+                activityHistoryCoverage: {
+                  end: historyEnd,
+                  start: historyStart,
+                },
+              },
               provider: "wahoo",
               resource: WAHOO_ACTIVITY_HISTORY_RESOURCE,
-              succeeded: true,
+              workerId,
             });
+            if (finalized === false) return "failed";
             return "completed";
           } catch (error) {
             const lastError =

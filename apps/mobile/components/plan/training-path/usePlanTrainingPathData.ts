@@ -21,7 +21,7 @@ import { buildEffectivePlanMetricSummaries } from "@/lib/training-path/effective
 import {
   buildDailyTrainingAdjustmentPointsFromTimelineWindow,
   buildEffectiveCompletedObservationsByDate,
-  mergeCompletedTssObservations,
+  mergeCompletedCommonLoadObservations,
 } from "@/lib/training-path/trainingTimelineAdapters";
 import {
   buildTrainingPreferencesLoadTimeline,
@@ -567,30 +567,34 @@ export function usePlanTrainingPathData() {
       ).sort((left, right) => left.date.localeCompare(right.date)),
     [dashboard.fitnessHistory, expandedActualCurveQuery.data?.dataPoints],
   );
-  const dailyTssReadiness = resolveBoundedPlanningDateRange({
+  const dailyCommonLoadReadiness = resolveBoundedPlanningDateRange({
     startDate: recentQueryEnabled ? dataWindowStart : null,
     endDate: recentQueryEnabled ? recentWindowEnd : null,
     maxInclusiveDays: 365,
     timezone: planningTimezone,
   });
-  const dailyTssInput =
-    dailyTssReadiness.status === "ready"
+  const dailyCommonLoadInput =
+    dailyCommonLoadReadiness.status === "ready"
       ? {
-          start_date: dailyTssReadiness.value.startDate,
-          end_date: dailyTssReadiness.value.endDate,
-          timezone: dailyTssReadiness.value.timezone,
+          start_date: dailyCommonLoadReadiness.value.startDate,
+          end_date: dailyCommonLoadReadiness.value.endDate,
+          timezone: dailyCommonLoadReadiness.value.timezone,
         }
       : {
           start_date: DORMANT_DATE_KEY,
           end_date: DORMANT_DATE_KEY,
           timezone: "UTC",
         };
-  const dailyTssQueryEnabled = scheduleQueriesEnabled && dailyTssReadiness.status === "ready";
-  const dailyTssObservationsQuery = api.activities.dailyTssObservations.useQuery(dailyTssInput, {
-    ...scheduleAwareReadQueryOptions,
-    enabled: dailyTssQueryEnabled,
-    placeholderData: (previousData) => previousData,
-  });
+  const dailyCommonLoadQueryEnabled =
+    scheduleQueriesEnabled && dailyCommonLoadReadiness.status === "ready";
+  const dailyCommonLoadObservationsQuery = api.activities.dailyCommonLoadObservations.useQuery(
+    dailyCommonLoadInput,
+    {
+      ...scheduleAwareReadQueryOptions,
+      enabled: dailyCommonLoadQueryEnabled,
+      placeholderData: (previousData) => previousData,
+    },
+  );
   const localProjectionPreview = useMemo(
     () =>
       buildTrainingPreferencesProjectionPreview({
@@ -632,19 +636,19 @@ export function usePlanTrainingPathData() {
   );
   const completedObservationMerge = useMemo(
     () =>
-      mergeCompletedTssObservations({
+      mergeCompletedCommonLoadObservations({
         requestedRange:
-          dailyTssReadiness.status === "ready"
+          dailyCommonLoadReadiness.status === "ready"
             ? {
-                start_date: dailyTssReadiness.value.startDate,
-                end_date: dailyTssReadiness.value.endDate,
-                timezone: dailyTssReadiness.value.timezone,
+                start_date: dailyCommonLoadReadiness.value.startDate,
+                end_date: dailyCommonLoadReadiness.value.endDate,
+                timezone: dailyCommonLoadReadiness.value.timezone,
               }
             : null,
-        response: dailyTssObservationsQuery.data,
+        response: dailyCommonLoadObservationsQuery.data,
         timeline: projectedLoadTimelinePoints,
       }),
-    [dailyTssObservationsQuery.data, dailyTssReadiness, projectedLoadTimelinePoints],
+    [dailyCommonLoadObservationsQuery.data, dailyCommonLoadReadiness, projectedLoadTimelinePoints],
   );
   const effectiveCompletedObservationsByDate = useMemo(
     () =>
@@ -663,7 +667,7 @@ export function usePlanTrainingPathData() {
         return {
           ...point,
           completed_observation_state: completedObservation?.state,
-          completed_tss_identity: completedObservation?.identity ?? null,
+          completed_common_load_identity: completedObservation?.identity ?? null,
           has_unavailable_completed_activity:
             completedObservation?.hasUnavailableCompletedActivity === true,
           ideal_tss: hasTargetLoad ? point.ideal_tss : null,
@@ -985,7 +989,7 @@ export function usePlanTrainingPathData() {
     activePlanQuery.isLoading ||
     upcomingPlannedEventsQuery.isLoading ||
     recentPlannedEventsQuery.isLoading ||
-    dailyTssObservationsQuery.isLoading ||
+    dailyCommonLoadObservationsQuery.isLoading ||
     profileSettings.isLoading;
   const queryFailureCount =
     [
@@ -995,7 +999,7 @@ export function usePlanTrainingPathData() {
       groupCalendarEventsQuery.isError,
       selectedGroupActivityPlansQuery.isError,
       completedActivitiesQuery.isError,
-      dailyTssObservationsQuery.isError,
+      dailyCommonLoadObservationsQuery.isError,
       expandedActualCurveQuery.isError,
       goals.isError,
       profileSettings.isError,
@@ -1009,7 +1013,7 @@ export function usePlanTrainingPathData() {
         recentPlannedEvents?.length ||
         groupCalendarEvents.length ||
         completedActivities.length ||
-        dailyTssObservationsQuery.data?.observations.length ||
+        dailyCommonLoadObservationsQuery.data?.observations.length ||
         goals.goals.length ||
         dailyTrainingPathPoints.length,
     );
@@ -1056,7 +1060,7 @@ export function usePlanTrainingPathData() {
       String(groupCalendarEventsQuery.dataUpdatedAt ?? 0),
       String(selectedGroupActivityPlansQuery.dataUpdatedAt ?? 0),
       String(completedActivitiesQuery.dataUpdatedAt ?? 0),
-      String(dailyTssObservationsQuery.dataUpdatedAt ?? 0),
+      String(dailyCommonLoadObservationsQuery.dataUpdatedAt ?? 0),
       String(goals.dataUpdatedAt ?? 0),
     ].join(":");
 
@@ -1077,7 +1081,7 @@ export function usePlanTrainingPathData() {
     void Promise.all([refetchActivePlan(), snapshot.refetchAll()]);
   }, [
     completedActivitiesQuery.dataUpdatedAt,
-    dailyTssObservationsQuery.dataUpdatedAt,
+    dailyCommonLoadObservationsQuery.dataUpdatedAt,
     goals.dataUpdatedAt,
     groupCalendarEventsQuery.dataUpdatedAt,
     recentPlannedEventsQuery.dataUpdatedAt,
@@ -1106,7 +1110,9 @@ export function usePlanTrainingPathData() {
           ? selectedGroupActivityPlansQuery.refetch()
           : Promise.resolve(null),
         recentQueryEnabled ? completedActivitiesQuery.refetch() : Promise.resolve(null),
-        dailyTssQueryEnabled ? dailyTssObservationsQuery.refetch() : Promise.resolve(null),
+        dailyCommonLoadQueryEnabled
+          ? dailyCommonLoadObservationsQuery.refetch()
+          : Promise.resolve(null),
         expandedActualCurveEnabled ? expandedActualCurveQuery.refetch() : Promise.resolve(null),
         refreshProfile(),
         profileSettings.refetch(),
@@ -1116,8 +1122,8 @@ export function usePlanTrainingPathData() {
     }
   }, [
     completedActivitiesQuery.refetch,
-    dailyTssObservationsQuery.refetch,
-    dailyTssQueryEnabled,
+    dailyCommonLoadObservationsQuery.refetch,
+    dailyCommonLoadQueryEnabled,
     eventsQueryEnabled,
     expandedActualCurveEnabled,
     expandedActualCurveQuery.refetch,

@@ -656,3 +656,63 @@ export function aggregateCommonLoad(
     intensity,
   });
 }
+
+/** Combines already-adapted activity or parent envelopes without reintroducing source metrics. */
+export function aggregateCommonLoadEnvelopes(
+  envelopes: readonly (CommonLoadResult | CommonLoadAggregate)[],
+): CommonLoadAggregate {
+  const normalized = envelopes.map((envelope) => {
+    if (!("sport" in envelope)) return envelope;
+    return aggregateCommonLoad([envelope]);
+  });
+  // Each envelope is one activity, even when that activity is itself a
+  // multisport aggregate of segments. Do not leak segment counts into a
+  // parent-level history coverage denominator.
+  const totalActivityCount = normalized.length;
+  const contributingActivityCount = normalized.filter(
+    (item) => item.status !== "unavailable",
+  ).length;
+  const partialActivityCount = normalized.filter((item) => item.status === "partial").length;
+  const unavailableActivityCount = normalized.filter(
+    (item) => item.status === "unavailable",
+  ).length;
+  const unknownDurationActivityCount = normalized.filter(
+    (item) => item.knownDurationSeconds === null,
+  ).length;
+  const knownDurations = normalized.flatMap((item) =>
+    item.knownDurationSeconds === null ? [] : [item.knownDurationSeconds],
+  );
+  const knownDurationSeconds = knownDurations.length === 0 ? null : stableFiniteSum(knownDurations);
+  const contributors = normalized.filter(
+    (item): item is Extract<CommonLoadAggregate, { status: "complete" | "partial" }> =>
+      item.status !== "unavailable",
+  );
+  const contributingDurationSeconds = stableFiniteSum(
+    contributors.map((item) => item.contributingDurationSeconds),
+  );
+  const coverage = {
+    model: COMMON_RELATIVE_LOAD_MODEL,
+    version: COMMON_RELATIVE_LOAD_VERSION,
+    contributingDurationSeconds,
+    knownDurationSeconds,
+    contributingActivityCount,
+    partialActivityCount,
+    unavailableActivityCount,
+    totalActivityCount,
+    activityCountCoverage:
+      totalActivityCount === 0 ? 0 : contributingActivityCount / totalActivityCount,
+    knownDurationCoverage:
+      knownDurationSeconds === null ? null : contributingDurationSeconds / knownDurationSeconds,
+    unknownDurationActivityCount,
+  } as const;
+  if (contributors.length === 0) return unavailableAggregate("no_load_data", coverage);
+  const load = stableFiniteSum(contributors.map((item) => item.load));
+  const intensity = Math.sqrt(load / (100 * (contributingDurationSeconds / 3600)));
+  const complete = normalized.every((item) => item.status === "complete");
+  return commonLoadAggregateSchema.parse({
+    status: complete ? "complete" : "partial",
+    ...coverage,
+    load,
+    intensity,
+  });
+}

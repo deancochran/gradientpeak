@@ -63,8 +63,8 @@ function canonicalSport(value: string | null | undefined): CommonLoadResult["spo
 
 function unavailableLoad(input: {
   asOfInstant: string;
-  durationSeconds?: number | null;
-  sport?: string | null;
+  durationSeconds?: number | null | undefined;
+  sport?: string | null | undefined;
 }): CommonLoadResult {
   const duration = input.durationSeconds;
   return {
@@ -129,25 +129,14 @@ function summarizeItems(input: {
   const tentativeAggregate = aggregateCommonLoad(
     input.tentativeItems.map((item) => item.commonLoad),
   );
-  const hasIncompleteTentativeLoad =
-    input.tentativeItems.length > 0 && tentativeAggregate.status !== "complete";
   const tentativeLoad =
     tentativeAggregate.status === "unavailable" ? null : tentativeAggregate.load;
+  const tentativeCommonLoadUnavailable =
+    input.tentativeItems.length > 0 && tentativeAggregate.status === "unavailable";
+  const tentativeCommonLoadPartial = tentativeAggregate.status === "partial";
   const sourcesComplete = input.completedSourceComplete && input.scheduledSourceComplete;
   if (input.items.length === 0) {
-    if (hasIncompleteTentativeLoad) {
-      return {
-        status: "unavailable",
-        load: null,
-        intensity: null,
-        completedLoad: null,
-        remainingLoad: null,
-        tentativeLoad: null,
-        hasUnavailableCompletedLoad,
-        reason: "common_load_unavailable",
-      };
-    }
-    return sourcesComplete
+    return sourcesComplete && !tentativeCommonLoadUnavailable
       ? {
           status: "known_zero",
           load: 0,
@@ -166,9 +155,11 @@ function summarizeItems(input: {
           remainingLoad: null,
           tentativeLoad,
           hasUnavailableCompletedLoad,
-          reason: input.scheduledSourceComplete
-            ? "completed_source_incomplete"
-            : "scheduled_source_incomplete",
+          reason: tentativeCommonLoadUnavailable
+            ? "common_load_unavailable"
+            : input.scheduledSourceComplete
+              ? "completed_source_incomplete"
+              : "scheduled_source_incomplete",
         };
   }
   const aggregate = aggregateCommonLoad(input.items.map((item) => item.commonLoad));
@@ -186,7 +177,10 @@ function summarizeItems(input: {
   }
   return {
     status:
-      sourcesComplete && aggregate.status === "complete" && !hasIncompleteTentativeLoad
+      sourcesComplete &&
+      aggregate.status === "complete" &&
+      !tentativeCommonLoadUnavailable &&
+      !tentativeCommonLoadPartial
         ? "complete"
         : "partial",
     load: aggregate.load,
@@ -196,7 +190,10 @@ function summarizeItems(input: {
     tentativeLoad,
     hasUnavailableCompletedLoad,
     reason:
-      sourcesComplete && aggregate.status === "complete" && !hasIncompleteTentativeLoad
+      sourcesComplete &&
+      aggregate.status === "complete" &&
+      !tentativeCommonLoadUnavailable &&
+      !tentativeCommonLoadPartial
         ? null
         : "incomplete_common_load",
   };

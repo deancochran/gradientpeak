@@ -110,17 +110,15 @@ describe("getTrendsLoadState", () => {
 
 describe("trend source refresh", () => {
   it("refetches common load history with every preserved trend source", async () => {
-    const sources = Object.fromEntries(
-      [
-        "commonLoad",
-        "consistency",
-        "peakPower",
-        "performance",
-        "profileMetrics",
-        "volume",
-        "zones",
-      ].map((name) => [name, { refetch: jest.fn(async () => name) }]),
-    );
+    const sources = {
+      commonLoad: { refetch: jest.fn(async () => "commonLoad") },
+      consistency: { refetch: jest.fn(async () => "consistency") },
+      peakPower: { refetch: jest.fn(async () => "peakPower") },
+      performance: { refetch: jest.fn(async () => "performance") },
+      profileMetrics: { refetch: jest.fn(async () => "profileMetrics") },
+      volume: { refetch: jest.fn(async () => "volume") },
+      zones: { refetch: jest.fn(async () => "zones") },
+    };
 
     await refetchTrendsSources(sources);
 

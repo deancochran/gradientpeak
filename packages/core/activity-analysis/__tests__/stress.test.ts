@@ -1188,12 +1188,14 @@ describe("activity analysis", () => {
         recentEfforts: [],
         profile: {},
       },
-      heartRateDistribution: example.distribution
+      ...(example.distribution
         ? {
-            coverageSeconds: example.distribution.coverageSeconds,
-            buckets: example.distribution.buckets.map((bucket) => ({ ...bucket })),
+            heartRateDistribution: {
+              coverageSeconds: example.distribution.coverageSeconds,
+              buckets: example.distribution.buckets.map((bucket) => ({ ...bucket })),
+            },
           }
-        : undefined,
+        : {}),
     });
 
     expect(derived.stress).toMatchObject({ tss: 100, intensity_factor: 1 });

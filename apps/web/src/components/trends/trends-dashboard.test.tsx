@@ -3,10 +3,29 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
+  CommonLoadUnavailable,
   getFailedTrendSources,
   retryFailedTrendQueries,
   TrendPartialFailure,
 } from "./trends-dashboard";
+
+describe("CommonLoadUnavailable", () => {
+  it("explains intentional abstention and provides a retry", () => {
+    const onRetry = vi.fn();
+    render(
+      <CommonLoadUnavailable
+        isRetrying={false}
+        onRetry={onRetry}
+        reason="incomplete_observation"
+      />,
+    );
+
+    expect(screen.getByText("Long-term unavailable")).toBeTruthy();
+    expect(screen.getByText(/activity history is incomplete/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry Load history" }));
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+});
 
 describe("getFailedTrendSources", () => {
   it("returns only independently failed analytics sources", () => {

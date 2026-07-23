@@ -22,6 +22,7 @@ const homeMocks = vi.hoisted(() => ({
   getLoadBalanceStatus: vi.fn(),
   loadActivitySegmentsByActivityId: vi.fn(),
   replayTrainingLoadByDate: vi.fn(),
+  readCurrentProfileCommonLoadHistory: vi.fn(),
 }));
 
 vi.mock("@repo/core", async (importOriginal) => {
@@ -34,9 +35,17 @@ vi.mock("@repo/core", async (importOriginal) => {
   };
 });
 
-vi.mock("@repo/core/load", () => ({
-  buildDailyTssByDateSeries: homeMocks.buildDailyTssByDateSeries,
-  replayTrainingLoadByDate: homeMocks.replayTrainingLoadByDate,
+vi.mock("@repo/core/load", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/core/load")>();
+  return {
+    ...actual,
+    buildDailyTssByDateSeries: homeMocks.buildDailyTssByDateSeries,
+    replayTrainingLoadByDate: homeMocks.replayTrainingLoadByDate,
+  };
+});
+
+vi.mock("../../application/activities/read-current-profile-common-load-history", () => ({
+  readCurrentProfileCommonLoadHistory: homeMocks.readCurrentProfileCommonLoadHistory,
 }));
 
 vi.mock("../../infrastructure/repositories", () => ({
@@ -181,6 +190,17 @@ function buildActivityPlan(id: string, name: string, category: "bike" | "run") {
 
 describe("homeRouter", () => {
   beforeEach(() => {
+    homeMocks.readCurrentProfileCommonLoadHistory.mockResolvedValue({
+      computedAt: "2026-04-03T12:00:00.000Z",
+      planningTimezone: "UTC",
+      currentPlanningDate: "2026-04-03",
+      result: {
+        status: "unavailable",
+        policyVersion: "common_load_history_v1",
+        reason: "insufficient_history",
+        context: { requiredDays: 84, receivedDays: 0 },
+      },
+    });
     homeMocks.loadActivitySegmentsByActivityId.mockImplementation(
       async (_db: unknown, activityIds: string[]) =>
         new Map(
@@ -401,13 +421,17 @@ describe("homeRouter", () => {
       loadBalanceStatus: "negative_balance",
     });
     expect(result.consistency).toEqual({ streak: 2, weeklyCount: 2 });
-    expect(result.weeklySummary).toEqual({
+    expect(result.weeklySummary).toMatchObject({
       actual: { distance: 25, duration: 5400, tss: 80, tssComplete: true, count: 2 },
       planned: { distance: 32, duration: 6000, tss: 150, count: 2 },
       adherence: 53,
+      commonLoad: {
+        actual: { status: "unavailable", reason: "no_load_data" },
+        planned: { status: "unavailable", reason: "no_load_data" },
+      },
     });
     expect(result.schedule).toEqual([
-      {
+      expect.objectContaining({
         id: "planned-today",
         date: "2026-04-03",
         isToday: true,
@@ -418,9 +442,10 @@ describe("homeRouter", () => {
         activityCategories: ["bike"],
         estimatedDuration: 3600,
         estimatedDistance: 20000,
-        estimatedTSS: 90,
-      },
-      {
+        load: null,
+        intensity: null,
+      }),
+      expect.objectContaining({
         id: "planned-tomorrow",
         date: "2026-04-04",
         isToday: false,
@@ -431,22 +456,26 @@ describe("homeRouter", () => {
         activityCategories: ["run"],
         estimatedDuration: 2400,
         estimatedDistance: 12000,
-        estimatedTSS: 60,
-      },
+        load: null,
+        intensity: null,
+      }),
     ]);
-    expect(result.todaysActivity).toEqual({
-      id: "planned-today",
-      date: "2026-04-03",
-      isToday: true,
-      isCompleted: true,
-      activityName: "Threshold Ride",
-      activityType: "bike",
-      activityKind: "single",
-      activityCategories: ["bike"],
-      estimatedDuration: 3600,
-      estimatedDistance: 20000,
-      estimatedTSS: 90,
-    });
+    expect(result.todaysActivity).toEqual(
+      expect.objectContaining({
+        id: "planned-today",
+        date: "2026-04-03",
+        isToday: true,
+        isCompleted: true,
+        activityName: "Threshold Ride",
+        activityType: "bike",
+        activityKind: "single",
+        activityCategories: ["bike"],
+        estimatedDuration: 3600,
+        estimatedDistance: 20000,
+        load: null,
+        intensity: null,
+      }),
+    );
     expect(result.projectedLoad).toEqual([
       { date: "2026-04-04", ctl: 43.1, atl: 49.3, tsb: -6.2, plannedTss: 90 },
       { date: "2026-04-05", ctl: 44.6, atl: 48.2, tsb: -3.6, plannedTss: 60 },

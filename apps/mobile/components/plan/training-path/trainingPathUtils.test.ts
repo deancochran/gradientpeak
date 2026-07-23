@@ -10,12 +10,9 @@ import {
 const goalMarkers = [{ id: "goal-1", label: "A race", targetDate: "2026-08-16" }];
 const observedCompletedLoad = {
   completed_observation_state: "observed" as const,
-  completed_tss_identity: {
-    sport: "bike" as const,
-    method: "power_threshold" as const,
-    source: "activity_analysis" as const,
+  completed_common_load_identity: {
+    model: "gradientpeak_relative_load" as const,
     version: "1" as const,
-    calibration: { type: "ftp_watts" as const, value: 250 },
   },
 };
 const zeroTargetDates = (dates: string[]) =>
@@ -192,7 +189,7 @@ describe("trainingPathUtils", () => {
 
     expect(model.selectedWeekSummary?.weekStart).toBe("2026-05-18");
     expect(model.selectedWeekSummary?.loadDelta).toBe(-40);
-    expect(model.selectedWeekSummary?.headline).toBe("40 TSS below target");
+    expect(model.selectedWeekSummary?.headline).toBe("40 Load below target");
   });
 
   it("does not flatline actual fitness into future weeks without projected fitness", () => {
@@ -358,12 +355,9 @@ describe("trainingPathUtils", () => {
       secondPoint: {
         completed_load_tss: 25,
         completed_observation_state: "observed" as const,
-        completed_tss_identity: {
-          sport: "run" as const,
-          method: "run_pace_threshold" as const,
-          source: "activity_analysis" as const,
-          version: "1" as const,
-          calibration: { type: "threshold_speed_mps" as const, value: 4 },
+        completed_common_load_identity: {
+          model: "gradientpeak_relative_load" as const,
+          version: "2" as const,
         },
       },
     },
@@ -372,7 +366,7 @@ describe("trainingPathUtils", () => {
       secondPoint: {
         completed_load_tss: 0,
         completed_observation_state: "unavailable" as const,
-        completed_tss_identity: null,
+        completed_common_load_identity: null,
         has_unavailable_completed_activity: true,
       },
     },

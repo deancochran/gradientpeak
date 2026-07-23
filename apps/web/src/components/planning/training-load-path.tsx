@@ -10,11 +10,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@repo/ui/components/ta
 
 import { formatShortDayLabel, getTrainingLoadPath, type PlanningEvent } from "../../lib/planning";
 
-function LoadValue({ value }: { value: number | null }) {
-  return value === null ? (
-    <Badge variant="outline">Estimate unavailable</Badge>
-  ) : (
-    <Badge>{Math.round(value)} TSS estimated</Badge>
+function LoadValue({
+  load,
+  status,
+}: {
+  load: number | null;
+  status: "complete" | "partial" | "unavailable";
+}) {
+  if (load === null) return <Badge variant="outline">Load unavailable</Badge>;
+  return (
+    <Badge variant={status === "complete" ? "default" : "outline"}>
+      Load {Math.round(load)}
+      {status === "partial" ? " · partial" : ""}
+    </Badge>
   );
 }
 
@@ -26,7 +34,8 @@ export function TrainingLoadPath({ events }: { events: PlanningEvent[] }) {
       <CardHeader>
         <CardTitle>Training path</CardTitle>
         <CardDescription>
-          Daily and weekly planned load from persisted scheduled activity estimates.
+          Daily and weekly common Load from scheduled activity plans; partial and unavailable data
+          remain explicit.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -52,7 +61,7 @@ export function TrainingLoadPath({ events }: { events: PlanningEvent[] }) {
                       {point.eventCount} scheduled {point.eventCount === 1 ? "session" : "sessions"}
                     </p>
                   </div>
-                  <LoadValue value={point.estimatedTss} />
+                  <LoadValue load={point.load} status={point.status} />
                 </div>
               ))}
             </TabsContent>
@@ -68,7 +77,7 @@ export function TrainingLoadPath({ events }: { events: PlanningEvent[] }) {
                       {point.eventCount} scheduled {point.eventCount === 1 ? "session" : "sessions"}
                     </p>
                   </div>
-                  <LoadValue value={point.estimatedTss} />
+                  <LoadValue load={point.load} status={point.status} />
                 </div>
               ))}
             </TabsContent>

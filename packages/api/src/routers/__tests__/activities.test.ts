@@ -428,6 +428,9 @@ function createDbMock(options: {
   activityGeometryRows?: any[];
   activityLapRows?: any[];
   currentArtifactRows?: any[];
+  profileRows?: any[];
+  integrationRows?: any[];
+  providerSyncRows?: any[];
   queryActivitiesFindFirst?: any[];
   queryActivityFileIngestionsFindFirst?: any[];
   queryActivityGeometryFindFirst?: any[];
@@ -486,6 +489,11 @@ function createDbMock(options: {
   });
 
   function rowsForTable(tableName: string) {
+    if (tableName === "profiles") {
+      return options.profileRows ?? [{ planningTimezone: "America/New_York" }];
+    }
+    if (tableName === "integrations") return options.integrationRows ?? [];
+    if (tableName === "provider_sync_state") return options.providerSyncRows ?? [];
     if (tableName === "activity_summaries") return options.activitySummaryRows ?? [];
     if (tableName === "activity_imports") return options.activityImportRows ?? [];
     if (tableName === "activity_geometry") return options.activityGeometryRows ?? [];
@@ -684,127 +692,11 @@ beforeEach(() => {
 });
 
 describe("activitiesRouter", () => {
-  it("returns user-scoped sparse daily TSS observations", async () => {
-    const rows = [
-      buildActivityRow({
-        id: ACTIVITY_ID,
-        started_at: new Date("2026-03-08T05:30:00.000Z"),
-      }),
-      buildActivityRow({
-        id: ACTIVITY_ID_2,
-        started_at: new Date("2026-03-08T15:30:00.000Z"),
-      }),
-    ];
-    const tssIdentity = {
-      sport: "run",
-      method: "run_pace_threshold",
-      source: "activity_analysis",
-      version: "1",
-      calibration: { type: "threshold_speed_mps", value: 4.2 },
-    } as const;
-    mockActivityAnalysis.buildActivitySegmentDerivedSummaries.mockResolvedValue([
-      {
-        activity_id: ACTIVITY_ID,
-        segment_id: ACTIVITY_ID,
-        category: "run",
-        tss: 35,
-        tss_identity: tssIdentity,
-        load_stream_key: "run-load",
-        dedupe_key: ACTIVITY_ID,
-      },
-      {
-        activity_id: ACTIVITY_ID_2,
-        segment_id: ACTIVITY_ID_2,
-        category: "run",
-        tss: 45,
-        tss_identity: tssIdentity,
-        load_stream_key: "run-load",
-        dedupe_key: ACTIVITY_ID_2,
-      },
-    ]);
-    const db = createDbMock({ activityRows: rows });
-
-    const result = await createCaller(db).dailyTssObservations({
-      start_date: "2026-03-08",
-      end_date: "2026-03-09",
-      timezone: "America/New_York",
-    });
-
-    expect(result).toEqual({
-      start_date: "2026-03-08",
-      end_date: "2026-03-09",
-      timezone: "America/New_York",
-      day_policy: "activity_started_at_in_requested_timezone",
-      observations: [
-        {
-          date: "2026-03-08",
-          state: "calculated",
-          value: 80,
-          tss_identity: tssIdentity,
-          activity_count: 2,
-          unavailable_activity_count: 0,
-        },
-      ],
-    });
-    expect(mockActivityAnalysis.buildActivitySegmentDerivedSummaries).toHaveBeenCalledWith({
-      store: { kind: "activity-analysis-store" },
-      profileId: OWNER_ID,
-      activities: expect.arrayContaining([
-        expect.objectContaining({ id: ACTIVITY_ID, segments: expect.any(Array) }),
-        expect.objectContaining({ id: ACTIVITY_ID_2, segments: expect.any(Array) }),
-      ]),
-    });
-  });
-
-  it("validates daily TSS ranges and requires authentication", async () => {
-    const caller = createCaller(createDbMock({}));
-
-    await expect(
-      caller.dailyTssObservations({
-        start_date: "2026-03-10",
-        end_date: "2026-03-09",
-        timezone: "UTC",
-      }),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    await expect(
-      caller.dailyTssObservations({
-        start_date: "2026-01-01",
-        end_date: "2027-01-01",
-        timezone: "UTC",
-      }),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    await expect(
-      caller.dailyTssObservations({
-        start_date: "2026-03-08",
-        end_date: "2026-03-09",
-        timezone: "EST",
-      }),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-
-    const unauthenticatedCaller = activitiesRouter.createCaller({
-      db: createDbMock({}),
-      session: null,
-      headers: new Headers(),
-      clientType: "test",
-      trpcSource: "vitest",
-    } as any);
-    await expect(
-      unauthenticatedCaller.dailyTssObservations({
-        start_date: "2026-03-08",
-        end_date: "2026-03-09",
-        timezone: "UTC",
-      }),
-    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
-  });
-
   it("returns authenticated profile-scoped common Load history through the Core output contract", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-21T16:00:00.000Z"));
     try {
-      const result = await createCaller(createDbMock({})).commonLoadHistory({
-        current_planning_date: "2026-07-21",
-        planning_timezone: "America/New_York",
-      });
+      const result = await createCaller(createDbMock({})).commonLoadHistory();
 
       expect(result.status).toBe("available");
       if (result.status !== "available") throw new Error("Available common Load history expected");
@@ -832,6 +724,18 @@ describe("activitiesRouter", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("returns explicit abstention when the profile planning timezone is missing", async () => {
+    const result = await createCaller(
+      createDbMock({ profileRows: [{ planningTimezone: null }] }),
+    ).commonLoadHistory();
+
+    expect(result).toMatchObject({
+      status: "unavailable",
+      reason: "invalid_input",
+      context: { path: "planningTimezone" },
+    });
   });
 
   it("rejects a planning date that differs from the server-derived profile-local date", async () => {

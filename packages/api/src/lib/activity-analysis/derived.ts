@@ -1,6 +1,10 @@
 import {
   type ActivityListDerivedSummary,
+  aggregateCommonLoad,
   analyzeActivityDerivedMetrics,
+  COMMON_RELATIVE_LOAD_MODEL,
+  COMMON_RELATIVE_LOAD_VERSION,
+  commonLoadResultSchema,
   segmentSummarySchemaV1,
 } from "@repo/core";
 import { type ActivityRow, type ActivitySegmentRow, activitySegments } from "@repo/db";
@@ -155,11 +159,13 @@ export async function buildActivitySegmentDerivedSummaries(input: {
   store: ActivityAnalysisStore;
   profileId: string;
   activities: ActivityWithSegments[];
+  computedAsOf?: Date;
 }): Promise<SegmentDerivedSummary[]> {
   const { store, profileId, activities } = input;
+  const computedAsOf = (input.computedAsOf ?? new Date()).toISOString();
   if (activities.length === 0) return [];
   const requests = activities.map((activity) => ({
-    asOf: activity.finished_at,
+    asOf: activity.started_at,
     effortLookbackAsOf: activity.started_at,
     profileId: activity.profile_id ?? profileId,
   }));
@@ -189,7 +195,7 @@ export async function buildActivitySegmentDerivedSummaries(input: {
       ? evidenceByProfileId.get(activity.profile_id)
       : evidenceByRequest.get(
           contextRequestKey({
-            asOf: activity.finished_at,
+            asOf: activity.started_at,
             effortLookbackAsOf: activity.started_at,
             profileId: activity.profile_id,
           }),
@@ -202,7 +208,6 @@ export async function buildActivitySegmentDerivedSummaries(input: {
       evidence,
       activityTimestamp: activity.started_at,
       activityId: activity.id,
-      activityEffortThrough: activity.finished_at,
     });
     for (const segment of orderedActivitySegments(activity.segments)) {
       const summary = segmentSummarySchemaV1.parse(segment.summary);
@@ -219,7 +224,20 @@ export async function buildActivitySegmentDerivedSummaries(input: {
           method: null,
           unavailable_reason: "activity_data_missing",
           calibration_quality: null,
-          computed_as_of: startedAt.toISOString(),
+          common_load: commonLoadResultSchema.parse({
+            status: "unavailable",
+            model: COMMON_RELATIVE_LOAD_MODEL,
+            version: COMMON_RELATIVE_LOAD_VERSION,
+            sport: segment.category,
+            method: null,
+            quality: null,
+            thresholdEvidence: null,
+            evidenceFingerprint: null,
+            computedAsOf,
+            contributingDurationSeconds: null,
+            reason: "duration_missing",
+          }),
+          computed_as_of: computedAsOf,
           dedupe_key: `activity-segment:${activity.id}:${segment.id}:load:v1`,
           load_stream_key: null,
         });
@@ -239,7 +257,20 @@ export async function buildActivitySegmentDerivedSummaries(input: {
           method: null,
           unavailable_reason: "activity_data_missing",
           calibration_quality: null,
-          computed_as_of: startedAt.toISOString(),
+          common_load: commonLoadResultSchema.parse({
+            status: "unavailable",
+            model: COMMON_RELATIVE_LOAD_MODEL,
+            version: COMMON_RELATIVE_LOAD_VERSION,
+            sport: segment.category,
+            method: null,
+            quality: null,
+            thresholdEvidence: null,
+            evidenceFingerprint: null,
+            computedAsOf,
+            contributingDurationSeconds: null,
+            reason: "duration_missing",
+          }),
+          computed_as_of: computedAsOf,
           dedupe_key: `activity-segment:${activity.id}:${segment.id}:load:v1`,
           load_stream_key: null,
         });
@@ -263,12 +294,15 @@ export async function buildActivitySegmentDerivedSummaries(input: {
           max_power: null,
           avg_speed_mps: summary.averageSpeedMetersPerSecond ?? null,
           max_speed_mps: null,
-          normalized_power: null,
-          normalized_speed_mps: null,
-          normalized_graded_speed_mps: null,
+          normalized_power: summary.normalizedPowerWatts ?? null,
+          normalized_speed_mps: summary.normalizedSpeedMetersPerSecond ?? null,
+          normalized_graded_speed_mps: summary.normalizedGradedSpeedMetersPerSecond ?? null,
         },
         context,
-        heartRateDistribution: summary.heartRateDistribution,
+        computedAsOf,
+        ...(summary.heartRateDistribution !== undefined
+          ? { heartRateDistribution: summary.heartRateDistribution }
+          : {}),
       });
       const compact: ActivityListDerivedSummary = {
         tss: derived.stress.tss,
@@ -293,7 +327,7 @@ export async function buildActivitySegmentDerivedSummaries(input: {
   return output;
 }
 
-/** Parent summaries exist only when every load-bearing segment belongs to one compatible stream. */
+/** Parent summaries aggregate modern common Load for every represented segment. */
 export async function buildActivityDerivedSummaryMap(input: {
   store: ActivityAnalysisStore;
   profileId: string;
@@ -325,14 +359,64 @@ function buildParentDerivedSummaryMap(
   for (const segment of segments) result.set(segment.segment_id, segment);
   for (const activity of activities) {
     const parts = segments.filter((segment) => segment.activity_id === activity.id);
-    const available = parts.filter(
-      (part) => part.tss !== null && part.tss_identity !== null && part.load_stream_key !== null,
+    if (parts.length === 0) continue;
+    const commonLoad = aggregateCommonLoad(
+      parts.flatMap((part) => {
+        const parsed = commonLoadResultSchema.safeParse(part.common_load);
+        return parsed.success ? [parsed.data] : [];
+      }),
     );
-    if (parts.length !== 1 || available.length !== 1) continue;
-    const first = available[0];
+    const first = parts[0];
     if (!first) continue;
+    if (parts.length === 1) {
+      result.set(activity.id, {
+        ...first,
+        common_load: commonLoad,
+      });
+      continue;
+    }
+
+    const completeCompatibleLegacyParts = parts.every((part) => {
+      const parsedCommonLoad = commonLoadResultSchema.safeParse(part.common_load);
+      return (
+        part.tss !== null &&
+        part.tss_identity !== null &&
+        part.intensity_factor !== null &&
+        part.method !== null &&
+        part.unavailable_reason === null &&
+        part.load_stream_key !== null &&
+        part.load_stream_key === first.load_stream_key &&
+        JSON.stringify(part.tss_identity) === JSON.stringify(first.tss_identity) &&
+        JSON.stringify(part.calibration_quality) === JSON.stringify(first.calibration_quality) &&
+        parsedCommonLoad.success &&
+        parsedCommonLoad.data.status === "available"
+      );
+    });
+    const legacyIntensityFactor =
+      completeCompatibleLegacyParts && commonLoad.status === "complete"
+        ? Math.round(commonLoad.intensity * 100) / 100
+        : null;
+
     result.set(activity.id, {
       ...first,
+      tss:
+        completeCompatibleLegacyParts && legacyIntensityFactor !== null
+          ? parts.reduce((total, part) => total + (part.tss ?? 0), 0)
+          : null,
+      tss_identity:
+        completeCompatibleLegacyParts && legacyIntensityFactor !== null ? first.tss_identity : null,
+      intensity_factor: legacyIntensityFactor,
+      method: completeCompatibleLegacyParts && legacyIntensityFactor !== null ? first.method : null,
+      unavailable_reason:
+        completeCompatibleLegacyParts && legacyIntensityFactor !== null
+          ? null
+          : "activity_data_missing",
+      calibration_quality:
+        completeCompatibleLegacyParts && legacyIntensityFactor !== null
+          ? first.calibration_quality
+          : null,
+      common_load: commonLoad,
+      computed_as_of: first.computed_as_of,
     });
   }
   return result;

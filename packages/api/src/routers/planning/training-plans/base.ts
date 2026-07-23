@@ -19,6 +19,7 @@ import {
   classifyProjectionFeasibility,
   computeLoadBootstrapState,
   countAvailableTrainingDays,
+  createAthletePlanningContextFromSnapshot,
   createFromCreationConfigInputSchema,
   creationBehaviorControlsV1Schema,
   creationConfigValueSchema,
@@ -75,15 +76,13 @@ import {
   trainingPlanUpdateInputSchema,
 } from "@repo/core";
 import { getAuthoritativeActivityPlanMetrics } from "@repo/core/activity-plan";
-import {
-  getActivityEffortThresholdEvidence,
-  resolveCanonicalThresholds,
-} from "@repo/core/athlete-inputs";
 import { getScheduledDateKey } from "@repo/core/utils/schedule-date";
 import { type ProfileGoalRow, schema, type TrainingPlanRow } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
 import { z } from "zod";
+import { readCurrentProfileCommonLoadHistory } from "../../../application/activities/read-current-profile-common-load-history";
+import { buildEffectiveAthleteSnapshot } from "../../../application/athlete-state/build-effective-athlete-snapshot";
 import {
   parseProfileTrainingSettings,
   readParsedProfileTrainingSettings,
@@ -149,8 +148,6 @@ import { indexCursorSchema } from "../../../utils/index-cursor";
 import {
   filterObservationsAfterLatestTombstone,
   filterSupersededProfileOverrides,
-  isActiveManualFtpOverride,
-  resolveLatestObservationsByKey,
 } from "../../../utils/profile-override-observations";
 
 const feasibilityStateSchema = z.enum(["feasible", "aggressive", "unsafe"]);
@@ -2515,7 +2512,7 @@ export async function deriveProfileAwareCreationContext(input: {
   recentActivitiesCutoff.setDate(recentActivitiesCutoff.getDate() - 84);
 
   const recentEffortsCutoff = new Date(asOf);
-  recentEffortsCutoff.setDate(recentEffortsCutoff.getDate() - 84);
+  recentEffortsCutoff.setDate(recentEffortsCutoff.getDate() - 90);
 
   const [activitiesResult, effortsResult, profileMetricsResult, profileResult, settingsResult] =
     input.db
@@ -2527,6 +2524,8 @@ export async function deriveProfileAwareCreationContext(input: {
               and(
                 eq(schema.activities.profile_id, input.profileId),
                 gte(schema.activities.started_at, recentActivitiesCutoff),
+                lte(schema.activities.started_at, asOf),
+                lte(schema.activities.finished_at, asOf),
               ),
             )
             .orderBy(sql`${schema.activities.started_at} desc`)
@@ -2576,7 +2575,6 @@ export async function deriveProfileAwareCreationContext(input: {
             .where(
               and(
                 eq(schema.profileMetrics.profile_id, input.profileId),
-                inArray(schema.profileMetrics.metric_type, ["ftp", "lthr", "weight_kg"]),
                 lte(schema.profileMetrics.recorded_at, asOf),
               ),
             )
@@ -2601,6 +2599,8 @@ export async function deriveProfileAwareCreationContext(input: {
             )
             .eq("profile_id", input.profileId)
             .gte("started_at", recentActivitiesCutoff.toISOString())
+            .lte("started_at", asOf.toISOString())
+            .lte("finished_at", asOf.toISOString())
             .order("started_at", { ascending: false })
             .limit(300),
           input.supabase
@@ -2620,7 +2620,6 @@ export async function deriveProfileAwareCreationContext(input: {
               "id, metric_type, value, recorded_at, unit, source, method, calculation_version, quality_score, provenance",
             )
             .eq("profile_id", input.profileId)
-            .in("metric_type", ["ftp", "lthr", "weight_kg"])
             .lte("recorded_at", asOf.toISOString())
             .order("recorded_at", { ascending: false })
             .order("id", { ascending: false }),
@@ -2730,85 +2729,107 @@ export async function deriveProfileAwareCreationContext(input: {
     profileMetricsResult.error ? [] : (profileMetricsResult.data ?? []),
     (metric: any) => metric.metric_type,
   );
+  // Planning context uses the same cross-sport common Load history as Trends,
+  // rather than a nullable legacy TSS fitness snapshot.
+  const commonLoadHistory = input.db
+    ? await readCurrentProfileCommonLoadHistory({
+        db: input.db,
+        profileId: input.profileId,
+        now: asOf,
+      })
+    : null;
+  const currentCommonLoad =
+    commonLoadHistory?.result.status === "available"
+      ? (commonLoadHistory.result.points.at(-1) ?? null)
+      : null;
 
-  const thresholds = resolveCanonicalThresholds({
-    now: asOf.toISOString(),
-    freshnessWindowMs: 90 * 24 * 60 * 60 * 1000,
-    directMetrics: [
-      ...profileMetricsRows.flatMap((metric: any) =>
-        metric.metric_type === "ftp" && Number.isFinite(Number(metric.value))
-          ? [
-              {
-                threshold: "cycling_ftp" as const,
-                value: Number(metric.value),
-                observedAt: new Date(metric.recorded_at).toISOString(),
-                source: "provider" as const,
-              },
-            ]
-          : [],
-      ),
-      ...efforts.flatMap((effort: any) =>
-        isActiveManualFtpOverride(effort)
-          ? [
-              {
-                threshold: "cycling_ftp" as const,
-                value: Number(effort.value) * 0.95,
-                observedAt: new Date(effort.recorded_at).toISOString(),
-                source: "manual" as const,
-                locked: true,
-              },
-            ]
-          : [],
-      ),
-    ],
-    activityEfforts: efforts.flatMap((effort: any) =>
-      !isActiveManualFtpOverride(effort) &&
-      effort.activity_category === "bike" &&
-      effort.effort_type === "power" &&
-      effort.duration_seconds === 1200
-        ? [
-            {
-              sport: "bike" as const,
-              metric: "power" as const,
-              value: Number(effort.value),
-              durationSeconds: 1200,
-              observedAt: new Date(effort.recorded_at).toISOString(),
-              observationKind:
-                effort.activity_id !== null &&
-                effort.source !== "derived" &&
-                effort.source !== "estimated"
-                  ? ("actual" as const)
-                  : ("derived" as const),
-              evidence:
-                getActivityEffortThresholdEvidence({
-                  activityCategory: effort.activity_category,
-                  activityId: effort.activity_id,
-                  durationSeconds: effort.duration_seconds,
-                  effortType: effort.effort_type,
-                  method: effort.method,
-                  provenance: effort.provenance,
-                  source: effort.source,
-                  unit: effort.unit,
-                  value: Number(effort.value),
-                }) ?? undefined,
-            },
-          ]
-        : [],
-    ),
+  const effectiveAthleteSnapshot = buildEffectiveAthleteSnapshot({
+    asOf,
+    profile: {
+      dob: profileResult.data?.[0]?.dob ?? null,
+      gender:
+        profileResult.data?.[0]?.gender === "male" ||
+        profileResult.data?.[0]?.gender === "female" ||
+        profileResult.data?.[0]?.gender === "other"
+          ? profileResult.data[0].gender
+          : null,
+    },
+    profileMetrics: profileMetricsRows.map((metric) => ({
+      metric_type: metric.metric_type,
+      value: Number(metric.value),
+      unit:
+        metric.unit ??
+        (metric.metric_type === "ftp" ? "W" : metric.metric_type === "lthr" ? "bpm" : "kg"),
+      recorded_at: metric.recorded_at,
+      source: metric.source,
+      method: metric.method,
+      calculation_version: metric.calculation_version,
+      quality_score: metric.quality_score === null ? undefined : metric.quality_score,
+      provenance:
+        typeof metric.provenance === "object" && metric.provenance !== null
+          ? metric.provenance
+          : undefined,
+    })),
+    currentFitness:
+      currentCommonLoad === null
+        ? null
+        : {
+            ctl: currentCommonLoad.longTermLoad,
+            atl: currentCommonLoad.recentLoad,
+            tsb: currentCommonLoad.loadBalance,
+            recorded_at: commonLoadHistory?.computedAt,
+          },
+    activityEfforts: efforts.flatMap((effort) => {
+      const value = Number(effort.value);
+      const recordedAt = new Date(effort.recorded_at);
+      if (
+        (effort.effort_type !== "power" && effort.effort_type !== "speed") ||
+        !Number.isFinite(value) ||
+        typeof effort.unit !== "string" ||
+        effort.unit.length === 0 ||
+        Number.isNaN(recordedAt.getTime())
+      ) {
+        return [];
+      }
+      return [
+        {
+          activity_category: effort.activity_category,
+          effort_type: effort.effort_type,
+          duration_seconds: effort.duration_seconds,
+          value,
+          unit: effort.unit,
+          recorded_at: recordedAt,
+          activity_id: effort.activity_id,
+          source: effort.source,
+          method: effort.method,
+          calculation_version: effort.calculation_version,
+          quality_score: effort.quality_score === null ? undefined : effort.quality_score,
+          provenance:
+            typeof effort.provenance === "object" && effort.provenance !== null
+              ? effort.provenance
+              : undefined,
+        },
+      ];
+    }),
+    coverage: {
+      profileMetrics: profileMetricsResult.error ? "unknown" : "complete",
+      activityEfforts: effortsResult.error
+        ? "unknown"
+        : (effortsResult.data?.length ?? 0) >= 200
+          ? "possibly_truncated"
+          : "complete",
+    },
   });
-
-  const latestProfileMetrics = resolveLatestObservationsByKey(
-    profileMetricsResult.error ? [] : (profileMetricsResult.data ?? []),
-    (metric: any) => metric.metric_type,
-  );
-  const lthrMetric = latestProfileMetrics.get("lthr");
-  const weightMetric = latestProfileMetrics.get("weight_kg");
+  const athleteContext = createAthletePlanningContextFromSnapshot(effectiveAthleteSnapshot);
 
   const profileMetrics = {
-    ftp: thresholds.cycling_ftp.value === null ? null : Math.round(thresholds.cycling_ftp.value),
-    threshold_hr: lthrMetric?.value ? Number(lthrMetric.value) : null,
-    weight_kg: weightMetric?.value ? Number(weightMetric.value) : null,
-    lthr: lthrMetric?.value ? Number(lthrMetric.value) : null,
+    ftp:
+      athleteContext.physiology.ftpWatts.value === null
+        ? null
+        : Math.round(athleteContext.physiology.ftpWatts.value),
+    threshold_hr: athleteContext.physiology.thresholdHeartRateBpm.value,
+    weight_kg: athleteContext.body.weightKg.value,
+    lthr: athleteContext.physiology.thresholdHeartRateBpm.value,
   };
 
   const settings = parseProfileTrainingSettings(settingsResult.data?.settings);
@@ -2851,6 +2872,7 @@ export async function deriveProfileAwareCreationContext(input: {
       : undefined;
 
   return {
+    athleteContext,
     contextSummary,
     loadBootstrapState,
     globalCtlOverride,
@@ -4184,47 +4206,16 @@ const trainingPlansProcedures = {
       repository: createTrainingPlanRepository(db),
     });
 
-    // Get activities from the last 42 days (CTL time constant)
     const today = new Date();
-    const fortyTwoDaysAgo = new Date(today);
-    fortyTwoDaysAgo.setDate(fortyTwoDaysAgo.getDate() - 42);
-
-    const activities = await db
-      .select(activitySummaryColumns)
-      .from(schema.activities)
-      .where(
-        and(
-          eq(schema.activities.profile_id, ctx.session.user.id),
-          gte(schema.activities.started_at, fortyTwoDaysAgo),
-        ),
-      )
-      .orderBy(asc(schema.activities.started_at));
-
-    const activitiesWithSegments = await attachActivitySegments(db, activities);
-    const stressSeries = await buildDynamicStressSeries({
-      store: createActivityAnalysisStore(db),
+    const commonLoadHistory = await readCurrentProfileCommonLoadHistory({
+      db,
       profileId: ctx.session.user.id,
-      activities: activitiesWithSegments,
+      now: today,
     });
-
-    // No activities is not evidence of zero fitness, and a partial/incompatible
-    // stress series cannot produce a trustworthy current load state.
-    if (activities.length === 0 || !stressSeries.complete) {
-      return null;
-    }
-
-    const loadSeries = calculateTrainingLoadSeries(
-      buildDateRange(formatDateOnlyUtc(fortyTwoDaysAgo), formatDateOnlyUtc(today)).map(
-        (date) => stressSeries.byDate.get(date) ?? 0,
-      ),
-      0,
-      0,
-    );
-    const latestLoadState = loadSeries[loadSeries.length - 1];
-    if (!latestLoadState) return null;
-    const { ctl, atl, tsb } = latestLoadState;
-    const form = getFormStatus(tsb);
-    const derivedActivityMap = stressSeries.byActivityId;
+    const latestLoadState =
+      commonLoadHistory.result.status === "available"
+        ? (commonLoadHistory.result.points.at(-1) ?? null)
+        : null;
 
     // Get this week's progress
     const startOfWeek = new Date(today);
@@ -4397,10 +4388,35 @@ const trainingPlansProcedures = {
     const targetTSS = plannedWeeklyTSS;
 
     return {
-      ctl: Math.round(ctl * 10) / 10,
-      atl: Math.round(atl * 10) / 10,
-      tsb: Math.round(tsb * 10) / 10,
-      form,
+      asOf: commonLoadHistory.computedAt,
+      loadHistory: commonLoadHistory.result,
+      currentLoadStatus:
+        latestLoadState === null
+          ? null
+          : {
+              longTermLoad: Math.round(latestLoadState.longTermLoad * 10) / 10,
+              recentLoad: Math.round(latestLoadState.recentLoad * 10) / 10,
+              loadBalance: Math.round(latestLoadState.loadBalance * 10) / 10,
+              loadBalanceStatus: getFormStatus(latestLoadState.loadBalance),
+              recordedAt: commonLoadHistory.computedAt,
+            },
+      /** @deprecated Use currentLoadStatus.longTermLoad. */
+      ctl: latestLoadState === null ? null : Math.round(latestLoadState.longTermLoad * 10) / 10,
+      /** @deprecated Use currentLoadStatus.recentLoad. */
+      atl: latestLoadState === null ? null : Math.round(latestLoadState.recentLoad * 10) / 10,
+      /** @deprecated Use currentLoadStatus.loadBalance. */
+      tsb: latestLoadState === null ? null : Math.round(latestLoadState.loadBalance * 10) / 10,
+      /** @deprecated Use currentLoadStatus.loadBalanceStatus. */
+      form: latestLoadState === null ? null : getFormStatus(latestLoadState.loadBalance),
+      legacyTssWeekProgress: {
+        completedTSS: Math.round(completedWeeklyTSS * 10) / 10,
+        tssComplete: completedWeeklyLoad.complete,
+        plannedTSS: Math.round(plannedWeeklyTSS * 10) / 10,
+        targetTSS: Math.round(targetTSS * 10) / 10,
+        completedActivities: completedActivitiesCount || 0,
+        totalPlannedActivities,
+      },
+      /** @deprecated Use legacyTssWeekProgress until common planned-load migration lands. */
       weekProgress: {
         completedTSS: Math.round(completedWeeklyTSS * 10) / 10,
         tssComplete: completedWeeklyLoad.complete,

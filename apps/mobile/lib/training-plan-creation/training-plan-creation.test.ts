@@ -163,7 +163,7 @@ describe("training plan creation domain", () => {
     expect(context.physiology.currentFitnessCtl).toMatchObject({
       value: 41.2,
       source: "training_status",
-      unit: "CTL",
+      unit: "Load",
     });
     expect(context.physiology.currentFatigueAtl.value).toBe(49.8);
     expect(context.physiology.currentFormTsb.value).toBe(-8.6);
@@ -2395,7 +2395,7 @@ describe("training plan creation domain", () => {
       "assign-session",
     );
     expect(viewModel.planningBriefRows.map((row) => row.value)).toEqual([
-      "Fitness 41 CTL",
+      "Long-term Load (CTL) 41",
       "1 goal",
       "4 weeks · 3 sessions/week",
       "Reusable Week/Day plan · 2 preferred days",
@@ -2465,7 +2465,7 @@ describe("training plan creation domain", () => {
       tsb: null,
       summaryLabel: "Fitness calibration needed",
     });
-    expect(viewModel.currentBaseline.detail).toContain("calculated load");
+    expect(viewModel.currentBaseline.detail).toContain("calculated Load");
     expect(viewModel.dailyTrainingPathChart.emptyState).toBe("noActivityHistory");
     expect(
       viewModel.dailyTrainingPathChart.dailyPoints.every(

@@ -1,4 +1,3 @@
-import type { ActivityTssIdentity } from "@repo/core";
 import {
   aggregateDailyTrainingLoadAdjustmentsToWeeks,
   type DailyTrainingLoadAdjustment,
@@ -6,7 +5,10 @@ import {
   normalizeDailyTrainingLoadAdjustments,
   type WeeklyTrainingLoadAdjustment,
 } from "@repo/core/training-timeline";
-import type { CompletedObservationState } from "./completedTssObservation";
+import type {
+  CommonLoadIdentity,
+  CompletedObservationState,
+} from "./completedCommonLoadObservation";
 
 export type DailyTrainingAdjustmentSeverity = "info" | "warning" | "risk";
 
@@ -18,7 +20,7 @@ export type DailyTrainingAdjustmentAnnotation = {
 
 type DailyTrainingAdjustmentPresentation = {
   completedObservationState?: CompletedObservationState;
-  completedTssIdentity?: ActivityTssIdentity | null;
+  completedCommonLoadIdentity?: CommonLoadIdentity | null;
   hasCompletedActivityWithoutLoad?: boolean;
   hasTargetLoad?: boolean;
   fitnessCtl?: number | null;
@@ -72,10 +74,10 @@ function normalizeNumber(value: number | null | undefined, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-function formatSignedTss(value: number) {
+function formatSignedLoad(value: number) {
   const rounded = Math.round(value);
   if (rounded === 0) return "On target";
-  return `${rounded > 0 ? "+" : ""}${rounded} TSS`;
+  return `${rounded > 0 ? "+" : ""}${rounded} Load`;
 }
 
 function getDeltaTone(value: number): DailyTrainingAdjustmentSummary["loadDeltaTone"] {
@@ -95,7 +97,7 @@ export function normalizeDailyTrainingAdjustmentPoints(input: {
     return {
       ...point,
       completedObservationState: raw?.completedObservationState,
-      completedTssIdentity: raw?.completedTssIdentity ?? null,
+      completedCommonLoadIdentity: raw?.completedCommonLoadIdentity ?? null,
       hasCompletedActivityWithoutLoad: raw?.hasCompletedActivityWithoutLoad === true,
       hasTargetLoad: raw?.hasTargetLoad !== false,
       fitnessCtl: raw?.fitnessCtl ?? null,
@@ -120,9 +122,9 @@ export function getDailyTrainingAdjustmentSummary(input: {
   return {
     date: point.date,
     point,
-    loadDeltaLabel: point.hasTargetLoad === false ? null : formatSignedTss(point.loadDeltaTss),
+    loadDeltaLabel: point.hasTargetLoad === false ? null : formatSignedLoad(point.loadDeltaTss),
     plannedDeltaLabel:
-      point.hasTargetLoad === false ? null : formatSignedTss(point.plannedDeltaTss),
+      point.hasTargetLoad === false ? null : formatSignedLoad(point.plannedDeltaTss),
     loadDeltaTone: point.hasTargetLoad === false ? null : getDeltaTone(point.loadDeltaTss),
   };
 }

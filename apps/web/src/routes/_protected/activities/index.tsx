@@ -13,14 +13,14 @@ import { api } from "../../../lib/api/client";
 type ActivityHistorySearch = {
   q?: string;
   category?: "run" | "bike" | "swim" | "strength" | "other";
-  sort?: "date" | "distance" | "duration" | "tss";
+  sort?: "date" | "distance" | "duration";
   order?: "asc" | "desc";
   from?: string;
   to?: string;
 };
 
 const CATEGORIES = ["run", "bike", "swim", "strength", "other"] as const;
-const SORTS = ["date", "distance", "duration", "tss"] as const;
+const SORTS = ["date", "distance", "duration"] as const;
 
 export function validateActivityHistorySearch(
   search: Record<string, unknown>,

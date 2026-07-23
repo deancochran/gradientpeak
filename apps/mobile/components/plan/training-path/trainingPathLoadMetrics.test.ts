@@ -39,6 +39,18 @@ describe("buildTrainingPathLoadMetrics", () => {
     ).toContainEqual({ label: "Completed", value: "Unavailable" });
   });
 
+  it("preserves the unavailable suffix for a week summary", () => {
+    expect(
+      buildTrainingPathLoadMetrics({
+        completedLoadUnavailable: true,
+        effectiveCompletedLoad: 35,
+        effectiveIntensity: 0.6,
+        effectiveLoad: 35,
+        effectiveLoadStatus: "partial",
+      }),
+    ).toContainEqual({ label: "Completed", value: "35 + unavailable" });
+  });
+
   it("shows known zero only when the effective result says it is known", () => {
     expect(
       buildTrainingPathLoadMetrics({

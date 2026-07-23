@@ -187,7 +187,10 @@ function ActivityPlansPage() {
               </div>
             ) : (
               plans.map((plan) => {
-                const metrics = getActivityPlanMetricSummary(plan.authoritative_metrics);
+                const metrics = getActivityPlanMetricSummary(
+                  plan.authoritative_metrics,
+                  plan.common_load,
+                );
                 return (
                   <button
                     className="w-full rounded-2xl border bg-card p-5 text-left transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

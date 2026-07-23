@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { resolveActivityContextAsOf, resolveActivityContextFromEvidence } from "../context";
 
 describe("resolveActivityContextAsOf", () => {
-  it("selects a guarded multi-ride Critical Power calibration ahead of a 20-minute estimate", () => {
+  it("keeps an eligible 20-minute FTP calibration ahead of guarded Critical Power", () => {
     const powerEffort = (
       activityId: string,
       durationSeconds: number,
@@ -36,17 +36,17 @@ describe("resolveActivityContextAsOf", () => {
 
     expect(result.profileMetrics).toMatchObject({
       ftp: 249,
-      cycling_power_watts: 250,
-      cycling_power_method: "critical_power_threshold",
+      cycling_power_watts: 249,
+      cycling_power_method: "power_threshold",
     });
     expect(result.calibrationQuality?.cyclingPower).toMatchObject({
       source: "observed_effort",
-      calculation_version: "critical-power-curve-fit-v1",
+      calculation_version: "twenty_minute_effort_v1",
       estimate: true,
     });
   });
 
-  it("allows the current ride to complete a guarded curve only when prior calibration is missing", () => {
+  it("does not let the current ride complete the curve used to score itself", () => {
     const powerEffort = (
       activityId: string,
       durationSeconds: number,
@@ -66,7 +66,6 @@ describe("resolveActivityContextAsOf", () => {
     });
     const result = resolveActivityContextFromEvidence({
       activityTimestamp: "2026-05-01T12:00:00.000Z",
-      activityEffortThrough: "2026-05-01T13:00:00.000Z",
       activityId: "current-ride",
       evidence: {
         profile: { dob: null, gender: null },
@@ -79,10 +78,8 @@ describe("resolveActivityContextAsOf", () => {
       },
     });
 
-    expect(result.profileMetrics).toMatchObject({
-      cycling_power_watts: 250,
-      cycling_power_method: "critical_power_threshold",
-    });
+    expect(result.profileMetrics.cycling_power_watts).toBeNull();
+    expect(result.profileMetrics.cycling_power_method).toBeNull();
   });
 
   it("does not let stale points from a bulk evidence window complete a fresh curve", () => {
@@ -126,7 +123,7 @@ describe("resolveActivityContextAsOf", () => {
     );
   });
 
-  it("allows a provenance-backed effort from the activity interval without admitting later evidence", async () => {
+  it("does not admit provenance-backed evidence from the activity interval", async () => {
     const evidence = {
       profile: { dob: null, gender: null },
       profileMetrics: [],
@@ -205,16 +202,12 @@ describe("resolveActivityContextAsOf", () => {
 
     const result = resolveActivityContextFromEvidence({
       activityTimestamp: "2026-05-01T12:00:00.000Z",
-      activityEffortThrough: "2026-05-01T13:00:00.000Z",
       activityId: "activity-under-analysis",
       evidence,
     });
 
-    expect(result.profileMetrics.ftp).toBe(238);
-    expect(result.calibrationQuality?.ftp).toMatchObject({
-      source: "observed_effort",
-      observed_at: "2026-05-01T12:45:00.000Z",
-    });
+    expect(result.profileMetrics.ftp).toBeNull();
+    expect(result.calibrationQuality?.ftp).toBeNull();
   });
 
   it("keeps an eligible prior threshold instead of recalibrating every activity from itself", () => {
@@ -233,7 +226,6 @@ describe("resolveActivityContextAsOf", () => {
 
     const result = resolveActivityContextFromEvidence({
       activityTimestamp: "2026-05-01T12:00:00.000Z",
-      activityEffortThrough: "2026-05-01T13:00:00.000Z",
       activityId: "activity-under-analysis",
       evidence: {
         profile: { dob: null, gender: null },
@@ -252,7 +244,6 @@ describe("resolveActivityContextAsOf", () => {
   it("evaluates prior-effort freshness at activity start", () => {
     const result = resolveActivityContextFromEvidence({
       activityTimestamp: "2026-05-01T12:00:00.000Z",
-      activityEffortThrough: "2026-05-01T14:00:00.000Z",
       activityId: "activity-under-analysis",
       evidence: {
         profile: { dob: null, gender: null },
@@ -415,10 +406,10 @@ describe("resolveActivityContextAsOf", () => {
     });
 
     expect(result.profileMetrics.ftp).toBeNull();
-    expect(result.calibrationQuality?.ftp).toBeNull();
+    expect(result.calibrationQuality?.ftp).toMatchObject({ source: "manual", stale: true });
   });
 
-  it("does not use an athlete-entered CSS test as activity calibration", () => {
+  it("uses a fresh validated CSS test as activity calibration", () => {
     const result = resolveActivityContextFromEvidence({
       activityTimestamp: "2026-07-14T12:00:00.000Z",
       evidence: {
@@ -437,8 +428,11 @@ describe("resolveActivityContextAsOf", () => {
       },
     });
 
-    expect(result.profileMetrics.swim_threshold_speed_mps).toBeNull();
-    expect(result.calibrationQuality?.swimThreshold).toBeNull();
+    expect(result.profileMetrics.swim_threshold_speed_mps).toBeCloseTo(100 / 96);
+    expect(result.calibrationQuality?.swimThreshold).toMatchObject({
+      source: "validated_test",
+      stale: false,
+    });
   });
 
   it.each([
@@ -517,7 +511,7 @@ describe("resolveActivityContextAsOf", () => {
     expect(result.profileMetrics.ftp).toBe(238);
   });
 
-  it("uses trusted activity efforts instead of locked manual or provider thresholds", () => {
+  it("uses a locked manual threshold before activity effort and effort before provider seed", () => {
     const result = resolveActivityContextFromEvidence({
       activityTimestamp: "2026-05-01T12:00:00.000Z",
       evidence: {
@@ -575,7 +569,7 @@ describe("resolveActivityContextAsOf", () => {
     });
 
     expect(result.profileMetrics).toMatchObject({
-      threshold_speed_mps: 5,
+      threshold_speed_mps: 4,
       swim_threshold_speed_mps: 1.5,
     });
   });
@@ -771,7 +765,7 @@ describe("resolveActivityContextAsOf", () => {
     ).toMatchObject({ bike: 180, run: 168 });
   });
 
-  it("uses trusted same-activity LTHR only when prior sport evidence is absent", () => {
+  it("uses only prior LTHR evidence when scoring an activity", () => {
     const currentBikeLthr = {
       id: "current-bike-lthr",
       metric_type: "lthr" as const,
@@ -795,7 +789,6 @@ describe("resolveActivityContextAsOf", () => {
     };
     const input = {
       activityTimestamp: "2026-05-01T12:00:00.000Z",
-      activityEffortThrough: "2026-05-01T13:30:00.000Z",
       activityId: "activity-under-analysis",
     };
 
@@ -808,7 +801,7 @@ describe("resolveActivityContextAsOf", () => {
           recentEfforts: [],
         },
       }).profileMetrics.lthr_by_sport,
-    ).toEqual({ bike: 180 });
+    ).toBeUndefined();
 
     expect(
       resolveActivityContextFromEvidence({
@@ -961,7 +954,7 @@ describe("resolveActivityContextAsOf", () => {
         evidence,
         activityTimestamp: "2026-05-01T12:00:00.000Z",
       }).profileMetrics,
-    ).toMatchObject({ weight_kg: 70, ftp: null });
+    ).toMatchObject({ weight_kg: 70, ftp: 300 });
     expect(
       resolveActivityContextFromEvidence({
         evidence,
@@ -973,6 +966,6 @@ describe("resolveActivityContextAsOf", () => {
         evidence,
         activityTimestamp: "2026-05-03T12:00:00.000Z",
       }).profileMetrics,
-    ).toMatchObject({ weight_kg: 72, ftp: null });
+    ).toMatchObject({ weight_kg: 72, ftp: 320 });
   });
 });

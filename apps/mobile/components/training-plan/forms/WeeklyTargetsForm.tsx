@@ -60,18 +60,18 @@ export function WeeklyTargetsForm({ data, onChange, errors }: WeeklyTargetsFormP
       <View className="gap-2">
         <Text className="text-2xl font-bold">Weekly Training Targets</Text>
         <Text className="text-muted-foreground">
-          Set your weekly Training Stress Score (TSS) range and activity frequency goals.
+          Set your weekly Load range and activity frequency goals.
         </Text>
       </View>
 
       {/* TSS Range */}
       <View className="gap-3">
-        <Label className="text-base font-semibold">Weekly TSS Range</Label>
+        <Label className="text-base font-semibold">Weekly Load Range</Label>
         <View className="flex-row gap-3">
           <View className="flex-1">
             <IntegerStepper
               id="weekly-target-min-tss"
-              label="Min TSS"
+              label="Min Load"
               value={data.target_weekly_tss_min}
               min={TSS_MIN}
               max={TSS_MAX}
@@ -82,7 +82,7 @@ export function WeeklyTargetsForm({ data, onChange, errors }: WeeklyTargetsFormP
           <View className="flex-1">
             <IntegerStepper
               id="weekly-target-max-tss"
-              label="Max TSS"
+              label="Max Load"
               value={data.target_weekly_tss_max}
               min={TSS_MIN}
               max={TSS_MAX}
@@ -96,7 +96,7 @@ export function WeeklyTargetsForm({ data, onChange, errors }: WeeklyTargetsFormP
         {tssRangeValid && data.target_weekly_tss_min > 0 && data.target_weekly_tss_max > 0 && (
           <View className="flex-row items-center gap-2 bg-success/10 p-2 rounded-md">
             <Icon as={CheckCircle} size={16} className="text-success" />
-            <Text className="text-success text-sm">Valid TSS range</Text>
+            <Text className="text-success text-sm">Valid Load range</Text>
           </View>
         )}
       </View>
@@ -136,13 +136,13 @@ export function WeeklyTargetsForm({ data, onChange, errors }: WeeklyTargetsFormP
 
               <View className="gap-2">
                 <View className="flex-row justify-between">
-                  <Text className="text-muted-foreground">Average TSS per activity:</Text>
-                  <Text className="font-semibold">{avgTssPerActivity} TSS</Text>
+                  <Text className="text-muted-foreground">Average Load per activity:</Text>
+                  <Text className="font-semibold">{avgTssPerActivity} Load</Text>
                 </View>
                 <View className="flex-row justify-between">
-                  <Text className="text-muted-foreground">Weekly TSS range:</Text>
+                  <Text className="text-muted-foreground">Weekly Load range:</Text>
                   <Text className="font-semibold">
-                    {data.target_weekly_tss_min} - {data.target_weekly_tss_max} TSS
+                    {data.target_weekly_tss_min} - {data.target_weekly_tss_max} Load
                   </Text>
                 </View>
                 <View className="flex-row justify-between">
@@ -159,13 +159,13 @@ export function WeeklyTargetsForm({ data, onChange, errors }: WeeklyTargetsFormP
         <CardContent className="p-4 gap-2">
           <Text className="font-semibold mb-1">💡 Tips</Text>
           <Text className="text-sm text-muted-foreground">
-            • Start conservative with TSS targets and build gradually
+            • Start conservative with Load targets and build gradually
           </Text>
           <Text className="text-sm text-muted-foreground">
-            • A typical recovery week is 50-80 TSS per activity
+            • A typical recovery week is 50-80 Load per activity
           </Text>
           <Text className="text-sm text-muted-foreground">
-            • Hard training sessions are typically 100-200 TSS
+            • Hard training sessions are typically 100-200 Load
           </Text>
           <Text className="text-sm text-muted-foreground">
             • Most athletes train 3-6 times per week
@@ -176,9 +176,9 @@ export function WeeklyTargetsForm({ data, onChange, errors }: WeeklyTargetsFormP
       {/* Warning for unrealistic values */}
       {avgTssPerActivity > 300 && (
         <Alert icon={AlertCircle} variant="destructive">
-          <AlertTitle>Warning: Very High TSS</AlertTitle>
+          <AlertTitle>Warning: Very High Load</AlertTitle>
           <AlertDescription>
-            Your average TSS per activity ({avgTssPerActivity}) is very high. This might be
+            Your average Load per activity ({avgTssPerActivity}) is very high. This might be
             unrealistic for most athletes. Consider adjusting your targets.
           </AlertDescription>
         </Alert>

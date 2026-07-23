@@ -1,12 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { buildSelectedWeekBucket } from "./trainingPathSelectedWeekBucket";
 
-const bikeIdentity = {
-  sport: "bike" as const,
-  method: "power_threshold" as const,
-  source: "activity_analysis" as const,
+const commonLoadIdentity = {
+  model: "gradientpeak_relative_load" as const,
   version: "1" as const,
-  calibration: { type: "ftp_watts" as const, value: 250 },
 };
 
 describe("buildSelectedWeekBucket", () => {
@@ -55,19 +52,13 @@ describe("buildSelectedWeekBucket", () => {
           date: "2026-06-01",
           completedLoadTss: 40,
           completedObservationState: "observed",
-          completedTssIdentity: bikeIdentity,
+          completedCommonLoadIdentity: commonLoadIdentity,
         },
         {
           date: "2026-06-02",
           completedLoadTss: 20,
           completedObservationState: "observed",
-          completedTssIdentity: {
-            sport: "run",
-            method: "run_pace_threshold",
-            source: "activity_analysis",
-            version: "1",
-            calibration: { type: "threshold_speed_mps", value: 4 },
-          },
+          completedCommonLoadIdentity: { ...commonLoadIdentity, version: "2" },
         },
       ],
     });
@@ -83,7 +74,7 @@ describe("buildSelectedWeekBucket", () => {
             date: "2026-06-01",
             completedLoadTss: 40,
             completedObservationState: "observed",
-            completedTssIdentity: bikeIdentity,
+            completedCommonLoadIdentity: commonLoadIdentity,
           },
           {
             date: "2026-06-02",

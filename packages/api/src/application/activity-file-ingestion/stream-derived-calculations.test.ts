@@ -131,6 +131,29 @@ describe("buildActivityFileBestEffortRows", () => {
       rows.find((row) => row.effort_type === metric && row.duration_seconds === 5),
     ).toMatchObject({ start_offset: 5 });
   });
+
+  it("retains exact fractional effort boundaries in provenance when the offset column quantizes", () => {
+    const rows = buildActivityFileBestEffortRows({
+      ...base,
+      activityType: "bike",
+      streamMetadata: {
+        timestamps: [0, 1, 2.5, 4, 5.5],
+        powerStream: [0, 100, 100, 100, 0],
+        speedStream: [],
+        altitudeStream: [],
+      },
+    });
+    const effort = rows.find((row) => row.effort_type === "power" && row.duration_seconds === 5);
+
+    expect(effort).toMatchObject({
+      start_offset: 0,
+      provenance: {
+        exact_window_start_seconds: 0.5,
+        exact_window_end_seconds: 5.5,
+        persisted_start_offset_quantization: "floor_seconds_v1",
+      },
+    });
+  });
 });
 
 describe("sparse activity-file stream calculations", () => {

@@ -1,3 +1,10 @@
+import {
+  type CommonLoadAggregate,
+  type CommonLoadResult,
+  commonLoadAggregateSchema,
+  commonLoadResultSchema,
+} from "@repo/core";
+
 type CalibrationQuality = {
   source:
     | "manual"
@@ -10,20 +17,89 @@ type CalibrationQuality = {
   observed_at: string | null;
   stale: boolean;
   estimate: boolean;
-  calculation_version?: string | null;
+  calculation_version?: string | null | undefined;
 };
 
-export function getActivityLoadLabels(method?: string | null) {
-  if (method === "heart_rate_threshold") {
-    return { load: "Estimated HR Load", intensity: "HR IF" };
-  }
-  if (method === "run_pace_threshold") return { load: "rTSS", intensity: "Run IF" };
-  if (method === "swim_pace_threshold") return { load: "sTSS", intensity: "Swim IF" };
-  if (method === "power_threshold") return { load: "TSS", intensity: "IF" };
-  if (method === "critical_power_threshold") {
-    return { load: "Estimated CP Load", intensity: "CP IF" };
-  }
+export function getActivityLoadLabels() {
   return { load: "Load", intensity: "Intensity" };
+}
+
+export type WebCommonLoadPresentation = {
+  status: CommonLoadResult["status"] | CommonLoadAggregate["status"];
+  load: string;
+  intensity: string;
+  explanation: string;
+};
+
+const unavailableReasons: Record<
+  Extract<CommonLoadResult, { status: "unavailable" }>["reason"],
+  string
+> = {
+  activity_data_missing: "required activity data is missing",
+  duration_missing: "eligible duration is missing",
+  insufficient_coverage: "activity data coverage is insufficient",
+  intensity_out_of_range: "the calculated Intensity is outside the supported range",
+  invalid_data: "the available activity data is invalid",
+  private_data: "the required activity data is private",
+  stale_threshold: "the applicable threshold is stale",
+  threshold_missing: "no applicable threshold is available",
+  unsupported_modality: "this activity type is not supported",
+};
+
+export function getCommonLoadPresentation(value: unknown): WebCommonLoadPresentation {
+  const parsed = commonLoadResultSchema.safeParse(value);
+  if (!parsed.success) {
+    const aggregate = commonLoadAggregateSchema.safeParse(value);
+    if (aggregate.success) {
+      if (aggregate.data.status === "unavailable") {
+        return {
+          status: aggregate.data.status,
+          load: "Unavailable",
+          intensity: "Unavailable",
+          explanation: "Common Load and Intensity are unavailable for this activity aggregate.",
+        };
+      }
+      const coverage = aggregate.data.status === "partial" ? "Partial " : "Complete ";
+      return {
+        status: aggregate.data.status,
+        load: Math.round(aggregate.data.load).toString(),
+        intensity: aggregate.data.intensity.toFixed(2),
+        explanation: `${coverage}common Load and Intensity aggregated across this activity's segments.`,
+      };
+    }
+    return {
+      status: "unavailable",
+      load: "Unavailable",
+      intensity: "Unavailable",
+      explanation:
+        "Common Load and Intensity are unavailable because no current result was provided.",
+    };
+  }
+
+  const result = parsed.data;
+  if (result.status === "available") {
+    return {
+      status: result.status,
+      load: Math.round(result.load).toString(),
+      intensity: result.intensity.toFixed(2),
+      explanation: "Complete common Load and Intensity from this activity's eligible duration.",
+    };
+  }
+  if (result.status === "partial") {
+    const coverage = Math.round(result.sourceTimeCoverage * 100);
+    return {
+      status: result.status,
+      load: result.load === null ? "Unavailable" : Math.round(result.load).toString(),
+      intensity: result.intensity === null ? "Unavailable" : result.intensity.toFixed(2),
+      explanation: `Partial common Load and Intensity: ${coverage}% of eligible duration contributed.`,
+    };
+  }
+  return {
+    status: result.status,
+    load: "Unavailable",
+    intensity: "Unavailable",
+    explanation: `Common Load and Intensity are unavailable because ${unavailableReasons[result.reason]}.`,
+  };
 }
 
 export function getThresholdNextAction(activityType?: string | null): string {

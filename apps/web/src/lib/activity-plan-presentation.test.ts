@@ -1,3 +1,4 @@
+import { calculateAvailableCommonLoad } from "@repo/core";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -7,6 +8,34 @@ import {
   getActivityPlanMetricSummary,
   summarizeActivityPlanSegments,
 } from "./activity-plan-presentation";
+
+const commonLoad = calculateAvailableCommonLoad({
+  sport: "bike",
+  method: "power_threshold",
+  quality: {
+    source: "validated_test",
+    observed_at: "2026-07-20T12:00:00.000Z",
+    confidence: "high",
+    stale: false,
+    estimate: false,
+  },
+  thresholdEvidence: {
+    type: "ftp_watts",
+    value: 250,
+    unit: "watts",
+    source: "validated_test",
+    observedAt: "2026-07-20T12:00:00.000Z",
+    validAt: "2026-07-20T12:00:00.000Z",
+    freshness: "current",
+    calculationVersion: null,
+    sourceFingerprint: "threshold-power",
+  },
+  evidenceFingerprint: "plan-load",
+  computedAsOf: "2026-07-21T12:00:00.000Z",
+  estimated: true,
+  contributingDurationSeconds: 4_500,
+  intensity: 0.84,
+});
 
 describe("activity plan presentation", () => {
   const structure = {
@@ -46,23 +75,19 @@ describe("activity plan presentation", () => {
 
   it("builds a compact metric summary from authoritative estimates", () => {
     expect(
-      getActivityPlanMetricSummary({
-        estimated_distance: 12_500,
-        estimated_duration: 4_500,
-        estimated_tss: 72,
-        intensity_factor: 0.84,
-      }),
-    ).toEqual(["1h 15m", "12.5 km", "72 TSS", "0.84 IF"]);
+      getActivityPlanMetricSummary(
+        { estimated_distance: 12_500, estimated_duration: 4_500 },
+        commonLoad,
+      ),
+    ).toEqual(["1h 15m", "12.5 km", "Load 88", "Intensity 0.84"]);
   });
 
   it("omits unavailable and invalid estimates", () => {
     expect(
-      getActivityPlanMetricSummary({
-        estimated_distance: null,
-        estimated_duration: 0,
-        estimated_tss: Number.NaN,
-        intensity_factor: null,
-      }),
-    ).toEqual([]);
+      getActivityPlanMetricSummary(
+        { estimated_distance: null, estimated_duration: 0 },
+        { status: "unavailable" },
+      ),
+    ).toEqual(["Load unavailable", "Intensity unavailable"]);
   });
 });

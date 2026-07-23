@@ -10,10 +10,18 @@ import {
   type ActivityPlanMetricsLike,
   getAuthoritativeActivityPlanMetrics,
 } from "@repo/core/activity-plan";
-import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
+import {
+  aggregateCommonLoadEnvelopes,
+  buildDailyTssByDateSeries,
+  commonLoadAggregateSchema,
+  commonLoadHistoryResultSchema,
+  commonLoadResultSchema,
+  replayTrainingLoadByDate,
+} from "@repo/core/load";
 import { schema, type TrainingPlanRow } from "@repo/db";
 import { and, asc, eq, gte, isNotNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
+import { readCurrentProfileCommonLoadHistory } from "../application/activities/read-current-profile-common-load-history";
 import { loadPlannedActivitiesWithEstimations } from "../application/home/plannedActivities";
 import { readParsedProfileTrainingSettings } from "../application/profile-settings/profileTrainingSettings";
 import { getRequiredDb } from "../db";
@@ -32,6 +40,13 @@ import { buildWorkloadEnvelopes } from "../utils/workload";
 
 function readActivityPlanMetrics(plan: unknown) {
   return getAuthoritativeActivityPlanMetrics(plan as ActivityPlanMetricsLike | null | undefined);
+}
+
+function readCommonLoadEnvelope(value: unknown) {
+  const result = commonLoadResultSchema.safeParse(value);
+  if (result.success) return result.data;
+  const aggregate = commonLoadAggregateSchema.safeParse(value);
+  return aggregate.success ? aggregate.data : null;
 }
 
 const upcomingDaysSchema = z.object({
@@ -142,9 +157,11 @@ const scheduleItemSchema = z
     activityType: canonicalSportSchema.nullable(),
     activityKind: z.enum(["single", "multisport", "unknown"]),
     activityCategories: z.array(canonicalSportSchema),
-    estimatedDuration: z.number(),
-    estimatedDistance: z.number(),
-    estimatedTSS: z.number(),
+    estimatedDuration: z.number().nullable(),
+    estimatedDistance: z.number().nullable(),
+    commonLoad: z.union([commonLoadResultSchema, commonLoadAggregateSchema]),
+    load: z.number().nullable(),
+    intensity: z.number().nullable(),
   })
   .strict();
 
@@ -156,6 +173,16 @@ const dashboardResponseSchema = z
         name: z.string(),
         phase: z.string().nullable(),
         targetType: z.string().nullable().optional(),
+      })
+      .strict()
+      .nullable(),
+    commonLoadHistory: commonLoadHistoryResultSchema,
+    currentLoadStatus: z
+      .object({
+        longTermLoad: z.number(),
+        recentLoad: z.number(),
+        loadBalance: z.number(),
+        loadBalanceStatus: z.string(),
       })
       .strict()
       .nullable(),
@@ -187,6 +214,12 @@ const dashboardResponseSchema = z
       .strict(),
     weeklySummary: z
       .object({
+        commonLoad: z
+          .object({
+            actual: commonLoadAggregateSchema,
+            planned: commonLoadAggregateSchema,
+          })
+          .strict(),
         actual: z
           .object({
             distance: z.number(),
@@ -387,6 +420,14 @@ export const homeRouter = createTRPCRouter({
       const db = getRequiredDb(ctx);
       const estimationStore = createEventReadRepository(db);
       const userId = ctx.session.user.id;
+      const commonLoadHistory = await readCurrentProfileCommonLoadHistory({
+        db,
+        profileId: userId,
+      });
+      const latestCommonLoadPoint =
+        commonLoadHistory.result.status === "available"
+          ? (commonLoadHistory.result.points.at(-1) ?? null)
+          : null;
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
@@ -736,6 +777,27 @@ export const homeRouter = createTRPCRouter({
         })
         .map((pa: any) => {
           const metrics = readActivityPlanMetrics(pa.activity_plan);
+          const commonLoad =
+            readCommonLoadEnvelope(pa.activity_plan?.common_load) ??
+            commonLoadResultSchema.parse({
+              status: "unavailable",
+              model: "gradientpeak_relative_load",
+              version: "1",
+              sport: "other",
+              method: null,
+              quality: null,
+              thresholdEvidence: null,
+              evidenceFingerprint: null,
+              computedAsOf: new Date().toISOString(),
+              contributingDurationSeconds: metrics.estimated_duration ?? null,
+              reason: "activity_data_missing",
+            });
+          const commonValue =
+            commonLoad.status === "available" ||
+            commonLoad.status === "complete" ||
+            commonLoad.status === "partial"
+              ? commonLoad
+              : null;
           const activityCategories = pa.activity_plan
             ? getPlanCategoryComposition(pa.activity_plan.structure)
             : [];
@@ -753,9 +815,11 @@ export const homeRouter = createTRPCRouter({
                   ? "single"
                   : "multisport",
             activityCategories,
-            estimatedDuration: metrics.estimated_duration ?? 0,
-            estimatedDistance: metrics.estimated_distance ?? 0,
-            estimatedTSS: metrics.estimated_tss ?? 0,
+            estimatedDuration: metrics.estimated_duration ?? null,
+            estimatedDistance: metrics.estimated_distance ?? null,
+            commonLoad,
+            load: commonValue && "load" in commonValue ? commonValue.load : null,
+            intensity: commonValue && "intensity" in commonValue ? commonValue.intensity : null,
           };
         });
 
@@ -893,6 +957,28 @@ export const homeRouter = createTRPCRouter({
         weeklyActualStats.tssComplete && weeklyPlannedStats.tss > 0
           ? Math.round((weeklyActualStats.tss / weeklyPlannedStats.tss) * 100)
           : null;
+      const weeklyActivityIds = new Set(
+        activities
+          .filter(
+            (activity) => activity.started_at >= startOfWeek && activity.started_at <= endOfWeek,
+          )
+          .map((activity) => activity.id),
+      );
+      const weeklyActualCommonLoad = aggregateCommonLoadEnvelopes(
+        segmentSummaries.flatMap((summary) => {
+          if (!weeklyActivityIds.has(summary.activity_id)) return [];
+          const envelope = readCommonLoadEnvelope(summary.common_load);
+          return envelope === null ? [] : [envelope];
+        }),
+      );
+      const weeklyPlannedCommonLoad = aggregateCommonLoadEnvelopes(
+        weeklyPlanned.flatMap((plannedActivity) => {
+          const envelope = readCommonLoadEnvelope(
+            (plannedActivity.activity_plan as { common_load?: unknown } | null)?.common_load,
+          );
+          return envelope === null ? [] : [envelope];
+        }),
+      );
 
       let firstTargetType;
       if (planStructure?.goals?.[0]?.targets?.[0]) {
@@ -908,6 +994,16 @@ export const homeRouter = createTRPCRouter({
               targetType: firstTargetType,
             }
           : null,
+        commonLoadHistory: commonLoadHistory.result,
+        currentLoadStatus:
+          latestCommonLoadPoint === null
+            ? null
+            : {
+                longTermLoad: latestCommonLoadPoint.longTermLoad,
+                recentLoad: latestCommonLoadPoint.recentLoad,
+                loadBalance: latestCommonLoadPoint.loadBalance,
+                loadBalanceStatus: getLoadBalanceStatus(latestCommonLoadPoint.loadBalance),
+              },
         currentStatus: todayStatus,
         trainingLoadState: {
           status: hasCompleteTssSeries && seriesIdentity ? "available" : "unavailable",
@@ -922,6 +1018,10 @@ export const homeRouter = createTRPCRouter({
           weeklyCount: weeklyActualStats.count,
         },
         weeklySummary: {
+          commonLoad: {
+            actual: weeklyActualCommonLoad,
+            planned: weeklyPlannedCommonLoad,
+          },
           actual: weeklyActualStats,
           planned: weeklyPlannedStats,
           adherence, // Percentage

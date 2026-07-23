@@ -1,14 +1,9 @@
-import {
-  activityTssIdentityMethodValues,
-  calculateAge,
-  calculateRollingTrainingQuality,
-  canonicalSportSchema,
-  getLoadBalanceStatus,
-} from "@repo/core";
-import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
-import { activities, activitySegments, profiles, publicActivityCategorySchema } from "@repo/db";
+import { getLoadBalanceStatus } from "@repo/core";
+import { commonLoadHistoryPointSchema, commonLoadHistoryResultSchema } from "@repo/core/load";
+import { activities, activitySegments, publicActivityCategorySchema } from "@repo/db";
 import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { z } from "zod";
+import { readCurrentProfileCommonLoadHistory } from "../application/activities/read-current-profile-common-load-history";
 import {
   type NormalizedTrendActivityRow,
   normalizeTrendActivityRows,
@@ -22,19 +17,14 @@ import { getRequiredDb } from "../db";
 import { createActivityAnalysisStore } from "../infrastructure/repositories";
 import {
   buildActivityDerivedSummaryMap,
-  buildDynamicStressSeries,
   loadActivitySegmentsByActivityId,
 } from "../lib/activity-analysis";
-import { featureFlags } from "../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { buildWorkloadEnvelopes } from "../utils/workload";
 
 const activityTypeSchema = publicActivityCategorySchema;
 const isoDatetimeSchema = z.string().datetime({ offset: true });
 const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected ISO date (YYYY-MM-DD)");
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
-const workloadSourceSchema = z.enum(["trimp", "tss", "mixed", "none"]);
-const activityTimestampSchema = z.coerce.date();
 
 function normalizeTrendBoundary(value: string, boundary: "start" | "end") {
   if (isoDatePattern.test(value)) {
@@ -164,23 +154,6 @@ async function attachTrendSegments(
   return rows.map((row) => ({ ...row, segments: segments.get(row.id) ?? [] }));
 }
 
-const profileTelemetryRowSchema = z
-  .object({
-    dob: activityTimestampSchema.nullable().optional(),
-    gender: z.string().nullable().optional(),
-  })
-  .strict();
-
-const replayedTrainingLoadPointSchema = z
-  .object({
-    date: isoDateSchema,
-    ctl: z.number().finite(),
-    atl: z.number().finite(),
-    tsb: z.number().finite(),
-    tss: z.number().finite(),
-  })
-  .strict();
-
 const volumeTrendDataPointSchema = z
   .object({
     date: isoDateSchema,
@@ -223,75 +196,22 @@ const performanceTrendsOutputSchema = z
   })
   .strict();
 
-const trainingLoadTrendDataPointSchema = z
-  .object({
-    date: isoDateSchema,
-    ctl: z.number().finite(),
-    atl: z.number().finite(),
-    tsb: z.number().finite(),
-    tss: z.number().finite(),
-  })
-  .strict();
-
-const workloadMetricSchema = z
-  .object({
-    source: workloadSourceSchema.optional(),
-    identity: z
-      .object({
-        sport: canonicalSportSchema,
-        method: z.enum(activityTssIdentityMethodValues),
-        source: z.literal("activity_analysis"),
-        version: z.literal("1"),
-      })
-      .strict()
-      .nullable()
-      .optional(),
-    coverageComplete: z.boolean().optional(),
-  })
-  .passthrough();
-
-const workloadEnvelopeSchema = z
-  .object({
-    acwr: workloadMetricSchema,
-    monotony: workloadMetricSchema,
-  })
-  .strict();
-
 const trainingLoadTrendsOutputSchema = z
   .object({
-    dataPoints: z.array(trainingLoadTrendDataPointSchema),
+    history: commonLoadHistoryResultSchema,
+    dataPoints: z.array(commonLoadHistoryPointSchema),
     currentStatus: z
       .object({
-        ctl: z.number().finite(),
-        atl: z.number().finite(),
-        tsb: z.number().finite(),
+        longTermLoad: z.number().finite(),
+        recentLoad: z.number().finite(),
+        loadBalance: z.number().finite(),
         loadBalanceStatus: z.string(),
       })
       .strict()
       .nullable(),
-    workload: workloadEnvelopeSchema,
-    trainingLoadState: z
-      .object({
-        status: z.enum(["available", "unavailable"]),
-        reason: z.enum(["complete_identified_series", "mixed_or_incomplete_tss_series"]),
-      })
-      .strict(),
-    personalizationTelemetry: z
-      .object({
-        flags: z
-          .object({
-            age_constants: z.boolean(),
-            gender_adjustment: z.boolean(),
-            training_quality: z.boolean(),
-            ramp_learning: z.boolean(),
-          })
-          .strict(),
-        user_age: z.number().finite().nullable(),
-        user_gender: z.union([z.literal("male"), z.literal("female")]).nullable(),
-        training_quality: z.number().finite().nullable(),
-      })
-      .strict()
-      .optional(),
+    computedAt: z.string().datetime({ offset: true }),
+    planningTimezone: z.string().nullable(),
+    currentPlanningDate: isoDateSchema.nullable(),
   })
   .strict();
 
@@ -347,10 +267,6 @@ const peakPerformancesOutputSchema = z
     performances: z.array(peakPerformanceItemSchema),
   })
   .strict();
-
-function toDateKey(value: Date) {
-  return value.toISOString().split("T")[0] ?? "";
-}
 
 export const trendsRouter = createTRPCRouter({
   // ------------------------------
@@ -437,171 +353,33 @@ export const trendsRouter = createTRPCRouter({
     const db = getRequiredDb(ctx);
     const startDate = new Date(input.start_date);
     const endDate = new Date(input.end_date);
-
-    const [rawProfile] = await db
-      .select({ dob: profiles.dob, gender: profiles.gender })
-      .from(profiles)
-      .where(eq(profiles.id, ctx.session.user.id))
-      .limit(1);
-
-    const profile = rawProfile ? profileTelemetryRowSchema.parse(rawProfile) : null;
-
-    const userAge = calculateAge(profile?.dob?.toISOString() ?? null);
-    const userGender =
-      profile?.gender === "male" || profile?.gender === "female" ? profile.gender : null;
-    const effectiveAge = featureFlags.personalizationAgeConstants ? userAge : undefined;
-    const effectiveGender = featureFlags.personalizationGenderAdjustment ? userGender : undefined;
-
-    // Get all activities in the date range plus 42 days before (for CTL calculation)
-    const extendedStart = new Date(startDate);
-    extendedStart.setDate(startDate.getDate() - 42);
-
-    const rawActivityRows = await attachTrendSegments(
+    const history = await readCurrentProfileCommonLoadHistory({
       db,
-      await db
-        .select(trendActivitySelect)
-        .from(activities)
-        .where(
-          and(
-            eq(activities.profile_id, ctx.session.user.id),
-            gte(activities.started_at, extendedStart),
-            lte(activities.started_at, endDate),
-          ),
-        )
-        .orderBy(asc(activities.started_at)),
-    );
-
-    const activityRows = normalizeTrendActivityRows(rawActivityRows);
-
-    if (activityRows.length === 0) {
-      const workload = workloadEnvelopeSchema.parse(buildWorkloadEnvelopes([], startDate, endDate));
-      return trainingLoadTrendsOutputSchema.parse({
-        dataPoints: [],
-        currentStatus: null,
-        workload,
-        trainingLoadState: {
-          status: "unavailable",
-          reason: "mixed_or_incomplete_tss_series",
-        },
-      });
-    }
-
-    const dynamicStressSeries = await buildDynamicStressSeries({
-      store: createActivityAnalysisStore(db),
       profileId: ctx.session.user.id,
-      activities: rawActivityRows,
     });
-    const {
-      byActivityId: derivedActivityMap,
-      byDate: activitiesByDate,
-      complete = false,
-      seriesIdentity = null,
-    } = dynamicStressSeries as typeof dynamicStressSeries & {
-      complete?: boolean;
-      seriesIdentity?: unknown;
-    };
-
-    const rollingTrainingQuality = featureFlags.personalizationTrainingQuality
-      ? calculateRollingTrainingQuality(
-          activityRows.map((activity) => ({
-            started_at: activity.started_at.toISOString(),
-            tss: derivedActivityMap.get(activity.id)?.tss ?? null,
-            intensity_factor: derivedActivityMap.get(activity.id)?.intensity_factor ?? null,
-          })),
-        )
-      : undefined;
-
-    const replayed = replayedTrainingLoadPointSchema.array().parse(
-      complete && seriesIdentity
-        ? replayTrainingLoadByDate({
-            dailyTss: buildDailyTssByDateSeries({
-              startDate: toDateKey(extendedStart),
-              endDate: toDateKey(endDate),
-              tssByDate: activitiesByDate,
-            }),
-            initialCTL: 0,
-            initialATL: 0,
-            userAge: effectiveAge,
-            userGender: effectiveGender,
-            trainingQuality: rollingTrainingQuality,
+    const dataPoints =
+      history.result.status === "available"
+        ? history.result.points.filter((point) => {
+            const date = new Date(`${point.date}T00:00:00.000Z`);
+            return date >= startDate && date <= endDate;
           })
-        : [],
-    );
-
-    // Filter to requested date range and create data points
-    const dataPoints = [];
-    let finalCTL = 0;
-    let finalATL = 0;
-    let finalTSB = 0;
-
-    for (const item of replayed) {
-      const date = new Date(`${item.date}T00:00:00.000Z`);
-
-      if (date >= startDate && date <= endDate) {
-        dataPoints.push({
-          date: item.date,
-          ctl: Math.round(item.ctl * 10) / 10,
-          atl: Math.round(item.atl * 10) / 10,
-          tsb: Math.round(item.tsb * 10) / 10,
-          tss: item.tss,
-        });
-
-        finalCTL = item.ctl;
-        finalATL = item.atl;
-        finalTSB = item.tsb;
-      }
-    }
-
-    // Current status
-    const currentStatus =
-      dataPoints.length > 0
-        ? (() => {
-            const loadBalanceStatus = getLoadBalanceStatus(finalTSB);
-            return {
-              ctl: Math.round(finalCTL * 10) / 10,
-              atl: Math.round(finalATL * 10) / 10,
-              tsb: Math.round(finalTSB * 10) / 10,
-              loadBalanceStatus,
-            };
-          })()
-        : null;
-
-    const workloadWindowStart = new Date(endDate);
-    workloadWindowStart.setDate(endDate.getDate() - 27);
-    const workload = workloadEnvelopeSchema.parse(
-      buildWorkloadEnvelopes(
-        activityRows.map((activity) => ({
-          started_at: activity.started_at.toISOString(),
-          tss: derivedActivityMap.get(activity.id)?.tss ?? null,
-          tss_identity: derivedActivityMap.get(activity.id)?.tss_identity ?? null,
-        })),
-        workloadWindowStart,
-        endDate,
-      ),
-    );
-
+        : [];
+    const latest = dataPoints.at(-1) ?? null;
     return trainingLoadTrendsOutputSchema.parse({
+      history: history.result,
       dataPoints,
-      currentStatus,
-      workload,
-      trainingLoadState: {
-        status: complete && seriesIdentity ? "available" : "unavailable",
-        reason:
-          complete && seriesIdentity
-            ? "complete_identified_series"
-            : "mixed_or_incomplete_tss_series",
-      },
-      personalizationTelemetry: {
-        flags: {
-          age_constants: featureFlags.personalizationAgeConstants,
-          gender_adjustment: featureFlags.personalizationGenderAdjustment,
-          training_quality: featureFlags.personalizationTrainingQuality,
-          ramp_learning: featureFlags.personalizationRampLearning,
-        },
-        user_age: effectiveAge ?? null,
-        user_gender: effectiveGender ?? null,
-        training_quality: rollingTrainingQuality ?? null,
-      },
+      currentStatus:
+        latest === null
+          ? null
+          : {
+              longTermLoad: latest.longTermLoad,
+              recentLoad: latest.recentLoad,
+              loadBalance: latest.loadBalance,
+              loadBalanceStatus: getLoadBalanceStatus(latest.loadBalance),
+            },
+      computedAt: history.computedAt,
+      planningTimezone: history.planningTimezone,
+      currentPlanningDate: history.currentPlanningDate,
     });
   }),
 

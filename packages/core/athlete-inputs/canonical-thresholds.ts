@@ -48,7 +48,7 @@ export interface ThresholdActivityEffortObservation {
 export interface ResolvedCanonicalThreshold {
   threshold: CanonicalThresholdType;
   value: number | null;
-  unit: "W" | "s/1000m" | "s/100m";
+  unit: "W" | "seconds_per_km" | "seconds_per_100m";
   source:
     | "manual"
     | "validated_test"
@@ -72,7 +72,6 @@ export interface ResolveCanonicalThresholdsInput {
   directMetrics?: readonly DirectThresholdMetricObservation[];
   activityEfforts?: readonly ThresholdActivityEffortObservation[];
   criticalPower?: CriticalPowerThresholdCandidate | null;
-  allowDirectMetricEvidence?: boolean;
 }
 
 export interface CriticalPowerThresholdCandidate {
@@ -94,10 +93,21 @@ export type ResolvedCanonicalThresholds = Record<
   cycling_power: ResolvedCyclingPowerCalibration;
 };
 
+export function getEligibleThresholdValue(
+  threshold: Pick<
+    ResolvedCanonicalThreshold | ResolvedCyclingPowerCalibration,
+    "value" | "stale" | "eligibilityReason"
+  >,
+): number | null {
+  return threshold.value !== null && !threshold.stale && threshold.eligibilityReason === "eligible"
+    ? threshold.value
+    : null;
+}
+
 const thresholdDefinitions = {
   cycling_ftp: { unit: "W", sport: "bike", metric: "power" },
-  running_threshold_pace: { unit: "s/1000m", sport: "run", metric: "speed" },
-  swimming_css: { unit: "s/100m", sport: "swim", metric: "speed" },
+  running_threshold_pace: { unit: "seconds_per_km", sport: "run", metric: "speed" },
+  swimming_css: { unit: "seconds_per_100m", sport: "swim", metric: "speed" },
 } as const;
 
 function timestamp(value: string): number | null {
@@ -135,6 +145,33 @@ function latest<T extends { observedAt: string }>(items: readonly T[]): T | null
   }, null);
 }
 
+function resolvedDirectMetric(
+  threshold: CanonicalThresholdType,
+  definition: (typeof thresholdDefinitions)[CanonicalThresholdType],
+  metric: DirectThresholdMetricObservation,
+  now: number,
+  freshnessWindowMs: number,
+): ResolvedCanonicalThreshold {
+  const stale = !isFresh(metric.observedAt, now, freshnessWindowMs);
+  return {
+    threshold,
+    value: metric.value,
+    unit: definition.unit,
+    source: metric.source,
+    observedAt: metric.observedAt,
+    confidence:
+      metric.source === "manual" || metric.source === "validated_test"
+        ? "high"
+        : metric.source === "provider"
+          ? "medium"
+          : "low",
+    stale,
+    eligibilityReason: stale ? "stale" : "eligible",
+    estimate: metric.source === "modeled" || metric.source === "estimated",
+    calculationVersion: metric.calculationVersion ?? null,
+  };
+}
+
 function resolveEffortValue(
   threshold: CanonicalThresholdType,
   effort: ThresholdActivityEffortObservation,
@@ -161,9 +198,10 @@ function unknown(threshold: CanonicalThresholdType): ResolvedCanonicalThreshold 
 /**
  * Resolves a threshold without persistence or runtime dependencies.
  *
- * Thresholds are resolved only from fresh, activity-backed observations. User-entered,
- * provider-supplied, onboarding-modeled, and direct threshold values are retained as history but
- * intentionally cannot calibrate activity analysis.
+ * Resolves the accepted evidence hierarchy: fresh locked manual override, fresh validated test,
+ * fresh observed activity evidence, unlocked manual value, provider seed, modeled/estimated seed,
+ * then unknown. Stale seeds remain explicit so downstream policies can abstain without losing the
+ * athlete's last known value.
  */
 export function resolveCanonicalThresholds(
   input: ResolveCanonicalThresholdsInput,
@@ -181,6 +219,45 @@ export function resolveCanonicalThresholds(
         input.freshnessWindowMs < 0
       ) {
         return [threshold, unknown(threshold)];
+      }
+
+      const eligibleDirectMetrics = directMetrics.filter((candidate) => {
+        const observedAt = timestamp(candidate.observedAt);
+        return (
+          candidate.threshold === threshold &&
+          Number.isFinite(candidate.value) &&
+          candidate.value > 0 &&
+          observedAt !== null &&
+          observedAt <= now
+        );
+      });
+      const lockedManual = latest(
+        eligibleDirectMetrics.filter(
+          (candidate) =>
+            candidate.source === "manual" &&
+            candidate.locked === true &&
+            isFresh(candidate.observedAt, now, input.freshnessWindowMs),
+        ),
+      );
+      if (lockedManual) {
+        return [
+          threshold,
+          resolvedDirectMetric(threshold, definition, lockedManual, now, input.freshnessWindowMs),
+        ];
+      }
+
+      const validatedTest = latest(
+        eligibleDirectMetrics.filter(
+          (candidate) =>
+            candidate.source === "validated_test" &&
+            isFresh(candidate.observedAt, now, input.freshnessWindowMs),
+        ),
+      );
+      if (validatedTest) {
+        return [
+          threshold,
+          resolvedDirectMetric(threshold, definition, validatedTest, now, input.freshnessWindowMs),
+        ];
       }
 
       const effort = strongest(
@@ -214,37 +291,19 @@ export function resolveCanonicalThresholds(
         ];
       }
 
-      if (input.allowDirectMetricEvidence) {
+      const fallbackSourceOrder: readonly (readonly ThresholdMetricSource[])[] = [
+        ["manual"],
+        ["provider"],
+        ["modeled", "estimated"],
+      ];
+      for (const sources of fallbackSourceOrder) {
         const metric = latest(
-          directMetrics.filter(
-            (candidate) =>
-              candidate.threshold === threshold &&
-              Number.isFinite(candidate.value) &&
-              candidate.value > 0 &&
-              timestamp(candidate.observedAt) !== null,
-          ),
+          eligibleDirectMetrics.filter((candidate) => sources.includes(candidate.source)),
         );
         if (metric) {
-          const stale = !isFresh(metric.observedAt, now, input.freshnessWindowMs);
           return [
             threshold,
-            {
-              threshold,
-              value: metric.value,
-              unit: definition.unit,
-              source: metric.source,
-              observedAt: metric.observedAt,
-              confidence:
-                metric.source === "manual" || metric.source === "validated_test"
-                  ? "high"
-                  : metric.source === "provider"
-                    ? "medium"
-                    : "low",
-              stale,
-              eligibilityReason: stale ? "stale" : "eligible",
-              estimate: metric.source === "modeled" || metric.source === "estimated",
-              calculationVersion: metric.calculationVersion ?? null,
-            },
+            resolvedDirectMetric(threshold, definition, metric, now, input.freshnessWindowMs),
           ];
         }
       }
@@ -270,6 +329,7 @@ function resolveCyclingPowerCalibration(
 
   const criticalPower = input.criticalPower;
   if (
+    (ftp.value === null || ftp.stale || ftp.eligibilityReason !== "eligible") &&
     criticalPower &&
     Number.isFinite(criticalPower.valueWatts) &&
     criticalPower.valueWatts > 0 &&

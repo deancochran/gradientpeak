@@ -17,7 +17,7 @@ export interface SmartSuggestion {
 
 interface UseSmartSuggestionsParams {
   plan?: { created_at: string; structure: SmartPlanStructure };
-  status?: { ctl?: number | null; tsb?: number | null };
+  status?: { longTermLoad?: number | null; loadBalance?: number | null };
   weeklySummaries?: Array<{ activityPercentage?: number | null }>;
 }
 
@@ -80,9 +80,9 @@ export function deriveSmartSuggestion({
     }
   }
 
-  // TSB describes modeled load balance only. Offer review, never physiological conclusions
+  // Load Balance describes modeled load history only. Offer review, never physiological conclusions
   // or an automatic plan mutation.
-  if (typeof status.tsb === "number" && status.tsb < -30) {
+  if (typeof status.loadBalance === "number" && status.loadBalance < -30) {
     return {
       reason: "load_balance_review",
       title: "Review recent training load",
@@ -108,7 +108,7 @@ export function deriveSmartSuggestion({
     // Calculate fitness progress (CTL toward target)
     const startingCTL = structure.periodization_template.starting_ctl || 0;
     const targetCTL = structure.periodization_template.target_ctl || 0;
-    const currentCTL = status.ctl || 0;
+    const currentCTL = status.longTermLoad || 0;
 
     const fitnessProgress =
       targetCTL > startingCTL

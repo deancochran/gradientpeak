@@ -130,6 +130,7 @@ export function useTrainingPlanCreationService({
       !profileQuery.data ||
       !profileMetricsQuery.data ||
       !activityEffortsQuery.data ||
+      !currentTrainingStatusQuery.data ||
       currentTrainingStatusQuery.isLoading
     ) {
       return;
@@ -138,6 +139,7 @@ export function useTrainingPlanCreationService({
     dispatch({
       type: "athleteContext.replace",
       athleteContext: createAthletePlanningContextFromSnapshot({
+        asOf: currentTrainingStatusQuery.data.asOf,
         profile: {
           dob: profileQuery.data.dob,
           gender:
@@ -180,12 +182,12 @@ export function useTrainingPlanCreationService({
             quality_score: effort.quality_score,
             provenance: toProvenanceRecord(effort.provenance),
           })),
-        currentFitness: currentTrainingStatusQuery.data
+        currentFitness: currentTrainingStatusQuery.data?.currentLoadStatus
           ? {
-              ctl: currentTrainingStatusQuery.data.ctl,
-              atl: currentTrainingStatusQuery.data.atl,
-              tsb: currentTrainingStatusQuery.data.tsb,
-              recorded_at: new Date().toISOString(),
+              ctl: currentTrainingStatusQuery.data.currentLoadStatus.longTermLoad,
+              atl: currentTrainingStatusQuery.data.currentLoadStatus.recentLoad,
+              tsb: currentTrainingStatusQuery.data.currentLoadStatus.loadBalance,
+              recorded_at: currentTrainingStatusQuery.data.currentLoadStatus.recordedAt,
             }
           : null,
       }),

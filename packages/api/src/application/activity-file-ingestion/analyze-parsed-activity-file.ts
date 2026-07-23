@@ -509,11 +509,31 @@ export async function analyzeParsedActivityFile(
         segment,
         segmentMetadata,
         calculation,
-        efforts: calculation.effortsToInsert.map((effort) => ({
-          ...effort,
-          segment_id: segment.id,
-          start_offset: (effort.start_offset ?? 0) + segment.startOffsetMs / 1000,
-        })),
+        efforts: calculation.effortsToInsert.map((effort) => {
+          const segmentOffsetSeconds = segment.startOffsetMs / 1000;
+          const provenance =
+            effort.provenance &&
+            typeof effort.provenance === "object" &&
+            !Array.isArray(effort.provenance)
+              ? (effort.provenance as Record<string, unknown>)
+              : {};
+          const exactStart = provenance.exact_window_start_seconds;
+          const exactEnd = provenance.exact_window_end_seconds;
+          return {
+            ...effort,
+            segment_id: segment.id,
+            start_offset: (effort.start_offset ?? 0) + segmentOffsetSeconds,
+            provenance: {
+              ...provenance,
+              ...(typeof exactStart === "number" && Number.isFinite(exactStart)
+                ? { exact_window_start_seconds: exactStart + segmentOffsetSeconds }
+                : {}),
+              ...(typeof exactEnd === "number" && Number.isFinite(exactEnd)
+                ? { exact_window_end_seconds: exactEnd + segmentOffsetSeconds }
+                : {}),
+            },
+          };
+        }),
       };
     });
   const persistedSegmentSet = completedActivitySegmentSetSchemaV1.parse({

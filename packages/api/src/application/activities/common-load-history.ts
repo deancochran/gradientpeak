@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   aggregateCommonLoad,
+  aggregateCommonLoadEnvelopes,
   COMMON_LOAD_HISTORY_REQUIRED_DAYS,
   COMMON_RELATIVE_LOAD_MODEL,
   COMMON_RELATIVE_LOAD_VERSION,
@@ -10,8 +11,9 @@ import {
   commonLoadResultSchema,
   replayCommonLoadHistory,
 } from "@repo/core/load";
-import { activities } from "@repo/db";
-import { and, asc, eq, gte, lt } from "drizzle-orm";
+import { scheduledDateTimeToIsoInstant } from "@repo/core/utils/schedule-date";
+import { activities, integrations, providerSyncState } from "@repo/db";
+import { and, asc, eq, gte, inArray, lt } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 import { createActivityAnalysisStore } from "../../infrastructure/repositories";
 import {
@@ -19,12 +21,88 @@ import {
   loadActivitySegmentsByActivityId,
   type SegmentDerivedSummary,
 } from "../../lib/activity-analysis";
+import { supportsActivityHistorySync } from "../integrations/syncOverviewUseCase";
 
 export const commonLoadHistoryActivityLimit = 10_000;
 
 type Db = ReturnType<typeof getRequiredDb>;
 type ActivityIdentity = { id: string; started_at: Date };
 type ActivityContribution = { result: CommonLoadResult; fingerprint: string };
+
+async function hasCompleteActivitySourceCoverage(
+  db: Parameters<Parameters<Db["transaction"]>[0]>[0],
+  input: { endDate: string; planningTimezone: string; profileId: string; startDate: string },
+): Promise<boolean> {
+  const integrationRows = await db
+    .select({ id: integrations.id, provider: integrations.provider })
+    .from(integrations)
+    .where(eq(integrations.profile_id, input.profileId));
+  const relevant = integrationRows.filter((integration) =>
+    supportsActivityHistorySync(integration.provider),
+  );
+  if (relevant.length === 0) return true;
+  const syncRows = await db
+    .select({
+      integrationId: providerSyncState.integration_id,
+      lastSucceededAt: providerSyncState.last_sync_succeeded_at,
+      lastFailedAt: providerSyncState.last_sync_failed_at,
+      consecutiveFailures: providerSyncState.consecutive_failures,
+      highWatermark: providerSyncState.high_watermark,
+      metadata: providerSyncState.metadata,
+    })
+    .from(providerSyncState)
+    .where(
+      and(
+        inArray(
+          providerSyncState.integration_id,
+          relevant.map((integration) => integration.id),
+        ),
+        eq(providerSyncState.resource, "historical_activities"),
+      ),
+    );
+  const byIntegration = new Map(syncRows.map((row) => [row.integrationId, row]));
+  const requiredStart = Date.parse(
+    scheduledDateTimeToIsoInstant({
+      scheduledDate: input.startDate,
+      time: "00:00",
+      timeZone: input.planningTimezone,
+    }),
+  );
+  const requiredEnd =
+    Date.parse(
+      scheduledDateTimeToIsoInstant({
+        scheduledDate: addCalendarDays(input.endDate, 1),
+        time: "00:00",
+        timeZone: input.planningTimezone,
+      }),
+    ) - 1;
+  return relevant.every((integration) => {
+    const sync = byIntegration.get(integration.id);
+    const metadata = sync?.metadata;
+    const coverage =
+      metadata && typeof metadata === "object" && !Array.isArray(metadata)
+        ? (metadata as Record<string, unknown>).activityHistoryCoverage
+        : null;
+    const record =
+      coverage && typeof coverage === "object" && !Array.isArray(coverage)
+        ? (coverage as Record<string, unknown>)
+        : null;
+    const coverageStart = typeof record?.start === "string" ? Date.parse(record.start) : Number.NaN;
+    const coverageEnd = typeof record?.end === "string" ? Date.parse(record.end) : Number.NaN;
+    return (
+      sync !== undefined &&
+      sync.lastSucceededAt !== null &&
+      sync.highWatermark !== null &&
+      sync.consecutiveFailures === 0 &&
+      (sync.lastFailedAt === null || sync.lastSucceededAt >= sync.lastFailedAt) &&
+      Number.isFinite(coverageStart) &&
+      Number.isFinite(coverageEnd) &&
+      coverageStart <= requiredStart &&
+      coverageEnd >= requiredEnd &&
+      sync.highWatermark.getTime() >= requiredEnd
+    );
+  });
+}
 
 function addCalendarDays(date: string, days: number): string {
   const instant = new Date(`${date}T00:00:00.000Z`);
@@ -80,11 +158,15 @@ function parseActivitySegments(
   const results = summaries.map((summary) => commonLoadResultSchema.safeParse(summary.common_load));
   if (results.length === 0 || results.some((result) => !result.success)) return null;
   const commonResults = results.flatMap((result) => (result.success ? [result.data] : []));
-  if (commonResults.some((result) => result.status !== "available")) return null;
+  if (commonResults.some((result) => result.status === "unavailable")) return null;
   return commonResults.map((result, index) => {
     const summary = summaries[index];
-    if (!summary || result.status !== "available" || result.evidenceFingerprint === null) {
-      throw new Error("Validated available segment contribution expected");
+    if (
+      !summary ||
+      result.status === "unavailable" ||
+      (result.status === "partial" && result.load === null)
+    ) {
+      throw new Error("Validated common Load segment contribution expected");
     }
     return {
       result,
@@ -97,7 +179,8 @@ function parseActivitySegments(
         String(result.load),
         String(result.intensity),
         String(result.contributingDurationSeconds),
-        result.evidenceFingerprint,
+        result.evidenceFingerprint ?? "partial-without-activity-evidence",
+        result.thresholdEvidence?.sourceFingerprint ?? "partial-without-threshold-evidence",
       ]),
     };
   });
@@ -108,6 +191,7 @@ export function buildCommonLoadHistoryObservations(input: {
   segmentSummaries: SegmentDerivedSummary[];
   currentPlanningDate: string;
   planningTimezone: string;
+  coverageStatus?: "complete" | "partial";
 }): CommonLoadHistoryDayObservation[] {
   const dates = datesForWindow(input.currentPlanningDate);
   const startDate = dates[0];
@@ -115,6 +199,7 @@ export function buildCommonLoadHistoryObservations(input: {
   if (!startDate || !endDate) throw new Error("Common Load history window must not be empty");
 
   const summariesByActivity = new Map<string, SegmentDerivedSummary[]>();
+  const coverageStatus = input.coverageStatus ?? "complete";
   for (const summary of input.segmentSummaries) {
     summariesByActivity.set(summary.activity_id, [
       ...(summariesByActivity.get(summary.activity_id) ?? []),
@@ -136,6 +221,7 @@ export function buildCommonLoadHistoryObservations(input: {
         date,
         model: COMMON_RELATIVE_LOAD_MODEL,
         version: COMMON_RELATIVE_LOAD_VERSION,
+        coverageStatus,
         evidenceFingerprints: [fingerprint(["complete-bounded-read", date])],
       };
     }
@@ -149,23 +235,34 @@ export function buildCommonLoadHistoryObservations(input: {
         date,
         model: COMMON_RELATIVE_LOAD_MODEL,
         version: COMMON_RELATIVE_LOAD_VERSION,
+        coverageStatus,
         reason: "common_load_unavailable",
         evidenceFingerprints: [],
       };
     }
-    const completeContributions = activitySegmentResults.flatMap((result) => result ?? []);
-    const completeResults = completeContributions.map((contribution) => contribution.result);
-    const aggregate = aggregateCommonLoad(completeResults);
-    if (aggregate.status !== "complete") {
+    const parentAggregates = activitySegmentResults.map((contributions) =>
+      aggregateCommonLoad((contributions ?? []).map((contribution) => contribution.result)),
+    );
+    const aggregate = aggregateCommonLoadEnvelopes(parentAggregates);
+    if (aggregate.status === "unavailable") {
       return {
         state: "unavailable",
         date,
         model: COMMON_RELATIVE_LOAD_MODEL,
         version: COMMON_RELATIVE_LOAD_VERSION,
-        reason: aggregate.status === "partial" ? "partial_common_load" : "common_load_unavailable",
-        evidenceFingerprints: completeResults.flatMap((result) =>
-          result.evidenceFingerprint === null ? [] : [result.evidenceFingerprint],
-        ),
+        reason: "common_load_unavailable",
+        coverageStatus,
+        evidenceFingerprints: activitySegmentResults.flatMap((contributions, index) => {
+          const activity = dailyActivities[index];
+          if (!activity || contributions === null) return [];
+          return [
+            fingerprint([
+              "activity-contribution",
+              activity.id,
+              ...contributions.map((contribution) => contribution.fingerprint).sort(),
+            ]),
+          ];
+        }),
       };
     }
     return {
@@ -173,14 +270,21 @@ export function buildCommonLoadHistoryObservations(input: {
       date,
       model: COMMON_RELATIVE_LOAD_MODEL,
       version: COMMON_RELATIVE_LOAD_VERSION,
+      coverageStatus,
       aggregate: {
         ...aggregate,
-        totalActivityCount: dailyActivities.length,
-        includedActivityCount: dailyActivities.length,
-        excludedActivityCount: 0,
-        contributingActivityCount: dailyActivities.length,
       },
-      evidenceFingerprints: completeContributions.map((contribution) => contribution.fingerprint),
+      evidenceFingerprints: activitySegmentResults.flatMap((contributions, index) => {
+        const activity = dailyActivities[index];
+        if (!activity || contributions === null) return [];
+        return [
+          fingerprint([
+            "activity-contribution",
+            activity.id,
+            ...contributions.map((contribution) => contribution.fingerprint).sort(),
+          ]),
+        ];
+      }),
     };
   });
 }
@@ -204,6 +308,12 @@ export async function getCommonLoadHistory(input: {
   try {
     return await input.db.transaction(
       async (tx) => {
+        const sourceCoverageComplete = await hasCompleteActivitySourceCoverage(tx, {
+          endDate,
+          planningTimezone: input.planningTimezone,
+          profileId: input.profileId,
+          startDate,
+        });
         const activityRows = await tx
           .select()
           .from(activities)
@@ -244,6 +354,7 @@ export async function getCommonLoadHistory(input: {
             segmentSummaries,
             currentPlanningDate: input.currentPlanningDate,
             planningTimezone: input.planningTimezone,
+            coverageStatus: sourceCoverageComplete ? "complete" : "partial",
           }),
         });
       },

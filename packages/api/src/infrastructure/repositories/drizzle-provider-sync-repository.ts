@@ -51,6 +51,68 @@ export function createProviderSyncRepository({
   db,
 }: CreateProviderSyncRepositoryOptions): ProviderSyncRepository {
   return {
+    async completeJobWithSyncState({
+      highWatermark,
+      id,
+      integrationId,
+      metadata,
+      provider,
+      resource,
+      workerId,
+    }) {
+      return db.transaction(async (tx) => {
+        const now = new Date();
+        const [updated] = await tx
+          .update(schema.providerSyncJobs)
+          .set({
+            last_error: null,
+            lock_expires_at: null,
+            locked_at: null,
+            locked_by: null,
+            status: "completed",
+            updated_at: now,
+          })
+          .where(
+            and(
+              eq(schema.providerSyncJobs.id, id),
+              eq(schema.providerSyncJobs.integration_id, integrationId),
+              eq(schema.providerSyncJobs.provider, provider),
+              eq(schema.providerSyncJobs.status, "running"),
+              eq(schema.providerSyncJobs.locked_by, workerId),
+              gt(schema.providerSyncJobs.lock_expires_at, now),
+            ),
+          )
+          .returning({ id: schema.providerSyncJobs.id });
+        if (!updated) return false;
+        await tx
+          .insert(schema.providerSyncState)
+          .values({
+            integration_id: integrationId,
+            provider,
+            resource,
+            sync_mode: "push_windowed",
+            high_watermark: new Date(highWatermark),
+            metadata,
+            consecutive_failures: 0,
+            last_sync_started_at: now,
+            last_sync_succeeded_at: now,
+          })
+          .onConflictDoUpdate({
+            target: [schema.providerSyncState.integration_id, schema.providerSyncState.resource],
+            set: {
+              consecutive_failures: 0,
+              high_watermark: new Date(highWatermark),
+              last_error: null,
+              last_sync_started_at: now,
+              last_sync_succeeded_at: now,
+              metadata: sql`${schema.providerSyncState.metadata} || ${JSON.stringify(metadata)}::jsonb`,
+              updated_at: now,
+            },
+          });
+        return true;
+      });
+    },
+
     async getQueueTelemetry({ jobTypes, now, provider }) {
       const result = await db.execute(sql<{
         deadLetterDepth: number | string;
@@ -740,7 +802,15 @@ export function createProviderSyncRepository({
         });
     },
 
-    async updateSyncStateAfterRun({ integrationId, nextSyncAt, provider, resource, succeeded }) {
+    async updateSyncStateAfterRun({
+      highWatermark,
+      integrationId,
+      metadata,
+      nextSyncAt,
+      provider,
+      resource,
+      succeeded,
+    }) {
       await db
         .insert(schema.providerSyncState)
         .values({
@@ -749,6 +819,8 @@ export function createProviderSyncRepository({
           resource,
           sync_mode: "push_windowed",
           next_sync_at: nextSyncAt ? new Date(nextSyncAt) : null,
+          high_watermark: highWatermark ? new Date(highWatermark) : null,
+          metadata: metadata ?? {},
         })
         .onConflictDoUpdate({
           target: [schema.providerSyncState.integration_id, schema.providerSyncState.resource],
@@ -764,6 +836,12 @@ export function createProviderSyncRepository({
             last_sync_succeeded_at: succeeded
               ? new Date()
               : schema.providerSyncState.last_sync_succeeded_at,
+            high_watermark: highWatermark
+              ? new Date(highWatermark)
+              : schema.providerSyncState.high_watermark,
+            metadata: metadata
+              ? sql`${schema.providerSyncState.metadata} || ${JSON.stringify(metadata)}::jsonb`
+              : schema.providerSyncState.metadata,
             next_sync_at: nextSyncAt ? new Date(nextSyncAt) : schema.providerSyncState.next_sync_at,
             updated_at: new Date(),
           },

@@ -12,6 +12,10 @@ const loadMocks = vi.hoisted(() => ({
   replayTrainingLoadByDate: vi.fn(),
 }));
 
+const historyMocks = vi.hoisted(() => ({
+  readCurrentProfileCommonLoadHistory: vi.fn(),
+}));
+
 const analysisMocks = vi.hoisted(() => ({
   createActivityAnalysisStore: vi.fn(() => ({ kind: "activity-analysis-store" })),
   buildActivityDerivedSummaryMap: vi.fn(),
@@ -44,10 +48,19 @@ vi.mock("@repo/core", async () => {
   };
 });
 
-vi.mock("@repo/core/load", () => ({
-  buildDailyTssByDateSeries: loadMocks.buildDailyTssByDateSeries,
-  replayTrainingLoadByDate: loadMocks.replayTrainingLoadByDate,
-}));
+vi.mock("@repo/core/load", async () => {
+  const actual = await vi.importActual<typeof import("@repo/core/load")>("@repo/core/load");
+  return {
+    ...actual,
+    buildDailyTssByDateSeries: loadMocks.buildDailyTssByDateSeries,
+    replayTrainingLoadByDate: loadMocks.replayTrainingLoadByDate,
+  };
+});
+
+vi.mock(
+  "../../application/activities/read-current-profile-common-load-history",
+  () => historyMocks,
+);
 
 vi.mock("../../infrastructure/repositories", () => ({
   createActivityAnalysisStore: analysisMocks.createActivityAnalysisStore,
@@ -424,95 +437,54 @@ describe("trendsRouter", () => {
     ).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR" });
   });
 
-  it("returns training load trends with personalization telemetry and workload", async () => {
-    featureFlagMocks.featureFlags.personalizationAgeConstants = true;
-    featureFlagMocks.featureFlags.personalizationGenderAdjustment = true;
-    featureFlagMocks.featureFlags.personalizationTrainingQuality = true;
-    featureFlagMocks.featureFlags.personalizationRampLearning = true;
-
-    const firstActivity = createActivityRow({
-      id: "33333333-3333-4333-8333-333333333333",
-      started_at: new Date("2026-03-29T07:00:00.000Z"),
-    });
-    const secondActivity = createActivityRow({
-      id: "44444444-4444-4444-8444-444444444444",
-      started_at: new Date("2026-04-01T07:00:00.000Z"),
-    });
-
-    analysisMocks.buildDynamicStressSeries.mockResolvedValue({
-      byActivityId: new Map([
-        [firstActivity.id, { tss: 50, intensity_factor: 0.76 }],
-        [secondActivity.id, { tss: 100, intensity_factor: 0.91 }],
-      ]),
-      byDate: new Map([
-        ["2026-03-29", 50],
-        ["2026-04-01", 100],
-      ]),
-      complete: true,
-      seriesIdentity: {
-        sport: "bike",
-        method: "power_threshold",
-        source: "activity_analysis",
-        version: "1",
+  it("returns common Load history without legacy workload replay", async () => {
+    historyMocks.readCurrentProfileCommonLoadHistory.mockResolvedValue({
+      computedAt: "2026-04-02T00:00:00.000Z",
+      planningTimezone: "UTC",
+      currentPlanningDate: "2026-04-02",
+      result: {
+        status: "available",
+        policyVersion: "common_load_history_v1",
+        identity: {
+          policyVersion: "common_load_history_v1",
+          planningTimezone: "UTC",
+          startDate: "2026-01-08",
+          endDate: "2026-04-01",
+          commonLoad: { model: "gradientpeak_relative_load", version: "1" },
+          evidenceFingerprints: [],
+        },
+        points: Array.from({ length: 84 }, (_, index) => {
+          const date = new Date("2026-01-08T00:00:00.000Z");
+          date.setUTCDate(date.getUTCDate() + index);
+          return {
+            date: date.toISOString().slice(0, 10),
+            dailyLoad: 0,
+            longTermLoad: 21.2,
+            recentLoad: 35.2,
+            loadBalance: -14,
+          };
+        }),
       },
     });
-    loadMocks.replayTrainingLoadByDate.mockReturnValue([
-      { date: "2026-03-31", ctl: 20.16, atl: 30.14, tsb: -9.98, tss: 0 },
-      { date: "2026-04-01", ctl: 21.24, atl: 35.17, tsb: -13.93, tss: 100 },
-    ]);
-
-    const { caller, callLog } = createCaller([
-      [{ dob: new Date("1990-06-15T00:00:00.000Z"), gender: "female" }],
-      [firstActivity, secondActivity],
-    ]);
+    const { caller } = createCaller([]);
 
     const result = await caller.getTrainingLoadTrends({
       start_date: "2026-03-31T00:00:00.000Z",
       end_date: "2026-04-01T23:59:59.000Z",
     });
 
-    expect(callLog).toEqual(expect.arrayContaining(["select:0", "limit", "select:1", "orderBy"]));
-    expect(loadMocks.buildDailyTssByDateSeries).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tssByDate: new Map([
-          ["2026-03-29", 50],
-          ["2026-04-01", 100],
-        ]),
-      }),
-    );
-    expect(result).toEqual({
-      dataPoints: [
-        { date: "2026-03-31", ctl: 20.2, atl: 30.1, tsb: -10, tss: 0 },
-        { date: "2026-04-01", ctl: 21.2, atl: 35.2, tsb: -13.9, tss: 100 },
-      ],
+    expect(result).toMatchObject({
+      history: { status: "available", policyVersion: "common_load_history_v1" },
+      dataPoints: [{ date: "2026-04-01", dailyLoad: 0 }],
       currentStatus: {
-        ctl: 21.2,
-        atl: 35.2,
-        tsb: -13.9,
+        longTermLoad: 21.2,
+        recentLoad: 35.2,
+        loadBalance: -14,
         loadBalanceStatus: "negative_balance",
       },
-      workload: {
-        acwr: { current: 1.1, source: "tss" },
-        monotony: { current: 1.4, source: "tss" },
-      },
-      trainingLoadState: {
-        status: "available",
-        reason: "complete_identified_series",
-      },
-      personalizationTelemetry: {
-        flags: {
-          age_constants: true,
-          gender_adjustment: true,
-          training_quality: true,
-          ramp_learning: true,
-        },
-        user_age: 36,
-        user_gender: "female",
-        training_quality: 0.82,
-      },
+      computedAt: "2026-04-02T00:00:00.000Z",
     });
-    expect(result.currentStatus).not.toHaveProperty("form");
-    expect(JSON.stringify(result)).not.toMatch(/productive|fatigued|overreach/i);
+    expect(loadMocks.replayTrainingLoadByDate).not.toHaveBeenCalled();
   });
 
   it("aggregates weekly zone distribution percentages from derived stress data", async () => {

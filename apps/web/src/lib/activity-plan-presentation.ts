@@ -1,3 +1,4 @@
+import { commonLoadResultSchema } from "@repo/core";
 import { formatDuration } from "./activity-route-helpers";
 
 function humanizeRole(value: string | null | undefined) {
@@ -62,8 +63,6 @@ export function describeTrainingPlanSessions(structure: unknown) {
 type ActivityPlanMetrics = {
   estimated_distance?: number | null;
   estimated_duration?: number | null;
-  estimated_tss?: number | null;
-  intensity_factor?: number | null;
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -79,22 +78,31 @@ export function formatActivityPlanCategory(category: string | null | undefined) 
   return CATEGORY_LABELS[category] ?? category.replaceAll("_", " ");
 }
 
-export function getActivityPlanMetricSummary(metrics: ActivityPlanMetrics | null | undefined) {
-  if (!metrics) return [];
-
+export function getActivityPlanMetricSummary(
+  metrics: ActivityPlanMetrics | null | undefined,
+  commonLoad: unknown,
+) {
   const summary: string[] = [];
-  if (isPositiveFinite(metrics.estimated_duration)) {
+  if (metrics && isPositiveFinite(metrics.estimated_duration)) {
     summary.push(formatDuration(metrics.estimated_duration));
   }
-  if (isPositiveFinite(metrics.estimated_distance)) {
+  if (metrics && isPositiveFinite(metrics.estimated_distance)) {
     summary.push(`${(metrics.estimated_distance / 1_000).toFixed(1)} km`);
   }
-  if (isPositiveFinite(metrics.estimated_tss)) {
-    summary.push(`${Math.round(metrics.estimated_tss)} TSS`);
+
+  const parsed = commonLoadResultSchema.safeParse(commonLoad);
+  if (!parsed.success || parsed.data.status === "unavailable") {
+    summary.push("Load unavailable", "Intensity unavailable");
+    return summary;
   }
-  if (isPositiveFinite(metrics.intensity_factor)) {
-    summary.push(`${metrics.intensity_factor.toFixed(2)} IF`);
+  const result = parsed.data;
+  if (result.load === null || result.intensity === null) {
+    summary.push("Load unavailable (partial data)", "Intensity unavailable (partial data)");
+    return summary;
   }
+  const suffix = result.status === "partial" ? " (partial data)" : "";
+  summary.push(`Load ${Math.round(result.load)}${suffix}`);
+  summary.push(`Intensity ${result.intensity.toFixed(2)}${suffix}`);
   return summary;
 }
 

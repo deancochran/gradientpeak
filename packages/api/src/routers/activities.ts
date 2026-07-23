@@ -7,8 +7,7 @@ import {
   ianaTimezoneSchema,
   recordingExecutionManifestSchema,
 } from "@repo/core";
-import { commonLoadHistoryResultSchema } from "@repo/core/load";
-import { getScheduledDateKey } from "@repo/core/utils/schedule-date";
+import { commonLoadAggregateSchema, commonLoadHistoryResultSchema } from "@repo/core/load";
 import {
   activities,
   activityFileIngestions,
@@ -31,11 +30,11 @@ import {
   getActivityByIdForViewer,
   listActivitiesForProfile,
 } from "../application/activities/activity-reads";
-import { getCommonLoadHistory } from "../application/activities/common-load-history";
 import {
-  DailyTssActivityLimitExceededError,
-  getDailyTssObservations,
-} from "../application/activities/daily-tss-observations";
+  DailyCommonLoadActivityLimitExceededError,
+  getDailyCommonLoadObservations,
+} from "../application/activities/daily-common-load-observations";
+import { readCurrentProfileCommonLoadHistory } from "../application/activities/read-current-profile-common-load-history";
 import {
   recordingSessionActivityId,
   submitActivity,
@@ -176,7 +175,14 @@ const listPaginatedInputSchema = z
   })
   .strict();
 
-const dailyTssObservationsInputSchema = z
+const commonLoadHistoryInputSchema = z
+  .object({
+    current_planning_date: z.iso.date(),
+    planning_timezone: ianaTimezoneSchema,
+  })
+  .strict();
+
+const dailyCommonLoadObservationsInputSchema = z
   .object({
     start_date: z.iso.date(),
     end_date: z.iso.date(),
@@ -201,44 +207,20 @@ const dailyTssObservationsInputSchema = z
     }
   });
 
-const dailyTssObservationBaseSchema = z.object({
-  date: z.iso.date(),
-  activity_count: z.number().int().positive(),
-  unavailable_activity_count: z.number().int().nonnegative(),
-});
-
-const dailyTssObservationsOutputSchema = z
+const dailyCommonLoadObservationsOutputSchema = z
   .object({
     start_date: z.iso.date(),
     end_date: z.iso.date(),
     timezone: ianaTimezoneSchema,
     day_policy: z.literal("activity_started_at_in_requested_timezone"),
     observations: z.array(
-      z.discriminatedUnion("state", [
-        dailyTssObservationBaseSchema
-          .extend({
-            state: z.literal("calculated"),
-            value: z.number().finite().nonnegative(),
-            tss_identity: activityTssIdentitySchema,
-          })
-          .strict(),
-        dailyTssObservationBaseSchema
-          .extend({
-            state: z.literal("unavailable"),
-            value: z.null(),
-            tss_identity: z.null(),
-            reason: z.enum(["tss_unavailable", "mixed_tss_identities"]),
-          })
-          .strict(),
-      ]),
+      z
+        .object({
+          date: z.iso.date(),
+          aggregate: commonLoadAggregateSchema,
+        })
+        .strict(),
     ),
-  })
-  .strict();
-
-const commonLoadHistoryInputSchema = z
-  .object({
-    current_planning_date: z.iso.date(),
-    planning_timezone: ianaTimezoneSchema,
   })
   .strict();
 
@@ -454,39 +436,38 @@ function _parseActivityRows(value: unknown[]) {
 
 export const activitiesRouter = createTRPCRouter({
   commonLoadHistory: protectedProcedure
-    .input(commonLoadHistoryInputSchema)
+    .input(commonLoadHistoryInputSchema.optional())
     .output(commonLoadHistoryResultSchema)
-    .query(({ ctx, input }) => {
-      const serverPlanningDate = getScheduledDateKey(
-        new Date().toISOString(),
-        input.planning_timezone,
-      );
-      if (input.current_planning_date !== serverPlanningDate) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Current planning date must match the server-derived profile-local date",
-        });
-      }
-      return getCommonLoadHistory({
+    .query(async ({ ctx, input }) => {
+      const history = await readCurrentProfileCommonLoadHistory({
         db: getRequiredDb(ctx),
         profileId: ctx.session.user.id,
-        currentPlanningDate: input.current_planning_date,
-        planningTimezone: input.planning_timezone,
       });
+      if (
+        input &&
+        (input.planning_timezone !== history.planningTimezone ||
+          input.current_planning_date !== history.currentPlanningDate)
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Common Load history input must match the profile planning timezone and date",
+        });
+      }
+      return history.result;
     }),
 
-  dailyTssObservations: protectedProcedure
-    .input(dailyTssObservationsInputSchema)
-    .output(dailyTssObservationsOutputSchema)
+  dailyCommonLoadObservations: protectedProcedure
+    .input(dailyCommonLoadObservationsInputSchema)
+    .output(dailyCommonLoadObservationsOutputSchema)
     .query(async ({ ctx, input }) => {
       try {
-        return await getDailyTssObservations({
+        return await getDailyCommonLoadObservations({
           db: getRequiredDb(ctx),
           profileId: ctx.session.user.id,
           range: input,
         });
       } catch (error) {
-        if (error instanceof DailyTssActivityLimitExceededError) {
+        if (error instanceof DailyCommonLoadActivityLimitExceededError) {
           throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
         }
         throw error;

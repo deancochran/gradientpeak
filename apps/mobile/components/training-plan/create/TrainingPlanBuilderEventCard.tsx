@@ -65,7 +65,7 @@ function getEventMeta(
   return [
     event.eventOverrides?.start_time || null,
     minutes !== null ? `${minutes} min` : null,
-    tss !== null ? `${Math.round(tss)} TSS` : null,
+    tss !== null ? `${Math.round(tss)} Load` : null,
   ]
     .filter((part): part is string => Boolean(part))
     .join(" · ");
@@ -91,7 +91,7 @@ function getActivityMetrics(
   const intensityFactor = estimate?.intensityFactor ?? null;
   return [
     { label: "Duration", value: formatDurationMetric(durationSeconds) },
-    { label: "TSS", value: tss !== null ? `${Math.round(tss)}` : "--", tone: "primary" },
+    { label: "Load", value: tss !== null ? `${Math.round(tss)}` : "--", tone: "primary" },
     {
       label: "Intensity",
       value: intensityFactor ? intensityFactor.toFixed(2) : "--",

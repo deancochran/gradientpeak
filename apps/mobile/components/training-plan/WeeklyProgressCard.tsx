@@ -47,10 +47,10 @@ export function WeeklyProgressCard({
       <ProgressSection
         icon={Target}
         indicatorClassName={getTSSProgressColor()}
-        label="Training Stress Score"
+        label="Training Load"
         progress={tssProgress}
         summary={formatEstimatedTss(completedTSS, { includeUnit: false }) ?? "--"}
-        targetLabel={`/ ${Math.round(targetTSS)} TSS target`}
+        targetLabel={`/ ${Math.round(targetTSS)} Load target`}
       />
 
       {plannedTSS > completedTSS ? (
@@ -72,7 +72,7 @@ export function WeeklyProgressCard({
 
       {tssProgress >= 100 ? (
         <Text className="text-sm font-medium text-green-600">
-          Weekly TSS target achieved. Great work.
+          Weekly Load target achieved. Great work.
         </Text>
       ) : null}
 

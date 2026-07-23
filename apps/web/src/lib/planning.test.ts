@@ -1,3 +1,4 @@
+import { calculateAvailableCommonLoad } from "@repo/core";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -98,6 +99,36 @@ describe("planning navigation and recurrence", () => {
   });
 });
 
+function planCommonLoad(durationSeconds: number, intensity: number) {
+  return calculateAvailableCommonLoad({
+    sport: "bike",
+    method: "power_threshold",
+    quality: {
+      source: "validated_test",
+      observed_at: "2026-07-20T12:00:00.000Z",
+      confidence: "high",
+      stale: false,
+      estimate: false,
+    },
+    thresholdEvidence: {
+      type: "ftp_watts",
+      value: 250,
+      unit: "watts",
+      source: "validated_test",
+      observedAt: "2026-07-20T12:00:00.000Z",
+      validAt: "2026-07-20T12:00:00.000Z",
+      freshness: "current",
+      calculationVersion: null,
+      sourceFingerprint: `threshold-${durationSeconds}`,
+    },
+    evidenceFingerprint: `plan-${durationSeconds}-${intensity}`,
+    computedAsOf: "2026-07-21T12:00:00.000Z",
+    estimated: true,
+    contributingDurationSeconds: durationSeconds,
+    intensity,
+  });
+}
+
 describe("training load path", () => {
   it("aggregates persisted scheduled activity estimates into daily and weekly load", () => {
     const path = getTrainingLoadPath([
@@ -106,7 +137,7 @@ describe("training load path", () => {
         scheduled_date: "2026-07-20",
         activity_plan: {
           id: "plan-1",
-          authoritative_metrics: { estimated_tss: 42 },
+          common_load: planCommonLoad(3_600, 0.6),
         },
       },
       {
@@ -114,7 +145,7 @@ describe("training load path", () => {
         scheduled_date: "2026-07-20",
         activity_plan: {
           id: "plan-2",
-          authoritative_metrics: { estimated_tss: 28 },
+          common_load: planCommonLoad(3_600, 0.8),
         },
       },
       {
@@ -122,18 +153,18 @@ describe("training load path", () => {
         scheduled_date: "2026-07-26",
         activity_plan: {
           id: "plan-3",
-          authoritative_metrics: { estimated_tss: null },
+          common_load: { status: "unavailable" },
         },
       },
     ]);
 
     expect(path.daily).toEqual([
-      { date: "2026-07-20", eventCount: 2, estimatedTss: 70 },
-      { date: "2026-07-26", eventCount: 1, estimatedTss: null },
+      { date: "2026-07-20", eventCount: 2, load: 100, status: "complete" },
+      { date: "2026-07-26", eventCount: 1, load: null, status: "unavailable" },
     ]);
     expect(path.weekly).toEqual([
-      { weekStart: "2026-07-19", eventCount: 2, estimatedTss: 70 },
-      { weekStart: "2026-07-26", eventCount: 1, estimatedTss: null },
+      { weekStart: "2026-07-19", eventCount: 2, load: 100, status: "complete" },
+      { weekStart: "2026-07-26", eventCount: 1, load: null, status: "unavailable" },
     ]);
   });
 });

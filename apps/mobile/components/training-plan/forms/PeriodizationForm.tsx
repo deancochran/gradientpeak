@@ -185,7 +185,7 @@ export function PeriodizationForm({
               min={0}
               max={250}
               onChange={(nextCtl) => handleTargetCtlChange(String(nextCtl))}
-              helperText="Set your CTL goal by your target date"
+              helperText="Set your Long-term Load (CTL) goal by your target date"
               error={errors.target_ctl}
             />
           </View>
@@ -202,7 +202,7 @@ export function PeriodizationForm({
               min={1}
               max={20}
               onChange={(nextRate) => handleRampRateChange(String(nextRate))}
-              helperText="Set weekly CTL increase percentage"
+              helperText="Set weekly Long-term Load (CTL) increase percentage"
               error={errors.ramp_rate}
             />
           </View>

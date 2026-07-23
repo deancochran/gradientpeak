@@ -41,7 +41,7 @@ export function BuilderProjectionOverview({
       finite(startFitness) && finite(endFitness)
         ? `Fitness starts at ${Math.round(startFitness)} and reaches ${Math.round(endFitness)}`
         : "Fitness is still calibrating",
-      `Peak planned load ${Math.round(peakPlannedLoad)} TSS per week`,
+      `Peak planned load ${Math.round(peakPlannedLoad)} Load per week`,
       goal ? `Goal ${goal.label} on ${goal.targetDate}` : "No goal date",
     ].join(". ");
     const visibleWeeks = weeks.filter(
@@ -104,7 +104,7 @@ export function BuilderProjectionOverview({
             <View className="flex-1 gap-0.5">
               <Text className="text-[11px] uppercase text-muted-foreground">Peak planned</Text>
               <Text className="text-sm font-semibold text-foreground">
-                {Math.round(model.peakPlannedLoad)} TSS/wk
+                {Math.round(model.peakPlannedLoad)} Load/wk
               </Text>
             </View>
             {model.goalSummary ? (

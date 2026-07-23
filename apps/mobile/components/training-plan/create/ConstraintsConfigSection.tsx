@@ -123,12 +123,12 @@ export function ConstraintsConfigSection({
         control={form.control}
         name="startingCtlAssumption"
         id="starting-ctl-assumption"
-        label="Initial CTL (fitness)"
+        label="Initial Long-term Load (CTL)"
         min={0}
         max={250}
         step={0.5}
         decimals={1}
-        unitLabel="CTL"
+        unitLabel="Load"
         helperText="Higher values raise your starting fitness line before progression is projected."
         showCurrentValueInRange={false}
         onSliderChange={() => {

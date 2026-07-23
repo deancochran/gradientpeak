@@ -281,6 +281,7 @@ type DiscoverListActivityPlan = SerializedActivityPlan &
       | "estimator_version"
       | "category_loads"
       | "authoritative_metrics"
+      | "common_load"
       | "route"
     >
   >;

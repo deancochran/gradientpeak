@@ -296,12 +296,17 @@ export function createEventReadRepository(
         db
           .select({
             id: schema.activityEfforts.id,
+            activity_id: schema.activityEfforts.activity_id,
             effort_type: schema.activityEfforts.effort_type,
             duration_seconds: schema.activityEfforts.duration_seconds,
             value: schema.activityEfforts.value,
             unit: schema.activityEfforts.unit,
             activity_category: schema.activityEfforts.activity_category,
+            recorded_at: schema.activityEfforts.recorded_at,
+            source: schema.activityEfforts.source,
             method: schema.activityEfforts.method,
+            calculation_version: schema.activityEfforts.calculation_version,
+            quality_score: schema.activityEfforts.quality_score,
             provenance: schema.activityEfforts.provenance,
           })
           .from(schema.activityEfforts)
@@ -322,7 +327,10 @@ export function createEventReadRepository(
             unit: schema.profileMetrics.unit,
             value: schema.profileMetrics.value,
             recorded_at: schema.profileMetrics.recorded_at,
+            source: schema.profileMetrics.source,
             method: schema.profileMetrics.method,
+            calculation_version: schema.profileMetrics.calculation_version,
+            quality_score: schema.profileMetrics.quality_score,
             provenance: schema.profileMetrics.provenance,
           })
           .from(schema.profileMetrics)
@@ -383,7 +391,10 @@ export function createEventReadRepository(
           efforts,
           (effort) =>
             `${effort.activity_category}:${effort.effort_type}:${effort.duration_seconds}:${effort.unit}`,
-        ),
+        ).map((effort) => ({
+          ...effort,
+          recorded_at: effort.recorded_at.toISOString(),
+        })),
         metrics: [
           ...resolveLatestObservationsByKey(metrics, (metric) => metric.metric_type).values(),
         ]
@@ -398,6 +409,11 @@ export function createEventReadRepository(
             unit: metric.unit,
             value: metric.value,
             recorded_at: metric.recorded_at.toISOString(),
+            source: metric.source,
+            method: metric.method,
+            calculation_version: metric.calculation_version,
+            quality_score: metric.quality_score,
+            provenance: metric.provenance,
           })),
         routes: routes.map((route) => ({
           ...route,

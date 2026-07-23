@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { commonLoadResultSchema } from "../load/common-relative-load";
+import { commonLoadAggregateSchema, commonLoadResultSchema } from "../load/common-relative-load";
 import { canonicalSportSchema } from "../schemas/sport";
 import {
   type ActivityTssIdentityMethod,
@@ -140,7 +140,9 @@ function validateMethodAwareStress(
 export const activityDerivedStressSchema = z
   .object({
     ...methodAwareStressFields,
-    common_load: commonLoadResultSchema.optional(),
+    // A parent activity combines its segment results into a coverage-aware
+    // aggregate, while a single segment retains the activity-level result.
+    common_load: z.union([commonLoadResultSchema, commonLoadAggregateSchema]).optional(),
     trimp: z.number().nullable(),
     trimp_source: z.enum(["hr", "power_proxy"]).nullable().optional(),
     training_effect: z
@@ -170,7 +172,7 @@ export const activityDerivedMetricsSchema = z.object({
 export const activityListDerivedSummarySchema = z
   .object({
     ...methodAwareStressFields,
-    common_load: commonLoadResultSchema.optional(),
+    common_load: z.union([commonLoadResultSchema, commonLoadAggregateSchema]).optional(),
     computed_as_of: z.string(),
   })
   .superRefine(validateMethodAwareStress);

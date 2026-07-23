@@ -96,6 +96,7 @@ function knownZeroDays(count = 84, startOffset = -84): CommonLoadHistoryDayObser
     date: addDays(planningDate, startOffset + index),
     model: COMMON_RELATIVE_LOAD_MODEL,
     version: COMMON_RELATIVE_LOAD_VERSION,
+    coverageStatus: "complete" as const,
     evidenceFingerprints: [`source-${String(index).padStart(2, "0")}`],
   }));
 }
@@ -131,6 +132,7 @@ describe("common Load history v1 replay", () => {
     expect(result).toEqual({
       status: "available",
       policyVersion: COMMON_LOAD_HISTORY_POLICY_VERSION,
+      coverageStatus: "complete",
       identity: {
         policyVersion: COMMON_LOAD_HISTORY_POLICY_VERSION,
         planningTimezone: "America/Los_Angeles",
@@ -144,6 +146,7 @@ describe("common Load history v1 replay", () => {
       },
       points: knownZeroDays().map((day) => ({
         date: day.date,
+        coverageStatus: "complete",
         dailyLoad: 0,
         longTermLoad: 0,
         recentLoad: 0,
@@ -195,13 +198,14 @@ describe("common Load history v1 replay", () => {
     expect(result.status).toBe("available");
     if (result.status !== "available") throw new Error("Expected available history");
 
-    expect(result.points.at(-1)).toEqual({
+    expect(result.points.at(-1)).toMatchObject({
       date: "2026-07-20",
+      coverageStatus: "complete",
       dailyLoad: 100,
-      longTermLoad: 86.46647167633867,
-      recentLoad: 99.99938557876466,
-      loadBalance: -13.532913902425989,
     });
+    expect(result.points.at(-1)?.longTermLoad).toBeCloseTo(86.46647167633867, 12);
+    expect(result.points.at(-1)?.recentLoad).toBeCloseTo(99.99938557876466, 12);
+    expect(result.points.at(-1)?.loadBalance).toBeCloseTo(-13.532913902425989, 12);
   });
 
   it("accepts a complete mixed-sport common aggregate", () => {
@@ -229,24 +233,39 @@ describe("common Load history v1 replay", () => {
     expect(result.points.at(-1)?.dailyLoad).toBe(149);
   });
 
-  it("rejects partial aggregates and explicit unavailable source days", () => {
+  it("retains partial common Load coverage for fitness and fatigue projection inputs", () => {
     const partialAggregate = aggregateCommonLoad([available(100), unavailableActivity()]);
     expect(partialAggregate.status).toBe("partial");
     const partialDays = knownZeroDays().map(
       (day, index): CommonLoadHistoryDayObservation =>
         index === 20 ? { ...day, state: "observed", aggregate: partialAggregate } : day,
     );
-    expect(
-      replayCommonLoadHistory({
-        currentPlanningDate: planningDate,
-        planningTimezone: "UTC",
-        observations: partialDays,
-      }),
-    ).toMatchObject({
-      status: "unavailable",
-      reason: "incomplete_observation",
-      context: { observationState: "observed", observationReason: "partial" },
+    const partialResult = replayCommonLoadHistory({
+      currentPlanningDate: planningDate,
+      planningTimezone: "UTC",
+      observations: partialDays,
     });
+    expect(partialResult).toMatchObject({ status: "available", coverageStatus: "partial" });
+    if (partialResult.status !== "available")
+      throw new Error("Expected partial common Load history");
+    if (partialAggregate.status !== "partial") {
+      throw new Error("Expected partial common Load aggregate");
+    }
+    expect(partialResult.points[20]).toMatchObject({
+      coverageStatus: "partial",
+      dailyLoad: partialAggregate.load,
+    });
+
+    // Long-term Load, Recent Load, and Load Balance remain source values for
+    // fitness, fatigue, and form projections even when their coverage is partial.
+    expect(partialResult.points.at(-1)).toMatchObject({
+      longTermLoad: expect.any(Number),
+      recentLoad: expect.any(Number),
+      loadBalance: expect.any(Number),
+    });
+
+    // An unavailable day is distinct from a partial numeric aggregate and cannot
+    // be silently converted to a zero-load projection input.
 
     const unavailableDays = knownZeroDays().map(
       (day, index): CommonLoadHistoryDayObservation =>

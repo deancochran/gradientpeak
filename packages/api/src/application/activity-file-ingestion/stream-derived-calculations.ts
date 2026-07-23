@@ -272,9 +272,7 @@ export function buildActivityFileBestEffortRows(input: {
     })
   ) {
     for (const effort of calculateBestEfforts(powerStream, powerTimestamps)) {
-      effortsToInsert.push(
-        buildActivityFileBestEffortRow(input, effort, powerTimestamps, "power", "watts"),
-      );
+      effortsToInsert.push(buildActivityFileBestEffortRow(input, effort, "power", "watts"));
     }
   }
 
@@ -285,13 +283,7 @@ export function buildActivityFileBestEffortRows(input: {
         : { values: speedStream, timestamps: speedTimestamps };
     for (const effort of calculateBestEfforts(streamToUse.values, streamToUse.timestamps)) {
       effortsToInsert.push(
-        buildActivityFileBestEffortRow(
-          input,
-          effort,
-          streamToUse.timestamps,
-          "speed",
-          "meters_per_second",
-        ),
+        buildActivityFileBestEffortRow(input, effort, "speed", "meters_per_second"),
       );
     }
   }
@@ -306,9 +298,7 @@ export function buildActivityFileBestEffortRows(input: {
     for (const effort of calculateBestEfforts(heartRateStream, hrTimestamps).filter((candidate) =>
       isBoundedHeartRateEffort(candidate, hrTimestamps),
     )) {
-      effortsToInsert.push(
-        buildActivityFileBestEffortRow(input, effort, hrTimestamps, "heart_rate", "bpm"),
-      );
+      effortsToInsert.push(buildActivityFileBestEffortRow(input, effort, "heart_rate", "bpm"));
     }
   }
 
@@ -340,13 +330,15 @@ function buildActivityFileBestEffortRow(
     streamMetadata: Pick<ActivityFileStreamMetadata, "timestamps">;
   },
   effort: ReturnType<typeof calculateBestEfforts>[number],
-  effortTimestamps: number[],
   effortType: "power" | "speed" | "heart_rate",
   unit: "watts" | "meters_per_second" | "bpm",
 ): typeof activityEfforts.$inferInsert {
   const { timestamps } = input.streamMetadata;
-  const effortStartedAt = effortTimestamps[effort.startIndex];
   const streamStartedAt = timestamps[0];
+  const exactStartOffsetSeconds =
+    streamStartedAt === undefined ? null : effort.startTimeSeconds - streamStartedAt;
+  const exactEndOffsetSeconds =
+    streamStartedAt === undefined ? null : effort.endTimeSeconds - streamStartedAt;
 
   return {
     id: randomUUID(),
@@ -358,10 +350,9 @@ function buildActivityFileBestEffortRow(
     activity_category: input.activityType as typeof activityEfforts.$inferInsert.activity_category,
     effort_type: effortType,
     duration_seconds: effort.duration,
-    start_offset:
-      effortStartedAt === undefined || streamStartedAt === undefined
-        ? null
-        : Math.round(effortStartedAt - streamStartedAt),
+    // The persistence column is whole seconds. Floor avoids claiming the window starts after its
+    // exact boundary; provenance retains the calculation-grade fractional boundaries.
+    start_offset: exactStartOffsetSeconds === null ? null : Math.floor(exactStartOffsetSeconds),
     unit,
     value: effort.value,
     source: "imported",
@@ -370,6 +361,9 @@ function buildActivityFileBestEffortRow(
     provenance: {
       activity_id: input.activityId,
       derived_from: "activity_file_stream",
+      exact_window_start_seconds: exactStartOffsetSeconds,
+      exact_window_end_seconds: exactEndOffsetSeconds,
+      persisted_start_offset_quantization: "floor_seconds_v1",
     },
   };
 }

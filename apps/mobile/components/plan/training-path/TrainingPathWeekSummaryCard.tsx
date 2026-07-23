@@ -137,8 +137,6 @@ function ScheduledRecordPlanCard({
         commonLoad={activity.commonLoad}
         description={activity.description || activity.notes || null}
         estimatedDuration={activity.estimatedDuration}
-        estimatedTss={undefined}
-        intensityFactor={undefined}
         owner={activity.owner}
         presentation={presentation}
         routeName={activity.routeName}
@@ -155,8 +153,6 @@ function ScheduledRecordPlanCard({
         plan={{
           authoritative_metrics: {
             estimated_duration: activity.estimatedDuration,
-            estimated_tss: null,
-            intensity_factor: null,
             estimated_distance: activity.estimatedDistance,
           },
           route: {
@@ -192,8 +188,6 @@ function getScheduledActivityPlanCardData(event: CalendarEvent): ActivityPlanCar
     description: plan.description ?? event.description ?? undefined,
     estimatedDistance: metrics.estimated_distance ?? undefined,
     estimatedDuration: metrics.estimated_duration ?? undefined,
-    estimatedTss: metrics.estimated_tss ?? undefined,
-    intensityFactor: metrics.intensity_factor ?? undefined,
     commonLoad: plan.common_load,
     notes: plan.notes ?? event.notes ?? undefined,
     routeId: plan.route_id ?? undefined,
@@ -228,8 +222,6 @@ function getGroupEventActivityPlanCardData(event: CalendarGroupEvent): ActivityP
     description: plan.description ?? undefined,
     estimatedDistance: metrics.estimated_distance ?? undefined,
     estimatedDuration: metrics.estimated_duration ?? undefined,
-    estimatedTss: metrics.estimated_tss ?? undefined,
-    intensityFactor: metrics.intensity_factor ?? undefined,
     commonLoad: plan.common_load,
     notes: plan.notes ?? undefined,
     routeId: plan.route_id ?? undefined,
@@ -325,7 +317,7 @@ export function TrainingPathWeekSummaryCard({
     effectiveCompletedLoad: summary.effectiveCompletedLoad,
     effectiveRemainingLoad: summary.effectiveRemainingLoad,
     effectiveTentativeLoad: summary.effectiveTentativeLoad,
-    hasCompletedActivityWithoutLoad: summary.completedLoadUnavailable,
+    hasCompletedActivityWithoutLoad: summary.completedLoadUnavailable ?? false,
   });
 
   return (

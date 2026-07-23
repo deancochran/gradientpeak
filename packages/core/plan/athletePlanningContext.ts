@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getActivityEffortThresholdEvidence } from "../athlete-inputs/activity-effort-policy";
 import {
+  getEligibleThresholdValue,
   resolveCanonicalThresholds,
   type ThresholdMetricSource,
 } from "../athlete-inputs/canonical-thresholds";
@@ -116,6 +117,36 @@ export const athleteContextSourceSnapshotSchema = z
       .optional(),
     manualHeightCm: z.number().min(0).max(300).nullable().optional(),
     asOf: z.union([z.string(), z.date()]).optional(),
+    coverage: z
+      .object({
+        profileMetrics: z.enum(["complete", "possibly_truncated", "unknown"]).default("unknown"),
+        activityEfforts: z.enum(["complete", "possibly_truncated", "unknown"]).default("unknown"),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export const effectiveAthleteSnapshotSchema = athleteContextSourceSnapshotSchema
+  .omit({ asOf: true, coverage: true })
+  .extend({
+    asOf: z.string().datetime(),
+    coverage: z
+      .object({
+        profileMetrics: z.enum(["complete", "possibly_truncated", "unknown"]),
+        activityEfforts: z.enum(["complete", "possibly_truncated", "unknown"]),
+      })
+      .strict(),
+    exclusions: z
+      .object({
+        futureProfileMetrics: z.number().int().min(0),
+        futureActivityEfforts: z.number().int().min(0),
+        invalidProfileMetrics: z.number().int().min(0),
+        invalidActivityEfforts: z.number().int().min(0),
+        clearedProfileMetrics: z.number().int().min(0),
+        clearedActivityEfforts: z.number().int().min(0),
+      })
+      .strict(),
   })
   .strict();
 
@@ -179,6 +210,11 @@ export const athletePlanningContextSchema = z
         metricCount: z.number().int().min(0),
         effortCount: z.number().int().min(0),
         missingFields: z.array(z.string()),
+        asOf: z.string().datetime(),
+        profileMetricsCoverage: z.enum(["complete", "possibly_truncated", "unknown"]),
+        activityEffortsCoverage: z.enum(["complete", "possibly_truncated", "unknown"]),
+        excludedFutureMetricCount: z.number().int().min(0),
+        excludedFutureEffortCount: z.number().int().min(0),
       })
       .strict(),
   })
@@ -187,6 +223,7 @@ export const athletePlanningContextSchema = z
 export type AthleteContextMetricType = z.infer<typeof athleteContextMetricTypeSchema>;
 export type AthletePlanningContext = z.infer<typeof athletePlanningContextSchema>;
 export type AthleteContextSourceSnapshot = z.infer<typeof athleteContextSourceSnapshotSchema>;
+export type EffectiveAthleteSnapshot = z.infer<typeof effectiveAthleteSnapshotSchema>;
 
 export type AthletePlanningContextFieldKey =
   | "ageYears"
@@ -343,22 +380,22 @@ export const ATHLETE_CONTEXT_FIELD_REGISTRY: Record<
     requiredDefault: 42,
   },
   currentFitnessCtl: {
-    label: "Fitness",
+    label: "Long-term Load (CTL)",
     category: "physiology",
     inputKind: "number",
-    defaultUnit: "CTL",
+    defaultUnit: "Load",
   },
   currentFatigueAtl: {
-    label: "Fatigue",
+    label: "Recent Load (ATL)",
     category: "physiology",
     inputKind: "number",
-    defaultUnit: "ATL",
+    defaultUnit: "Load",
   },
   currentFormTsb: {
-    label: "Form",
+    label: "Load Balance (TSB)",
     category: "physiology",
     inputKind: "number",
-    defaultUnit: "TSB",
+    defaultUnit: "Load",
   },
   sleepHours: {
     label: "Sleep",
@@ -503,6 +540,114 @@ function manualEvidenceValueForField({
   };
 }
 
+function isClearedObservation(input: {
+  source?: string | null | undefined;
+  method?: string | null | undefined;
+  provenance?: Record<string, unknown> | null | undefined;
+}) {
+  return (
+    input.source === "manual" &&
+    input.method === "profile_update_override" &&
+    input.provenance?.override_state === "cleared"
+  );
+}
+
+function effectiveObservationsAfterClears<T>(
+  observations: readonly T[],
+  keyFor: (observation: T) => string,
+  recordedAtFor: (observation: T) => string | Date,
+  isCleared: (observation: T) => boolean,
+) {
+  const effective = new Map<string, T[]>();
+  let clearedCount = 0;
+  const sorted = [...observations].sort((left, right) => {
+    const timeDifference =
+      new Date(recordedAtFor(left)).getTime() - new Date(recordedAtFor(right)).getTime();
+    if (timeDifference !== 0) return timeDifference;
+    return Number(isCleared(left)) - Number(isCleared(right));
+  });
+
+  for (const observation of sorted) {
+    const key = keyFor(observation);
+    if (isCleared(observation)) {
+      clearedCount += 1;
+      effective.set(key, []);
+      continue;
+    }
+    effective.set(key, [...(effective.get(key) ?? []), observation]);
+  }
+
+  return { observations: [...effective.values()].flat(), clearedCount };
+}
+
+/** Normalizes raw profile evidence into one deterministic, effective projection at a point in time. */
+export function createEffectiveAthleteSnapshot(
+  input: z.input<typeof athleteContextSourceSnapshotSchema>,
+): EffectiveAthleteSnapshot {
+  const source = athleteContextSourceSnapshotSchema.parse(input);
+  const asOfDate = source.asOf ? new Date(source.asOf) : new Date();
+  if (Number.isNaN(asOfDate.getTime())) {
+    throw new Error("Effective athlete snapshot requires a valid asOf date");
+  }
+  const asOf = asOfDate.toISOString();
+  const asOfTime = asOfDate.getTime();
+  const profileMetricsWithValidDate = source.profileMetrics.filter((metric) =>
+    Number.isFinite(new Date(metric.recorded_at).getTime()),
+  );
+  const activityEffortsWithValidDate = source.activityEfforts.filter((effort) =>
+    Number.isFinite(new Date(effort.recorded_at).getTime()),
+  );
+  const profileMetricsAtDate = profileMetricsWithValidDate.filter(
+    (metric) => new Date(metric.recorded_at).getTime() <= asOfTime,
+  );
+  const activityEffortsAtDate = activityEffortsWithValidDate.filter(
+    (effort) => new Date(effort.recorded_at).getTime() <= asOfTime,
+  );
+  const effectiveMetrics = effectiveObservationsAfterClears(
+    profileMetricsAtDate,
+    (metric) => metric.metric_type,
+    (metric) => metric.recorded_at,
+    (metric) => isClearedObservation(metric),
+  );
+  const effectiveEfforts = effectiveObservationsAfterClears(
+    activityEffortsAtDate,
+    (effort) =>
+      `${effort.activity_category}:${effort.effort_type}:${effort.duration_seconds}:${effort.unit}`,
+    (effort) => effort.recorded_at,
+    (effort) => isClearedObservation(effort),
+  );
+  const currentFitnessRecordedAt = source.currentFitness?.recorded_at
+    ? new Date(source.currentFitness.recorded_at).getTime()
+    : null;
+  const hasInvalidCurrentFitnessDate =
+    currentFitnessRecordedAt !== null && !Number.isFinite(currentFitnessRecordedAt);
+
+  return effectiveAthleteSnapshotSchema.parse({
+    profile: source.profile,
+    profileMetrics: effectiveMetrics.observations,
+    activityEfforts: effectiveEfforts.observations,
+    currentFitness:
+      hasInvalidCurrentFitnessDate ||
+      (currentFitnessRecordedAt !== null && currentFitnessRecordedAt > asOfTime)
+        ? null
+        : source.currentFitness,
+    manualHeightCm: source.manualHeightCm,
+    asOf,
+    coverage: {
+      profileMetrics: source.coverage?.profileMetrics ?? "unknown",
+      activityEfforts: source.coverage?.activityEfforts ?? "unknown",
+    },
+    exclusions: {
+      futureProfileMetrics: profileMetricsWithValidDate.length - profileMetricsAtDate.length,
+      futureActivityEfforts: activityEffortsWithValidDate.length - activityEffortsAtDate.length,
+      invalidProfileMetrics: source.profileMetrics.length - profileMetricsWithValidDate.length,
+      invalidActivityEfforts: source.activityEfforts.length - activityEffortsWithValidDate.length,
+      clearedProfileMetrics: effectiveMetrics.clearedCount,
+      clearedActivityEfforts: effectiveEfforts.clearedCount,
+    },
+  });
+}
+
 function latestMetric(
   metrics: AthleteContextSourceSnapshot["profileMetrics"],
   metricType: Exclude<AthleteContextMetricType, "height_cm">,
@@ -584,39 +729,49 @@ function resolvedThresholdEvidenceValue(input: {
     activityEfforts: input.snapshot.activityEfforts
       .filter(
         (effort) =>
-          effort.unit === (effort.effort_type === "power" ? "watts" : "meters_per_second") ||
-          (effort.effort_type === "power" && effort.unit === "W") ||
-          (effort.effort_type === "speed" && effort.unit === "m/s"),
+          (effort.activity_category === "bike" ||
+            effort.activity_category === "run" ||
+            effort.activity_category === "swim") &&
+          (effort.unit === (effort.effort_type === "power" ? "watts" : "meters_per_second") ||
+            (effort.effort_type === "power" && effort.unit === "W") ||
+            (effort.effort_type === "speed" && effort.unit === "m/s")),
       )
-      .map((effort) => ({
-        sport:
-          effort.activity_category === "bike"
-            ? "bike"
-            : effort.activity_category === "run"
-              ? "run"
-              : "swim",
-        metric: effort.effort_type,
-        value: effort.value,
-        durationSeconds: effort.duration_seconds,
-        observedAt: toIsoDateTime(effort.recorded_at),
-        observationKind:
-          effort.source === "derived" || effort.source === "estimated" ? "derived" : "actual",
-        evidence:
-          getActivityEffortThresholdEvidence({
-            activityCategory: effort.activity_category,
-            activityId: effort.activity_id,
-            durationSeconds: effort.duration_seconds,
-            effortType: effort.effort_type,
-            method: effort.method,
-            provenance: effort.provenance,
-            source: effort.source,
-            unit: effort.unit,
+      .flatMap((effort) => {
+        const evidence = getActivityEffortThresholdEvidence({
+          activityCategory: effort.activity_category,
+          durationSeconds: effort.duration_seconds,
+          effortType: effort.effort_type,
+          unit: effort.unit,
+          value: effort.value,
+          ...(effort.activity_id !== undefined ? { activityId: effort.activity_id } : {}),
+          ...(effort.method !== undefined ? { method: effort.method } : {}),
+          ...(effort.provenance !== undefined ? { provenance: effort.provenance } : {}),
+          ...(effort.source !== undefined ? { source: effort.source } : {}),
+        });
+        return [
+          {
+            sport:
+              effort.activity_category === "bike"
+                ? ("bike" as const)
+                : effort.activity_category === "run"
+                  ? ("run" as const)
+                  : ("swim" as const),
+            metric: effort.effort_type,
             value: effort.value,
-          }) ?? undefined,
-      })),
+            durationSeconds: effort.duration_seconds,
+            observedAt: toIsoDateTime(effort.recorded_at),
+            observationKind:
+              effort.source === "derived" || effort.source === "estimated"
+                ? ("derived" as const)
+                : ("actual" as const),
+            ...(evidence !== null ? { evidence } : {}),
+          },
+        ];
+      }),
   })[input.threshold];
+  const eligibleValue = getEligibleThresholdValue(resolved);
   return {
-    value: resolved.value,
+    value: eligibleValue,
     source:
       resolved.source === "observed_effort"
         ? "activity_effort"
@@ -624,7 +779,7 @@ function resolvedThresholdEvidenceValue(input: {
           ? "unknown"
           : "profile_metric",
     recordedAt: resolved.observedAt,
-    unit: resolved.value === null ? input.fallbackUnit : resolved.unit,
+    unit: eligibleValue === null ? input.fallbackUnit : resolved.unit,
     overridden: resolved.source === "manual",
   };
 }
@@ -652,9 +807,12 @@ function calculateBmi(heightCm: number | null, weightKg: number | null) {
 }
 
 export function createAthletePlanningContextFromSnapshot(
-  input: z.input<typeof athleteContextSourceSnapshotSchema>,
+  input: z.input<typeof athleteContextSourceSnapshotSchema> | EffectiveAthleteSnapshot,
 ): AthletePlanningContext {
-  const snapshot = athleteContextSourceSnapshotSchema.parse(input);
+  const effectiveInput = effectiveAthleteSnapshotSchema.safeParse(input);
+  const snapshot = effectiveInput.success
+    ? effectiveInput.data
+    : createEffectiveAthleteSnapshot(input);
   const birthDate = toIsoDate(snapshot.profile?.dob);
   const ageYears = calculateAgeYears(birthDate, snapshot.asOf);
   const heightCm = manualEvidenceValue(snapshot.manualHeightCm ?? null, "cm");
@@ -715,17 +873,17 @@ export function createAthletePlanningContextFromSnapshot(
       vo2Max: metricEvidenceValue(snapshot.profileMetrics, "vo2_max", "ml/kg/min"),
       currentFitnessCtl: trainingStatusEvidenceValue(
         snapshot.currentFitness?.ctl,
-        "CTL",
+        "Load",
         snapshot.currentFitness?.recorded_at ?? snapshot.asOf,
       ),
       currentFatigueAtl: trainingStatusEvidenceValue(
         snapshot.currentFitness?.atl,
-        "ATL",
+        "Load",
         snapshot.currentFitness?.recorded_at ?? snapshot.asOf,
       ),
       currentFormTsb: trainingStatusEvidenceValue(
         snapshot.currentFitness?.tsb,
-        "TSB",
+        "Load",
         snapshot.currentFitness?.recorded_at ?? snapshot.asOf,
       ),
     },
@@ -749,6 +907,11 @@ export function createAthletePlanningContextFromSnapshot(
       metricCount: snapshot.profileMetrics.length,
       effortCount: snapshot.activityEfforts.length,
       missingFields,
+      asOf: snapshot.asOf,
+      profileMetricsCoverage: snapshot.coverage.profileMetrics,
+      activityEffortsCoverage: snapshot.coverage.activityEfforts,
+      excludedFutureMetricCount: snapshot.exclusions.futureProfileMetrics,
+      excludedFutureEffortCount: snapshot.exclusions.futureActivityEfforts,
     },
   });
 }

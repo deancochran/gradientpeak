@@ -33,6 +33,7 @@ function createDeps() {
     },
     providerSyncRepository: {
       claimDueJobs: vi.fn(),
+      completeJobWithSyncState: vi.fn().mockResolvedValue(true),
       markJobFailed: vi.fn(),
       markJobSucceeded: vi.fn(),
       renewJobLease: vi.fn().mockResolvedValue(true),
@@ -137,16 +138,74 @@ describe("WahooActivityHistoryJobService", () => {
       expect.objectContaining({ accessToken: "access-2", refreshToken: "refresh-2" }),
     );
     expect(deps.importer.importWorkoutSummary).toHaveBeenCalledWith(77, createSummary(123));
-    expect(deps.providerSyncRepository.markJobSucceeded).toHaveBeenCalledWith(
-      "job-1",
-      expect.stringMatching(/^worker-1:/),
-    );
-    expect(deps.providerSyncRepository.updateSyncStateAfterRun).toHaveBeenCalledWith({
+    expect(deps.providerSyncRepository.completeJobWithSyncState).toHaveBeenCalledWith({
+      highWatermark: "2026-04-03T12:00:00.000Z",
+      id: "job-1",
       integrationId: "integration-1",
+      metadata: {
+        activityHistoryCoverage: {
+          end: "2026-04-03T12:00:00.000Z",
+          start: "2025-04-03T12:00:00.000Z",
+        },
+      },
       provider: "wahoo",
       resource: "historical_activities",
-      succeeded: true,
+      workerId: expect.stringMatching(/^worker-1:/),
     });
+  });
+
+  it("keeps the job retryable when atomic completion and coverage persistence fails", async () => {
+    const deps = createDeps();
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
+      {
+        attempt: 1,
+        dedupeKey: "provider-history-reconcile:integration-1:activity",
+        id: "job-1",
+        integrationId: "integration-1",
+        internalResourceId: null,
+        jobType: "wahoo.activity_history_reconcile",
+        maxAttempts: 5,
+        payload: { trigger: "scheduled", windowMonths: 12 },
+        profileId: "profile-1",
+        provider: "wahoo",
+        resourceKind: "activity",
+        runAt: "2026-04-03T12:00:00.000Z",
+        status: "running",
+      },
+    ]);
+    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue({
+      accessToken: "access-1",
+      expiresAt: null,
+      externalId: "77",
+      id: "integration-1",
+      profileId: "profile-1",
+      refreshToken: null,
+    });
+    deps.wahooClient.listWorkoutSummaries.mockResolvedValue({ sourceCount: 0, summaries: [] });
+    deps.providerSyncRepository.completeJobWithSyncState.mockRejectedValueOnce(
+      new Error("coverage persistence failed"),
+    );
+    deps.providerSyncRepository.markJobFailed.mockResolvedValueOnce(true);
+    const service = new WahooActivityHistoryJobService({
+      importer: deps.importer as never,
+      providerSyncRepository: deps.providerSyncRepository as never,
+      wahooClientFactory: () => deps.wahooClient,
+      wahooRepository: deps.wahooRepository,
+    });
+
+    await expect(service.processDueJobs({ workerId: "worker-1" })).resolves.toEqual({
+      completed: 0,
+      failed: 1,
+      processed: 1,
+    });
+    expect(deps.providerSyncRepository.markJobFailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "job-1",
+        lastError: "coverage persistence failed",
+        status: "failed",
+        workerId: expect.stringMatching(/^worker-1:/),
+      }),
+    );
   });
 
   it("fails retryably after continuing past a per-summary import failure", async () => {

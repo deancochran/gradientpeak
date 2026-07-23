@@ -275,10 +275,6 @@ jest.mock("@/components/shared/EntityOwnerRow", () => ({
   __esModule: true,
   EntityOwnerRow: createHost("EntityOwnerRow"),
 }));
-jest.mock("@/components/training-plan/WeeklyProgressCard", () => ({
-  __esModule: true,
-  WeeklyProgressCard: createHost("WeeklyProgressCard"),
-}));
 jest.mock("@/components/charts/PlanVsActualChart", () => ({
   __esModule: true,
   PlanVsActualChart: createHost("PlanVsActualChart"),

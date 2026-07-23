@@ -3,9 +3,9 @@ import type { ActivityAnalysisContext, ActivityCalibrationQuality } from "@repo/
 import {
   type CriticalPowerThresholdCandidate,
   canonicalizeActivityEffortObservation,
-  canonicalThresholdTypes,
   type DirectThresholdMetricObservation,
   getActivityEffortThresholdEvidence,
+  getEligibleThresholdValue,
   hasTrustedActivityStreamEvidence,
   resolveCanonicalThresholds,
   type ThresholdActivityEffortObservation,
@@ -33,7 +33,6 @@ type ResolveActivityContextAsOfInput = {
   profileId: string;
   activityTimestamp: string | Date;
   activityId?: string;
-  activityEffortThrough?: string | Date;
   evidenceScope?: "thresholds";
 };
 
@@ -48,35 +47,23 @@ type ResolvedActivityAnalysisContext = Omit<ActivityAnalysisContext, "profileMet
 export async function resolveActivityContextAsOf(
   input: ResolveActivityContextAsOfInput,
 ): Promise<ResolvedActivityAnalysisContext> {
-  const { store, profileId, activityTimestamp, activityId, activityEffortThrough, evidenceScope } =
-    input;
+  const { store, profileId, activityTimestamp, activityId, evidenceScope } = input;
   const asOf = activityTimestamp instanceof Date ? activityTimestamp : new Date(activityTimestamp);
-  const effortThrough =
-    activityEffortThrough instanceof Date
-      ? activityEffortThrough
-      : activityEffortThrough
-        ? new Date(activityEffortThrough)
-        : null;
-  const evidenceAsOf =
-    effortThrough && Number.isFinite(effortThrough.getTime()) && effortThrough > asOf
-      ? effortThrough
-      : asOf;
   const evidence = store.loadContextEvidence
     ? ((
         await store.loadContextEvidence({
-          requests: [{ asOf: evidenceAsOf, effortLookbackAsOf: asOf, profileId }],
+          requests: [{ asOf, effortLookbackAsOf: asOf, profileId }],
           ...(evidenceScope !== undefined ? { evidenceScope } : {}),
         })
       ).get(profileId) ?? emptyContextEvidence)
     : await store.getContextSnapshot({
-        asOf: evidenceAsOf,
+        asOf,
         effortLookbackAsOf: asOf,
         profileId,
         ...(evidenceScope !== undefined ? { evidenceScope } : {}),
       });
   return resolveActivityContextFromEvidence({
     activityTimestamp: asOf,
-    activityEffortThrough: effortThrough,
     evidence,
     ...(activityId !== undefined ? { activityId } : {}),
   });
@@ -91,7 +78,6 @@ const emptyContextEvidence: ActivityAnalysisContextSnapshot = {
 export function resolveActivityContextFromEvidence(input: {
   activityTimestamp: string | Date;
   activityId?: string;
-  activityEffortThrough?: string | Date | null;
   evidence: ActivityAnalysisContextSnapshot;
 }): ResolvedActivityAnalysisContext {
   const asOf =
@@ -101,17 +87,6 @@ export function resolveActivityContextFromEvidence(input: {
   const snapshot = input.evidence;
   const cutoff = asOf.getTime();
   const freshnessWindowMs = 90 * 24 * 60 * 60 * 1000;
-  const effortThrough =
-    input.activityEffortThrough instanceof Date
-      ? input.activityEffortThrough
-      : input.activityEffortThrough
-        ? new Date(input.activityEffortThrough)
-        : null;
-  const effortCutoff =
-    effortThrough && Number.isFinite(effortThrough.getTime()) && effortThrough.getTime() >= cutoff
-      ? effortThrough.getTime()
-      : cutoff;
-
   const profileMetrics: ResolvedActivityAnalysisContext["profileMetrics"] = {};
   const metricRows = snapshot.profileMetrics
     .filter(
@@ -125,28 +100,8 @@ export function resolveActivityContextFromEvidence(input: {
     cutoff,
     freshnessWindowMs,
   );
-  const priorLthrSports = new Set(priorLthrMetrics.map(metricObservationKey));
-  const currentLthrMetrics =
-    input.activityId && effortCutoff > cutoff
-      ? selectStrongestActivityLthrMetrics(
-          snapshot.profileMetrics.filter((metric) => {
-            const observedAt = new Date(metric.recorded_at).getTime();
-            return (
-              metric.metric_type === "lthr" &&
-              isLthrUnit(metric.unit) &&
-              metric.reference_activity_id === input.activityId &&
-              Number.isFinite(observedAt) &&
-              observedAt >= cutoff &&
-              observedAt <= effortCutoff
-            );
-          }),
-          effortCutoff,
-          freshnessWindowMs,
-        ).filter((metric) => !priorLthrSports.has(metricObservationKey(metric)))
-      : [];
-  const selectedLthrMetrics = [...priorLthrMetrics, ...currentLthrMetrics];
   const latestMetrics = resolveLatestObservationsByKey(
-    [...metricRows.filter((metric) => metric.metric_type !== "lthr"), ...selectedLthrMetrics],
+    [...metricRows.filter((metric) => metric.metric_type !== "lthr"), ...priorLthrMetrics],
     metricObservationKey,
   );
   const typedMetrics = [...latestMetrics.values()].filter((metric) => metric !== null);
@@ -154,8 +109,7 @@ export function resolveActivityContextFromEvidence(input: {
     .filter((effort) => {
       const observedAt = new Date(effort.recorded_at).getTime();
       if (!Number.isFinite(observedAt)) return false;
-      if (!input.activityId || effort.activity_id !== input.activityId) return observedAt <= cutoff;
-      return effortCutoff > cutoff && observedAt >= cutoff && observedAt <= effortCutoff;
+      return observedAt <= cutoff && (!input.activityId || effort.activity_id !== input.activityId);
     })
     .sort(compareRecordedAtDesc);
   const typedEfforts = filterSupersededProfileOverrides(
@@ -172,17 +126,11 @@ export function resolveActivityContextFromEvidence(input: {
         effort.effort_type === "speed")
     );
   });
-  const priorThresholdEfforts = thresholdEfforts.filter(
-    (effort) => !input.activityId || effort.activity_id !== input.activityId,
-  );
   const criticalPowerEfforts = typedEfforts.filter(
     (effort) =>
       effort.activity_category === "bike" &&
       effort.effort_type === "power" &&
       (CRITICAL_POWER_CANONICAL_DURATIONS as readonly number[]).includes(effort.duration_seconds),
-  );
-  const priorCriticalPowerEfforts = criticalPowerEfforts.filter(
-    (effort) => !input.activityId || effort.activity_id !== input.activityId,
   );
 
   for (const metric of typedMetrics) {
@@ -224,19 +172,18 @@ export function resolveActivityContextFromEvidence(input: {
       return directMetric ? [directMetric] : [];
     },
   );
-  const manualFtpMetrics = priorThresholdEfforts.flatMap(
-    (effort): DirectThresholdMetricObservation[] =>
-      isActiveManualFtpOverride(effort)
-        ? [
-            {
-              threshold: "cycling_ftp",
-              value: effort.value * 0.95,
-              observedAt: toIsoString(effort.recorded_at) ?? asOf.toISOString(),
-              source: "manual",
-              locked: true,
-            },
-          ]
-        : [],
+  const manualFtpMetrics = thresholdEfforts.flatMap((effort): DirectThresholdMetricObservation[] =>
+    isActiveManualFtpOverride(effort)
+      ? [
+          {
+            threshold: "cycling_ftp",
+            value: effort.value * 0.95,
+            observedAt: toIsoString(effort.recorded_at) ?? asOf.toISOString(),
+            source: "manual",
+            locked: true,
+          },
+        ]
+      : [],
   );
   const toThresholdObservation = (
     effort: (typeof thresholdEfforts)[number],
@@ -302,56 +249,32 @@ export function resolveActivityContextFromEvidence(input: {
     now: asOf.toISOString(),
     freshnessWindowMs,
     directMetrics: directThresholdEvidence,
-    activityEfforts: priorThresholdEfforts.flatMap(toThresholdObservation),
-    criticalPower: resolveCriticalPowerCandidate(
-      priorCriticalPowerEfforts,
-      asOf,
-      freshnessWindowMs,
-    ),
-  });
-  const thresholdsWithCurrentActivity = resolveCanonicalThresholds({
-    now: new Date(effortCutoff).toISOString(),
-    freshnessWindowMs,
-    directMetrics: directThresholdEvidence,
     activityEfforts: thresholdEfforts.flatMap(toThresholdObservation),
-    criticalPower: resolveCriticalPowerCandidate(
-      criticalPowerEfforts,
-      new Date(effortCutoff),
-      freshnessWindowMs,
-    ),
+    criticalPower: resolveCriticalPowerCandidate(criticalPowerEfforts, asOf, freshnessWindowMs),
   });
-  const canonicalThresholds = Object.fromEntries(
-    canonicalThresholdTypes.map((threshold) => [
-      threshold,
-      priorThresholds[threshold].value === null
-        ? thresholdsWithCurrentActivity[threshold]
-        : priorThresholds[threshold],
-    ]),
-  ) as Pick<typeof priorThresholds, (typeof canonicalThresholdTypes)[number]>;
   const thresholds = {
-    ...canonicalThresholds,
-    cycling_power:
-      priorThresholds.cycling_power.value === null
-        ? thresholdsWithCurrentActivity.cycling_power
-        : priorThresholds.cycling_power,
+    ...priorThresholds,
+    cycling_power: priorThresholds.cycling_power,
   };
+  const ftpValue = getEligibleThresholdValue(thresholds.cycling_ftp);
+  const cyclingPowerValue = getEligibleThresholdValue(thresholds.cycling_power);
+  const runThresholdPace = getEligibleThresholdValue(thresholds.running_threshold_pace);
+  const swimThresholdPace = getEligibleThresholdValue(thresholds.swimming_css);
 
-  profileMetrics.ftp =
-    thresholds.cycling_ftp.value === null ? null : Math.round(thresholds.cycling_ftp.value);
+  profileMetrics.ftp = ftpValue === null ? null : Math.round(ftpValue);
   profileMetrics.cycling_power_watts =
-    thresholds.cycling_power.value === null ? null : Math.round(thresholds.cycling_power.value);
+    cyclingPowerValue === null ? null : Math.round(cyclingPowerValue);
   profileMetrics.cycling_power_method =
-    thresholds.cycling_power.kind === "critical_power"
-      ? "critical_power_threshold"
-      : thresholds.cycling_power.kind === "ftp"
-        ? "power_threshold"
-        : null;
-  profileMetrics.threshold_speed_mps =
-    thresholds.running_threshold_pace.value === null
+    cyclingPowerValue === null
       ? null
-      : 1000 / thresholds.running_threshold_pace.value;
+      : thresholds.cycling_power.kind === "critical_power"
+        ? "critical_power_threshold"
+        : thresholds.cycling_power.kind === "ftp"
+          ? "power_threshold"
+          : null;
+  profileMetrics.threshold_speed_mps = runThresholdPace === null ? null : 1000 / runThresholdPace;
   profileMetrics.swim_threshold_speed_mps =
-    thresholds.swimming_css.value === null ? null : 100 / thresholds.swimming_css.value;
+    swimThresholdPace === null ? null : 100 / swimThresholdPace;
 
   const activityTimestampIso = asOf.toISOString();
   const gender = normalizeGender(snapshot.profile.gender ?? null);

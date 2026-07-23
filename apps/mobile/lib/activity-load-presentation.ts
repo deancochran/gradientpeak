@@ -1,5 +1,7 @@
 import {
+  type CommonLoadAggregate,
   type CommonLoadResult,
+  commonLoadAggregateSchema,
   commonLoadResultSchema,
   getTrainingIntensityZone,
 } from "@repo/core";
@@ -42,8 +44,8 @@ const intensityLabels = {
   neuromuscular: "Neuromuscular",
 } as const;
 
-export type CommonLoadPresentation = {
-  status: CommonLoadResult["status"];
+export type MobileCommonLoadPresentation = {
+  status: CommonLoadResult["status"] | CommonLoadAggregate["status"];
   load: string | null;
   intensity: string | null;
   unavailableText: string | null;
@@ -57,9 +59,27 @@ function formatCommonIntensity(value: number): string {
   return `${intensityLabels[getTrainingIntensityZone(value)]} · ${value.toFixed(2)}`;
 }
 
-export function getCommonLoadPresentation(value: unknown): CommonLoadPresentation | null {
+export function getCommonLoadPresentation(value: unknown): MobileCommonLoadPresentation | null {
   const parsed = commonLoadResultSchema.safeParse(value);
-  if (!parsed.success) return null;
+  if (!parsed.success) {
+    const aggregate = commonLoadAggregateSchema.safeParse(value);
+    if (!aggregate.success) return null;
+    if (aggregate.data.status === "unavailable") {
+      return {
+        status: aggregate.data.status,
+        load: null,
+        intensity: null,
+        unavailableText: "Unavailable",
+      };
+    }
+    const incomplete = aggregate.data.status === "partial" ? " · Incomplete" : "";
+    return {
+      status: aggregate.data.status,
+      load: `${formatCommonLoad(aggregate.data.load)}${incomplete}`,
+      intensity: `${formatCommonIntensity(aggregate.data.intensity)}${incomplete}`,
+      unavailableText: null,
+    };
+  }
 
   const result = parsed.data;
   if (result.status === "available") {

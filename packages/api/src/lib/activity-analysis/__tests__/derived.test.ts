@@ -241,7 +241,7 @@ describe("segment-derived activity analysis", () => {
     });
   });
 
-  it("derives category-safe loads and does not publish a multisport parent TSS", async () => {
+  it("publishes a multisport common-load parent without legacy TSS or IF", async () => {
     const input = activity([
       segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 1_800_000),
       segment("22222222-2222-4222-8222-222222222222", 1, "run", 1_800_000, 3_600_000),
@@ -266,11 +266,88 @@ describe("segment-derived activity analysis", () => {
       profileId: PROFILE_ID,
       activities: [input],
     });
-    expect(parent.has(input.id)).toBe(false);
+    expect(parent.get(input.id)).toMatchObject({
+      tss: null,
+      tss_identity: null,
+      intensity_factor: null,
+      method: null,
+      common_load: {
+        totalActivityCount: 2,
+      },
+    });
     expect(parent.has(input.segments[0]?.id ?? "missing-segment")).toBe(true);
   });
 
-  it("uses a qualifying effort from the activity interval when no earlier threshold exists", async () => {
+  it("preserves one segment's legacy TSS evidence while aggregating its common load", async () => {
+    const input = activity([
+      segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 3_600_000),
+    ]);
+
+    const [part] = await buildActivitySegmentDerivedSummaries({
+      store: store() as never,
+      profileId: PROFILE_ID,
+      activities: [input],
+    });
+    const parent = await buildActivityDerivedSummaryMap({
+      store: store() as never,
+      profileId: PROFILE_ID,
+      activities: [input],
+    });
+
+    expect(parent.get(input.id)).toMatchObject({
+      tss: part?.tss,
+      tss_identity: part?.tss_identity,
+      intensity_factor: part?.intensity_factor,
+      method: part?.method,
+      unavailable_reason: part?.unavailable_reason,
+      calibration_quality: part?.calibration_quality,
+      common_load: {
+        totalActivityCount: 1,
+        contributingActivityCount: 1,
+      },
+    });
+  });
+
+  it("publishes summed TSS and duration-weighted RMS IF for compatible segments", async () => {
+    const input = activity([
+      segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 1_200_000),
+      segment("22222222-2222-4222-8222-222222222222", 1, "bike", 1_200_000, 3_600_000),
+    ]);
+
+    const parts = await buildActivitySegmentDerivedSummaries({
+      store: store() as never,
+      profileId: PROFILE_ID,
+      activities: [input],
+    });
+    const parent = await buildActivityDerivedSummaryMap({
+      store: store() as never,
+      profileId: PROFILE_ID,
+      activities: [input],
+    });
+
+    expect(parent.get(input.id)).toMatchObject({
+      tss: parts.reduce((total, part) => total + (part.tss ?? 0), 0),
+      tss_identity: parts[0]?.tss_identity,
+      intensity_factor: expect.any(Number),
+      method: "power_threshold",
+      unavailable_reason: null,
+      common_load: {
+        status: "complete",
+        totalActivityCount: 2,
+        contributingActivityCount: 2,
+      },
+    });
+    expect(parent.get(input.id)?.intensity_factor).toBeCloseTo(
+      Math.sqrt(
+        (1_200 * (parts[0]?.intensity_factor ?? 0) ** 2 +
+          2_400 * (parts[1]?.intensity_factor ?? 0) ** 2) /
+          3_600,
+      ),
+      2,
+    );
+  });
+
+  it("does not use an effort from the activity interval to score that activity", async () => {
     const input = activity([
       segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 3_600_000),
     ]);
@@ -285,28 +362,23 @@ describe("segment-derived activity analysis", () => {
     expect(analysisStore.loadContextEvidence).toHaveBeenCalledWith({
       requests: [
         {
-          asOf: input.finished_at,
+          asOf: input.started_at,
           effortLookbackAsOf: input.started_at,
           profileId: PROFILE_ID,
         },
       ],
     });
     expect(summaries[0]).toMatchObject({
-      method: "power_threshold",
-      unavailable_reason: null,
-      intensity_factor: 0.84,
-      calibration_quality: {
-        source: "observed_effort",
-        observed_at: "2026-07-01T08:45:00.000Z",
-        valid_at: "2026-07-01T08:45:00.000Z",
-        evidence_fingerprint: expect.stringMatching(/^activity-threshold:v1:sha256:/),
-      },
+      method: null,
+      unavailable_reason: "threshold_missing",
+      intensity_factor: null,
+      calibration_quality: null,
       common_load: {
         status: "unavailable",
-        reason: "invalid_data",
+        reason: "threshold_missing",
       },
     });
-    expect(summaries[0]?.tss).toBe(71);
+    expect(summaries[0]?.tss).toBeNull();
   });
 
   it.each([
@@ -364,7 +436,7 @@ describe("segment-derived activity analysis", () => {
     });
   });
 
-  it("publishes guarded Critical Power load as a distinct stream", async () => {
+  it("keeps eligible FTP ahead of guarded Critical Power for the load stream", async () => {
     const input = activity([
       segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 3_600_000),
     ]);
@@ -376,20 +448,20 @@ describe("segment-derived activity analysis", () => {
     });
 
     expect(summaries[0]).toMatchObject({
-      tss: 64,
-      method: "critical_power_threshold",
+      tss: 65,
+      method: "power_threshold",
       tss_identity: {
-        method: "critical_power_threshold",
-        calibration: { type: "critical_power_watts", value: 250 },
+        method: "power_threshold",
+        calibration: { type: "ftp_watts", value: 249 },
       },
       calibration_quality: {
-        calculation_version: "critical-power-curve-fit-v1",
+        calculation_version: "twenty_minute_effort_v1",
       },
-      load_stream_key: "bike:critical_power_threshold:activity_analysis:1",
+      load_stream_key: "bike:power_threshold:activity_analysis:1",
     });
   });
 
-  it("uses finish-time evidence with a snapshot-only analysis store", async () => {
+  it("uses start-time evidence with a snapshot-only analysis store", async () => {
     const input = activity([
       segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 3_600_000),
     ]);
@@ -402,14 +474,14 @@ describe("segment-derived activity analysis", () => {
     });
 
     expect(analysisStore.getContextSnapshot).toHaveBeenCalledWith({
-      asOf: input.finished_at,
+      asOf: input.started_at,
       effortLookbackAsOf: input.started_at,
       profileId: PROFILE_ID,
     });
     expect(summaries[0]).toMatchObject({
-      tss: 71,
-      method: "power_threshold",
-      unavailable_reason: null,
+      tss: null,
+      method: null,
+      unavailable_reason: "threshold_missing",
     });
   });
 

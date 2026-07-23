@@ -705,7 +705,7 @@ function deriveActionRecommendations({
     recommendations.push({
       key: "increase-load",
       label: "Build toward the goal load",
-      detail: `Average planned load is ${recommendedLoad.plannedAverageTss} TSS/wk; target ${recommendedLoad.rangeMinTss}-${recommendedLoad.rangeMaxTss}.`,
+      detail: `Average planned load is ${recommendedLoad.plannedAverageTss} Load/wk; target ${recommendedLoad.rangeMinTss}-${recommendedLoad.rangeMaxTss}.`,
       target: { type: "addSession" },
     });
   }
@@ -714,7 +714,7 @@ function deriveActionRecommendations({
     recommendations.push({
       key: "reduce-load",
       label: "Bring load back into range",
-      detail: `Average planned load is ${recommendedLoad.plannedAverageTss} TSS/wk, above the goal range.`,
+      detail: `Average planned load is ${recommendedLoad.plannedAverageTss} Load/wk, above the goal range.`,
       target: { type: "week", weekIndex: 0 },
     });
   }
@@ -728,7 +728,7 @@ function deriveActionRecommendations({
     recommendations.push({
       key: "baseline-ramp-caution",
       label: "Check the ramp from current fitness",
-      detail: `This plan averages ${recommendedLoad.plannedAverageTss} TSS/wk from ${Math.round(currentBaseline.ctl)} CTL. Consider easing the first week if that jump feels aggressive.`,
+      detail: `This plan averages ${recommendedLoad.plannedAverageTss} Load/wk from Long-term Load (CTL) ${Math.round(currentBaseline.ctl)}. Consider easing the first week if that jump feels aggressive.`,
       target: { type: "athleteContext" },
     });
   }
@@ -788,7 +788,7 @@ function deriveStrategyViewModel({
             : "risk",
       label: goalSupportLevel === "Unsupported" ? "Goal Unsupported" : "Goal Supported",
       detail: recommendedLoad
-        ? `Average load is ${recommendedLoad.plannedAverageTss} TSS/wk against the strategic range.`
+        ? `Average load is ${recommendedLoad.plannedAverageTss} Load/wk against the strategic range.`
         : "Add a goal or planning constraint to evaluate support.",
     },
     {
@@ -856,7 +856,7 @@ function deriveStrategyViewModel({
       key: "support-below",
       severity: "warning",
       title: "Goal support is weak",
-      detail: `Planned load averages ${recommendedLoad.plannedAverageTss} TSS/wk, below the ${recommendedLoad.rangeMinTss}-${recommendedLoad.rangeMaxTss} range.`,
+      detail: `Planned load averages ${recommendedLoad.plannedAverageTss} Load/wk, below the ${recommendedLoad.rangeMinTss}-${recommendedLoad.rangeMaxTss} range.`,
       target: { type: "addSession" },
     });
   }
@@ -865,7 +865,7 @@ function deriveStrategyViewModel({
       key: "support-above",
       severity: "risk",
       title: "Recovery risk is elevated",
-      detail: `Planned load averages ${recommendedLoad.plannedAverageTss} TSS/wk, above the strategic range.`,
+      detail: `Planned load averages ${recommendedLoad.plannedAverageTss} Load/wk, above the strategic range.`,
       target: { type: "week", weekIndex: 0 },
     });
   }
@@ -921,7 +921,7 @@ function deriveStrategyViewModel({
               ? "weak"
               : "unknown",
       detail: recommendedLoad
-        ? `Current strategy averages ${recommendedLoad.plannedAverageTss} TSS/wk.`
+        ? `Current strategy averages ${recommendedLoad.plannedAverageTss} Load/wk.`
         : "Add goals and workouts to estimate readiness.",
     },
   };
@@ -971,20 +971,20 @@ function deriveCurrentBaseline(state: TrainingPlanBuilderState): BuilderCurrentB
       sourceLabel,
       summaryLabel: "Fitness calibration needed",
       detail:
-        "Complete activities with calculated load or add current fitness before using CTL, ATL, and TSB projections.",
+        "Complete activities with calculated Load or add a Long-term Load (CTL), Recent Load (ATL), and Load Balance (TSB) baseline before using projections.",
       target: { type: "athleteContext" },
     };
   }
 
   const formPart = tsb !== null ? ` · ${Math.round(tsb)} form` : "";
-  const fatiguePart = atl !== null ? ` · ${Math.round(atl)} ATL` : "";
+  const fatiguePart = atl !== null ? ` · Recent Load (ATL) ${Math.round(atl)}` : "";
   return {
     ctl,
     atl,
     tsb,
     sourceLabel,
-    summaryLabel: `Starts at ${Math.round(ctl)} CTL${formPart}`,
-    detail: `Based on your recent training load, this plan starts from ${Math.round(ctl)} CTL${fatiguePart}.`,
+    summaryLabel: `Starts at Long-term Load (CTL) ${Math.round(ctl)}${formPart}`,
+    detail: `Based on your recent training Load, this plan starts from Long-term Load (CTL) ${Math.round(ctl)}${fatiguePart}.`,
     target: { type: "athleteContext" },
   };
 }
@@ -1091,7 +1091,7 @@ function deriveRecommendedLoad({
     baselineWeeklyTss,
     plannedAverageTss,
     markerPercent: Math.min(100, Math.max(6, Math.round((targetLoad / scale) * 100))),
-    label: `${targetLoad} TSS/wk`,
+    label: `${targetLoad} Load/wk`,
     guidance,
     sourceLabel,
     loadDeltaLabel,
@@ -1203,7 +1203,7 @@ function getAthleteContextSummary(state: TrainingPlanBuilderState) {
   const context = state.athleteContext;
   const parts = [
     context.physiology.currentFitnessCtl.value !== null
-      ? `Fitness ${Math.round(context.physiology.currentFitnessCtl.value)} CTL`
+      ? `Long-term Load (CTL) ${Math.round(context.physiology.currentFitnessCtl.value)}`
       : null,
     context.demographics.gender ? formatBuilderGender(context.demographics.gender) : null,
     context.demographics.ageYears.value !== null

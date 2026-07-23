@@ -2,14 +2,16 @@
  * Best Effort Calculation
  *
  * Calculates the best average value (power, speed, heart rate) for standard durations
- * (5s, 10s, 30s, 1m, 5m, 10m, 20m, 30m, 60m, 90m, 3h) using a sliding window algorithm.
+ * (5s, 10s, 30s, 1m, 5m, 10m, 20m, 30m, 60m, 90m, 3h) using exact duration windows.
  */
 
 export interface BestEffort {
   duration: number; // Duration in seconds
   value: number; // Best average value (e.g., watts, m/s, bpm)
-  startIndex: number; // Index where the effort starts
-  endIndex: number; // Index where the effort ends
+  startIndex: number; // First sample contributing positive duration
+  endIndex: number; // Last sample contributing positive duration
+  startTimeSeconds: number; // Exact evaluated window boundary
+  endTimeSeconds: number; // Exact evaluated window boundary
 }
 
 /**
@@ -29,87 +31,146 @@ export const STANDARD_DURATIONS = [
   10800, // 3h
 ];
 
+/** Maximum interval that is treated as continuous coverage for 1 Hz-ish streams. */
+export const MAX_BEST_EFFORT_SAMPLE_GAP_SECONDS = 2;
+
+function numberAt(values: number[], index: number): number {
+  return values[index] ?? Number.NaN;
+}
+
+function upperBound(values: number[], target: number, low: number, high: number): number {
+  let left = low;
+  let right = high + 1;
+
+  while (left < right) {
+    const middle = left + Math.floor((right - left) / 2);
+    if (numberAt(values, middle) <= target) {
+      left = middle + 1;
+    } else {
+      right = middle;
+    }
+  }
+
+  return left;
+}
+
+function lowerBound(values: number[], target: number, low: number, high: number): number {
+  let left = low;
+  let right = high + 1;
+
+  while (left < right) {
+    const middle = left + Math.floor((right - left) / 2);
+    if (numberAt(values, middle) < target) {
+      left = middle + 1;
+    } else {
+      right = middle;
+    }
+  }
+
+  return left;
+}
+
 /**
- * Calculates the best average value for a specific duration using a sliding window.
+ * Calculates the best average value for a specific duration. Values are piecewise constant:
+ * stream[i] applies over [timestamps[i], timestamps[i + 1]).
  *
  * @param stream - Array of values (e.g., power, speed, HR).
  * @param timestamps - Array of timestamps (seconds).
  * @param durationSeconds - Duration to calculate best effort for (seconds).
- * @returns BestEffort object or null if duration exceeds stream length.
+ * @returns BestEffort object or null if the input is invalid or has no continuously covered window.
  */
 export function calculateBestEffort(
   stream: number[],
   timestamps: number[],
   durationSeconds: number,
 ): BestEffort | null {
-  if (!stream || !timestamps || stream.length === 0 || durationSeconds <= 0) {
+  if (
+    stream.length !== timestamps.length ||
+    stream.length < 2 ||
+    !Number.isFinite(durationSeconds) ||
+    durationSeconds <= 0
+  ) {
     return null;
   }
 
-  // If total duration is less than requested duration, return null
-  const totalDuration = timestamps[timestamps.length - 1]! - timestamps[0]!;
-  if (totalDuration < durationSeconds) {
-    return null;
+  const cumulativeArea = new Array<number>(stream.length).fill(0);
+  for (let index = 0; index < stream.length; index++) {
+    if (
+      !Number.isFinite(numberAt(stream, index)) ||
+      !Number.isFinite(numberAt(timestamps, index))
+    ) {
+      return null;
+    }
+
+    if (index > 0) {
+      const interval = numberAt(timestamps, index) - numberAt(timestamps, index - 1);
+      if (interval <= 0) {
+        return null;
+      }
+      cumulativeArea[index] =
+        numberAt(cumulativeArea, index - 1) + numberAt(stream, index - 1) * interval;
+    }
   }
 
   let bestAvg = -Infinity;
   let bestStartIdx = -1;
   let bestEndIdx = -1;
+  let bestStartTime = -1;
+  let segmentStart = 0;
 
-  let currentWindowSum = 0;
-  let windowEnd = 0;
+  const evaluateSegment = (segmentEnd: number) => {
+    const firstTimestamp = numberAt(timestamps, segmentStart);
+    const lastTimestamp = numberAt(timestamps, segmentEnd);
+    const latestStart = lastTimestamp - durationSeconds;
+    if (latestStart < firstTimestamp) {
+      return;
+    }
 
-  for (let windowStart = 0; windowStart < stream.length; windowStart++) {
-    // Expand window to the right until duration is met
-    // We need a window [windowStart, windowEnd] such that
-    // timestamps[windowEnd] - timestamps[windowStart] >= durationSeconds
+    const candidateStarts = new Set<number>([firstTimestamp, latestStart]);
+    for (let index = segmentStart; index <= segmentEnd; index++) {
+      const timestamp = numberAt(timestamps, index);
+      if (timestamp <= latestStart) {
+        candidateStarts.add(timestamp);
+      }
 
-    while (
-      windowEnd < stream.length &&
-      timestamps[windowEnd]! - timestamps[windowStart]! < durationSeconds
+      const endAlignedStart = timestamp - durationSeconds;
+      if (endAlignedStart >= firstTimestamp && endAlignedStart <= latestStart) {
+        candidateStarts.add(endAlignedStart);
+      }
+    }
+
+    const areaAt = (timestamp: number) => {
+      const sampleIndex = upperBound(timestamps, timestamp, segmentStart, segmentEnd) - 1;
+      return (
+        numberAt(cumulativeArea, sampleIndex) -
+        numberAt(cumulativeArea, segmentStart) +
+        numberAt(stream, sampleIndex) * (timestamp - numberAt(timestamps, sampleIndex))
+      );
+    };
+
+    for (const startTimestamp of [...candidateStarts].sort((a, b) => a - b)) {
+      const endTimestamp = startTimestamp + durationSeconds;
+      const average = (areaAt(endTimestamp) - areaAt(startTimestamp)) / durationSeconds;
+
+      if (average > bestAvg) {
+        bestAvg = average;
+        bestStartIdx = upperBound(timestamps, startTimestamp, segmentStart, segmentEnd) - 1;
+        bestEndIdx = lowerBound(timestamps, endTimestamp, segmentStart, segmentEnd) - 1;
+        bestStartTime = startTimestamp;
+      }
+    }
+  };
+
+  for (let index = 1; index < timestamps.length; index++) {
+    if (
+      numberAt(timestamps, index) - numberAt(timestamps, index - 1) >
+      MAX_BEST_EFFORT_SAMPLE_GAP_SECONDS
     ) {
-      currentWindowSum += stream[windowEnd]!;
-      windowEnd++;
-    }
-
-    // If we've reached the end and still haven't met the duration requirement, break
-    if (windowEnd >= stream.length) {
-      // Check if the last window [windowStart, stream.length-1] meets the duration
-      // The while loop condition failed because windowEnd == stream.length
-      // But we might have met the duration exactly at the end.
-      // Let's check:
-      // timestamps[stream.length-1] - timestamps[windowStart] < durationSeconds?
-      // If so, we can't form a valid window starting at windowStart.
-      break;
-    }
-
-    // At this point, [windowStart, windowEnd] is a valid window >= durationSeconds
-    // currentWindowSum includes stream[windowStart] ... stream[windowEnd-1]
-    // We need to include stream[windowEnd] for the calculation
-
-    const fullWindowSum = currentWindowSum + stream[windowEnd]!;
-    const count = windowEnd - windowStart + 1;
-    const avg = fullWindowSum / count;
-
-    if (avg > bestAvg) {
-      bestAvg = avg;
-      bestStartIdx = windowStart;
-      bestEndIdx = windowEnd;
-    }
-
-    // Prepare for next iteration: remove stream[windowStart] from sum
-    // Note: currentWindowSum does NOT include stream[windowEnd] yet, so we don't subtract it.
-    // currentWindowSum includes [windowStart, windowEnd-1].
-    // We subtract stream[windowStart].
-
-    if (windowEnd > windowStart) {
-      currentWindowSum -= stream[windowStart]!;
-    } else {
-      // Should not happen if duration > 0, but for safety
-      windowEnd = windowStart + 1;
-      currentWindowSum = 0;
+      evaluateSegment(index - 1);
+      segmentStart = index;
     }
   }
+  evaluateSegment(timestamps.length - 1);
 
   if (bestStartIdx === -1) {
     return null;
@@ -120,6 +181,8 @@ export function calculateBestEffort(
     value: bestAvg,
     startIndex: bestStartIdx,
     endIndex: bestEndIdx,
+    startTimeSeconds: bestStartTime,
+    endTimeSeconds: bestStartTime + durationSeconds,
   };
 }
 

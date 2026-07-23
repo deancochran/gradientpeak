@@ -60,6 +60,15 @@ export type ProviderWebhookReceiptRecord = {
 };
 
 export interface ProviderSyncRepository {
+  completeJobWithSyncState(input: {
+    highWatermark: string;
+    id: string;
+    integrationId: string;
+    metadata: Record<string, unknown>;
+    provider: "wahoo";
+    resource: string;
+    workerId: string;
+  }): Promise<boolean>;
   getQueueTelemetry?(input: {
     jobTypes?: string[];
     now: string;
@@ -158,7 +167,9 @@ export interface ProviderSyncRepository {
     resource: string;
   }): Promise<void>;
   updateSyncStateAfterRun(input: {
+    highWatermark?: string;
     integrationId: string;
+    metadata?: Record<string, unknown>;
     nextSyncAt?: string;
     provider: "wahoo";
     resource: string;

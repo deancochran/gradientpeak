@@ -138,7 +138,7 @@ export function TrainingPlanDetailHeaderActionsSection({
             <SummaryMetricCard label="Linked activities" value={`${overview.linkedWorkouts}`} />
             <SummaryMetricCard label="Route-backed activities" value={`${overview.routeBacked}`} />
             <SummaryMetricCard
-              label="Planned TSS"
+              label="Planned Load"
               value={markEstimated(`${overview.plannedTss}`) ?? "0"}
             />
             <SummaryMetricCard label="Planned time" value={overview.plannedTime} />

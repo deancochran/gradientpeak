@@ -15,6 +15,7 @@ import { useViewingUserPreferredUnitSystem } from "../../hooks/use-viewing-user-
 import {
   formatCalibrationQuality,
   getActivityLoadLabels,
+  getCommonLoadPresentation,
   getThresholdNextAction,
 } from "../../lib/activity-load-presentation";
 import {
@@ -208,26 +209,16 @@ function deriveCategoryLabel(categories: string[]) {
 
 export function ActivityListCard({ activity, onOpen }: { activity: any; onOpen: () => void }) {
   const { unitSystem } = useViewingUserPreferredUnitSystem();
-  const loadMethod = activity.derived?.method;
-  const loadLabels = getActivityLoadLabels(loadMethod);
-  const unavailableValue =
-    activity.derived?.unavailable_reason === "private_data"
-      ? "Private"
-      : activity.derived?.unavailable_reason === "threshold_missing"
-        ? "No prior threshold"
-        : activity.derived?.unavailable_reason === "invalid_data"
-          ? "Invalid data"
-          : "Missing activity data";
-  const calibrationText = formatCalibrationQuality(
-    activity.derived?.calibration_quality,
-    activity.started_at,
-  );
+  const commonLoad = activity.derived?.common_load;
+  const loadLabels = getActivityLoadLabels();
+  const loadPresentation = getCommonLoadPresentation(commonLoad);
+  const calibrationText = formatCalibrationQuality(commonLoad?.quality, activity.started_at);
   const categories = activity.activity_categories as string[] | undefined;
   const firstCategory = categories?.[0] ?? null;
   const elapsedSeconds =
     activity.elapsed_ms != null ? Math.round(activity.elapsed_ms / 1000) : null;
   const thresholdAction =
-    activity.derived?.unavailable_reason === "threshold_missing"
+    commonLoad?.status === "unavailable" && commonLoad.reason === "threshold_missing"
       ? getThresholdNextAction(firstCategory)
       : null;
   return (
@@ -257,23 +248,10 @@ export function ActivityListCard({ activity, onOpen }: { activity: any; onOpen: 
             value={formatDistance(activity.distance_meters, unitSystem)}
           />
           <MetricPill label="Duration" value={formatDuration(elapsedSeconds)} />
-          <MetricPill
-            label={loadLabels.load}
-            value={
-              activity.derived?.tss != null
-                ? `${Math.round(activity.derived.tss)}`
-                : unavailableValue
-            }
-          />
-          <MetricPill
-            label={loadLabels.intensity}
-            value={
-              activity.derived?.intensity_factor != null
-                ? Number(activity.derived.intensity_factor).toFixed(2)
-                : "-"
-            }
-          />
+          <MetricPill label={loadLabels.load} value={loadPresentation.load} />
+          <MetricPill label={loadLabels.intensity} value={loadPresentation.intensity} />
         </div>
+        <p className="text-xs text-muted-foreground">{loadPresentation.explanation}</p>
         {calibrationText || thresholdAction ? (
           <p className="text-xs text-muted-foreground">{calibrationText ?? thresholdAction}</p>
         ) : null}

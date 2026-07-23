@@ -1,4 +1,4 @@
-import { scheduledDateTimeToIsoInstant } from "@repo/core";
+import { commonLoadResultSchema, scheduledDateTimeToIsoInstant } from "@repo/core";
 
 export type PlanningEvent = {
   id: string;
@@ -17,9 +17,7 @@ export type PlanningEvent = {
     name?: string | null;
     description?: string | null;
     activity_category?: string | null;
-    authoritative_metrics?: {
-      estimated_tss?: number | null;
-    } | null;
+    common_load?: unknown;
   } | null;
 };
 
@@ -135,53 +133,93 @@ export function buildWeeklyRecurrence({
   };
 }
 
+export type PlannedLoadPathPoint = {
+  eventCount: number;
+  load: number | null;
+  status: "complete" | "partial" | "unavailable";
+};
+
 export function getTrainingLoadPath(events: PlanningEvent[]) {
   const dailyBuckets = new Map<
     string,
-    { date: string; eventCount: number; estimatedTss: number | null }
+    PlannedLoadPathPoint & {
+      date: string;
+      contributingEventCount: number;
+      partialEventCount: number;
+    }
   >();
 
   for (const event of events) {
     if (!event.scheduled_date) continue;
-    const estimate = event.activity_plan?.authoritative_metrics?.estimated_tss;
+    const parsed = commonLoadResultSchema.safeParse(event.activity_plan?.common_load);
     const bucket = dailyBuckets.get(event.scheduled_date) ?? {
       date: event.scheduled_date,
       eventCount: 0,
-      estimatedTss: null,
+      contributingEventCount: 0,
+      partialEventCount: 0,
+      load: null,
+      status: "unavailable" as const,
     };
     bucket.eventCount += 1;
-    if (typeof estimate === "number" && Number.isFinite(estimate)) {
-      bucket.estimatedTss = (bucket.estimatedTss ?? 0) + estimate;
+    if (parsed.success && parsed.data.status !== "unavailable" && parsed.data.load !== null) {
+      bucket.load = bucket.load === null ? parsed.data.load : bucket.load + parsed.data.load;
+      bucket.contributingEventCount += 1;
+      if (parsed.data.status === "partial") bucket.partialEventCount += 1;
     }
+    bucket.status =
+      bucket.contributingEventCount === bucket.eventCount && bucket.partialEventCount === 0
+        ? "complete"
+        : bucket.load === null
+          ? "unavailable"
+          : "partial";
     dailyBuckets.set(event.scheduled_date, bucket);
   }
 
-  const daily = [...dailyBuckets.values()].sort((left, right) =>
-    left.date.localeCompare(right.date),
-  );
+  const daily = [...dailyBuckets.values()]
+    .sort((left, right) => left.date.localeCompare(right.date))
+    .map((point) => ({
+      date: point.date,
+      eventCount: point.eventCount,
+      load: point.load,
+      status: point.status,
+    }));
   const weeklyBuckets = new Map<
     string,
-    { weekStart: string; eventCount: number; estimatedTss: number | null }
+    PlannedLoadPathPoint & { weekStart: string; completeDayCount: number; dayCount: number }
   >();
   for (const day of daily) {
     const weekStart = getWeekWindow(day.date).startKey;
     const bucket = weeklyBuckets.get(weekStart) ?? {
       weekStart,
       eventCount: 0,
-      estimatedTss: null,
+      completeDayCount: 0,
+      dayCount: 0,
+      load: null,
+      status: "unavailable" as const,
     };
     bucket.eventCount += day.eventCount;
-    if (day.estimatedTss !== null) {
-      bucket.estimatedTss = (bucket.estimatedTss ?? 0) + day.estimatedTss;
-    }
+    bucket.dayCount += 1;
+    if (day.status === "complete") bucket.completeDayCount += 1;
+    if (day.load !== null) bucket.load = bucket.load === null ? day.load : bucket.load + day.load;
+    bucket.status =
+      bucket.completeDayCount === bucket.dayCount
+        ? "complete"
+        : bucket.load === null
+          ? "unavailable"
+          : "partial";
     weeklyBuckets.set(weekStart, bucket);
   }
 
   return {
     daily,
-    weekly: [...weeklyBuckets.values()].sort((left, right) =>
-      left.weekStart.localeCompare(right.weekStart),
-    ),
+    weekly: [...weeklyBuckets.values()]
+      .sort((left, right) => left.weekStart.localeCompare(right.weekStart))
+      .map((point) => ({
+        weekStart: point.weekStart,
+        eventCount: point.eventCount,
+        load: point.load,
+        status: point.status,
+      })),
   };
 }
 

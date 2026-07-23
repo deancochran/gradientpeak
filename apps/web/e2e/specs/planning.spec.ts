@@ -14,6 +14,8 @@ test("planning.training-path and calendar.navigation expose daily, weekly, month
   await expect(athletePage.getByRole("heading", { name: /training path/i })).toBeVisible();
   await expect(athletePage.getByRole("tab", { name: /daily/i })).toBeVisible();
   await expect(athletePage.getByRole("tab", { name: /weekly/i })).toBeVisible();
+  await expect(athletePage.getByText(/\b(?:TSS|IF|CTL|ATL|TSB)\b/)).toHaveCount(0);
+  await expect(athletePage.getByText(/Load (?:unavailable|\d+)/).first()).toBeVisible();
 
   await openPlanningRoute(athletePage, "/calendar?view=month", /^calendar$/i);
   await expect(athletePage.getByRole("tab", { name: /^month$/i })).toBeVisible();

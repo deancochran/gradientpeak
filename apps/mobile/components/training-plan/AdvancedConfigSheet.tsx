@@ -85,10 +85,10 @@ export function AdvancedConfigSheet({
 
     // Weekly Targets validation
     if (formData.target_weekly_tss_min < 0) {
-      errors.tss_min = "Min TSS must be at least 0";
+      errors.tss_min = "Min Load must be at least 0";
     }
     if (formData.target_weekly_tss_max < formData.target_weekly_tss_min) {
-      errors.tss_max = "Max TSS must be greater than or equal to Min TSS";
+      errors.tss_max = "Max Load must be greater than or equal to Min Load";
     }
     if (formData.target_activities_per_week < 1 || formData.target_activities_per_week > 14) {
       errors.activities_per_week = "Activities per week must be between 1 and 14";
@@ -111,10 +111,11 @@ export function AdvancedConfigSheet({
     if (formData.periodization_template) {
       const p = formData.periodization_template;
       if (p.starting_ctl < 0) {
-        errors.starting_ctl = "Starting CTL must be at least 0";
+        errors.starting_ctl = "Starting Long-term Load (CTL) must be at least 0";
       }
       if (p.target_ctl <= p.starting_ctl) {
-        errors.target_ctl = "Target CTL must be greater than starting CTL";
+        errors.target_ctl =
+          "Target Long-term Load (CTL) must be greater than starting Long-term Load";
       }
       if (p.ramp_rate < 0.01 || p.ramp_rate > 1) {
         errors.ramp_rate = "Ramp rate must be between 0.01 and 1";

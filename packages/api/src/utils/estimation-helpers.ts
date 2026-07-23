@@ -8,6 +8,7 @@ import {
 } from "@repo/core/activity-plan";
 import {
   getActivityEffortThresholdEvidence,
+  getEligibleThresholdValue,
   resolveCanonicalThresholds,
   type ThresholdActivityEffortObservation,
 } from "@repo/core/athlete-inputs";
@@ -118,6 +119,8 @@ function getEstimationProfileInputsFromData(
   let maxHr: number | null = null;
   let lthr: number | null = null;
   const thresholds = resolveEstimationThresholds(data.efforts, data.metrics, asOf.toISOString());
+  const ftp = getEligibleThresholdValue(thresholds.cycling_ftp);
+  const runThresholdPace = getEligibleThresholdValue(thresholds.running_threshold_pace);
   for (const metric of data.metrics) {
     if (metric.metric_type === "weight_kg" && weightKg === null) weightKg = Number(metric.value);
     else if (metric.metric_type === "resting_hr" && restingHr === null)
@@ -126,16 +129,13 @@ function getEstimationProfileInputsFromData(
     else if (metric.metric_type === "lthr" && lthr === null) lthr = Number(metric.value);
   }
   return {
-    ftp: thresholds.cycling_ftp.value === null ? null : Math.round(thresholds.cycling_ftp.value),
+    ftp: ftp === null ? null : Math.round(ftp),
     dob: data.profile?.dob ?? null,
     max_hr: maxHr,
     threshold_hr: lthr,
     resting_hr: restingHr,
     weight_kg: weightKg,
-    threshold_pace_seconds_per_km:
-      thresholds.running_threshold_pace.value === null
-        ? null
-        : Math.round(thresholds.running_threshold_pace.value),
+    threshold_pace_seconds_per_km: runThresholdPace === null ? null : Math.round(runThresholdPace),
   };
 }
 
@@ -151,12 +151,7 @@ export async function loadEstimationSnapshot(
     profileId,
     routeIds: [...new Set(routeIds)],
   });
-  const thresholds = resolveEstimationThresholds(
-    data.efforts,
-    data.metrics,
-    asOf.toISOString(),
-    true,
-  );
+  const thresholds = resolveEstimationThresholds(data.efforts, data.metrics, asOf.toISOString());
   const routes = new Map(
     data.routes.map((route) => [route.id, Object.freeze({ ...route })] as const),
   );
@@ -280,6 +275,8 @@ async function getEstimationProfileInputs(
     currentMetrics,
     asOf.toISOString(),
   );
+  const ftp = getEligibleThresholdValue(thresholds.cycling_ftp);
+  const runThresholdPace = getEligibleThresholdValue(thresholds.running_threshold_pace);
 
   const latestMetrics = resolveLatestObservationsByKey(
     legacyMetrics,
@@ -305,16 +302,13 @@ async function getEstimationProfileInputs(
   }
 
   return {
-    ftp: thresholds.cycling_ftp.value === null ? null : Math.round(thresholds.cycling_ftp.value),
+    ftp: ftp === null ? null : Math.round(ftp),
     dob: profile?.dob ?? null,
     max_hr: maxHr,
     threshold_hr: lthr,
     resting_hr: restingHr,
     weight_kg: weightKg,
-    threshold_pace_seconds_per_km:
-      thresholds.running_threshold_pace.value === null
-        ? null
-        : Math.round(thresholds.running_threshold_pace.value),
+    threshold_pace_seconds_per_km: runThresholdPace === null ? null : Math.round(runThresholdPace),
   };
 }
 
@@ -333,12 +327,16 @@ function resolveEstimationThresholds(
   }>,
   metrics: Array<{ metric_type: string; unit?: string; value: number; recorded_at?: string }>,
   now: string,
-  allowDirectMetricEvidence = false,
 ) {
+  const getEffortObservedAt = (effort: (typeof efforts)[number]) => {
+    if (!effort.recorded_at) return null;
+    const recordedAt = new Date(effort.recorded_at);
+    return Number.isNaN(recordedAt.getTime()) ? null : recordedAt.toISOString();
+  };
+
   return resolveCanonicalThresholds({
     now,
     freshnessWindowMs: 90 * 24 * 60 * 60 * 1000,
-    allowDirectMetricEvidence,
     directMetrics: [
       ...metrics.flatMap((metric) =>
         metric.metric_type === "ftp" && metric.unit === "W" && Number.isFinite(Number(metric.value))
@@ -352,45 +350,48 @@ function resolveEstimationThresholds(
             ]
           : [],
       ),
-      ...efforts.flatMap((effort) =>
-        isActiveManualFtpOverride(effort)
+      ...efforts.flatMap((effort) => {
+        const observedAt = getEffortObservedAt(effort);
+        return isActiveManualFtpOverride(effort) && observedAt
           ? [
               {
                 threshold: "cycling_ftp" as const,
                 value: Number(effort.value) * 0.95,
-                observedAt: effort.recorded_at ?? now,
+                observedAt,
                 source: "manual" as const,
                 locked: true,
               },
             ]
-          : [],
-      ),
+          : [];
+      }),
     ],
     activityEfforts: efforts.flatMap((effort): ThresholdActivityEffortObservation[] => {
       if (isActiveManualFtpOverride(effort)) return [];
+      const observedAt = getEffortObservedAt(effort);
+      if (!observedAt) return [];
       const value = normalizeThresholdEffortValue(effort.value, effort.unit);
       if (value === null || effort.duration_seconds !== 1200) return [];
       if (effort.activity_category === "bike" && effort.effort_type === "power") {
+        const evidence = getActivityEffortThresholdEvidence({
+          activityCategory: effort.activity_category,
+          durationSeconds: effort.duration_seconds,
+          effortType: effort.effort_type,
+          unit: effort.unit,
+          value: effort.value,
+          ...(effort.activity_id !== undefined ? { activityId: effort.activity_id } : {}),
+          ...(effort.method !== undefined ? { method: effort.method } : {}),
+          ...(effort.provenance !== undefined ? { provenance: effort.provenance } : {}),
+          ...(effort.source !== undefined ? { source: effort.source } : {}),
+        });
         return [
           {
             sport: "bike" as const,
             metric: "power" as const,
             value,
             durationSeconds: 1200,
-            observedAt: now,
+            observedAt,
             observationKind: "actual" as const,
-            evidence:
-              getActivityEffortThresholdEvidence({
-                activityCategory: effort.activity_category,
-                activityId: effort.activity_id,
-                durationSeconds: effort.duration_seconds,
-                effortType: effort.effort_type,
-                method: effort.method,
-                provenance: effort.provenance,
-                source: effort.source,
-                unit: effort.unit,
-                value: effort.value,
-              }) ?? undefined,
+            ...(evidence !== null ? { evidence } : {}),
           },
         ];
       }
@@ -398,26 +399,26 @@ function resolveEstimationThresholds(
         effort.effort_type === "speed" &&
         (effort.activity_category === "run" || effort.activity_category === "swim")
       ) {
+        const evidence = getActivityEffortThresholdEvidence({
+          activityCategory: effort.activity_category,
+          durationSeconds: effort.duration_seconds,
+          effortType: effort.effort_type,
+          unit: effort.unit,
+          value: effort.value,
+          ...(effort.activity_id !== undefined ? { activityId: effort.activity_id } : {}),
+          ...(effort.method !== undefined ? { method: effort.method } : {}),
+          ...(effort.provenance !== undefined ? { provenance: effort.provenance } : {}),
+          ...(effort.source !== undefined ? { source: effort.source } : {}),
+        });
         return [
           {
             sport: effort.activity_category,
             metric: "speed" as const,
             value,
             durationSeconds: 1200,
-            observedAt: now,
+            observedAt,
             observationKind: "actual" as const,
-            evidence:
-              getActivityEffortThresholdEvidence({
-                activityCategory: effort.activity_category,
-                activityId: effort.activity_id,
-                durationSeconds: effort.duration_seconds,
-                effortType: effort.effort_type,
-                method: effort.method,
-                provenance: effort.provenance,
-                source: effort.source,
-                unit: effort.unit,
-                value: effort.value,
-              }) ?? undefined,
+            ...(evidence !== null ? { evidence } : {}),
           },
         ];
       }

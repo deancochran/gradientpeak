@@ -3,6 +3,7 @@ import {
   type CommonLoadResult,
   commonLoadHistoryResultSchema,
 } from "@repo/core/load";
+import { getTableName } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SegmentDerivedSummary } from "../../lib/activity-analysis";
@@ -131,29 +132,46 @@ function summary(
   };
 }
 
-function createDb(rows: unknown[], failure?: Error) {
-  let whereClause: unknown;
-  const query = {
-    from: vi.fn(() => query),
-    where: vi.fn((condition: unknown) => {
-      whereClause = condition;
+function createDb(
+  rows: unknown[],
+  failure?: Error,
+  source: { integrationRows?: unknown[]; syncRows?: unknown[] } = {},
+) {
+  const whereClauses = new Map<string, unknown>();
+  const db = {
+    select: vi.fn(() => {
+      let tableName = "";
+      const rowsForTable = () => {
+        if (tableName === "integrations") return source.integrationRows ?? [];
+        if (tableName === "provider_sync_state") return source.syncRows ?? [];
+        return rows;
+      };
+      const query = {
+        from: vi.fn((table: Parameters<typeof getTableName>[0]) => {
+          tableName = getTableName(table);
+          return query;
+        }),
+        where: vi.fn((condition: unknown) => {
+          whereClauses.set(tableName, condition);
+          return query;
+        }),
+        orderBy: vi.fn(() => query),
+        limit: vi.fn(async () => {
+          if (failure && tableName === "activities") throw failure;
+          return rowsForTable();
+        }),
+        then: (onFulfilled: (value: unknown[]) => unknown) =>
+          Promise.resolve(rowsForTable()).then(onFulfilled),
+      };
       return query;
     }),
-    orderBy: vi.fn(() => query),
-    limit: vi.fn(async () => {
-      if (failure) throw failure;
-      return rows;
-    }),
-  };
-  const db = {
-    select: vi.fn(() => query),
     transaction: vi.fn(async (callback: (transaction: typeof db) => Promise<unknown>) =>
       callback(db),
     ),
   };
   return {
     db,
-    getWhereClause: () => whereClause,
+    getWhereClause: () => whereClauses.get("activities"),
   };
 }
 
@@ -179,6 +197,127 @@ describe("common Load history", () => {
     expect(result.points).toHaveLength(COMMON_LOAD_HISTORY_REQUIRED_DAYS);
     expect(result.points.every((point) => point.dailyLoad === 0)).toBe(true);
     expect(result.points.at(-1)?.date).toBe("2026-07-20");
+  });
+
+  it("retains partial history when provider coverage is incomplete", async () => {
+    const { db } = createDb([], undefined, {
+      integrationRows: [{ id: "integration-1", provider: "wahoo" }],
+      syncRows: [],
+    });
+    const result = await getCommonLoadHistory({
+      db: db as never,
+      profileId: PROFILE_ID,
+      currentPlanningDate: CURRENT_DATE,
+      planningTimezone: "UTC",
+    });
+
+    expect(result).toMatchObject({ status: "available", coverageStatus: "partial" });
+    expect(analysis.buildActivitySegmentDerivedSummaries).toHaveBeenCalledOnce();
+  });
+
+  it("accepts an up-to-date successful historical provider sync as complete source coverage", async () => {
+    const succeededAt = new Date("2026-07-21T00:00:00.000Z");
+    const { db } = createDb([], undefined, {
+      integrationRows: [{ id: "integration-1", provider: "wahoo" }],
+      syncRows: [
+        {
+          integrationId: "integration-1",
+          lastSucceededAt: succeededAt,
+          lastFailedAt: null,
+          consecutiveFailures: 0,
+          highWatermark: succeededAt,
+          metadata: {
+            activityHistoryCoverage: {
+              start: "2026-01-01T00:00:00.000Z",
+              end: "2026-07-21T00:00:00.000Z",
+            },
+          },
+        },
+      ],
+    });
+    const result = await getCommonLoadHistory({
+      db: db as never,
+      profileId: PROFILE_ID,
+      currentPlanningDate: CURRENT_DATE,
+      planningTimezone: "UTC",
+    });
+
+    expect(result.status).toBe("available");
+  });
+
+  it("ignores integrations that do not support activity history sync", async () => {
+    const { db } = createDb([], undefined, {
+      integrationRows: [{ id: "zwift-1", provider: "zwift" }],
+      syncRows: [],
+    });
+    const result = await getCommonLoadHistory({
+      db: db as never,
+      profileId: PROFILE_ID,
+      currentPlanningDate: CURRENT_DATE,
+      planningTimezone: "UTC",
+    });
+
+    expect(result.status).toBe("available");
+  });
+
+  it("requires provider coverage to span the complete history window", async () => {
+    const succeededAt = new Date("2026-07-21T00:00:00.000Z");
+    const { db } = createDb([], undefined, {
+      integrationRows: [{ id: "integration-1", provider: "wahoo" }],
+      syncRows: [
+        {
+          integrationId: "integration-1",
+          lastSucceededAt: succeededAt,
+          lastFailedAt: null,
+          consecutiveFailures: 0,
+          highWatermark: succeededAt,
+          metadata: {
+            activityHistoryCoverage: {
+              start: "2026-07-01T00:00:00.000Z",
+              end: "2026-07-21T00:00:00.000Z",
+            },
+          },
+        },
+      ],
+    });
+    const result = await getCommonLoadHistory({
+      db: db as never,
+      profileId: PROFILE_ID,
+      currentPlanningDate: CURRENT_DATE,
+      planningTimezone: "UTC",
+    });
+
+    expect(result).toMatchObject({ status: "available", coverageStatus: "partial" });
+  });
+
+  it("checks provider coverage against profile-local rather than UTC day boundaries", async () => {
+    const watermark = new Date("2026-07-21T00:00:00.000Z");
+    const { db } = createDb([], undefined, {
+      integrationRows: [{ id: "integration-1", provider: "wahoo" }],
+      syncRows: [
+        {
+          integrationId: "integration-1",
+          lastSucceededAt: watermark,
+          lastFailedAt: null,
+          consecutiveFailures: 0,
+          highWatermark: watermark,
+          metadata: {
+            activityHistoryCoverage: {
+              start: "2026-01-01T00:00:00.000Z",
+              end: watermark.toISOString(),
+            },
+          },
+        },
+      ],
+    });
+    const result = await getCommonLoadHistory({
+      db: db as never,
+      profileId: PROFILE_ID,
+      currentPlanningDate: CURRENT_DATE,
+      planningTimezone: "America/Los_Angeles",
+    });
+
+    expect(result).toMatchObject({ status: "available", coverageStatus: "partial" });
   });
 
   it("aggregates cross-sport activities on one observed day", () => {
@@ -232,6 +371,25 @@ describe("common Load history", () => {
     }).at(-1);
     if (changed?.state !== "observed") throw new Error("Observed day expected");
     expect(changed.evidenceFingerprints).not.toEqual(day.evidenceFingerprints);
+
+    const thresholdChangedLoad = availableLoad();
+    if (thresholdChangedLoad.status !== "available") throw new Error("Available load expected");
+    const changedThreshold = buildCommonLoadHistoryObservations({
+      activities,
+      segmentSummaries: [
+        summary("private-activity-a", "private-segment-a", {
+          ...thresholdChangedLoad,
+          thresholdEvidence: {
+            ...thresholdChangedLoad.thresholdEvidence,
+            sourceFingerprint: "new-threshold",
+          },
+        }),
+        summary("private-activity-b", "private-segment-b", availableLoad()),
+      ],
+      currentPlanningDate: CURRENT_DATE,
+      planningTimezone: "UTC",
+    }).at(-1);
+    expect(changedThreshold?.evidenceFingerprints).not.toEqual(day.evidenceFingerprints);
   });
 
   it("groups cross-sport segments into one multisport activity before daily aggregation", () => {
@@ -263,7 +421,7 @@ describe("common Load history", () => {
   it.each([
     ["partial", partialLoad()],
     ["unavailable", unavailableLoad()],
-  ])("makes an %s common result unavailable rather than treating it as zero", async (_, load) => {
+  ])("keeps %s common results distinct from zero", async (status, load) => {
     const activity = { id: "incomplete", started_at: new Date("2026-07-20T08:00:00.000Z") };
     const { db } = createDb([activity]);
     analysis.buildActivitySegmentDerivedSummaries.mockResolvedValue([
@@ -276,7 +434,11 @@ describe("common Load history", () => {
       planningTimezone: "UTC",
     });
 
-    expect(result).toMatchObject({ status: "unavailable", reason: "incomplete_observation" });
+    expect(result).toMatchObject(
+      status === "partial"
+        ? { status: "available", coverageStatus: "partial" }
+        : { status: "unavailable", reason: "incomplete_observation" },
+    );
   });
 
   it("assigns dates in the requested planning timezone and excludes the current day", () => {

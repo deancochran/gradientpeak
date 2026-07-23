@@ -860,7 +860,7 @@ jest.mock("@/lib/api", () => ({
       },
     },
     activities: {
-      dailyTssObservations: {
+      dailyCommonLoadObservations: {
         useQuery: () => ({
           data: { observations: [] },
           dataUpdatedAt: 1,

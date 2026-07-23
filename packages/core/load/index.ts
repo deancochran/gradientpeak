@@ -3,6 +3,7 @@ export * from "./common-relative-load";
 export * from "./form";
 export * from "./heart-rate-zone-stress";
 export * from "./load-series";
+export * from "./planned-common-load";
 export * from "./progression";
 export * from "./ramp";
 export * from "./replay";

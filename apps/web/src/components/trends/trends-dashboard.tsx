@@ -59,6 +59,39 @@ export function TrendPartialFailure({
   );
 }
 
+export function CommonLoadUnavailable({
+  isRetrying,
+  onRetry,
+  reason,
+}: {
+  isRetrying: boolean;
+  onRetry: () => void;
+  reason: string;
+}) {
+  const description =
+    reason === "insufficient_history"
+      ? "A complete 84-day history is required before Long-term can be shown."
+      : reason === "incomplete_observation"
+        ? "Some activity history is incomplete, so common Load history is intentionally unavailable."
+        : reason === "invalid_input"
+          ? "Set a valid profile planning timezone to calculate Load history."
+          : "Load history could not be calculated from the available evidence.";
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Long-term unavailable</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button disabled={isRetrying} onClick={onRetry} type="button" variant="outline">
+          <RefreshCw className={`mr-2 h-4 w-4 ${isRetrying ? "animate-spin" : ""}`} />
+          Retry Load history
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function getFailedTrendSources(
   states: ReadonlyArray<{ isError: boolean; name: TrendSourceName }>,
 ): TrendSourceName[] {
@@ -100,10 +133,7 @@ export function TrendsDashboard() {
     end_date: range.endDate,
     groupBy: "week",
   });
-  const load = api.trends.getTrainingLoadTrends.useQuery({
-    start_date: range.startDate,
-    end_date: range.endDate,
-  });
+  const load = api.activities.commonLoadHistory.useQuery();
   const consistency = api.trends.getConsistencyMetrics.useQuery({
     start_date: range.startDate,
     end_date: range.endDate,
@@ -170,7 +200,8 @@ export function TrendsDashboard() {
     label: "Functional threshold power",
     type: "ftp" as const,
   };
-  const latestLoad = load.data?.dataPoints.at(-1);
+  const commonLoadPoints = load.data?.status === "available" ? load.data.points : [];
+  const latestLoad = commonLoadPoints.at(-1);
   const latestZones = zones.data?.weeklyData.at(-1);
   const zoneEntries = latestZones ? Object.entries(latestZones.zones) : [];
   const performanceUsesPower =
@@ -215,21 +246,40 @@ export function TrendsDashboard() {
       />
 
       <div className="grid gap-6 xl:grid-cols-2">
-        {load.data ? (
+        {load.data?.status === "available" ? (
           <SimpleTrendChart
             axisLabels={{ x: "Date", y: "Load" }}
-            description="Chronic training load from recorded activity stress. ATL and form remain visible in the evidence summary."
-            emptyMessage="Record activities with training stress to build load."
+            description="Long-term common Load from complete versioned history."
+            emptyMessage="Complete activity history is required to build common Load trends."
             formatValue={(value) => number(value)}
-            points={load.data.dataPoints.map((point) => ({
+            points={commonLoadPoints.map((point) => ({
               id: point.date,
               label: formatDate(point.date),
-              value: point.ctl,
+              value: point.longTermLoad,
               x: new Date(point.date).getTime(),
             }))}
-            title="Training load (CTL)"
+            title="Long-term"
           />
-        ) : null}
+        ) : load.data?.status === "unavailable" ? (
+          <CommonLoadUnavailable
+            isRetrying={load.isRefetching}
+            onRetry={() => void load.refetch()}
+            reason={load.data.reason}
+          />
+        ) : load.isError ? (
+          <CommonLoadUnavailable
+            isRetrying={load.isRefetching}
+            onRetry={() => void load.refetch()}
+            reason="transport_error"
+          />
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>Long-term</CardTitle>
+              <CardDescription>Loading complete common Load history…</CardDescription>
+            </CardHeader>
+          </Card>
+        )}
         {volume.data ? (
           <SimpleTrendChart
             axisLabels={{ x: "Week", y: "Hours" }}
@@ -325,17 +375,17 @@ export function TrendsDashboard() {
             </CardContent>
           </Card>
         ) : null}
-        {load.data?.currentStatus ? (
+        {latestLoad ? (
           <Card>
             <CardHeader>
               <CardTitle>Load evidence</CardTitle>
-              <CardDescription>{load.data.currentStatus.loadBalanceStatus} form</CardDescription>
+              <CardDescription>Complete common Load history</CardDescription>
             </CardHeader>
             <CardContent className="grid grid-cols-2 gap-3 text-sm">
-              <Metric label="CTL" value={number(load.data.currentStatus.ctl)} />
-              <Metric label="ATL" value={number(load.data.currentStatus.atl)} />
-              <Metric label="TSB" value={number(load.data.currentStatus.tsb)} />
-              <Metric label="Latest TSS" value={latestLoad ? number(latestLoad.tss) : "—"} />
+              <Metric label="Long-term" value={number(latestLoad.longTermLoad)} />
+              <Metric label="Recent" value={number(latestLoad.recentLoad)} />
+              <Metric label="Balance" value={number(latestLoad.loadBalance)} />
+              <Metric label="Daily" value={number(latestLoad.dailyLoad)} />
             </CardContent>
           </Card>
         ) : null}

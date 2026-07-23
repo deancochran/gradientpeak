@@ -33,11 +33,38 @@ type ConstraintActivityPlan = Pick<
 >;
 type ProfileMetricValue = Pick<ProfileMetricRow, "value">;
 type ConstraintTrainingPlan = Pick<TrainingPlanRow, "id" | "structure">;
-type EstimationEffort = Pick<
-  ActivityEffortRow,
-  "activity_category" | "duration_seconds" | "effort_type" | "unit" | "value"
->;
-type EstimationMetric = Pick<ProfileMetricRow, "metric_type" | "value"> & {
+type EstimationEffort = Omit<
+  Pick<
+    ActivityEffortRow,
+    | "activity_category"
+    | "activity_id"
+    | "calculation_version"
+    | "duration_seconds"
+    | "effort_type"
+    | "id"
+    | "method"
+    | "provenance"
+    | "quality_score"
+    | "recorded_at"
+    | "source"
+    | "unit"
+    | "value"
+  >,
+  "recorded_at"
+> & {
+  recorded_at: string;
+};
+type EstimationProfileMetric = Pick<
+  ProfileMetricRow,
+  | "calculation_version"
+  | "method"
+  | "metric_type"
+  | "provenance"
+  | "quality_score"
+  | "source"
+  | "unit"
+  | "value"
+> & {
   recorded_at: string;
 };
 type EstimationRoute = {
@@ -115,7 +142,7 @@ export interface EventReadRepository {
     routeIds: string[];
   }): Promise<{
     efforts: EstimationEffort[];
-    metrics: EstimationMetric[];
+    metrics: EstimationProfileMetric[];
     profile: SerializedProfileDob | null;
     routes: EstimationRoute[];
   }>;

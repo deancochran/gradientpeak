@@ -54,7 +54,7 @@ export function CurrentStatusCard({ ctl, atl, tsb, form }: CurrentStatusCardProp
         <View className="mb-2 flex-row items-center justify-between">
           <Text className={`text-lg font-bold ${formInfo.color}`}>{formInfo.label}</Text>
           <Text className={`text-2xl font-bold ${formInfo.color}`}>
-            TSB: {tsb > 0 ? "+" : ""}
+            Balance (TSB): {tsb > 0 ? "+" : ""}
             {tsb}
           </Text>
         </View>
@@ -65,22 +65,22 @@ export function CurrentStatusCard({ ctl, atl, tsb, form }: CurrentStatusCardProp
         <TrainingMetricCard
           icon={TrendingUp}
           iconClassName="text-blue-500"
-          label="CTL"
-          subtitle="Fitness"
+          label="Long-term Load (CTL)"
+          subtitle="Fitness trend"
           value={`${ctl}`}
         />
         <TrainingMetricCard
           icon={Heart}
           iconClassName="text-red-500"
-          label="ATL"
-          subtitle="Fatigue"
+          label="Recent Load (ATL)"
+          subtitle="Fatigue trend"
           value={`${atl}`}
         />
         <TrainingMetricCard
           icon={Activity}
           iconClassName={formInfo.color}
-          label="TSB"
-          subtitle="Form"
+          label="Load Balance (TSB)"
+          subtitle="Form trend"
           value={`${tsb > 0 ? "+" : ""}${tsb}`}
           valueClassName={formInfo.color}
         />

@@ -122,6 +122,17 @@ describe("analyzeParsedActivityFile", () => {
           : (start >= 0 && end <= 60) || (start >= 140 && end <= 200);
       }),
     ).toBe(true);
+    expect(
+      efforts.every((effort) => {
+        const provenance = effort.provenance as Record<string, unknown>;
+        const exactStart = provenance.exact_window_start_seconds;
+        const exactEnd = provenance.exact_window_end_seconds;
+        if (typeof exactStart !== "number" || typeof exactEnd !== "number") return false;
+        return effort.activity_category === "bike"
+          ? exactStart >= 70 && exactEnd <= 130
+          : (exactStart >= 0 && exactEnd <= 60) || (exactStart >= 140 && exactEnd <= 200);
+      }),
+    ).toBe(true);
     expect(result.summaryValues).toMatchObject({
       normalized_power: null,
       normalized_speed_mps: null,

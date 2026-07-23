@@ -19,7 +19,7 @@ describe("training model safety", () => {
         },
         created_at: "2026-01-01",
       },
-      status: { ctl: 45, tsb: -35 },
+      status: { longTermLoad: 45, loadBalance: -35 },
     });
     const copy = `${suggestion?.title} ${suggestion?.description}`.toLowerCase();
 

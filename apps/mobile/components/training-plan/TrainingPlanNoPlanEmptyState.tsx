@@ -42,7 +42,7 @@ export function TrainingPlanNoPlanEmptyState({
             <View className="flex-1">
               <Text className="font-semibold mb-1">Review Load History</Text>
               <Text className="text-sm text-muted-foreground">
-                View CTL and ATL as load-history averages and TSB as the difference between them.
+                View Long-term Load (CTL) and Recent Load (ATL) averages, plus Load Balance (TSB).
               </Text>
             </View>
           </View>
@@ -51,7 +51,7 @@ export function TrainingPlanNoPlanEmptyState({
             <View className="flex-1">
               <Text className="font-semibold mb-1">Structured Scheduling</Text>
               <Text className="text-sm text-muted-foreground">
-                Weekly TSS targets and constraint validation ensure balanced training.
+                Weekly Load targets and constraint validation ensure balanced training.
               </Text>
             </View>
           </View>

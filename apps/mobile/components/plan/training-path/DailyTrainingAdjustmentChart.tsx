@@ -1,4 +1,3 @@
-import type { ActivityTssIdentity } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import {
   DashPathEffect,
@@ -12,7 +11,10 @@ import { View } from "react-native";
 import { ScrollView } from "react-native-gesture-handler";
 import { CartesianChart, Line } from "victory-native";
 import { useTheme } from "@/lib/stores/theme-store";
-import type { CompletedObservationState } from "@/lib/training-path/completedTssObservation";
+import type {
+  CommonLoadIdentity,
+  CompletedObservationState,
+} from "@/lib/training-path/completedCommonLoadObservation";
 import { DailyTrainingAdjustmentTray } from "./DailyTrainingAdjustmentTray";
 import {
   buildDailyTrainingAdjustmentAccessibilityValue,
@@ -33,7 +35,7 @@ import { useInstantChartSelection } from "./useInstantChartSelection";
 
 export type DailyTrainingAdjustmentPoint = {
   completedObservationState?: CompletedObservationState;
-  completedTssIdentity?: ActivityTssIdentity | null;
+  completedCommonLoadIdentity?: CommonLoadIdentity | null;
   date: string;
   hasCompletedActivityWithoutLoad?: boolean;
   hasTargetLoad?: boolean;

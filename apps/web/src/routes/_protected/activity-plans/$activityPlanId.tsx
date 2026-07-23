@@ -206,7 +206,7 @@ function ActivityPlanDetailPage() {
   }
 
   if (!plan) return null;
-  const metrics = getActivityPlanMetricSummary(plan.authoritative_metrics);
+  const metrics = getActivityPlanMetricSummary(plan.authoritative_metrics, plan.common_load);
 
   return (
     <div className="container mx-auto max-w-5xl space-y-6 py-4">
@@ -289,7 +289,9 @@ function ActivityPlanDetailPage() {
         <Card>
           <CardHeader>
             <CardTitle>Plan summary</CardTitle>
-            <CardDescription>Training intent and estimated workload.</CardDescription>
+            <CardDescription>
+              Training intent with common Load and Intensity availability.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="flex flex-wrap gap-2">
@@ -307,7 +309,7 @@ function ActivityPlanDetailPage() {
               </dl>
             ) : (
               <p className="text-sm text-muted-foreground">
-                Estimated duration and training load are not available for this plan.
+                Duration, common Load, and Intensity are unavailable for this plan.
               </p>
             )}
             {plan.notes ? (

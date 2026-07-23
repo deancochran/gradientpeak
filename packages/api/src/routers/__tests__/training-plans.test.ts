@@ -1,9 +1,90 @@
 import { buildSystemActivityTemplateCatalog, SYSTEM_TEMPLATES } from "@repo/core";
 import { TRPCError } from "@trpc/server";
-import { describe, expect, it, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
 import { createQueryMapDbMock, type QueryMap, type QueryResult } from "../../test/mock-query-db";
 import { deriveProfileAwareCreationContext, trainingPlansRouter } from "../planning/training-plans";
+
+const currentLoadHistoryMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../../application/activities/read-current-profile-common-load-history", () => ({
+  readCurrentProfileCommonLoadHistory: currentLoadHistoryMock,
+}));
+
+function currentHistoryResult(
+  result:
+    | {
+        status: "unavailable";
+        policyVersion: "common_load_history_v1";
+        reason: "incomplete_observation";
+        context: { date: string; observationState: "unavailable"; observationReason: string };
+      }
+    | {
+        status: "available";
+        policyVersion: "common_load_history_v1";
+        identity: {
+          policyVersion: "common_load_history_v1";
+          planningTimezone: string;
+          startDate: string;
+          endDate: string;
+          commonLoad: { model: "gradientpeak_relative_load"; version: "1" };
+          evidenceFingerprints: string[];
+        };
+        points: Array<{
+          date: string;
+          dailyLoad: number;
+          longTermLoad: number;
+          recentLoad: number;
+          loadBalance: number;
+        }>;
+      },
+) {
+  return {
+    computedAt: "2026-07-23T12:00:00.000Z",
+    planningTimezone: "UTC",
+    currentPlanningDate: "2026-07-23",
+    result,
+  };
+}
+
+const unavailableCurrentHistory = currentHistoryResult({
+  status: "unavailable",
+  policyVersion: "common_load_history_v1",
+  reason: "incomplete_observation",
+  context: {
+    date: "2026-07-22",
+    observationState: "unavailable",
+    observationReason: "source_incomplete",
+  },
+});
+
+function availableCurrentHistory() {
+  return currentHistoryResult({
+    status: "available",
+    policyVersion: "common_load_history_v1",
+    identity: {
+      policyVersion: "common_load_history_v1",
+      planningTimezone: "UTC",
+      startDate: "2026-04-30",
+      endDate: "2026-07-22",
+      commonLoad: { model: "gradientpeak_relative_load", version: "1" },
+      evidenceFingerprints: ["history-fixture"],
+    },
+    points: Array.from({ length: 84 }, (_, index) => ({
+      date: new Date(Date.UTC(2026, 3, 30 + index)).toISOString().slice(0, 10),
+      dailyLoad: index === 83 ? 70 : 0,
+      longTermLoad: index === 83 ? 45 : 0,
+      recentLoad: index === 83 ? 52 : 0,
+      loadBalance: index === 83 ? -7 : 0,
+    })),
+  });
+}
+
+beforeEach(() => {
+  currentLoadHistoryMock.mockReset();
+  currentLoadHistoryMock.mockResolvedValue(unavailableCurrentHistory);
+});
 
 const systemActivityPlanId = buildSystemActivityTemplateCatalog()[0]?.template_id;
 if (!systemActivityPlanId) throw new Error("Expected seeded system activity templates");
@@ -15,7 +96,10 @@ const systemTemplateRows = SYSTEM_TEMPLATES.map((template) => ({
   structure_hash: activityPlanStructureHash(template.structure),
 }));
 
-function createSupabaseMock(results: QueryMap) {
+function createSupabaseMock(
+  results: QueryMap,
+  filters: Array<{ table: string; operator: string; column: string; value: unknown }> = [],
+) {
   const counters = new Map<string, number>();
 
   return {
@@ -48,8 +132,14 @@ function createSupabaseMock(results: QueryMap) {
         neq: vi.fn(() => builder),
         not: vi.fn(() => builder),
         or: vi.fn(() => builder),
-        gte: vi.fn(() => builder),
-        lte: vi.fn(() => builder),
+        gte: vi.fn((column: string, value: unknown) => {
+          filters.push({ table, operator: "gte", column, value });
+          return builder;
+        }),
+        lte: vi.fn((column: string, value: unknown) => {
+          filters.push({ table, operator: "lte", column, value });
+          return builder;
+        }),
         lt: vi.fn(() => builder),
         in: vi.fn(() => builder),
         order: vi.fn(() => builder),
@@ -376,6 +466,12 @@ describe("deriveProfileAwareCreationContext", () => {
         profileId: "profile-123",
       }),
     ).resolves.toMatchObject({
+      athleteContext: {
+        evidence: {
+          activityEffortsCoverage: "unknown",
+          profileMetricsCoverage: "complete",
+        },
+      },
       contextSummary: {
         history_availability_state: expect.any(String),
         rationale_codes: expect.any(Array),
@@ -385,6 +481,157 @@ describe("deriveProfileAwareCreationContext", () => {
         starting_atl: expect.any(Number),
         starting_tsb: expect.any(Number),
       },
+    });
+  });
+
+  it("uses the effective athlete snapshot for personalized creation inputs", async () => {
+    const activityId = "00000000-0000-4000-8000-000000000101";
+    const result = await deriveProfileAwareCreationContext({
+      supabase: createSupabaseMock({
+        activities: { data: [], error: null },
+        activity_efforts: {
+          data: [
+            {
+              id: "effort-1",
+              activity_id: activityId,
+              recorded_at: "2026-05-30T00:00:00.000Z",
+              effort_type: "power",
+              duration_seconds: 1200,
+              value: 300,
+              activity_category: "bike",
+              unit: "watts",
+              source: "imported",
+              method: "activity_file_best_effort",
+              calculation_version: "activity-file-best-effort-v1",
+              quality_score: null,
+              provenance: { activity_id: activityId, derived_from: "activity_file_stream" },
+            },
+          ],
+          error: null,
+        },
+        profile_metrics: {
+          data: [
+            {
+              id: "weight-1",
+              metric_type: "weight_kg",
+              value: 72,
+              unit: "kg",
+              recorded_at: "2026-05-01T00:00:00.000Z",
+              source: "provider",
+            },
+          ],
+          error: null,
+        },
+        profiles: { data: [{ dob: null, gender: null }], error: null },
+        profile_training_settings: { data: null, error: null },
+      }) as any,
+      store: {
+        getContextSnapshot: async () => ({
+          profile: { dob: null, gender: null },
+          profileMetrics: [],
+          recentEfforts: [],
+        }),
+      },
+      profileId: "profile-123",
+      asOfIso: "2026-06-01T00:00:00.000Z",
+    });
+
+    expect(result.athleteContext.body.weightKg.value).toBe(72);
+    expect(result.athleteContext.physiology.ftpWatts).toMatchObject({
+      value: 285,
+      source: "activity_effort",
+    });
+    expect(result.contextSummary.missing_optional_calibration_fields).not.toContain("ftp");
+    expect(result.athleteContext.evidence).toMatchObject({
+      asOf: "2026-06-01T00:00:00.000Z",
+      profileMetricsCoverage: "complete",
+      activityEffortsCoverage: "complete",
+    });
+  });
+
+  it("caps recent activity reads at asOf for Drizzle and legacy Supabase", async () => {
+    const asOfIso = "2026-01-10T12:00:00.000Z";
+    const whereArgs: unknown[] = [];
+    const drizzleDb = createQueryMapDbMock({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      profiles: { data: [], error: null },
+      profile_training_settings: { data: null, error: null },
+    }).db;
+    const originalSelect = drizzleDb.select as any;
+    drizzleDb.select = vi.fn((...args: unknown[]) => {
+      const selectBuilder = originalSelect(...args) as any;
+      const originalFrom = selectBuilder.from;
+      selectBuilder.from = vi.fn((table: unknown) => {
+        const queryBuilder = originalFrom(table);
+        const originalWhere = queryBuilder.where;
+        queryBuilder.where = vi.fn((whereArg: unknown) => {
+          whereArgs.push(whereArg);
+          return originalWhere(whereArg);
+        });
+        return queryBuilder;
+      });
+      return selectBuilder;
+    }) as any;
+
+    const store = {
+      getContextSnapshot: async () => ({
+        profile: { dob: null, gender: null },
+        profileMetrics: [],
+        recentEfforts: [],
+      }),
+    };
+    await deriveProfileAwareCreationContext({
+      db: drizzleDb as any,
+      store: store as any,
+      profileId: "profile-123",
+      asOfIso,
+    });
+
+    const dialect = new PgDialect();
+    const whereQueries = whereArgs.map((whereArg) => dialect.sqlToQuery(whereArg as any));
+    const activityQuery = whereQueries.find((query) =>
+      query.sql.includes('"activities"."started_at"'),
+    );
+    if (!activityQuery) throw new Error("Expected recent activities query");
+    expect(activityQuery.sql).toContain('"activities"."started_at" <=');
+    expect(activityQuery.sql).toContain('"activities"."finished_at" <=');
+    expect(activityQuery.params).toContain(asOfIso);
+
+    const legacyFilters: Array<{
+      table: string;
+      operator: string;
+      column: string;
+      value: unknown;
+    }> = [];
+    await deriveProfileAwareCreationContext({
+      supabase: createSupabaseMock(
+        {
+          activities: { data: [], error: null },
+          activity_efforts: { data: [], error: null },
+          profile_metrics: { data: [], error: null },
+          profiles: { data: [], error: null },
+          profile_training_settings: { data: null, error: null },
+        },
+        legacyFilters,
+      ) as any,
+      store: store as any,
+      profileId: "profile-123",
+      asOfIso,
+    });
+
+    expect(legacyFilters).toContainEqual({
+      table: "activities",
+      operator: "lte",
+      column: "started_at",
+      value: asOfIso,
+    });
+    expect(legacyFilters).toContainEqual({
+      table: "activities",
+      operator: "lte",
+      column: "finished_at",
+      value: asOfIso,
     });
   });
 });
@@ -2925,10 +3172,14 @@ describe("trainingPlansRouter analytics endpoints", () => {
     });
 
     const result = await caller.getCurrentStatus();
-    expect(result).toBeNull();
+    expect(result?.loadHistory).toMatchObject({
+      status: "unavailable",
+      reason: "incomplete_observation",
+    });
+    expect(result?.currentLoadStatus).toBeNull();
   });
 
-  it("returns unavailable current status for unknown or partial load history", async () => {
+  it("keeps unknown history unavailable while retaining partial common Load coverage for projections", async () => {
     const recent = new Date();
     recent.setUTCDate(recent.getUTCDate() - 1);
     const known = buildLoadActivity("known", recent);
@@ -2945,11 +3196,20 @@ describe("trainingPlansRouter analytics endpoints", () => {
       training_plans: { data: null, error: null },
     }).getCurrentStatus();
 
-    expect(unknownResult).toBeNull();
-    expect(partialResult).toBeNull();
+    expect(unknownResult?.currentLoadStatus).toBeNull();
+    expect(partialResult?.loadHistory).toMatchObject({
+      status: "available",
+      coverageStatus: "partial",
+    });
+    expect(partialResult?.currentLoadStatus).toMatchObject({
+      longTermLoad: expect.any(Number),
+      recentLoad: expect.any(Number),
+      loadBalance: expect.any(Number),
+    });
   });
 
   it("returns current load after adequate history", async () => {
+    currentLoadHistoryMock.mockResolvedValueOnce(availableCurrentHistory());
     const recent = new Date();
     recent.setUTCDate(recent.getUTCDate() - 7);
     const activity = buildLoadActivity("known", recent);
@@ -2960,9 +3220,16 @@ describe("trainingPlansRouter analytics endpoints", () => {
       training_plans: { data: null, error: null },
     }).getCurrentStatus();
 
-    expect(result).toMatchObject({ ctl: expect.any(Number), atl: expect.any(Number) });
-    expect(result?.ctl).toBeGreaterThan(0);
-    expect(result?.atl).toBeGreaterThan(0);
+    expect(result?.loadHistory.status).toBe("available");
+    expect(result?.currentLoadStatus).toEqual({
+      longTermLoad: 45,
+      recentLoad: 52,
+      loadBalance: -7,
+      loadBalanceStatus: expect.any(String),
+      recordedAt: "2026-07-23T12:00:00.000Z",
+    });
+    expect(result).toMatchObject({ ctl: 45, atl: 52, tsb: -7, form: expect.any(String) });
+    expect(result?.weekProgress).toEqual(result?.legacyTssWeekProgress);
   });
 
   it("returns ideal curve projection payload shape", async () => {

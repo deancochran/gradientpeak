@@ -36,6 +36,7 @@ import { useViewingUserPreferredUnitSystem } from "../../../../hooks/use-viewing
 import {
   formatCalibrationQuality,
   getActivityLoadLabels,
+  getCommonLoadPresentation,
   getThresholdNextAction,
 } from "../../../../lib/activity-load-presentation";
 import {
@@ -102,33 +103,15 @@ function ActivityDetailPage() {
   const primaryStreamSegment = activity?.segments
     .filter((segment) => segment.role === "activity")
     .sort((left, right) => left.ordinal - right.ordinal)[0];
-  const loadMethod = derived?.stress.method;
-  const loadLabels = getActivityLoadLabels(loadMethod);
-  const unavailableValue =
-    derived?.stress.unavailable_reason === "private_data"
-      ? "Private"
-      : derived?.stress.unavailable_reason === "threshold_missing"
-        ? "No prior threshold"
-        : derived?.stress.unavailable_reason === "invalid_data"
-          ? "Invalid data"
-          : "Missing activity data";
-  const calibrationQuality = derived?.stress.calibration_quality;
+  const commonLoad = derived?.stress.common_load;
+  const loadLabels = getActivityLoadLabels();
+  const loadPresentation = getCommonLoadPresentation(commonLoad);
   const calibrationText = formatCalibrationQuality(
-    calibrationQuality
-      ? {
-          source: calibrationQuality.source,
-          observed_at: calibrationQuality.observed_at,
-          stale: calibrationQuality.stale,
-          estimate: calibrationQuality.estimate,
-          ...(calibrationQuality.calculation_version !== undefined
-            ? { calculation_version: calibrationQuality.calculation_version }
-            : {}),
-        }
-      : calibrationQuality,
+    commonLoad && "quality" in commonLoad ? commonLoad.quality : null,
     activity?.started_at,
   );
   const thresholdAction =
-    derived?.stress.unavailable_reason === "threshold_missing"
+    commonLoad?.status === "unavailable" && commonLoad.reason === "threshold_missing"
       ? getThresholdNextAction(categoryDisplay.singleCategory)
       : null;
   const isOwner = user?.id === activity?.profile_id;
@@ -369,18 +352,8 @@ function ActivityDetailPage() {
                 ? formatPace(activity.avg_speed_mps, unitSystem)
                 : formatSpeed(activity.avg_speed_mps, unitSystem),
           },
-          {
-            label: loadLabels.load,
-            value:
-              derived?.stress.tss != null ? `${Math.round(derived.stress.tss)}` : unavailableValue,
-          },
-          {
-            label: loadLabels.intensity,
-            value:
-              derived?.stress.intensity_factor != null
-                ? derived.stress.intensity_factor.toFixed(2)
-                : "-",
-          },
+          { label: loadLabels.load, value: loadPresentation.load },
+          { label: loadLabels.intensity, value: loadPresentation.intensity },
           {
             label: "Normalized power",
             value: formatPower(activity.normalized_power),
@@ -388,14 +361,9 @@ function ActivityDetailPage() {
           { label: "Started", value: formatDateTime(activity.started_at) },
         ]}
       />
+      <p className="text-sm text-muted-foreground">{loadPresentation.explanation}</p>
       {calibrationText || thresholdAction ? (
         <p className="text-sm text-muted-foreground">{calibrationText ?? thresholdAction}</p>
-      ) : null}
-      {loadMethod === "critical_power_threshold" ? (
-        <p className="text-xs text-muted-foreground">
-          Estimated CP Load uses a guarded power curve from multiple rides and remains separate from
-          FTP-based TSS.
-        </p>
       ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">

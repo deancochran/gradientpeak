@@ -1,12 +1,14 @@
-import type { ActivityTssIdentity } from "@repo/core";
-import type { CompletedObservationState } from "@/lib/training-path/completedTssObservation";
-import { sameTssIdentity } from "@/lib/training-path/completedTssObservation";
+import {
+  type CommonLoadIdentity,
+  type CompletedObservationState,
+  sameCommonLoadIdentity,
+} from "@/lib/training-path/completedCommonLoadObservation";
 
 export type TrainingPathSelectedWeekPoint = {
   actualOrScheduledLoadTss?: number | null;
   completedLoadTss?: number | null;
   completedObservationState?: CompletedObservationState;
-  completedTssIdentity?: ActivityTssIdentity | null;
+  completedCommonLoadIdentity?: CommonLoadIdentity | null;
   date: string;
   hasTargetLoad?: boolean;
   hasCompletedActivityWithoutLoad?: boolean;
@@ -52,7 +54,7 @@ export function buildSelectedWeekBucket<TPoint extends TrainingPathSelectedWeekP
   if (points.length === 0) return null;
   const sum = (selector: (point: TPoint) => number | null | undefined) =>
     points.reduce((total, point) => total + numberValue(selector(point)), 0);
-  let completedIdentity: ActivityTssIdentity | null = null;
+  let completedIdentity: CommonLoadIdentity | null = null;
   let completedLoadUnavailable = false;
   let hasCompletedObservation = false;
   let completedLoadTss = 0;
@@ -61,12 +63,13 @@ export function buildSelectedWeekBucket<TPoint extends TrainingPathSelectedWeekP
       hasCompletedObservation = true;
       if (
         point.hasCompletedActivityWithoutLoad ||
-        !point.completedTssIdentity ||
-        (completedIdentity && !sameTssIdentity(completedIdentity, point.completedTssIdentity))
+        !point.completedCommonLoadIdentity ||
+        (completedIdentity &&
+          !sameCommonLoadIdentity(completedIdentity, point.completedCommonLoadIdentity))
       ) {
         completedLoadUnavailable = true;
       } else {
-        completedIdentity ??= point.completedTssIdentity;
+        completedIdentity ??= point.completedCommonLoadIdentity;
         completedLoadTss += numberValue(point.completedLoadTss);
       }
     } else if (point.completedObservationState === "known_zero") {

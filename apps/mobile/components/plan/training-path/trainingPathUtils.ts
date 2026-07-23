@@ -1,7 +1,9 @@
-import type { ActivityTssIdentity } from "@repo/core";
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core";
 import { isCanonicalDateKey } from "@/lib/calendar/dateMath";
-import { sameTssIdentity } from "@/lib/training-path/completedTssObservation";
+import {
+  type CommonLoadIdentity,
+  sameCommonLoadIdentity,
+} from "@/lib/training-path/completedCommonLoadObservation";
 import type {
   TrainingPathEmptyState,
   TrainingPathFitnessPoint,
@@ -30,7 +32,7 @@ type BuildTrainingPathInput = {
 
 type WeekBucket = {
   completedAggregateUnavailable: boolean;
-  completedIdentity: ActivityTssIdentity | null;
+  completedIdentity: CommonLoadIdentity | null;
   completedLoad: number;
   hasCompletedObservation: boolean;
   plannedLoad: number;
@@ -159,13 +161,13 @@ function aggregateLoadByWeek(timeline: TrainingPathLoadPoint[]) {
       bucket.hasCompletedObservation = true;
       if (
         point.has_unavailable_completed_activity ||
-        !point.completed_tss_identity ||
+        !point.completed_common_load_identity ||
         (bucket.completedIdentity &&
-          !sameTssIdentity(bucket.completedIdentity, point.completed_tss_identity))
+          !sameCommonLoadIdentity(bucket.completedIdentity, point.completed_common_load_identity))
       ) {
         bucket.completedAggregateUnavailable = true;
       } else {
-        bucket.completedIdentity ??= point.completed_tss_identity;
+        bucket.completedIdentity ??= point.completed_common_load_identity;
         bucket.completedLoad += getNumericLoad(completedLoad);
       }
     } else if (completedState === "known_zero") {
@@ -392,8 +394,8 @@ export function buildTrainingPathWeekSummary(input: {
       : absDelta < 10
         ? "On target"
         : loadDelta < 0
-          ? `${absDelta} TSS below target`
-          : `${absDelta} TSS above target`;
+          ? `${absDelta} Load below target`
+          : `${absDelta} Load above target`;
   const body = input.week.completedLoadUnavailable
     ? "Completed load is unavailable for this week."
     : absDelta == null || loadDelta == null

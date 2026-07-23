@@ -30,7 +30,7 @@ describe("activity history search contract", () => {
     expect(
       validateActivityHistorySearch({
         category: "ski",
-        sort: "newest",
+        sort: "tss",
         order: "sideways",
         from: "yesterday",
         to: "2026-1-1",

@@ -35,12 +35,18 @@ function DashboardPage() {
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <MetricCard
-          title="Current Form"
-          value={dashboard ? dashboard.currentStatus.loadBalanceStatus : "..."}
+          title="Balance"
+          value={
+            dashboard?.currentLoadStatus
+              ? String(dashboard.currentLoadStatus.loadBalance)
+              : "Unavailable"
+          }
           description={
-            dashboard
-              ? `CTL ${dashboard.currentStatus.ctl} / ATL ${dashboard.currentStatus.atl}`
-              : "Loading dashboard status"
+            dashboard?.currentLoadStatus
+              ? `Long-term ${dashboard.currentLoadStatus.longTermLoad} / Recent ${dashboard.currentLoadStatus.recentLoad}`
+              : dashboard
+                ? "Complete common Load history is unavailable"
+                : "Loading common Load history"
           }
           icon={<Activity className="h-4 w-4" />}
         />
@@ -91,8 +97,12 @@ function DashboardPage() {
                       </p>
                     </div>
                     <div className="text-right text-sm text-muted-foreground">
-                      <p>{Math.round(item.estimatedDuration / 60)} min</p>
-                      <p>{Math.round(item.estimatedTSS)} TSS</p>
+                      <p>
+                        {item.estimatedDuration === null
+                          ? "Duration unavailable"
+                          : `${Math.round(item.estimatedDuration / 60)} min`}
+                      </p>
+                      <p>Load unavailable</p>
                     </div>
                   </div>
                 ))}

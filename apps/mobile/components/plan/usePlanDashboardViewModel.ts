@@ -328,7 +328,7 @@ export function usePlanDashboardViewModel({
       return {
         targetCTL: snapshot.idealCurveData.targetCTL,
         targetDate: snapshot.idealCurveData.targetDate,
-        description: `Target: ${snapshot.idealCurveData.targetCTL} CTL by ${new Date(snapshot.idealCurveData.targetDate).toLocaleDateString()}`,
+        description: `Target Long-term Load (CTL): ${snapshot.idealCurveData.targetCTL} by ${new Date(snapshot.idealCurveData.targetDate).toLocaleDateString()}`,
       };
     }
 

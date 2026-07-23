@@ -3,12 +3,12 @@ type TrainingPathLoadMetricPoint = {
   completedLoadUnavailable?: boolean;
   hasCompletedActivityWithoutLoad?: boolean;
   hasTargetLoad?: boolean;
-  effectiveLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
-  effectiveLoad?: number | null;
-  effectiveIntensity?: number | null;
-  effectiveCompletedLoad?: number | null;
-  effectiveRemainingLoad?: number | null;
-  effectiveTentativeLoad?: number | null;
+  effectiveLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable" | undefined;
+  effectiveLoad?: number | null | undefined;
+  effectiveIntensity?: number | null | undefined;
+  effectiveCompletedLoad?: number | null | undefined;
+  effectiveRemainingLoad?: number | null | undefined;
+  effectiveTentativeLoad?: number | null | undefined;
   plannedLoadTss?: number | null;
   targetLoadTss?: number | null;
   tentativePlannedLoadTss?: number | null;
@@ -64,7 +64,7 @@ export function buildTrainingPathLoadMetrics(
         value:
           point.effectiveCompletedLoad == null
             ? "Unavailable"
-            : `${formatLoad(point.effectiveCompletedLoad)}${point.hasCompletedActivityWithoutLoad ? " + unavailable" : ""}`,
+            : `${formatLoad(point.effectiveCompletedLoad)}${point.hasCompletedActivityWithoutLoad || point.completedLoadUnavailable ? " + unavailable" : ""}`,
       });
     }
     if (point.effectiveRemainingLoad != null) {

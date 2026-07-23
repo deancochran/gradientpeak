@@ -290,7 +290,7 @@ export function MesocycleCard({ mesocycle, index, onChange, onRemove }: Mesocycl
                 maximumTrackTintColor="#e5e7eb"
               />
               <Text className="text-xs text-muted-foreground">
-                Adjusts weekly TSS targets for this phase (1.0 = baseline)
+                Adjusts weekly Load targets for this phase (1.0 = baseline)
               </Text>
             </View>
 

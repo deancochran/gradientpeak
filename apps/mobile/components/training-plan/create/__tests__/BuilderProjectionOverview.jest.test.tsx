@@ -80,10 +80,10 @@ describe("BuilderProjectionOverview", () => {
     render(<BuilderProjectionOverview chartReview={chartReview} />);
 
     expect(screen.getByText("Fitness 40 → 48")).toBeTruthy();
-    expect(screen.getByText("240 TSS/wk")).toBeTruthy();
+    expect(screen.getByText("240 Load/wk")).toBeTruthy();
     expect(screen.getByText("Summer race · 2026-09-12")).toBeTruthy();
     expect(screen.getByTestId("builder-projection-summary").props.accessibilityLabel).toContain(
-      "Peak planned load 240 TSS per week",
+      "Peak planned load 240 Load per week",
     );
     expect(screen.queryByTestId("full-builder-training-path")).toBeNull();
 

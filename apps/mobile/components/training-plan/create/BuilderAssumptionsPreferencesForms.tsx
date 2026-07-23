@@ -409,7 +409,7 @@ export function BuilderActivityEffortsForm({
         training preferences, or activity records.
       </HelperCopy>
       <NumberField
-        label="Recent weekly TSS"
+        label="Recent weekly Load"
         value={values.recentWeeklyTss}
         onChange={(recentWeeklyTss) => update({ recentWeeklyTss })}
         min={0}

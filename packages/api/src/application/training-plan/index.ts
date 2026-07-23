@@ -3,6 +3,7 @@ export * from "./applyTemplateUseCase";
 export * from "./createFromCreationConfigUseCase";
 export * from "./crudUseCases";
 export * from "./currentStatusUseCase";
+export * from "./effective-plan-composition";
 export * from "./getCreationSuggestionsUseCase";
 export * from "./mutationUseCases";
 export * from "./planTabProjectionService";

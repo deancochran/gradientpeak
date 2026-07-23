@@ -318,7 +318,7 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
   },
   {
     path: "baseline_fitness.max_weekly_tss_ramp_pct",
-    label: "Max weekly TSS ramp percent",
+    label: "Max weekly Load ramp percent",
     standalone: { status: "covered", testId: "preferences-ramp-tss-pct" },
     builderOverride: {
       status: "not-applicable",

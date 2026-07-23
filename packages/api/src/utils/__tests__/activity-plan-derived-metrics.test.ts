@@ -170,13 +170,13 @@ describe("on-demand activity plan estimation", () => {
       method: "power_threshold",
       sport: "bike",
       contributingDurationSeconds: 1800,
-      intensity: 0.8,
+      intensity: 0.75,
       estimated: true,
     });
     if (result[0]?.common_load.status !== "available") {
       throw new Error("Expected available planned common Load");
     }
-    expect(result[0].common_load.load).toBeCloseTo(32, 12);
+    expect(result[0].common_load.load).toBeCloseTo(28.125, 12);
   });
 
   it("memoizes a duplicate-heavy batch by normalized plan and route content", async () => {
@@ -221,7 +221,7 @@ describe("on-demand activity plan estimation", () => {
     expect(changedPlan?.authoritative_metrics.estimated_tss).not.toBe(
       base?.authoritative_metrics.estimated_tss,
     );
-    expect(changedProfile?.authoritative_metrics.estimated_tss).toBe(
+    expect(changedProfile?.authoritative_metrics.estimated_tss).not.toBe(
       base?.authoritative_metrics.estimated_tss,
     );
   });

@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   COMMON_RELATIVE_LOAD_MODEL,
   COMMON_RELATIVE_LOAD_VERSION,
+  type CommonLoadAggregate,
   commonLoadAggregateSchema,
 } from "./common-relative-load";
 
@@ -10,6 +11,11 @@ export const COMMON_LOAD_HISTORY_POLICY_VERSION = "common_load_history_v1" as co
 export const COMMON_LOAD_HISTORY_REQUIRED_DAYS = 84 as const;
 export const COMMON_LOAD_HISTORY_LONG_TERM_DAYS = 42 as const;
 export const COMMON_LOAD_HISTORY_RECENT_DAYS = 7 as const;
+
+export type DailyCommonLoadObservation = {
+  date: string;
+  aggregate: CommonLoadAggregate;
+};
 
 const calendarDatePattern = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -63,6 +69,7 @@ const evidenceFingerprintsSchema = z
 const observationIdentityShape = {
   model: z.string().trim().min(1),
   version: z.string().trim().min(1),
+  coverageStatus: z.enum(["complete", "partial"]).default("complete"),
 };
 
 const commonLoadHistoryObservedDaySchema = z
@@ -140,6 +147,7 @@ export type CommonLoadHistoryIdentity = z.infer<typeof commonLoadHistoryIdentity
 export const commonLoadHistoryPointSchema = z
   .object({
     date: calendarDateSchema,
+    coverageStatus: z.enum(["complete", "partial"]),
     dailyLoad: z.number().finite().nonnegative(),
     longTermLoad: z.number().finite().nonnegative(),
     recentLoad: z.number().finite().nonnegative(),
@@ -227,6 +235,7 @@ export const commonLoadHistoryResultSchema = z.union([
     .object({
       status: z.literal("available"),
       policyVersion: z.literal(COMMON_LOAD_HISTORY_POLICY_VERSION),
+      coverageStatus: z.enum(["complete", "partial"]),
       identity: commonLoadHistoryIdentitySchema,
       points: z.array(commonLoadHistoryPointSchema).length(COMMON_LOAD_HISTORY_REQUIRED_DAYS),
     })
@@ -348,30 +357,21 @@ export function replayCommonLoadHistory(
         },
       });
     }
-    if (observation.state === "observed" && observation.aggregate.status !== "complete") {
-      return unavailableResult({
-        status: "unavailable",
-        policyVersion: COMMON_LOAD_HISTORY_POLICY_VERSION,
-        reason: "incomplete_observation",
-        context: {
-          date: observation.date,
-          observationState: observation.state,
-          observationReason: observation.aggregate.status,
-        },
-      });
-    }
   }
 
   const longTermAlpha = 1 - Math.exp(-1 / COMMON_LOAD_HISTORY_LONG_TERM_DAYS);
   const recentAlpha = 1 - Math.exp(-1 / COMMON_LOAD_HISTORY_RECENT_DAYS);
   let longTermLoad = 0;
   let recentLoad = 0;
+  let coverageStatus: "complete" | "partial" = "complete";
   const points = observations.map((observation) => {
+    if (observation.coverageStatus === "partial") coverageStatus = "partial";
     let dailyLoad: number;
     if (observation.state === "known_zero") {
       dailyLoad = 0;
-    } else if (observation.state === "observed" && observation.aggregate.status === "complete") {
+    } else if (observation.state === "observed" && observation.aggregate.status !== "unavailable") {
       dailyLoad = observation.aggregate.load;
+      if (observation.aggregate.status === "partial") coverageStatus = "partial";
     } else {
       throw new Error("Complete common Load history observation expected");
     }
@@ -379,6 +379,11 @@ export function replayCommonLoadHistory(
     recentLoad += recentAlpha * (dailyLoad - recentLoad);
     return {
       date: observation.date,
+      coverageStatus:
+        observation.coverageStatus === "partial" ||
+        (observation.state === "observed" && observation.aggregate.status === "partial")
+          ? "partial"
+          : "complete",
       dailyLoad,
       longTermLoad,
       recentLoad,
@@ -403,6 +408,7 @@ export function replayCommonLoadHistory(
   return commonLoadHistoryResultSchema.parse({
     status: "available",
     policyVersion: COMMON_LOAD_HISTORY_POLICY_VERSION,
+    coverageStatus,
     identity,
     points,
   });

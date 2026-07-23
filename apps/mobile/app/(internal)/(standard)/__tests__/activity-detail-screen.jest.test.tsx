@@ -44,10 +44,40 @@ const activityData = {
   },
   derived: {
     stress: {
-      tss: 84,
-      intensity_factor: 0.88,
-      method: "run_pace_threshold" as const,
-      unavailable_reason: null,
+      common_load: {
+        status: "available" as const,
+        model: "gradientpeak_relative_load" as const,
+        version: "1" as const,
+        sport: "run" as const,
+        method: "run_pace_threshold" as const,
+        load: 84,
+        intensity: 0.88,
+        contributingDurationSeconds: 3120,
+        estimated: false,
+        quality: {
+          source: "validated_test" as const,
+          observed_at: "2026-03-20T09:00:00.000Z",
+          valid_at: "2026-03-20T09:00:00.000Z",
+          confidence: "high" as const,
+          stale: false,
+          estimate: false,
+          calculation_version: "threshold-v1",
+          evidence_fingerprint: "run-quality",
+        },
+        thresholdEvidence: {
+          type: "threshold_speed_mps" as const,
+          value: 4,
+          unit: "meters_per_second" as const,
+          source: "validated_test" as const,
+          observedAt: "2026-03-20T09:00:00.000Z",
+          validAt: "2026-03-20T09:00:00.000Z",
+          freshness: "current" as const,
+          calculationVersion: "threshold-v1",
+          sourceFingerprint: "run-threshold",
+        },
+        evidenceFingerprint: "run-activity",
+        computedAsOf: "2026-03-23T09:00:00.000Z",
+      },
     },
     zones: {
       hr: [],
@@ -366,6 +396,7 @@ jest.mock("@/lib/api", () => ({
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
+  ...jest.requireActual("@repo/core"),
   decodePolyline: () => [
     { latitude: 40.0, longitude: -75.0 },
     { latitude: 40.1, longitude: -75.1 },
@@ -442,10 +473,10 @@ describe("activity detail screen", () => {
     expect(screen.getAllByText("10.4 km").length).toBeGreaterThan(0);
     expect(screen.getByText("Elapsed")).toBeTruthy();
     expect(screen.getAllByText("52:00").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("rTSS").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("~84").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Run IF").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("~0.88").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Run-pace Load").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("84").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Run-pace Intensity").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/0\.88/).length).toBeGreaterThan(0);
     expect(unsafeRendered.UNSAFE_getAllByType("ZoneDistributionCard")[0]?.props.zones).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ label: "Zone 2", time: 60 }),

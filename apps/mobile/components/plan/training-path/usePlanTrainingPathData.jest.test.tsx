@@ -1,11 +1,8 @@
 import { act, renderHook } from "@testing-library/react-native";
 
-const mockTssIdentity = {
-  sport: "bike" as const,
-  method: "power_threshold" as const,
-  source: "activity_analysis" as const,
+const mockCommonLoadIdentity = {
+  model: "gradientpeak_relative_load" as const,
   version: "1" as const,
-  calibration: { type: "ftp_watts" as const, value: 250 },
 };
 const mockCommonLoad = {
   status: "available" as const,
@@ -41,23 +38,31 @@ const mockCommonLoad = {
   estimated: false,
 };
 
-const queryResult = {
-  data: { items: [] },
-  dataUpdatedAt: 0,
-  isError: false,
-  isFetching: false,
-  isLoading: false,
-  isPlaceholderData: false,
-  refetch: jest.fn(async () => undefined),
-};
-const paginatedQueryResult = {
-  ...queryResult,
-  data: { pages: [{ items: [] as Array<Record<string, unknown>> }] },
-  fetchNextPage: jest.fn(),
-  hasNextPage: false,
-  isFetchNextPageError: false,
-  isFetchingNextPage: false,
-};
+function buildQueryResult() {
+  return {
+    data: { items: [] },
+    dataUpdatedAt: 0,
+    isError: false,
+    isFetching: false,
+    isLoading: false,
+    isPlaceholderData: false,
+    refetch: jest.fn(async () => undefined),
+  };
+}
+
+function buildPaginatedQueryResult() {
+  return {
+    ...buildQueryResult(),
+    data: { pages: [{ items: [] as Array<Record<string, unknown>> }] },
+    fetchNextPage: jest.fn(),
+    hasNextPage: false,
+    isFetchNextPageError: false,
+    isFetchingNextPage: false,
+  };
+}
+
+let queryResult = buildQueryResult();
+let paginatedQueryResult = buildPaginatedQueryResult();
 const mockEventsListUseQuery = jest.fn(
   (_input?: unknown, _options?: unknown) => paginatedQueryResult,
 );
@@ -77,20 +82,21 @@ const mockGetTrainingPathTodayKey = jest.fn<string | null, []>(() =>
 );
 const mockMillisecondsUntilNextTrainingPathDay = jest.fn(() => 60_000);
 
-let mockDailyTssObservations: Array<
+let mockDailyCommonLoadObservations: Array<
   | {
       date: string;
-      state: "calculated";
-      tss_identity: typeof mockTssIdentity;
-      unavailable_activity_count: number;
-      value: number;
+      aggregate: {
+        status: "complete" | "partial";
+        model: string;
+        version: string;
+        load: number;
+        intensity: number;
+        contributingDurationSeconds: number;
+      };
     }
   | {
       date: string;
-      state: "unavailable";
-      tss_identity: null;
-      unavailable_activity_count: number;
-      value: null;
+      aggregate: { status: "unavailable"; model: string; version: string };
     }
 > = [];
 const mockDailyTssRefetch = jest.fn(async () => undefined);
@@ -108,19 +114,23 @@ const mockDailyTssUseQuery = jest.fn((_input?: unknown, _options?: unknown) => (
     start_date: "2026-03-30",
     end_date: "2026-04-12",
     timezone: mockPlanningTimezone ?? "UTC",
-    observations: mockDailyTssObservations,
+    observations: mockDailyCommonLoadObservations,
   },
 }));
 
-const snapshot = {
-  actualCurveData: {
-    dataPoints: [{ date: "2026-04-01", ctl: 42, atl: 54 }],
-  },
-  idealCurveData: {
-    dataPoints: [{ date: "2026-04-01", ctl: 42 }],
-  },
-  refetchAll: jest.fn(async () => undefined),
-};
+function buildSnapshot() {
+  return {
+    actualCurveData: {
+      dataPoints: [{ date: "2026-04-01", ctl: 42, atl: 54 }],
+    },
+    idealCurveData: {
+      dataPoints: [{ date: "2026-04-01", ctl: 42 }],
+    },
+    refetchAll: jest.fn(async () => undefined),
+  };
+}
+
+let snapshot = buildSnapshot();
 
 jest.mock("@/lib/api", () => ({
   __esModule: true,
@@ -154,7 +164,7 @@ jest.mock("@/lib/api", () => ({
     },
     activityPlans: { getManyByIds: { useQuery: () => queryResult } },
     activities: {
-      dailyTssObservations: {
+      dailyCommonLoadObservations: {
         useQuery: (input: unknown, options: unknown) => mockDailyTssUseQuery(input, options),
       },
       listPaginated: {
@@ -350,30 +360,18 @@ const { buildTrainingPreferencesProjectionPreview: mockBuildTrainingPreferencesP
 
 describe("usePlanTrainingPathData", () => {
   beforeEach(() => {
+    jest.clearAllMocks();
     mockPlanningTimezone = "America/Los_Angeles";
     mockProfileLoading = false;
-    mockRefreshProfile.mockClear();
     mockResolvedWeekWindow = { start: "2026-03-30", end: "2026-04-12" };
     mockSelectedWeekSummary = null;
-    mockGetTrainingPathTodayKey.mockClear();
-    mockMillisecondsUntilNextTrainingPathDay.mockClear();
-    mockDailyTssObservations = [];
-    mockDailyTssRefetch.mockClear();
-    mockActivePlanRefetch.mockClear();
-    mockExpandedActualCurveRefetch.mockClear();
-    mockExpandedActualCurveUseQuery.mockClear();
-    snapshot.refetchAll.mockClear();
-    mockDailyTssUseQuery.mockClear();
-    mockEventsListUseQuery.mockReset();
+    mockDailyCommonLoadObservations = [];
+    queryResult = buildQueryResult();
+    paginatedQueryResult = buildPaginatedQueryResult();
+    snapshot = buildSnapshot();
     mockEventsListUseQuery.mockImplementation(() => paginatedQueryResult);
-    mockGroupEventsUseQuery.mockReset();
     mockGroupEventsUseQuery.mockImplementation(() => paginatedQueryResult);
-    mockCompletedActivitiesUseInfiniteQuery.mockReset();
     mockCompletedActivitiesUseInfiniteQuery.mockImplementation(() => paginatedQueryResult);
-    mockUseTrainingPlanSnapshot.mockClear();
-    mockUsePlanDashboardViewModel.mockClear();
-    mockBuildTrainingPreferencesLoadTimeline.mockClear();
-    mockBuildTrainingPreferencesProjectionPreview.mockReset();
     mockUseTrainingPlanSnapshot.mockReturnValue(snapshot);
     mockUsePlanDashboardViewModel.mockImplementation(
       ({ snapshot: dashboardSnapshot }: { snapshot: typeof snapshot }) => ({
@@ -416,14 +414,18 @@ describe("usePlanTrainingPathData", () => {
     );
   });
 
-  it("queries daily TSS with the persisted planning timezone and maps known completed load", () => {
-    mockDailyTssObservations = [
+  it("queries daily common Load with the persisted planning timezone and maps observed completed load", () => {
+    mockDailyCommonLoadObservations = [
       {
         date: "2026-04-01",
-        state: "calculated",
-        tss_identity: mockTssIdentity,
-        unavailable_activity_count: 0,
-        value: 35,
+        aggregate: {
+          status: "complete",
+          model: mockCommonLoadIdentity.model,
+          version: mockCommonLoadIdentity.version,
+          load: 35,
+          intensity: 0.8,
+          contributingDurationSeconds: 3600,
+        },
       },
     ];
 
@@ -1052,20 +1054,20 @@ describe("usePlanTrainingPathData", () => {
   });
 
   it("maps unavailable and mixed observations to explicit markers", () => {
-    mockDailyTssObservations = [
+    mockDailyCommonLoadObservations = [
       {
         date: "2026-04-01",
-        state: "calculated",
-        tss_identity: mockTssIdentity,
-        value: 35,
-        unavailable_activity_count: 1,
+        aggregate: {
+          ...mockCommonLoadIdentity,
+          status: "partial",
+          load: 35,
+          intensity: 0.8,
+          contributingDurationSeconds: 3600,
+        },
       },
       {
         date: "2026-04-02",
-        state: "unavailable",
-        tss_identity: null,
-        unavailable_activity_count: 1,
-        value: null,
+        aggregate: { ...mockCommonLoadIdentity, status: "unavailable" },
       },
     ];
 
@@ -1088,13 +1090,16 @@ describe("usePlanTrainingPathData", () => {
   });
 
   it("includes completed-only dates in the chart timeline", () => {
-    mockDailyTssObservations = [
+    mockDailyCommonLoadObservations = [
       {
         date: "2026-04-03",
-        state: "calculated",
-        tss_identity: mockTssIdentity,
-        unavailable_activity_count: 0,
-        value: 42,
+        aggregate: {
+          ...mockCommonLoadIdentity,
+          status: "complete",
+          load: 42,
+          intensity: 0.8,
+          contributingDurationSeconds: 3600,
+        },
       },
     ];
 
@@ -1106,7 +1111,7 @@ describe("usePlanTrainingPathData", () => {
           date: "2026-04-03",
           completedLoadTss: 42,
           completedObservationState: "observed",
-          completedTssIdentity: mockTssIdentity,
+          completedCommonLoadIdentity: mockCommonLoadIdentity,
           hasTargetLoad: false,
         }),
       ]),

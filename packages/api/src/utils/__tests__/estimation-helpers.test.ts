@@ -195,19 +195,88 @@ describe("estimation-helpers", () => {
     });
   });
 
-  it("does not use a direct FTP profile metric without eligible activity effort", async () => {
+  it("uses a direct FTP seed when eligible activity effort is unavailable", async () => {
+    const asOf = new Date("2026-07-20T12:00:00.000Z");
     const inputs = await getEstimationProfileInputsFromStore(
       {
         getEstimationInputs: vi.fn(async () => ({
           profile: { dob: null },
           efforts: [],
-          metrics: [
-            { metric_type: "ftp", unit: "W", value: 271, recorded_at: new Date().toISOString() },
-          ],
+          metrics: [{ metric_type: "ftp", unit: "W", value: 271, recorded_at: asOf.toISOString() }],
           routes: [],
         })),
       } as any,
       "profile-1",
+      asOf,
+    );
+
+    expect(inputs.ftp).toBe(271);
+  });
+
+  it("uses the effort observation time instead of request time for freshness", async () => {
+    const inputs = await getEstimationProfileInputsFromStore(
+      {
+        getEstimationInputs: vi.fn(async () => ({
+          profile: { dob: null },
+          efforts: [
+            {
+              activity_id: "activity-1",
+              effort_type: "power",
+              activity_category: "bike",
+              duration_seconds: 1200,
+              value: 300,
+              unit: "watts",
+              recorded_at: "2026-01-01T00:00:00.000Z",
+              source: "imported",
+              method: "activity_file_best_effort",
+              provenance: {
+                activity_id: "activity-1",
+                derived_from: "activity_file_stream",
+              },
+            },
+          ],
+          metrics: [],
+          routes: [],
+        })),
+      } as any,
+      "profile-1",
+      new Date("2026-07-01T00:00:00.000Z"),
+    );
+
+    expect(inputs.ftp).toBeNull();
+  });
+
+  it.each([
+    undefined,
+    "not-a-date",
+  ])("does not trust activity effort with invalid recorded_at %s", async (recordedAt) => {
+    const inputs = await getEstimationProfileInputsFromStore(
+      {
+        getEstimationInputs: vi.fn(async () => ({
+          profile: { dob: null },
+          efforts: [
+            {
+              activity_id: "activity-1",
+              effort_type: "power",
+              activity_category: "bike",
+              duration_seconds: 1200,
+              value: 300,
+              unit: "watts",
+              recorded_at: recordedAt,
+              source: "imported",
+              method: "activity_file_best_effort",
+              provenance: {
+                activity_id: "activity-1",
+                derived_from: "activity_file_stream",
+              },
+            },
+          ],
+          metrics: [],
+          routes: [],
+        })),
+      } as any,
+      "profile-1",
+      new Date("2026-07-01T00:00:00.000Z"),
     );
 
     expect(inputs.ftp).toBeNull();

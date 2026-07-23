@@ -44,6 +44,10 @@ describe("ActivityListCard", () => {
     expect(screen.getByText("Run • Ride")).toBeTruthy();
     expect(screen.getByText("Run, Ride")).toBeTruthy();
     expect(screen.getByText("1h 30m")).toBeTruthy();
+    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("Intensity")).toBeTruthy();
+    expect(screen.getAllByText("Unavailable")).toHaveLength(2);
+    expect(screen.getByText(/no current result was provided/i)).toBeTruthy();
   });
 });
 

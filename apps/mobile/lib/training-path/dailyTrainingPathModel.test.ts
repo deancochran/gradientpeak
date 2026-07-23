@@ -59,8 +59,8 @@ describe("dailyTrainingPathModel", () => {
     expect(getDailyTrainingAdjustmentSummary({ points, selectedDate: "2026-06-01" })).toMatchObject(
       {
         date: "2026-06-01",
-        loadDeltaLabel: "+15 TSS",
-        plannedDeltaLabel: "-40 TSS",
+        loadDeltaLabel: "+15 Load",
+        plannedDeltaLabel: "-40 Load",
         loadDeltaTone: "increase",
       },
     );

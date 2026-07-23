@@ -1,17 +1,66 @@
+import { calculateAvailableCommonLoad } from "@repo/core";
 import { describe, expect, it } from "vitest";
 import {
   formatCalibrationQuality,
   getActivityLoadLabels,
+  getCommonLoadPresentation,
   getThresholdNextAction,
 } from "./activity-load-presentation";
 
 describe("activity load presentation", () => {
-  it("distinguishes estimated summary HR Load from Stream HR Load", () => {
-    expect(getActivityLoadLabels("heart_rate_threshold").load).toBe("Estimated HR Load");
-    expect(getActivityLoadLabels("critical_power_threshold")).toEqual({
-      load: "Estimated CP Load",
-      intensity: "CP IF",
+  it("uses common Load and Intensity labels for every calculation method", () => {
+    expect(getActivityLoadLabels()).toEqual({ load: "Load", intensity: "Intensity" });
+  });
+
+  it("distinguishes complete, partial, and unavailable common Load", () => {
+    const available = calculateAvailableCommonLoad({
+      sport: "bike",
+      method: "power_threshold",
+      quality: {
+        source: "validated_test",
+        observed_at: "2026-07-20T12:00:00.000Z",
+        confidence: "high",
+        stale: false,
+        estimate: false,
+      },
+      thresholdEvidence: {
+        type: "ftp_watts",
+        value: 250,
+        unit: "watts",
+        source: "validated_test",
+        observedAt: "2026-07-20T12:00:00.000Z",
+        validAt: "2026-07-20T12:00:00.000Z",
+        freshness: "current",
+        calculationVersion: null,
+        sourceFingerprint: "threshold-power",
+      },
+      evidenceFingerprint: "activity-load",
+      computedAsOf: "2026-07-21T12:00:00.000Z",
+      estimated: false,
+      contributingDurationSeconds: 3_600,
+      intensity: 0.8,
     });
+    if (available.status !== "available") {
+      throw new Error("Expected available common Load fixture");
+    }
+    const { estimated: _estimated, status: _status, ...provenance } = available;
+    const partial = {
+      ...provenance,
+      status: "partial",
+      eligibleDurationSeconds: 7_200,
+      sourceTimeCoverage: 0.5,
+      reason: "activity_data_partial",
+    };
+
+    expect(getCommonLoadPresentation(available)).toMatchObject({
+      status: "available",
+      load: "64",
+      intensity: "0.80",
+    });
+    expect(getCommonLoadPresentation(partial).explanation).toContain("Partial common Load");
+    expect(getCommonLoadPresentation({ status: "unavailable" }).explanation).toContain(
+      "no current result",
+    );
   });
 
   it("describes guarded Critical Power calibration distinctly", () => {

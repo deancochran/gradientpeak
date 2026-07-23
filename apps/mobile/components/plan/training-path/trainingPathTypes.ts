@@ -1,9 +1,11 @@
-import type { ActivityTssIdentity } from "@repo/core";
 import type { ActivityCardActivity } from "@/components/shared/ActivityCard";
 import type { ActivityPlan, PlannedActivity } from "@/components/shared/ActivityPlanCard";
 import type { CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
-import type { CompletedObservationState } from "@/lib/training-path/completedTssObservation";
+import type {
+  CommonLoadIdentity,
+  CompletedObservationState,
+} from "@/lib/training-path/completedCommonLoadObservation";
 
 export type TrainingPathRange = "goal" | "season" | "all";
 
@@ -122,7 +124,7 @@ export type TrainingPathViewModel = {
 
 export type TrainingPathLoadPoint = {
   completed_observation_state?: CompletedObservationState;
-  completed_tss_identity?: ActivityTssIdentity | null;
+  completed_common_load_identity?: CommonLoadIdentity | null;
   has_unavailable_completed_activity?: boolean;
   date: string;
   completed_load_tss?: number | null;
