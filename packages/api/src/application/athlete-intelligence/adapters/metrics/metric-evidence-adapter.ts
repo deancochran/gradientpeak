@@ -1,4 +1,9 @@
-import { EVIDENCE_VERSION, type EvidenceCandidate, resolveCanonicalThresholds } from "@repo/core";
+import {
+  EVIDENCE_VERSION,
+  type EvidenceCandidate,
+  getEligibleThresholdValue,
+  resolveCanonicalThresholds,
+} from "@repo/core";
 import { profileMetrics } from "@repo/db";
 import { and, desc, eq, inArray, lte } from "drizzle-orm";
 import type { getRequiredDb } from "../../../../db";
@@ -149,7 +154,9 @@ export class MetricEvidenceAdapter {
             source:
               row.source === "manual" || row.source === "provider" || row.source === "estimated"
                 ? row.source
-                : ("modeled" as const),
+                : row.source === "test"
+                  ? ("validated_test" as const)
+                  : ("modeled" as const),
             locked:
               row.provenance?.manual_override === true ||
               (row.provenance?.manual_override as { locked?: boolean } | undefined)?.locked ===
@@ -196,16 +203,23 @@ export class MetricEvidenceAdapter {
       }
 
       const specification = metricSpecifications[metricType];
-      if (
-        row.unit !== specification.canonicalUnit ||
-        (resolved !== null && resolved.value === null)
-      ) {
+      if (row.unit !== specification.canonicalUnit) {
         return this.unknownEvidence({
           metricType,
           policy,
           profileId: input.profileId,
           row,
           reason: "metric_unit_not_canonical",
+        });
+      }
+
+      if (resolved !== null && getEligibleThresholdValue(resolved) === null) {
+        return this.unknownEvidence({
+          metricType,
+          policy,
+          profileId: input.profileId,
+          row,
+          reason: "metric_threshold_ineligible",
         });
       }
 

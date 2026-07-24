@@ -1,4 +1,5 @@
 import { athleteIntelligenceModelInputSchema } from "@repo/core";
+import { activityEfforts } from "@repo/db";
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
@@ -20,6 +21,7 @@ const profileId = "athlete-a";
 const pgDialect = new PgDialect();
 
 interface CapturedSelect {
+  fields: unknown;
   from: unknown;
   leftJoins: unknown[][];
   limit: number | undefined;
@@ -42,9 +44,10 @@ function createFluentReadDb(results: readonly unknown[][]) {
   const selects: CapturedSelect[] = [];
   let selectIndex = 0;
   const db = {
-    select: () => {
+    select: (fields?: unknown) => {
       const result = results[selectIndex++] ?? [];
       const capture: CapturedSelect = {
+        fields,
         from: undefined,
         leftJoins: [],
         limit: undefined,
@@ -358,6 +361,9 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       limit: modelReaderBounds.efforts + 1,
       orderBy: [expect.anything(), expect.anything()],
     });
+    expect(selects[4]?.fields).toMatchObject({
+      activityId: activityEfforts.activity_id,
+    });
     expect(selects[6]).toMatchObject({
       limit: modelReaderBounds.schedule + 1,
       orderBy: [expect.anything(), expect.anything(), expect.anything()],
@@ -626,6 +632,161 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     expect(swim?.value).toMatchObject({ value: 95, unit: "seconds_per_100m" });
     expect(result.evidenceRegistry[run?.value.evidenceSourceIds[0] ?? ""]?.sport).toBe("run");
     expect(result.evidenceRegistry[swim?.value.evidenceSourceIds[0] ?? ""]?.sport).toBe("swim");
+  });
+
+  it("maps the current test-sourced threshold to validated test evidence", async () => {
+    const sourceRows = rows();
+    sourceRows.metrics = sourceRows.metrics.filter((metric) => metric.type !== "ftp");
+    sourceRows.metrics.push(
+      {
+        profileId,
+        id: "provider-ftp",
+        referenceActivityId: null,
+        type: "ftp",
+        value: 250,
+        unit: "W",
+        recordedAt: new Date("2026-05-30T00:00:00.000Z"),
+        createdAt: new Date("2026-05-30T00:00:00.000Z"),
+        updatedAt: new Date("2026-05-30T00:00:00.000Z"),
+        source: "provider",
+      },
+      {
+        profileId,
+        id: "test-ftp",
+        referenceActivityId: null,
+        type: "ftp",
+        value: 260,
+        unit: "W",
+        recordedAt: new Date("2026-05-31T00:00:00.000Z"),
+        createdAt: new Date("2026-05-31T00:00:00.000Z"),
+        updatedAt: new Date("2026-05-31T00:00:00.000Z"),
+        source: "test",
+      },
+    );
+
+    const result = await materializeAthleteIntelligenceModelInput({
+      dataSource: readRows(sourceRows),
+      profileId,
+      asOf,
+    });
+
+    expect(result.metricEvidence.find((metric) => metric.metricType === "ftp")?.value.value).toBe(
+      260,
+    );
+  });
+
+  it("omits stale threshold metrics from canonical athlete evidence", async () => {
+    const sourceRows = rows();
+    sourceRows.metrics = sourceRows.metrics.filter(
+      (metric) =>
+        !["ftp", "threshold_pace_seconds_per_km", "css_seconds_per_100m"].includes(metric.type),
+    );
+    for (const [type, value, unit] of [
+      ["ftp", 250, "W"],
+      ["threshold_pace_seconds_per_km", 270, "s/km"],
+      ["css_seconds_per_100m", 95, "s/100m"],
+    ] as const) {
+      sourceRows.metrics.push({
+        profileId,
+        id: `stale-${type}`,
+        referenceActivityId: null,
+        type,
+        value,
+        unit,
+        recordedAt: new Date("2025-01-01T00:00:00.000Z"),
+        createdAt: new Date("2025-01-01T00:00:00.000Z"),
+        updatedAt: new Date("2025-01-01T00:00:00.000Z"),
+        source: "provider",
+      });
+    }
+
+    const result = await materializeAthleteIntelligenceModelInput({
+      dataSource: readRows(sourceRows),
+      profileId,
+      asOf,
+    });
+
+    expect(
+      result.metricEvidence.some((metric) =>
+        ["ftp", "threshold_pace_seconds_per_km", "css_seconds_per_100m"].includes(
+          metric.metricType,
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it("preserves exact fractional effort boundaries from ingestion provenance", async () => {
+    const sourceRows = rows();
+    const effort = sourceRows.efforts.find((candidate) => candidate.id === "effort-1");
+    if (!effort) throw new Error("Expected effort fixture");
+    effort.provenance = {
+      activity_id: "activity-1",
+      derived_from: "activity_file_stream",
+      exact_window_start_seconds: 600.5,
+      exact_window_end_seconds: 900.5,
+    };
+    effort.source = "imported";
+    effort.method = "activity_file_best_effort";
+
+    const result = await materializeAthleteIntelligenceModelInput({
+      dataSource: readRows(sourceRows),
+      profileId,
+      asOf,
+    });
+    const materialized = result.efforts.find((candidate) =>
+      candidate.sourceId.includes("effort-1"),
+    );
+
+    expect(materialized?.startOffsetSeconds).toMatchObject({ value: 600.5, unit: "seconds" });
+    expect(materialized?.endOffsetSeconds).toMatchObject({ value: 900.5, unit: "seconds" });
+  });
+
+  it("falls back to persisted effort boundaries for inconsistent exact duration", async () => {
+    const sourceRows = rows();
+    const effort = sourceRows.efforts.find((candidate) => candidate.id === "effort-1");
+    if (!effort) throw new Error("Expected effort fixture");
+    effort.source = "imported";
+    effort.method = "activity_file_best_effort";
+    effort.provenance = {
+      activity_id: "activity-1",
+      derived_from: "activity_file_stream",
+      exact_window_start_seconds: 600.5,
+      exact_window_end_seconds: 901,
+    };
+
+    const result = await materializeAthleteIntelligenceModelInput({
+      dataSource: readRows(sourceRows),
+      profileId,
+      asOf,
+    });
+    const materialized = result.efforts.find((candidate) =>
+      candidate.sourceId.includes("effort-1"),
+    );
+
+    expect(materialized?.startOffsetSeconds).toMatchObject({ value: 600, unit: "seconds" });
+    expect(materialized?.endOffsetSeconds).toMatchObject({ value: 900, unit: "seconds" });
+  });
+
+  it("rejects an imported effort with mismatched activity provenance", async () => {
+    const sourceRows = rows();
+    const effort = sourceRows.efforts.find((candidate) => candidate.id === "effort-1");
+    if (!effort) throw new Error("Expected effort fixture");
+    effort.source = "imported";
+    effort.method = "activity_file_best_effort";
+    effort.provenance = {
+      activity_id: "other-activity",
+      derived_from: "activity_file_stream",
+      exact_window_start_seconds: 600.5,
+      exact_window_end_seconds: 900.5,
+    };
+
+    const result = await materializeAthleteIntelligenceModelInput({
+      dataSource: readRows(sourceRows),
+      profileId,
+      asOf,
+    });
+
+    expect(result.efforts.some((candidate) => candidate.sourceId.includes("effort-1"))).toBe(false);
   });
 
   it("keeps activity training load unknown when no compatible dynamic method is available", async () => {

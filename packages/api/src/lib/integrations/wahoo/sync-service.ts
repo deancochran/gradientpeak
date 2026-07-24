@@ -10,6 +10,7 @@ import {
 } from "@repo/core";
 import {
   type ActivityEffortThresholdEvidence,
+  getEligibleThresholdValue,
   resolveCanonicalThresholds,
   type ThresholdMetricSource,
 } from "@repo/core/athlete-inputs";
@@ -221,7 +222,7 @@ export function resolveWahooSyncMetrics(
   }).cycling_ftp;
 
   return {
-    ftp: ftp.value,
+    ftp: getEligibleThresholdValue(ftp),
     maxHr: profile.maxHr,
     thresholdHr:
       (activityCategory === "bike" || activityCategory === "run" || activityCategory === "swim"

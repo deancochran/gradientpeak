@@ -181,6 +181,83 @@ describe("MetricEvidenceAdapter", () => {
     ]);
   });
 
+  it("uses the newer test-sourced threshold as validated test evidence", async () => {
+    const { db } = createDb([
+      {
+        id: "provider-pace",
+        profile_id: PROFILE_ID,
+        metric_type: "threshold_pace_seconds_per_km",
+        recorded_at: new Date("2026-07-08T00:00:00.000Z"),
+        unit: "seconds_per_km",
+        value: 275,
+        reference_activity_id: null,
+        source: "provider",
+        provenance: null,
+      },
+      {
+        id: "test-pace",
+        profile_id: PROFILE_ID,
+        metric_type: "threshold_pace_seconds_per_km",
+        recorded_at: new Date("2026-07-09T00:00:00.000Z"),
+        unit: "seconds_per_km",
+        value: 270,
+        reference_activity_id: null,
+        source: "test",
+        provenance: null,
+      },
+    ]);
+
+    const evidence = await new MetricEvidenceAdapter(db as never).read({
+      profileId: PROFILE_ID,
+      metricTypes: ["threshold_pace_seconds_per_km"],
+      policy: policy(),
+    });
+
+    expect(evidence).toMatchObject([
+      {
+        metricType: "threshold_pace_seconds_per_km",
+        canonicalValue: 270,
+        candidate: {
+          reasons: expect.arrayContaining(["canonical_threshold_source:validated_test"]),
+          sourceId: "test-pace",
+        },
+      },
+    ]);
+  });
+
+  it("keeps stale canonical thresholds out of athlete evidence", async () => {
+    const { db } = createDb([
+      {
+        id: "stale-ftp",
+        profile_id: PROFILE_ID,
+        metric_type: "ftp",
+        recorded_at: new Date("2026-06-01T00:00:00.000Z"),
+        unit: "W",
+        value: 250,
+        reference_activity_id: "activity-1",
+        source: "provider",
+        provenance: null,
+      },
+    ]);
+
+    const evidence = await new MetricEvidenceAdapter(db as never).read({
+      profileId: PROFILE_ID,
+      metricTypes: ["ftp"],
+      policy: policy(),
+    });
+
+    expect(evidence).toMatchObject([
+      {
+        metricType: "ftp",
+        canonicalValue: null,
+        candidate: {
+          confidence: 0,
+          reasons: ["metric_threshold_ineligible"],
+        },
+      },
+    ]);
+  });
+
   it("emits unknown evidence for absent, unsupported, and non-canonical metric inputs", async () => {
     const { db } = createDb([
       {

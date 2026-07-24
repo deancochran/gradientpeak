@@ -57,7 +57,7 @@ vi.mock("./route-converter", () => ({
 
 import { hashPlannedWorkoutPayload } from "../../provider-sync/planned-workouts/planned-workout-hash";
 import { getWahooProjectionSnapshot } from "./plan-converter";
-import { WahooSyncService } from "./sync-service";
+import { resolveWahooSyncMetrics, WahooSyncService } from "./sync-service";
 
 const intervalId = "00000000-0000-4000-8000-000000000001";
 const stepId = "00000000-0000-4000-8000-000000000002";
@@ -208,6 +208,26 @@ describe("WahooSyncService", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it("does not expose a stale direct FTP as an outbound calibration", () => {
+    expect(
+      resolveWahooSyncMetrics(
+        {
+          bikePowerEfforts: [],
+          ftpMetrics: [
+            {
+              observedAt: "2025-01-01T00:00:00.000Z",
+              source: "provider",
+              value: 250,
+            },
+          ],
+          maxHr: 190,
+          thresholdHr: 170,
+        },
+        "bike",
+      ),
+    ).toMatchObject({ ftp: null });
   });
 
   it("uses a fresh observed 20-minute bike power effort for FTP conversion", async () => {
@@ -392,7 +412,7 @@ describe("WahooSyncService", () => {
     );
   });
 
-  it("uses fresh direct FTP when no eligible observed effort exists", async () => {
+  it("uses an eligible direct profile FTP when observed effort is unavailable", async () => {
     const repository = createRepositoryMock();
     repository.getProfileSyncMetrics.mockResolvedValueOnce({
       bikePowerEfforts: [
@@ -427,6 +447,35 @@ describe("WahooSyncService", () => {
     expect(convertToWahooPlanMock).toHaveBeenCalledWith(
       expect.objectContaining({ segments: expect.any(Array) }),
       expect.objectContaining({ ftp: 250 }),
+    );
+  });
+
+  it("does not send a stale direct FTP to Wahoo", async () => {
+    const repository = createRepositoryMock();
+    repository.getProfileSyncMetrics.mockResolvedValueOnce({
+      bikePowerEfforts: [],
+      ftpMetrics: [
+        {
+          observedAt: "2025-12-01T10:00:00.000Z",
+          source: "provider",
+          value: 250,
+        },
+      ],
+      maxHr: 190,
+      thresholdHr: 170,
+    });
+    createWahooClientMock.mockReturnValueOnce(createClientMock());
+    const service = new WahooSyncService({
+      repository,
+      storage: { downloadRouteGpx: vi.fn() },
+    });
+
+    await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      success: true,
+    });
+    expect(convertToWahooPlanMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ ftp: undefined }),
     );
   });
 

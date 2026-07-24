@@ -5,9 +5,13 @@ import {
   athleteIntelligenceModelInputSchema,
   athleteMetricRoleByType,
   canonicalGoalObjectiveSchema,
+  getEligibleThresholdValue,
   resolveCanonicalThresholds,
 } from "@repo/core";
-import { getActivityEffortObservationStatus } from "@repo/core/athlete-inputs";
+import {
+  getActivityEffortObservationStatus,
+  hasTrustedActivityStreamEvidence,
+} from "@repo/core/athlete-inputs";
 import type { PreferredUnitSystem } from "@repo/core/units";
 import { scheduledDateTimeToIsoInstant } from "@repo/core/utils/schedule-date";
 import {
@@ -45,6 +49,7 @@ import {
 } from "./evidence-adapters";
 
 const DAY = 86_400_000;
+const EXACT_EFFORT_BOUNDARY_DURATION_TOLERANCE_SECONDS = 0.001;
 const RECURRING_EVENT_PAGE_SIZE = 100;
 const MAX_RECURRING_EVENTS_SCANNED = 1_000;
 export const modelReaderBounds = {
@@ -161,6 +166,47 @@ export interface AthleteIntelligenceRows {
 }
 
 type ScheduleRow = AthleteIntelligenceRows["schedule"][number];
+
+function resolveEffortWindowBoundaries(
+  row: AthleteIntelligenceRows["efforts"][number],
+  activityCategory: "bike" | "run" | "swim",
+): { endSeconds: number | null; startSeconds: number | null } {
+  const provenance =
+    row.provenance && typeof row.provenance === "object" && !Array.isArray(row.provenance)
+      ? (row.provenance as Record<string, unknown>)
+      : null;
+  const exactStart = provenance?.exact_window_start_seconds;
+  const exactEnd = provenance?.exact_window_end_seconds;
+  const hasExactBoundaries =
+    hasTrustedActivityStreamEvidence({
+      activityCategory,
+      activityId: row.activityId,
+      durationSeconds: row.durationSeconds,
+      effortType: row.kind,
+      method: row.method ?? null,
+      provenance: row.provenance,
+      source: row.source ?? null,
+      unit: row.unit,
+      value: row.value,
+    }) &&
+    typeof exactStart === "number" &&
+    Number.isFinite(exactStart) &&
+    exactStart >= 0 &&
+    typeof exactEnd === "number" &&
+    Number.isFinite(exactEnd) &&
+    exactEnd >= exactStart &&
+    Math.abs(exactEnd - exactStart - row.durationSeconds) <=
+      EXACT_EFFORT_BOUNDARY_DURATION_TOLERANCE_SECONDS;
+  const startSeconds = hasExactBoundaries ? exactStart : row.startOffsetSeconds;
+  return {
+    startSeconds,
+    endSeconds: hasExactBoundaries
+      ? exactEnd
+      : startSeconds === null
+        ? null
+        : startSeconds + row.durationSeconds,
+  };
+}
 
 export type ScheduleRecurrenceParseResult =
   | { state: "nonrecurring" }
@@ -461,7 +507,7 @@ export function createDrizzleAthleteIntelligenceDataSource(
           .select({
             profileId: activityEfforts.profile_id,
             id: activityEfforts.id,
-            activityId: activityEfforts.segment_id,
+            activityId: activityEfforts.activity_id,
             recordedAt: activityEfforts.recorded_at,
             sport: activityEfforts.activity_category,
             kind: activityEfforts.effort_type,
@@ -771,43 +817,70 @@ export async function materializeAthleteIntelligenceModelInput(input: {
         provenance: manualFtpEffort.provenance,
       }
     : null;
-  const canonicalFtp = resolveCanonicalThresholds({
+  const thresholdMetricTypes = [
+    "ftp",
+    "threshold_pace_seconds_per_km",
+    "css_seconds_per_100m",
+  ] as const;
+  for (const type of thresholdMetricTypes) latest.delete(type);
+  const thresholdCandidateRows = [
+    ...currentMetricRows,
+    ...(manualFtpMetric ? [manualFtpMetric] : []),
+  ];
+  const canonicalThresholds = resolveCanonicalThresholds({
     now: asOf.toISOString(),
     freshnessWindowMs: 90 * DAY,
-    directMetrics: [...currentMetricRows, ...(manualFtpMetric ? [manualFtpMetric] : [])].flatMap(
-      (row) => {
-        if (row.type !== "ftp" || canonicalMetricValue("ftp", row.value, row.unit) === null)
-          return [];
-        return [
-          {
-            threshold: "cycling_ftp" as const,
-            value: row.value,
-            observedAt: row.recordedAt.toISOString(),
-            source:
-              row.source === "manual" || row.source === "provider" || row.source === "estimated"
-                ? row.source
+    directMetrics: thresholdCandidateRows.flatMap((row) => {
+      const threshold =
+        row.type === "ftp"
+          ? "cycling_ftp"
+          : row.type === "threshold_pace_seconds_per_km"
+            ? "running_threshold_pace"
+            : row.type === "css_seconds_per_100m"
+              ? "swimming_css"
+              : null;
+      if (
+        threshold === null ||
+        canonicalMetricValue(row.type as AthleteMetricType, row.value, row.unit) === null
+      ) {
+        return [];
+      }
+      return [
+        {
+          threshold,
+          value: row.value,
+          observedAt: row.recordedAt.toISOString(),
+          source:
+            row.source === "manual" || row.source === "provider" || row.source === "estimated"
+              ? row.source
+              : row.source === "test"
+                ? ("validated_test" as const)
                 : ("modeled" as const),
-            locked:
-              row === manualFtpMetric ||
-              (typeof row.provenance === "object" &&
-                row.provenance !== null &&
-                ((row.provenance as Record<string, unknown>).manual_override === true ||
-                  (
-                    (row.provenance as Record<string, unknown>).manual_override as
-                      | { locked?: boolean }
-                      | undefined
-                  )?.locked === true ||
-                  (row.provenance as Record<string, unknown>).locked === true)),
-          },
-        ];
-      },
-    ),
-  }).cycling_ftp;
-  if (canonicalFtp.observedAt !== null && canonicalFtp.source !== "observed_effort") {
-    const selectedFtp = [...currentMetricRows, ...(manualFtpMetric ? [manualFtpMetric] : [])].find(
-      (row) => row.type === "ftp" && row.recordedAt.toISOString() === canonicalFtp.observedAt,
+          locked:
+            row === manualFtpMetric ||
+            (typeof row.provenance === "object" &&
+              row.provenance !== null &&
+              ((row.provenance as Record<string, unknown>).manual_override === true ||
+                (
+                  (row.provenance as Record<string, unknown>).manual_override as
+                    | { locked?: boolean }
+                    | undefined
+                )?.locked === true ||
+                (row.provenance as Record<string, unknown>).locked === true)),
+        },
+      ];
+    }),
+  });
+  for (const [type, threshold] of [
+    ["ftp", canonicalThresholds.cycling_ftp],
+    ["threshold_pace_seconds_per_km", canonicalThresholds.running_threshold_pace],
+    ["css_seconds_per_100m", canonicalThresholds.swimming_css],
+  ] as const) {
+    if (getEligibleThresholdValue(threshold) === null || threshold.observedAt === null) continue;
+    const selected = thresholdCandidateRows.find(
+      (row) => row.type === type && row.recordedAt.toISOString() === threshold.observedAt,
     );
-    if (selectedFtp) latest.set("ftp", selectedFtp);
+    if (selected) latest.set(type, selected);
   }
   const metricEvidenceRows = [...latest.values(), ...currentLthrRows];
   const metricEvidence = metricEvidenceRows.flatMap((row) => {
@@ -1056,8 +1129,8 @@ export async function materializeAthleteIntelligenceModelInput(input: {
             value: row.value,
             unit: row.unit,
             activityId: row.activityId,
-            source: row.source,
-            method: row.method,
+            source: row.source ?? null,
+            method: row.method ?? null,
             provenance: row.provenance,
           })
         : ("invalid" as const);
@@ -1132,29 +1205,30 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       sport,
       effortLineage,
     );
+    const { endSeconds, startSeconds } = resolveEffortWindowBoundaries(row, sport);
     const start =
-      row.startOffsetSeconds === null
+      startSeconds === null
         ? null
         : measured(
             "effort",
             row.id,
             "start",
             row.recordedAt,
-            row.startOffsetSeconds,
+            startSeconds,
             "seconds",
             "activity_effort",
             sport,
             effortLineage,
           );
     const end =
-      row.startOffsetSeconds === null
+      endSeconds === null
         ? null
         : measured(
             "effort",
             row.id,
             "end",
             row.recordedAt,
-            row.startOffsetSeconds + row.durationSeconds,
+            endSeconds,
             "seconds",
             "activity_effort",
             sport,
