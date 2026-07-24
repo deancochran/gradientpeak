@@ -313,6 +313,7 @@ describe("submitActivity", () => {
         ingestion: {
           source: "mobile_recording",
           operationKey: "recording:1",
+          ingestionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
           claimToken: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
           artifact: {
             sha256: "a".repeat(64),

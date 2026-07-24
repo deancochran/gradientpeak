@@ -15,6 +15,10 @@ vi.mock("@repo/db", () => ({
   },
   activityArtifacts: {
     id: "activity_artifacts.id",
+    profile_id: "activity_artifacts.profile_id",
+    availability: "activity_artifacts.availability",
+    digest: "activity_artifacts.digest",
+    byte_size: "activity_artifacts.byte_size",
     path: "activity_artifacts.path",
     format: "activity_artifacts.format",
   },
@@ -38,7 +42,15 @@ vi.mock("@repo/db", () => ({
   activityFileIngestions: {
     id: "activity_file_ingestions.id",
     activity_id: "activity_file_ingestions.activity_id",
+    artifact_id: "activity_file_ingestions.artifact_id",
     profile_id: "activity_file_ingestions.profile_id",
+    source: "activity_file_ingestions.source",
+    operation_key: "activity_file_ingestions.operation_key",
+    status: "activity_file_ingestions.status",
+    claim_token: "activity_file_ingestions.claim_token",
+    lease_expires_at: "activity_file_ingestions.lease_expires_at",
+    attempt_count: "activity_file_ingestions.attempt_count",
+    staging_cleanup_pending: "activity_file_ingestions.staging_cleanup_pending",
   },
   activityLaps: { table: "activity_laps", activity_id: "activity_laps.activity_id" },
   activitySummaries: { table: "activity_summaries", activity_id: "activity_summaries.activity_id" },
@@ -80,8 +92,12 @@ const mocks = vi.hoisted(() => ({
     remove: vi.fn(),
     createSignedUrl: vi.fn(),
   },
+  readObjectBounded: vi.fn(),
   functionsInvoke: vi.fn(),
   processManualActivityFile: vi.fn(),
+  beginMobileRecordingUploadClaim: vi.fn(),
+  claimLegacyMobileRecordingUpload: vi.fn(),
+  drainPendingMobileRecordingStagingCleanup: vi.fn(),
   db: {
     current: null as any,
   },
@@ -134,6 +150,13 @@ vi.mock("../../storage-service", () => ({
     functions: {
       invoke: mocks.functionsInvoke,
     },
+    readObjectBounded: mocks.readObjectBounded,
+  }),
+  getActivityArtifactStorageService: () => ({
+    storage: {
+      from: () => ({ upload: mocks.storage.upload, remove: mocks.storage.remove }),
+    },
+    readObjectBounded: mocks.readObjectBounded,
   }),
 }));
 
@@ -151,8 +174,20 @@ vi.mock("../../lib/activity-analysis/context", () => ({
 vi.mock("../../application/activity-file-ingestion/process-manual-activity-file", () => ({
   processManualActivityFile: mocks.processManualActivityFile,
 }));
+vi.mock(
+  "../../application/activity-file-ingestion/mobile-recording-upload",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("../../application/activity-file-ingestion/mobile-recording-upload")
+    >()),
+    beginMobileRecordingUploadClaim: mocks.beginMobileRecordingUploadClaim,
+    claimLegacyMobileRecordingUpload: mocks.claimLegacyMobileRecordingUpload,
+    drainPendingMobileRecordingStagingCleanup: mocks.drainPendingMobileRecordingStagingCleanup,
+  }),
+);
 
 import { activities } from "@repo/db";
+import { MobileRecordingUploadError } from "../../application/activity-file-ingestion/mobile-recording-upload";
 import { activityFilesRouter } from "../activity-files";
 
 type MockDbPlan = {
@@ -290,7 +325,10 @@ beforeEach(() => {
   }));
   mocks.storage.createBucket.mockResolvedValue({ data: null, error: null });
   mocks.storage.upload.mockResolvedValue({ error: null });
-  mocks.storage.download.mockResolvedValue({ data: createBlob(), error: null });
+  mocks.readObjectBounded.mockResolvedValue({
+    data: new TextEncoder().encode("fit bytes"),
+    contentType: "application/vnd.ant.fit",
+  });
   mocks.storage.remove.mockResolvedValue({ data: null, error: null });
   mocks.storage.createSignedUrl.mockImplementation(async (path: string, expiresIn: number) => ({
     data: {
@@ -308,6 +346,31 @@ beforeEach(() => {
       finished_at: new Date("2025-05-10T11:00:00.000Z"),
     },
     ingestion: { id: "ingestion-1", status: "ready", activity_id: "activity-1" },
+  });
+  mocks.beginMobileRecordingUploadClaim.mockResolvedValue({
+    status: "upload",
+    ingestionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    activityId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    byteSize: 9,
+    sha256: "a".repeat(64),
+    format: "fit",
+    mediaType: "application/vnd.ant.fit",
+    stagingPath:
+      "mobile-recordings/11111111-1111-4111-8111-111111111111/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.fit",
+  });
+  mocks.claimLegacyMobileRecordingUpload.mockResolvedValue({
+    status: "claimed",
+    ingestionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    activityId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    byteSize: 9,
+    sha256: "a".repeat(64),
+    format: "fit",
+    mediaType: "application/vnd.ant.fit",
+  });
+  mocks.drainPendingMobileRecordingStagingCleanup.mockResolvedValue({
+    attempted: 1,
+    cleaned: 1,
+    pending: 0,
   });
   mocks.calculateBounds.mockReturnValue({ minLat: 40, maxLat: 41, minLng: -74, maxLng: -73 });
   mocks.encodePolyline.mockReturnValue("encoded-polyline");
@@ -363,6 +426,115 @@ beforeEach(() => {
 describe("activityFilesRouter", () => {
   it("does not expose evidence maintenance as an end-user procedure", () => {
     expect(activityFilesRouter._def.procedures).not.toHaveProperty("recalculateOwnedEvidence");
+  });
+
+  it("returns a signed URL only after creating the actor-owned recording claim", async () => {
+    const { db } = createDbMock();
+    const result = await createCaller({ db }).beginMobileRecordingUpload({
+      recordingSessionId: "recording-session-1",
+      byteSize: 9,
+      sha256: "a".repeat(64),
+      format: "fit",
+    });
+
+    expect(mocks.beginMobileRecordingUploadClaim).toHaveBeenCalledWith(db, {
+      profileId: "11111111-1111-4111-8111-111111111111",
+      recordingSessionId: "recording-session-1",
+      byteSize: 9,
+      sha256: "a".repeat(64),
+      format: "fit",
+    });
+    expect(mocks.storage.createSignedUploadUrl).toHaveBeenCalledWith(
+      "mobile-recordings/11111111-1111-4111-8111-111111111111/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.fit",
+      { upsert: true },
+    );
+    expect(result).toMatchObject({
+      status: "upload",
+      ingestionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      token: "upload-token",
+    });
+    expect(result).not.toHaveProperty("stagingPath");
+  });
+
+  it("returns an already accepted claim without issuing another upload URL", async () => {
+    const acceptedArtifact = {
+      sha256: "a".repeat(64),
+      byteSize: 9,
+      bucket: "activity-files",
+      path: `artifacts/sha256/11111111-1111-4111-8111-111111111111/${"a".repeat(64)}`,
+      mediaType: "application/vnd.ant.fit",
+      format: "fit" as const,
+      originalName: null,
+    };
+    mocks.beginMobileRecordingUploadClaim.mockResolvedValueOnce({
+      status: "ready",
+      ingestionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      activityId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      byteSize: 9,
+      sha256: "a".repeat(64),
+      format: "fit",
+      mediaType: "application/vnd.ant.fit",
+      acceptedArtifact,
+    });
+
+    const result = await createCaller({ db: createDbMock().db }).beginMobileRecordingUpload({
+      recordingSessionId: "recording-session-1",
+      byteSize: 9,
+      sha256: "a".repeat(64),
+      format: "fit",
+    });
+    expect(result).toMatchObject({ status: "ready", acceptedArtifact });
+    expect(mocks.storage.createSignedUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it("maps immutable recording-claim conflicts to a client-safe conflict", async () => {
+    mocks.beginMobileRecordingUploadClaim.mockRejectedValueOnce(
+      new MobileRecordingUploadError("claim_conflict", "Recording upload metadata conflicts"),
+    );
+    await expect(
+      createCaller({ db: createDbMock().db }).beginMobileRecordingUpload({
+        recordingSessionId: "recording-session-1",
+        byteSize: 9,
+        sha256: "a".repeat(64),
+        format: "fit",
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT", message: "Recording upload metadata conflicts" });
+    expect(mocks.storage.createSignedUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it("claims an actor-owned legacy staged upload without accepting a client artifact path", async () => {
+    const { db } = createDbMock();
+    const result = await createCaller({ db }).claimLegacyMobileRecordingUpload({
+      recordingSessionId: "recording-session-1",
+      stagingPath: "activities/11111111-1111-4111-8111-111111111111/uploads/123_activity.fit",
+      byteSize: 9,
+      sha256: "a".repeat(64),
+      format: "fit",
+    });
+    expect(mocks.claimLegacyMobileRecordingUpload).toHaveBeenCalledWith(
+      db,
+      expect.anything(),
+      expect.objectContaining({
+        profileId: "11111111-1111-4111-8111-111111111111",
+        recordingSessionId: "recording-session-1",
+      }),
+    );
+    expect(result).toMatchObject({
+      status: "claimed",
+      ingestionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    });
+  });
+
+  it("drains bounded pending cleanup only for the authenticated profile", async () => {
+    const { db } = createDbMock();
+    await expect(
+      createCaller({ db }).retryPendingMobileRecordingCleanup({ limit: 5 }),
+    ).resolves.toEqual({ attempted: 1, cleaned: 1, pending: 0 });
+    expect(mocks.drainPendingMobileRecordingStagingCleanup).toHaveBeenCalledWith(
+      db,
+      expect.anything(),
+      { profileId: "11111111-1111-4111-8111-111111111111", limit: 5 },
+    );
   });
 
   it("creates signed upload URLs for activity uploads", async () => {
@@ -502,6 +674,17 @@ describe("activityFilesRouter", () => {
         decodeActivityFile: expect.any(Function),
       }),
     );
+    const dependencies = mocks.processManualActivityFile.mock.calls[0]?.[2];
+    const stored = await dependencies.readStoredActivityFile({
+      activityFilePath: "activities/11111111-1111-4111-8111-111111111111/uploads/123_history.fit",
+      removeOnParseFailure: false,
+    });
+    expect(stored.activityFile.type).toBe("application/vnd.ant.fit");
+    expect(mocks.readObjectBounded).toHaveBeenCalledWith({
+      bucket: "activity-files",
+      path: "activities/11111111-1111-4111-8111-111111111111/uploads/123_history.fit",
+      maxBytes: 50 * 1024 * 1024,
+    });
   });
 
   it("rejects processing activity files owned by another user", async () => {
@@ -515,7 +698,7 @@ describe("activityFilesRouter", () => {
       }),
     ).rejects.toThrow("Access denied");
 
-    expect(mocks.storage.download).not.toHaveBeenCalled();
+    expect(mocks.readObjectBounded).not.toHaveBeenCalled();
   });
 
   it("rejects the removed processActivityFile parent activity type field", async () => {
@@ -528,7 +711,7 @@ describe("activityFilesRouter", () => {
         activityType: "bike",
       }),
     ).rejects.toThrow("Unrecognized key");
-    expect(mocks.storage.download).not.toHaveBeenCalled();
+    expect(mocks.readObjectBounded).not.toHaveBeenCalled();
   });
 
   it("attaches an uploaded file to an existing activity and marks ingestion ready", async () => {
@@ -668,7 +851,7 @@ describe("activityFilesRouter", () => {
         activityFilePath: "activities/11111111-1111-4111-8111-111111111111/uploads/phase5.fit",
       }),
     ).rejects.toThrow("Activity file ingestion not found");
-    expect(mocks.storage.download).not.toHaveBeenCalled();
+    expect(mocks.readObjectBounded).not.toHaveBeenCalled();
   });
 
   it("rejects attaching uploaded files outside the user's storage prefix", async () => {
@@ -682,7 +865,7 @@ describe("activityFilesRouter", () => {
         activityFilePath: "activities/22222222-2222-4222-8222-222222222222/uploads/phase5.fit",
       }),
     ).rejects.toThrow("Access denied");
-    expect(mocks.storage.download).not.toHaveBeenCalled();
+    expect(mocks.readObjectBounded).not.toHaveBeenCalled();
   });
 
   it("marks ingestion failed and preserves the activity when uploaded file parsing fails", async () => {
@@ -845,9 +1028,11 @@ describe("activityFilesRouter", () => {
       scope: { type: "segment", segmentId },
     });
 
-    expect(mocks.storage.download).toHaveBeenCalledWith(
-      `artifacts/sha256/11111111-1111-4111-8111-111111111111/${"a".repeat(64)}`,
-    );
+    expect(mocks.readObjectBounded).toHaveBeenCalledWith({
+      bucket: "activity-files",
+      path: `artifacts/sha256/11111111-1111-4111-8111-111111111111/${"a".repeat(64)}`,
+      maxBytes: 50 * 1024 * 1024,
+    });
     expect(mocks.parseActivityFile).toHaveBeenCalledWith(
       expect.objectContaining({ fileType: "fit" }),
     );
@@ -1042,7 +1227,7 @@ describe("activityFilesRouter", () => {
         scope: { type: "segment", segmentId: "99999999-9999-4999-8999-999999999999" },
       }),
     ).rejects.toThrow("Detailed activity streams are only available to the activity owner");
-    expect(mocks.storage.download).not.toHaveBeenCalled();
+    expect(mocks.readObjectBounded).not.toHaveBeenCalled();
   });
 
   it("retains an accepted immutable artifact when decoded data is malformed", async () => {

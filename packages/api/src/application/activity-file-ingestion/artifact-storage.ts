@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { activityArtifactContentPath } from "@repo/core/activity-artifacts";
+import { MAX_ACTIVITY_FILE_SIZE_BYTES } from "@repo/core/activity-files";
 import type { ActivityFileType } from "@repo/core/server/activity-files";
 
 export { activityArtifactContentPath } from "@repo/core/activity-artifacts";
@@ -9,23 +10,22 @@ interface StorageError {
   statusCode?: string | number;
 }
 
-interface StoredBlob {
-  arrayBuffer(): Promise<ArrayBuffer>;
-  type?: string;
-}
-
 export interface ActivityArtifactStorage {
   storage: {
     from(bucket: string): {
-      download(path: string): Promise<{ data: StoredBlob | null; error: StorageError | null }>;
       upload(
         path: string,
         body: Uint8Array,
         options: { contentType: string; upsert: false },
       ): Promise<{ error: StorageError | null }>;
-      remove(paths: string[]): Promise<unknown>;
+      remove(paths: string[]): Promise<{ error?: StorageError | null } | unknown>;
     };
   };
+  readObjectBounded(input: {
+    bucket: string;
+    path: string;
+    maxBytes: number;
+  }): Promise<{ data: Uint8Array; contentType: string; contentLength?: number }>;
 }
 
 export interface PromotedActivityArtifact {
@@ -38,7 +38,7 @@ export interface PromotedActivityArtifact {
   stagingPath: string;
 }
 
-function digest(bytes: Uint8Array): string {
+export function activityArtifactSha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
@@ -56,6 +56,9 @@ export async function verifyAcceptedActivityArtifact(
     originalName?: string | null;
   },
 ) {
+  if (input.bucket !== "activity-files") {
+    throw new Error("Accepted activity artifact must use the canonical private bucket");
+  }
   const expectedPath = activityArtifactContentPath(input.profileId, input.sha256);
   if (input.path !== expectedPath) {
     throw new Error("Accepted activity artifact path does not match profile and digest");
@@ -68,10 +71,12 @@ async function verifyDestination(
   storage: ActivityArtifactStorage,
   input: { bucket: string; path: string; sha256: string; byteSize: number },
 ) {
-  const { data, error } = await storage.storage.from(input.bucket).download(input.path);
-  if (error || !data) throw new Error("Failed to verify promoted activity artifact");
-  const bytes = new Uint8Array(await data.arrayBuffer());
-  if (bytes.byteLength !== input.byteSize || digest(bytes) !== input.sha256) {
+  const { data: bytes } = await storage.readObjectBounded({
+    bucket: input.bucket,
+    path: input.path,
+    maxBytes: MAX_ACTIVITY_FILE_SIZE_BYTES,
+  });
+  if (bytes.byteLength !== input.byteSize || activityArtifactSha256(bytes) !== input.sha256) {
     throw new Error("Content-addressed activity artifact destination does not match source bytes");
   }
 }
@@ -88,7 +93,7 @@ export async function promoteActivityArtifact(
     mediaType?: string | null;
   },
 ): Promise<PromotedActivityArtifact> {
-  const sha256 = digest(input.bytes);
+  const sha256 = activityArtifactSha256(input.bytes);
   const path = activityArtifactContentPath(input.profileId, sha256);
   const mediaType = input.mediaType || "application/octet-stream";
   const { error } = await storage.storage.from(input.bucket).upload(path, input.bytes, {
@@ -123,5 +128,15 @@ export async function cleanupActivityArtifactStaging(
   artifact: Pick<PromotedActivityArtifact, "bucket" | "stagingPath" | "path">,
 ) {
   if (artifact.stagingPath === artifact.path) return;
-  await storage.storage.from(artifact.bucket).remove([artifact.stagingPath]);
+  const result = await storage.storage.from(artifact.bucket).remove([artifact.stagingPath]);
+  if (
+    result &&
+    typeof result === "object" &&
+    "error" in result &&
+    result.error &&
+    typeof result.error === "object" &&
+    "message" in result.error
+  ) {
+    throw new Error("Failed to remove staged activity artifact");
+  }
 }

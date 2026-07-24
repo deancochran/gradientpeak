@@ -8,11 +8,14 @@ import { prepareMobileRecordingStartup } from "@/lib/services/mobileRecordingSta
 /** Drains durable jobs once per authenticated app bootstrap; the runner deduplicates in-flight jobs. */
 export function useStartupActivitySubmissionRecovery(profileId: string | null): void {
   const create = api.activities.createFromRecordingSummary.useMutation();
-  const signedUrl = api.activityFiles.getSignedUploadUrl.useMutation();
+  const beginUpload = api.activityFiles.beginMobileRecordingUpload.useMutation();
+  const claimLegacyUpload = api.activityFiles.claimLegacyMobileRecordingUpload.useMutation();
+  const retryRecordingCleanup = api.activityFiles.retryPendingMobileRecordingCleanup.useMutation();
 
   useEffect(() => {
     if (!profileId) return;
     let cancelled = false;
+    void retryRecordingCleanup.mutateAsync({ limit: 10 }).catch(() => undefined);
     void prepareMobileRecordingStartup(profileId)
       .then(async ({ queueJobs: jobs }) => {
         const uploader = new ActivityFileUploader();
@@ -21,8 +24,8 @@ export function useStartupActivitySubmissionRecovery(profileId: string | null): 
           await runActivitySubmissionQueueJob(job, {
             createFromRecordingSummary: create.mutateAsync,
             getLocalArtifactMetadata: getLocalActivityArtifactMetadata,
-            getSignedUploadUrl: (input) =>
-              signedUrl.mutateAsync({ fileName: input.fileName, fileSize: input.fileSize ?? 0 }),
+            beginMobileRecordingUpload: beginUpload.mutateAsync,
+            claimLegacyMobileRecordingUpload: claimLegacyUpload.mutateAsync,
             uploadToSignedUrl: (path, url) => uploader.uploadToSignedUrl(path, url),
           });
         }
@@ -31,5 +34,11 @@ export function useStartupActivitySubmissionRecovery(profileId: string | null): 
     return () => {
       cancelled = true;
     };
-  }, [profileId, create.mutateAsync, signedUrl.mutateAsync]);
+  }, [
+    profileId,
+    create.mutateAsync,
+    beginUpload.mutateAsync,
+    claimLegacyUpload.mutateAsync,
+    retryRecordingCleanup.mutateAsync,
+  ]);
 }

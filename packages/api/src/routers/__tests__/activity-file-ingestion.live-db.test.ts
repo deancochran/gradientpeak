@@ -9,6 +9,11 @@ import {
   markProcessing,
   markUploaded,
 } from "../../application/activity-file-ingestion/ingestion-state";
+import {
+  claimMobileRecordingUpload,
+  createOrLoadMobileRecordingUploadClaim,
+  markMobileRecordingUploadFailed,
+} from "../../repositories/mobile-recording-upload-repository";
 
 const profileIds: string[] = [];
 
@@ -104,5 +109,116 @@ describe("activity file ingestion lease fencing", () => {
     ]);
     expect(first.id).toBe(second.id);
     expect(first.activity_id).toBeNull();
+  });
+
+  it("creates one immutable mobile claim and grants only one active lease", async () => {
+    const profileId = await seedProfile();
+    const operationKey = `mobile-recording:${randomUUID()}`;
+    const expectedSha256 = "a".repeat(64);
+    const input = {
+      profileId,
+      operationKey,
+      stagingBucket: "activity-files",
+      stagingPath: `mobile-recordings/${profileId}/session.fit`,
+      expectedSha256,
+      expectedByteSize: 3,
+      expectedFormat: "fit" as const,
+      expectedMediaType: "application/vnd.ant.fit",
+    };
+
+    const [first, second] = await Promise.all([
+      createOrLoadMobileRecordingUploadClaim(db, input),
+      createOrLoadMobileRecordingUploadClaim(db, input),
+    ]);
+    expect(first.id).toBe(second.id);
+    expect(first).toMatchObject({
+      status: "pending_upload",
+      expected_sha256: expectedSha256,
+      expected_byte_size: 3,
+      expected_format: "fit",
+    });
+
+    const [claimA, claimB] = await Promise.all([
+      claimMobileRecordingUpload(db, {
+        ingestionId: first.id,
+        profileId,
+        operationKey,
+      }),
+      claimMobileRecordingUpload(db, {
+        ingestionId: first.id,
+        profileId,
+        operationKey,
+      }),
+    ]);
+    const claimed = claimA ?? claimB;
+    expect(claimed?.status).toBe("processing");
+    expect([claimA, claimB].filter(Boolean)).toHaveLength(1);
+    expect(claimed?.claim_token).not.toBeNull();
+
+    expect(
+      await markMobileRecordingUploadFailed(db, {
+        ingestionId: first.id,
+        profileId,
+        operationKey,
+        claimToken: randomUUID(),
+        errorCode: "wrong_worker",
+        errorMessage: "Wrong worker must not complete the lease",
+      }),
+    ).toBe(false);
+    expect(
+      await markMobileRecordingUploadFailed(db, {
+        ingestionId: first.id,
+        profileId,
+        operationKey,
+        claimToken: claimed?.claim_token ?? randomUUID(),
+        errorCode: "test_failure",
+        errorMessage: "Synthetic failure",
+      }),
+    ).toBe(true);
+  });
+
+  it("enforces complete hash-bound claim and cleanup metadata", async () => {
+    const profileId = await seedProfile();
+    const base = {
+      profile_id: profileId,
+      source: "mobile_recording" as const,
+      operation_key: `mobile-recording:${randomUUID()}`,
+    };
+
+    await expect(
+      db.insert(activityFileIngestions).values({
+        ...base,
+        staging_bucket: "activity-files",
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      db.insert(activityFileIngestions).values({
+        ...base,
+        operation_key: `mobile-recording:${randomUUID()}`,
+        staging_bucket: "activity-files",
+        staging_path: `mobile-recordings/${profileId}/invalid.fit`,
+        expected_sha256: "INVALID",
+        expected_byte_size: 3,
+        expected_format: "fit",
+        expected_media_type: "application/vnd.ant.fit",
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      db.insert(activityFileIngestions).values({
+        ...base,
+        operation_key: `mobile-recording:${randomUUID()}`,
+        status: "processing",
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      db.insert(activityFileIngestions).values({
+        ...base,
+        operation_key: `mobile-recording:${randomUUID()}`,
+        staging_cleanup_pending: true,
+      }),
+    ).rejects.toThrow();
   });
 });

@@ -330,7 +330,9 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
   );
 
   const createActivityMutation = api.activities.createFromRecordingSummary.useMutation();
-  const getSignedUrlMutation = api.activityFiles.getSignedUploadUrl.useMutation();
+  const beginRecordingUploadMutation = api.activityFiles.beginMobileRecordingUpload.useMutation();
+  const claimLegacyRecordingUploadMutation =
+    api.activityFiles.claimLegacyMobileRecordingUpload.useMutation();
 
   // ================================
   // Durable Queue Submission
@@ -362,8 +364,17 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         }
 
         let fileSize = existingJob?.localActivityFileSize ?? null;
+        const hasLegacyRemoteEvidence = Boolean(
+          existingJob?.remoteFilePath &&
+            existingJob.artifactSha256 &&
+            existingJob.localActivityFileSize,
+        );
 
-        if (!existingJob?.remoteFilePath) {
+        if (
+          !existingJob?.uploadCompletedAt &&
+          !existingJob?.activityId &&
+          !hasLegacyRemoteEvidence
+        ) {
           // A local file is only required until upload progress has been persisted.
           const { File } = await import("expo-file-system");
           const localActivityFilePath =
@@ -408,11 +419,8 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         const completion = runActivitySubmissionQueueJob(queuedJob, {
           createFromRecordingSummary: createActivityMutation.mutateAsync,
           getLocalArtifactMetadata: getLocalActivityArtifactMetadata,
-          getSignedUploadUrl: (input) =>
-            getSignedUrlMutation.mutateAsync({
-              fileName: input.fileName,
-              fileSize: input.fileSize ?? 0,
-            }),
+          beginMobileRecordingUpload: beginRecordingUploadMutation.mutateAsync,
+          claimLegacyMobileRecordingUpload: claimLegacyRecordingUploadMutation.mutateAsync,
           uploadToSignedUrl: (localPath, signedUrl) =>
             uploader.uploadToSignedUrl(localPath, signedUrl),
           onJobUpdated: async (job) => {
@@ -496,7 +504,13 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         throw err;
       }
     },
-    [createActivityMutation, getSignedUrlMutation, profile?.id, queryClient],
+    [
+      beginRecordingUploadMutation,
+      claimLegacyRecordingUploadMutation,
+      createActivityMutation,
+      profile?.id,
+      queryClient,
+    ],
   );
 
   const submit = useCallback(

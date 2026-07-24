@@ -17,7 +17,8 @@ type Policy = {
   };
   contentAliases: string[][];
 };
-type Ledger = { entries: Array<{ version: string; name: string }> };
+type MigrationEntry = { version: string; name: string };
+type Ledger = { entries: MigrationEntry[]; [key: string]: unknown };
 type MismatchCatalog = { ledgerOnly: string[]; archiveOnly: string[] };
 
 const policyPath = resolve(dbPackageRoot, "migration-policy.json");
@@ -32,6 +33,18 @@ function sqlFiles(directory: string) {
   return readdirSync(directory)
     .filter((file) => file.endsWith(".sql"))
     .sort();
+}
+
+function activeMigrationEntries(): MigrationEntry[] {
+  return sqlFiles(authorityDirectory).map((file) => {
+    const match = file.match(migrationPattern);
+    if (!match?.[1] || !match[2]) {
+      throw new Error(
+        `invalid authoritative migration filename: ${repoPath(resolve(authorityDirectory, file))}`,
+      );
+    }
+    return { version: match[1], name: match[2] };
+  });
 }
 
 function repoPath(path: string) {
@@ -53,6 +66,14 @@ function syncMirrors() {
     copyFileSync(resolve(authorityDirectory, file), resolve(mirrorDirectory, file));
   }
   console.log(`[db:migration:sync] mirrored ${activeFiles.length} authoritative migrations`);
+}
+
+function syncPostReconciliationLedger() {
+  const path = resolve(dbPackageRoot, policy.ledgerEvidence.postReconciliationFile);
+  const ledger = JSON.parse(readFileSync(path, "utf8")) as Ledger;
+  const entries = activeMigrationEntries();
+  writeFileSync(path, `${JSON.stringify({ ...ledger, entries }, null, 2)}\n`);
+  console.log(`[db:migration:sync] refreshed ${policy.ledgerEvidence.postReconciliationFile}`);
 }
 
 function writeArchiveLock() {
@@ -149,10 +170,7 @@ function check() {
   const mismatches = JSON.parse(
     readFileSync(resolve(dbPackageRoot, policy.ledgerEvidence.mismatchCatalogFile), "utf8"),
   ) as MismatchCatalog;
-  const activeEntries = activeFiles.map((file) => ({
-    version: file.slice(0, 14),
-    name: file.slice(15, -4),
-  }));
+  const activeEntries = activeMigrationEntries();
   if (JSON.stringify(postLedger.entries) !== JSON.stringify(activeEntries)) {
     errors.push("post-reconciliation ledger does not exactly match active migrations");
   }
@@ -200,6 +218,7 @@ function createMigration(rawName: string | undefined) {
   mkdirSync(mirrorDirectory, { recursive: true });
   writeFileSync(resolve(authorityDirectory, file), content, { flag: "wx" });
   writeFileSync(resolve(mirrorDirectory, file), content, { flag: "wx" });
+  syncPostReconciliationLedger();
   console.log(`[db:migration:new] created ${policy.authorityDirectory}/${file}`);
   console.log(`[db:migration:new] mirrored ${policy.mirrorDirectory}/${file}`);
 }
@@ -207,8 +226,10 @@ function createMigration(rawName: string | undefined) {
 const [commandOrName, value] = process.argv.slice(2);
 try {
   if (commandOrName === "check") check();
-  else if (commandOrName === "sync") syncMirrors();
-  else if (commandOrName === "lock-archive") writeArchiveLock();
+  else if (commandOrName === "sync") {
+    syncMirrors();
+    syncPostReconciliationLedger();
+  } else if (commandOrName === "lock-archive") writeArchiveLock();
   else createMigration(commandOrName ?? value);
 } catch (error) {
   console.error(`[db:migration] ${error instanceof Error ? error.message : String(error)}`);

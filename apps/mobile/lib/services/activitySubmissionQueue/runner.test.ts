@@ -34,6 +34,7 @@ const baseJob: ActivitySubmissionQueueJob = {
   streamArtifactPaths: ["file:///streams"],
   executionManifest,
   draft: {
+    recordingSessionId: "recording-session-1",
     profileId: "profile-1",
     startedAt: "2026-01-01T10:00:00.000Z",
     finishedAt: "2026-01-01T11:00:00.000Z",
@@ -56,9 +57,25 @@ function createDeps(overrides: Partial<ActivitySubmissionQueueRunnerDeps> = {}) 
       id: "activity-1",
       ingestion: { id: "ingestion-1", status: "pending_upload", source: "mobile_recording" },
     })),
-    getSignedUploadUrl: vi.fn(async () => ({
+    beginMobileRecordingUpload: vi.fn(async () => ({
+      status: "upload" as const,
+      ingestionId: "ingestion-1",
+      activityId: "activity-1",
+      byteSize: 1024,
+      sha256: "a".repeat(64),
+      format: "fit" as const,
+      mediaType: "application/vnd.ant.fit",
       signedUrl: "https://storage.example/upload",
-      filePath: "activities/profile-1/uploads/activity.fit",
+      token: "signed-upload-token",
+    })),
+    claimLegacyMobileRecordingUpload: vi.fn(async () => ({
+      status: "claimed" as const,
+      ingestionId: "ingestion-1",
+      activityId: "activity-1",
+      byteSize: 1024,
+      sha256: "a".repeat(64),
+      format: "fit" as const,
+      mediaType: "application/vnd.ant.fit",
     })),
     uploadToSignedUrl: vi.fn(async () => ({ success: true })),
     now: vi.fn(() => "2026-01-01T11:01:00.000Z"),
@@ -106,10 +123,10 @@ describe("activity submission queue runner", () => {
     expect(result.status).toBe("complete");
     expect(result.activityId).toBe("activity-1");
     expect(result.ingestionId).toBe("ingestion-1");
-    expect(result.remoteFilePath).toBe("activities/profile-1/uploads/activity.fit");
+    expect(result.uploadCompletedAt).toBe("2026-01-01T11:01:00.000Z");
     expect(deps.createFromRecordingSummary).toHaveBeenCalledWith({
       profileId: "profile-1",
-      recordingSessionId: undefined,
+      recordingSessionId: "recording-session-1",
       name: "Morning ride",
       notes: undefined,
       is_private: undefined,
@@ -118,21 +135,16 @@ describe("activity submission queue runner", () => {
       finishedAt: "2026-01-01T11:00:00.000Z",
       activityPlanId: undefined,
       executionManifest,
-      acceptedArtifact: {
-        sha256: "a".repeat(64),
-        byteSize: 1024,
-        bucket: "activity-files",
-        path: "activities/profile-1/uploads/activity.fit",
-        mediaType: "application/vnd.ant.fit",
-        format: "fit",
-        originalName: "activity.fit",
-      },
+      artifactSource: "uploadedArtifact",
+      uploadedArtifact: { ingestionId: "ingestion-1" },
       summary: { distanceMeters: 25000, calories: 500 },
       source: "mobile_recording",
     });
-    expect(deps.getSignedUploadUrl).toHaveBeenCalledWith({
-      fileName: "activity.fit",
-      fileSize: 1024,
+    expect(deps.beginMobileRecordingUpload).toHaveBeenCalledWith({
+      recordingSessionId: "recording-session-1",
+      byteSize: 1024,
+      sha256: "a".repeat(64),
+      format: "fit",
     });
     expect(deps.uploadToSignedUrl).toHaveBeenCalledWith(
       "file:///activity.fit",
@@ -141,16 +153,20 @@ describe("activity submission queue runner", () => {
     expect(persistedHistory.map((job) => job.status)).toEqual([
       "uploading",
       "uploading",
+      "uploading",
+      "uploading",
       "creating_activity",
       "creating_activity",
       "complete",
     ]);
-    expect(persistedHistory[3]).toMatchObject({
+    expect(persistedHistory[5]).toMatchObject({
       activityId: "activity-1",
       ingestionId: "ingestion-1",
     });
+    expect(persistedHistory[2]).toMatchObject({
+      ingestionId: "ingestion-1",
+    });
     expect(persistedHistory[1]).toMatchObject({
-      remoteFilePath: "activities/profile-1/uploads/activity.fit",
       artifactSha256: "a".repeat(64),
     });
   });
@@ -187,7 +203,94 @@ describe("activity submission queue runner", () => {
     expect(result.status).toBe("complete");
     expect(result.attempts).toBe(1);
     expect(deps.createFromRecordingSummary).not.toHaveBeenCalled();
-    expect(deps.getSignedUploadUrl).not.toHaveBeenCalled();
+    expect(deps.beginMobileRecordingUpload).not.toHaveBeenCalled();
     expect(deps.uploadToSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it("converges a lost response when begin upload reports the claim already ready", async () => {
+    const deps = createDeps({
+      beginMobileRecordingUpload: vi.fn(async () => ({
+        status: "ready" as const,
+        ingestionId: "ingestion-ready",
+        activityId: "activity-ready",
+        byteSize: 1024,
+        sha256: "a".repeat(64),
+        format: "fit" as const,
+        mediaType: "application/vnd.ant.fit",
+        acceptedArtifact: {
+          sha256: "a".repeat(64),
+          byteSize: 1024,
+          bucket: "activity-files",
+          path: `artifacts/sha256/profile-1/${"a".repeat(64)}`,
+          mediaType: "application/vnd.ant.fit",
+          format: "fit" as const,
+          originalName: null,
+        },
+      })),
+    });
+
+    const result = await runActivitySubmissionQueueJob(baseJob, deps);
+    expect(result).toMatchObject({
+      status: "complete",
+      activityId: "activity-ready",
+      ingestionId: "ingestion-ready",
+    });
+    expect(deps.uploadToSignedUrl).not.toHaveBeenCalled();
+    expect(deps.createFromRecordingSummary).not.toHaveBeenCalled();
+  });
+
+  it("adopts a legacy staged-path job through the actor-scoped compatibility claim", async () => {
+    const deps = createDeps({
+      getLocalArtifactMetadata: vi.fn(async () => {
+        throw new Error("local file is unavailable");
+      }),
+      uploadToSignedUrl: vi.fn(async () => {
+        throw new Error("local file is unavailable");
+      }),
+    });
+    const legacyJob: ActivitySubmissionQueueJob = {
+      ...baseJob,
+      remoteFilePath: "activities/profile-1/uploads/legacy.fit",
+      artifactSha256: "a".repeat(64),
+      localActivityFileSize: 1024,
+      status: "failed",
+      attempts: 1,
+    };
+
+    const result = await runActivitySubmissionQueueJob(legacyJob, deps);
+    expect(result.status).toBe("complete");
+    expect(deps.claimLegacyMobileRecordingUpload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stagingPath: "activities/profile-1/uploads/legacy.fit",
+        recordingSessionId: "recording-session-1",
+      }),
+    );
+    expect(deps.beginMobileRecordingUpload).not.toHaveBeenCalled();
+    expect(deps.getLocalArtifactMetadata).not.toHaveBeenCalled();
+    expect(deps.uploadToSignedUrl).not.toHaveBeenCalled();
+    expect(deps.createFromRecordingSummary).toHaveBeenCalledWith(
+      expect.objectContaining({ uploadedArtifact: { ingestionId: "ingestion-1" } }),
+    );
+  });
+
+  it("re-uploads retained local evidence after server acceptance fails", async () => {
+    const createFromRecordingSummary = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("server acceptance failed"))
+      .mockResolvedValueOnce({
+        id: "activity-1",
+        ingestion: { id: "ingestion-1", status: "ready", source: "mobile_recording" },
+      });
+    const deps = createDeps({ createFromRecordingSummary });
+
+    const failed = await runActivitySubmissionQueueJob(baseJob, deps);
+    expect(failed).toMatchObject({ status: "failed", uploadCompletedAt: undefined });
+    expect(failed.activityId).toBeUndefined();
+
+    const retried = await runActivitySubmissionQueueJob(failed, deps);
+    expect(retried.status).toBe("complete");
+    expect(deps.beginMobileRecordingUpload).toHaveBeenCalledTimes(2);
+    expect(deps.uploadToSignedUrl).toHaveBeenCalledTimes(2);
+    expect(createFromRecordingSummary).toHaveBeenCalledTimes(2);
   });
 });

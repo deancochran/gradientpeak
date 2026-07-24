@@ -112,7 +112,9 @@ interface ReadyIngestionSubmission {
   provider?: "strava" | "wahoo" | "trainingpeaks" | "garmin" | "zwift" | null;
   externalId?: string | null;
   operationKey?: string;
+  ingestionId?: string;
   claimToken?: string;
+  stagingCleanupPending?: boolean;
   artifact?: ActivityArtifactSubmission;
   fileType?: ActivityFileType;
 }
@@ -415,12 +417,25 @@ async function persistReadyActivityFileIngestion(
 ) {
   const operationKey = ingestionOperationKey(input.ingestion, input.activityId);
   if (input.ingestion.claimToken) {
+    if (!input.ingestion.ingestionId || !input.ingestion.artifact) {
+      throw new Error("Claimed activity file ingestion requires its exact claim and artifact");
+    }
     const [ready] = await tx
       .update(activityFileIngestions)
       .set({
         activity_id: input.activityId,
         artifact_id: input.artifactId,
         status: "ready",
+        accepted_sha256: input.ingestion.artifact.sha256,
+        accepted_byte_size: input.ingestion.artifact.byteSize,
+        accepted_bucket: input.ingestion.artifact.bucket,
+        accepted_path: input.ingestion.artifact.path,
+        accepted_media_type: input.ingestion.artifact.mediaType,
+        accepted_format: input.ingestion.artifact.format,
+        uploaded_at: input.now,
+        staging_cleanup_pending: input.ingestion.stagingCleanupPending ?? false,
+        staging_cleaned_at: null,
+        staging_cleanup_error: null,
         claim_token: null,
         lease_expires_at: null,
         completed_at: input.now,
@@ -429,7 +444,9 @@ async function persistReadyActivityFileIngestion(
       .where(
         and(
           eq(activityFileIngestions.profile_id, input.profileId),
+          eq(activityFileIngestions.id, input.ingestion.ingestionId),
           eq(activityFileIngestions.operation_key, operationKey),
+          eq(activityFileIngestions.source, input.ingestion.source),
           eq(activityFileIngestions.status, "processing"),
           eq(activityFileIngestions.claim_token, input.ingestion.claimToken),
           gt(activityFileIngestions.lease_expires_at, sql`clock_timestamp()`),
@@ -439,6 +456,8 @@ async function persistReadyActivityFileIngestion(
     if (!ready) throw new ActivityFileIngestionClaimLostError();
     return;
   }
+  const artifact = input.ingestion.artifact;
+  if (!artifact) throw new Error("Ready activity file ingestion requires an accepted artifact");
   const [ready] = await tx
     .insert(activityFileIngestions)
     .values({
@@ -451,6 +470,13 @@ async function persistReadyActivityFileIngestion(
       external_id: input.ingestion.externalId ?? null,
       operation_key: operationKey,
       status: "ready",
+      accepted_sha256: artifact.sha256,
+      accepted_byte_size: artifact.byteSize,
+      accepted_bucket: artifact.bucket,
+      accepted_path: artifact.path,
+      accepted_media_type: artifact.mediaType,
+      accepted_format: artifact.format,
+      uploaded_at: input.now,
       attempt_count: 1,
       requested_at: input.now,
       received_at: input.now,
@@ -459,20 +485,37 @@ async function persistReadyActivityFileIngestion(
       created_at: input.now,
       updated_at: input.now,
     })
-    .onConflictDoUpdate({
+    .onConflictDoNothing({
       target: [activityFileIngestions.profile_id, activityFileIngestions.operation_key],
-      set: {
-        activity_id: input.activityId,
-        artifact_id: input.artifactId,
-        status: "ready",
-        claim_token: null,
-        lease_expires_at: null,
-        completed_at: input.now,
-        updated_at: input.now,
-      },
     })
     .returning({ id: activityFileIngestions.id });
-  if (!ready) throw new Error("Failed to persist ready activity file ingestion");
+  if (ready) return;
+
+  const [existing] = await tx
+    .select({
+      id: activityFileIngestions.id,
+      activityId: activityFileIngestions.activity_id,
+      artifactId: activityFileIngestions.artifact_id,
+      source: activityFileIngestions.source,
+      status: activityFileIngestions.status,
+    })
+    .from(activityFileIngestions)
+    .where(
+      and(
+        eq(activityFileIngestions.profile_id, input.profileId),
+        eq(activityFileIngestions.operation_key, operationKey),
+      ),
+    )
+    .limit(1);
+  if (
+    !existing ||
+    existing.activityId !== input.activityId ||
+    existing.artifactId !== input.artifactId ||
+    existing.source !== input.ingestion.source ||
+    existing.status !== "ready"
+  ) {
+    throw new Error("Activity file ingestion operation conflicts with an existing claim");
+  }
 }
 
 export async function updateCanonicalActivityFields(
@@ -508,13 +551,18 @@ export async function submitActivity(
     const provenance = input.kind === "enrich" ? undefined : input.providerProvenance;
     const ingestion = input.kind === "enrich" ? input.ingestion : input.analysis?.ingestion;
     if (ingestion?.claimToken) {
+      if (!ingestion.ingestionId) {
+        throw new Error("Claimed activity file ingestion requires an ingestion ID");
+      }
       const [claim] = await tx
         .select({ id: activityFileIngestions.id })
         .from(activityFileIngestions)
         .where(
           and(
             eq(activityFileIngestions.profile_id, input.profileId),
+            eq(activityFileIngestions.id, ingestion.ingestionId),
             eq(activityFileIngestions.operation_key, ingestionOperationKey(ingestion, activityId)),
+            eq(activityFileIngestions.source, ingestion.source),
             eq(activityFileIngestions.status, "processing"),
             eq(activityFileIngestions.claim_token, ingestion.claimToken),
             gt(activityFileIngestions.lease_expires_at, sql`clock_timestamp()`),

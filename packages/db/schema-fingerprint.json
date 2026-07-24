@@ -1663,6 +1663,166 @@
       "generated": ""
     },
     {
+      "name": "staging_bucket",
+      "type": "text",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 26,
+      "generated": ""
+    },
+    {
+      "name": "staging_path",
+      "type": "text",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 27,
+      "generated": ""
+    },
+    {
+      "name": "expected_sha256",
+      "type": "text",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 28,
+      "generated": ""
+    },
+    {
+      "name": "expected_byte_size",
+      "type": "integer",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 29,
+      "generated": ""
+    },
+    {
+      "name": "expected_format",
+      "type": "text",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 30,
+      "generated": ""
+    },
+    {
+      "name": "expected_media_type",
+      "type": "text",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 31,
+      "generated": ""
+    },
+    {
+      "name": "accepted_sha256",
+      "type": "text",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 32,
+      "generated": ""
+    },
+    {
+      "name": "accepted_byte_size",
+      "type": "integer",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 33,
+      "generated": ""
+    },
+    {
+      "name": "accepted_bucket",
+      "type": "text",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 34,
+      "generated": ""
+    },
+    {
+      "name": "accepted_path",
+      "type": "text",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 35,
+      "generated": ""
+    },
+    {
+      "name": "accepted_media_type",
+      "type": "text",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 36,
+      "generated": ""
+    },
+    {
+      "name": "accepted_format",
+      "type": "text",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 37,
+      "generated": ""
+    },
+    {
+      "name": "uploaded_at",
+      "type": "timestamp with time zone",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 38,
+      "generated": ""
+    },
+    {
+      "name": "staging_cleanup_pending",
+      "type": "boolean",
+      "table": "activity_file_ingestions",
+      "default": "false",
+      "notNull": true,
+      "identity": "",
+      "position": 39,
+      "generated": ""
+    },
+    {
+      "name": "staging_cleaned_at",
+      "type": "timestamp with time zone",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 40,
+      "generated": ""
+    },
+    {
+      "name": "staging_cleanup_error",
+      "type": "text",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 41,
+      "generated": ""
+    },
+    {
       "name": "id",
       "type": "uuid",
       "table": "activity_plans",
@@ -7696,6 +7856,27 @@
       "definition": "CHECK (COALESCE(value > 0::double precision AND (value <> ALL (ARRAY['NaN'::real, 'Infinity'::real, '-Infinity'::real])) OR value = 0::double precision AND activity_id IS NULL AND activity_category = 'bike'::text AND effort_type = 'power'::effort_type AND source = 'manual'::evidence_observation_source AND method = 'profile_update_override'::text AND (provenance ->> 'override_state'::text) = 'cleared'::text, false))"
     },
     {
+      "kind": "c",
+      "name": "activity_file_ingestions_accepted_hash_check",
+      "table": "activity_file_ingestions",
+      "validated": false,
+      "definition": "CHECK (accepted_sha256 IS NULL OR accepted_sha256 ~ '^[0-9a-f]{64}$'::text) NOT VALID"
+    },
+    {
+      "kind": "c",
+      "name": "activity_file_ingestions_accepted_metadata_check",
+      "table": "activity_file_ingestions",
+      "validated": false,
+      "definition": "CHECK ((num_nonnulls(accepted_sha256, accepted_byte_size, accepted_bucket, accepted_path, accepted_media_type, accepted_format, uploaded_at) = ANY (ARRAY[0, 7])) AND (accepted_sha256 IS NULL OR status = 'ready'::activity_file_ingestion_status AND btrim(accepted_bucket) <> ''::text AND btrim(accepted_path) <> ''::text AND (accepted_format = ANY (ARRAY['fit'::text, 'gpx'::text, 'tcx'::text])) AND accepted_path = ((('artifacts/sha256/'::text || profile_id::text) || '/'::text) || accepted_sha256))) NOT VALID"
+    },
+    {
+      "kind": "c",
+      "name": "activity_file_ingestions_accepted_size_check",
+      "table": "activity_file_ingestions",
+      "validated": false,
+      "definition": "CHECK (accepted_byte_size IS NULL OR accepted_byte_size > 0) NOT VALID"
+    },
+    {
       "kind": "f",
       "name": "activity_file_ingestions_activity_profile_fkey",
       "table": "activity_file_ingestions",
@@ -7718,10 +7899,38 @@
     },
     {
       "kind": "c",
+      "name": "activity_file_ingestions_claim_artifact_match_check",
+      "table": "activity_file_ingestions",
+      "validated": false,
+      "definition": "CHECK (expected_sha256 IS NULL OR accepted_sha256 IS NULL OR accepted_sha256 = expected_sha256 AND accepted_byte_size = expected_byte_size AND accepted_bucket = staging_bucket AND accepted_format = expected_format AND accepted_media_type = expected_media_type) NOT VALID"
+    },
+    {
+      "kind": "c",
       "name": "activity_file_ingestions_claim_check",
       "table": "activity_file_ingestions",
       "validated": true,
       "definition": "CHECK ((claim_token IS NULL) = (lease_expires_at IS NULL))"
+    },
+    {
+      "kind": "c",
+      "name": "activity_file_ingestions_cleanup_state_check",
+      "table": "activity_file_ingestions",
+      "validated": false,
+      "definition": "CHECK ((NOT staging_cleanup_pending OR status = 'ready'::activity_file_ingestion_status AND staging_path IS NOT NULL AND accepted_path IS NOT NULL) AND (staging_cleaned_at IS NULL OR NOT staging_cleanup_pending AND staging_path IS NOT NULL) AND (staging_cleanup_error IS NULL OR staging_cleanup_pending) AND NOT (staging_cleaned_at IS NOT NULL AND staging_cleanup_error IS NOT NULL)) NOT VALID"
+    },
+    {
+      "kind": "c",
+      "name": "activity_file_ingestions_expected_hash_check",
+      "table": "activity_file_ingestions",
+      "validated": false,
+      "definition": "CHECK (expected_sha256 IS NULL OR expected_sha256 ~ '^[0-9a-f]{64}$'::text) NOT VALID"
+    },
+    {
+      "kind": "c",
+      "name": "activity_file_ingestions_expected_size_check",
+      "table": "activity_file_ingestions",
+      "validated": false,
+      "definition": "CHECK (expected_byte_size IS NULL OR expected_byte_size > 0) NOT VALID"
     },
     {
       "kind": "f",
@@ -7745,6 +7954,13 @@
       "definition": "PRIMARY KEY (id)"
     },
     {
+      "kind": "c",
+      "name": "activity_file_ingestions_processing_claim_check",
+      "table": "activity_file_ingestions",
+      "validated": false,
+      "definition": "CHECK (status = 'processing'::activity_file_ingestion_status AND claim_token IS NOT NULL AND lease_expires_at IS NOT NULL OR status <> 'processing'::activity_file_ingestion_status AND claim_token IS NULL AND lease_expires_at IS NULL) NOT VALID"
+    },
+    {
       "kind": "f",
       "name": "activity_file_ingestions_profile_id_profiles_id_fk",
       "table": "activity_file_ingestions",
@@ -7757,6 +7973,13 @@
       "table": "activity_file_ingestions",
       "validated": true,
       "definition": "CHECK (status <> 'ready'::activity_file_ingestion_status OR activity_id IS NOT NULL AND artifact_id IS NOT NULL)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_file_ingestions_staging_metadata_check",
+      "table": "activity_file_ingestions",
+      "validated": false,
+      "definition": "CHECK ((num_nonnulls(staging_bucket, staging_path, expected_sha256, expected_byte_size, expected_format, expected_media_type) = ANY (ARRAY[0, 6])) AND (staging_bucket IS NULL OR btrim(staging_bucket) <> ''::text AND btrim(staging_path) <> ''::text AND (expected_format = 'fit'::text AND expected_media_type = 'application/vnd.ant.fit'::text OR expected_format = 'gpx'::text AND expected_media_type = 'application/gpx+xml'::text OR expected_format = 'tcx'::text AND expected_media_type = 'application/vnd.garmin.tcx+xml'::text))) NOT VALID"
     },
     {
       "kind": "c",
@@ -9359,6 +9582,8 @@
         "application/gpx+xml",
         "application/octet-stream",
         "application/tcx+xml",
+        "application/vnd.ant.fit",
+        "application/vnd.garmin.tcx+xml",
         "application/xml",
         "text/xml"
       ]

@@ -21,6 +21,10 @@
       "types": "./src/query-client.ts",
       "default": "./src/query-client.ts"
     },
+    "./recording-submission": {
+      "types": "./src/contracts/recording-submission.ts",
+      "default": "./src/contracts/recording-submission.ts"
+    },
     "./react": {
       "types": "./src/react.ts",
       "default": "./src/react.ts"

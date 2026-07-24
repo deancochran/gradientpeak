@@ -10,7 +10,7 @@ import {
   activityFileIngestions,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, eq, lt, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, lte, or, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 
 type DbClient = Pick<ReturnType<typeof getRequiredDb>, "insert" | "select" | "update">;
@@ -130,6 +130,8 @@ function buildTransitionUpdate(
     case "uploaded":
       return {
         ...base,
+        claim_token: null,
+        lease_expires_at: null,
         last_error_code: null,
         last_error_message: null,
         failed_at: null,
@@ -168,6 +170,8 @@ function buildTransitionUpdate(
     case "pending_upload":
       return {
         ...base,
+        claim_token: null,
+        lease_expires_at: null,
         last_error_code: null,
         last_error_message: null,
         failed_at: null,
@@ -188,6 +192,12 @@ export async function transitionActivityFileIngestion(
     });
   }
 
+  const completesProcessingClaim =
+    existing.status === "processing" && (input.status === "ready" || input.status === "failed");
+  if (completesProcessingClaim && !input.claimToken) {
+    throw new ActivityFileIngestionClaimLostError();
+  }
+
   const [updated] = await db
     .update(activityFileIngestions)
     .set(buildTransitionUpdate(existing, input))
@@ -196,9 +206,15 @@ export async function transitionActivityFileIngestion(
         scopedIngestionWhere(input),
         eq(activityFileIngestions.status, existing.status),
         input.status === "processing" && existing.status === "processing"
-          ? lt(activityFileIngestions.lease_expires_at, sql`clock_timestamp()`)
+          ? or(
+              isNull(activityFileIngestions.lease_expires_at),
+              lte(activityFileIngestions.lease_expires_at, sql`clock_timestamp()`),
+            )
           : undefined,
         input.claimToken ? eq(activityFileIngestions.claim_token, input.claimToken) : undefined,
+        completesProcessingClaim
+          ? gt(activityFileIngestions.lease_expires_at, sql`clock_timestamp()`)
+          : undefined,
       ),
     )
     .returning();
@@ -230,14 +246,18 @@ export function markProcessing(
 
 export function markReady(
   db: DbClient,
-  input: Omit<TransitionActivityFileIngestionInput, "status">,
+  input: Omit<TransitionActivityFileIngestionInput, "status" | "claimToken"> & {
+    claimToken: string;
+  },
 ) {
   return transitionActivityFileIngestion(db, { ...input, status: "ready" });
 }
 
 export function markFailed(
   db: DbClient,
-  input: Omit<TransitionActivityFileIngestionInput, "status">,
+  input: Omit<TransitionActivityFileIngestionInput, "status" | "claimToken"> & {
+    claimToken: string;
+  },
 ) {
   return transitionActivityFileIngestion(db, { ...input, status: "failed" });
 }

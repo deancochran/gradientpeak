@@ -40,7 +40,7 @@ vi.mock("../../application/activity-file-ingestion/artifact-storage", async (imp
   >()),
   verifyAcceptedActivityArtifact: mockArtifactStorage.verifyAcceptedActivityArtifact,
 }));
-vi.mock("../../storage-service", () => ({ getApiStorageService: () => ({}) }));
+vi.mock("../../storage-service", () => ({ getActivityArtifactStorageService: () => ({}) }));
 
 vi.mock("@repo/core", async () => {
   const actual = await vi.importActual<typeof import("@repo/core")>("@repo/core");
@@ -144,6 +144,7 @@ function recordingExecutionManifest(category: "run" | "bike" | "swim" = "run") {
 function recordingCreateInput(profileId = OWNER_ID) {
   return {
     profileId,
+    recordingSessionId: "recording-session-1",
     name: "Recorder Run",
     startedAt: "2026-01-15T09:00:00.000Z",
     finishedAt: "2026-01-15T10:00:00.000Z",
@@ -329,6 +330,8 @@ function buildActivityImportRow(overrides: Record<string, unknown> = {}) {
 }
 
 function buildActivityFileIngestionRow(overrides: Record<string, unknown> = {}) {
+  const status = overrides.status ?? "pending_upload";
+  const accepted = status === "ready";
   return {
     id: "88888888-8888-4888-8888-888888888888",
     activity_id: ACTIVITY_ID,
@@ -336,10 +339,20 @@ function buildActivityFileIngestionRow(overrides: Record<string, unknown> = {}) 
     source: "mobile_recording",
     provider: null,
     external_id: null,
+    operation_key: "mobile-recording:recording-session-1",
+    artifact_id: accepted ? "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" : null,
+    accepted_sha256: accepted ? ACCEPTED_ARTIFACT.sha256 : null,
+    accepted_byte_size: accepted ? ACCEPTED_ARTIFACT.byteSize : null,
+    accepted_bucket: accepted ? ACCEPTED_ARTIFACT.bucket : null,
+    accepted_path: accepted ? ACCEPTED_ARTIFACT.path : null,
+    accepted_media_type: accepted ? ACCEPTED_ARTIFACT.mediaType : null,
+    accepted_format: accepted ? ACCEPTED_ARTIFACT.format : null,
+    uploaded_at: accepted ? new Date("2026-01-01T00:00:00.000Z") : null,
+    staging_cleanup_pending: false,
     file_path: null,
     file_size: 123456,
     file_type: "fit",
-    status: "pending_upload",
+    status,
     attempt_count: 0,
     last_error_code: null,
     last_error_message: null,
@@ -1431,7 +1444,7 @@ describe("activitiesRouter", () => {
     });
   });
 
-  it("creates an activity from a mobile execution manifest with an accepted artifact", async () => {
+  it("accepts the legacy sessionless accepted-artifact recording submission", async () => {
     const createdActivity = buildActivityRow({
       id: ACTIVITY_ID,
       activity_plan_id: PLAN_ID,
@@ -1448,8 +1461,8 @@ describe("activitiesRouter", () => {
         activities: [createdActivity],
         activity_file_ingestions: [ingestion],
       },
-      queryActivitiesFindFirst: [createdActivity],
-      queryActivityFileIngestionsFindFirst: [ingestion],
+      queryActivitiesFindFirst: [undefined, createdActivity],
+      queryActivityFileIngestionsFindFirst: [undefined, ingestion],
       queryActivitySummariesFindFirst: [
         buildActivitySummaryRow({
           activity_id: ACTIVITY_ID,
@@ -1508,7 +1521,7 @@ describe("activitiesRouter", () => {
       calories: 640,
     });
     expect(findInsertedValue(db, "activity_file_ingestions")).toMatchObject({
-      activity_id: ACTIVITY_ID,
+      activity_id: findInsertedValue(db, "activities").id,
       profile_id: OWNER_ID,
       source: "mobile_recording",
       status: "ready",
@@ -1526,7 +1539,7 @@ describe("activitiesRouter", () => {
         activities: [createdActivity],
         activity_file_ingestions: [ingestion],
       },
-      queryActivitiesFindFirst: [createdActivity],
+      queryActivitiesFindFirst: [undefined, createdActivity],
       queryActivityFileIngestionsFindFirst: [ingestion],
     });
 
@@ -1597,6 +1610,7 @@ describe("activitiesRouter", () => {
     const ingestion = buildActivityFileIngestionRow({
       activity_id: ACTIVITY_ID,
       profile_id: OWNER_ID,
+      status: "ready",
     });
     const db = createDbMock({
       queryActivitiesFindFirst: [createdActivity],
@@ -1621,6 +1635,7 @@ describe("activitiesRouter", () => {
     const ingestion = buildActivityFileIngestionRow({
       activity_id: ACTIVITY_ID,
       profile_id: OWNER_ID,
+      status: "ready",
     });
     const db = createDbMock({
       queryActivitiesFindFirst: [undefined, createdActivity],
@@ -1639,6 +1654,23 @@ describe("activitiesRouter", () => {
       ingestion: { id: ingestion.id },
     });
     expect(db.transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a recording submission whose accepted artifact is not canonical", async () => {
+    mockArtifactStorage.verifyAcceptedActivityArtifact.mockRejectedValueOnce(
+      new Error("accepted path is not content-addressed"),
+    );
+
+    await expect(
+      createCaller(createDbMock({})).createFromRecordingSummary({
+        ...recordingCreateInput(),
+        acceptedArtifact: { ...ACCEPTED_ARTIFACT, path: "staging/attacker-controlled.fit" },
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(mockArtifactStorage.verifyAcceptedActivityArtifact).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ path: "staging/attacker-controlled.fit" }),
+    );
   });
 
   it("rejects recording manifests outside the parent time range", async () => {

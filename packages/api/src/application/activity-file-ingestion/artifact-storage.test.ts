@@ -12,14 +12,14 @@ function storage(input?: {
   const source = new Uint8Array([1, 2, 3]);
   const destination = input?.destination ?? source;
   const upload = vi.fn().mockResolvedValue({ error: input?.uploadError ?? null });
-  const download = vi.fn().mockResolvedValue({
-    data: { arrayBuffer: async () => destination.buffer },
-    error: null,
-  });
+  const readObjectBounded = vi.fn().mockResolvedValue({ data: destination, contentType: "" });
   return {
     source,
     upload,
-    service: { storage: { from: vi.fn(() => ({ upload, download, remove: vi.fn() })) } },
+    service: {
+      storage: { from: vi.fn(() => ({ upload, remove: vi.fn() })) },
+      readObjectBounded,
+    },
   };
 }
 

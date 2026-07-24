@@ -45,18 +45,18 @@ pnpm --filter @repo/db self-host:down
 
 1. Change `src/schema/**` first when the object is Drizzle-managed.
 2. Create exactly one timestamp with `pnpm --filter @repo/db db:migration:new <name>`.
-3. Author SQL only in the new `supabase/migrations/` file, then run `db:migration:sync` to regenerate its `drizzle/deploy/` mirror.
+3. Author SQL only in the new `supabase/migrations/` file, then run `db:migration:sync` to regenerate its `drizzle/deploy/` mirror and the post-reconciliation ledger entries. `db:migration:new` creates the authority/mirror pair and refreshes that ledger as well.
 4. Run `db:migration:check`. It rejects duplicate versions/content, archive mutation, baseline hash drift, stale mismatch catalogs, and byte-level mirror drift.
 5. Run `db:verify`. Its create/drop operations require both `--disposable` and `--local`, enforce a localhost URL, and never inspect or mutate the shared local database.
 6. `db:diff` builds the same disposable authoritative target, runs Supabase lint against it, and requires an empty public-schema shadow diff.
 
 The checked-in fingerprint covers every public relation and sequence (including unmanaged extras), managed columns/defaults/indexes/constraints/enums, RLS and ACL state, default privileges for policy-declared owners, policy-declared extensions, public/auth functions and triggers, and owned storage buckets/policies. Supabase platform extensions and platform-role default privileges are intentionally outside repository ownership and are not serialized as environment noise. Update the fingerprint only from the guarded disposable fresh target.
 
-`db:verify:static` needs no database. `db:verify` builds both fresh and upgrade disposable databases, verifies schema/data convergence, fingerprints all owned surfaces, checks storage/security, lints the same disposable target, and runs an empty diff. Shared-local ledger diagnostics are deliberately separate: `db:migration:ledger:pre` expects exactly 71 entries and `db:migration:ledger:post` expects exactly the four active entries.
+`db:verify:static` needs no database. `db:verify` builds both fresh and upgrade disposable databases, verifies schema/data convergence, fingerprints all owned surfaces, checks storage/security, lints the same disposable target, and runs an empty diff. Shared-local ledger diagnostics are deliberately separate: `db:migration:ledger:pre` checks the captured pre-reconciliation endpoint and `db:migration:ledger:post` checks the active authoritative migration entries.
 
 ## Baseline reconciliation
 
-The old active chain could not build a fresh shadow: its first migration inserted into `training_plans` before that table was created. Rewriting that deployed SQL would invalidate history, so all 52 repository migration files are preserved exactly under `supabase/migrations-archive/`. The active `20260713034500_baseline.sql` is a schema-only snapshot of the verified managed database, followed by idempotent security/index migrations.
+The old active chain could not build a fresh shadow: its first migration inserted into `training_plans` before that table was created. Rewriting that deployed SQL would invalidate history, so the archived repository migration files are preserved exactly under `supabase/migrations-archive/`. The active `20260713034500_baseline.sql` is a schema-only snapshot of the verified managed database, followed by idempotent security/index migrations.
 
 For a fresh target, run the active chain normally. For an existing pre-consolidation target, **do not execute the baseline over existing objects**:
 
@@ -65,7 +65,7 @@ For a fresh target, run the active chain normally. For an existing pre-consolida
 3. Use `migration repair --status applied 20260713034500` so the target records the schema it already has.
 4. Re-list the ledger. Only then run normal migration-up for post-baseline files.
 
-No reconciliation command is automated because it changes an environment ledger. Run it once per explicitly approved target after taking a backup. `migration-history-mismatches.json` explicitly records 36 ledger-only versions whose SQL is unavailable and 17 archive-only versions absent from the captured endpoint. The disposable upgrade fixture recreates the captured schema/71-entry ledger with representative data, performs metadata reconciliation, applies the three followups, and requires exact four-entry ledger, schema, storage, and data convergence. The security followup also restores hosted storage buckets and policies because existing targets skip the baseline.
+No reconciliation command is automated because it changes an environment ledger. Run it once per explicitly approved target after taking a backup. `migration-history-mismatches.json` explicitly records 36 ledger-only versions whose SQL is unavailable and 17 archive-only versions absent from the captured endpoint. The disposable upgrade fixture recreates the captured schema/71-entry ledger with representative data, performs metadata reconciliation, applies every active post-baseline migration, and requires exact convergence with the current post-reconciliation ledger, schema, storage, and representative data. The security followup also restores hosted storage buckets and policies because existing targets skip the baseline.
 
 The provider queue-sequence followup is expand-only: it adds and backfills `queue_sequence` while legacy `idx` columns and their relations remain available during the old-client soak. `transitional-schema-extras.json` declares those temporary physical extras so parity and fingerprint checks remain strict. `scripts/contract_redundant_idx_columns.sql` is never auto-applied; run it only in an explicitly approved quiescent transaction after the old-client soak. The disposable upgrade fixture proves both the expand state and the guarded final contract without changing a shared database.
 

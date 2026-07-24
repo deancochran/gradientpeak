@@ -1,4 +1,24 @@
 export type { inferRouterOutputs } from "@trpc/server";
+export type {
+  BeginMobileRecordingUploadInput,
+  BeginMobileRecordingUploadOutput,
+  ClaimLegacyMobileRecordingUploadInput,
+  ClaimLegacyMobileRecordingUploadOutput,
+  MobileRecordingSubmissionInput,
+  MobileRecordingSubmissionRequest,
+  RecordingAcceptedArtifact,
+  RecordingUploadedArtifact,
+} from "./contracts/recording-submission";
+export {
+  beginMobileRecordingUploadInputSchema,
+  beginMobileRecordingUploadOutputSchema,
+  claimLegacyMobileRecordingUploadInputSchema,
+  claimLegacyMobileRecordingUploadOutputSchema,
+  mobileRecordingArtifactFormatSchema,
+  recordingAcceptedArtifactSchema,
+  recordingSummarySubmissionInputSchema,
+  recordingUploadedArtifactSchema,
+} from "./contracts/recording-submission";
 export type { SchedulingRefreshScope } from "./query-client";
 export {
   createQueryClient,

@@ -262,6 +262,7 @@ export async function processManualActivityFile(
         ingestion: {
           source: "manual_import",
           operationKey,
+          ingestionId: ingestion.id,
           claimToken,
           artifact: { ...promoted, originalName: input.originalName ?? null },
         },

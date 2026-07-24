@@ -5,12 +5,10 @@ import {
   completedActivitySegmentSetSchemaV1,
   contentVisibilitySchema,
   ianaTimezoneSchema,
-  recordingExecutionManifestSchema,
 } from "@repo/core";
 import { commonLoadAggregateSchema, commonLoadHistoryResultSchema } from "@repo/core/load";
 import {
   activities,
-  activityFileIngestions,
   events,
   profiles,
   publicActivitiesRowSchema,
@@ -40,13 +38,19 @@ import {
   SessionRpeEvidenceConflictError,
   SessionRpeEvidenceNotFoundError,
 } from "../application/activities/record-session-rpe";
+import { submitActivity } from "../application/activities/submit-activity";
 import {
-  recordingSessionActivityId,
-  submitActivity,
-} from "../application/activities/submit-activity";
+  MobileRecordingSubmissionError,
+  submitMobileRecording,
+} from "../application/activities/submit-mobile-recording";
 import { verifyAcceptedActivityArtifact } from "../application/activity-file-ingestion/artifact-storage";
+import { MobileRecordingUploadError } from "../application/activity-file-ingestion/mobile-recording-upload";
+import {
+  recordingAcceptedArtifactSchema,
+  recordingSummarySubmissionInputSchema,
+} from "../contracts/recording-submission";
 import { getRequiredDb } from "../db";
-import { getApiStorageService } from "../storage-service";
+import { getActivityArtifactStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { indexCursorSchema } from "../utils/index-cursor";
 
@@ -247,24 +251,12 @@ const dailyCommonLoadObservationsOutputSchema = z
   })
   .strict();
 
-const acceptedArtifactSchema = z
-  .object({
-    sha256: z.string().regex(/^[0-9a-f]{64}$/),
-    byteSize: z.number().int().positive(),
-    bucket: z.string().trim().min(1),
-    path: z.string().trim().min(1),
-    mediaType: z.string().trim().min(1),
-    format: z.enum(["fit", "gpx", "tcx"]),
-    originalName: z.string().trim().min(1).nullable().optional(),
-  })
-  .strict();
-
 async function resolveAcceptedArtifact(
   profileId: string,
-  artifact: z.infer<typeof acceptedArtifactSchema>,
+  artifact: z.infer<typeof recordingAcceptedArtifactSchema>,
 ) {
   try {
-    return await verifyAcceptedActivityArtifact(getApiStorageService(), {
+    return await verifyAcceptedActivityArtifact(getActivityArtifactStorageService(), {
       profileId,
       ...artifact,
     });
@@ -299,7 +291,7 @@ const createInputSchema = z
     finishedAt: isoDatetimeSchema,
     content_visibility: contentVisibilitySchema.optional(),
     segmentSet: completedActivitySegmentSetSchemaV1,
-    acceptedArtifact: acceptedArtifactSchema,
+    acceptedArtifact: recordingAcceptedArtifactSchema,
     summary: activityParentSummarySchema,
   })
   .strict()
@@ -318,28 +310,6 @@ const createInputSchema = z
         path: ["segmentSet", "elapsedMs"],
       });
     }
-  });
-
-const createFromRecordingSummaryInputSchema = z
-  .object({
-    profileId: z.string().uuid(),
-    recordingSessionId: z.string().trim().min(1).max(200).optional(),
-    name: z.string().trim().min(1),
-    notes: z.string().nullable().optional(),
-    is_private: z.boolean().optional(),
-    content_visibility: contentVisibilitySchema.optional(),
-    startedAt: isoDatetimeSchema,
-    finishedAt: isoDatetimeSchema,
-    activityPlanId: z.string().uuid().nullable().optional(),
-    executionManifest: recordingExecutionManifestSchema,
-    acceptedArtifact: acceptedArtifactSchema,
-    summary: activityParentSummarySchema,
-    source: z.literal("mobile_recording").default("mobile_recording"),
-  })
-  .strict()
-  .refine((data) => new Date(data.finishedAt) > new Date(data.startedAt), {
-    message: "finishedAt must be after startedAt",
-    path: ["finishedAt"],
   });
 
 const getByIdInputSchema = z.object({ id: z.string().uuid() }).strict();
@@ -427,52 +397,6 @@ function aggregateSegmentTiming(segmentSet: z.infer<typeof completedActivitySegm
       : null,
     timingCoverage: complete ? ("complete" as const) : ("partial" as const),
   };
-}
-
-function segmentSetFromExecutionManifest(input: {
-  startedAt: string;
-  finishedAt: string;
-  executionManifest: z.infer<typeof recordingExecutionManifestSchema>;
-}) {
-  const parentStartMs = new Date(input.startedAt).getTime();
-  const elapsedMs = new Date(input.finishedAt).getTime() - parentStartMs;
-  const grouped = new Map<string, (typeof input.executionManifest.occurrences)[number][]>();
-  for (const occurrence of input.executionManifest.occurrences) {
-    const entries = grouped.get(occurrence.segmentId) ?? [];
-    entries.push(occurrence);
-    grouped.set(occurrence.segmentId, entries);
-  }
-  const segments = [...grouped.values()].map((occurrences, ordinal) => {
-    const first = occurrences[0];
-    const last = occurrences.at(-1);
-    if (!first || !last) {
-      throw new Error("Execution manifest segment group must not be empty");
-    }
-    const base = {
-      id: first.segmentId,
-      ordinal,
-      role: first.role,
-      startOffsetMs: new Date(first.startedAt).getTime() - parentStartMs,
-      endOffsetMs: new Date(last.completedAt).getTime() - parentStartMs,
-      summary: {
-        version: 1 as const,
-        timing: {
-          timingCoverage: "complete" as const,
-          activeMs: Math.round(
-            occurrences.reduce((sum, item) => sum + item.activeSeconds, 0) * 1_000,
-          ),
-          movingMs: Math.round(
-            occurrences.reduce((sum, item) => sum + item.movingSeconds, 0) * 1_000,
-          ),
-        },
-        distanceMeters: occurrences.reduce((sum, item) => sum + item.distanceMeters, 0),
-      },
-    };
-    if (first.role === "activity")
-      return { ...base, role: "activity" as const, category: first.category };
-    return { ...base, role: first.role };
-  });
-  return completedActivitySegmentSetSchemaV1.parse({ version: 1, elapsedMs, segments });
 }
 
 async function getProfileDefaultContentVisibility(
@@ -687,193 +611,55 @@ export const activitiesRouter = createTRPCRouter({
   }),
 
   createFromRecordingSummary: protectedProcedure
-    .input(createFromRecordingSummaryInputSchema)
+    .input(recordingSummarySubmissionInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const db = getRequiredDb(ctx);
-
-      if (input.profileId !== ctx.session.user.id) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Cannot create activities for other profiles",
-        });
-      }
-
-      if (input.recordingSessionId) {
-        const activityId = recordingSessionActivityId(input.profileId, input.recordingSessionId);
-        const existingActivity = await db.query.activities.findFirst({
-          where: and(eq(activities.id, activityId), eq(activities.profile_id, input.profileId)),
-        });
-        if (existingActivity) {
-          const existingIngestion = await db.query.activityFileIngestions.findFirst({
-            where: and(
-              eq(activityFileIngestions.activity_id, existingActivity.id),
-              eq(activityFileIngestions.profile_id, input.profileId),
-            ),
-          });
-          if (!existingIngestion) {
-            throw new TRPCError({
-              code: "INTERNAL_SERVER_ERROR",
-              message: "Recording activity is missing its file ingestion",
-            });
-          }
-          return {
-            ...parseActivityRow(existingActivity),
-            ingestion: {
-              id: existingIngestion.id,
-              status: existingIngestion.status,
-              source: existingIngestion.source,
-            },
-          };
-        }
-      }
-
-      const contentVisibility =
-        input.content_visibility ??
-        (input.is_private === undefined
-          ? await getProfileDefaultContentVisibility(db, input.profileId)
-          : input.is_private
-            ? "private"
-            : "followers");
-
-      let segmentSet: z.infer<typeof completedActivitySegmentSetSchemaV1>;
       try {
-        segmentSet = segmentSetFromExecutionManifest(input);
+        const result = await submitMobileRecording(
+          getRequiredDb(ctx),
+          getActivityArtifactStorageService(),
+          {
+            actorProfileId: ctx.session.user.id,
+            submission: input,
+          },
+        );
+        return {
+          ...parseActivityRow(result.activity),
+          ingestion: {
+            id: result.ingestion.id,
+            status: result.ingestion.status,
+            source: result.ingestion.source,
+          },
+          acceptedArtifact: result.acceptedArtifact,
+        };
       } catch (error) {
+        if (error instanceof MobileRecordingSubmissionError) {
+          const code =
+            error.code === "forbidden"
+              ? "FORBIDDEN"
+              : error.code === "conflict"
+                ? "CONFLICT"
+                : error.code === "artifact_invalid" || error.code === "manifest_invalid"
+                  ? "BAD_REQUEST"
+                  : "INTERNAL_SERVER_ERROR";
+          throw new TRPCError({ code, message: error.message, cause: error });
+        }
+        if (error instanceof MobileRecordingUploadError) {
+          const code =
+            error.code === "claim_not_found"
+              ? "NOT_FOUND"
+              : error.code === "claim_conflict" || error.code === "claim_lost"
+                ? "CONFLICT"
+                : error.code === "claim_invalid" || error.code === "expected_artifact_mismatch"
+                  ? "BAD_REQUEST"
+                  : "INTERNAL_SERVER_ERROR";
+          throw new TRPCError({ code, message: error.message, cause: error });
+        }
         throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Invalid recording execution manifest",
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Recording activity submission failed",
           cause: error,
         });
       }
-      const activitySegment = segmentSet.segments.find((segment) => segment.role === "activity");
-      if (!activitySegment) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "An activity segment is required" });
-      }
-      const timing = aggregateSegmentTiming(segmentSet);
-      const acceptedArtifact = await resolveAcceptedArtifact(
-        input.profileId,
-        input.acceptedArtifact,
-      );
-
-      let created: Awaited<ReturnType<typeof submitActivity>>;
-      try {
-        created = await submitActivity(db, {
-          ...(input.recordingSessionId
-            ? {
-                requestedActivityId: recordingSessionActivityId(
-                  input.profileId,
-                  input.recordingSessionId,
-                ),
-              }
-            : {}),
-          profileId: input.profileId,
-          activityPlanId: input.activityPlanId ?? null,
-          name: input.name,
-          notes: input.notes ?? null,
-          isPrivate: contentVisibility === "private",
-          contentVisibility,
-          startedAt: new Date(input.startedAt),
-          finishedAt: new Date(input.finishedAt),
-          elapsedMs: segmentSet.elapsedMs,
-          activeMs: timing.activeMs,
-          movingMs: timing.movingMs,
-          timingCoverage: timing.timingCoverage,
-          segmentSet,
-          distanceMeters: input.summary.distanceMeters,
-          calories: input.summary.calories ?? null,
-          elevationGainMeters: input.summary.elevationGainMeters ?? null,
-          avgHeartRate: null,
-          maxHeartRate: null,
-          avgPower: null,
-          maxPower: null,
-          normalizedPower: input.summary.normalizedPower ?? null,
-          avgCadence: null,
-          maxCadence: null,
-          avgSpeedMps: null,
-          maxSpeedMps: null,
-          normalizedSpeedMps: null,
-          normalizedGradedSpeedMps: null,
-          efficiencyFactor: null,
-          aerobicDecoupling: null,
-          avgTemperature: input.summary.avgTemperature ?? null,
-          poolLength: input.summary.poolLength ?? null,
-          deviceManufacturer: null,
-          deviceProduct: null,
-          laps: null,
-          mapBounds: null,
-          polyline: null,
-          analysis: {
-            efforts: [],
-            detectedLTHR: null,
-            activityCompletedAt: new Date(input.finishedAt),
-            ingestion: {
-              source: input.source,
-              operationKey: input.recordingSessionId
-                ? `mobile-recording:${input.recordingSessionId}`
-                : `mobile-recording:${acceptedArtifact.sha256}`,
-              artifact: acceptedArtifact,
-              fileType: acceptedArtifact.format,
-            },
-          },
-        });
-      } catch (error) {
-        if (!input.recordingSessionId) throw error;
-
-        const activityId = recordingSessionActivityId(input.profileId, input.recordingSessionId);
-        const [existingActivity, existingIngestion] = await Promise.all([
-          db.query.activities.findFirst({
-            where: and(eq(activities.id, activityId), eq(activities.profile_id, input.profileId)),
-          }),
-          db.query.activityFileIngestions.findFirst({
-            where: and(
-              eq(activityFileIngestions.activity_id, activityId),
-              eq(activityFileIngestions.profile_id, input.profileId),
-            ),
-          }),
-        ]);
-        if (!existingActivity || !existingIngestion) throw error;
-
-        return {
-          ...parseActivityRow(existingActivity),
-          ingestion: {
-            id: existingIngestion.id,
-            status: existingIngestion.status,
-            source: existingIngestion.source,
-          },
-        };
-      }
-
-      const activity = await db.query.activities.findFirst({
-        where: eq(activities.id, created.id),
-      });
-      if (!activity)
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to load created activity",
-        });
-      const ingestion = await db.query.activityFileIngestions.findFirst({
-        where: and(
-          eq(activityFileIngestions.activity_id, created.id),
-          eq(activityFileIngestions.profile_id, input.profileId),
-        ),
-      });
-      if (!ingestion) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to load accepted activity artifact ingestion",
-        });
-      }
-
-      const data = parseActivityRow(activity);
-
-      return {
-        ...data,
-        ingestion: {
-          id: ingestion.id,
-          status: ingestion.status,
-          source: ingestion.source,
-        },
-      };
     }),
 
   getById: protectedProcedure.input(getByIdInputSchema).query(async ({ input, ctx }) => {
@@ -932,7 +718,7 @@ export const activitiesRouter = createTRPCRouter({
     const db = getRequiredDb(ctx);
     return deleteActivityForProfile({
       db,
-      artifactStorage: getApiStorageService(),
+      artifactStorage: getActivityArtifactStorageService(),
       activityId: input.id,
       profileId: ctx.session.user.id,
     });

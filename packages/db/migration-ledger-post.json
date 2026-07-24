@@ -89,6 +89,10 @@
     {
       "version": "20260723221702",
       "name": "add_activity_session_rpe_evidence"
+    },
+    {
+      "version": "20260724143824",
+      "name": "add_mobile_recording_upload_claim"
     }
   ]
 }

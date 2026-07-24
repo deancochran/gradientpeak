@@ -1,3 +1,11 @@
+import type {
+  BeginMobileRecordingUploadInput,
+  BeginMobileRecordingUploadOutput,
+  ClaimLegacyMobileRecordingUploadInput,
+  ClaimLegacyMobileRecordingUploadOutput,
+  MobileRecordingSubmissionRequest,
+  RecordingAcceptedArtifact,
+} from "@repo/api/recording-submission";
 import {
   canonicalSportSchema,
   contentVisibilitySchema,
@@ -57,6 +65,7 @@ export const activitySubmissionQueueJobSchema = z
     activityId: z.string().min(1).optional(),
     ingestionId: z.string().min(1).optional(),
     remoteFilePath: z.string().min(1).optional(),
+    uploadCompletedAt: z.string().datetime({ offset: true }).optional(),
     artifactSha256: z
       .string()
       .regex(/^[0-9a-f]{64}$/)
@@ -70,31 +79,7 @@ export const activitySubmissionQueueJobSchema = z
   .strict();
 export type ActivitySubmissionQueueJob = z.infer<typeof activitySubmissionQueueJobSchema>;
 
-export type CreateFromRecordingSummaryInput = Pick<
-  ActivitySubmissionQueueDraft,
-  | "recordingSessionId"
-  | "profileId"
-  | "startedAt"
-  | "finishedAt"
-  | "name"
-  | "notes"
-  | "content_visibility"
-  | "is_private"
-  | "activityPlanId"
-> & {
-  executionManifest: z.infer<typeof recordingExecutionManifestSchema>;
-  acceptedArtifact: {
-    sha256: string;
-    byteSize: number;
-    bucket: string;
-    path: string;
-    mediaType: string;
-    format: "fit" | "gpx" | "tcx";
-    originalName?: string | null;
-  };
-  summary: { distanceMeters: number; calories?: number | null };
-  source: "mobile_recording";
-};
+export type CreateFromRecordingSummaryInput = MobileRecordingSubmissionRequest;
 
 export type CreateFromRecordingSummaryResult = {
   id: string;
@@ -103,16 +88,7 @@ export type CreateFromRecordingSummaryResult = {
     status?: string;
     source?: string;
   };
-};
-
-export type GetSignedUploadUrlInput = {
-  fileName: string;
-  fileSize?: number;
-};
-
-export type GetSignedUploadUrlResult = {
-  signedUrl: string;
-  filePath: string;
+  acceptedArtifact?: RecordingAcceptedArtifact;
 };
 
 export type UploadToSignedUrlResult = {
@@ -136,7 +112,12 @@ export type ActivitySubmissionQueueRunnerDeps = {
   createFromRecordingSummary: (
     input: CreateFromRecordingSummaryInput,
   ) => Promise<CreateFromRecordingSummaryResult>;
-  getSignedUploadUrl: (input: GetSignedUploadUrlInput) => Promise<GetSignedUploadUrlResult>;
+  beginMobileRecordingUpload: (
+    input: BeginMobileRecordingUploadInput,
+  ) => Promise<BeginMobileRecordingUploadOutput>;
+  claimLegacyMobileRecordingUpload: (
+    input: ClaimLegacyMobileRecordingUploadInput,
+  ) => Promise<ClaimLegacyMobileRecordingUploadOutput>;
   uploadToSignedUrl: (
     localPath: string,
     signedUrl: string,

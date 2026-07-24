@@ -46,8 +46,13 @@ function createDependencies(provider: "wahoo" | "strava" = "wahoo") {
       status: "queued",
     })),
   };
-  const runInTransaction = async <T>(operation: (value: DrizzleTransactionClient) => Promise<T>) =>
-    operation(transaction);
+  let transactionCallCount = 0;
+  const runInTransaction = async <T>(
+    operation: (value: DrizzleTransactionClient) => Promise<T>,
+  ) => {
+    transactionCallCount += 1;
+    return operation(transaction);
+  };
   return {
     repositories: { integrations, oauthStates } as unknown as IntegrationsRepositories,
     providerSyncRepository: providerSyncRepository as unknown as ProviderSyncRepository,
@@ -56,6 +61,7 @@ function createDependencies(provider: "wahoo" | "strava" = "wahoo") {
     oauthStates,
     providerSyncRepositoryMock: providerSyncRepository,
     transaction,
+    getTransactionCallCount: () => transactionCallCount,
   };
 }
 
@@ -79,6 +85,12 @@ function useRemoteWahooConfig() {
   delete process.env.PROVIDER_OAUTH_TEST_ADAPTER;
   process.env.WAHOO_CLIENT_ID = "wahoo-client-id";
   process.env.WAHOO_CLIENT_SECRET = "wahoo-client-secret";
+}
+
+function useRemoteStravaConfig() {
+  delete process.env.PROVIDER_OAUTH_TEST_ADAPTER;
+  process.env.STRAVA_CLIENT_ID = "strava-client-id";
+  process.env.STRAVA_CLIENT_SECRET = "strava-client-secret";
 }
 
 describe("OAuth callback use case", () => {
@@ -269,6 +281,137 @@ describe("OAuth callback use case", () => {
         scope: null,
       }),
     );
+  });
+
+  it("fails closed when a supplied token identity is malformed", async () => {
+    useRemoteWahooConfig();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({ access_token: "remote-access-token", athlete: { id: "   " } }),
+        {
+          status: 200,
+        },
+      ),
+    );
+    const deps = createDependencies();
+
+    const result = await handleOAuthCallback({
+      ...deps,
+      code: "provider-code",
+      error: null,
+      fallbackRedirect: "http://localhost:3000/integrations",
+      provider: "wahoo",
+      state: STATE_ID,
+    });
+
+    expect(new URL(result.redirectUrl).searchParams.get("error")).toBe("provider_identity_failed");
+    expect(deps.getTransactionCallCount()).toBe(0);
+    expect(deps.integrations.upsertFromOAuthStateInTransaction).not.toHaveBeenCalled();
+    expect(deps.providerSyncRepositoryMock.enqueueJobInTransaction).not.toHaveBeenCalled();
+    expect(deps.oauthStates.deleteByState).toHaveBeenCalledWith(STATE_ID);
+  });
+
+  it("uses a valid Wahoo profile identity when the token omits one", async () => {
+    useRemoteWahooConfig();
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: "remote-access-token" }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: "  wahoo-account-42  " }), { status: 200 }),
+      );
+    const deps = createDependencies();
+
+    const result = await handleOAuthCallback({
+      ...deps,
+      code: "provider-code",
+      error: null,
+      fallbackRedirect: "http://localhost:3000/integrations",
+      provider: "wahoo",
+      state: STATE_ID,
+    });
+
+    expect(new URL(result.redirectUrl).searchParams.get("integration")).toBe("connected");
+    expect(deps.integrations.upsertFromOAuthStateInTransaction).toHaveBeenCalledWith(
+      deps.transaction,
+      expect.objectContaining({ externalId: "wahoo-account-42" }),
+    );
+  });
+
+  it.each([
+    ["missing", new Response(JSON.stringify({}), { status: 200 })],
+    ["invalid", new Response("not json", { status: 200 })],
+    ["non-2xx", new Response(null, { status: 401 })],
+  ])("fails closed when the Wahoo profile identity response is %s", async (_case, profileResponse) => {
+    useRemoteWahooConfig();
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: "remote-access-token" }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(profileResponse);
+    const deps = createDependencies();
+
+    const result = await handleOAuthCallback({
+      ...deps,
+      code: "provider-code",
+      error: null,
+      fallbackRedirect: "http://localhost:3000/integrations",
+      provider: "wahoo",
+      state: STATE_ID,
+    });
+
+    expect(new URL(result.redirectUrl).searchParams.get("error")).toBe("provider_identity_failed");
+    expect(deps.getTransactionCallCount()).toBe(0);
+    expect(deps.integrations.upsertFromOAuthStateInTransaction).not.toHaveBeenCalled();
+    expect(deps.providerSyncRepositoryMock.enqueueJobInTransaction).not.toHaveBeenCalled();
+    expect(deps.oauthStates.deleteByState).toHaveBeenCalledWith(STATE_ID);
+  });
+
+  it("fails closed when fetching the Wahoo profile identity fails", async () => {
+    useRemoteWahooConfig();
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: "remote-access-token" }), { status: 200 }),
+      )
+      .mockRejectedValueOnce(new TypeError("network unavailable"));
+    const deps = createDependencies();
+
+    const result = await handleOAuthCallback({
+      ...deps,
+      code: "provider-code",
+      error: null,
+      fallbackRedirect: "http://localhost:3000/integrations",
+      provider: "wahoo",
+      state: STATE_ID,
+    });
+
+    expect(new URL(result.redirectUrl).searchParams.get("error")).toBe("provider_identity_failed");
+    expect(deps.getTransactionCallCount()).toBe(0);
+    expect(deps.integrations.upsertFromOAuthStateInTransaction).not.toHaveBeenCalled();
+    expect(deps.providerSyncRepositoryMock.enqueueJobInTransaction).not.toHaveBeenCalled();
+    expect(deps.oauthStates.deleteByState).toHaveBeenCalledWith(STATE_ID);
+  });
+
+  it("fails closed when a non-Wahoo token omits the provider identity", async () => {
+    useRemoteStravaConfig();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ access_token: "remote-access-token" }), { status: 200 }),
+    );
+    const deps = createDependencies("strava");
+
+    const result = await handleOAuthCallback({
+      ...deps,
+      code: "provider-code",
+      error: null,
+      fallbackRedirect: "http://localhost:3000/integrations",
+      provider: "strava",
+      state: STATE_ID,
+    });
+
+    expect(new URL(result.redirectUrl).searchParams.get("error")).toBe("provider_identity_failed");
+    expect(deps.getTransactionCallCount()).toBe(0);
+    expect(deps.integrations.upsertFromOAuthStateInTransaction).not.toHaveBeenCalled();
+    expect(deps.oauthStates.deleteByState).toHaveBeenCalledWith(STATE_ID);
   });
 
   it("finishes remote token exchange before opening the persistence transaction", async () => {

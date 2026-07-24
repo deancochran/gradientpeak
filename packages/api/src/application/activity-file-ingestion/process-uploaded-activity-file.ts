@@ -8,7 +8,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
-import { getApiStorageService } from "../../storage-service";
+import { getActivityArtifactStorageService } from "../../storage-service";
 import type { ActivityArtifactSubmission } from "../activities/submit-activity";
 import { cleanupActivityArtifactStaging, promoteActivityArtifact } from "./artifact-storage";
 import {
@@ -125,7 +125,7 @@ async function markIngestionFailed(
     profileId: string;
     errorCode: string;
     errorMessage: string;
-    claimToken?: string;
+    claimToken: string;
   },
 ) {
   try {
@@ -170,7 +170,7 @@ async function loadOwnedActivityFileIngestion(
 }
 
 async function promoteArtifact(input: ProcessUploadedActivityFileInput, data: Uint8Array) {
-  return promoteActivityArtifact(getApiStorageService(), {
+  return promoteActivityArtifact(getActivityArtifactStorageService(), {
     profileId: input.userId,
     bucket: "activity-files",
     stagingPath: input.activityFilePath,
@@ -261,7 +261,7 @@ export async function processUploadedActivityFile<TParsedData>(
       (await db.query.activities.findFirst({ where: eq(activities.id, input.activityId) })) ??
       activity;
 
-    await cleanupActivityArtifactStaging(getApiStorageService(), artifact);
+    await cleanupActivityArtifactStaging(getActivityArtifactStorageService(), artifact);
 
     return {
       activity: updatedActivity,

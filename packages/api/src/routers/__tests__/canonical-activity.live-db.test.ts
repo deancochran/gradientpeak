@@ -503,6 +503,7 @@ describe("canonical activity persistence against PostgreSQL", () => {
         ingestion: {
           source: "manual_import",
           operationKey,
+          ingestionId: ingestion.id,
           claimToken: firstClaim.claim_token,
           artifact: acceptedArtifact,
         },
@@ -562,6 +563,7 @@ describe("canonical activity persistence against PostgreSQL", () => {
         ingestion: {
           source: "manual_import",
           operationKey,
+          ingestionId: ingestion.id,
           claimToken: secondClaim.claim_token,
           artifact: acceptedArtifact,
         },

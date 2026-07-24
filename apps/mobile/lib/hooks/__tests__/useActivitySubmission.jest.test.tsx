@@ -8,9 +8,25 @@ const createFromRecordingSummaryMock = jest.fn(async () => ({
   id: "activity-1",
   ingestion: { id: "ingestion-1", status: "pending_upload", source: "mobile_recording" },
 }));
-const getSignedUploadUrlMock = jest.fn(async () => ({
+const beginMobileRecordingUploadMock = jest.fn(async () => ({
+  status: "upload" as const,
+  ingestionId: "ingestion-1",
+  activityId: "activity-1",
+  byteSize: 1234,
+  sha256: "a".repeat(64),
+  format: "fit" as const,
+  mediaType: "application/vnd.ant.fit",
   signedUrl: "https://storage.example/upload",
-  filePath: "activities/profile-1/activity.fit",
+  token: "upload-token",
+}));
+const claimLegacyMobileRecordingUploadMock = jest.fn(async () => ({
+  status: "claimed" as const,
+  ingestionId: "ingestion-1",
+  activityId: "activity-1",
+  byteSize: 1234,
+  sha256: "a".repeat(64),
+  format: "fit" as const,
+  mediaType: "application/vnd.ant.fit",
 }));
 const markUploadedAndProcessMock = jest.fn(async () => ({ success: true }));
 const uploadToSignedUrlMock = jest.fn(async () => ({ success: true, attempts: 1 }));
@@ -96,8 +112,11 @@ jest.mock("@/lib/api", () => ({
       },
     },
     activityFiles: {
-      getSignedUploadUrl: {
-        useMutation: () => ({ mutateAsync: getSignedUploadUrlMock }),
+      beginMobileRecordingUpload: {
+        useMutation: () => ({ mutateAsync: beginMobileRecordingUploadMock }),
+      },
+      claimLegacyMobileRecordingUpload: {
+        useMutation: () => ({ mutateAsync: claimLegacyMobileRecordingUploadMock }),
       },
       markUploadedAndProcess: {
         useMutation: () => ({ mutateAsync: markUploadedAndProcessMock }),
@@ -188,10 +207,8 @@ describe("useActivitySubmission", () => {
       expect.objectContaining({
         name: "Queued ride",
         executionManifest,
-        acceptedArtifact: expect.objectContaining({
-          sha256: "a".repeat(64),
-          path: "activities/profile-1/activity.fit",
-        }),
+        artifactSource: "uploadedArtifact",
+        uploadedArtifact: { ingestionId: "ingestion-1" },
         source: "mobile_recording",
       }),
     );
@@ -247,7 +264,7 @@ describe("useActivitySubmission", () => {
 
     expect(loadJobMock).toHaveBeenCalledWith("session-1", "profile-1");
     expect(createFromRecordingSummaryMock).not.toHaveBeenCalled();
-    expect(getSignedUploadUrlMock).not.toHaveBeenCalled();
+    expect(beginMobileRecordingUploadMock).not.toHaveBeenCalled();
     expect(uploadToSignedUrlMock).not.toHaveBeenCalled();
     expect(markUploadedAndProcessMock).not.toHaveBeenCalled();
     await waitFor(() => expect(result.current.isSuccess).toBe(true));

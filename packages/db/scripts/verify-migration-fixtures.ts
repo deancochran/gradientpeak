@@ -293,7 +293,172 @@ async function main() {
             );
         `);
       }
+      const isMobileRecordingClaimMigration =
+        file === "20260724143824_add_mobile_recording_upload_claim.sql";
+      if (isMobileRecordingClaimMigration) {
+        await target.query(`
+          insert into public.activity_file_ingestions (
+            id, profile_id, source, operation_key, status, claim_token, lease_expires_at
+          ) values
+            (
+              '24242424-2424-4424-8424-242424242424',
+              '22222222-2222-4222-8222-222222222222',
+              'mobile_recording',
+              'mobile-recording:upgrade-sentinel',
+              'pending_upload',
+              null,
+              null
+            ),
+            (
+              '25252525-2525-4525-8525-252525252525',
+              '22222222-2222-4222-8222-222222222222',
+              'manual_import',
+              'manual-import:legacy-unclaimed-processing',
+              'processing',
+              null,
+              null
+            ),
+            (
+              '26262626-2626-4626-8626-262626262626',
+              '22222222-2222-4222-8222-222222222222',
+              'provider_sync',
+              'provider-sync:legacy-nonprocessing-lease',
+              'pending_upload',
+              '27272727-2727-4727-8727-272727272727',
+              clock_timestamp() + interval '5 minutes'
+            )
+        `);
+      }
       await applySqlFile(target, resolve(migrationDirectory, file));
+      if (isMobileRecordingClaimMigration) {
+        const migratedClaim = await target.query<{
+          claim_token: string | null;
+          expected_sha256: string | null;
+          id: string;
+          status: string;
+          staging_cleanup_pending: boolean;
+        }>(`
+          select id, status, claim_token, expected_sha256, staging_cleanup_pending
+          from public.activity_file_ingestions
+          where id in (
+            '24242424-2424-4424-8424-242424242424',
+            '25252525-2525-4525-8525-252525252525',
+            '26262626-2626-4626-8626-262626262626'
+          )
+          order by id
+        `);
+        const [claim, unclaimedProcessing, nonProcessingLease] = migratedClaim.rows;
+        if (
+          !claim ||
+          claim.expected_sha256 !== null ||
+          claim.staging_cleanup_pending !== false ||
+          unclaimedProcessing?.status !== "processing" ||
+          unclaimedProcessing.claim_token !== null ||
+          nonProcessingLease?.status !== "pending_upload" ||
+          nonProcessingLease.claim_token === null
+        ) {
+          throw new Error(
+            "mobile recording upload claim migration did not preserve legacy ingestion state",
+          );
+        }
+        const transitionalConstraints = await target.query<{
+          convalidated: boolean;
+          conname: string;
+        }>(
+          `select conname, convalidated
+           from pg_constraint
+           where conrelid = 'public.activity_file_ingestions'::regclass
+             and conname in (
+               'activity_file_ingestions_expected_size_check',
+               'activity_file_ingestions_accepted_size_check',
+               'activity_file_ingestions_expected_hash_check',
+               'activity_file_ingestions_accepted_hash_check',
+               'activity_file_ingestions_staging_metadata_check',
+               'activity_file_ingestions_accepted_metadata_check',
+               'activity_file_ingestions_claim_artifact_match_check',
+               'activity_file_ingestions_cleanup_state_check',
+               'activity_file_ingestions_processing_claim_check'
+             )`,
+        );
+        if (
+          transitionalConstraints.rows.length !== 9 ||
+          transitionalConstraints.rows.some((constraint) => constraint.convalidated)
+        ) {
+          throw new Error("mobile recording upload claim constraints must remain NOT VALID");
+        }
+        let invalidProcessingRejected = false;
+        try {
+          await target.query(`
+            insert into public.activity_file_ingestions (
+              profile_id, source, operation_key, status, claim_token, lease_expires_at
+            ) values (
+              '22222222-2222-4222-8222-222222222222',
+              'mobile_recording',
+              'mobile-recording:invalid-processing-claim',
+              'processing',
+              null,
+              null
+            )
+          `);
+        } catch {
+          invalidProcessingRejected = true;
+        }
+        if (!invalidProcessingRejected) {
+          throw new Error("strict processing-state constraint did not enforce new rows");
+        }
+        const transitionedLegacyLease = await target.query<{
+          claim_token: string | null;
+          lease_expires_at: Date | null;
+          status: string;
+        }>(`
+          update public.activity_file_ingestions
+          set
+            status = 'uploaded',
+            claim_token = null,
+            lease_expires_at = null,
+            updated_at = clock_timestamp()
+          where id = '26262626-2626-4626-8626-262626262626'
+            and profile_id = '22222222-2222-4222-8222-222222222222'
+            and status = 'pending_upload'
+          returning status, claim_token, lease_expires_at
+        `);
+        const transitioned = transitionedLegacyLease.rows[0];
+        if (
+          transitioned?.status !== "uploaded" ||
+          transitioned.claim_token !== null ||
+          transitioned.lease_expires_at !== null
+        ) {
+          throw new Error(
+            "legacy non-processing claim did not converge during uploaded transition",
+          );
+        }
+        const reclaimedLegacyProcessing = await target.query<{
+          claim_token: string | null;
+          lease_expires_at: Date | null;
+          status: string;
+        }>(`
+          update public.activity_file_ingestions
+          set
+            status = 'processing',
+            claim_token = '28282828-2828-4828-8828-282828282828',
+            lease_expires_at = clock_timestamp() + interval '5 minutes',
+            attempt_count = attempt_count + 1,
+            updated_at = clock_timestamp()
+          where id = '25252525-2525-4525-8525-252525252525'
+            and profile_id = '22222222-2222-4222-8222-222222222222'
+            and status = 'processing'
+            and (lease_expires_at is null or lease_expires_at <= clock_timestamp())
+          returning status, claim_token, lease_expires_at
+        `);
+        const reclaimed = reclaimedLegacyProcessing.rows[0];
+        if (
+          reclaimed?.status !== "processing" ||
+          reclaimed.claim_token !== "28282828-2828-4828-8828-282828282828" ||
+          !reclaimed.lease_expires_at
+        ) {
+          throw new Error("legacy processing claim did not converge to a fresh fenced lease");
+        }
+      }
       await target.query(
         "insert into supabase_migrations.schema_migrations (version, name) values ($1, $2)",
         [file.slice(0, 14), file.slice(15, -4)],

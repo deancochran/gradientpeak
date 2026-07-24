@@ -29,6 +29,8 @@ type IngestionRow = {
   failed_at: Date | null;
   created_at: Date;
   updated_at: Date;
+  claim_token?: string | null;
+  lease_expires_at?: Date | null;
 };
 
 function collectStringValues(value: unknown, seen = new WeakSet<object>()): string[] {
@@ -162,6 +164,8 @@ function row(overrides: Partial<IngestionRow> = {}): IngestionRow {
     failed_at: null,
     created_at: now,
     updated_at: now,
+    claim_token: null,
+    lease_expires_at: null,
     ...overrides,
   };
 }
@@ -252,6 +256,7 @@ describe("activity file ingestion state service", () => {
     const ready = await markReady(fake.db as any, {
       id: "ingestion-1",
       profileId: "profile-1",
+      claimToken: "11111111-1111-4111-8111-111111111111",
       now,
     });
 
@@ -268,6 +273,7 @@ describe("activity file ingestion state service", () => {
     const failed = await markFailed(fake.db as any, {
       id: "ingestion-1",
       profileId: "profile-1",
+      claimToken: "11111111-1111-4111-8111-111111111111",
       errorCode: "parse_error",
       errorMessage: "Could not parse FIT file",
       now,
@@ -281,6 +287,43 @@ describe("activity file ingestion state service", () => {
       last_error_message: "Could not parse FIT file",
       updated_at: now,
     });
+  });
+
+  it("clears a retained stale claim when moving a non-processing ingestion to uploaded", async () => {
+    const fake = createFakeDb([
+      row({
+        status: "pending_upload",
+        claim_token: "11111111-1111-4111-8111-111111111111",
+        lease_expires_at: new Date("2026-02-03T04:10:06.000Z"),
+      }),
+    ]);
+
+    const uploaded = await markUploaded(fake.db as any, {
+      id: "ingestion-1",
+      profileId: "profile-1",
+    });
+
+    expect(uploaded).toMatchObject({
+      status: "uploaded",
+      claim_token: null,
+      lease_expires_at: null,
+    });
+  });
+
+  it("reclaims a retained processing ingestion without a lease by atomically issuing a fresh claim", async () => {
+    const fake = createFakeDb([
+      row({ status: "processing", claim_token: null, lease_expires_at: null }),
+    ]);
+
+    const claimed = await markProcessing(fake.db as any, {
+      id: "ingestion-1",
+      profileId: "profile-1",
+      now: new Date("2026-02-03T04:05:06.000Z"),
+    });
+
+    expect(claimed).toMatchObject({ status: "processing", attempt_count: 1 });
+    expect(claimed.claim_token).toMatch(/^[0-9a-f-]{36}$/);
+    expect(claimed.lease_expires_at).toEqual(new Date("2026-02-03T04:10:06.000Z"));
   });
 
   it("throws BAD_REQUEST and does not update invalid transitions", async () => {

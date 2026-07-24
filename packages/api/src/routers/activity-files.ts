@@ -18,6 +18,7 @@ import {
   activityArtifactSemanticsSchema,
   decodedActivityArtifactSchema,
 } from "@repo/core/activity-artifacts";
+import { MAX_ACTIVITY_FILE_SIZE_BYTES } from "@repo/core/activity-files";
 import {
   type ActivityFileType,
   inferActivityFileType,
@@ -38,19 +39,32 @@ import {
   analyzeParsedActivityFile,
   type ParsedActivityFileForAnalysis,
 } from "../application/activity-file-ingestion/analyze-parsed-activity-file";
+import {
+  beginMobileRecordingUploadClaim,
+  claimLegacyMobileRecordingUpload,
+  drainPendingMobileRecordingStagingCleanup,
+  MobileRecordingUploadError,
+} from "../application/activity-file-ingestion/mobile-recording-upload";
 import { processManualActivityFile } from "../application/activity-file-ingestion/process-manual-activity-file";
 import { processUploadedActivityFile } from "../application/activity-file-ingestion/process-uploaded-activity-file";
+import {
+  beginMobileRecordingUploadInputSchema,
+  beginMobileRecordingUploadOutputSchema,
+  claimLegacyMobileRecordingUploadInputSchema,
+  claimLegacyMobileRecordingUploadOutputSchema,
+} from "../contracts/recording-submission";
 import { getRequiredDb } from "../db";
 import { createActivityAnalysisStore } from "../infrastructure/repositories/drizzle-activity-analysis-repository";
 import { resolveActivityContextAsOf } from "../lib/activity-analysis/context";
 import { logger } from "../lib/logger";
-import { getApiStorageService } from "../storage-service";
+import { getActivityArtifactStorageService, getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 const storageService = getApiStorageService();
+const activityArtifactStorage = getActivityArtifactStorageService();
 
 const ACTIVITY_FILE_BUCKET = "activity-files";
-const ACTIVITY_FILE_SIZE_LIMIT = 50 * 1024 * 1024; // 50MB
+const ACTIVITY_FILE_SIZE_LIMIT = MAX_ACTIVITY_FILE_SIZE_BYTES;
 const ACTIVITY_FILE_BUCKET_SIZE_LIMIT = "50MB";
 const ACTIVITY_FILE_TYPES = [".fit", ".gpx", ".tcx"];
 const activityFileTypeSchema = z.enum(["fit", "gpx", "tcx"]);
@@ -90,16 +104,6 @@ const activityStoragePathSchema = z
   .refine((value) => !value.startsWith("/") && !value.includes(".."), {
     message: "File path must be a relative storage path",
   });
-
-const blobLikeSchema = z
-  .object({
-    size: z.number().finite().nonnegative(),
-    type: z.string().optional(),
-    arrayBuffer: z.custom<() => Promise<ArrayBuffer>>((value) => typeof value === "function", {
-      message: "Downloaded file is missing arrayBuffer()",
-    }),
-  })
-  .strip();
 
 const activityFileParserRecordSchema = z
   .object({
@@ -285,17 +289,6 @@ function isOwnedActivityFilePath(userId: string, filePath: string): boolean {
   return filePath.startsWith(`${userId}/`) || filePath.startsWith(`activities/${userId}/`);
 }
 
-type BlobLike = Blob & { arrayBuffer: () => Promise<ArrayBuffer> };
-
-function requireBlobLike(blob: unknown): BlobLike {
-  return blobLikeSchema.parse(blob) && (blob as BlobLike);
-}
-
-async function toBufferFromBlobLike(blob: BlobLike): Promise<Buffer> {
-  const arrayBuffer = await blob.arrayBuffer.call(blob);
-  return Buffer.from(arrayBuffer);
-}
-
 async function canAccessActivityStreams(
   db: DbClient,
   activityId: string,
@@ -453,26 +446,36 @@ async function readStoredActivityFile(input: {
   activityFilePath: string;
   removeOnParseFailure: boolean;
 }) {
-  const { data: activityFile, error: downloadError } = await storageService.storage
-    .from(ACTIVITY_FILE_BUCKET)
-    .download(input.activityFilePath);
-
-  if (downloadError || !activityFile) {
+  let activityFile: Uint8Array;
+  let contentType: string;
+  try {
+    const result = await activityArtifactStorage.readObjectBounded({
+      bucket: ACTIVITY_FILE_BUCKET,
+      path: input.activityFilePath,
+      maxBytes: MAX_ACTIVITY_FILE_SIZE_BYTES,
+    });
+    activityFile = result.data;
+    contentType = result.contentType;
+  } catch (error) {
     if (input.removeOnParseFailure) {
       await storageService.storage.from(ACTIVITY_FILE_BUCKET).remove([input.activityFilePath]);
     }
 
     throw new TRPCError({
       code: "INTERNAL_SERVER_ERROR",
-      message: `Failed to download activity file from storage: ${downloadError?.message || "Unknown error"}`,
-      cause: downloadError,
+      message: "Failed to download activity file from storage",
+      cause: error,
     });
   }
 
   try {
-    const activityFileBlob = requireBlobLike(activityFile);
-    const buffer = await toBufferFromBlobLike(activityFileBlob);
-    return { activityFile, data: buffer };
+    return {
+      activityFile: {
+        size: activityFile.byteLength,
+        ...(contentType === "" ? {} : { type: contentType }),
+      },
+      data: activityFile,
+    };
   } catch (parseError) {
     if (input.removeOnParseFailure) {
       await storageService.storage.from(ACTIVITY_FILE_BUCKET).remove([input.activityFilePath]);
@@ -553,6 +556,7 @@ async function upsertExistingActivityFileEnrichment(
       provider: input.ingestion.provider,
       externalId: input.ingestion.external_id,
       operationKey: input.ingestion.operation_key,
+      ingestionId: input.ingestion.id,
       claimToken: input.claimToken,
       artifact: input.artifact,
     },
@@ -560,6 +564,116 @@ async function upsertExistingActivityFileEnrichment(
 }
 
 export const activityFilesRouter = createTRPCRouter({
+  beginMobileRecordingUpload: protectedProcedure
+    .input(beginMobileRecordingUploadInputSchema)
+    .output(beginMobileRecordingUploadOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const claim = await beginMobileRecordingUploadClaim(getRequiredDb(ctx), {
+          profileId: ctx.session.user.id,
+          ...input,
+        });
+        if (claim.status === "ready") {
+          return beginMobileRecordingUploadOutputSchema.parse(claim);
+        }
+
+        await ensureActivityFilesBucketExists();
+        const { data, error } = await storageService.storage
+          .from(ACTIVITY_FILE_BUCKET)
+          .createSignedUploadUrl(claim.stagingPath, { upsert: true });
+        if (error || !data) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to create recording upload URL",
+          });
+        }
+        const signedUpload = signedUploadUrlDataSchema.parse(data);
+        return beginMobileRecordingUploadOutputSchema.parse({
+          status: claim.status,
+          ingestionId: claim.ingestionId,
+          activityId: claim.activityId,
+          byteSize: claim.byteSize,
+          sha256: claim.sha256,
+          format: claim.format,
+          mediaType: claim.mediaType,
+          signedUrl: signedUpload.signedUrl,
+          token: signedUpload.token,
+        });
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (error instanceof MobileRecordingUploadError) {
+          throw new TRPCError({
+            code:
+              error.code === "claim_conflict" || error.code === "claim_lost"
+                ? "CONFLICT"
+                : error.code === "claim_not_found"
+                  ? "NOT_FOUND"
+                  : error.code === "claim_invalid" || error.code === "expected_artifact_mismatch"
+                    ? "BAD_REQUEST"
+                    : "INTERNAL_SERVER_ERROR",
+            message: error.message,
+            cause: error,
+          });
+        }
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to create recording upload claim",
+          cause: error,
+        });
+      }
+    }),
+  claimLegacyMobileRecordingUpload: protectedProcedure
+    .input(claimLegacyMobileRecordingUploadInputSchema)
+    .output(claimLegacyMobileRecordingUploadOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return claimLegacyMobileRecordingUploadOutputSchema.parse(
+          await claimLegacyMobileRecordingUpload(
+            getRequiredDb(ctx),
+            getActivityArtifactStorageService(),
+            { profileId: ctx.session.user.id, ...input },
+          ),
+        );
+      } catch (error) {
+        if (error instanceof MobileRecordingUploadError) {
+          throw new TRPCError({
+            code:
+              error.code === "claim_conflict" || error.code === "claim_lost"
+                ? "CONFLICT"
+                : error.code === "claim_not_found"
+                  ? "NOT_FOUND"
+                  : error.code === "claim_invalid" || error.code === "expected_artifact_mismatch"
+                    ? "BAD_REQUEST"
+                    : "INTERNAL_SERVER_ERROR",
+            message: error.message,
+            cause: error,
+          });
+        }
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to claim legacy recording upload",
+          cause: error,
+        });
+      }
+    }),
+  retryPendingMobileRecordingCleanup: protectedProcedure
+    .input(z.object({ limit: z.number().int().min(1).max(25).default(10) }).strict())
+    .output(
+      z
+        .object({
+          attempted: z.number().int().nonnegative(),
+          cleaned: z.number().int().nonnegative(),
+          pending: z.number().int().nonnegative(),
+        })
+        .strict(),
+    )
+    .mutation(async ({ ctx, input }) =>
+      drainPendingMobileRecordingStagingCleanup(
+        getRequiredDb(ctx),
+        getActivityArtifactStorageService(),
+        { profileId: ctx.session.user.id, limit: input.limit },
+      ),
+    ),
   /**
    * Get a signed URL for uploading an activity file
    * This allows the client to upload directly to storage without passing the session token
@@ -676,7 +790,7 @@ export const activityFilesRouter = createTRPCRouter({
             fileType: getActivityFileTypeFromPath(activityFilePath),
           },
           {
-            storage: storageService,
+            storage: activityArtifactStorage,
             readStoredActivityFile,
             decodeActivityFile,
             getProfileDefaultContentVisibility,
@@ -836,7 +950,6 @@ export const activityFilesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const { activityId } = input;
       const userId = ctx.session?.user?.id;
-      const supabase = storageService;
       const db = getRequiredDb(ctx);
 
       if (!userId) {
@@ -859,22 +972,23 @@ export const activityFilesRouter = createTRPCRouter({
           });
         }
 
-        // Download activity file from storage
-        const { data: activityFile, error: downloadError } = await supabase.storage
-          .from(ACTIVITY_FILE_BUCKET)
-          .download(access.activityFilePath);
-
-        if (downloadError || !activityFile) {
+        let buffer: Uint8Array;
+        try {
+          const result = await activityArtifactStorage.readObjectBounded({
+            bucket: ACTIVITY_FILE_BUCKET,
+            path: access.activityFilePath,
+            maxBytes: MAX_ACTIVITY_FILE_SIZE_BYTES,
+          });
+          buffer = result.data;
+        } catch (error) {
           throw new TRPCError({
             code: "NOT_FOUND",
             message: "Activity file not found",
-            cause: downloadError,
+            cause: error,
           });
         }
 
         // Parse activity file
-        const activityFileBlob = requireBlobLike(activityFile);
-        const buffer = await toBufferFromBlobLike(activityFileBlob);
         const parsedData = parsedActivityFileSchema.parse(
           parseActivityFile({
             data: buffer,

@@ -108,6 +108,9 @@ export default function IntegrationsScreen() {
                 ? `Provider error: ${errorDetail}`
                 : "Token exchange failed.";
               break;
+            case "provider_identity_failed":
+              errorMessage = "Could not verify the provider account.";
+              break;
             case "invalid_provider":
               errorMessage = "Provider unavailable.";
               break;

@@ -1,9 +1,10 @@
 import type { ContentVisibility, StandardActivity } from "@repo/core";
+import { MAX_ACTIVITY_FILE_SIZE_BYTES } from "@repo/core/activity-files";
 import { activities, profiles } from "@repo/db";
 import { and, eq } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 import type { ImportedActivityCreateInput } from "../../lib/provider-sync/imported-activity";
-import { getApiStorageService } from "../../storage-service";
+import { getActivityArtifactStorageService } from "../../storage-service";
 import {
   activityArtifactId,
   providerActivityId,
@@ -62,14 +63,12 @@ export async function submitImportedActivityArtifact(
       input.activity.provider,
       input.activity.externalId,
     );
-  const storage = getApiStorageService();
-  const { data, error } = await storage.storage
-    .from("activity-files")
-    .download(input.activity.activityFilePath);
-  if (error || !data) {
-    throw new Error(`Failed to load staged provider artifact: ${error?.message ?? "not found"}`);
-  }
-  const bytes = new Uint8Array(await data.arrayBuffer());
+  const storage = getActivityArtifactStorageService();
+  const { data: bytes } = await storage.readObjectBounded({
+    bucket: "activity-files",
+    path: input.activity.activityFilePath,
+    maxBytes: MAX_ACTIVITY_FILE_SIZE_BYTES,
+  });
   const promoted = await promoteActivityArtifact(storage, {
     profileId: input.activity.profileId,
     bucket: "activity-files",

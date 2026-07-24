@@ -1,13 +1,14 @@
 import React from "react";
 
 import { createHost } from "../../../../test/mock-components";
-import { fireEvent, renderNative, screen } from "../../../../test/render-native";
+import { act, fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const backMock = jest.fn();
 const refetchMock = jest.fn();
 let integrationOverviewErrorMock: Error | null = null;
 let integrationOverviewMock: unknown[] | undefined;
 let integrationOverviewHasCachedDataMock = false;
+let deepLinkHandlerMock: ((event: { url: string }) => void) | null = null;
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -38,7 +39,10 @@ jest.mock("expo-constants", () => ({
 
 jest.mock("expo-linking", () => ({
   __esModule: true,
-  addEventListener: jest.fn(() => ({ remove: jest.fn() })),
+  addEventListener: jest.fn((_event: string, handler: (event: { url: string }) => void) => {
+    deepLinkHandlerMock = handler;
+    return { remove: jest.fn() };
+  }),
   createURL: jest.fn(() => "gradientpeak-dev://integrations"),
 }));
 
@@ -277,6 +281,7 @@ describe("integrations screen", () => {
     integrationOverviewErrorMock = null;
     integrationOverviewMock = undefined;
     integrationOverviewHasCachedDataMock = false;
+    deepLinkHandlerMock = null;
   });
 
   it("renders compact provider cards with one action", () => {
@@ -337,5 +342,18 @@ describe("integrations screen", () => {
     expect(screen.getByTestId("integration-provider-strava")).toBeTruthy();
     expect(screen.getByTestId("integration-disconnect-strava")).toBeTruthy();
     expect(screen.queryByTestId("integration-provider-fallback-strava")).toBeNull();
+  });
+
+  it("shows non-sensitive copy for a provider identity callback failure", () => {
+    renderNative(<IntegrationsScreen />);
+
+    act(() => {
+      deepLinkHandlerMock?.({
+        url: "gradientpeak-dev://integrations?error=provider_identity_failed&error_detail=provider-account-42",
+      });
+    });
+
+    expect(screen.getAllByText("Could not verify the provider account.").length).toBeTruthy();
+    expect(screen.queryByText("provider-account-42")).toBeNull();
   });
 });

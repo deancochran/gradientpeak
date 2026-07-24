@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   submitActivity: vi.fn(),
   cleanupActivityArtifactStaging: vi.fn(),
   promoteActivityArtifact: vi.fn(),
-  download: vi.fn(),
+  readObjectBounded: vi.fn(),
 }));
 
 vi.mock("./analyze-parsed-activity-file", () => ({
@@ -24,7 +24,10 @@ vi.mock("./artifact-storage", () => ({
   promoteActivityArtifact: mocks.promoteActivityArtifact,
 }));
 vi.mock("../../storage-service", () => ({
-  getApiStorageService: () => ({ storage: { from: () => ({ download: mocks.download }) } }),
+  getActivityArtifactStorageService: () => ({
+    storage: { from: () => ({}) },
+    readObjectBounded: mocks.readObjectBounded,
+  }),
 }));
 
 import { submitImportedActivityArtifact } from "./submit-imported-activity-artifact";
@@ -34,10 +37,7 @@ type DbClient = ReturnType<typeof getRequiredDb>;
 describe("submitImportedActivityArtifact", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.download.mockResolvedValue({
-      data: { arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer },
-      error: null,
-    });
+    mocks.readObjectBounded.mockResolvedValue({ data: new Uint8Array([1, 2, 3]), contentType: "" });
     mocks.promoteActivityArtifact.mockResolvedValue({
       sha256: "a".repeat(64),
       byteSize: 123,

@@ -77,51 +77,104 @@ async function runActivitySubmissionQueueJobOnce(
   if (job.status === "complete") return job;
 
   try {
-    if (!job.remoteFilePath) {
+    const recordingSessionId = job.draft.recordingSessionId ?? job.sessionId ?? job.artifactId;
+    job = activitySubmissionQueueJobSchema.parse({
+      ...job,
+      draft: { ...job.draft, recordingSessionId },
+    });
+
+    if (!job.artifactSha256 || !job.localActivityFileSize) {
       job = await persistJobProgress(job, "uploading", now, deps);
       const artifactMetadata = await deps.getLocalArtifactMetadata(job.localActivityFilePath);
-      const signedUrl = await deps.getSignedUploadUrl({
-        fileName: getFileName(job.localActivityFilePath),
-        fileSize: artifactMetadata.byteSize,
+      job = await persistJobProgress(job, "uploading", now, deps, {
+        localActivityFileSize: artifactMetadata.byteSize,
+        artifactSha256: artifactMetadata.sha256,
+      });
+    }
+
+    if (
+      job.remoteFilePath &&
+      job.artifactSha256 &&
+      job.localActivityFileSize &&
+      !job.uploadCompletedAt &&
+      !job.activityId
+    ) {
+      try {
+        const legacyClaim = await deps.claimLegacyMobileRecordingUpload({
+          recordingSessionId,
+          stagingPath: job.remoteFilePath,
+          byteSize: job.localActivityFileSize,
+          sha256: job.artifactSha256,
+          format: getFileType(job.localActivityFilePath),
+        });
+        if (job.ingestionId && job.ingestionId !== legacyClaim.ingestionId) {
+          throw new Error("Legacy recording upload claim changed during retry");
+        }
+        if (legacyClaim.status === "ready") {
+          job = await persistJobProgress(job, "creating_activity", now, deps, {
+            activityId: legacyClaim.activityId,
+            ingestionId: legacyClaim.ingestionId,
+            uploadCompletedAt: now(),
+          });
+          return persistJobProgress(job, "complete", now, deps);
+        }
+        job = await persistJobProgress(job, "uploading", now, deps, {
+          ingestionId: legacyClaim.ingestionId,
+          uploadCompletedAt: now(),
+        });
+      } catch {
+        // The legacy object may have expired or predate strict ownership metadata.
+        // Fall back to re-uploading the retained local artifact through a new URL.
+      }
+    }
+
+    if (!job.uploadCompletedAt && !job.activityId) {
+      if (!job.artifactSha256 || !job.localActivityFileSize) {
+        throw new Error("Recording artifact metadata is incomplete");
+      }
+      const fileType = getFileType(job.localActivityFilePath);
+      const uploadClaim = await deps.beginMobileRecordingUpload({
+        recordingSessionId,
+        byteSize: job.localActivityFileSize,
+        sha256: job.artifactSha256,
+        format: fileType,
+      });
+      if (job.ingestionId && job.ingestionId !== uploadClaim.ingestionId) {
+        throw new Error("Recording upload claim changed during retry");
+      }
+      if (uploadClaim.status === "ready") {
+        job = await persistJobProgress(job, "creating_activity", now, deps, {
+          activityId: uploadClaim.activityId,
+          ingestionId: uploadClaim.ingestionId,
+          uploadCompletedAt: now(),
+        });
+        return persistJobProgress(job, "complete", now, deps);
+      }
+
+      job = await persistJobProgress(job, "uploading", now, deps, {
+        ingestionId: uploadClaim.ingestionId,
       });
       const uploadResult = await deps.uploadToSignedUrl(
         job.localActivityFilePath,
-        signedUrl.signedUrl,
+        uploadClaim.signedUrl,
       );
-
       if (uploadResult && !uploadResult.success) {
         throw new Error(uploadResult.error || "Failed to upload activity file");
       }
-
       job = await persistJobProgress(job, "uploading", now, deps, {
-        remoteFilePath: signedUrl.filePath,
-        localActivityFileSize: artifactMetadata.byteSize,
-        artifactSha256: artifactMetadata.sha256,
+        uploadCompletedAt: now(),
       });
     }
 
-    if (job.remoteFilePath && (!job.artifactSha256 || !job.localActivityFileSize)) {
-      const artifactMetadata = await deps.getLocalArtifactMetadata(job.localActivityFilePath);
-      job = await persistJobProgress(job, "uploading", now, deps, {
-        artifactSha256: artifactMetadata.sha256,
-        localActivityFileSize: artifactMetadata.byteSize,
-      });
-    }
-
-    if (!job.activityId || !job.ingestionId) {
-      if (!job.remoteFilePath || !job.artifactSha256 || !job.localActivityFileSize) {
+    if (!job.activityId) {
+      if (!job.ingestionId || !job.artifactSha256 || !job.localActivityFileSize) {
         throw new Error("Uploaded activity artifact metadata is incomplete");
       }
-      const acceptedArtifact = {
-        path: job.remoteFilePath,
-        sha256: job.artifactSha256,
-        byteSize: job.localActivityFileSize,
-      };
+      const ingestionId = job.ingestionId;
       job = await persistJobProgress(job, "creating_activity", now, deps);
-      const fileType = getFileType(job.localActivityFilePath);
       const created = await deps.createFromRecordingSummary({
         profileId: job.draft.profileId,
-        recordingSessionId: job.draft.recordingSessionId,
+        recordingSessionId,
         name: job.draft.name,
         notes: job.draft.notes,
         is_private: job.draft.is_private,
@@ -130,20 +183,8 @@ async function runActivitySubmissionQueueJobOnce(
         finishedAt: job.draft.finishedAt,
         activityPlanId: job.draft.activityPlanId,
         executionManifest: job.executionManifest,
-        acceptedArtifact: {
-          sha256: acceptedArtifact.sha256,
-          byteSize: acceptedArtifact.byteSize,
-          bucket: "activity-files",
-          path: acceptedArtifact.path,
-          mediaType:
-            fileType === "fit"
-              ? "application/vnd.ant.fit"
-              : fileType === "gpx"
-                ? "application/gpx+xml"
-                : "application/vnd.garmin.tcx+xml",
-          format: fileType,
-          originalName: getFileName(job.localActivityFilePath),
-        },
+        artifactSource: "uploadedArtifact",
+        uploadedArtifact: { ingestionId },
         summary: {
           distanceMeters: Math.round(job.draft.distanceMeters),
           calories: job.draft.calories ?? null,
@@ -153,6 +194,9 @@ async function runActivitySubmissionQueueJobOnce(
 
       if (!created.ingestion?.id) {
         throw new Error("Activity file ingestion was not returned");
+      }
+      if (created.ingestion.id !== ingestionId) {
+        throw new Error("Accepted activity returned a different upload claim");
       }
 
       job = await persistJobProgress(job, "creating_activity", now, deps, {
@@ -166,6 +210,7 @@ async function runActivitySubmissionQueueJobOnce(
     return persistJobProgress(job, "failed", now, deps, {
       attempts: job.attempts + 1,
       lastError: getErrorMessage(error),
+      ...(job.activityId ? {} : { uploadCompletedAt: undefined }),
     });
   }
 }

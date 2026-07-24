@@ -1321,6 +1321,22 @@ export const activityFileIngestions = pgTable(
     operation_key: text("operation_key").notNull(),
     claim_token: uuid("claim_token"),
     lease_expires_at: timestamp("lease_expires_at", { withTimezone: true, mode: "date" }),
+    staging_bucket: text("staging_bucket"),
+    staging_path: text("staging_path"),
+    expected_sha256: text("expected_sha256"),
+    expected_byte_size: integer("expected_byte_size"),
+    expected_format: text("expected_format"),
+    expected_media_type: text("expected_media_type"),
+    accepted_sha256: text("accepted_sha256"),
+    accepted_byte_size: integer("accepted_byte_size"),
+    accepted_bucket: text("accepted_bucket"),
+    accepted_path: text("accepted_path"),
+    accepted_media_type: text("accepted_media_type"),
+    accepted_format: text("accepted_format"),
+    uploaded_at: timestamp("uploaded_at", { withTimezone: true, mode: "date" }),
+    staging_cleanup_pending: boolean("staging_cleanup_pending").notNull().default(false),
+    staging_cleaned_at: timestamp("staging_cleaned_at", { withTimezone: true, mode: "date" }),
+    staging_cleanup_error: text("staging_cleanup_error"),
     received_at: timestamp("received_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -1362,6 +1378,42 @@ export const activityFileIngestions = pgTable(
     ),
     check("activity_file_ingestions_operation_key_check", sql`btrim(${table.operation_key}) <> ''`),
     check("activity_file_ingestions_attempt_count_check", sql`${table.attempt_count} >= 0`),
+    check(
+      "activity_file_ingestions_expected_size_check",
+      sql`${table.expected_byte_size} is null or ${table.expected_byte_size} > 0`,
+    ),
+    check(
+      "activity_file_ingestions_accepted_size_check",
+      sql`${table.accepted_byte_size} is null or ${table.accepted_byte_size} > 0`,
+    ),
+    check(
+      "activity_file_ingestions_expected_hash_check",
+      sql`${table.expected_sha256} is null or ${table.expected_sha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "activity_file_ingestions_accepted_hash_check",
+      sql`${table.accepted_sha256} is null or ${table.accepted_sha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "activity_file_ingestions_staging_metadata_check",
+      sql`num_nonnulls(${table.staging_bucket}, ${table.staging_path}, ${table.expected_sha256}, ${table.expected_byte_size}, ${table.expected_format}, ${table.expected_media_type}) in (0, 6) and (${table.staging_bucket} is null or (btrim(${table.staging_bucket}) <> '' and btrim(${table.staging_path}) <> '' and ((${table.expected_format} = 'fit' and ${table.expected_media_type} = 'application/vnd.ant.fit') or (${table.expected_format} = 'gpx' and ${table.expected_media_type} = 'application/gpx+xml') or (${table.expected_format} = 'tcx' and ${table.expected_media_type} = 'application/vnd.garmin.tcx+xml'))))`,
+    ),
+    check(
+      "activity_file_ingestions_accepted_metadata_check",
+      sql`num_nonnulls(${table.accepted_sha256}, ${table.accepted_byte_size}, ${table.accepted_bucket}, ${table.accepted_path}, ${table.accepted_media_type}, ${table.accepted_format}, ${table.uploaded_at}) in (0, 7) and (${table.accepted_sha256} is null or (${table.status} = 'ready' and btrim(${table.accepted_bucket}) <> '' and btrim(${table.accepted_path}) <> '' and ${table.accepted_format} in ('fit', 'gpx', 'tcx') and ${table.accepted_path} = 'artifacts/sha256/' || ${table.profile_id}::text || '/' || ${table.accepted_sha256}))`,
+    ),
+    check(
+      "activity_file_ingestions_claim_artifact_match_check",
+      sql`${table.expected_sha256} is null or ${table.accepted_sha256} is null or (${table.accepted_sha256} = ${table.expected_sha256} and ${table.accepted_byte_size} = ${table.expected_byte_size} and ${table.accepted_bucket} = ${table.staging_bucket} and ${table.accepted_format} = ${table.expected_format} and ${table.accepted_media_type} = ${table.expected_media_type})`,
+    ),
+    check(
+      "activity_file_ingestions_cleanup_state_check",
+      sql`(not ${table.staging_cleanup_pending} or (${table.status} = 'ready' and ${table.staging_path} is not null and ${table.accepted_path} is not null)) and (${table.staging_cleaned_at} is null or (not ${table.staging_cleanup_pending} and ${table.staging_path} is not null)) and (${table.staging_cleanup_error} is null or ${table.staging_cleanup_pending}) and not (${table.staging_cleaned_at} is not null and ${table.staging_cleanup_error} is not null)`,
+    ),
+    check(
+      "activity_file_ingestions_processing_claim_check",
+      sql`(${table.status} = 'processing' and ${table.claim_token} is not null and ${table.lease_expires_at} is not null) or (${table.status} <> 'processing' and ${table.claim_token} is null and ${table.lease_expires_at} is null)`,
+    ),
     index("idx_activity_file_ingestions_activity_profile")
       .on(table.activity_id, table.profile_id)
       .where(sql`${table.activity_id} is not null`),

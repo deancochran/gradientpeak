@@ -30,7 +30,10 @@ export type HandleOAuthCallbackInput = {
 
 export type HandleOAuthCallbackResult = { redirectUrl: string; status: 302 };
 
-const providerIdentifierSchema = z.union([z.string(), z.number()]).nullable().optional();
+const providerIdentifierSchema = z
+  .union([z.string().trim().min(1), z.number().finite().int()])
+  .nullable()
+  .optional();
 const oauthTokenResponseSchema = z
   .object({
     access_token: z.string().trim().min(1),
@@ -58,6 +61,13 @@ export class OAuthTokenExchangeError extends Error {
   }
 }
 
+export class OAuthProviderIdentityError extends Error {
+  constructor() {
+    super("Provider account identity could not be verified");
+    this.name = "OAuthProviderIdentityError";
+  }
+}
+
 function buildRedirectUrl(baseUrl: string, params: Record<string, string | null | undefined>) {
   const redirectUrl = new URL(baseUrl);
   for (const [key, value] of Object.entries(params)) {
@@ -69,6 +79,10 @@ function buildRedirectUrl(baseUrl: string, params: Record<string, string | null 
 function parseOAuthTokenResponse(value: unknown): OAuthTokenResponse {
   const parsed = oauthTokenResponseSchema.safeParse(value);
   if (!parsed.success) {
+    const hasMalformedProviderIdentifier = parsed.error.issues.some((issue) =>
+      ["athlete", "user", "userId", "id"].includes(String(issue.path[0])),
+    );
+    if (hasMalformedProviderIdentifier) throw new OAuthProviderIdentityError();
     throw new OAuthTokenExchangeError("OAuth token response was invalid", "invalid_token_response");
   }
   return parsed.data;
@@ -124,32 +138,40 @@ async function exchangeCodeForTokens(
   return parseOAuthTokenResponse(await response.json());
 }
 
-async function resolveExternalId(provider: PublicIntegrationProvider, tokens: OAuthTokenResponse) {
-  let externalId =
+function resolveTokenExternalId(tokens: OAuthTokenResponse): string | null {
+  const externalId =
     tokens.athlete?.id?.toString() ||
     tokens.user?.id?.toString() ||
     tokens.userId?.toString() ||
     tokens.id?.toString() ||
     null;
-  if (provider === "wahoo" && !externalId) {
-    try {
-      const userResponse = await fetch("https://api.wahooligan.com/v1/user", {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${tokens.access_token}`,
-          "Content-Type": "application/json",
-        },
-      });
-      if (userResponse.ok)
-        externalId = ((await userResponse.json()) as { id: number }).id.toString();
-    } catch (error) {
-      logger.warn("Failed to fetch Wahoo user profile", {
-        provider,
-        errorName: error instanceof Error ? error.name : "unknown",
-      });
-    }
+  return externalId;
+}
+
+const wahooUserProfileSchema = z.object({ id: providerIdentifierSchema }).passthrough();
+
+async function resolveExternalId(provider: PublicIntegrationProvider, tokens: OAuthTokenResponse) {
+  const tokenExternalId = resolveTokenExternalId(tokens);
+  if (tokenExternalId) return tokenExternalId;
+  if (provider !== "wahoo") throw new OAuthProviderIdentityError();
+
+  try {
+    const userResponse = await fetch("https://api.wahooligan.com/v1/user", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${tokens.access_token}`,
+        "Content-Type": "application/json",
+      },
+    });
+    if (!userResponse.ok) throw new OAuthProviderIdentityError();
+
+    const profile = wahooUserProfileSchema.safeParse(await userResponse.json());
+    if (!profile.success || profile.data.id == null) throw new OAuthProviderIdentityError();
+    return profile.data.id.toString();
+  } catch (error) {
+    if (error instanceof OAuthProviderIdentityError) throw error;
+    throw new OAuthProviderIdentityError();
   }
-  return externalId || "unknown";
 }
 
 export async function handleOAuthCallback({
@@ -213,6 +235,18 @@ export async function handleOAuthCallback({
     tokens = await exchangeCodeForTokens(provider, code, state);
     externalId = await resolveExternalId(provider, tokens);
   } catch (caughtError) {
+    if (caughtError instanceof OAuthProviderIdentityError) {
+      logger.warn("OAuth callback provider identity validation failed", { provider });
+      await cleanupState();
+      return {
+        redirectUrl: buildRedirectUrl(mobileRedirectUri, {
+          error: "provider_identity_failed",
+          integration: "failed",
+          provider,
+        }),
+        status: 302,
+      };
+    }
     logger.warn("OAuth callback token exchange failed", {
       provider,
       errorName: caughtError instanceof Error ? caughtError.name : "unknown",
