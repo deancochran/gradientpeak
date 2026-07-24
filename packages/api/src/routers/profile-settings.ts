@@ -8,7 +8,7 @@ import {
 } from "../application/profile-settings/profileTrainingSettings";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { assertProfileAccess } from "./account/profile-access";
+import { assertProfileAccess, withProfileWriteAccess } from "./account/profile-access";
 
 const profileIdSchema = z.string().uuid();
 
@@ -79,12 +79,11 @@ export const profileSettingsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
-      await assertProfileAccess({
+      const data = await withProfileWriteAccess({
         ctx,
         profileId: input.profile_id,
+        write: (tx) => upsertProfileTrainingSettings(tx, input),
       });
-
-      const data = await upsertProfileTrainingSettings(db, input);
 
       if (!data) {
         throw new TRPCError({

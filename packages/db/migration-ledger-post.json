@@ -93,6 +93,10 @@
     {
       "version": "20260724143824",
       "name": "add_mobile_recording_upload_claim"
+    },
+    {
+      "version": "20260724150000",
+      "name": "harden_coaching_access"
     }
   ]
 }

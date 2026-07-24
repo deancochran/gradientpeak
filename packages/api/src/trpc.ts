@@ -128,7 +128,7 @@ const telemetryProcedure = t.procedure.use(async ({ path, type, next }) => {
 });
 
 export const publicProcedure = telemetryProcedure.use(async ({ ctx, next }) => {
-  const rateLimit = checkApiRateLimit(ctx);
+  const rateLimit = await checkApiRateLimit(ctx);
 
   if (!rateLimit.allowed) {
     throw new TRPCError({

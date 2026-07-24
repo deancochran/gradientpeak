@@ -17,7 +17,7 @@ import { profileGoalWriteDataSchema } from "../application/goals/profile-goal-wr
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
-import { assertProfileAccess } from "./account/profile-access";
+import { assertProfileAccess, withProfileWriteAccess } from "./account/profile-access";
 
 function toSafeDbErrorMessage(error: unknown): string {
   if (!error || typeof error !== "object") {
@@ -171,8 +171,9 @@ async function createProfileGoal(input: {
 async function updateProfileGoal(input: {
   db: ReturnType<typeof getRequiredDb>;
   id: string;
+  profileId: string;
   data: ProfileGoalRecord;
-}): Promise<ProfileGoalRecord> {
+}): Promise<ProfileGoalRecord | null> {
   const [row] = await input.db
     .update(profileGoals)
     .set({
@@ -183,7 +184,7 @@ async function updateProfileGoal(input: {
       target_payload: input.data.target_payload,
       updated_at: new Date(),
     })
-    .where(eq(profileGoals.id, input.id))
+    .where(and(eq(profileGoals.id, input.id), eq(profileGoals.profile_id, input.profileId)))
     .returning({
       id: profileGoals.id,
       profile_id: profileGoals.profile_id,
@@ -194,14 +195,19 @@ async function updateProfileGoal(input: {
       target_payload: profileGoals.target_payload,
     });
 
-  return profileGoalRecordSchema.parse(row);
+  return row ? profileGoalRecordSchema.parse(row) : null;
 }
 
 async function deleteProfileGoal(input: {
   db: ReturnType<typeof getRequiredDb>;
   id: string;
-}): Promise<void> {
-  await input.db.delete(profileGoals).where(eq(profileGoals.id, input.id));
+  profileId: string;
+}): Promise<boolean> {
+  const [row] = await input.db
+    .delete(profileGoals)
+    .where(and(eq(profileGoals.id, input.id), eq(profileGoals.profile_id, input.profileId)))
+    .returning({ id: profileGoals.id });
+  return Boolean(row);
 }
 
 export const goalsRouter = createTRPCRouter({
@@ -276,22 +282,22 @@ export const goalsRouter = createTRPCRouter({
   create: protectedProcedure.input(profileGoalWriteSchema).mutation(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
 
-    await assertProfileAccess({
-      ctx,
-      profileId: input.profile_id,
-    });
-
     try {
-      const createdGoal = await createProfileGoal({
-        db,
-        values: {
-          profile_id: input.profile_id,
-          target_date: input.target_date,
-          title: input.title,
-          priority: input.priority,
-          activity_category: input.activity_category,
-          target_payload: input.target_payload,
-        },
+      const createdGoal = await withProfileWriteAccess({
+        ctx,
+        profileId: input.profile_id,
+        write: (tx) =>
+          createProfileGoal({
+            db: tx,
+            values: {
+              profile_id: input.profile_id,
+              target_date: input.target_date,
+              title: input.title,
+              priority: input.priority,
+              activity_category: input.activity_category,
+              target_payload: input.target_payload,
+            },
+          }),
       });
 
       return {
@@ -329,11 +335,6 @@ export const goalsRouter = createTRPCRouter({
         });
       }
 
-      await assertProfileAccess({
-        ctx,
-        profileId: existingGoal.profile_id,
-      });
-
       const mergedGoal = profileGoalRecordSchema.safeParse({
         ...existingGoal,
         ...input.data,
@@ -348,12 +349,24 @@ export const goalsRouter = createTRPCRouter({
       }
 
       try {
-        const updatedGoal = await updateProfileGoal({
-          db,
-          id: input.id,
-          data: mergedGoal.data,
+        const updatedGoal = await withProfileWriteAccess({
+          ctx,
+          profileId: existingGoal.profile_id,
+          write: (tx) =>
+            updateProfileGoal({
+              db: tx,
+              id: input.id,
+              profileId: existingGoal.profile_id,
+              data: mergedGoal.data,
+            }),
         });
 
+        if (!updatedGoal) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "You are not authorized to access this profile",
+          });
+        }
         return {
           ...updatedGoal,
           cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
@@ -379,16 +392,23 @@ export const goalsRouter = createTRPCRouter({
       });
     }
 
-    await assertProfileAccess({
-      ctx,
-      profileId: existingGoal.profile_id,
-    });
-
     try {
-      await deleteProfileGoal({
-        db,
-        id: input.id,
+      const deleted = await withProfileWriteAccess({
+        ctx,
+        profileId: existingGoal.profile_id,
+        write: (tx) =>
+          deleteProfileGoal({
+            db: tx,
+            id: input.id,
+            profileId: existingGoal.profile_id,
+          }),
       });
+      if (!deleted) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "You are not authorized to access this profile",
+        });
+      }
     } catch (error) {
       rethrowTrpcError(error);
       throw new TRPCError({

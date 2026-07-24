@@ -2,6 +2,7 @@
 import { createTRPCRouter } from "../trpc";
 import {
   onboardingRouter,
+  profileAccessRouter,
   profileMetricsRouter,
   profileSettingsRouter,
   profilesRouter,
@@ -27,6 +28,7 @@ export const appRouter = createTRPCRouter({
 
   onboarding: onboardingRouter,
   profileMetrics: profileMetricsRouter,
+  profileAccess: profileAccessRouter,
   activities: activitiesRouter,
   activityEfforts: activityEffortsRouter,
   activityPlans: activityPlansRouter,

@@ -79,6 +79,10 @@ export type AuthFormError = {
   target: AuthFormErrorTarget;
 };
 
+/** Public recovery acknowledgement used regardless of whether an identity exists. */
+export const passwordRecoveryAcknowledgement =
+  "If an account matches that email address, password reset instructions will arrive shortly.";
+
 export type SignInErrorResult =
   | { type: "verify-email" }
   | { type: "form-error"; error: AuthFormError };
@@ -166,7 +170,7 @@ export function getForgotPasswordFormError(error: unknown): AuthFormError {
   const message = getErrorMessage(error, "Failed to send reset email");
 
   if (message.includes("User not found")) {
-    return { message: "No account found with this email address", target: "email" };
+    return { message: passwordRecoveryAcknowledgement, target: "email" };
   }
 
   if (message.includes("Email rate limit")) {

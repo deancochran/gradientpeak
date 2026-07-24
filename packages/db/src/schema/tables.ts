@@ -1718,6 +1718,24 @@ export const profileTrainingSettings = pgTable("profile_training_settings", {
   updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 });
 
+export const apiRateLimitWindows = pgTable(
+  "api_rate_limit_windows",
+  {
+    key_hash: text("key_hash").notNull(),
+    window_started_at: timestamp("window_started_at", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
+    count: integer("count").notNull(),
+    expires_at: timestamp("expires_at", { withTimezone: true, mode: "date" }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.key_hash, table.window_started_at] }),
+    check("api_rate_limit_windows_count_check", sql`${table.count} > 0`),
+    index("idx_api_rate_limit_windows_expiry").on(table.expires_at),
+  ],
+);
+
 export const profileGoals = pgTable(
   "profile_goals",
   {
@@ -2084,11 +2102,17 @@ export const coachesAthletes = pgTable(
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
+    revoked_at: timestamp("revoked_at", { withTimezone: true, mode: "date" }),
+    revision: integer("revision").default(1).notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.coach_id, table.athlete_id] }),
     index("idx_coaches_athletes_coach_id").on(table.coach_id),
     index("idx_coaches_athletes_athlete_id").on(table.athlete_id),
+    index("idx_coaches_athletes_active_lookup")
+      .on(table.coach_id, table.athlete_id)
+      .where(sql`${table.revoked_at} is null`),
+    check("coaches_athletes_revision_positive", sql`${table.revision} > 0`),
   ],
 );
 

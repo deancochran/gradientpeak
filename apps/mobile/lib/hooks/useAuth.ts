@@ -1,11 +1,7 @@
 // auth-hooks.ts - Separate file for auth hooks that use API
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import {
-  deleteMobileAccount,
-  updateMobileEmail,
-  updateMobilePassword,
-} from "@/lib/auth/account-management";
+import { updateMobileEmail, updateMobilePassword } from "@/lib/auth/account-management";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { api } from "../api";
@@ -111,18 +107,6 @@ export const useAuth = () => {
     store.setProfile,
   ]); // Don't include store methods
 
-  // FIX: Delete account - stable callback
-  const deleteAccount = useCallback(async () => {
-    try {
-      const result = await deleteMobileAccount();
-      if (result.error) throw result.error;
-      await useAuthStore.getState().clearSession();
-    } catch (e) {
-      console.error("Error deleting account:", e);
-      throw e;
-    }
-  }, []); // No dependencies needed
-
   const updatePassword = useCallback(
     async (input: { currentPassword?: string; newPassword: string }) => {
       if (!user?.email) {
@@ -200,7 +184,6 @@ export const useAuth = () => {
     isEmailVerified,
 
     // Actions
-    deleteAccount,
     updateEmail,
     updatePassword,
     completeOnboarding,

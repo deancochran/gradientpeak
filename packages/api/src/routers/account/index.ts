@@ -3,3 +3,4 @@ export { profileMetricsRouter } from "../profile-metrics";
 export { profileSettingsRouter } from "../profile-settings";
 export { profilesRouter } from "../profiles";
 export { assertProfileAccess } from "./profile-access";
+export { profileAccessRouter } from "./profile-access-router";

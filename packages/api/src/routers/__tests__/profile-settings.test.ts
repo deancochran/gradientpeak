@@ -30,55 +30,55 @@ function createDbMock(plan: DbPlan = {}) {
     conflictConfigs: [] as Array<Record<string, unknown>>,
   };
 
-  return {
-    calls,
-    db: {
-      execute: async (query: unknown) => {
-        calls.execute.push(query);
-        return { rows: executeQueue.shift() ?? [] };
-      },
-      select: () => {
-        const builder: any = {
-          from: (table: unknown) => {
-            if (table !== profileTrainingSettings) {
-              throw new Error(`Unexpected table: ${String(table)}`);
-            }
+  const db: any = {
+    transaction: async (callback: (tx: any) => Promise<unknown>) => callback(db),
+    execute: async (query: unknown) => {
+      calls.execute.push(query);
+      return { rows: executeQueue.shift() ?? [] };
+    },
+    select: () => {
+      const builder: any = {
+        from: (table: unknown) => {
+          if (table !== profileTrainingSettings) {
+            throw new Error(`Unexpected table: ${String(table)}`);
+          }
 
-            return builder;
-          },
-          where: () => builder,
-          limit: () => builder,
-          then: (onFulfilled: (value: unknown[]) => unknown) => {
-            calls.select += 1;
-            return Promise.resolve(selectQueue.shift() ?? []).then(onFulfilled);
-          },
-        };
+          return builder;
+        },
+        where: () => builder,
+        limit: () => builder,
+        then: (onFulfilled: (value: unknown[]) => unknown) => {
+          calls.select += 1;
+          return Promise.resolve(selectQueue.shift() ?? []).then(onFulfilled);
+        },
+      };
 
-        return builder;
-      },
-      insert: (table: unknown) => {
-        if (table !== profileTrainingSettings) {
-          throw new Error(`Unexpected table: ${String(table)}`);
-        }
+      return builder;
+    },
+    insert: (table: unknown) => {
+      if (table !== profileTrainingSettings) {
+        throw new Error(`Unexpected table: ${String(table)}`);
+      }
 
-        return {
-          values: (values: Record<string, unknown>) => {
-            calls.insertValues.push(values);
+      return {
+        values: (values: Record<string, unknown>) => {
+          calls.insertValues.push(values);
 
-            return {
-              onConflictDoUpdate: (config: Record<string, unknown>) => {
-                calls.conflictConfigs.push(config);
+          return {
+            onConflictDoUpdate: (config: Record<string, unknown>) => {
+              calls.conflictConfigs.push(config);
 
-                return {
-                  returning: () => Promise.resolve(insertQueue.shift() ?? []),
-                };
-              },
-            };
-          },
-        };
-      },
+              return {
+                returning: () => Promise.resolve(insertQueue.shift() ?? []),
+              };
+            },
+          };
+        },
+      };
     },
   };
+
+  return { calls, db };
 }
 
 function createCaller(params?: { userId?: string; plan?: DbPlan }) {

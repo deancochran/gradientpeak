@@ -1,3 +1,4 @@
+import { passwordRecoveryAcknowledgement } from "@repo/auth/forms";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Form, FormTextField } from "@repo/ui/components/form";
@@ -9,12 +10,7 @@ import React from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
 import { authClient, getPasswordResetCallbackUrl } from "@/lib/auth/client";
-import {
-  applyPendingAuthServerOverride,
-  getAuthFormUnexpectedErrorMessage,
-  mapForgotPasswordError,
-  setAuthFormError,
-} from "@/lib/auth/form-helpers";
+import { applyPendingAuthServerOverride } from "@/lib/auth/form-helpers";
 import { type ForgotPasswordFields, forgotPasswordSchema } from "@/lib/auth/form-schemas";
 import { withAuthRequestTimeout } from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
@@ -62,23 +58,21 @@ export default function ForgotPasswordScreen() {
 
       if (error) {
         logMobileAction("auth.resetPasswordForEmail", "failure", {
-          email: data.email,
-          error: error.message,
+          error: "recovery request rejected",
         });
-        setAuthFormError(form, mapForgotPasswordError(error.message));
       } else {
-        logMobileAction("auth.resetPasswordForEmail", "success", { email: data.email });
-        setEmailSent(true);
+        logMobileAction("auth.resetPasswordForEmail", "success");
       }
-    } catch (err) {
+      // Better Auth may reject unknown identities. The visible acknowledgement is
+      // deliberately identical so recovery cannot enumerate accounts.
+      setEmailSent(true);
+    } catch {
       logMobileAction("auth.resetPasswordForEmail", "failure", {
-        email: data.email,
-        error: err instanceof Error ? err.message : String(err),
+        error: "recovery request unavailable",
       });
-      setAuthFormError(form, {
-        name: "email",
-        message: `${getAuthFormUnexpectedErrorMessage(err)}. Please try again.`,
-      });
+      // Transport/provider failures must be indistinguishable from success
+      // and unknown identities at this account-enumeration boundary.
+      setEmailSent(true);
     }
   };
 
@@ -115,10 +109,7 @@ export default function ForgotPasswordScreen() {
                   Check your email
                 </Text>
                 <Text variant="muted" className="text-center">
-                  We have sent password reset instructions to{"\n"}
-                  <Text variant="default" className="font-semibold">
-                    {form.getValues("email")}
-                  </Text>
+                  {passwordRecoveryAcknowledgement}
                 </Text>
               </View>
 

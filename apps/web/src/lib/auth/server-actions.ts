@@ -1,17 +1,12 @@
+import { passwordRecoveryAcknowledgement } from "@repo/auth/forms";
 import { getGradientPeakAuth } from "@repo/auth/server";
 import { redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeaders } from "@tanstack/react-start/server";
 import { z } from "zod";
-
 import { getSafeAppRedirectTarget, toAbsoluteAppUrl } from "../app-url";
 import { buildFlashHref } from "../flash";
-import {
-  getForgotPasswordFormError,
-  getLoginFormError,
-  getSignUpFormError,
-  getUpdatePasswordFormError,
-} from "./form-errors";
+import { getLoginFormError, getSignUpFormError, getUpdatePasswordFormError } from "./form-errors";
 import {
   forgotPasswordFormSchema,
   loginFormSchema,
@@ -226,20 +221,15 @@ export const requestPasswordResetAction = createServerFn({ method: "POST" })
         },
       });
     } catch (error) {
-      const formError = getForgotPasswordFormError(error);
-
-      if (data._native) {
-        throw redirect({
-          href: buildFlashHref("/auth/forgot-password", formError.message, "error"),
-          statusCode: 303,
-        });
-      }
-
-      throw new Error(formError.message);
+      // Do not distinguish an absent account from a delivered reset request.
+      throw redirect({
+        href: buildFlashHref("/auth/forgot-password", passwordRecoveryAcknowledgement, "success"),
+        statusCode: 303,
+      });
     }
 
     throw redirect({
-      href: "/auth/forgot-password?flash=Password%20reset%20instructions%20sent&flashType=success",
+      href: buildFlashHref("/auth/forgot-password", passwordRecoveryAcknowledgement, "success"),
       statusCode: 303,
     });
   });

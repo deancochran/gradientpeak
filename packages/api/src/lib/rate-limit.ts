@@ -1,9 +1,20 @@
+import { createHash } from "node:crypto";
+import { sql } from "drizzle-orm";
+
 import type { Context } from "../context";
+import { type DrizzleQueryExecutor, getRequiredDb } from "../db";
 
 const WINDOW_MS = 60_000;
 const AUTHENTICATED_LIMIT = 300;
-const ANONYMOUS_LIMIT = 60;
+const TRUSTED_NETWORK_ANONYMOUS_LIMIT = 60;
+// This is deliberately a finite global circuit breaker, not a per-client
+// bucket: the current Fetch adapter supplies no trustworthy remote address.
+// 10,000 requests per minute leaves substantial room for normal anonymous
+// traffic while still bounding an outage/amplification event.
+export const ANONYMOUS_GLOBAL_CIRCUIT_BREAKER_LIMIT = 10_000;
 const MAX_BUCKETS_BEFORE_SWEEP = 10_000;
+const MAX_DURABLE_WINDOWS = 100_000;
+const EXPIRED_WINDOW_CLEANUP_BATCH_SIZE = 100;
 
 export interface RateLimitBucket {
   count: number;
@@ -13,6 +24,7 @@ export interface RateLimitBucket {
 export interface RateLimitIdentity {
   key: string;
   limit: number;
+  type: "authenticated-user" | "trusted-network" | "global-anonymous-circuit-breaker";
 }
 
 export interface ApiRateLimitResult {
@@ -23,35 +35,8 @@ export interface ApiRateLimitResult {
   retryAfterSeconds: number;
 }
 
-const unlimitedResult: ApiRateLimitResult = {
-  allowed: true,
-  limit: Number.POSITIVE_INFINITY,
-  remaining: Number.POSITIVE_INFINITY,
-  resetAt: new Date(Number.MAX_SAFE_INTEGER),
-  retryAfterSeconds: 0,
-};
-
 export interface ApiRateLimitStore {
-  increment(identity: RateLimitIdentity, now: number): RateLimitBucket;
-}
-
-function getForwardedIp(headers: Headers) {
-  const trustedHeaders = new Set(
-    (process.env.TRUSTED_PROXY_IP_HEADERS ?? "")
-      .split(",")
-      .map((name) => name.trim().toLowerCase())
-      .filter(Boolean),
-  );
-  for (const name of ["cf-connecting-ip", "x-real-ip", "x-forwarded-for", "forwarded"]) {
-    if (!trustedHeaders.has(name)) continue;
-    const value = headers.get(name);
-    if (!value) continue;
-    if (name === "forwarded") {
-      return value.match(/for=(?:"?)([^;,"]+)/i)?.[1]?.trim() || "unknown";
-    }
-    return value.split(",")[0]?.trim() || "unknown";
-  }
-  return "unknown";
+  increment(identity: RateLimitIdentity, now: number): RateLimitBucket | Promise<RateLimitBucket>;
 }
 
 export class InMemoryApiRateLimitStore implements ApiRateLimitStore {
@@ -75,8 +60,6 @@ export class InMemoryApiRateLimitStore implements ApiRateLimitStore {
   }
 }
 
-const defaultStore = new InMemoryApiRateLimitStore();
-
 function getRateLimitIdentity(ctx: Context): RateLimitIdentity {
   const userId = ctx.session?.user.id;
 
@@ -84,51 +67,151 @@ function getRateLimitIdentity(ctx: Context): RateLimitIdentity {
     return {
       key: `user:${userId}`,
       limit: AUTHENTICATED_LIMIT,
+      type: "authenticated-user",
     };
   }
 
-  const ip = getForwardedIp(ctx.headers);
-  const source = ctx.trpcSource || ctx.clientType || "unknown";
-
-  return {
-    key: `anonymous:${source}:${ip}`,
-    limit: ANONYMOUS_LIMIT,
-  };
-}
-
-function shouldBypassRateLimit(ctx: Context) {
-  return ctx.trpcSource.startsWith("vitest");
-}
-
-/**
- * Lightweight tRPC API abuse guard.
- *
- * Production caveat: this is an in-memory, per-process limiter. It is safe for
- * local/dev and provides a best-effort guard in a single Node process, but it is
- * not durable across restarts and is not shared across scaled/serverless
- * instances. Replace the bucket store with Redis/Upstash (or an edge/WAF
- * provider) before relying on it as the sole production abuse control.
- */
-export function checkApiRateLimit(
-  ctx: Context,
-  now = Date.now(),
-  store: ApiRateLimitStore = defaultStore,
-): ApiRateLimitResult {
-  if (shouldBypassRateLimit(ctx)) {
-    return unlimitedResult;
+  if (ctx.trustedNetworkIdentity) {
+    return {
+      key: `network:${ctx.trustedNetworkIdentity}`,
+      limit: TRUSTED_NETWORK_ANONYMOUS_LIMIT,
+      type: "trusted-network",
+    };
   }
 
-  const identity = getRateLimitIdentity(ctx);
-  const bucket = store.increment(identity, now);
-
-  const retryAfterSeconds = Math.max(1, Math.ceil((bucket.resetAt - now) / 1_000));
-  const remaining = Math.max(0, identity.limit - bucket.count);
-
   return {
-    allowed: bucket.count <= identity.limit,
-    limit: identity.limit,
-    remaining,
-    resetAt: new Date(bucket.resetAt),
-    retryAfterSeconds,
+    key: "anonymous:global-circuit-breaker",
+    limit: ANONYMOUS_GLOBAL_CIRCUIT_BREAKER_LIMIT,
+    type: "global-anonymous-circuit-breaker",
   };
+}
+
+const testStore = new InMemoryApiRateLimitStore();
+
+/**
+ * Durable tRPC API abuse guard. The Postgres counter is the authoritative
+ * cross-instance decision; in-memory stores exist only for isolated tests.
+ */
+function persistedRateLimitKey(identity: RateLimitIdentity) {
+  return createHash("sha256").update(identity.key).digest("hex");
+}
+
+export interface PostgresApiRateLimitStoreOptions {
+  windowMs?: number;
+  maxDurableWindows?: number;
+  expiredWindowCleanupBatchSize?: number;
+}
+
+function validPositiveInteger(value: number | undefined, fallback: number) {
+  return value === undefined
+    ? fallback
+    : Number.isSafeInteger(value) && value > 0
+      ? value
+      : fallback;
+}
+
+export class PostgresApiRateLimitStore implements ApiRateLimitStore {
+  private readonly windowMs: number;
+  private readonly maxDurableWindows: number;
+  private readonly expiredWindowCleanupBatchSize: number;
+
+  constructor(
+    private readonly ctx: Context,
+    options: PostgresApiRateLimitStoreOptions = {},
+  ) {
+    this.windowMs = validPositiveInteger(options.windowMs, WINDOW_MS);
+    this.maxDurableWindows = validPositiveInteger(options.maxDurableWindows, MAX_DURABLE_WINDOWS);
+    this.expiredWindowCleanupBatchSize = validPositiveInteger(
+      options.expiredWindowCleanupBatchSize,
+      EXPIRED_WINDOW_CLEANUP_BATCH_SIZE,
+    );
+  }
+
+  async increment(identity: RateLimitIdentity, now: number): Promise<RateLimitBucket> {
+    const db = getRequiredDb(this.ctx);
+    const windowStartedAt = new Date(Math.floor(now / this.windowMs) * this.windowMs);
+    const resetAt = windowStartedAt.getTime() + this.windowMs;
+    const keyHash = persistedRateLimitKey(identity);
+    const incrementExisting = async (executor: DrizzleQueryExecutor) => {
+      const result = await executor.execute(sql<{ count: number }>`
+        update public.api_rate_limit_windows
+        set count = count + 1
+        where key_hash = ${keyHash} and window_started_at = ${windowStartedAt}
+        returning count
+      `);
+      const count = Number(result.rows[0]?.count);
+      return Number.isSafeInteger(count) && count > 0 ? count : undefined;
+    };
+
+    const fastCount = await incrementExisting(db);
+    if (fastCount) return { count: fastCount, resetAt };
+
+    return db.transaction(async (tx) => {
+      // This statement must be separate: following READ COMMITTED statements
+      // see admissions committed by earlier lock holders.
+      await tx.execute(sql`select pg_advisory_xact_lock(847219)`);
+      await tx.execute(sql`
+        delete from public.api_rate_limit_windows
+        where ctid in (
+          select ctid from public.api_rate_limit_windows
+          where expires_at <= now()
+          order by expires_at
+          limit ${this.expiredWindowCleanupBatchSize}
+        )
+      `);
+
+      const existingCount = await incrementExisting(tx);
+      if (existingCount) return { count: existingCount, resetAt };
+
+      const capacity = await tx.execute(sql<{ count: string }>`
+        select count(*) as count from public.api_rate_limit_windows
+      `);
+      if (Number(capacity.rows[0]?.count) >= this.maxDurableWindows) {
+        throw new Error("Rate-limit durable window capacity reached");
+      }
+
+      const inserted = await tx.execute(sql<{ count: number }>`
+        insert into public.api_rate_limit_windows (key_hash, window_started_at, count, expires_at)
+        values (${keyHash}, ${windowStartedAt}, 1, ${new Date(resetAt)})
+        returning count
+      `);
+      const count = Number(inserted.rows[0]?.count);
+      if (!Number.isSafeInteger(count) || count < 1) {
+        throw new Error("Rate-limit counter did not return a valid count");
+      }
+      return { count, resetAt };
+    });
+  }
+}
+
+export async function checkApiRateLimit(
+  ctx: Context,
+  now = Date.now(),
+  store: ApiRateLimitStore = process.env.NODE_ENV === "test"
+    ? testStore
+    : new PostgresApiRateLimitStore(ctx),
+): Promise<ApiRateLimitResult> {
+  const identity = getRateLimitIdentity(ctx);
+  try {
+    const bucket = await store.increment(identity, now);
+    const retryAfterSeconds = Math.max(1, Math.ceil((bucket.resetAt - now) / 1_000));
+    const remaining = Math.max(0, identity.limit - bucket.count);
+
+    return {
+      allowed: bucket.count <= identity.limit,
+      limit: identity.limit,
+      remaining,
+      resetAt: new Date(bucket.resetAt),
+      retryAfterSeconds,
+    };
+  } catch {
+    // At an abuse boundary, an unavailable durable authority fails closed.
+    return {
+      allowed: false,
+      limit: identity.limit,
+      remaining: 0,
+      resetAt: new Date(now + WINDOW_MS),
+      retryAfterSeconds: Math.ceil(WINDOW_MS / 1_000),
+    };
+  }
 }

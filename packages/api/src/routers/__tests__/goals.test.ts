@@ -157,14 +157,14 @@ function createDbMock(queryMap: QueryMap = {}) {
       },
     }),
     delete: (table: any) => ({
-      where: async () => {
+      where: () => {
         const tableName = getTableName(table);
         if (tableName === "training_plans") {
           throw new Error("unexpected training plan delete");
         }
 
         callLog.push({ operation: "delete", table: tableName });
-        return [];
+        return { returning: async () => [{ id: GOAL_ID }] };
       },
     }),
   };

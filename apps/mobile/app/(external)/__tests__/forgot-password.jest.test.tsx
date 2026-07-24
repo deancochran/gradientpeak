@@ -141,7 +141,7 @@ describe("forgot-password screen", () => {
     });
   });
 
-  it("maps missing-user errors onto the email field", async () => {
+  it("acknowledges unknown identities exactly like existing identities", async () => {
     resetMock.mockResolvedValue({ error: { message: "User not found" } });
 
     renderNative(<ForgotPasswordScreen />);
@@ -150,7 +150,31 @@ describe("forgot-password screen", () => {
     fireEvent.press(screen.getByTestId("send-reset-button"));
 
     await waitFor(() => {
-      expect(screen.getByText("No account found with this email address")).toBeTruthy();
+      expect(screen.getByText("Check your email")).toBeTruthy();
+      expect(
+        screen.getByText(
+          "If an account matches that email address, password reset instructions will arrive shortly.",
+        ),
+      ).toBeTruthy();
+      expect(screen.queryByText(/No account found/i)).toBeNull();
+    });
+  });
+
+  it("acknowledges thrown transport failures exactly like existing identities", async () => {
+    resetMock.mockRejectedValue(new Error("provider unavailable: athlete@example.com"));
+
+    renderNative(<ForgotPasswordScreen />);
+
+    fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    fireEvent.press(screen.getByTestId("send-reset-button"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Check your email")).toBeTruthy();
+      expect(
+        screen.getByText(
+          "If an account matches that email address, password reset instructions will arrive shortly.",
+        ),
+      ).toBeTruthy();
     });
   });
 });

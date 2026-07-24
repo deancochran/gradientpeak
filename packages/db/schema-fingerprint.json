@@ -145,6 +145,12 @@
     {
       "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
       "rls": true,
+      "name": "api_rate_limit_windows",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
       "name": "canonical_activity_categories",
       "forceRls": false
     },
@@ -2493,6 +2499,46 @@
       "generated": ""
     },
     {
+      "name": "key_hash",
+      "type": "text",
+      "table": "api_rate_limit_windows",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "window_started_at",
+      "type": "timestamp with time zone",
+      "table": "api_rate_limit_windows",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "count",
+      "type": "integer",
+      "table": "api_rate_limit_windows",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "expires_at",
+      "type": "timestamp with time zone",
+      "table": "api_rate_limit_windows",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
       "name": "code",
       "type": "text",
       "table": "canonical_activity_categories",
@@ -2550,6 +2596,26 @@
       "notNull": true,
       "identity": "",
       "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "revoked_at",
+      "type": "timestamp with time zone",
+      "table": "coaches_athletes",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "revision",
+      "type": "integer",
+      "table": "coaches_athletes",
+      "default": "1",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
       "generated": ""
     },
     {
@@ -6545,6 +6611,16 @@
       "definition": "CREATE INDEX idx_activity_session_rpe_evidence_activity_recorded ON public.activity_session_rpe_evidence USING btree (activity_id, recorded_at, id) WHERE (correction_of_id IS NULL)"
     },
     {
+      "name": "api_rate_limit_windows_pkey",
+      "table": "api_rate_limit_windows",
+      "definition": "CREATE UNIQUE INDEX api_rate_limit_windows_pkey ON public.api_rate_limit_windows USING btree (key_hash, window_started_at)"
+    },
+    {
+      "name": "idx_api_rate_limit_windows_expiry",
+      "table": "api_rate_limit_windows",
+      "definition": "CREATE INDEX idx_api_rate_limit_windows_expiry ON public.api_rate_limit_windows USING btree (expires_at)"
+    },
+    {
       "name": "canonical_activity_categories_pkey",
       "table": "canonical_activity_categories",
       "definition": "CREATE UNIQUE INDEX canonical_activity_categories_pkey ON public.canonical_activity_categories USING btree (code)"
@@ -6553,6 +6629,11 @@
       "name": "coaches_athletes_coach_id_athlete_id_pk",
       "table": "coaches_athletes",
       "definition": "CREATE UNIQUE INDEX coaches_athletes_coach_id_athlete_id_pk ON public.coaches_athletes USING btree (coach_id, athlete_id)"
+    },
+    {
+      "name": "idx_coaches_athletes_active_lookup",
+      "table": "coaches_athletes",
+      "definition": "CREATE INDEX idx_coaches_athletes_active_lookup ON public.coaches_athletes USING btree (coach_id, athlete_id) WHERE (revoked_at IS NULL)"
     },
     {
       "name": "idx_coaches_athletes_athlete_id",
@@ -8332,6 +8413,20 @@
       "definition": "CHECK (btrim(scale_version) <> ''::text)"
     },
     {
+      "kind": "c",
+      "name": "api_rate_limit_windows_count_check",
+      "table": "api_rate_limit_windows",
+      "validated": true,
+      "definition": "CHECK (count > 0)"
+    },
+    {
+      "kind": "p",
+      "name": "api_rate_limit_windows_pkey",
+      "table": "api_rate_limit_windows",
+      "validated": true,
+      "definition": "PRIMARY KEY (key_hash, window_started_at)"
+    },
+    {
       "kind": "p",
       "name": "canonical_activity_categories_pkey",
       "table": "canonical_activity_categories",
@@ -8358,6 +8453,13 @@
       "table": "coaches_athletes",
       "validated": true,
       "definition": "FOREIGN KEY (coach_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "coaches_athletes_revision_positive",
+      "table": "coaches_athletes",
+      "validated": true,
+      "definition": "CHECK (revision > 0)"
     },
     {
       "kind": "u",
@@ -9702,6 +9804,14 @@
       "rls": true,
       "kind": "r",
       "name": "activity_session_rpe_evidence",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "api_rate_limit_windows",
       "managed": true,
       "forceRls": false
     },

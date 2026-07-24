@@ -1,15 +1,4 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@repo/ui/components/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
@@ -36,16 +25,7 @@ import {
 import { Label } from "@repo/ui/components/label";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  Calendar,
-  Camera,
-  ImageIcon,
-  Loader2,
-  Mail,
-  Shield,
-  Trash2,
-  UserRound,
-} from "lucide-react";
+import { Calendar, Camera, ImageIcon, Loader2, Mail, Shield, UserRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type UseFormReturn, useForm } from "react-hook-form";
 import { useAuth } from "../../components/providers/auth-provider";
@@ -214,7 +194,6 @@ function SettingsPage() {
           {...(user?.email !== undefined ? { email: user.email } : {})}
           {...(user?.emailVerified !== undefined ? { emailVerified: user.emailVerified } : {})}
         />
-        <DangerZoneCard />
       </div>
     </div>
   );
@@ -628,42 +607,6 @@ function SecurityCard({
             </Button>
           </form>
         </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function DangerZoneCard() {
-  return (
-    <Card className="border-destructive">
-      <CardHeader>
-        <CardTitle className="text-destructive">Danger Zone</CardTitle>
-        <CardDescription>Irreversible and destructive actions.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="destructive">
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete Account
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Account deletion is temporarily unavailable</AlertDialogTitle>
-              <AlertDialogDescription>
-                We are finishing our authentication migration. If you need your account removed
-                right now, please contact support and we will handle it manually.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction disabled className="bg-destructive">
-                Delete Account Unavailable
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       </CardContent>
     </Card>
   );

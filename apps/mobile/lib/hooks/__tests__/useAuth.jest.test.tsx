@@ -74,7 +74,6 @@ jest.mock("react-native/Libraries/AppState/AppState", () => ({
 
 jest.mock("@/lib/auth/account-management", () => ({
   __esModule: true,
-  deleteMobileAccount: jest.fn(async () => ({ error: null })),
   updateMobileEmail: jest.fn(async () => ({ error: null })),
   updateMobilePassword: jest.fn(async () => ({ error: null })),
 }));
