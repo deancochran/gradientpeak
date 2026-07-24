@@ -45,7 +45,10 @@ describe("adaptPlannedCommonLoadDoses", () => {
     const result = adaptPlannedCommonLoadDoses({
       computedAsOf,
       doses: [
-        dose("bike", "power_threshold", "ftp_watts", { type: "percent_threshold", value: 1 }),
+        dose("bike", "power_threshold", "ftp_watts", {
+          type: "percent_threshold",
+          thresholdRatio: 1,
+        }),
         dose("run", "run_pace_threshold", "threshold_speed_mps", {
           type: "speed_mps",
           value: 4,
@@ -73,5 +76,34 @@ describe("adaptPlannedCommonLoadDoses", () => {
     });
     expect(result.doses[0]).toMatchObject({ status: "unavailable", reason: "duration_missing" });
     expect(result.aggregate).toMatchObject({ status: "unavailable", reason: "no_load_data" });
+  });
+
+  it.each([
+    [0.75, "available", 0.75],
+    [1.5, "available", 1.5],
+    [1.51, "intensity_out_of_range", null],
+    [75, "intensity_out_of_range", null],
+  ] as const)("uses the percent-threshold ratio %s without clamping or reinterpreting it", (thresholdRatio, expectedStatus, expectedIntensity) => {
+    const result = adaptPlannedCommonLoadDoses({
+      computedAsOf,
+      doses: [
+        dose("bike", "power_threshold", "ftp_watts", {
+          type: "percent_threshold",
+          thresholdRatio,
+        }),
+      ],
+    });
+    const [resultDose] = result.doses;
+
+    expect(resultDose).toBeDefined();
+    expect(resultDose?.status).toBe(expectedStatus === "available" ? "available" : "unavailable");
+    if (expectedStatus === "available") {
+      expect(resultDose).toMatchObject({ status: "available", intensity: expectedIntensity });
+    } else {
+      expect(resultDose).toMatchObject({
+        status: "unavailable",
+        reason: "intensity_out_of_range",
+      });
+    }
   });
 });

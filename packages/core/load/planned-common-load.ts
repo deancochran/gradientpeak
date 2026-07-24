@@ -13,7 +13,8 @@ import {
 } from "./common-relative-load";
 
 export type PlannedCommonLoadTarget =
-  | { type: "percent_threshold"; value: number }
+  // Authored percentage points are converted to this ratio at the API boundary.
+  | { type: "percent_threshold"; thresholdRatio: number }
   | { type: "power_watts"; value: number }
   | { type: "speed_mps"; value: number };
 
@@ -65,7 +66,7 @@ function unavailable(
 
 function intensityForDose(dose: PlannedCommonLoadDose): number | null {
   if (dose.target === null || dose.thresholdEvidence === null || dose.method === null) return null;
-  if (dose.target.type === "percent_threshold") return dose.target.value;
+  if (dose.target.type === "percent_threshold") return dose.target.thresholdRatio;
   if (dose.target.type === "power_watts") {
     return dose.thresholdEvidence.unit === "watts"
       ? dose.target.value / dose.thresholdEvidence.value

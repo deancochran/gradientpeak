@@ -51,7 +51,7 @@ import { loadEstimationSnapshot } from "../estimation-helpers";
 
 const asOf = new Date("2026-07-12T12:00:00.000Z");
 
-function structure(duration = 1800, name = "Bike") {
+function structure(duration = 1800, name = "Bike", percentFtp = 75) {
   return {
     version: 3 as const,
     segments: [
@@ -70,7 +70,7 @@ function structure(duration = 1800, name = "Bike") {
                 id: "44444444-4444-4444-8444-444444444444",
                 name: "Ride",
                 duration: { type: "time" as const, seconds: duration },
-                targets: [{ type: "%FTP" as const, intensity: 75 }],
+                targets: [{ type: "%FTP" as const, intensity: percentFtp }],
               },
             ],
           },
@@ -177,6 +177,21 @@ describe("on-demand activity plan estimation", () => {
       throw new Error("Expected available planned common Load");
     }
     expect(result[0].common_load.load).toBeCloseTo(28.125, 12);
+  });
+
+  it.each([
+    [75, 0.75],
+    [150, 1.5],
+  ])("converts authored %%FTP percentage points %i to threshold ratio %f", async (percentFtp, intensity) => {
+    const [result] = await getActivityPlansDerivedMetrics(
+      [plan({ structure: structure(1800, "Bike", percentFtp) })],
+      {} as never,
+      store() as never,
+      "profile-1",
+      { asOf },
+    );
+
+    expect(result?.common_load).toMatchObject({ status: "available", intensity });
   });
 
   it("memoizes a duplicate-heavy batch by normalized plan and route content", async () => {

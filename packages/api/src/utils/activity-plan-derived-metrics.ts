@@ -141,7 +141,8 @@ function plannedCommonLoad(input: {
     );
     const target =
       supportedTarget?.type === "%FTP"
-        ? ({ type: "percent_threshold", value: supportedTarget.intensity / 100 } as const)
+        ? // Activity-plan %FTP is authored in percentage points; Core receives a threshold ratio.
+          ({ type: "percent_threshold", thresholdRatio: supportedTarget.intensity / 100 } as const)
         : supportedTarget?.type === "watts"
           ? ({ type: "power_watts", value: supportedTarget.intensity } as const)
           : supportedTarget?.type === "speed"
