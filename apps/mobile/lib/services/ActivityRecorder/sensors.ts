@@ -1,16 +1,18 @@
 import {
-  BLE_CHARACTERISTIC_UUIDS,
-  BLE_SERVICE_UUIDS,
-  type CscParserState,
-  type CyclingPowerParserState,
   detectFtmsMachineType,
+  FTMS_SERVICE_UUIDS,
   type FtmsMachineType,
   type FtmsMachineTypeSource,
   type FtmsParserDefinition,
   listFtmsParserDefinitions,
+  type ParsedFtmsPayload,
+} from "@deancochran/ftms";
+import {
+  BLE_CHARACTERISTIC_UUIDS,
+  type CscParserState,
+  type CyclingPowerParserState,
   listStandardBleProfileDefinitions,
   matchStandardBleProfiles,
-  type ParsedFtmsPayload,
   parseCscMeasurement,
   parseCyclingPowerMeasurementWithState,
   parseHeartRateMeasurement,
@@ -149,6 +151,7 @@ export class SensorsManager {
   });
   private connectedSensors: Map<string, ConnectedSensor> = new Map();
   private gattQueues = new DeviceGattQueueRegistry();
+  private disconnectPromises = new Map<string, Promise<void>>();
   private monitorSubscriptions: Map<string, Array<{ remove: () => void }>> = new Map();
   private dataCallbacks: Set<(reading: SensorReading) => void> = new Set();
   private connectionCallbacks: Set<(sensor: ConnectedSensor) => void> = new Set();
@@ -957,7 +960,10 @@ export class SensorsManager {
       await this.monitorKnownCharacteristics(connectedSensor);
 
       // Check if device supports FTMS control
-      const hasFTMS = services.some((s) => s.uuid.toLowerCase().includes("1826"));
+      const hasFTMS = services.some((service) => {
+        const uuid = service.uuid.toLowerCase();
+        return uuid === FTMS_SERVICE_UUIDS.FITNESS_MACHINE || uuid === "1826";
+      });
 
       if (hasFTMS) {
         console.log(`[SensorsManager] Detected FTMS trainer: ${connectedSensor.name}`);
@@ -1083,7 +1089,29 @@ export class SensorsManager {
   async disconnectSensor(
     deviceId: string,
     options?: { forgetPersisted?: boolean; suppressAutoReconnect?: boolean },
-  ) {
+  ): Promise<void> {
+    const activeDisconnect = this.disconnectPromises.get(deviceId);
+    if (activeDisconnect) {
+      await activeDisconnect;
+      if (options?.forgetPersisted) await this.knownSensorRegistry.remove(deviceId);
+      return;
+    }
+
+    const disconnect = this.disconnectSensorOnce(deviceId, options);
+    this.disconnectPromises.set(deviceId, disconnect);
+    try {
+      await disconnect;
+    } finally {
+      if (this.disconnectPromises.get(deviceId) === disconnect) {
+        this.disconnectPromises.delete(deviceId);
+      }
+    }
+  }
+
+  private async disconnectSensorOnce(
+    deviceId: string,
+    options?: { forgetPersisted?: boolean; suppressAutoReconnect?: boolean },
+  ): Promise<void> {
     const shouldForgetPersisted = options?.forgetPersisted ?? false;
     const shouldSuppressAutoReconnect = options?.suppressAutoReconnect ?? !shouldForgetPersisted;
     await this.knownSensorRegistry.setAutoReconnectSuppressed(
@@ -1113,16 +1141,19 @@ export class SensorsManager {
       });
     }
 
+    this.clearDeviceGattRuntime(deviceId, "Sensor disconnecting");
+
     // Cancel BLE connection if device exists
     if (sensor.device) {
       try {
-        await this.gattQueues.enqueue(
+        await this.gattQueues.interruptDevice(
           deviceId,
           "disconnect",
           () => sensor.device.cancelConnection(),
           {
             timeoutMs: 5000,
           },
+          "Sensor disconnecting",
         );
         console.log(`Successfully disconnected from ${sensor.name}`);
       } catch (error) {
@@ -1140,7 +1171,6 @@ export class SensorsManager {
     this.connectedSensors.delete(deviceId);
     this.cscParserStates.delete(deviceId);
     this.cyclingPowerParserStates.delete(deviceId);
-    this.clearDeviceGattRuntime(deviceId, "Sensor disconnected");
 
     // Disconnect preserves known-device memory unless explicitly forgotten.
     if (shouldForgetPersisted) {
@@ -1646,7 +1676,7 @@ export class SensorsManager {
             timeoutMs: 5000,
           },
         )
-      ).find((s) => s.uuid.toLowerCase() === BLE_SERVICE_UUIDS.FITNESS_MACHINE.toLowerCase());
+      ).find((s) => s.uuid.toLowerCase() === FTMS_SERVICE_UUIDS.FITNESS_MACHINE.toLowerCase());
 
       if (!service) {
         console.warn(`[SensorsManager] Fitness Machine service not found for ${sensor.name}`);
@@ -1747,6 +1777,19 @@ export class SensorsManager {
       const rawBytes = decodeBase64ToBytes(char.value);
       const parsed = definition.parse(rawBytes);
       this.logParserDebug(`ftms:${definition.uuid.toLowerCase()}:${sensor.id}`, rawBytes, parsed);
+      if (parsed.kind === "machine_status") {
+        const permissionLost =
+          sensor.ftmsController?.handleMachineStatus(parsed.status?.code ?? null) === true;
+        if (permissionLost) {
+          delete sensor.currentControlMode;
+          const candidate = this.ftmsCandidates.get(sensor.id);
+          if (candidate) candidate.controlState = "control_lost";
+          if (this.trainerState.deviceId === sensor.id) {
+            this.updateTrainerState({ controlState: "control_lost" });
+          }
+          this.notifyConnectionChange(sensor);
+        }
+      }
 
       const timestamp = Date.now();
       const readings = this.createFtmsReadings(parsed, sensor.id, timestamp)
@@ -1929,6 +1972,15 @@ export class SensorsManager {
    * Get the currently connected controllable trainer
    */
   getControllableTrainer(): ConnectedSensor | undefined {
+    const selected = this.getSelectedFTMSTrainer();
+    return selected?.connectionState === "connected" &&
+      selected.ftmsController?.hasControlPermission()
+      ? selected
+      : undefined;
+  }
+
+  /** Get the selected feature-eligible trainer, regardless of current control permission. */
+  getSelectedFTMSTrainer(): ConnectedSensor | undefined {
     const selectedId = this.selectedFtmsDeviceId;
     return selectedId ? this.connectedSensors.get(selectedId) : undefined;
   }
@@ -2076,14 +2128,14 @@ export class SensorsManager {
   /**
    * Reset trainer control
    */
-  async resetTrainerControl(): Promise<boolean> {
+  async resetTrainerControl(context?: FTMSCommandContext): Promise<boolean> {
     const controller = this.getSelectedFTMSController();
     if (!controller) {
       console.warn("[SensorsManager] No controllable trainer connected");
       return false;
     }
 
-    return await controller.reset();
+    return await controller.reset(context);
   }
 
   /**

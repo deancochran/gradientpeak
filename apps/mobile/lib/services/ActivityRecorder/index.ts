@@ -13,15 +13,17 @@
  * - 4 core events instead of 12+
  */
 
+import type {
+  FTMSFeatures,
+  FtmsAvailableMode,
+  FtmsControlMode,
+  FtmsMachineType,
+} from "@deancochran/ftms";
 import {
   ACTIVITY_PLAN_COMPILER_VERSION,
   activityPlanStructureSchemaV3,
   type CurrentMetricValue,
   compileActivityPlanV3,
-  type FTMSFeatures,
-  type FtmsAvailableMode,
-  type FtmsControlMode,
-  type FtmsMachineType,
   GLOBAL_DEFAULTS,
   type MetricFamily,
   type MetricSourceCandidate,
@@ -912,7 +914,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   private buildTrainerView(): RecordingTrainerView {
-    const trainer = this.sensorsManager.getControllableTrainer();
+    const trainer = this.sensorsManager.getSelectedFTMSTrainer();
     const trainerState = this.sensorsManager.getTrainerState();
     const controller = trainer?.ftmsController;
     const ftmsCandidates = Array.from(this.sensorsManager.getFTMSCandidates().values());
@@ -1508,7 +1510,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       deviceName: sensor.name,
       role: this.getConnectedDeviceRole(sensor),
       sourceTypes,
-      controllable: Boolean(sensor.isControllable),
+      controllable: Boolean(sensor.ftmsController?.hasControlPermission()),
     };
   }
 
@@ -1708,14 +1710,14 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         this.shouldUseMetricSourceType(sourceType),
       ),
     );
-    const ftmsTrainer = this.sensorsManager.getControllableTrainer();
+    const ftmsTrainer = this.sensorsManager.getSelectedFTMSTrainer();
 
     return {
       ftmsTrainer: ftmsTrainer
         ? {
             deviceId: ftmsTrainer.id,
             autoControlEnabled: !this.isTrainerManualMode(),
-            controlReady: Boolean(ftmsTrainer.isControllable && ftmsTrainer.ftmsController),
+            controlReady: Boolean(ftmsTrainer.ftmsController?.hasControlPermission()),
           }
         : undefined,
       hasPowerMeter: sourceTypes.includes("power_meter") || sourceTypes.includes("trainer_power"),
@@ -2634,11 +2636,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   public getTrainerMachineType() {
-    return inferTrainerMachineType(this.sensorsManager.getControllableTrainer());
+    return inferTrainerMachineType(this.sensorsManager.getSelectedFTMSTrainer());
   }
 
   public getTrainerFeatures(): FTMSFeatures | null {
-    return this.sensorsManager.getControllableTrainer()?.ftmsFeatures ?? null;
+    return this.sensorsManager.getSelectedFTMSTrainer()?.ftmsFeatures ?? null;
   }
 
   public getBleState(): string {

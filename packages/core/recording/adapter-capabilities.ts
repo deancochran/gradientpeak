@@ -1,4 +1,4 @@
-import type { FTMSFeatures, FtmsControlMode, FtmsMachineType } from "../ftms-types";
+import type { FTMSFeatures, FtmsControlMode, FtmsMachineType } from "@deancochran/ftms";
 import type { MetricFamily, MetricSourceType } from "../schemas/recording-session";
 
 export type RecorderHardwareTransport =

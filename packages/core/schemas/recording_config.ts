@@ -9,10 +9,10 @@
  * - GPS intent + availability
  */
 
+import type { FTMSFeatures } from "@deancochran/ftms";
 import { z } from "zod";
 
 import type { ActivityPlanStructureV3 } from "../activity-plan";
-import type { FTMSFeatures } from "../ftms-types";
 import type { CanonicalSport } from "./sport";
 
 export const recordingPrimaryMetricSchema = z.enum(["time", "distance", "reps", "power"]);

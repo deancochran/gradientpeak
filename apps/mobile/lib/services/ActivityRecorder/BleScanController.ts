@@ -1,3 +1,4 @@
+import { FTMS_SERVICE_UUIDS } from "@deancochran/ftms";
 import { BLE_SERVICE_UUIDS } from "@repo/core";
 import type { BleManager, Device } from "react-native-ble-plx";
 
@@ -6,7 +7,7 @@ const SCAN_SERVICE_UUIDS = [
   BLE_SERVICE_UUIDS.CYCLING_SPEED_AND_CADENCE,
   BLE_SERVICE_UUIDS.CYCLING_POWER,
   BLE_SERVICE_UUIDS.RUNNING_SPEED_AND_CADENCE,
-  BLE_SERVICE_UUIDS.FITNESS_MACHINE,
+  FTMS_SERVICE_UUIDS.FITNESS_MACHINE,
 ];
 
 export class BleScanController {

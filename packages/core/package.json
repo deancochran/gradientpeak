@@ -100,6 +100,7 @@
     "watch": "pnpm exec concurrently \"tsc --noEmit --watch --preserveWatchOutput\" \"pnpm exec chokidar '**/*.{ts,tsx,js,jsx,json}' -c 'biome lint .'\""
   },
   "dependencies": {
+    "@deancochran/ftms": "0.1.0",
     "@garmin/fitsdk": "^21.188.0",
     "@mapbox/polyline": "^1.2.1",
     "@xmldom/xmldom": "^0.8.13",

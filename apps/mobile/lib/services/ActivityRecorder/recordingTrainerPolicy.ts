@@ -1,4 +1,4 @@
-import { BLE_SERVICE_UUIDS, type FtmsControlMode, type FtmsMachineType } from "@repo/core";
+import { FTMS_SERVICE_UUIDS, type FtmsControlMode, type FtmsMachineType } from "@deancochran/ftms";
 
 export interface TrainerLikeSensor {
   id: string;
@@ -56,7 +56,7 @@ export function isFtmsModeAllowedForMachine(
 }
 
 export function isFtmsServiceUuid(service: string): boolean {
-  return service.toLowerCase() === BLE_SERVICE_UUIDS.FITNESS_MACHINE.toLowerCase();
+  return service.toLowerCase() === FTMS_SERVICE_UUIDS.FITNESS_MACHINE.toLowerCase();
 }
 
 export function isTrainerLikeSensor(sensor: TrainerLikeSensor | undefined): boolean {
