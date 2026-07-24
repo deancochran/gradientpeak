@@ -6,6 +6,7 @@ import {
   oauthStates,
   profiles,
   providerSyncJobs,
+  providerSyncState,
   providerWebhookReceipts,
   users,
 } from "@repo/db/schema";
@@ -51,6 +52,38 @@ async function seedOwner() {
   return { integrationId, profileId: userId };
 }
 
+async function seedRunningJob(input: {
+  integrationId: string;
+  lockExpiresAt: Date;
+  profileId: string;
+  provider?: "strava" | "wahoo";
+  workerId: string;
+}) {
+  const jobId = randomUUID();
+  const now = new Date();
+  await db.insert(providerSyncJobs).values({
+    attempt: 1,
+    created_at: now,
+    id: jobId,
+    integration_id: input.integrationId,
+    job_type: `${input.provider ?? "wahoo"}.publish_event`,
+    last_error: "previous failure",
+    locked_at: now,
+    locked_by: input.workerId,
+    lock_expires_at: input.lockExpiresAt,
+    max_attempts: 3,
+    payload: {},
+    priority: 100,
+    profile_id: input.profileId,
+    provider: input.provider ?? "wahoo",
+    run_at: now,
+    status: "running",
+    sync_lane_key: `complete-with-state-${jobId}`,
+    updated_at: now,
+  });
+  return jobId;
+}
+
 afterEach(async () => {
   vi.unstubAllEnvs();
   const userId = userIds.pop();
@@ -62,6 +95,296 @@ afterAll(async () => {
 });
 
 describe("provider sync PostgreSQL claims", () => {
+  it.each([
+    ["expired lease", -60_000, false],
+    ["wrong ownership", 60_000, true],
+  ] as const)("does not complete a job or write sync state for %s", async (_name, leaseOffsetMs, useWrongWorker) => {
+    const owner = await seedOwner();
+    const repository = createProviderSyncRepository({ db });
+    const workerId = `worker:${randomUUID()}`;
+    const jobId = await seedRunningJob({
+      integrationId: owner.integrationId,
+      lockExpiresAt: new Date(Date.now() + leaseOffsetMs),
+      profileId: owner.profileId,
+      workerId,
+    });
+    const resource = `completion-fence-${randomUUID()}`;
+    const beforeJob = await db
+      .select()
+      .from(providerSyncJobs)
+      .where(eq(providerSyncJobs.id, jobId));
+
+    await expect(
+      repository.completeJobWithSyncState({
+        highWatermark: "2026-07-20T12:00:00.000Z",
+        id: jobId,
+        integrationId: owner.integrationId,
+        metadata: { source: "completion-fence-test" },
+        provider: "wahoo",
+        resource,
+        workerId: useWrongWorker ? `other:${randomUUID()}` : workerId,
+      }),
+    ).resolves.toBe(false);
+
+    expect(await db.select().from(providerSyncJobs).where(eq(providerSyncJobs.id, jobId))).toEqual(
+      beforeJob,
+    );
+    expect(
+      await db
+        .select()
+        .from(providerSyncState)
+        .where(eq(providerSyncState.integration_id, owner.integrationId)),
+    ).toEqual([]);
+  });
+
+  it("does not complete a job for a different integration owned by the same profile", async () => {
+    const owner = await seedOwner();
+    const otherIntegrationId = randomUUID();
+    const now = new Date();
+    await db.insert(integrations).values({
+      created_at: now,
+      external_id: randomUUID(),
+      id: otherIntegrationId,
+      profile_id: owner.profileId,
+      provider: "strava",
+      updated_at: now,
+    });
+    const repository = createProviderSyncRepository({ db });
+    const workerId = `worker:${randomUUID()}`;
+    const jobId = await seedRunningJob({
+      integrationId: owner.integrationId,
+      lockExpiresAt: new Date(Date.now() + 60_000),
+      profileId: owner.profileId,
+      workerId,
+    });
+    const resource = `integration-fence-${randomUUID()}`;
+    const beforeJob = await db
+      .select()
+      .from(providerSyncJobs)
+      .where(eq(providerSyncJobs.id, jobId));
+
+    await expect(
+      repository.completeJobWithSyncState({
+        highWatermark: "2026-07-20T12:00:00.000Z",
+        id: jobId,
+        integrationId: otherIntegrationId,
+        metadata: { source: "integration-fence-test" },
+        provider: "wahoo",
+        resource,
+        workerId,
+      }),
+    ).resolves.toBe(false);
+
+    expect(await db.select().from(providerSyncJobs).where(eq(providerSyncJobs.id, jobId))).toEqual(
+      beforeJob,
+    );
+    expect(
+      await db.select().from(providerSyncState).where(eq(providerSyncState.resource, resource)),
+    ).toEqual([]);
+  });
+
+  it("does not complete a job when the caller provider differs from the job", async () => {
+    const owner = await seedOwner();
+    const integrationId = randomUUID();
+    const now = new Date();
+    await db.insert(integrations).values({
+      created_at: now,
+      external_id: randomUUID(),
+      id: integrationId,
+      profile_id: owner.profileId,
+      provider: "strava",
+      updated_at: now,
+    });
+    const repository = createProviderSyncRepository({ db });
+    const workerId = `worker:${randomUUID()}`;
+    const jobId = await seedRunningJob({
+      integrationId,
+      lockExpiresAt: new Date(Date.now() + 60_000),
+      profileId: owner.profileId,
+      provider: "strava",
+      workerId,
+    });
+    const resource = `provider-fence-${randomUUID()}`;
+    const beforeJob = await db
+      .select()
+      .from(providerSyncJobs)
+      .where(eq(providerSyncJobs.id, jobId));
+
+    await expect(
+      repository.completeJobWithSyncState({
+        highWatermark: "2026-07-20T12:00:00.000Z",
+        id: jobId,
+        integrationId,
+        metadata: { source: "provider-fence-test" },
+        provider: "wahoo",
+        resource,
+        workerId,
+      }),
+    ).resolves.toBe(false);
+
+    expect(await db.select().from(providerSyncJobs).where(eq(providerSyncJobs.id, jobId))).toEqual(
+      beforeJob,
+    );
+    expect(
+      await db.select().from(providerSyncState).where(eq(providerSyncState.resource, resource)),
+    ).toEqual([]);
+  });
+
+  it("rolls job completion back when the sync-state upsert fails", async () => {
+    const owner = await seedOwner();
+    const repository = createProviderSyncRepository({ db });
+    const workerId = `worker:${randomUUID()}`;
+    const jobId = await seedRunningJob({
+      integrationId: owner.integrationId,
+      lockExpiresAt: new Date(Date.now() + 60_000),
+      profileId: owner.profileId,
+      workerId,
+    });
+    const resource = `rollback-${randomUUID()}`;
+    const identifierSuffix = randomUUID().replaceAll("-", "");
+    const functionName = `pss_fail_fn_${identifierSuffix}`;
+    const triggerName = `pss_fail_trg_${identifierSuffix}`;
+    await db.insert(providerSyncState).values({
+      consecutive_failures: 7,
+      created_at: new Date("2026-06-01T10:00:00.000Z"),
+      high_watermark: new Date("2026-06-02T10:00:00.000Z"),
+      integration_id: owner.integrationId,
+      last_error: "recognizable previous failure",
+      last_sync_failed_at: new Date("2026-06-05T10:00:00.000Z"),
+      last_sync_started_at: new Date("2026-06-04T10:00:00.000Z"),
+      last_sync_succeeded_at: new Date("2026-05-30T10:00:00.000Z"),
+      metadata: { marker: "preexisting", nested: { preserved: true } },
+      provider: "wahoo",
+      resource,
+      sync_mode: "push_windowed",
+      updated_at: new Date("2026-06-03T10:00:00.000Z"),
+    });
+    const beforeJob = await db
+      .select()
+      .from(providerSyncJobs)
+      .where(eq(providerSyncJobs.id, jobId));
+    const beforeState = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.integration_id, owner.integrationId));
+
+    try {
+      await pool.query(`
+        create function public."${functionName}"() returns trigger
+        language plpgsql as $$
+        begin
+          raise exception 'forced provider sync state failure';
+        end
+        $$
+      `);
+      await pool.query(`
+        create trigger "${triggerName}"
+        before update on public.provider_sync_state
+        for each row when (new.resource = '${resource}')
+        execute function public."${functionName}"()
+      `);
+
+      await expect(
+        repository.completeJobWithSyncState({
+          highWatermark: "2026-07-20T12:00:00.000Z",
+          id: jobId,
+          integrationId: owner.integrationId,
+          metadata: { source: "rollback-test" },
+          provider: "wahoo",
+          resource,
+          workerId,
+        }),
+      ).rejects.toThrow();
+
+      expect(
+        await db.select().from(providerSyncJobs).where(eq(providerSyncJobs.id, jobId)),
+      ).toEqual(beforeJob);
+      expect(
+        await db
+          .select()
+          .from(providerSyncState)
+          .where(eq(providerSyncState.integration_id, owner.integrationId)),
+      ).toEqual(beforeState);
+    } finally {
+      try {
+        await pool.query(`drop trigger if exists "${triggerName}" on public.provider_sync_state`);
+      } finally {
+        await pool.query(`drop function if exists public."${functionName}"()`);
+      }
+    }
+  });
+
+  it("persists job completion and sync state together", async () => {
+    const owner = await seedOwner();
+    const repository = createProviderSyncRepository({ db });
+    const workerId = `worker:${randomUUID()}`;
+    const jobId = await seedRunningJob({
+      integrationId: owner.integrationId,
+      lockExpiresAt: new Date(Date.now() + 60_000),
+      profileId: owner.profileId,
+      workerId,
+    });
+    const highWatermark = "2026-07-20T12:00:00.000Z";
+    const resource = `success-${randomUUID()}`;
+
+    await expect(
+      repository.completeJobWithSyncState({
+        highWatermark,
+        id: jobId,
+        integrationId: owner.integrationId,
+        metadata: { source: "success-test" },
+        provider: "wahoo",
+        resource,
+        workerId,
+      }),
+    ).resolves.toBe(true);
+
+    expect(
+      await db
+        .select({
+          lastError: providerSyncJobs.last_error,
+          lockExpiresAt: providerSyncJobs.lock_expires_at,
+          lockedAt: providerSyncJobs.locked_at,
+          lockedBy: providerSyncJobs.locked_by,
+          status: providerSyncJobs.status,
+        })
+        .from(providerSyncJobs)
+        .where(eq(providerSyncJobs.id, jobId)),
+    ).toEqual([
+      {
+        lastError: null,
+        lockExpiresAt: null,
+        lockedAt: null,
+        lockedBy: null,
+        status: "completed",
+      },
+    ]);
+    expect(
+      await db
+        .select({
+          consecutiveFailures: providerSyncState.consecutive_failures,
+          highWatermark: providerSyncState.high_watermark,
+          integrationId: providerSyncState.integration_id,
+          metadata: providerSyncState.metadata,
+          provider: providerSyncState.provider,
+          resource: providerSyncState.resource,
+          syncMode: providerSyncState.sync_mode,
+        })
+        .from(providerSyncState)
+        .where(eq(providerSyncState.integration_id, owner.integrationId)),
+    ).toEqual([
+      {
+        consecutiveFailures: 0,
+        highWatermark: new Date(highWatermark),
+        integrationId: owner.integrationId,
+        metadata: { source: "success-test" },
+        provider: "wahoo",
+        resource,
+        syncMode: "push_windowed",
+      },
+    ]);
+  });
+
   it("consumes one OAuth state with one atomic credential write", async () => {
     const owner = await seedOwner();
     await db.delete(integrations).where(eq(integrations.id, owner.integrationId));
