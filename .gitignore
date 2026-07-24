@@ -87,6 +87,7 @@ pnpm-debug.log*
 **/.maestro/home/
 **/.maestro/utils/
 **/.maestro/actors/*.env
+**/.maestro/fixtures.env
 packages/*/dist/
 packages/*/lib/
 # ------------------------------
