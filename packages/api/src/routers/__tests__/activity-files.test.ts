@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@repo/db", () => ({
@@ -80,6 +81,7 @@ const mocks = vi.hoisted(() => ({
     createSignedUrl: vi.fn(),
   },
   functionsInvoke: vi.fn(),
+  processManualActivityFile: vi.fn(),
   db: {
     current: null as any,
   },
@@ -145,6 +147,9 @@ vi.mock("../../infrastructure/repositories/drizzle-activity-analysis-repository"
 
 vi.mock("../../lib/activity-analysis/context", () => ({
   resolveActivityContextAsOf: mocks.resolveActivityContextAsOf,
+}));
+vi.mock("../../application/activity-file-ingestion/process-manual-activity-file", () => ({
+  processManualActivityFile: mocks.processManualActivityFile,
 }));
 
 import { activities } from "@repo/db";
@@ -295,6 +300,15 @@ beforeEach(() => {
     error: null,
   }));
   mocks.functionsInvoke.mockResolvedValue({ data: { queued: true }, error: null });
+  mocks.processManualActivityFile.mockResolvedValue({
+    activity: {
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      name: "Morning Ride",
+      started_at: new Date("2025-05-10T10:00:00.000Z"),
+      finished_at: new Date("2025-05-10T11:00:00.000Z"),
+    },
+    ingestion: { id: "ingestion-1", status: "ready", activity_id: "activity-1" },
+  });
   mocks.calculateBounds.mockReturnValue({ minLat: 40, maxLat: 41, minLng: -74, maxLng: -73 });
   mocks.encodePolyline.mockReturnValue("encoded-polyline");
   mocks.inferActivityFileType.mockImplementation((fileName: string) => {
@@ -397,7 +411,7 @@ describe("activityFilesRouter", () => {
     ).rejects.toThrow("Failed to generate upload URL");
   });
 
-  it("processes activity uploads through ctx.db and records derived side effects", async () => {
+  it("delegates owned manual uploads to the ingestion use case without changing the response", async () => {
     const startTime = new Date("2025-05-10T10:00:00.000Z");
     const finishedAt = new Date("2025-05-10T11:00:00.000Z");
     const createdActivity = {
@@ -408,7 +422,7 @@ describe("activityFilesRouter", () => {
       created_at: startTime,
       updated_at: finishedAt,
     };
-    const { db, callLog } = createDbMock({
+    const { db } = createDbMock({
       selectResults: [[{ value: "168" }], [{ value: "52" }], [], [], []],
       findFirstResults: [createdActivity],
       executeResults: [{ rows: [] }],
@@ -475,49 +489,19 @@ describe("activityFilesRouter", () => {
         finished_at: finishedAt.toISOString(),
       },
     });
-    const activityInsert = callLog.insertCalls.find(
-      (call) =>
-        !Array.isArray(call.values) &&
-        typeof call.values === "object" &&
-        call.values !== null &&
-        "name" in call.values,
+    expect(mocks.processManualActivityFile).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        profileId: "11111111-1111-4111-8111-111111111111",
+        activityFilePath: "activities/11111111-1111-4111-8111-111111111111/uploads/123_history.fit",
+        originalName: "morning-ride.fit",
+        fileType: "fit",
+      }),
+      expect.objectContaining({
+        readStoredActivityFile: expect.any(Function),
+        decodeActivityFile: expect.any(Function),
+      }),
     );
-    const effortInsert = callLog.insertCalls.find(
-      (call) =>
-        Array.isArray(call.values) && call.values.some((value) => value.effort_type === "power"),
-    );
-    const persistedActivityId = (activityInsert?.values as { id?: string } | undefined)?.id;
-    expect(persistedActivityId).toEqual(expect.any(String));
-    expect(
-      (effortInsert?.values as Array<{ activity_id?: string }> | undefined)?.[0]?.activity_id,
-    ).toBe(persistedActivityId);
-    expect(callLog.insertCalls).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          values: expect.arrayContaining([
-            expect.objectContaining({
-              activity_id: expect.any(String),
-              effort_type: "power",
-              profile_id: "11111111-1111-4111-8111-111111111111",
-              recorded_at: finishedAt,
-              source: "imported",
-              method: "activity_file_best_effort",
-              unit: "watts",
-            }),
-          ]),
-        }),
-        expect.objectContaining({
-          values: expect.objectContaining({
-            metric_type: "lthr",
-            recorded_at: finishedAt,
-            value: 175,
-          }),
-        }),
-      ]),
-    );
-    expect(mocks.storage.remove).toHaveBeenCalledWith([
-      "activities/11111111-1111-4111-8111-111111111111/uploads/123_history.fit",
-    ]);
   });
 
   it("rejects processing activity files owned by another user", async () => {
@@ -744,7 +728,7 @@ describe("activityFilesRouter", () => {
         activityId,
         activityFilePath: `activities/${userId}/uploads/bad.fit`,
       }),
-    ).rejects.toThrow("Failed to parse activity file: bad fit");
+    ).rejects.toThrow("Unable to parse activity file");
     expect(callLog.deleteCalls).toEqual([]);
     expect(mocks.storage.remove).not.toHaveBeenCalled();
     expect(callLog.updateCalls).toEqual(
@@ -1071,6 +1055,9 @@ describe("activityFilesRouter", () => {
       laps: [],
       lengths: [],
     });
+    mocks.processManualActivityFile.mockRejectedValue(
+      new TRPCError({ code: "BAD_REQUEST", message: "Failed to parse activity file" }),
+    );
 
     const caller = createCaller({ db });
 

@@ -1109,14 +1109,23 @@ export class WahooSyncService {
   /**
    * Remove sync - delete workout from Wahoo and remove sync record
    */
-  async unsyncEvent(eventId: string, profileId: string): Promise<SyncResult> {
+  async unsyncEvent(
+    eventId: string,
+    profileId: string,
+    capturedTarget?: { externalId: string; resourceLinkId: string },
+  ): Promise<SyncResult> {
     try {
       // 1. Fetch sync record
-      const sync = await this.repository.getEventResourceLink({
+      const persistedSync = await this.repository.getEventResourceLink({
         eventId,
         profileId,
         provider: "wahoo",
       });
+      const sync =
+        persistedSync ??
+        (capturedTarget
+          ? { externalId: capturedTarget.externalId, id: capturedTarget.resourceLinkId }
+          : null);
 
       if (!sync) {
         return createSyncFailure({

@@ -4,7 +4,6 @@ import {
   creationBehaviorControlsV1Schema,
   creationCalibrationCompositeLocksSchema,
   creationConfigLocksSchema,
-  creationConstraintsBaseSchema,
   creationConstraintsSchema,
   creationOptimizationProfileEnum,
   creationProvenanceSchema,
@@ -78,28 +77,6 @@ export const overridePolicySchema = z
   })
   .strict();
 
-export const getCreationSuggestionsInputSchema = z
-  .object({
-    as_of: z.string().datetime().optional(),
-    locks: creationConfigLocksSchema.partial().optional(),
-    existing_values: z
-      .object({
-        availability_config: creationConfigCoreFields.availability_config.optional(),
-        recent_influence: creationConfigCoreFields.recent_influence.optional(),
-        optimization_profile: creationConfigCoreFields.optimization_profile.optional(),
-        post_goal_recovery_days: creationConfigCoreFields.post_goal_recovery_days.optional(),
-        behavior_controls_v1: creationConfigCoreFields.behavior_controls_v1.optional(),
-        calibration_composite_locks:
-          creationConfigCoreFields.calibration_composite_locks.optional(),
-        calibration: trainingPlanCalibrationInputSchema.optional(),
-        constraints: creationConstraintsBaseSchema.partial().optional(),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict()
-  .optional();
-
 export const previewCreationConfigInputSchema = z
   .object({
     minimal_plan: minimalTrainingPlanCreateSchema,
@@ -122,11 +99,6 @@ export const previewCreationConfigInputSchema = z
   })
   .strict();
 
-export const createFromCreationConfigInputSchema = previewCreationConfigInputSchema.extend({
-  is_active: z.boolean().optional().default(true),
-  preview_snapshot_token: z.string().min(1).optional(),
-});
-
 const projectionChartDiagnosticsCompatSchema = z
   .object({
     inferred_current_state: z.unknown().optional(),
@@ -142,26 +114,11 @@ export const previewCreationConfigResponseCompatSchema = z
   })
   .passthrough();
 
-export const createFromCreationConfigResponseCompatSchema = z
-  .object({
-    creation_summary: z
-      .object({
-        projection_chart: projectionChartDiagnosticsCompatSchema,
-      })
-      .passthrough(),
-  })
-  .passthrough();
-
 export type CreationConfigValue = z.infer<typeof creationConfigValueSchema>;
 export type CreationNormalizationInput = z.infer<typeof creationNormalizationInputSchema>;
 export type PostCreateBehavior = z.infer<typeof postCreateBehaviorSchema>;
 export type OverridePolicy = z.infer<typeof overridePolicySchema>;
-export type GetCreationSuggestionsInput = z.infer<typeof getCreationSuggestionsInputSchema>;
 export type PreviewCreationConfigInput = z.infer<typeof previewCreationConfigInputSchema>;
-export type CreateFromCreationConfigInput = z.infer<typeof createFromCreationConfigInputSchema>;
 export type PreviewCreationConfigResponseCompat = z.infer<
   typeof previewCreationConfigResponseCompatSchema
->;
-export type CreateFromCreationConfigResponseCompat = z.infer<
-  typeof createFromCreationConfigResponseCompatSchema
 >;

@@ -31,9 +31,9 @@ describe("getFailedTrendSources", () => {
   it("returns only independently failed analytics sources", () => {
     expect(
       getFailedTrendSources([
-        { isError: false, name: "Volume" },
+        { isError: false, name: "Dashboard" },
         { isError: true, name: "Training load" },
-        { isError: false, name: "Consistency" },
+        { isError: false, name: "Dashboard" },
         { isError: true, name: "Peak power" },
       ]),
     ).toEqual(["Training load", "Peak power"]);

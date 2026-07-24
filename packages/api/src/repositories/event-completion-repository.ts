@@ -1,4 +1,5 @@
 import type { ActivityPlanRow, ActivityRow, EventRow, PublicEventStatus } from "@repo/db";
+import type { DrizzleTransactionClient } from "../db";
 
 type EventCompletionBase = Pick<
   EventRow,
@@ -90,6 +91,10 @@ export interface EventCompletionRepository {
     >;
     profileId: string;
     scope: EventDeleteScope;
+    beforeDelete?: (input: {
+      candidates: EventDeleteCandidateRecord[];
+      tx: DrizzleTransactionClient;
+    }) => Promise<void>;
   }): Promise<EventDeleteCandidateRecord[]>;
   listOwnedEventsForDeleteScope(input: {
     anchorEvent: Pick<EventCompletionEventRecord, "id" | "series_id" | "starts_at">;

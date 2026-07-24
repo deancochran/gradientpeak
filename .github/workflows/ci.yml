@@ -54,6 +54,9 @@ jobs:
       - name: Type check
         run: pnpm check-types
 
+      - name: Check dead files and dependencies
+        run: pnpm knip
+
       - name: Check maintained mobile Maestro flows
         run: pnpm --filter mobile maestro:check
 

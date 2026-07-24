@@ -68,7 +68,6 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     onSuccess: async (data) => {
       await invalidateActivityPlanQueries(utils, {
         planId: options.planId,
-        includeCount: false,
         includeDetail: true,
       });
       options.onSuccess?.(data.id);

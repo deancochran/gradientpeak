@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { getRequiredDb } from "../../db";
 import {
   type ActivitySubmission,
+  manualImportActivityId,
   providerActivityId,
   providerProjectionDecision,
   recordingSessionActivityId,
@@ -33,6 +34,18 @@ describe("providerActivityId", () => {
     const id = providerActivityId("profile-1", "wahoo", "external-1");
     expect(id).toBe(providerActivityId("profile-1", "wahoo", "external-1"));
     expect(id).not.toBe(providerActivityId("profile-1", "wahoo", "external-2"));
+  });
+});
+
+describe("manualImportActivityId", () => {
+  it("is stable for a profile-scoped artifact digest", () => {
+    const digest = "a".repeat(64);
+    expect(manualImportActivityId("profile-1", digest)).toBe(
+      manualImportActivityId("profile-1", digest),
+    );
+    expect(manualImportActivityId("profile-1", digest)).not.toBe(
+      manualImportActivityId("profile-2", digest),
+    );
   });
 });
 
@@ -311,7 +324,7 @@ describe("submitActivity", () => {
           },
         },
       }),
-    ).rejects.toThrow("claim was lost before projection");
+    ).rejects.toThrow("Activity file ingestion claim was lost");
     expect(committed).toEqual([]);
   });
 

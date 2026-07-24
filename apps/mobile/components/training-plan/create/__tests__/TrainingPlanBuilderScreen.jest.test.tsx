@@ -457,8 +457,6 @@ jest.mock("@/lib/api", () => ({
     trainingPlans: {
       create: {},
       update: {},
-      createFromCreationConfig: {},
-      updateFromCreationConfig: {},
       getCurrentStatus: {
         useQuery: () => ({
           data: { ctl: 41, atl: 50, tsb: -9 },

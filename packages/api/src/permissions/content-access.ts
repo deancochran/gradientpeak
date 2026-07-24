@@ -1,5 +1,6 @@
-import { type DrizzleDbClient, schema } from "@repo/db";
+import { schema } from "@repo/db";
 import { and, eq, gt, inArray, isNull, or } from "drizzle-orm";
+import type { DrizzleQueryExecutor } from "../db";
 import { permissionDeniedForbidden, permissionDeniedNotFound } from "./content-access-errors";
 import type {
   AccessLevel,
@@ -24,12 +25,6 @@ export type ContentAccessRow = {
   isPublic?: boolean | null;
   visibility?: "private" | "followers" | "public" | null;
   isSystem?: boolean | null;
-};
-
-type ReadableRowInput<T> = {
-  row: T;
-  resource: PermissionResource;
-  access: ContentAccessRow;
 };
 
 export function canContentRowSatisfyRead(row: ContentAccessRow, actorProfileId: string) {
@@ -91,7 +86,11 @@ function readGrantLevels(action: PermissionAction): AccessLevel[] {
   return [];
 }
 
-async function hasAcceptedFollower(db: DrizzleDbClient, followerId: string, followingId: string) {
+async function hasAcceptedFollower(
+  db: DrizzleQueryExecutor,
+  followerId: string,
+  followingId: string,
+) {
   const [follow] = await db
     .select({ followerId: schema.follows.follower_id })
     .from(schema.follows)
@@ -108,7 +107,7 @@ async function hasAcceptedFollower(db: DrizzleDbClient, followerId: string, foll
 }
 
 async function canRowSatisfyAction(
-  db: DrizzleDbClient,
+  db: DrizzleQueryExecutor,
   row: ResourceRow,
   actorProfileId: string,
   action: PermissionAction,
@@ -140,7 +139,7 @@ async function canRowSatisfyAction(
   return { allowed: false, reason: "denied" as const };
 }
 
-export function createContentAccessPermissions(db: DrizzleDbClient) {
+export function createContentAccessPermissions(db: DrizzleQueryExecutor) {
   async function findResource(resource: PermissionResource): Promise<ResourceRow | null> {
     if (resource.type === "activity_plan") {
       const [row] = await db
@@ -350,29 +349,6 @@ export function createContentAccessPermissions(db: DrizzleDbClient) {
     return can({ actorProfileId: input.actorProfileId, action: "read", resource: input.resource });
   }
 
-  async function filterReadableRows<T>(input: {
-    actorProfileId: string;
-    rows: T[];
-    getRowInput: (row: T) => ReadableRowInput<T>;
-  }) {
-    const readableRows: T[] = [];
-
-    for (const row of input.rows) {
-      const rowInput = input.getRowInput(row);
-      const decision = await canReadForRow({
-        actorProfileId: input.actorProfileId,
-        resource: rowInput.resource,
-        row: rowInput.access,
-      });
-
-      if (decision.allowed) {
-        readableRows.push(row);
-      }
-    }
-
-    return readableRows;
-  }
-
   async function grant(input: GrantInput & { accessLevel: AccessLevel }) {
     await db
       .insert(schema.contentAccessGrants)
@@ -484,7 +460,6 @@ export function createContentAccessPermissions(db: DrizzleDbClient) {
       require({ actorProfileId, action: "read", resource, message }),
     canReadForRow,
     requireReadForRow,
-    filterReadableRows,
     requireManage: (actorProfileId: string, resource: PermissionResource, message?: string) =>
       require({ actorProfileId, action: "manage", resource, message }),
     requireRouteGeometry: (actorProfileId: string, routeId: string, message?: string) =>

@@ -13,6 +13,7 @@ export class PlannedWorkoutSyncService {
     eventIds: string[];
     operation: "publish" | "unsync";
     profileId: string;
+    unsyncTargets?: ReadonlyMap<string, { externalId: string; resourceLinkId: string }>;
   }): Promise<PlannedWorkoutQueueResult | null> {
     const eventIds = [...new Set(input.eventIds)];
     if (eventIds.length === 0) return null;
@@ -35,10 +36,15 @@ export class PlannedWorkoutSyncService {
 
       for (const eventId of eventIds) {
         try {
+          const unsyncTarget = input.unsyncTargets?.get(eventId);
           const result =
             input.operation === "publish"
               ? await adapter.enqueuePublishEvent({ eventId, profileId: input.profileId })
-              : await adapter.enqueueUnsyncEvent({ eventId, profileId: input.profileId });
+              : await adapter.enqueueUnsyncEvent({
+                  eventId,
+                  profileId: input.profileId,
+                  ...(unsyncTarget === undefined ? {} : { unsyncTarget }),
+                });
 
           firstJobId ??= result.jobId;
           queued = queued || result.queued;

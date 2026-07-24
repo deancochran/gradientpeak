@@ -1,7 +1,11 @@
 import { TRPCError } from "@trpc/server";
 import type { Context } from "../../context";
+import type { DrizzleTransactionClient } from "../../db";
+import { getRequiredDb } from "../../db";
 import type { createEventCompletionRepository } from "../../infrastructure/repositories";
+import { logger } from "../../lib/logger";
 import type { PlannedWorkoutQueueResult } from "../../lib/provider-sync/planned-workouts";
+import { drainDueWahooPlannedWorkoutJobs } from "../../lib/provider-sync/wahoo-planned-workout-drain";
 import type { createContentAccessPermissions } from "../../permissions/content-access";
 
 type ProtectedContext = Context & {
@@ -34,9 +38,18 @@ type DeleteEventUseCaseDependencies = {
   }) => unknown;
   enqueueProviderPlannedActivityJobs: (
     ctx: ProtectedContext,
-    input: { eventIds: string[]; operation: "publish" | "unsync"; profileId?: string },
+    input: {
+      drainDueJobs?: boolean;
+      eventIds: string[];
+      operation: "publish" | "unsync";
+      profileId?: string;
+      transaction?: DrizzleTransactionClient;
+    },
   ) => Promise<PlannedWorkoutQueueResult | null>;
-  getContentPermissions: (ctx: Context) => ContentPermissions;
+  getContentPermissions: (
+    ctx: Context,
+    transaction?: DrizzleTransactionClient,
+  ) => ContentPermissions;
   getEventCompletionRepository: (
     ctx: Context,
   ) => ReturnType<typeof createEventCompletionRepository>;
@@ -51,7 +64,6 @@ export async function deleteEventUseCase<
 >(input: { ctx: ProtectedContext; input: TInput; dependencies: DeleteEventUseCaseDependencies }) {
   const { ctx, dependencies } = input;
   const completionRepository = dependencies.getEventCompletionRepository(ctx);
-  const permissions = dependencies.getContentPermissions(ctx);
   const existing = await completionRepository.getOwnedEventForCompletion({
     eventId: input.input.id,
     profileId: ctx.session.user.id,
@@ -75,61 +87,61 @@ export async function deleteEventUseCase<
 
   const scope = input.input.scope ?? "single";
 
-  let rowsToDelete: TEventRecord[];
   try {
-    rowsToDelete = (await completionRepository.listOwnedEventsForDeleteScope({
+    const rowsToDelete = (await completionRepository.deleteOwnedEventsForScope({
       anchorEvent: existingEvent,
       profileId: ctx.session.user.id,
       scope,
+      beforeDelete: async ({ candidates, tx }) => {
+        const rows = candidates as TEventRecord[];
+        const transactionPermissions = dependencies.getContentPermissions(ctx, tx);
+        const plannedEventIds = rows
+          .filter((row) => row.event_type === dependencies.plannedEventType && row.activity_plan_id)
+          .map((row) => row.id);
+        if (plannedEventIds.length > 0) {
+          const result = await dependencies.enqueueProviderPlannedActivityJobs(ctx, {
+            drainDueJobs: false,
+            eventIds: plannedEventIds,
+            operation: "unsync",
+            transaction: tx,
+          });
+          if (result && !result.success)
+            throw new Error(result.error ?? "Failed to enqueue unsync jobs");
+        }
+        if (transactionPermissions) {
+          await Promise.all(rows.map((row) => transactionPermissions.revokeEventGrants(row.id)));
+        }
+      },
     })) as TEventRecord[];
-  } catch (error) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: error instanceof Error ? error.message : "Failed to scope events for delete",
-    });
-  }
 
-  try {
-    const plannedEventIds = rowsToDelete
-      .filter((row) => row.event_type === dependencies.plannedEventType && row.activity_plan_id)
-      .map((row) => row.id);
-
-    if (plannedEventIds.length > 0) {
-      await dependencies.enqueueProviderPlannedActivityJobs(ctx, {
-        eventIds: plannedEventIds,
-        operation: "unsync",
+    const result = {
+      success: true,
+      mutation_scope: scope,
+      affected_count: rowsToDelete.length,
+      affected_event_ids: rowsToDelete.map((row) => row.id),
+      insight_refresh_hint: dependencies.buildInsightRefreshHint({
+        trainingPlanId: existingEvent.training_plan_id,
+        changedDate: dependencies.toDateKey(existingEvent.starts_at),
+        changeAt: existingEvent.updated_at,
+      }),
+    };
+    try {
+      await drainDueWahooPlannedWorkoutJobs({
+        db: getRequiredDb(ctx),
+        limit: 3,
+        workerId: "event-delete-planned-workout-drain",
+      });
+    } catch {
+      logger.error("Failed to drain planned workout unsync jobs after event deletion", {
+        category: "upstream",
+        provider: "wahoo",
       });
     }
-  } catch (error) {
-    console.error("Failed to enqueue planned workout unsync jobs:", error);
-  }
-
-  try {
-    await completionRepository.deleteOwnedEventsForScope({
-      anchorEvent: existingEvent,
-      profileId: ctx.session.user.id,
-      scope,
-    });
-
-    if (permissions) {
-      await Promise.all(rowsToDelete.map((row) => permissions.revokeEventGrants(row.id)));
-    }
-  } catch (error) {
+    return result;
+  } catch {
     throw new TRPCError({
       code: "BAD_REQUEST",
-      message: error instanceof Error ? error.message : "Failed to delete events",
+      message: "Failed to delete events",
     });
   }
-
-  return {
-    success: true,
-    mutation_scope: scope,
-    affected_count: rowsToDelete.length,
-    affected_event_ids: rowsToDelete.map((row) => row.id),
-    insight_refresh_hint: dependencies.buildInsightRefreshHint({
-      trainingPlanId: existingEvent.training_plan_id,
-      changedDate: dependencies.toDateKey(existingEvent.starts_at),
-      changeAt: existingEvent.updated_at,
-    }),
-  };
 }

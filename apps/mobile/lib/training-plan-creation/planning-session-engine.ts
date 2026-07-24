@@ -1,18 +1,11 @@
 import {
-  type BackendCreateCommitMappingResult,
   type BackendPreviewProjection,
-  type BackendUpdateCommitMappingResult,
   deriveTrainingPathChartFromActiveProjection,
   deriveTrainingPathProjectionStatus,
-  mapBackendPlanningCreateCommitInput,
-  mapBackendPlanningUpdateCommitInput,
   selectActiveTrainingPlanProjection,
 } from "./backend-planning-client";
 import type { TrainingPlanLocalProjection } from "./local-projection";
-import {
-  createTrainingPlanProjectionFacade,
-  createTrainingPlanSavePlanFacade,
-} from "./planning-session";
+import { createTrainingPlanProjectionFacade } from "./planning-session";
 
 export type TrainingPlanCreationPreviewQueryState = {
   error?: { message?: string } | null;
@@ -25,7 +18,6 @@ export type TrainingPlanCreationSessionInput = {
   backendPreviewInputEnabled: boolean;
   isBackendPlanningInputStale: boolean;
   localProjection: TrainingPlanLocalProjection;
-  planId?: string;
   previewQuery: TrainingPlanCreationPreviewQueryState;
 };
 
@@ -94,14 +86,6 @@ function derivePreviewLifecycle({
   }
 
   return { status: "local_ready", reason: "Using instant local planning projection." };
-}
-
-function deriveCommitLifecycle(
-  commit: BackendCreateCommitMappingResult | BackendUpdateCommitMappingResult,
-): TrainingPlanCommitLifecycle {
-  return commit.ok
-    ? { status: "commit_ready" }
-    : { status: "commit_blocked", reason: commit.reason };
 }
 
 export function deriveTrainingPlanReadinessPresentation({
@@ -180,7 +164,6 @@ export function deriveTrainingPlanCreationSession({
   backendPreviewInputEnabled,
   isBackendPlanningInputStale,
   localProjection,
-  planId,
   previewQuery,
 }: TrainingPlanCreationSessionInput) {
   const activeProjection = selectActiveTrainingPlanProjection({
@@ -190,17 +173,6 @@ export function deriveTrainingPlanCreationSession({
     localChart: localProjection.builderViewModel.dailyTrainingPathChart,
   });
 
-  const backendPlanningCommit = {
-    create: mapBackendPlanningCreateCommitInput({
-      previewInput: localProjection.backendPlanning.previewInput,
-      previewSnapshotToken: authoritativeProjection?.previewSnapshotToken,
-    }),
-    update: mapBackendPlanningUpdateCommitInput({
-      planId,
-      previewInput: localProjection.backendPlanning.previewInput,
-      previewSnapshotToken: authoritativeProjection?.previewSnapshotToken,
-    }),
-  };
   const previewLifecycle = derivePreviewLifecycle({
     authoritativeProjection,
     backendPlanningReason: localProjection.backendPlanning.status.reason,
@@ -210,8 +182,8 @@ export function deriveTrainingPlanCreationSession({
     previewQuery,
   });
   const saveLifecycle: TrainingPlanSaveLifecycle = {
-    create: deriveCommitLifecycle(backendPlanningCommit.create),
-    update: deriveCommitLifecycle(backendPlanningCommit.update),
+    create: { status: "commit_ready" },
+    update: { status: "commit_ready" },
   };
 
   const trainingPathChartProjection = deriveTrainingPathChartFromActiveProjection({
@@ -237,18 +209,11 @@ export function deriveTrainingPlanCreationSession({
     trainingPathProjectionStatus,
   });
 
-  const savePlanRoute = createTrainingPlanSavePlanFacade({
-    createCommit: backendPlanningCommit.create,
-    updateCommit: backendPlanningCommit.update,
-  });
-
   return {
     activeProjection,
-    backendPlanningCommit,
     previewLifecycle,
     projection,
     saveLifecycle,
-    savePlanRoute,
     trainingPathChartProjection,
     trainingPathProjectionStatus,
   };

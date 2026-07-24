@@ -278,7 +278,6 @@ export function useTrainingPlanCreationService({
         backendPreviewInputEnabled: backendPreviewInput !== null,
         isBackendPlanningInputStale,
         localProjection,
-        planId,
         previewQuery: {
           error: backendPlanningPreviewQuery.error,
           isFetching: backendPlanningPreviewQuery.isFetching,
@@ -293,7 +292,6 @@ export function useTrainingPlanCreationService({
       backendPlanningPreviewQuery.isLoading,
       isBackendPlanningInputStale,
       localProjection,
-      planId,
     ],
   );
   const { previewLifecycle, projection, saveLifecycle } = planningSession;

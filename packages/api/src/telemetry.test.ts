@@ -2,21 +2,15 @@ import { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const captureException = vi.fn();
-const posthogCapture = vi.fn();
+const captureMessage = vi.fn();
 
-vi.mock("@sentry/node", () => ({ captureException }));
-vi.mock("posthog-node", () => ({
-  PostHog: class {
-    capture = posthogCapture;
-  },
-}));
+vi.mock("@sentry/node", () => ({ captureException, captureMessage }));
 
 describe("API telemetry", () => {
   beforeEach(() => {
     vi.resetModules();
     captureException.mockClear();
-    posthogCapture.mockClear();
-    delete process.env.POSTHOG_KEY;
+    captureMessage.mockClear();
   });
 
   it("suppresses expected tRPC control-flow failures", async () => {
@@ -78,37 +72,93 @@ describe("API telemetry", () => {
     ).toBe(false);
   });
 
-  it("redacts and bounds explicit error context", async () => {
+  it("allows only bounded operational context and does not mutate cyclic input", async () => {
     const { sanitizeTelemetryContext } = await import("./telemetry");
-    const circular: Record<string, unknown> = { token: "secret" };
+    const circular: Record<string, unknown> = {
+      token: "secret",
+      nested: { email: "person@example.test" },
+    };
     circular.self = circular;
+    const context = {
+      procedure_group: "activities",
+      procedure_type: "query",
+      outcome: "success",
+      duration_bucket: "<50",
+      count: 3,
+      flags: { cached: true, secret: true },
+      authorization: "Bearer synthetic-secret",
+      error: "private database detail",
+      url: "https://example.test/private?token=synthetic",
+      nested: { one: { two: { three: { four: circular } } } },
+      circular,
+      extraEntries: Array.from({ length: 30 }, (_, index) => index),
+    };
+
+    expect(sanitizeTelemetryContext(context)).toEqual({
+      procedure_group: "activities",
+      procedure_type: "query",
+      outcome: "success",
+      duration_bucket: "<50",
+      count: 3,
+      flags: { cached: true },
+    });
+    expect(circular.self).toBe(circular);
+  });
+
+  it("redacts secret and PII canaries even in approved string fields", async () => {
+    const { sanitizeTelemetryContext } = await import("./telemetry");
 
     expect(
       sanitizeTelemetryContext({
-        authorization: "Bearer secret",
-        safe: "x".repeat(600),
-        nested: { one: { two: { three: { four: "too deep" } } } },
-        circular,
-        list: Array.from({ length: 30 }, (_, index) => index),
+        release: "550e8400-e29b-41d4-a716-446655440000",
+        environment: "production",
+        provider: "https://example.test/?access_token=secret",
       }),
     ).toEqual({
-      authorization: "[Redacted]",
-      safe: "x".repeat(500),
-      nested: { one: { two: { three: "[Truncated]" } } },
-      circular: { token: "[Redacted]", self: "[Circular]" },
-      list: Array.from({ length: 20 }, (_, index) => index),
+      release: "[Redacted]",
+      environment: "production",
+      provider: "unknown",
     });
   });
 
-  it("does not mirror raw exceptions to PostHog", async () => {
-    process.env.POSTHOG_KEY = "synthetic-test-key";
-    const { captureApiError } = await import("./telemetry");
+  it("records only a sanitized non-fatal procedure metric", async () => {
+    const { captureApiProcedureMetric } = await import("./telemetry");
+    captureMessage.mockImplementationOnce(() => {
+      throw new Error("transport unavailable");
+    });
 
-    captureApiError(new Error("private database detail"), { surface: "trpc" });
+    expect(() =>
+      captureApiProcedureMetric({
+        procedure_group: "activities",
+        procedure_type: "query",
+        outcome: "success",
+        error_code: "INTERNAL_SERVER_ERROR",
+        message: "person@example.test",
+      }),
+    ).not.toThrow();
+    expect(captureMessage).toHaveBeenCalledWith("api.procedure", {
+      level: "info",
+      extra: {
+        procedure_group: "activities",
+        procedure_type: "query",
+        outcome: "success",
+        error_code: "INTERNAL_SERVER_ERROR",
+      },
+    });
+  });
 
-    expect(posthogCapture).toHaveBeenCalledOnce();
-    expect(posthogCapture.mock.calls[0]?.[0]).toMatchObject({
-      event: "server_telemetry_initialized",
+  it("normalizes arbitrary error codes while denying raw error fields", async () => {
+    const { captureApiProcedureMetric } = await import("./telemetry");
+
+    captureApiProcedureMetric({
+      error_code: "private-token-550e8400-e29b-41d4-a716-446655440000",
+      error: "person@example.test",
+      error_message: "Bearer synthetic-secret",
+    });
+
+    expect(captureMessage).toHaveBeenCalledWith("api.procedure", {
+      level: "info",
+      extra: { error_code: "unknown" },
     });
   });
 });

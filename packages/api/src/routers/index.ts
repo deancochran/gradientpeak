@@ -14,23 +14,15 @@ import {
 } from "./activity";
 import { athleteIntelligenceRouter } from "./athlete-intelligence";
 import { groupsRouter } from "./groups";
-import { analyticsRouter, homeRouter, trendsRouter } from "./insights";
+import { homeRouter, trendsRouter } from "./insights";
 import { organizationsRouter } from "./organizations";
 import { activityPlansRouter, eventsRouter, goalsRouter, trainingPlansRouter } from "./planning";
 import { integrationsRouter, storageRouter } from "./platform";
 import { publicShareRouter } from "./public-share";
-import {
-  coachingRouter,
-  feedRouter,
-  messagingRouter,
-  notificationsRouter,
-  socialRouter,
-} from "./social/index";
+import { feedRouter, messagingRouter, notificationsRouter, socialRouter } from "./social/index";
 
 export const appRouter = createTRPCRouter({
-  coaching: coachingRouter,
   profiles: profilesRouter,
-  analytics: analyticsRouter,
   athleteIntelligence: athleteIntelligenceRouter,
 
   onboarding: onboardingRouter,

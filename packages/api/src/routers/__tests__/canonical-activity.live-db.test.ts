@@ -19,6 +19,12 @@ import {
   type ExistingActivityEnrichmentSubmission,
   submitActivity,
 } from "../../application/activities/submit-activity";
+import {
+  ActivityFileIngestionClaimLostError,
+  createActivityFileIngestion,
+  markProcessing,
+  markUploaded,
+} from "../../application/activity-file-ingestion/ingestion-state";
 
 const seededUserIds: string[] = [];
 
@@ -112,7 +118,7 @@ function segmentManifest(
   movingMs: number,
   category: "bike" | "run" = "bike",
   sourceArtifactId?: string,
-): ActivitySubmission["segmentSet"] {
+): NonNullable<ActivitySubmission["segmentSet"]> {
   return {
     version: 1,
     elapsedMs,
@@ -455,6 +461,127 @@ describe("canonical activity persistence against PostgreSQL", () => {
       timing_coverage: "complete",
       active_ms: 3_500_000,
       moving_ms: 3_500_000,
+    });
+  });
+
+  it("rolls back a stale finalizer after another worker reclaims its expired lease", async () => {
+    const profileId = await seedProfile();
+    const activityId = randomUUID();
+    const operationKey = `manual_import:${randomUUID()}`;
+    const acceptedArtifact = artifact(profileId, "d", 42);
+    const ingestion = await createActivityFileIngestion(db, {
+      activityId: null,
+      profileId,
+      source: "manual_import",
+      operationKey,
+    });
+    await markUploaded(db, { id: ingestion.id, profileId });
+    const firstClaim = await markProcessing(db, { id: ingestion.id, profileId });
+    if (!firstClaim.claim_token) throw new Error("First worker did not acquire an ingestion claim");
+
+    let signalProjectionReached: (() => void) | undefined;
+    const projectionReached = new Promise<void>((resolve) => {
+      signalProjectionReached = resolve;
+    });
+    let releaseStaleWorker: (() => void) | undefined;
+    const staleWorkerMayFinish = new Promise<void>((resolve) => {
+      releaseStaleWorker = resolve;
+    });
+    const staleSubmission = submission(profileId, {
+      requestedActivityId: activityId,
+      segmentSet: segmentManifest(
+        3_600_000,
+        3_500_000,
+        3_500_000,
+        "bike",
+        activityArtifactId(profileId, acceptedArtifact.sha256, acceptedArtifact.byteSize),
+      ),
+      analysis: {
+        efforts: [],
+        detectedLTHR: null,
+        activityCompletedAt: new Date("2026-01-01T11:00:00.000Z"),
+        ingestion: {
+          source: "manual_import",
+          operationKey,
+          claimToken: firstClaim.claim_token,
+          artifact: acceptedArtifact,
+        },
+      },
+      composition: {
+        persist: async () => {
+          signalProjectionReached?.();
+          await staleWorkerMayFinish;
+        },
+      },
+    });
+
+    const staleCommit = submitActivity(db, staleSubmission);
+    await projectionReached;
+    await db
+      .update(activityFileIngestions)
+      .set({ lease_expires_at: new Date(Date.now() - 1_000) })
+      .where(
+        and(
+          eq(activityFileIngestions.id, ingestion.id),
+          eq(activityFileIngestions.claim_token, firstClaim.claim_token),
+        ),
+      );
+    const secondClaim = await markProcessing(db, { id: ingestion.id, profileId });
+    expect(secondClaim.claim_token).not.toBe(firstClaim.claim_token);
+
+    releaseStaleWorker?.();
+    await expect(staleCommit).rejects.toBeInstanceOf(ActivityFileIngestionClaimLostError);
+
+    expect(await db.select().from(activities).where(eq(activities.id, activityId))).toEqual([]);
+    expect(
+      await db
+        .select()
+        .from(activityArtifactLinks)
+        .where(eq(activityArtifactLinks.activity_id, activityId)),
+    ).toEqual([]);
+    const [reclaimed] = await db
+      .select()
+      .from(activityFileIngestions)
+      .where(eq(activityFileIngestions.id, ingestion.id));
+    expect(reclaimed).toMatchObject({
+      status: "processing",
+      claim_token: secondClaim.claim_token,
+      activity_id: null,
+      artifact_id: null,
+    });
+
+    if (!secondClaim.claim_token)
+      throw new Error("Second worker did not acquire an ingestion claim");
+    const finalAnalysis = staleSubmission.analysis;
+    if (!finalAnalysis) throw new Error("Stale submission did not include ingestion analysis");
+    const { composition: _staleComposition, ...reclaimedSubmission } = staleSubmission;
+    const committed = await submitActivity(db, {
+      ...reclaimedSubmission,
+      analysis: {
+        ...finalAnalysis,
+        ingestion: {
+          source: "manual_import",
+          operationKey,
+          claimToken: secondClaim.claim_token,
+          artifact: acceptedArtifact,
+        },
+      },
+    });
+    expect(committed.id).toBe(activityId);
+    expect(await db.select().from(activities).where(eq(activities.id, activityId))).toHaveLength(1);
+    const [ready] = await db
+      .select()
+      .from(activityFileIngestions)
+      .where(eq(activityFileIngestions.id, ingestion.id));
+    expect(ready).toMatchObject({
+      status: "ready",
+      claim_token: null,
+      activity_id: activityId,
+      artifact_id: activityArtifactId(
+        profileId,
+        acceptedArtifact.sha256,
+        acceptedArtifact.byteSize,
+      ),
     });
   });
 });

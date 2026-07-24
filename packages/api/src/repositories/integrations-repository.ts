@@ -7,6 +7,7 @@ import type {
   OAuthStateRow,
   PublicIntegrationProvider,
 } from "@repo/db";
+import type { DrizzleTransactionClient } from "../db";
 
 type IntegrationUpsertFields = {
   accessToken: IntegrationCredentialInsert["access_token"];
@@ -53,6 +54,10 @@ export interface IntegrationsRepository {
   }): Promise<Pick<IntegrationCredentialRow, "expires_at" | "scope"> | null>;
   upsertByProfileIdAndProvider(input: IntegrationUpsertFields): Promise<IntegrationRow>;
   upsertFromOAuthState(input: OAuthIntegrationUpsertFields): Promise<IntegrationRow | null>;
+  upsertFromOAuthStateInTransaction(
+    transaction: DrizzleTransactionClient,
+    input: OAuthIntegrationUpsertFields,
+  ): Promise<IntegrationRow | null>;
   updateTokensByProfileIdAndProvider(input: IntegrationTokenUpdateFields): Promise<void>;
   deleteByProfileIdAndProvider(input: {
     profileId: string;

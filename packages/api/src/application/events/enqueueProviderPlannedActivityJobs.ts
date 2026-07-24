@@ -1,5 +1,5 @@
 import type { Context } from "../../context";
-import { getRequiredDb } from "../../db";
+import { type DrizzleTransactionClient, getRequiredDb } from "../../db";
 import {
   enqueuePlannedWorkoutSyncAfterCalendarMutation,
   type PlannedWorkoutQueueResult,
@@ -13,12 +13,20 @@ type ProtectedContext = Context & {
 
 export async function enqueueProviderPlannedActivityJobs(
   ctx: ProtectedContext,
-  input: { eventIds: string[]; operation: "publish" | "unsync"; profileId?: string },
+  input: {
+    drainDueJobs?: boolean;
+    eventIds: string[];
+    operation: "publish" | "unsync";
+    profileId?: string;
+    transaction?: DrizzleTransactionClient;
+  },
 ): Promise<PlannedWorkoutQueueResult | null> {
   return enqueuePlannedWorkoutSyncAfterCalendarMutation({
     db: getRequiredDb(ctx),
+    ...(input.drainDueJobs === undefined ? {} : { drainDueJobs: input.drainDueJobs }),
     eventIds: input.eventIds,
     operation: input.operation,
     profileId: input.profileId ?? ctx.session.user.id,
+    ...(input.transaction === undefined ? {} : { transaction: input.transaction }),
   });
 }

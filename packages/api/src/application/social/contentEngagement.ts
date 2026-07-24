@@ -4,7 +4,6 @@ import type { getRequiredDb } from "../../db";
 import {
   addContentCommentRecord,
   canAccessSocialContent,
-  deleteOwnedCommentRecord,
   loadContentComments,
   toggleContentLikeRecord,
 } from "../../repositories/social-content-repository";
@@ -56,10 +55,6 @@ export async function addContentComment({
 }) {
   await requireAccess(db, viewerId, input.entity_id, input.entity_type, "comment on");
   return addContentCommentRecord(db, viewerId, input);
-}
-
-export async function deleteOwnedComment(db: DbClient, viewerId: string, commentId: string) {
-  return deleteOwnedCommentRecord(db, viewerId, commentId);
 }
 
 export async function readContentComments({

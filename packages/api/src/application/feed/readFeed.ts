@@ -5,14 +5,10 @@ import {
   loadActivitySegmentsByActivityId,
 } from "../../lib/activity-analysis";
 import {
-  feedActivityDetailDtoSchema,
   feedResponseSchema,
   listFeedActivityRows,
   loadFeedActivityCommentCounts,
-  loadFeedActivityComments,
-  loadFeedActivityDetail,
   mapFeedActivity,
-  mapFeedActivityDetail,
 } from "../../repositories/feed-read-repository";
 import { loadLikeStats } from "../../repositories/like-stats";
 import { buildFeedPage } from "./feedPage";
@@ -20,7 +16,7 @@ import { buildFeedPage } from "./feedPage";
 type DbClient = ReturnType<typeof getRequiredDb>;
 
 export type { FeedActivity } from "../../repositories/feed-read-repository";
-export { feedActivityDetailDtoSchema, feedResponseSchema };
+export { feedResponseSchema };
 
 export async function getFeedForViewer({
   db,
@@ -64,26 +60,4 @@ export async function getFeedForViewer({
       mapRow: (activity) => mapFeedActivity(activity, { commentCounts, derivedMap, likeStats }),
     }),
   );
-}
-
-export async function getFeedActivityForViewer({
-  db,
-  viewerId,
-  activityId,
-}: {
-  db: DbClient;
-  viewerId: string;
-  activityId: string;
-}) {
-  const activity = await loadFeedActivityDetail(db, viewerId, activityId);
-  const [likeStats, comments, segmentMap] = await Promise.all([
-    loadLikeStats(db, {
-      entityType: "activity",
-      entityIds: [activityId],
-      viewerProfileId: viewerId,
-    }),
-    loadFeedActivityComments(db, activityId),
-    loadActivitySegmentsByActivityId(db, [activityId]),
-  ]);
-  return mapFeedActivityDetail(activity, likeStats, comments, segmentMap.get(activityId) ?? []);
 }

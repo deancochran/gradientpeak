@@ -34,7 +34,7 @@ import {
   updateEventUseCase,
 } from "../application/events";
 import type { Context } from "../context";
-import { getRequiredDb } from "../db";
+import { type DrizzleTransactionClient, getRequiredDb } from "../db";
 import {
   createEventCompletionRepository,
   createEventReadRepository,
@@ -69,8 +69,8 @@ function getEventReadRepository(ctx: Context) {
   return createEventReadRepository(getRequiredDb(ctx));
 }
 
-function getContentPermissions(ctx: Context) {
-  const db = getRequiredDb(ctx);
+function getContentPermissions(ctx: Context, transaction?: DrizzleTransactionClient) {
+  const db = transaction ?? getRequiredDb(ctx);
 
   if (!("select" in db) || !("insert" in db) || !("update" in db)) {
     return null;

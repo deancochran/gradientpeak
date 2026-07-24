@@ -2,7 +2,7 @@ import type {
   ActivityEffortThresholdEvidence,
   ThresholdMetricSource,
 } from "@repo/core/athlete-inputs";
-import type { DrizzleDbClient } from "@repo/db";
+import type { DrizzleQueryExecutor } from "../db";
 
 export type WahooIntegrationRecord = {
   accessToken: string;
@@ -79,6 +79,7 @@ export interface WahooRepository {
   getEventActivityPlanId(input: { eventId: string; profileId: string }): Promise<string | null>;
   getEventResourceLink(input: {
     eventId: string;
+    forUpdate?: boolean;
     profileId: string;
     provider: "wahoo";
   }): Promise<WahooEventResourceLinkRecord | null>;
@@ -144,5 +145,5 @@ export interface WahooRepository {
 }
 
 export interface CreateWahooRepositoryOptions {
-  db: DrizzleDbClient;
+  db: DrizzleQueryExecutor;
 }

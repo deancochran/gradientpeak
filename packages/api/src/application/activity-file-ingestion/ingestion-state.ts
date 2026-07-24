@@ -10,12 +10,20 @@ import {
   activityFileIngestions,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 
 type DbClient = Pick<ReturnType<typeof getRequiredDb>, "insert" | "select" | "update">;
+
+/** A conditional lease write lost to another worker or elapsed before commit. */
+export class ActivityFileIngestionClaimLostError extends Error {
+  constructor() {
+    super("Activity file ingestion claim was lost");
+    this.name = "ActivityFileIngestionClaimLostError";
+  }
+}
 export interface CreateActivityFileIngestionInput {
-  activityId: string;
+  activityId?: string | null;
   profileId: string;
   source: ActivityFileIngestionSource;
   provider?: ActivityFileIngestionInsert["provider"] | null;
@@ -79,7 +87,7 @@ export async function createActivityFileIngestion(
       external_id: input.externalId ?? null,
       operation_key:
         input.operationKey ??
-        `${input.source}:${input.provider ?? "direct"}:${input.externalId ?? input.activityId}`,
+        `${input.source}:${input.provider ?? "direct"}:${input.externalId ?? input.activityId ?? "pending"}`,
       status: "pending_upload",
       attempt_count: 0,
       requested_at: now,
@@ -88,7 +96,13 @@ export async function createActivityFileIngestion(
     })
     .onConflictDoUpdate({
       target: [activityFileIngestions.profile_id, activityFileIngestions.operation_key],
-      set: { activity_id: input.activityId, updated_at: now },
+      // A replay may arrive before its canonical parent exists. Never let that
+      // nullable replay erase an activity identity already finalized by another
+      // claimant.
+      set: {
+        activity_id: sql`coalesce(${activityFileIngestions.activity_id}, excluded.activity_id)`,
+        updated_at: now,
+      },
     })
     .returning();
 
@@ -181,12 +195,16 @@ export async function transitionActivityFileIngestion(
       and(
         scopedIngestionWhere(input),
         eq(activityFileIngestions.status, existing.status),
+        input.status === "processing" && existing.status === "processing"
+          ? lt(activityFileIngestions.lease_expires_at, sql`clock_timestamp()`)
+          : undefined,
         input.claimToken ? eq(activityFileIngestions.claim_token, input.claimToken) : undefined,
       ),
     )
     .returning();
 
   if (!updated) {
+    if (input.status === "processing") throw new ActivityFileIngestionClaimLostError();
     throw new TRPCError({
       code: "NOT_FOUND",
       message: "Activity file ingestion not found",

@@ -15,12 +15,10 @@ import {
   publicActivityPlansRowSchema,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, desc, eq, gt, gte, ilike, inArray, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, ilike, inArray, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { activityPlanStructureHash } from "../application/activity-plans/structure-hash";
-import { upsertImportedActivityPlan } from "../application/activity-plans/upsertImportedActivityPlan";
 import { enqueueProviderPlannedActivityJobs } from "../application/events";
-import type { Context } from "../context";
 import { getRequiredDb } from "../db";
 import { createEventReadRepository } from "../infrastructure/repositories";
 import { createContentAccessPermissions } from "../permissions/content-access";
@@ -100,12 +98,6 @@ const duplicateActivityPlanInputSchema = z
   })
   .strict();
 
-const activityPlanCountRowSchema = z
-  .object({
-    value: z.coerce.number().int().nonnegative(),
-  })
-  .strict();
-
 const activityPlanRowSchema = publicActivityPlansRowSchema
   .extend({
     created_at: z.date(),
@@ -134,10 +126,6 @@ const serializedActivityPlanSchema = activityPlanRowSchema.transform((row) => ({
 
 function validateStructure(structure: unknown) {
   return activityPlanStructureSchemaV3.parse(structure);
-}
-
-function getEstimationStore(ctx: Context) {
-  return createEventReadRepository(getRequiredDb(ctx));
 }
 
 const createActivityPlanInput = activityPlanCreateSchema.safeExtend({
@@ -169,16 +157,6 @@ const updateActivityPlanWithIdInput = updateActivityPlanInput
       });
     }
   });
-
-const importedTemplateInput = z
-  .object({
-    external_id: z.string().min(1).max(255),
-    name: z.string().min(1, "Plan name is required"),
-    description: z.string().max(1000).nullable().optional(),
-    notes: z.string().max(2000).optional(),
-    structure: activityPlanStructureSchemaV3,
-  })
-  .strict();
 
 function serializeActivityPlanRow(row: ActivityPlanRow | unknown) {
   if (
@@ -714,19 +692,16 @@ export const activityPlansRouter = createTRPCRouter({
       const estimationStore = createEventReadRepository(db);
       const userId = ctx.session.user.id;
       const ids = Array.from(new Set(input.ids));
-      const permissions = createContentAccessPermissions(db);
 
-      const planRows = await db.select().from(activityPlans).where(inArray(activityPlans.id, ids));
+      const planRows = await db
+        .select()
+        .from(activityPlans)
+        .where(and(inArray(activityPlans.id, ids), buildAccessiblePlanCondition(userId)));
 
       const parsedPlanRows = z.array(activityPlanRowSchema).parse(planRows);
-      const readablePlanRows = await permissions.filterReadableRows({
-        actorProfileId: userId,
-        rows: parsedPlanRows,
-        getRowInput: (plan) => ({ row: plan, ...activityPlanAccessInput(plan) }),
-      });
 
       const planById = new Map(
-        readablePlanRows.map((plan) => [plan.id, serializeActivityPlanRow(plan)]),
+        parsedPlanRows.map((plan) => [plan.id, serializeActivityPlanRow(plan)]),
       );
       const orderedPlans = ids
         .map((id) => planById.get(id))
@@ -759,17 +734,6 @@ export const activityPlansRouter = createTRPCRouter({
         })),
       };
     }),
-
-  getUserPlansCount: protectedProcedure.query(async ({ ctx }) => {
-    const db = getRequiredDb(ctx);
-
-    const [row] = await db
-      .select({ value: count() })
-      .from(activityPlans)
-      .where(eq(activityPlans.profile_id, ctx.session.user.id));
-
-    return activityPlanCountRowSchema.parse(row ?? { value: 0 }).value;
-  }),
 
   create: protectedProcedure.input(createActivityPlanInput).mutation(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
@@ -1132,90 +1096,5 @@ export const activityPlansRouter = createTRPCRouter({
       );
 
       return toPublicActivityPlan(withIdentityFields(planWithEstimation));
-    }),
-
-  importFromFitTemplate: protectedProcedure
-    .input(importedTemplateInput)
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const estimationStore = getEstimationStore(ctx);
-      const provider = "fit";
-      const externalId = input.external_id.trim();
-
-      const { action, row: persistedRow } = await upsertImportedActivityPlan(db, {
-        externalId,
-        profileId: ctx.session.user.id,
-        provider,
-        template: input,
-      });
-
-      if (!persistedRow) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Failed to import FIT template",
-        });
-      }
-
-      let withEstimation: SerializedActivityPlan | EstimatedActivityPlan =
-        serializeActivityPlanRow(persistedRow);
-      try {
-        withEstimation = await getActivityPlanDerivedMetrics(
-          serializeActivityPlanRow(persistedRow),
-          db,
-          estimationStore,
-          ctx.session.user.id,
-        );
-      } catch (estimationError) {
-        console.warn(
-          "Failed to estimate activity import template; returning raw plan",
-          estimationError,
-        );
-      }
-
-      return {
-        action,
-        item: toPublicActivityPlan(withIdentityFields(withEstimation)),
-      };
-    }),
-
-  importFromZwoTemplate: protectedProcedure
-    .input(importedTemplateInput)
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const estimationStore = getEstimationStore(ctx);
-      const provider = "zwo";
-      const externalId = input.external_id.trim();
-
-      const { action, row: persistedRow } = await upsertImportedActivityPlan(db, {
-        externalId,
-        profileId: ctx.session.user.id,
-        provider,
-        template: input,
-      });
-
-      if (!persistedRow) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Failed to import ZWO template",
-        });
-      }
-
-      let withEstimation: SerializedActivityPlan | EstimatedActivityPlan =
-        serializeActivityPlanRow(persistedRow);
-      try {
-        withEstimation = await getActivityPlanDerivedMetrics(
-          serializeActivityPlanRow(persistedRow),
-          db,
-          estimationStore,
-          ctx.session.user.id,
-        );
-      } catch (estimationError) {
-        console.warn("Failed to estimate ZWO import template; returning raw plan", estimationError);
-      }
-
-      return {
-        action,
-        item: toPublicActivityPlan(withIdentityFields(withEstimation)),
-      };
     }),
 });

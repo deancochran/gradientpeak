@@ -18,6 +18,7 @@ const historyMocks = vi.hoisted(() => ({
 
 const analysisMocks = vi.hoisted(() => ({
   createActivityAnalysisStore: vi.fn(() => ({ kind: "activity-analysis-store" })),
+  createDashboardRepository: vi.fn(),
   buildActivityDerivedSummaryMap: vi.fn(),
   buildDynamicStressSeries: vi.fn(),
   activityRows: new Map<string, any>(),
@@ -64,6 +65,42 @@ vi.mock(
 
 vi.mock("../../infrastructure/repositories", () => ({
   createActivityAnalysisStore: analysisMocks.createActivityAnalysisStore,
+  createDrizzleTrendsDashboardRepository:
+    analysisMocks.createDashboardRepository.mockImplementation(() => ({
+      loadDashboardActivities: async () =>
+        [...analysisMocks.activityRows.values()].map((row) => {
+          const activeSeconds = Math.max(row.duration_seconds ?? 0, row.moving_seconds ?? 0);
+          return {
+            ...row,
+            segments: [
+              {
+                id: row.id,
+                activity_id: row.id,
+                ordinal: 0,
+                role: "activity",
+                category: row.type,
+                start_offset_ms: 0,
+                end_offset_ms: activeSeconds * 1_000,
+                timing_coverage: "complete",
+                active_ms: activeSeconds * 1_000,
+                moving_ms: row.moving_seconds * 1_000,
+                summary: {
+                  version: 1,
+                  timing: {
+                    timingCoverage: "complete",
+                    activeMs: activeSeconds * 1_000,
+                    movingMs: row.moving_seconds * 1_000,
+                  },
+                  distanceMeters: row.distance_meters,
+                  averageSpeedMetersPerSecond: row.avg_speed_mps ?? undefined,
+                  averagePowerWatts: row.avg_power ?? undefined,
+                  averageHeartRateBpm: row.avg_heart_rate ?? undefined,
+                },
+              },
+            ],
+          };
+        }),
+    })),
 }));
 
 vi.mock("../../lib/activity-analysis", () => ({
@@ -241,6 +278,7 @@ function createCaller(selectResults: unknown[]) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  analysisMocks.activityRows.clear();
 
   featureFlagMocks.featureFlags.personalizationAgeConstants = false;
   featureFlagMocks.featureFlags.personalizationGenderAdjustment = false;
@@ -273,6 +311,38 @@ afterEach(() => {
 });
 
 describe("trendsRouter", () => {
+  it("rejects overlong ranges before repository work", async () => {
+    const { caller } = createCaller([]);
+    await expect(
+      caller.getDashboard({
+        start_date: "2025-01-01",
+        end_date: "2026-01-01",
+        groupBy: "week",
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(analysisMocks.createDashboardRepository).not.toHaveBeenCalled();
+  });
+
+  it("maps typed repository row limits at the router boundary", async () => {
+    analysisMocks.createDashboardRepository.mockReturnValueOnce({
+      loadDashboardActivities: vi.fn().mockResolvedValue({ kind: "row_limit_exceeded" }),
+    });
+    const { caller } = createCaller([]);
+    await expect(
+      caller.getDashboard({ start_date: "2026-04-01", end_date: "2026-04-01", groupBy: "day" }),
+    ).rejects.toMatchObject({ code: "PAYLOAD_TOO_LARGE" });
+  });
+
+  it("maps typed repository segment limits at the router boundary", async () => {
+    analysisMocks.createDashboardRepository.mockReturnValueOnce({
+      loadDashboardActivities: vi.fn().mockResolvedValue({ kind: "segment_limit_exceeded" }),
+    });
+    const { caller } = createCaller([]);
+    await expect(
+      caller.getDashboard({ start_date: "2026-04-01", end_date: "2026-04-01", groupBy: "day" }),
+    ).rejects.toMatchObject({ code: "PAYLOAD_TOO_LARGE" });
+  });
+
   it("groups volume trends by week and calculates totals", async () => {
     const { caller } = createCaller([
       [
@@ -295,13 +365,13 @@ describe("trendsRouter", () => {
       ],
     ]);
 
-    const result = await caller.getVolumeTrends({
+    const result = await caller.getDashboard({
       start_date: "2026-03-30T00:00:00.000Z",
       end_date: "2026-04-10T23:59:59.000Z",
       groupBy: "week",
     });
 
-    expect(result).toEqual({
+    expect(result.volume).toEqual({
       dataPoints: [
         {
           date: "2026-03-30",
@@ -336,13 +406,13 @@ describe("trendsRouter", () => {
       ],
     ]);
 
-    const result = await caller.getVolumeTrends({
+    const result = await caller.getDashboard({
       start_date: "2026-04-10",
       end_date: "2026-04-10",
       groupBy: "day",
     });
 
-    expect(result).toEqual({
+    expect(result.volume).toEqual({
       dataPoints: [
         {
           date: "2026-04-10",
@@ -363,7 +433,7 @@ describe("trendsRouter", () => {
     const { caller, callLog } = createCaller([[]]);
 
     await expect(
-      caller.getVolumeTrends({
+      caller.getDashboard({
         start_date: "2026-02-30",
         end_date: "2026-04-10T23:59:59.000Z",
         groupBy: "week",
@@ -377,7 +447,7 @@ describe("trendsRouter", () => {
     const { caller, callLog } = createCaller([[]]);
 
     await expect(
-      caller.getPerformanceTrends({
+      caller.getDashboard({
         start_date: "2026-04-30T23:59:59.000Z",
         end_date: "2026-04-01T00:00:00.000Z",
       }),
@@ -399,12 +469,12 @@ describe("trendsRouter", () => {
     });
     const { caller } = createCaller([[activity]]);
 
-    const result = await caller.getPerformanceTrends({
+    const result = await caller.getDashboard({
       start_date: "2026-04-01T00:00:00.000Z",
       end_date: "2026-04-30T23:59:59.000Z",
     });
 
-    expect(result).toEqual({
+    expect(result.performance).toEqual({
       dataPoints: [
         {
           date: "2026-04-05T06:30:00.000Z",
@@ -430,72 +500,11 @@ describe("trendsRouter", () => {
     ]);
 
     await expect(
-      caller.getPerformanceTrends({
+      caller.getDashboard({
         start_date: "2026-04-01T00:00:00.000Z",
         end_date: "2026-04-30T23:59:59.000Z",
       }),
     ).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR" });
-  });
-
-  it("returns common Load history without legacy workload replay", async () => {
-    historyMocks.readCurrentProfileCommonLoadHistory.mockResolvedValue({
-      computedAt: "2026-04-02T00:00:00.000Z",
-      planningTimezone: "UTC",
-      currentPlanningDate: "2026-04-02",
-      result: {
-        status: "available",
-        policyVersion: "common_load_history_v1",
-        coverageStatus: "complete",
-        maturity: {
-          status: "mature",
-          replayedDays: 168,
-          requiredMatureDays: 168,
-          coverage: { completeDays: 168, partialDays: 0, ratio: 1 },
-        },
-        identity: {
-          policyVersion: "common_load_history_v1",
-          planningTimezone: "UTC",
-          startDate: "2026-01-08",
-          endDate: "2026-04-01",
-          commonLoad: { model: "gradientpeak_relative_load", version: "1" },
-          evidenceFingerprints: [],
-        },
-        points: Array.from({ length: 84 }, (_, index) => {
-          const date = new Date("2026-01-08T00:00:00.000Z");
-          date.setUTCDate(date.getUTCDate() + index);
-          return {
-            date: date.toISOString().slice(0, 10),
-            coverageStatus: "complete",
-            dailyLoad: 0,
-            longTermLoad: 21.2,
-            recentLoad: 35.2,
-            loadBalance: -14,
-          };
-        }),
-      },
-    });
-    const { caller } = createCaller([]);
-
-    const result = await caller.getTrainingLoadTrends({
-      start_date: "2026-03-31T00:00:00.000Z",
-      end_date: "2026-04-01T23:59:59.000Z",
-    });
-
-    expect(result).toMatchObject({
-      history: { status: "available", policyVersion: "common_load_history_v1" },
-      dataPoints: [
-        { date: "2026-03-31", dailyLoad: 0 },
-        { date: "2026-04-01", dailyLoad: 0 },
-      ],
-      currentStatus: {
-        longTermLoad: 21.2,
-        recentLoad: 35.2,
-        loadBalance: -14,
-        loadBalanceStatus: "negative_balance",
-      },
-      computedAt: "2026-04-02T00:00:00.000Z",
-    });
-    expect(loadMocks.replayTrainingLoadByDate).not.toHaveBeenCalled();
   });
 
   it("aggregates weekly zone distribution percentages from derived stress data", async () => {
@@ -517,13 +526,13 @@ describe("trendsRouter", () => {
 
     const { caller } = createCaller([[firstActivity, secondActivity]]);
 
-    const result = await caller.getZoneDistributionTrends({
+    const result = await caller.getDashboard({
       start_date: "2026-04-07T00:00:00.000Z",
       end_date: "2026-04-13T23:59:59.000Z",
       metric: "power",
     });
 
-    expect(result).toEqual({
+    expect(result.zones).toEqual({
       weeklyData: [
         {
           weekStart: "2026-04-06",
@@ -557,12 +566,12 @@ describe("trendsRouter", () => {
       ],
     ]);
 
-    const result = await caller.getConsistencyMetrics({
+    const result = await caller.getDashboard({
       start_date: "2026-03-28T00:00:00.000Z",
       end_date: "2026-04-03T23:59:59.000Z",
     });
 
-    expect(result).toEqual({
+    expect(result.consistency).toEqual({
       activityDays: ["2026-03-29", "2026-03-30", "2026-03-31", "2026-04-02", "2026-04-03"],
       weeklyAvg: 5.3,
       currentStreak: 2,

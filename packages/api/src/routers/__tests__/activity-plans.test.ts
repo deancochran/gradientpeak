@@ -775,21 +775,7 @@ describe("activityPlansRouter", () => {
     });
     const { caller } = createCaller({
       state: {
-        "select:activity_plans": [
-          [grantedPlan, deniedPlan, systemPlan, ownPlan],
-          [grantedPlan],
-          [deniedPlan],
-        ],
-        "select:content_access_grants": [
-          [
-            {
-              accessLevel: "read",
-              sourceType: "event",
-              sourceId: "55555555-5555-4555-8555-555555555555",
-            },
-          ],
-          [],
-        ],
+        "select:activity_plans": [[grantedPlan, systemPlan, ownPlan]],
         "select:likes": [[]],
         "select:profiles": [
           [
@@ -812,14 +798,70 @@ describe("activityPlansRouter", () => {
     expect(result.items.map((item) => item.id)).not.toContain(deniedPlan.id);
   });
 
-  it("getUserPlansCount coerces the current user's count from the DB", async () => {
+  it("getManyByIds uses one canonical accessible-plan query at every input size", async () => {
+    for (const count of [1, 10, 100]) {
+      const followerPlans = Array.from({ length: count }, (_, index) =>
+        createActivityPlanRow({
+          id: `30000000-0000-4000-8000-${(index + 1).toString().padStart(12, "0")}`,
+          profile_id: `40000000-0000-4000-8000-${(index + 1).toString().padStart(12, "0")}`,
+          template_visibility: "followers",
+          content_visibility: "followers",
+        }),
+      );
+      const deniedPlans = Array.from({ length: count }, (_, index) =>
+        createActivityPlanRow({
+          id: `50000000-0000-4000-8000-${(index + 1).toString().padStart(12, "0")}`,
+          profile_id: `60000000-0000-4000-8000-${(index + 1).toString().padStart(12, "0")}`,
+          template_visibility: "private",
+        }),
+      );
+      const { caller, callLog } = createCaller({
+        state: {
+          "select:activity_plans": [[]],
+          "select:likes": [[]],
+          "select:profiles": [[]],
+        },
+      });
+
+      const result = await caller.getManyByIds({
+        ids: [...followerPlans, ...deniedPlans].map((plan) => plan.id),
+      });
+
+      expect(result.items).toEqual([]);
+      expect(callLog[0]).toMatchObject({ operation: "select", table: "activity_plans" });
+      expect(
+        callLog.filter((call) => call.operation === "select" && call.table === "activity_plans"),
+      ).toHaveLength(1);
+      const query = getActivityPlanListQuery(callLog);
+      const requestedIds = [...followerPlans, ...deniedPlans].map((plan) => plan.id);
+      expect(query.params).toEqual(expect.arrayContaining(requestedIds));
+      expect(query.sql).toContain('"activity_plans"."id" in');
+      expect(query.sql).toContain('"activity_plans"."profile_id" = $');
+      expect(query.sql).toContain('"activity_plans"."is_system_template" = $');
+      expect(query.sql).toContain('"activity_plans"."content_visibility" = $');
+      expect(query.sql).toContain("from follows f");
+      expect(query.sql).toContain("f.status = 'accepted'");
+      expect(query.sql).toContain("from content_access_grants cag");
+      expect(query.sql).toContain("cag.access_level = 'read'");
+      expect(query.sql).toContain("cag.revoked_at is null");
+      expect(query.sql).toContain("cag.expires_at is null or cag.expires_at > now()");
+    }
+  });
+
+  it("getManyByIds retains its unique input order contract", async () => {
+    const firstPlan = createActivityPlanRow({ id: "11111111-1111-4111-8111-111111111111" });
+    const secondPlan = createActivityPlanRow({ id: "22222222-2222-4222-8222-222222222222" });
     const { caller } = createCaller({
       state: {
-        "select:activity_plans": [[{ value: "3" }]],
+        "select:activity_plans": [[secondPlan, firstPlan]],
+        "select:likes": [[]],
+        "select:profiles": [[createProfileRow(), createProfileRow({ id: secondPlan.id })]],
       },
     });
 
-    await expect(caller.getUserPlansCount()).resolves.toBe(3);
+    const result = await caller.getManyByIds({ ids: [secondPlan.id, firstPlan.id, secondPlan.id] });
+
+    expect(result.items.map((item) => item.id)).toEqual([secondPlan.id, firstPlan.id]);
   });
 
   it("create stores computed metrics and allows missing description", async () => {
@@ -1300,93 +1342,5 @@ describe("activityPlansRouter", () => {
         extra: true,
       } as any),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
-  });
-
-  it("importFromFitTemplate updates an existing imported plan", async () => {
-    const existingRow = createActivityPlanRow({
-      id: "12121212-1212-4212-8212-121212121212",
-      import_provider: "fit",
-      import_external_id: "fit-template-1",
-    });
-    const updatedRow = createActivityPlanRow({
-      id: existingRow.id,
-      name: "Updated FIT",
-      import_provider: "fit",
-      import_external_id: "fit-template-1",
-    });
-    const { caller, callLog } = createCaller({
-      state: {
-        "insert:activity_plans": [[updatedRow]],
-      },
-    });
-
-    const result = await caller.importFromFitTemplate({
-      external_id: "fit-template-1",
-      name: "Updated FIT",
-      structure: sampleStructure,
-    });
-
-    const upsertCall = callLog.find((call) => call.operation === "insert");
-    expect(upsertCall?.payload).toMatchObject({
-      name: "Updated FIT",
-      import_provider: "fit",
-      import_external_id: "fit-template-1",
-      template_visibility: "private",
-    });
-    expect(upsertCall?.conflict).toMatchObject({
-      target: [
-        activityPlans.profile_id,
-        activityPlans.import_provider,
-        activityPlans.import_external_id,
-      ],
-      targetWhere: expect.anything(),
-      set: {
-        name: "Updated FIT",
-        import_provider: "fit",
-        import_external_id: "fit-template-1",
-      },
-    });
-    expect(callLog.filter((call) => call.operation === "select")).toHaveLength(0);
-    expect(callLog.filter((call) => call.operation === "update")).toHaveLength(0);
-    expect(result).toMatchObject({
-      action: "updated",
-      item: { id: existingRow.id, content_type: "activity_plan" },
-    });
-  });
-
-  it("importFromZwoTemplate creates a new imported plan when none exists", async () => {
-    const { caller, callLog } = createCaller({
-      state: {
-        "insert:activity_plans": [
-          (payload) => [
-            createActivityPlanRow({
-              ...(payload as Record<string, unknown>),
-              name: "Created ZWO",
-              import_provider: "zwo",
-              import_external_id: "zwo-template-1",
-            }),
-          ],
-        ],
-      },
-    });
-
-    const result = await caller.importFromZwoTemplate({
-      external_id: "zwo-template-1",
-      name: "Created ZWO",
-      structure: sampleStructure,
-    });
-
-    const insertCall = callLog.find((call) => call.operation === "insert");
-    expect(insertCall?.payload).toMatchObject({
-      name: "Created ZWO",
-      import_provider: "zwo",
-      import_external_id: "zwo-template-1",
-      template_visibility: "private",
-      profile_id: USER_ID,
-    });
-    expect(result).toMatchObject({
-      action: "created",
-      item: { content_type: "activity_plan" },
-    });
   });
 });

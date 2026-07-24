@@ -16,8 +16,6 @@ import {
   deriveTrainingPathProjectionStatus,
   getBackendPlanningClientStatus,
   getPlannedBackendPlanningOperations,
-  mapBackendPlanningCreateCommitInput,
-  mapBackendPlanningUpdateCommitInput,
   mapPlanningContextToPreviewCreationConfigInput,
   normalizeBackendPlanningPreview,
   selectActiveTrainingPlanProjection,
@@ -37,10 +35,7 @@ import {
   selectTrainingPlanBuilderStageSummaries,
 } from "./modules";
 import { createTrainingPlanPlanningContext } from "./planning-context";
-import {
-  createTrainingPlanProjectionFacade,
-  createTrainingPlanSavePlanFacade,
-} from "./planning-session";
+import { createTrainingPlanProjectionFacade } from "./planning-session";
 import {
   deriveTrainingPlanCreationSession,
   deriveTrainingPlanReadinessPresentation,
@@ -52,7 +47,6 @@ import {
   TRAINING_PLAN_PREFERENCE_FIELD_REGISTRY,
 } from "./preferences-context";
 import { trainingPlanBuilderReducer } from "./reducer";
-import { selectTrainingPlanCreateSaveRoute, selectTrainingPlanUpdateSaveRoute } from "./save-route";
 import { deriveTrainingPlanSchedulingPreview } from "./scheduling-preview";
 import {
   trainingPlanBuilderProfileGoalDraftSchema,
@@ -504,33 +498,6 @@ describe("training plan creation domain", () => {
     );
   });
 
-  it("derives planning session projection and save routing outside the service hook", () => {
-    const localProjection = deriveTrainingPlanLocalProjection(
-      createDefaultTrainingPlanBuilderState(),
-    );
-
-    const session = deriveTrainingPlanCreationSession({
-      authoritativeProjection: null,
-      backendPreviewInputEnabled: false,
-      isBackendPlanningInputStale: false,
-      localProjection,
-      previewQuery: {
-        error: null,
-        isFetching: false,
-        isLoading: false,
-      },
-    });
-
-    expect(session.projection.source).toBe("local");
-    expect(session.projection.chartSource).toBe("local");
-    expect(session.previewLifecycle).toMatchObject({
-      status: "backend_input_unavailable",
-    });
-    expect(session.savePlanRoute.createRoute).toBe("degraded");
-    expect(session.savePlanRoute.createDegradedReason).toBeTruthy();
-    expect(session.saveLifecycle.create.status).toBe("commit_blocked");
-  });
-
   it("derives user-facing readiness copy from lifecycle state", () => {
     expect(
       deriveTrainingPlanReadinessPresentation({
@@ -747,22 +714,16 @@ describe("training plan creation domain", () => {
     );
   });
 
-  it("keeps backend planning client scaffold explicit and network-free", () => {
+  it("reports the enabled backend planning preview capability truthfully", () => {
     const fixtures = createTrainingPlanBuilderFixtures();
     const context = createTrainingPlanPlanningContext(fixtures.readyState);
 
     expect(getBackendPlanningClientStatus()).toEqual({
-      available: false,
-      enabledOperations: [],
-      reason:
-        "Backend planning adapter scaffolded; local projection remains authoritative for this pass.",
+      available: true,
+      enabledOperations: ["previewCreationConfig"],
+      reason: "Backend planning preview is enabled.",
     });
-    expect(getPlannedBackendPlanningOperations()).toEqual([
-      "getCreationSuggestions",
-      "previewCreationConfig",
-      "createFromCreationConfig",
-      "updateFromCreationConfig",
-    ]);
+    expect(getPlannedBackendPlanningOperations()).toEqual(["previewCreationConfig"]);
     expect(createBackendPlanningRequestSnapshot(context, "previewCreationConfig")).toEqual({
       context,
       operation: "previewCreationConfig",
@@ -810,6 +771,11 @@ describe("training plan creation domain", () => {
 
     expect(result).toMatchObject({ ok: true });
     if (!result.ok) throw new Error(result.reason);
+    expect(deriveBackendPlanningState(context).status).toEqual({
+      available: true,
+      enabledOperations: ["previewCreationConfig"],
+      reason: "Backend planning preview is enabled.",
+    });
     expect(result.input.minimal_plan).toMatchObject({
       plan_start_date: state.scheduling.startDate,
       goals: [
@@ -970,177 +936,6 @@ describe("training plan creation domain", () => {
     expect(result).toMatchObject({ ok: false });
     expect(planningState.previewInput).toBeNull();
     expect(planningState.status.reason).toContain("needs a target date or plan duration");
-  });
-
-  it("maps backend preview input and snapshot token into create/update commit inputs", () => {
-    const fixtures = createTrainingPlanBuilderFixtures();
-    const state = {
-      ...fixtures.readyState,
-      goalContext: {
-        selectedGoals: [
-          fixtures.localGoal({
-            title: "Raise FTP",
-            targetDate: "2026-03-01",
-            targetOffsetDays: 59,
-            activityCategory: "bike",
-            objective: {
-              type: "threshold",
-              metric: "power",
-              activity_category: "bike",
-              value: 310,
-              test_duration_s: 1200,
-            },
-          }),
-        ],
-      },
-      scheduling: { ...fixtures.readyState.scheduling, startDate: fixtures.anchorDate },
-    };
-    const previewMapping = mapPlanningContextToPreviewCreationConfigInput(
-      createTrainingPlanPlanningContext(state),
-    );
-    if (!previewMapping.ok) throw new Error(previewMapping.reason);
-
-    const createMapping = mapBackendPlanningCreateCommitInput({
-      previewInput: previewMapping.input,
-      previewSnapshotToken: "snapshot-token",
-    });
-    const updateMapping = mapBackendPlanningUpdateCommitInput({
-      planId: "22222222-2222-4222-8222-222222222222",
-      previewInput: previewMapping.input,
-      previewSnapshotToken: "snapshot-token",
-    });
-
-    expect(createMapping).toMatchObject({
-      ok: true,
-      input: {
-        preview_snapshot_token: "snapshot-token",
-        is_active: true,
-        minimal_plan: {
-          goals: [
-            {
-              targets: [
-                {
-                  target_type: "power_threshold",
-                  target_watts: 310,
-                  activity_category: "bike",
-                },
-              ],
-            },
-          ],
-        },
-      },
-    });
-    expect(updateMapping).toMatchObject({
-      ok: true,
-      input: {
-        plan_id: "22222222-2222-4222-8222-222222222222",
-        preview_snapshot_token: "snapshot-token",
-      },
-    });
-  });
-
-  it("keeps backend commit mapping unavailable without preview input or snapshot token", () => {
-    const fixtures = createTrainingPlanBuilderFixtures();
-    const previewMapping = mapPlanningContextToPreviewCreationConfigInput(
-      createTrainingPlanPlanningContext({
-        ...fixtures.readyState,
-        goalContext: {
-          selectedGoals: [
-            fixtures.localGoal({
-              title: "Run threshold",
-              targetDate: "2026-03-01",
-              targetOffsetDays: 59,
-              activityCategory: "run",
-              objective: {
-                type: "threshold",
-                metric: "pace",
-                activity_category: "run",
-                value: 4.2,
-                test_duration_s: 1200,
-              },
-            }),
-          ],
-        },
-        scheduling: { ...fixtures.readyState.scheduling, startDate: fixtures.anchorDate },
-      }),
-    );
-    if (!previewMapping.ok) throw new Error(previewMapping.reason);
-
-    expect(
-      mapBackendPlanningCreateCommitInput({ previewInput: null, previewSnapshotToken: "token" }),
-    ).toMatchObject({ ok: false, reason: "Backend preview input is unavailable." });
-    expect(
-      mapBackendPlanningCreateCommitInput({
-        previewInput: previewMapping.input,
-        previewSnapshotToken: null,
-      }),
-    ).toMatchObject({ ok: false, reason: "Backend preview snapshot token is unavailable." });
-    expect(
-      mapBackendPlanningUpdateCommitInput({
-        planId: "not-a-uuid",
-        previewInput: null,
-        previewSnapshotToken: "token",
-      }),
-    ).toMatchObject({ ok: false, reason: "Training plan id must be a UUID for backend update." });
-  });
-
-  it("selects backend save routes only when backend commit mapping is available", () => {
-    const fixtures = createTrainingPlanBuilderFixtures();
-    const previewMapping = mapPlanningContextToPreviewCreationConfigInput(
-      createTrainingPlanPlanningContext({
-        ...fixtures.readyState,
-        goalContext: {
-          selectedGoals: [
-            fixtures.localGoal({
-              title: "Raise FTP",
-              targetDate: "2026-03-01",
-              targetOffsetDays: 59,
-              activityCategory: "bike",
-              objective: {
-                type: "threshold",
-                metric: "power",
-                activity_category: "bike",
-                value: 310,
-                test_duration_s: 1200,
-              },
-            }),
-          ],
-        },
-        scheduling: { ...fixtures.readyState.scheduling, startDate: fixtures.anchorDate },
-      }),
-    );
-    if (!previewMapping.ok) throw new Error(previewMapping.reason);
-
-    const backendCreate = mapBackendPlanningCreateCommitInput({
-      previewInput: previewMapping.input,
-      previewSnapshotToken: "snapshot-token",
-    });
-    const legacyCreate = mapBackendPlanningCreateCommitInput({
-      previewInput: previewMapping.input,
-      previewSnapshotToken: null,
-    });
-    const backendUpdate = mapBackendPlanningUpdateCommitInput({
-      planId: "22222222-2222-4222-8222-222222222222",
-      previewInput: previewMapping.input,
-      previewSnapshotToken: "snapshot-token",
-    });
-    const legacyUpdate = mapBackendPlanningUpdateCommitInput({
-      planId: "22222222-2222-4222-8222-222222222222",
-      previewInput: previewMapping.input,
-      previewSnapshotToken: null,
-    });
-
-    expect(selectTrainingPlanCreateSaveRoute(backendCreate)).toBe("backend");
-    expect(selectTrainingPlanCreateSaveRoute(legacyCreate)).toBe("degraded");
-    expect(selectTrainingPlanUpdateSaveRoute(backendUpdate)).toBe("backend");
-    expect(selectTrainingPlanUpdateSaveRoute(legacyUpdate)).toBe("degraded");
-    expect(
-      createTrainingPlanSavePlanFacade({ createCommit: backendCreate, updateCommit: legacyUpdate }),
-    ).toMatchObject({
-      createRoute: "backend",
-      updateRoute: "degraded",
-      updateDegradedReason: "Backend preview snapshot token is unavailable.",
-    });
   });
 
   it("creates a simplified projection facade over active projection internals", () => {

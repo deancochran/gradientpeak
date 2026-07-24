@@ -3,7 +3,6 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
   addContentComment,
-  deleteOwnedComment,
   readContentComments,
   toggleContentLike,
 } from "../application/social/contentEngagement";
@@ -140,12 +139,6 @@ export const socialRouter = createTRPCRouter({
     )
     .mutation(({ ctx, input }) =>
       addContentComment({ db: getRequiredDb(ctx), viewerId: ctx.session.user.id, input }),
-    ),
-
-  deleteComment: protectedProcedure
-    .input(z.object({ comment_id: z.string().uuid() }).strict())
-    .mutation(({ ctx, input }) =>
-      deleteOwnedComment(getRequiredDb(ctx), ctx.session.user.id, input.comment_id),
     ),
 
   getComments: protectedProcedure

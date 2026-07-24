@@ -70,20 +70,14 @@ type RefetchableTrendSource = { refetch: () => Promise<unknown> };
 
 export function refetchTrendsSources(sources: {
   commonLoad: RefetchableTrendSource;
-  consistency: RefetchableTrendSource;
+  dashboard: RefetchableTrendSource;
   peakPower: RefetchableTrendSource;
-  performance: RefetchableTrendSource;
   profileMetrics: RefetchableTrendSource;
-  volume: RefetchableTrendSource;
-  zones: RefetchableTrendSource;
 }) {
   return Promise.all([
     sources.profileMetrics.refetch(),
-    sources.volume.refetch(),
+    sources.dashboard.refetch(),
     sources.commonLoad.refetch(),
-    sources.consistency.refetch(),
-    sources.performance.refetch(),
-    sources.zones.refetch(),
     sources.peakPower.refetch(),
   ]);
 }
@@ -1167,25 +1161,12 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
     end_date: range.endDate,
     limit: 50,
   });
-  const volume = api.trends.getVolumeTrends.useQuery({
+  const dashboard = api.trends.getDashboard.useQuery({
     start_date: range.start_date,
     end_date: range.end_date,
     groupBy: "week",
   });
   const commonLoad = useCommonLoadHistory();
-  const consistency = api.trends.getConsistencyMetrics.useQuery({
-    start_date: range.start_date,
-    end_date: range.end_date,
-  });
-  const performance = api.trends.getPerformanceTrends.useQuery({
-    start_date: range.start_date,
-    end_date: range.end_date,
-  });
-  const zones = api.trends.getZoneDistributionTrends.useQuery({
-    start_date: range.start_date,
-    end_date: range.end_date,
-    metric: "power",
-  });
   const peakPower = api.trends.getPeakPerformances.useQuery({ metric: "power", limit: 5 });
 
   const handleRefresh = React.useCallback(async () => {
@@ -1193,67 +1174,40 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
     try {
       await refetchTrendsSources({
         commonLoad,
-        consistency,
+        dashboard,
         peakPower,
-        performance,
         profileMetrics,
-        volume,
-        zones,
       });
     } finally {
       setRefreshing(false);
     }
-  }, [profileMetrics, volume, commonLoad, consistency, performance, zones, peakPower]);
+  }, [profileMetrics, dashboard, commonLoad, peakPower]);
 
   const isLoading =
-    profileMetrics.isLoading ||
-    volume.isLoading ||
-    commonLoad.isLoading ||
-    consistency.isLoading ||
-    performance.isLoading ||
-    zones.isLoading ||
-    peakPower.isLoading;
-  const hasError =
-    profileMetrics.error ||
-    volume.error ||
-    commonLoad.error ||
-    consistency.error ||
-    performance.error ||
-    zones.error ||
-    peakPower.error;
+    profileMetrics.isLoading || dashboard.isLoading || commonLoad.isLoading || peakPower.isLoading;
+  const hasError = profileMetrics.error || dashboard.error || commonLoad.error || peakPower.error;
 
   const insights = React.useMemo(() => {
     const metricInsights = buildProfileInsights(profileMetrics.data?.items ?? []);
     const activityInsights = buildActivityInsights({
-      volume: volume.data,
+      volume: dashboard.data?.volume,
       load:
         commonLoad.status === "available"
           ? { status: commonLoad.status, data: commonLoad.data }
           : commonLoad.status === "unavailable"
             ? { status: commonLoad.status, reason: commonLoad.reason }
             : { status: commonLoad.status },
-      consistency: consistency.data,
-      performance: performance.data,
-      zones: zones.data,
+      consistency: dashboard.data?.consistency,
+      performance: dashboard.data?.performance,
+      zones: dashboard.data?.zones,
       peakPower: peakPower.data,
     });
     return [...metricInsights, ...activityInsights];
-  }, [
-    profileMetrics.data?.items,
-    volume.data,
-    commonLoad,
-    consistency.data,
-    performance.data,
-    zones.data,
-    peakPower.data,
-  ]);
+  }, [profileMetrics.data?.items, dashboard.data, commonLoad, peakPower.data]);
   const resolvedSourceCount = [
     profileMetrics.data,
-    volume.data,
+    dashboard.data,
     hasResolvedCommonLoad(commonLoad.status) ? commonLoad.status : undefined,
-    consistency.data,
-    performance.data,
-    zones.data,
     peakPower.data,
   ].filter((data) => data !== undefined).length;
   const hasLoadedSource = resolvedSourceCount > 0;

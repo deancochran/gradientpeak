@@ -12,10 +12,17 @@ import {
 } from "@repo/db/schema";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { handleOAuthCallback } from "../../application/integrations/oauthCallbackUseCase";
 import {
   createIntegrationsRepositories,
   createProviderSyncRepository,
 } from "../../infrastructure/repositories";
+import { getProviderOAuthConfig } from "../../lib/integrations/oauth-config";
+import {
+  createOAuthCodeChallenge,
+  deriveOAuthCodeVerifier,
+  issueLocalOAuthAuthorizationCode,
+} from "../../lib/integrations/oauth-pkce";
 
 const userIds: string[] = [];
 
@@ -466,6 +473,127 @@ describe("provider sync PostgreSQL claims", () => {
     expect(
       await db.select().from(integrations).where(eq(integrations.profile_id, owner.profileId)),
     ).toHaveLength(0);
+  });
+
+  it("rolls OAuth credentials and the initial history job back in one transaction", async () => {
+    const owner = await seedOwner();
+    await db.delete(integrations).where(eq(integrations.id, owner.integrationId));
+    const state = randomUUID();
+    const dedupeKey = `provider-history-reconcile:${randomUUID()}:activity`;
+    await db.insert(oauthStates).values({
+      created_at: new Date(),
+      expires_at: new Date(Date.now() + 60_000),
+      id: randomUUID(),
+      mobile_redirect_uri: "gradientpeak://integrations",
+      profile_id: owner.profileId,
+      provider: "wahoo",
+      state,
+    });
+    const integrationRepository = createIntegrationsRepositories(db).integrations;
+    const providerSyncRepository = createProviderSyncRepository({ db });
+
+    await expect(
+      db.transaction(async (tx) => {
+        const integration = await integrationRepository.upsertFromOAuthStateInTransaction(tx, {
+          accessToken: "access-token",
+          expiresAt: new Date(Date.now() + 3_600_000),
+          externalId: "wahoo-account",
+          now: new Date(),
+          profileId: owner.profileId,
+          provider: "wahoo",
+          refreshToken: "refresh-token",
+          scope: "workouts_read offline_data",
+          state,
+        });
+        if (!integration) throw new Error("Expected OAuth state to be consumed");
+        await providerSyncRepository.enqueueJobInTransaction(tx, {
+          dedupeKey,
+          integrationId: integration.id,
+          jobType: "wahoo.activity_history_reconcile",
+          payload: { trigger: "connect", windowMonths: 12 },
+          profileId: owner.profileId,
+          provider: "wahoo",
+          resourceKind: "activity",
+          runAt: new Date().toISOString(),
+        });
+        throw new Error("force shared transaction rollback");
+      }),
+    ).rejects.toThrow("force shared transaction rollback");
+
+    expect(await db.select().from(oauthStates).where(eq(oauthStates.state, state))).toHaveLength(1);
+    expect(
+      await db.select().from(integrations).where(eq(integrations.profile_id, owner.profileId)),
+    ).toHaveLength(0);
+    expect(
+      await db.select().from(providerSyncJobs).where(eq(providerSyncJobs.dedupe_key, dedupeKey)),
+    ).toHaveLength(0);
+  });
+
+  it("returns callback failure without committing credentials or a queued history job", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("PROVIDER_OAUTH_TEST_ADAPTER", "1");
+    const owner = await seedOwner();
+    await db.delete(integrations).where(eq(integrations.id, owner.integrationId));
+    const state = randomUUID();
+    await db.insert(oauthStates).values({
+      created_at: new Date(),
+      expires_at: new Date(Date.now() + 60_000),
+      id: randomUUID(),
+      mobile_redirect_uri: "http://localhost:3000/integrations",
+      profile_id: owner.profileId,
+      provider: "wahoo",
+      state,
+    });
+    const config = getProviderOAuthConfig("wahoo");
+    if (!config) throw new Error("Expected local OAuth adapter configuration");
+    const code = issueLocalOAuthAuthorizationCode({
+      challenge: createOAuthCodeChallenge(
+        deriveOAuthCodeVerifier({ clientSecret: config.clientSecret, provider: "wahoo", state }),
+      ),
+      config,
+      provider: "wahoo",
+    });
+    const realProviderSyncRepository = createProviderSyncRepository({ db });
+    const failingProviderSyncRepository = {
+      ...realProviderSyncRepository,
+      async enqueueJobInTransaction(transaction, input) {
+        await realProviderSyncRepository.enqueueJobInTransaction(transaction, input);
+        throw new Error("injected enqueue failure after insert");
+      },
+    } satisfies typeof realProviderSyncRepository;
+
+    const result = await handleOAuthCallback({
+      code,
+      error: null,
+      fallbackRedirect: "http://localhost:3000/integrations",
+      provider: "wahoo",
+      providerSyncRepository: failingProviderSyncRepository,
+      repositories: createIntegrationsRepositories(db),
+      runInTransaction: (operation) => db.transaction(operation),
+      state,
+    });
+
+    const redirect = new URL(result.redirectUrl);
+    expect(redirect.searchParams.get("error")).toBe("store_integration_failed");
+    expect(redirect.searchParams.get("success")).toBeNull();
+    expect(
+      await db.select().from(integrations).where(eq(integrations.profile_id, owner.profileId)),
+    ).toHaveLength(0);
+    expect(
+      await db
+        .select({ id: integrationCredentials.integration_id })
+        .from(integrationCredentials)
+        .innerJoin(integrations, eq(integrations.id, integrationCredentials.integration_id))
+        .where(eq(integrations.profile_id, owner.profileId)),
+    ).toHaveLength(0);
+    expect(
+      await db
+        .select()
+        .from(providerSyncJobs)
+        .where(eq(providerSyncJobs.profile_id, owner.profileId)),
+    ).toHaveLength(0);
+    // The provider code was redeemed, so terminal state cleanup remains intentionally one-time.
+    expect(await db.select().from(oauthStates).where(eq(oauthStates.state, state))).toHaveLength(0);
   });
 
   it("coalesces concurrent enqueues with the same dedupe key into one active job", async () => {

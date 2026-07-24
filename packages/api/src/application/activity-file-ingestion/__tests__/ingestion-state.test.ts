@@ -11,7 +11,7 @@ import {
 
 type IngestionRow = {
   id: string;
-  activity_id: string;
+  activity_id: string | null;
   profile_id: string;
   source: "mobile_recording" | "manual_import" | "provider_sync";
   provider: string | null;
@@ -195,6 +195,20 @@ describe("activity file ingestion state service", () => {
       source: "provider_sync",
       status: "pending_upload",
       attempt_count: 0,
+    });
+  });
+
+  it("allows a manual ingestion to exist before its canonical activity is assigned", async () => {
+    const fake = createFakeDb();
+    await createActivityFileIngestion(fake.db as any, {
+      activityId: null,
+      profileId: "profile-1",
+      source: "manual_import",
+      operationKey: "manual_import:abc",
+    });
+    expect(fake.calls.insertValues[0]).toMatchObject({
+      activity_id: null,
+      operation_key: "manual_import:abc",
     });
   });
 

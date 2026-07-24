@@ -2,6 +2,20 @@ import { describe, expect, it, vi } from "vitest";
 import { createQueryMapDbMock, type QueryMap, type QueryResult } from "../../test/mock-query-db";
 import { trainingPlansRouter } from "../planning/training-plans";
 
+const { drainDueWahooPlannedWorkoutJobs, enqueuePlannedWorkoutSyncAfterCalendarMutation } =
+  vi.hoisted(() => ({
+    drainDueWahooPlannedWorkoutJobs: vi.fn(),
+    enqueuePlannedWorkoutSyncAfterCalendarMutation: vi.fn(),
+  }));
+
+vi.mock("../../lib/provider-sync/planned-workouts/calendar-mutation-sync", () => ({
+  enqueuePlannedWorkoutSyncAfterCalendarMutation,
+}));
+
+vi.mock("../../lib/provider-sync/wahoo-planned-workout-drain", () => ({
+  drainDueWahooPlannedWorkoutJobs,
+}));
+
 function createCaller(queryMap: QueryMap) {
   const trainingPlanResults = queryMap.training_plans;
   const canonicalizeResult = (result: QueryResult): QueryResult => {
@@ -726,5 +740,53 @@ describe("trainingPlansRouter.applyTemplate", () => {
     });
 
     expect(result.scheduled_sessions_removed).toBe(2);
+  });
+
+  it("does not delete a schedule batch when the transactional unsync enqueue fails", async () => {
+    enqueuePlannedWorkoutSyncAfterCalendarMutation.mockResolvedValueOnce({
+      error: "queue unavailable",
+      queued: false,
+      success: false,
+    });
+    const { caller, callLog } = createCaller({
+      events: { data: [{ id: "event-1" }], error: null },
+    });
+
+    await expect(
+      caller.removeAppliedSchedule({
+        schedule_batch_id: "33333333-3333-4333-8333-333333333333",
+      }),
+    ).rejects.toThrow("Failed to enqueue planned workout unsync jobs");
+
+    expect(enqueuePlannedWorkoutSyncAfterCalendarMutation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        drainDueJobs: false,
+        eventIds: ["event-1"],
+        operation: "unsync",
+        transaction: expect.anything(),
+      }),
+    );
+    expect(callLog.some((call) => call.table === "events" && call.operation === "delete")).toBe(
+      false,
+    );
+  });
+
+  it("preserves successful schedule removal when the post-commit drain rejects", async () => {
+    drainDueWahooPlannedWorkoutJobs.mockRejectedValueOnce(new Error("worker unavailable"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { caller } = createCaller({
+      events: { data: [{ id: "event-1" }], error: null },
+    });
+
+    await expect(
+      caller.removeAppliedSchedule({
+        schedule_batch_id: "33333333-3333-4333-8333-333333333333",
+      }),
+    ).resolves.toMatchObject({ scheduled_sessions_removed: 1, success: true });
+
+    expect(console.error).toHaveBeenCalledWith(
+      "Failed to drain planned workout unsync jobs after schedule removal",
+      { category: "upstream", provider: "wahoo" },
+    );
   });
 });

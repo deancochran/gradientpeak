@@ -156,7 +156,11 @@ export function createProviderSyncRepository({
       };
     },
     async enqueueJob(input) {
-      return db.transaction(async (tx) => {
+      return db.transaction((tx) => this.enqueueJobInTransaction(tx, input));
+    },
+
+    async enqueueJobInTransaction(tx, input) {
+      return (async () => {
         const lockIdentities = [
           input.syncLaneKey ? JSON.stringify(["provider-sync", "lane", input.syncLaneKey]) : null,
           input.dedupeKey ? JSON.stringify(["provider-sync", "dedupe", input.dedupeKey]) : null,
@@ -286,7 +290,7 @@ export function createProviderSyncRepository({
           id: created.id,
           status: created.status as ProviderSyncJobRecord["status"],
         };
-      });
+      })();
     },
 
     async claimDueJobs({ jobTypes, limit, now, workerId, lockExpiresAt, provider }) {

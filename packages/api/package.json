@@ -33,6 +33,10 @@
       "types": "./src/telemetry.ts",
       "default": "./src/telemetry.ts"
     },
+    "./telemetry-sanitizer": {
+      "types": "./src/telemetry-sanitizer.mjs",
+      "default": "./src/telemetry-sanitizer.mjs"
+    },
     "./webhooks": {
       "types": "./src/webhooks.ts",
       "default": "./src/webhooks.ts"
@@ -60,7 +64,6 @@
     "@trpc/server": "^11.16.0",
     "@xmldom/xmldom": "^0.8.13",
     "drizzle-orm": "^0.45.2",
-    "posthog-node": "^5.40.0",
     "superjson": "^2.2.6",
     "zod": "^4.2.1"
   },

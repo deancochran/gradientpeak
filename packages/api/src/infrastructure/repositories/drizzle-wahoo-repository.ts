@@ -311,8 +311,8 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
       return row?.activityPlanId ?? null;
     },
 
-    async getEventResourceLink({ eventId, profileId, provider }) {
-      const [row] = await db
+    async getEventResourceLink({ eventId, forUpdate, profileId, provider }) {
+      const query = db
         .select({
           externalId: schema.integrationResourceLinks.external_id,
           id: schema.integrationResourceLinks.id,
@@ -327,8 +327,8 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
             eq(schema.integrationResourceLinks.provider, provider),
             eq(schema.integrationResourceLinks.resource_kind, "event"),
           ),
-        )
-        .limit(1);
+        );
+      const [row] = await (forUpdate ? query.for("update").limit(1) : query.limit(1));
 
       return row
         ? {

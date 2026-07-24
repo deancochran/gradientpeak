@@ -359,9 +359,15 @@ function buildParentDerivedSummaryMap(
   segments: SegmentDerivedSummary[],
 ): Map<string, ActivityListDerivedSummary> {
   const result = new Map<string, ActivityListDerivedSummary>();
-  for (const segment of segments) result.set(segment.segment_id, segment);
+  const segmentsByActivityId = new Map<string, SegmentDerivedSummary[]>();
+  for (const segment of segments) {
+    result.set(segment.segment_id, segment);
+    const activitySegments = segmentsByActivityId.get(segment.activity_id);
+    if (activitySegments) activitySegments.push(segment);
+    else segmentsByActivityId.set(segment.activity_id, [segment]);
+  }
   for (const activity of activities) {
-    const parts = segments.filter((segment) => segment.activity_id === activity.id);
+    const parts = segmentsByActivityId.get(activity.id) ?? [];
     if (parts.length === 0) continue;
     const commonLoad = aggregateCommonLoad(
       parts.flatMap((part) => {
@@ -432,6 +438,7 @@ export async function buildDynamicStressSeries(input: {
 }) {
   const segmentSummaries = await buildActivitySegmentDerivedSummaries(input);
   const byActivityId = buildParentDerivedSummaryMap(input.activities, segmentSummaries);
+  const activitiesById = new Map(input.activities.map((activity) => [activity.id, activity]));
   const byDate = new Map<string, number>();
   const streamKeys = new Set<string>();
   let complete = true;
@@ -441,7 +448,7 @@ export async function buildDynamicStressSeries(input: {
       continue;
     }
     streamKeys.add(summary.load_stream_key);
-    const activity = input.activities.find((candidate) => candidate.id === summary.activity_id);
+    const activity = activitiesById.get(summary.activity_id);
     const date = activity ? toIsoString(activity.started_at).split("T")[0] : undefined;
     if (date) byDate.set(date, (byDate.get(date) ?? 0) + summary.tss);
   }

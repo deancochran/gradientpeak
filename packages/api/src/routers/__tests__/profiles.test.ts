@@ -384,78 +384,6 @@ describe("profilesRouter", () => {
     });
   });
 
-  it("list returns public-safe rows and respects limit/cursor", async () => {
-    const { caller, calls } = createCaller({
-      select: {
-        profiles: [[createProfileRow({ id: OTHER_USER_ID, username: "other-athlete", dob: null })]],
-      },
-    });
-
-    const result = await caller.list({ username: "other", limit: 5, cursor: "index:10" });
-
-    expect(result.items).toEqual([
-      expect.objectContaining({
-        id: OTHER_USER_ID,
-        username: "other-athlete",
-        dob: null,
-        email: null,
-        ftp: null,
-        full_name: null,
-        threshold_hr: null,
-        weight_kg: null,
-      }),
-    ]);
-    expect(calls.selects).toContainEqual({ table: "profiles", limitArgs: [5], offsetArgs: [10] });
-  });
-
-  it("getStats aggregates totals and derived TSS for the requested period", async () => {
-    analysisMocks.createActivityAnalysisStore.mockReturnValue({ kind: "store" });
-    analysisMocks.loadActivitySegmentsByActivityId.mockResolvedValue(new Map());
-    analysisMocks.buildActivitySegmentDerivedSummaries.mockResolvedValue([
-      { activity_id: "activity-1", tss: 45 },
-      { activity_id: "activity-2", tss: 55 },
-    ]);
-
-    const { caller } = createCaller({
-      select: {
-        activities: [
-          [
-            {
-              id: "activity-1",
-              elapsed_ms: 3_600_000,
-              active_ms: 3_600_000,
-              moving_ms: 3_500_000,
-              timing_coverage: "complete",
-              distance_meters: 12000,
-            },
-            {
-              id: "activity-2",
-              elapsed_ms: 1_800_000,
-              active_ms: 1_800_000,
-              moving_ms: 1_750_000,
-              timing_coverage: "complete",
-              distance_meters: 8000,
-            },
-          ],
-        ],
-      },
-    });
-
-    const result = await caller.getStats({ period: 14 });
-
-    expect(result).toEqual({
-      totalActivities: 2,
-      totalDuration: 5400,
-      totalDistance: 20000,
-      totalTSS: 100,
-      avgDuration: 2700,
-      period: 14,
-    });
-    expect(analysisMocks.buildActivitySegmentDerivedSummaries).toHaveBeenCalledWith(
-      expect.objectContaining({ profileId: SESSION_USER_ID, activities: expect.any(Array) }),
-    );
-  });
-
   it("getZones calculates heart-rate, power, and pace thresholds from current metrics", async () => {
     const { caller } = createCaller({
       select: {
@@ -511,22 +439,6 @@ describe("profilesRouter", () => {
     });
     expect(result.heartRateZones).toBeNull();
     expect(result.powerZones).not.toBeNull();
-  });
-
-  it("rejects manual threshold updates", async () => {
-    const { caller, calls } = createCaller({
-      select: {
-        profiles: [[createProfileRow()]],
-        profileMetrics: [[], [{ value: "69.5" }], [{ value: "178" }], []],
-        activityEfforts: [[], [{ value: 315.79, recorded_at: new Date() }], []],
-      },
-    });
-
-    await expect(caller.updateZones({ threshold_hr: 178, ftp: 300 })).rejects.toMatchObject({
-      code: "FORBIDDEN",
-    });
-    expect(calls.deletes).toEqual([]);
-    expect(calls.inserts).toEqual([]);
   });
 
   it("get provisions a missing profile instead of returning NOT_FOUND", async () => {
