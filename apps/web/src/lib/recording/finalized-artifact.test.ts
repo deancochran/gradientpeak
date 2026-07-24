@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCreateFromRecordingSummaryInput,
   finalizeTimerRecordingArtifact,
+  sessionRpeOperationIdForReview,
 } from "./finalized-artifact";
 import {
   configureTimerOnlyRecording,
@@ -92,5 +93,49 @@ describe("web recording finalization", () => {
         ],
       },
     });
+  });
+
+  it("keeps RPE out of activity notes and retains an operation ID only for unchanged RPE", async () => {
+    const artifact = await finalizeTimerRecordingArtifact({
+      state: finishedRecording(),
+      ownerId: "profile-1",
+      segmentId: "44444444-4444-4444-8444-444444444444",
+      review: {
+        name: "Morning run",
+        notes: "User note",
+        perceivedEffort: 5,
+        distanceMeters: 0,
+        calories: null,
+      },
+      sessionRpeOperationId: "66666666-6666-4666-8666-666666666666",
+      digest: async () => "c".repeat(64),
+    });
+    expect(
+      buildCreateFromRecordingSummaryInput(artifact, {
+        bucket: "activity-files",
+        path: "recording.tcx",
+      }).notes,
+    ).toBe("User note");
+    expect(
+      sessionRpeOperationIdForReview({
+        previous: artifact,
+        perceivedEffort: 5,
+        createOperationId: () => "77777777-7777-4777-8777-777777777777",
+      }),
+    ).toBe(artifact.sessionRpeOperationId);
+    expect(
+      sessionRpeOperationIdForReview({
+        previous: artifact,
+        perceivedEffort: 6,
+        createOperationId: () => "77777777-7777-4777-8777-777777777777",
+      }),
+    ).toBe("77777777-7777-4777-8777-777777777777");
+    expect(
+      sessionRpeOperationIdForReview({
+        previous: artifact,
+        perceivedEffort: null,
+        createOperationId: () => "unused",
+      }),
+    ).toBeNull();
   });
 });

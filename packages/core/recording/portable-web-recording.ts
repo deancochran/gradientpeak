@@ -32,6 +32,9 @@ export const portableWebRecordingArtifactSchema = z
     fileText: z.string().min(1).max(1_000_000),
     sha256: sha256Schema,
     review: portableWebRecordingReviewSchema,
+    // v1 artifacts written before Session RPE submission existed omitted this
+    // field. Default it while parsing so IndexedDB recovery remains compatible.
+    sessionRpeOperationId: z.string().uuid().nullable().default(null),
   })
   .strict()
   .superRefine((artifact, context) => {
@@ -70,7 +73,7 @@ export const portableWebRecordingSubmissionJobSchema = z
     schemaVersion: z.literal(PORTABLE_WEB_RECORDING_SCHEMA_VERSION),
     id: z.string().min(1).max(200),
     artifact: portableWebRecordingArtifactSchema,
-    status: z.enum(["queued", "submitting", "retry_wait", "submitted"]),
+    status: z.enum(["queued", "submitting", "retry_wait", "review_required", "submitted"]),
     attempts: z.number().int().nonnegative(),
     nextAttemptAt: isoTimestampSchema.nullable(),
     lastError: z.string().min(1).max(200).nullable(),
@@ -91,6 +94,13 @@ export const portableWebRecordingSubmissionJobSchema = z
         code: "custom",
         path: ["activityId"],
         message: "A submitted job must retain the accepted activity identity.",
+      });
+    }
+    if (job.status === "review_required" && !job.activityId) {
+      context.addIssue({
+        code: "custom",
+        path: ["activityId"],
+        message: "A review-required job must retain the saved activity identity.",
       });
     }
   });

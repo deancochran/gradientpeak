@@ -22,7 +22,10 @@ import {
   TimerDraftStorageUnavailableError,
   type WebRecordingStorage,
 } from "./draft-storage";
-import { finalizeTimerRecordingArtifact } from "./finalized-artifact";
+import {
+  finalizeTimerRecordingArtifact,
+  sessionRpeOperationIdForReview,
+} from "./finalized-artifact";
 import { drainWebRecordingSubmissionQueue, type SubmitWebRecording } from "./submission-queue";
 import {
   configureTimerOnlyRecording,
@@ -310,6 +313,7 @@ export function TimerOnlyRecordingProvider({
           distanceMeters: 0,
           calories: null,
         },
+        sessionRpeOperationId: null,
       });
       await storageQueue.current;
       await draftStorage.finalize(artifact);
@@ -342,15 +346,27 @@ export function TimerOnlyRecordingProvider({
 
   const save = useCallback(
     async (review: PortableWebRecordingReview) => {
-      if (commandInFlight.current || !providerState.artifact) return;
+      if (
+        commandInFlight.current ||
+        !providerState.artifact ||
+        providerState.submissionJob?.activityId
+      ) {
+        return;
+      }
       commandInFlight.current = true;
       setProviderState((current) => ({ ...current, busy: true, error: null }));
       try {
+        const sessionRpeOperationId = sessionRpeOperationIdForReview({
+          previous: providerState.artifact,
+          perceivedEffort: review.perceivedEffort,
+          createOperationId: createSessionId,
+        });
         const artifact = await finalizeTimerRecordingArtifact({
           state: recordingRef.current,
           ownerId,
           segmentId: providerState.artifact.segmentId,
           review,
+          sessionRpeOperationId,
         });
         const submissionJob = await draftStorage.enqueueSubmission(
           artifact,
@@ -374,7 +390,7 @@ export function TimerOnlyRecordingProvider({
         commandInFlight.current = false;
       }
     },
-    [draftStorage, ownerId, providerState.artifact],
+    [draftStorage, ownerId, providerState.artifact, providerState.submissionJob?.activityId],
   );
   const reset = useCallback(() => {
     const result = resetTimerOnlyRecording();
@@ -444,8 +460,20 @@ export function TimerOnlyRecordingProvider({
 
   const drainSubmissionQueue = useCallback(
     async (submit: SubmitWebRecording) => {
-      if (drainInFlight.current) return;
+      if (drainInFlight.current || commandInFlight.current) return;
       drainInFlight.current = true;
+      commandInFlight.current = true;
+      setProviderState((current) => ({
+        ...current,
+        busy: true,
+        error: null,
+        submissionJob:
+          current.submissionJob &&
+          current.submissionJob.status !== "submitted" &&
+          current.submissionJob.status !== "review_required"
+            ? { ...current.submissionJob, status: "submitting", nextAttemptAt: null }
+            : current.submissionJob,
+      }));
       try {
         const updates = await drainWebRecordingSubmissionQueue(draftStorage, submit);
         const currentId = providerState.artifact?.recordingSessionId;
@@ -453,9 +481,29 @@ export function TimerOnlyRecordingProvider({
           ? (updates.find((job) => job.id === currentId) ??
             (await draftStorage.getSubmissionJob(currentId)))
           : null;
-        setProviderState((current) => ({ ...current, submissionJob }));
+        const history = await draftStorage.listArtifacts();
+        const artifact = currentId
+          ? (history.find((candidate) => candidate.recordingSessionId === currentId) ?? null)
+          : null;
+        setProviderState((current) => ({
+          ...current,
+          artifact,
+          submissionJob,
+          history,
+          busy: false,
+        }));
+      } catch (error) {
+        setProviderState((current) => ({
+          ...current,
+          busy: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "The recording submission could not be resumed.",
+        }));
       } finally {
         drainInFlight.current = false;
+        commandInFlight.current = false;
       }
     },
     [draftStorage, providerState.artifact?.recordingSessionId],
@@ -504,7 +552,20 @@ export function useTimerOnlyRecording(): TimerOnlyRecordingContextValue {
 }
 
 function createSessionId(): string {
-  return globalThis.crypto?.randomUUID?.() ?? `web-${Date.now().toString(36)}`;
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  if (!globalThis.crypto?.getRandomValues) {
+    throw new Error("Secure UUID generation is unavailable in this runtime.");
+  }
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  const versionByte = bytes[6];
+  const variantByte = bytes[8];
+  if (versionByte === undefined || variantByte === undefined) {
+    throw new Error("Secure UUID generation returned insufficient entropy.");
+  }
+  bytes[6] = (versionByte & 0x0f) | 0x40;
+  bytes[8] = (variantByte & 0x3f) | 0x80;
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 const RECORDING_INSTANCE_STORAGE_KEY = "gradientpeak.recording.instance-id";

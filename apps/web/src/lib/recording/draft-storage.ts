@@ -7,7 +7,11 @@ import {
   portableWebRecordingSubmissionJobSchema,
 } from "@repo/core";
 
-import { createQueuedSubmissionJob } from "./submission-queue";
+import {
+  type ClaimedWebRecordingSubmissionJob,
+  createQueuedSubmissionJob,
+  type SubmissionJobClaim,
+} from "./submission-queue";
 import { createTimerOnlyRecordingDraft, type TimerOnlyRecordingState } from "./timer-runtime";
 
 export interface TimerDraftStorage {
@@ -27,18 +31,28 @@ export interface WebRecordingStorage extends TimerDraftStorage {
   ): Promise<PortableWebRecordingSubmissionJob>;
   getSubmissionJob(id: string): Promise<PortableWebRecordingSubmissionJob | null>;
   listDueSubmissionJobs(now: string): Promise<PortableWebRecordingSubmissionJob[]>;
-  markSubmissionJobSubmitting(id: string, now: string): Promise<PortableWebRecordingSubmissionJob>;
+  claimSubmissionJob(id: string, now: string): Promise<ClaimedWebRecordingSubmissionJob | null>;
   markSubmissionJobRetry(
     id: string,
+    claim: SubmissionJobClaim,
     now: string,
     nextAttemptAt: string,
     reason: string,
-  ): Promise<PortableWebRecordingSubmissionJob>;
-  markSubmissionJobSubmitted(
+    activityId?: string | null,
+  ): Promise<PortableWebRecordingSubmissionJob | null>;
+  markSubmissionJobReviewRequired(
     id: string,
+    claim: SubmissionJobClaim,
     now: string,
     activityId: string,
-  ): Promise<PortableWebRecordingSubmissionJob>;
+    reason: string,
+  ): Promise<PortableWebRecordingSubmissionJob | null>;
+  markSubmissionJobSubmitted(
+    id: string,
+    claim: SubmissionJobClaim,
+    now: string,
+    activityId: string,
+  ): Promise<PortableWebRecordingSubmissionJob | null>;
   retrySubmissionNow(id: string, now: string): Promise<PortableWebRecordingSubmissionJob>;
   discardArtifact(id: string): Promise<boolean>;
 }
@@ -87,6 +101,7 @@ const FINALIZED_ARTIFACT_STORE_NAME = "finalized-artifacts";
 const SUBMISSION_JOB_STORE_NAME = "submission-jobs";
 export const TIMER_DRAFT_STORAGE_KEY = "active-timer-recording";
 const TIMER_DRAFT_LEASE_MS = 45_000;
+const SUBMISSION_JOB_LEASE_MS = 45_000;
 
 type StoredTimerDraftEnvelope = {
   ownerId: string;
@@ -95,8 +110,127 @@ type StoredTimerDraftEnvelope = {
   leaseExpiresAtMs: number;
 };
 
+export type StoredSubmissionJobEnvelope = {
+  job: PortableWebRecordingSubmissionJob;
+  claimOwner: string | null;
+  claimExpiresAtMs: number;
+  revision: number;
+};
+
 export class TimerDraftStorageUnavailableError extends Error {}
 export class TimerDraftStorageInUseError extends Error {}
+export class RecordingSubmissionOverwriteError extends Error {}
+
+export function parseStoredSubmissionJobEnvelope(
+  value: unknown,
+  ownerId: string,
+): StoredSubmissionJobEnvelope | null {
+  const envelope =
+    typeof value === "object" && value !== null
+      ? (value as Partial<StoredSubmissionJobEnvelope>)
+      : null;
+  const candidate = envelope && "job" in envelope ? envelope.job : value;
+  const parsed = portableWebRecordingSubmissionJobSchema.safeParse(candidate);
+  if (!parsed.success || parsed.data.artifact.ownerId !== ownerId) return null;
+  const claimExpiresAtMs = envelope?.claimExpiresAtMs;
+  const revision = envelope?.revision;
+  return {
+    job: parsed.data,
+    claimOwner: typeof envelope?.claimOwner === "string" ? envelope.claimOwner : null,
+    claimExpiresAtMs:
+      typeof claimExpiresAtMs === "number" &&
+      Number.isSafeInteger(claimExpiresAtMs) &&
+      claimExpiresAtMs >= 0
+        ? claimExpiresAtMs
+        : 0,
+    revision:
+      typeof revision === "number" && Number.isSafeInteger(revision) && revision >= 0
+        ? revision
+        : 0,
+  };
+}
+
+export function claimSubmissionJobEnvelope({
+  envelope,
+  instanceId,
+  nowMs,
+}: {
+  envelope: StoredSubmissionJobEnvelope;
+  instanceId: string;
+  nowMs: number;
+}): StoredSubmissionJobEnvelope | null {
+  const due =
+    envelope.job.status === "queued" ||
+    (envelope.job.status === "retry_wait" &&
+      (!envelope.job.nextAttemptAt || Date.parse(envelope.job.nextAttemptAt) <= nowMs));
+  const expiredSubmitting =
+    envelope.job.status === "submitting" && envelope.claimExpiresAtMs <= nowMs;
+  if (!due && !expiredSubmitting) return null;
+  return {
+    ...envelope,
+    job: {
+      ...envelope.job,
+      status: "submitting",
+      updatedAt: new Date(nowMs).toISOString(),
+      nextAttemptAt: null,
+    },
+    claimOwner: instanceId,
+    claimExpiresAtMs: nowMs + SUBMISSION_JOB_LEASE_MS,
+    revision: envelope.revision + 1,
+  };
+}
+
+export function finalizeClaimedSubmissionJobEnvelope({
+  envelope,
+  claim,
+  update,
+}: {
+  envelope: StoredSubmissionJobEnvelope;
+  claim: SubmissionJobClaim;
+  nowMs: number;
+  update: (job: PortableWebRecordingSubmissionJob) => PortableWebRecordingSubmissionJob;
+}): StoredSubmissionJobEnvelope | null {
+  if (
+    envelope.job.status !== "submitting" ||
+    envelope.claimOwner !== claim.owner ||
+    envelope.revision !== claim.revision
+  ) {
+    return null;
+  }
+  return {
+    job: portableWebRecordingSubmissionJobSchema.parse(update(envelope.job)),
+    claimOwner: null,
+    claimExpiresAtMs: 0,
+    revision: envelope.revision + 1,
+  };
+}
+
+export function isSameSubmissionArtifact(
+  left: PortableWebRecordingArtifact,
+  right: PortableWebRecordingArtifact,
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+export function canStoreSubmissionArtifact({
+  existingArtifact,
+  existingJob,
+  artifact,
+}: {
+  existingArtifact: PortableWebRecordingArtifact | null;
+  existingJob: StoredSubmissionJobEnvelope | null;
+  artifact: PortableWebRecordingArtifact;
+}): boolean {
+  if (!existingJob) return true;
+  return (
+    isSameSubmissionArtifact(existingJob.job.artifact, artifact) &&
+    (!existingArtifact || isSameSubmissionArtifact(existingArtifact, artifact))
+  );
+}
+
+export function canDiscardSubmissionJob(job: StoredSubmissionJobEnvelope | null): boolean {
+  return job?.job.status !== "submitted" && job?.job.status !== "submitting";
+}
 
 export function isTimerDraftLeaseAvailable({
   leaseOwner,
@@ -268,15 +402,31 @@ export class IndexedDbTimerDraftStorage implements WebRecordingStorage {
     const database = await this.openDatabase();
     try {
       const transaction = database.transaction(
-        [TIMER_DRAFT_STORE_NAME, FINALIZED_ARTIFACT_STORE_NAME],
+        [TIMER_DRAFT_STORE_NAME, FINALIZED_ARTIFACT_STORE_NAME, SUBMISSION_JOB_STORE_NAME],
         "readwrite",
       );
       const draftStore = transaction.objectStore(TIMER_DRAFT_STORE_NAME);
       const artifactStore = transaction.objectStore(FINALIZED_ARTIFACT_STORE_NAME);
+      const jobStore = transaction.objectStore(SUBMISSION_JOB_STORE_NAME);
       const stored = (await requestResult(draftStore.get(this.storageKey))) as
         | StoredTimerDraftEnvelope
         | undefined;
       this.assertLease(stored);
+      const existingArtifact = this.parseOwnedArtifact(
+        await requestResult(artifactStore.get(validatedArtifact.recordingSessionId)),
+      );
+      const existingJob = parseStoredSubmissionJobEnvelope(
+        await requestResult(jobStore.get(validatedArtifact.recordingSessionId)),
+        this.ownerId,
+      );
+      if (
+        !canStoreSubmissionArtifact({ existingArtifact, existingJob, artifact: validatedArtifact })
+      ) {
+        transaction.abort();
+        throw new RecordingSubmissionOverwriteError(
+          "A saved recording artifact cannot be replaced locally.",
+        );
+      }
       artifactStore.put(validatedArtifact, validatedArtifact.recordingSessionId);
       draftStore.put(
         {
@@ -334,15 +484,32 @@ export class IndexedDbTimerDraftStorage implements WebRecordingStorage {
       );
       const artifactStore = transaction.objectStore(FINALIZED_ARTIFACT_STORE_NAME);
       const jobStore = transaction.objectStore(SUBMISSION_JOB_STORE_NAME);
-      const existing = this.parseOwnedJob(
+      const existing = parseStoredSubmissionJobEnvelope(
         await requestResult(jobStore.get(validatedArtifact.recordingSessionId)),
+        this.ownerId,
       );
-      const job =
-        existing?.status === "submitted"
-          ? existing
-          : createQueuedSubmissionJob(validatedArtifact, now);
+      const existingArtifact = this.parseOwnedArtifact(
+        await requestResult(artifactStore.get(validatedArtifact.recordingSessionId)),
+      );
+      if (
+        !canStoreSubmissionArtifact({
+          existingArtifact,
+          existingJob: existing,
+          artifact: validatedArtifact,
+        })
+      ) {
+        transaction.abort();
+        throw new RecordingSubmissionOverwriteError(
+          "A saved recording submission cannot be replaced locally.",
+        );
+      }
+      if (existing) {
+        await transactionComplete(transaction);
+        return existing.job;
+      }
+      const job = createQueuedSubmissionJob(validatedArtifact, now);
       artifactStore.put(validatedArtifact, validatedArtifact.recordingSessionId);
-      jobStore.put(job, job.id);
+      jobStore.put(this.createSubmissionJobEnvelope(job), job.id);
       await transactionComplete(transaction);
       return job;
     } finally {
@@ -356,7 +523,7 @@ export class IndexedDbTimerDraftStorage implements WebRecordingStorage {
       const transaction = database.transaction(SUBMISSION_JOB_STORE_NAME, "readonly");
       const value = await requestResult(transaction.objectStore(SUBMISSION_JOB_STORE_NAME).get(id));
       await transactionComplete(transaction);
-      return this.parseOwnedJob(value);
+      return parseStoredSubmissionJobEnvelope(value, this.ownerId)?.job ?? null;
     } finally {
       database.close();
     }
@@ -372,52 +539,85 @@ export class IndexedDbTimerDraftStorage implements WebRecordingStorage {
       await transactionComplete(transaction);
       const nowMs = Date.parse(now);
       return values
-        .map((value) => this.parseOwnedJob(value))
+        .map((value) => parseStoredSubmissionJobEnvelope(value, this.ownerId)?.job ?? null)
         .filter(
           (job): job is PortableWebRecordingSubmissionJob =>
             Boolean(job) &&
             job?.status !== "submitted" &&
-            (!job?.nextAttemptAt || Date.parse(job.nextAttemptAt) <= nowMs),
+            job?.status !== "review_required" &&
+            (job?.status === "submitting" ||
+              !job?.nextAttemptAt ||
+              Date.parse(job.nextAttemptAt) <= nowMs),
         );
     } finally {
       database.close();
     }
   }
 
-  async markSubmissionJobSubmitting(
+  async claimSubmissionJob(
     id: string,
     now: string,
-  ): Promise<PortableWebRecordingSubmissionJob> {
-    return this.updateJob(id, (job) => ({
-      ...job,
-      status: "submitting",
-      updatedAt: now,
-      nextAttemptAt: null,
-    }));
+  ): Promise<ClaimedWebRecordingSubmissionJob | null> {
+    const database = await this.openDatabase();
+    try {
+      const transaction = database.transaction(SUBMISSION_JOB_STORE_NAME, "readwrite");
+      const store = transaction.objectStore(SUBMISSION_JOB_STORE_NAME);
+      const current = parseStoredSubmissionJobEnvelope(
+        await requestResult(store.get(id)),
+        this.ownerId,
+      );
+      if (!current) {
+        await transactionComplete(transaction);
+        return null;
+      }
+      const claimed = claimSubmissionJobEnvelope({
+        envelope: current,
+        instanceId: this.instanceId,
+        nowMs: Date.parse(now),
+      });
+      if (!claimed) {
+        await transactionComplete(transaction);
+        return null;
+      }
+      store.put(claimed, id);
+      await transactionComplete(transaction);
+      const claimOwner = claimed.claimOwner;
+      if (!claimOwner) throw new Error("Claimed submission job is missing its owner.");
+      return {
+        ...claimed.job,
+        claim: { owner: claimOwner, revision: claimed.revision },
+      };
+    } finally {
+      database.close();
+    }
   }
 
   async markSubmissionJobRetry(
     id: string,
+    claim: SubmissionJobClaim,
     now: string,
     nextAttemptAt: string,
     reason: string,
-  ): Promise<PortableWebRecordingSubmissionJob> {
-    return this.updateJob(id, (job) => ({
+    activityId: string | null = null,
+  ): Promise<PortableWebRecordingSubmissionJob | null> {
+    return this.updateClaimedJob(id, claim, now, (job) => ({
       ...job,
       status: "retry_wait",
       attempts: job.attempts + 1,
       updatedAt: now,
       nextAttemptAt,
       lastError: reason,
+      activityId: activityId ?? job.activityId,
     }));
   }
 
   async markSubmissionJobSubmitted(
     id: string,
+    claim: SubmissionJobClaim,
     now: string,
     activityId: string,
-  ): Promise<PortableWebRecordingSubmissionJob> {
-    return this.updateJob(id, (job) => ({
+  ): Promise<PortableWebRecordingSubmissionJob | null> {
+    return this.updateClaimedJob(id, claim, now, (job) => ({
       ...job,
       status: "submitted",
       attempts: job.attempts + 1,
@@ -428,14 +628,37 @@ export class IndexedDbTimerDraftStorage implements WebRecordingStorage {
     }));
   }
 
-  async retrySubmissionNow(id: string, now: string): Promise<PortableWebRecordingSubmissionJob> {
-    return this.updateJob(id, (job) => ({
+  async markSubmissionJobReviewRequired(
+    id: string,
+    claim: SubmissionJobClaim,
+    now: string,
+    activityId: string,
+    reason: string,
+  ): Promise<PortableWebRecordingSubmissionJob | null> {
+    return this.updateClaimedJob(id, claim, now, (job) => ({
       ...job,
-      status: "queued",
+      status: "review_required",
+      attempts: job.attempts + 1,
       updatedAt: now,
       nextAttemptAt: null,
-      lastError: null,
+      lastError: reason,
+      activityId,
     }));
+  }
+
+  async retrySubmissionNow(id: string, now: string): Promise<PortableWebRecordingSubmissionJob> {
+    return this.updateJob(id, (job) => {
+      if (job.status !== "retry_wait") {
+        throw new RecordingSubmissionOverwriteError("Only a waiting submission can be retried.");
+      }
+      return {
+        ...job,
+        status: "queued",
+        updatedAt: now,
+        nextAttemptAt: null,
+        lastError: null,
+      };
+    });
   }
 
   async discardArtifact(id: string): Promise<boolean> {
@@ -447,8 +670,11 @@ export class IndexedDbTimerDraftStorage implements WebRecordingStorage {
       );
       const artifactStore = transaction.objectStore(FINALIZED_ARTIFACT_STORE_NAME);
       const jobStore = transaction.objectStore(SUBMISSION_JOB_STORE_NAME);
-      const job = this.parseOwnedJob(await requestResult(jobStore.get(id)));
-      if (job?.status === "submitted") {
+      const job = parseStoredSubmissionJobEnvelope(
+        await requestResult(jobStore.get(id)),
+        this.ownerId,
+      );
+      if (!canDiscardSubmissionJob(job)) {
         await transactionComplete(transaction);
         return false;
       }
@@ -469,15 +695,54 @@ export class IndexedDbTimerDraftStorage implements WebRecordingStorage {
     try {
       const transaction = database.transaction(SUBMISSION_JOB_STORE_NAME, "readwrite");
       const store = transaction.objectStore(SUBMISSION_JOB_STORE_NAME);
-      const current = this.parseOwnedJob(await requestResult(store.get(id)));
-      if (!current) {
+      const current = parseStoredSubmissionJobEnvelope(
+        await requestResult(store.get(id)),
+        this.ownerId,
+      );
+      if (!current || current.claimOwner) {
         transaction.abort();
         throw new Error("Recording submission job was not found.");
       }
-      const next = portableWebRecordingSubmissionJobSchema.parse(update(current));
-      store.put(next, id);
+      const next = portableWebRecordingSubmissionJobSchema.parse(update(current.job));
+      store.put({ ...current, job: next, revision: current.revision + 1 }, id);
       await transactionComplete(transaction);
       return next;
+    } finally {
+      database.close();
+    }
+  }
+
+  private async updateClaimedJob(
+    id: string,
+    claim: SubmissionJobClaim,
+    now: string,
+    update: (job: PortableWebRecordingSubmissionJob) => PortableWebRecordingSubmissionJob,
+  ): Promise<PortableWebRecordingSubmissionJob | null> {
+    const database = await this.openDatabase();
+    try {
+      const transaction = database.transaction(SUBMISSION_JOB_STORE_NAME, "readwrite");
+      const store = transaction.objectStore(SUBMISSION_JOB_STORE_NAME);
+      const current = parseStoredSubmissionJobEnvelope(
+        await requestResult(store.get(id)),
+        this.ownerId,
+      );
+      if (!current) {
+        await transactionComplete(transaction);
+        return null;
+      }
+      const next = finalizeClaimedSubmissionJobEnvelope({
+        envelope: current,
+        claim,
+        nowMs: Date.parse(now),
+        update,
+      });
+      if (!next) {
+        await transactionComplete(transaction);
+        return null;
+      }
+      store.put(next, id);
+      await transactionComplete(transaction);
+      return next.job;
     } finally {
       database.close();
     }
@@ -493,9 +758,15 @@ export class IndexedDbTimerDraftStorage implements WebRecordingStorage {
     return parsed;
   }
 
-  private parseOwnedJob(value: unknown): PortableWebRecordingSubmissionJob | null {
-    const parsed = portableWebRecordingSubmissionJobSchema.safeParse(value);
-    if (!parsed.success || parsed.data.artifact.ownerId !== this.ownerId) return null;
+  private createSubmissionJobEnvelope(
+    job: PortableWebRecordingSubmissionJob,
+  ): StoredSubmissionJobEnvelope {
+    return { job, claimOwner: null, claimExpiresAtMs: 0, revision: 0 };
+  }
+
+  private parseOwnedArtifact(value: unknown): PortableWebRecordingArtifact | null {
+    const parsed = portableWebRecordingArtifactSchema.safeParse(value);
+    if (!parsed.success || parsed.data.ownerId !== this.ownerId) return null;
     return parsed.data;
   }
 

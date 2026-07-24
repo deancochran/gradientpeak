@@ -14,12 +14,14 @@ export async function finalizeTimerRecordingArtifact({
   ownerId,
   review,
   segmentId,
+  sessionRpeOperationId = null,
   state,
 }: {
   digest?: Digest;
   ownerId: string;
   review: PortableWebRecordingReview;
   segmentId: string;
+  sessionRpeOperationId?: string | null;
   state: TimerOnlyRecordingState;
 }): Promise<PortableWebRecordingArtifact> {
   const snapshot = state.reducer.snapshot;
@@ -58,6 +60,7 @@ export async function finalizeTimerRecordingArtifact({
     fileText,
     sha256: await digest(fileText),
     review,
+    sessionRpeOperationId,
   });
 }
 
@@ -65,20 +68,11 @@ export function buildCreateFromRecordingSummaryInput(
   artifact: PortableWebRecordingArtifact,
   upload: { bucket: string; path: string },
 ) {
-  const notes = [
-    artifact.review.notes,
-    artifact.review.perceivedEffort
-      ? `Perceived effort: ${artifact.review.perceivedEffort}/10`
-      : null,
-  ]
-    .filter((value): value is string => Boolean(value))
-    .join("\n\n");
-
   return {
     profileId: artifact.ownerId,
     recordingSessionId: artifact.recordingSessionId,
     name: artifact.review.name,
-    notes: notes || null,
+    notes: artifact.review.notes,
     startedAt: artifact.startedAt,
     finishedAt: artifact.finishedAt,
     activityPlanId: artifact.snapshot.activity.activityPlanId,
@@ -118,6 +112,23 @@ export function buildCreateFromRecordingSummaryInput(
     },
     source: "mobile_recording" as const,
   };
+}
+
+/** Keeps the append-only RPE operation stable until the review value changes. */
+export function sessionRpeOperationIdForReview({
+  previous,
+  perceivedEffort,
+  createOperationId,
+}: {
+  previous: PortableWebRecordingArtifact;
+  perceivedEffort: PortableWebRecordingReview["perceivedEffort"];
+  createOperationId: () => string;
+}): string | null {
+  if (perceivedEffort === null) return null;
+  if (previous.review.perceivedEffort === perceivedEffort && previous.sessionRpeOperationId) {
+    return previous.sessionRpeOperationId;
+  }
+  return createOperationId();
 }
 
 export async function sha256Text(value: string): Promise<string> {

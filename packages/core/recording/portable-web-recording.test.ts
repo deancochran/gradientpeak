@@ -83,7 +83,10 @@ const artifact = {
 
 describe("portable web recording contracts", () => {
   it("locks artifact identity and validates bounded review metadata", () => {
-    expect(portableWebRecordingArtifactSchema.parse(artifact)).toEqual(artifact);
+    expect(portableWebRecordingArtifactSchema.parse(artifact)).toEqual({
+      ...artifact,
+      sessionRpeOperationId: null,
+    });
     expect(
       portableWebRecordingArtifactSchema.safeParse({
         ...artifact,
@@ -94,6 +97,16 @@ describe("portable web recording contracts", () => {
       portableWebRecordingArtifactSchema.safeParse({
         ...artifact,
         movingMs: artifact.elapsedMs + 1,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts existing v1 artifacts without an RPE operation and rejects malformed IDs", () => {
+    expect(portableWebRecordingArtifactSchema.parse(artifact).sessionRpeOperationId).toBeNull();
+    expect(
+      portableWebRecordingArtifactSchema.safeParse({
+        ...artifact,
+        sessionRpeOperationId: "not-a-uuid",
       }).success,
     ).toBe(false);
   });
@@ -114,6 +127,24 @@ describe("portable web recording contracts", () => {
     expect(job.id).toBe(job.artifact.recordingSessionId);
     expect(
       portableWebRecordingSubmissionJobSchema.safeParse({ ...job, id: "another-id" }).success,
+    ).toBe(false);
+  });
+
+  it("requires a saved activity before a job can require review", () => {
+    const job = portableWebRecordingSubmissionJobSchema.parse({
+      schemaVersion: PORTABLE_WEB_RECORDING_SCHEMA_VERSION,
+      id: artifact.recordingSessionId,
+      artifact,
+      status: "review_required",
+      attempts: 1,
+      nextAttemptAt: null,
+      lastError: "session_rpe_conflict",
+      activityId: "activity-1",
+      updatedAt: "2026-07-20T10:31:00.000Z",
+    });
+    expect(job.status).toBe("review_required");
+    expect(
+      portableWebRecordingSubmissionJobSchema.safeParse({ ...job, activityId: null }).success,
     ).toBe(false);
   });
 });

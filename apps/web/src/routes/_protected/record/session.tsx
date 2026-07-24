@@ -17,6 +17,7 @@ import { uploadFileToSignedUrl } from "../../../lib/activity-route-upload";
 import { api } from "../../../lib/api/client";
 import { buildCreateFromRecordingSummaryInput } from "../../../lib/recording/finalized-artifact";
 import { useTimerOnlyRecording } from "../../../lib/recording/provider";
+import { submitWebRecordingArtifact } from "../../../lib/recording/submission-queue";
 
 export const Route = createFileRoute("/_protected/record/session")({
   component: RecordSessionPage,
@@ -28,11 +29,13 @@ export function RecordSessionPage() {
   const configuration = recording.state.configuration;
   const getSignedUrl = api.activityFiles.getSignedUploadUrl.useMutation();
   const createActivity = api.activities.createFromRecordingSummary.useMutation();
+  const recordSessionRpe = api.activities.recordSessionRpe.useMutation();
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
   const [perceivedEffort, setPerceivedEffort] = useState("");
   const [distanceMeters, setDistanceMeters] = useState("0");
   const [calories, setCalories] = useState("");
+  const hasSavedActivity = isReviewFrozen(recording.submissionJob);
 
   useEffect(() => {
     if (!recording.artifact) return;
@@ -53,15 +56,27 @@ export function RecordSessionPage() {
         fileSize: file.size,
       });
       await uploadFileToSignedUrl(file, signed.signedUrl);
-      const created = await createActivity.mutateAsync(
-        buildCreateFromRecordingSummaryInput(artifact, {
-          bucket: "activity-files",
-          path: signed.filePath,
-        }),
-      );
-      return { activityId: created.id };
+      return submitWebRecordingArtifact({
+        artifact,
+        createActivity: () =>
+          createActivity.mutateAsync(
+            buildCreateFromRecordingSummaryInput(artifact, {
+              bucket: "activity-files",
+              path: signed.filePath,
+            }),
+          ),
+        recordSessionRpe: ({ activityId, operationId, rpe }) =>
+          recordSessionRpe.mutateAsync({
+            activity_id: activityId,
+            operation_id: operationId,
+            rpe,
+            scale: "borg_cr10",
+            scale_version: "1",
+            source: "user",
+          }),
+      });
     },
-    [createActivity, getSignedUrl],
+    [createActivity, getSignedUrl, recordSessionRpe],
   );
 
   useEffect(() => {
@@ -233,6 +248,11 @@ export function RecordSessionPage() {
                   id="recording-name"
                   value={name}
                   maxLength={200}
+                  disabled={
+                    hasSavedActivity ||
+                    recording.busy ||
+                    recording.submissionJob?.status === "submitting"
+                  }
                   onChange={(event) => setName(event.target.value)}
                 />
               </label>
@@ -242,6 +262,11 @@ export function RecordSessionPage() {
                   id="recording-notes"
                   value={notes}
                   maxLength={4000}
+                  disabled={
+                    hasSavedActivity ||
+                    recording.busy ||
+                    recording.submissionJob?.status === "submitting"
+                  }
                   onChange={(event) => setNotes(event.target.value)}
                 />
               </label>
@@ -254,6 +279,11 @@ export function RecordSessionPage() {
                     min={1}
                     max={10}
                     value={perceivedEffort}
+                    disabled={
+                      hasSavedActivity ||
+                      recording.busy ||
+                      recording.submissionJob?.status === "submitting"
+                    }
                     onChange={(event) => setPerceivedEffort(event.target.value)}
                   />
                 </label>
@@ -265,6 +295,11 @@ export function RecordSessionPage() {
                     min={0}
                     step={1}
                     value={distanceMeters}
+                    disabled={
+                      hasSavedActivity ||
+                      recording.busy ||
+                      recording.submissionJob?.status === "submitting"
+                    }
                     onChange={(event) => setDistanceMeters(event.target.value)}
                   />
                 </label>
@@ -276,6 +311,11 @@ export function RecordSessionPage() {
                     min={0}
                     step={1}
                     value={calories}
+                    disabled={
+                      hasSavedActivity ||
+                      recording.busy ||
+                      recording.submissionJob?.status === "submitting"
+                    }
                     onChange={(event) => setCalories(event.target.value)}
                   />
                 </label>
@@ -284,8 +324,9 @@ export function RecordSessionPage() {
                 <Button
                   disabled={
                     recording.busy ||
+                    recording.submissionJob?.status === "submitting" ||
                     !name.trim() ||
-                    recording.submissionJob?.status === "submitted"
+                    hasSavedActivity
                   }
                   onClick={() =>
                     void recording.save({
@@ -299,6 +340,12 @@ export function RecordSessionPage() {
                 >
                   <Save className="h-4 w-4" /> Save activity
                 </Button>
+                {hasSavedActivity ? (
+                  <p className="basis-full text-sm text-muted-foreground">
+                    This activity is saved. Edit activity details or correct Session RPE on its
+                    detail page.
+                  </p>
+                ) : null}
                 {recording.submissionJob?.status === "retry_wait" ? (
                   <Button variant="outline" onClick={() => void recording.retrySubmission()}>
                     Retry now
@@ -309,12 +356,15 @@ export function RecordSessionPage() {
                   disabled={recording.busy || recording.submissionJob?.status === "submitted"}
                   onClick={() => void recording.discardFinalizedArtifact()}
                 >
-                  <Trash2 className="h-4 w-4" /> Discard
+                  <Trash2 className="h-4 w-4" />
+                  {recording.submissionJob?.status === "review_required"
+                    ? "Discard local RPE retry"
+                    : "Discard"}
                 </Button>
               </div>
               {recording.submissionJob ? (
                 <p role="status" className="text-sm text-muted-foreground">
-                  Submission: {submissionLabel(recording.submissionJob.status)}
+                  {submissionRecoveryLabel(recording.submissionJob)}
                   {recording.submissionJob.lastError
                     ? ` (${recording.submissionJob.lastError.replaceAll("_", " ")})`
                     : ""}
@@ -378,6 +428,32 @@ function submissionLabel(status: string): string {
   if (status === "queued") return "queued locally";
   if (status === "submitting") return "submitting";
   if (status === "retry_wait") return "waiting to retry";
+  if (status === "review_required") return "review required";
   if (status === "submitted") return "saved on server";
   return status;
+}
+
+export function submissionRecoveryLabel({
+  activityId,
+  lastError,
+  status,
+}: Pick<
+  NonNullable<ReturnType<typeof useTimerOnlyRecording>["submissionJob"]>,
+  "activityId" | "lastError" | "status"
+>): string {
+  if (status === "retry_wait" && activityId && lastError?.startsWith("session_rpe_")) {
+    return lastError === "session_rpe_conflict"
+      ? "Activity saved; Session RPE needs review"
+      : "Activity saved; Session RPE is pending";
+  }
+  return `Submission: ${submissionLabel(status)}`;
+}
+
+export function isReviewFrozen(
+  job: Pick<
+    NonNullable<ReturnType<typeof useTimerOnlyRecording>["submissionJob"]>,
+    "activityId"
+  > | null,
+): boolean {
+  return Boolean(job?.activityId);
 }
