@@ -5,6 +5,12 @@ import {
   commonLoadResultSchema,
   getTrainingIntensityZone,
 } from "@repo/core";
+import {
+  type CommonLoadDiagnostic,
+  type CommonLoadDiagnosticContext,
+  getAggregateCommonLoadDiagnostic,
+  getCommonLoadDiagnostic,
+} from "@repo/ui/lib/common-load-diagnostics";
 
 type CalibrationQuality = {
   source:
@@ -49,6 +55,7 @@ export type MobileCommonLoadPresentation = {
   load: string | null;
   intensity: string | null;
   unavailableText: string | null;
+  diagnostic: CommonLoadDiagnostic | null;
 };
 
 function formatCommonLoad(value: number): string {
@@ -59,7 +66,10 @@ function formatCommonIntensity(value: number): string {
   return `${intensityLabels[getTrainingIntensityZone(value)]} · ${value.toFixed(2)}`;
 }
 
-export function getCommonLoadPresentation(value: unknown): MobileCommonLoadPresentation | null {
+export function getCommonLoadPresentation(
+  value: unknown,
+  context: CommonLoadDiagnosticContext = {},
+): MobileCommonLoadPresentation | null {
   const parsed = commonLoadResultSchema.safeParse(value);
   if (!parsed.success) {
     const aggregate = commonLoadAggregateSchema.safeParse(value);
@@ -70,6 +80,7 @@ export function getCommonLoadPresentation(value: unknown): MobileCommonLoadPrese
         load: null,
         intensity: null,
         unavailableText: "Unavailable",
+        diagnostic: getAggregateCommonLoadDiagnostic(context),
       };
     }
     const incomplete = aggregate.data.status === "partial" ? " · Incomplete" : "";
@@ -78,6 +89,7 @@ export function getCommonLoadPresentation(value: unknown): MobileCommonLoadPrese
       load: `${formatCommonLoad(aggregate.data.load)}${incomplete}`,
       intensity: `${formatCommonIntensity(aggregate.data.intensity)}${incomplete}`,
       unavailableText: null,
+      diagnostic: null,
     };
   }
 
@@ -88,6 +100,7 @@ export function getCommonLoadPresentation(value: unknown): MobileCommonLoadPrese
       load: formatCommonLoad(result.load),
       intensity: formatCommonIntensity(result.intensity),
       unavailableText: null,
+      diagnostic: null,
     };
   }
 
@@ -100,6 +113,7 @@ export function getCommonLoadPresentation(value: unknown): MobileCommonLoadPrese
           ? null
           : `${formatCommonIntensity(result.intensity)} · Incomplete`,
       unavailableText: result.load === null ? "Incomplete" : null,
+      diagnostic: null,
     };
   }
 
@@ -113,6 +127,7 @@ export function getCommonLoadPresentation(value: unknown): MobileCommonLoadPrese
         : result.reason === "private_data"
           ? "Private"
           : "Unavailable",
+    diagnostic: getCommonLoadDiagnostic(result, context),
   };
 }
 

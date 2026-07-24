@@ -13,6 +13,36 @@ vi.mock("../../hooks/use-viewing-user-preferred-unit-system", () => ({
 afterEach(() => cleanup());
 
 describe("ActivityListCard", () => {
+  const unavailableHeartRateLoad = {
+    status: "unavailable",
+    model: "gradientpeak_relative_load",
+    version: "1",
+    sport: "run",
+    method: "heart_rate_zones",
+    quality: null,
+    thresholdEvidence: null,
+    sessionRpeEvidence: null,
+    evidenceFingerprint: null,
+    computedAsOf: "2026-07-21T12:00:00.000Z",
+    contributingDurationSeconds: null,
+    reason: "threshold_missing",
+  } as const;
+  const unavailableAggregate = {
+    status: "unavailable",
+    model: "gradientpeak_relative_load",
+    version: "1",
+    contributingDurationSeconds: 0,
+    knownDurationSeconds: 3_600,
+    contributingActivityCount: 0,
+    partialActivityCount: 0,
+    unavailableActivityCount: 1,
+    totalActivityCount: 1,
+    activityCountCoverage: 0,
+    knownDurationCoverage: 0,
+    unknownDurationActivityCount: 0,
+    reason: "no_load_data",
+  } as const;
+
   it("renders modern activity DTO category and elapsed fields", () => {
     render(
       <ActivityListCard
@@ -48,6 +78,26 @@ describe("ActivityListCard", () => {
     expect(screen.getByText("Intensity")).toBeTruthy();
     expect(screen.getAllByText("Unavailable")).toHaveLength(2);
     expect(screen.getByText(/no current result was provided/i)).toBeTruthy();
+  });
+
+  it("renders the canonical sport-specific LTHR diagnostic", () => {
+    render(
+      <ActivityListCard
+        activity={{
+          name: "Morning Run",
+          started_at: "2026-07-17T10:00:00.000Z",
+          activity_categories: ["run"],
+          elapsed_ms: 3_600_000,
+          avg_heart_rate: 150,
+          derived: { common_load: unavailableAggregate },
+          segment_loads: [{ common_load: unavailableHeartRateLoad }],
+        }}
+        onOpen={() => undefined}
+      />,
+    );
+
+    expect(screen.getByText(/sport-specific LTHR is missing for this activity/)).toBeTruthy();
+    expect(screen.getByText(/Add a current sport-specific LTHR/)).toBeTruthy();
   });
 });
 

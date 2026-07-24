@@ -39,7 +39,6 @@ import {
   formatCalibrationQuality,
   getActivityLoadLabels,
   getCommonLoadPresentation,
-  getThresholdNextAction,
 } from "@/lib/activity-load-presentation";
 import {
   getStreamArtifactMessage,
@@ -355,17 +354,27 @@ function ActivityDetailScreen() {
   );
 
   const activity = activityData?.activity;
+  const linkedActivityPlanId = activity?.activity_plans?.id;
+  const { data: linkedActivityPlan } = api.activityPlans.getById.useQuery(
+    linkedActivityPlanId ? { id: linkedActivityPlanId } : skipToken,
+    { enabled: !!linkedActivityPlanId },
+  );
   const activityCategory =
     activity?.segments?.find((segment) => segment.role === "activity")?.category ?? null;
   const derived = activityData?.derived;
   const loadMethod = derived?.stress.method;
   const loadLabels = getActivityLoadLabels(loadMethod);
-  const commonLoadPresentation = getCommonLoadPresentation(derived?.stress.common_load);
-  const loadUnavailableText =
-    derived?.stress.unavailable_reason === "private_data"
+  const commonLoadPresentation = getCommonLoadPresentation(derived?.stress.common_load, {
+    hasHeartRateSummary:
+      typeof activity?.avg_heart_rate === "number" && activity.avg_heart_rate > 0,
+    segmentCommonLoads: activityData?.segment_loads?.map((segment) => segment.common_load),
+  });
+  const loadUnavailableText = commonLoadPresentation?.diagnostic
+    ? null
+    : derived?.stress.unavailable_reason === "private_data"
       ? "Training load is private."
       : derived?.stress.unavailable_reason === "threshold_missing"
-        ? getThresholdNextAction(activityCategory)
+        ? "A required threshold is missing."
         : derived?.stress.unavailable_reason === "invalid_data"
           ? "The available activity or threshold data is invalid."
           : "Compatible activity data is missing.";
@@ -739,18 +748,17 @@ function ActivityDetailScreen() {
 
           {activity.activity_plan_id && activity.activity_plans && (
             <ActivityPlanComparison
-              activityPlan={activity.activity_plans}
+              activityPlan={{
+                ...activity.activity_plans,
+                ...(linkedActivityPlan?.common_load === undefined
+                  ? {}
+                  : { common_load: linkedActivityPlan.common_load }),
+              }}
               actualMetrics={{
                 duration: (activity.active_ms ?? activity.elapsed_ms) / 1000,
-                tss:
-                  derived?.stress.method === "power_threshold"
-                    ? (derived.stress.tss ?? undefined)
-                    : undefined,
-                intensity_factor:
-                  derived?.stress.method === "power_threshold"
-                    ? (derived.stress.intensity_factor ?? undefined)
-                    : undefined,
-                adherence_score: undefined,
+                ...(derived?.stress.common_load === undefined
+                  ? {}
+                  : { common_load: derived.stress.common_load }),
               }}
               onPress={() => {
                 if (activity.activity_plan_id) {
@@ -825,9 +833,11 @@ function ActivityDetailScreen() {
                   </View>
                 ) : (
                   <Text className="text-sm text-muted-foreground">
-                    {commonLoadPresentation?.unavailableText
-                      ? `${commonLoadPresentation.unavailableText}. ${loadUnavailableText}`
-                      : loadUnavailableText}
+                    {commonLoadPresentation?.diagnostic
+                      ? `${commonLoadPresentation.diagnostic.summary} ${commonLoadPresentation.diagnostic.action}`
+                      : commonLoadPresentation?.unavailableText
+                        ? `${commonLoadPresentation.unavailableText}. ${loadUnavailableText}`
+                        : loadUnavailableText}
                   </Text>
                 )}
                 {derived?.stress?.tss != null ? (

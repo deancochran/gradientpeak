@@ -38,7 +38,6 @@ import {
   formatCalibrationQuality,
   getActivityLoadLabels,
   getCommonLoadPresentation,
-  getThresholdNextAction,
 } from "../../../../lib/activity-load-presentation";
 import {
   deriveActivityCategoryDisplay,
@@ -106,15 +105,15 @@ function ActivityDetailPage() {
     .sort((left, right) => left.ordinal - right.ordinal)[0];
   const commonLoad = derived?.stress.common_load;
   const loadLabels = getActivityLoadLabels();
-  const loadPresentation = getCommonLoadPresentation(commonLoad);
+  const loadPresentation = getCommonLoadPresentation(commonLoad, {
+    hasHeartRateSummary:
+      typeof activity?.avg_heart_rate === "number" && activity.avg_heart_rate > 0,
+    segmentCommonLoads: activityQuery.data?.segment_loads?.map((segment) => segment.common_load),
+  });
   const calibrationText = formatCalibrationQuality(
     commonLoad && "quality" in commonLoad ? commonLoad.quality : null,
     activity?.started_at,
   );
-  const thresholdAction =
-    commonLoad?.status === "unavailable" && commonLoad.reason === "threshold_missing"
-      ? getThresholdNextAction(categoryDisplay.singleCategory)
-      : null;
   const isOwner = user?.id === activity?.profile_id;
   const ingestion = (
     activity as
@@ -363,9 +362,13 @@ function ActivityDetailPage() {
         ]}
       />
       <p className="text-sm text-muted-foreground">{loadPresentation.explanation}</p>
-      {calibrationText || thresholdAction ? (
-        <p className="text-sm text-muted-foreground">{calibrationText ?? thresholdAction}</p>
+      {loadPresentation.diagnostic ? (
+        <div className="space-y-1 text-sm text-muted-foreground">
+          <p>{loadPresentation.diagnostic.summary}</p>
+          <p>{loadPresentation.diagnostic.action}</p>
+        </div>
       ) : null}
+      {calibrationText ? <p className="text-sm text-muted-foreground">{calibrationText}</p> : null}
 
       <div className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
         <EntityMapCard

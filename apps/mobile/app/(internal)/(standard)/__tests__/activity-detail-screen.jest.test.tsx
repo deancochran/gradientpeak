@@ -92,6 +92,35 @@ const activityData = {
 const toggleLikeMutateMock = jest.fn();
 const deleteMutateMock = jest.fn();
 const authState = { profile: { threshold_hr: 170 }, user: { id: "profile-1" } };
+const unavailableAggregate = {
+  status: "unavailable",
+  model: "gradientpeak_relative_load",
+  version: "1",
+  contributingDurationSeconds: 0,
+  knownDurationSeconds: 3_600,
+  contributingActivityCount: 0,
+  partialActivityCount: 0,
+  unavailableActivityCount: 1,
+  totalActivityCount: 1,
+  activityCountCoverage: 0,
+  knownDurationCoverage: 0,
+  unknownDurationActivityCount: 0,
+  reason: "no_load_data",
+} as const;
+const unavailableHeartRateSegment = {
+  status: "unavailable",
+  model: "gradientpeak_relative_load",
+  version: "1",
+  sport: "run",
+  method: "heart_rate_zones",
+  quality: null,
+  thresholdEvidence: null,
+  sessionRpeEvidence: null,
+  evidenceFingerprint: null,
+  computedAsOf: "2026-03-23T09:00:00.000Z",
+  contributingDurationSeconds: null,
+  reason: "threshold_missing",
+} as const;
 let activityQueryState: { data: typeof activityData | undefined; isLoading: boolean } = {
   data: activityData,
   isLoading: false,
@@ -204,6 +233,8 @@ type ZoneDistributionCardProps = {
 };
 
 type ActivityPlanComparisonProps = {
+  activityPlan: { common_load?: unknown };
+  actualMetrics: { common_load?: unknown; [key: string]: unknown };
   onPress?: () => void;
 };
 
@@ -370,6 +401,11 @@ jest.mock("@/lib/api", () => ({
         useMutation: () => ({ mutate: jest.fn(), isPending: false }),
       },
     },
+    activityPlans: {
+      getById: {
+        useQuery: () => ({ data: { common_load: activityData.derived.stress.common_load } }),
+      },
+    },
     profiles: {
       getPublicById: {
         useQuery: () => ({ data: { username: "runner", avatar_url: null } }),
@@ -492,10 +528,42 @@ describe("activity detail screen", () => {
     expect(screen.getByTestId("activity-stream-hr-load-card")).toBeTruthy();
     expect(screen.getByText("62")).toBeTruthy();
     expect(screen.getByText(/does not replace summary training load/)).toBeTruthy();
-    expect(unsafeRendered.UNSAFE_getByType("ActivityPlanComparison").props.onPress).toEqual(
-      expect.any(Function),
+    const activityPlanComparison = unsafeRendered.UNSAFE_getByType("ActivityPlanComparison");
+    expect(activityPlanComparison.props.onPress).toEqual(expect.any(Function));
+    expect(activityPlanComparison.props.actualMetrics).toMatchObject({
+      common_load: activityData.derived.stress.common_load,
+    });
+    expect(activityPlanComparison.props.actualMetrics).not.toHaveProperty("tss");
+    expect(activityPlanComparison.props.actualMetrics).not.toHaveProperty("intensity_factor");
+    expect(activityPlanComparison.props.activityPlan.common_load).toEqual(
+      activityData.derived.stress.common_load,
     );
     expect(unsafeRendered.UNSAFE_getByType("ActivityRouteMap")).toBeTruthy();
+  });
+
+  it("renders a canonical segment diagnostic for an unavailable parent aggregate", () => {
+    activityQueryState = {
+      data: {
+        ...activityData,
+        derived: {
+          ...activityData.derived,
+          stress: { ...activityData.derived.stress, common_load: unavailableAggregate },
+        },
+        segment_loads: [
+          {
+            segment_id: "segment-hr",
+            category: "run",
+            common_load: unavailableHeartRateSegment,
+          },
+        ],
+      } as unknown as typeof activityData,
+      isLoading: false,
+    };
+
+    renderNative(<ActivityDetailScreen />);
+
+    expect(screen.getAllByText(/sport-specific LTHR is missing for this activity/)).toHaveLength(2);
+    expect(screen.queryByText("A required threshold is missing.")).toBeNull();
   });
 
   it("routes likes through the social mutation", () => {

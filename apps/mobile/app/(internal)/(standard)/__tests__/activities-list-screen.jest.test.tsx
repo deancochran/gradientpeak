@@ -223,6 +223,15 @@ describe("activities list screen filters", () => {
     expect(screen.getByTestId("activities-list-filter-button-dot")).toBeTruthy();
   });
 
+  it("does not offer legacy TSS sorting", () => {
+    renderNative(<ActivitiesListScreen />);
+
+    fireEvent.press(screen.getByTestId("activities-list-filter-button"));
+
+    expect(screen.queryByTestId("activities-list-filter-sort-tss")).toBeNull();
+    expect(screen.queryByText("TSS")).toBeNull();
+  });
+
   it("shows filtered-empty copy when a category filter is active", () => {
     renderNative(<ActivitiesListScreen />);
 

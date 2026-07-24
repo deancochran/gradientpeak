@@ -7,7 +7,6 @@ import { Pressable, View } from "react-native";
 import {
   formatCalibrationQuality,
   getCommonLoadPresentation,
-  getThresholdNextAction,
 } from "@/lib/activity-load-presentation";
 import { getUniqueActivityCategoryConfigs } from "@/lib/constants/activities";
 import { formatDistanceMeters } from "@/lib/display/formatters";
@@ -75,6 +74,7 @@ export type ActivityCardActivity = {
     intensity_factor?: number | null;
     method?: string | null;
     unavailable_reason?: string | null;
+    common_load?: unknown;
   }>;
   ingestion?: {
     status?: string | null;
@@ -146,14 +146,6 @@ function CompactRoutePreview({ coordinates }: { coordinates: RouteCoordinate[] }
   );
 }
 
-function getActivityCategory(activity: ActivityCardActivity): string {
-  return (
-    activity.activity_categories?.[0] ??
-    activity.segments?.find((segment) => segment.role === "activity")?.category ??
-    "other"
-  );
-}
-
 function getActivityCategories(activity: ActivityCardActivity): string[] {
   const categories = activity.activity_categories?.length
     ? activity.activity_categories
@@ -167,6 +159,11 @@ function getActivityCategories(activity: ActivityCardActivity): string[] {
 function getLoadPresentation(activity: ActivityCardActivity) {
   return getCommonLoadPresentation(
     activity.derived?.common_load ?? activity.derived?.stress?.common_load,
+    {
+      hasHeartRateSummary:
+        typeof activity.avg_heart_rate === "number" && activity.avg_heart_rate > 0,
+      segmentCommonLoads: activity.segment_loads?.map((segment) => segment.common_load),
+    },
   );
 }
 
@@ -174,11 +171,10 @@ function getCalibrationText(activity: ActivityCardActivity): string | null {
   const quality =
     activity.derived?.calibration_quality ?? activity.derived?.stress?.calibration_quality ?? null;
   if (quality) return formatCalibrationQuality(quality, activity.started_at);
+  if (activity.derived?.common_load ?? activity.derived?.stress?.common_load) return null;
   const unavailableReason =
     activity.derived?.unavailable_reason ?? activity.derived?.stress?.unavailable_reason ?? null;
-  return unavailableReason === "threshold_missing"
-    ? getThresholdNextAction(getActivityCategory(activity))
-    : null;
+  return unavailableReason === "threshold_missing" ? "A required threshold is missing." : null;
 }
 
 function getIngestionStatusText(activity: ActivityCardActivity): string | null {
@@ -316,9 +312,11 @@ export function ActivityCard({
   const loadCoverageMessage =
     loadPresentation?.status === "partial"
       ? "Load is incomplete because some activity evidence is missing. Open to review details."
-      : loadPresentation?.status === "unavailable"
-        ? "Load is unavailable until compatible activity evidence is available. Open to review details."
-        : null;
+      : loadPresentation?.diagnostic
+        ? `${loadPresentation.diagnostic.summary} ${loadPresentation.diagnostic.action}`
+        : loadPresentation?.status === "unavailable"
+          ? "Load is unavailable until compatible activity evidence is available. Open to review details."
+          : null;
   const hasCommentAction = Boolean(onCommentPress);
   const hasFooterAccessory = Boolean(footerAccessory);
   const hasHeaderAccessory = Boolean(headerAccessory);

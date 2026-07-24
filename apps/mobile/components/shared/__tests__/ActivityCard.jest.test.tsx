@@ -137,6 +137,21 @@ const partialCommonLoad = {
   sourceTimeCoverage: 0.5,
   reason: "activity_data_partial" as const,
 };
+const unavailableAggregate = {
+  status: "unavailable" as const,
+  model: "gradientpeak_relative_load" as const,
+  version: "1" as const,
+  contributingDurationSeconds: 0,
+  knownDurationSeconds: 3_600,
+  contributingActivityCount: 0,
+  partialActivityCount: 0,
+  unavailableActivityCount: 1,
+  totalActivityCount: 1,
+  activityCountCoverage: 0,
+  knownDurationCoverage: 0,
+  unknownDurationActivityCount: 0,
+  reason: "no_load_data" as const,
+};
 
 describe("ActivityCard", () => {
   beforeEach(() => {
@@ -279,6 +294,66 @@ describe("ActivityCard", () => {
     expect(screen.getByText("Tempo · 0.80 · Incomplete")).toBeTruthy();
   });
 
+  it("renders canonical segment HR coverage for an unavailable parent aggregate", () => {
+    renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-aggregate-coverage",
+          name: "Incomplete HR Run",
+          avg_heart_rate: 150,
+          derived: { common_load: unavailableAggregate, unavailable_reason: "threshold_missing" },
+          segment_loads: [
+            {
+              segment_id: "segment-hr",
+              category: "run",
+              common_load: {
+                status: "unavailable",
+                model: "gradientpeak_relative_load",
+                version: "1",
+                sport: "run",
+                method: "heart_rate_zones",
+                quality: {
+                  source: "validated_test",
+                  observed_at: "2026-07-20T12:00:00.000Z",
+                  confidence: "high",
+                  stale: false,
+                  estimate: false,
+                  calculation_version: "threshold-v1",
+                  evidence_fingerprint: "quality-hr",
+                },
+                thresholdEvidence: {
+                  type: "lthr_bpm",
+                  value: 170,
+                  unit: "beats_per_minute",
+                  source: "validated_test",
+                  observedAt: "2026-07-20T12:00:00.000Z",
+                  validAt: "2026-07-20T12:00:00.000Z",
+                  freshness: "current",
+                  calculationVersion: "threshold-v1",
+                  sourceFingerprint: "threshold-hr",
+                },
+                sessionRpeEvidence: null,
+                evidenceFingerprint: "activity-hr",
+                computedAsOf: "2026-07-21T12:00:00.000Z",
+                contributingDurationSeconds: 1_200,
+                eligibleDurationSeconds: 3_600,
+                sourceTimeCoverage: 1 / 3,
+                reason: "insufficient_coverage",
+              },
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "Heart-rate samples cover 33% of eligible duration; at least 50% is required. Import activity data with more time-weighted heart-rate samples.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/required threshold is missing/)).toBeNull();
+  });
+
   it("formats activity distance in the viewer's imperial units", () => {
     mockUsePreferredUnitSystem.mockReturnValue("imperial");
 
@@ -376,7 +451,12 @@ describe("ActivityCard", () => {
     );
 
     expect(screen.getByText("Unavailable")).toBeTruthy();
-    expect(screen.getByText("Establish a sport-specific LTHR.")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "This activity type is not supported for canonical Load. Canonical Load is not available for this activity type.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/sport-specific LTHR/)).toBeNull();
   });
 
   it("shows stale threshold source and age without claiming a tested threshold", () => {

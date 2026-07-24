@@ -16,7 +16,6 @@ import {
   formatCalibrationQuality,
   getActivityLoadLabels,
   getCommonLoadPresentation,
-  getThresholdNextAction,
 } from "../../lib/activity-load-presentation";
 import {
   buildElevationPolylinePoints,
@@ -211,16 +210,16 @@ export function ActivityListCard({ activity, onOpen }: { activity: any; onOpen: 
   const { unitSystem } = useViewingUserPreferredUnitSystem();
   const commonLoad = activity.derived?.common_load;
   const loadLabels = getActivityLoadLabels();
-  const loadPresentation = getCommonLoadPresentation(commonLoad);
+  const loadPresentation = getCommonLoadPresentation(commonLoad, {
+    hasHeartRateSummary: typeof activity.avg_heart_rate === "number" && activity.avg_heart_rate > 0,
+    segmentCommonLoads: activity.segment_loads?.map(
+      (segment: { common_load?: unknown }) => segment.common_load,
+    ),
+  });
   const calibrationText = formatCalibrationQuality(commonLoad?.quality, activity.started_at);
   const categories = activity.activity_categories as string[] | undefined;
-  const firstCategory = categories?.[0] ?? null;
   const elapsedSeconds =
     activity.elapsed_ms != null ? Math.round(activity.elapsed_ms / 1000) : null;
-  const thresholdAction =
-    commonLoad?.status === "unavailable" && commonLoad.reason === "threshold_missing"
-      ? getThresholdNextAction(firstCategory)
-      : null;
   return (
     <Card className="transition-colors hover:border-primary/30">
       <CardContent className="space-y-4 p-4">
@@ -252,8 +251,13 @@ export function ActivityListCard({ activity, onOpen }: { activity: any; onOpen: 
           <MetricPill label="Duration" value={formatDuration(elapsedSeconds)} />
         </div>
         <p className="text-xs text-muted-foreground">{loadPresentation.explanation}</p>
-        {calibrationText || thresholdAction ? (
-          <p className="text-xs text-muted-foreground">{calibrationText ?? thresholdAction}</p>
+        {loadPresentation.diagnostic ? (
+          <p className="text-xs text-muted-foreground">
+            {loadPresentation.diagnostic.summary} {loadPresentation.diagnostic.action}
+          </p>
+        ) : null}
+        {calibrationText ? (
+          <p className="text-xs text-muted-foreground">{calibrationText}</p>
         ) : null}
       </CardContent>
     </Card>

@@ -28,7 +28,7 @@ function ActivitiesScreen() {
     "run" | "bike" | "swim" | "strength" | "other" | null
   >(null);
   const [draftCategoryFilter, setDraftCategoryFilter] = useState<typeof categoryFilter>(null);
-  const [sortBy, setSortBy] = useState<"date" | "distance" | "duration" | "tss">("date");
+  const [sortBy, setSortBy] = useState<"date" | "distance" | "duration">("date");
   const [draftSortBy, setDraftSortBy] = useState<typeof sortBy>("date");
   const [includeMultisport, setIncludeMultisport] = useState(true);
   const [draftIncludeMultisport, setDraftIncludeMultisport] = useState(true);
@@ -257,7 +257,6 @@ function ActivitiesScreen() {
               { id: "date", label: "Date" },
               { id: "distance", label: "Distance" },
               { id: "duration", label: "Duration" },
-              { id: "tss", label: "TSS" },
             ].map((option) => (
               <FilterChip
                 key={option.id}

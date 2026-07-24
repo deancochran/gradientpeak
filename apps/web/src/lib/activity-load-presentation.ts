@@ -4,6 +4,12 @@ import {
   commonLoadAggregateSchema,
   commonLoadResultSchema,
 } from "@repo/core";
+import {
+  type CommonLoadDiagnostic,
+  type CommonLoadDiagnosticContext,
+  getAggregateCommonLoadDiagnostic,
+  getCommonLoadDiagnostic,
+} from "@repo/ui/lib/common-load-diagnostics";
 
 type CalibrationQuality = {
   source:
@@ -29,6 +35,7 @@ export type WebCommonLoadPresentation = {
   load: string;
   intensity: string;
   explanation: string;
+  diagnostic: CommonLoadDiagnostic | null;
 };
 
 const unavailableReasons: Record<
@@ -46,7 +53,10 @@ const unavailableReasons: Record<
   unsupported_modality: "this activity type is not supported",
 };
 
-export function getCommonLoadPresentation(value: unknown): WebCommonLoadPresentation {
+export function getCommonLoadPresentation(
+  value: unknown,
+  context: CommonLoadDiagnosticContext = {},
+): WebCommonLoadPresentation {
   const parsed = commonLoadResultSchema.safeParse(value);
   if (!parsed.success) {
     const aggregate = commonLoadAggregateSchema.safeParse(value);
@@ -57,6 +67,7 @@ export function getCommonLoadPresentation(value: unknown): WebCommonLoadPresenta
           load: "Unavailable",
           intensity: "Unavailable",
           explanation: "Common Load and Intensity are unavailable for this activity aggregate.",
+          diagnostic: getAggregateCommonLoadDiagnostic(context),
         };
       }
       const coverage = aggregate.data.status === "partial" ? "Partial " : "Complete ";
@@ -65,6 +76,7 @@ export function getCommonLoadPresentation(value: unknown): WebCommonLoadPresenta
         load: Math.round(aggregate.data.load).toString(),
         intensity: aggregate.data.intensity.toFixed(2),
         explanation: `${coverage}common Load and Intensity aggregated across this activity's segments.`,
+        diagnostic: null,
       };
     }
     return {
@@ -73,6 +85,7 @@ export function getCommonLoadPresentation(value: unknown): WebCommonLoadPresenta
       intensity: "Unavailable",
       explanation:
         "Common Load and Intensity are unavailable because no current result was provided.",
+      diagnostic: null,
     };
   }
 
@@ -83,6 +96,7 @@ export function getCommonLoadPresentation(value: unknown): WebCommonLoadPresenta
       load: Math.round(result.load).toString(),
       intensity: result.intensity.toFixed(2),
       explanation: "Complete common Load and Intensity from this activity's eligible duration.",
+      diagnostic: null,
     };
   }
   if (result.status === "partial") {
@@ -92,6 +106,7 @@ export function getCommonLoadPresentation(value: unknown): WebCommonLoadPresenta
       load: result.load === null ? "Unavailable" : Math.round(result.load).toString(),
       intensity: result.intensity === null ? "Unavailable" : result.intensity.toFixed(2),
       explanation: `Partial common Load and Intensity: ${coverage}% of eligible duration contributed.`,
+      diagnostic: null,
     };
   }
   return {
@@ -99,6 +114,7 @@ export function getCommonLoadPresentation(value: unknown): WebCommonLoadPresenta
     load: "Unavailable",
     intensity: "Unavailable",
     explanation: `Common Load and Intensity are unavailable because ${unavailableReasons[result.reason]}.`,
+    diagnostic: getCommonLoadDiagnostic(result, context),
   };
 }
 

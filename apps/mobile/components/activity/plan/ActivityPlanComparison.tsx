@@ -6,23 +6,19 @@ import { CheckCircle, XCircle } from "lucide-react-native";
 import { useMemo } from "react";
 import { Pressable, View } from "react-native";
 import { TimelineChart } from "@/components/activity-plan/workout/TimelineChart";
-import {
-  formatEstimatedIntensityFactor,
-  formatEstimatedTss,
-  markEstimated,
-} from "@/lib/estimatedMetrics";
+import { getCommonLoadPresentation } from "@/lib/activity-load-presentation";
+import { markEstimated } from "@/lib/estimatedMetrics";
 
 interface ActivityPlanData {
   id: string;
   name: string;
   structure: unknown;
+  common_load?: unknown;
 }
 
 interface ActivityMetrics {
   duration: number; // seconds
-  tss?: number;
-  if?: number;
-  intensity_factor?: number;
+  common_load?: unknown;
   adherence_score?: number;
 }
 
@@ -44,13 +40,10 @@ function formatDuration(seconds: number): string {
 
 // Helper function to calculate estimated duration from structure
 function getPlanComparison(presentation: ReturnType<typeof deriveActivityPlanPresentation>) {
-  if (!presentation) return { duration: 0, tss: 0, compatibleLoad: false };
+  if (!presentation) return { duration: 0 };
   const stats = calculateActivityPlanStats(presentation.compiled);
-  const cycling = stats.categoryDoses[0]?.cyclingPower;
   return {
     duration: stats.duration.exactElapsedSeconds ?? 0,
-    tss: cycling?.complete ? cycling.estimatedTss : 0,
-    compatibleLoad: presentation.categories.length === 1 && Boolean(cycling?.complete),
   };
 }
 
@@ -67,17 +60,15 @@ export function ActivityPlanComparison({
   );
   const planComparison = getPlanComparison(presentation);
   const estimatedDuration = planComparison.duration;
-  const estimatedTSS = planComparison.tss;
 
   const actualDuration = actualMetrics.duration;
-  const actualTSS = actualMetrics.tss || 0;
-  const actualIF = actualMetrics.intensity_factor ?? actualMetrics.if ?? 0;
+  const actualLoad = getCommonLoadPresentation(actualMetrics.common_load);
+  const plannedLoad = getCommonLoadPresentation(activityPlan.common_load);
   const adherence = (actualMetrics.adherence_score || 0) * 100;
 
   // Calculate variances
   const durationVariance =
     estimatedDuration > 0 ? ((actualDuration - estimatedDuration) / estimatedDuration) * 100 : 0;
-  const tssVariance = estimatedTSS > 0 ? ((actualTSS - estimatedTSS) / estimatedTSS) * 100 : 0;
 
   // Determine if adherence is good (>= 85%)
   const goodAdherence = adherence >= 85;
@@ -126,38 +117,29 @@ export function ActivityPlanComparison({
             )}
           </View>
 
-          {/* TSS */}
-          {planComparison.compatibleLoad && actualTSS > 0 && (
+          {(actualLoad?.load || actualLoad?.unavailableText || plannedLoad?.load) && (
             <View className="flex-1 p-3 bg-muted rounded-lg">
-              <Text className="text-xs text-muted-foreground uppercase mb-1">TSS</Text>
-              <View className="flex-row items-baseline gap-1">
-                <Text className="text-lg font-bold">
-                  {formatEstimatedTss(actualTSS, { includeUnit: false })}
-                </Text>
-                {estimatedTSS > 0 && (
-                  <Text
-                    className={`text-xs ${tssVariance > 10 ? "text-yellow-600" : tssVariance < -10 ? "text-blue-600" : "text-green-600"}`}
-                  >
-                    ({tssVariance > 0 ? "+" : ""}
-                    {tssVariance.toFixed(0)}%)
-                  </Text>
-                )}
-              </View>
-              {estimatedTSS > 0 && (
+              <Text className="text-xs text-muted-foreground uppercase mb-1">Load</Text>
+              <Text className="text-lg font-bold">
+                {actualLoad?.load ?? actualLoad?.unavailableText ?? "--"}
+              </Text>
+              {plannedLoad?.load && (
                 <Text className="text-xs text-muted-foreground mt-1">
-                  Plan: {markEstimated(estimatedTSS.toFixed(0))}
+                  Plan: {markEstimated(plannedLoad.load)}
                 </Text>
               )}
             </View>
           )}
 
-          {/* Intensity Factor */}
-          {planComparison.compatibleLoad && actualIF > 0 && (
+          {(actualLoad?.intensity || plannedLoad?.intensity) && (
             <View className="flex-1 p-3 bg-muted rounded-lg">
-              <Text className="text-xs text-muted-foreground uppercase mb-1">IF</Text>
-              <Text className="text-lg font-bold">
-                {formatEstimatedIntensityFactor(actualIF > 2 ? actualIF / 100 : actualIF)}
-              </Text>
+              <Text className="text-xs text-muted-foreground uppercase mb-1">Intensity</Text>
+              <Text className="text-lg font-bold">{actualLoad?.intensity ?? "--"}</Text>
+              {plannedLoad?.intensity && (
+                <Text className="text-xs text-muted-foreground mt-1">
+                  Plan: {markEstimated(plannedLoad.intensity)}
+                </Text>
+              )}
             </View>
           )}
         </View>
