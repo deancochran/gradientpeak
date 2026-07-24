@@ -322,7 +322,7 @@ describe("trainingPathUtils", () => {
     });
   });
 
-  it("anchors scheduled fitness at today's decayed fitness state", () => {
+  it("leaves scheduled fitness unavailable without authoritative scheduled common Load", () => {
     const model = buildTrainingPathViewModel({
       timeline: [{ date: "2026-05-21", scheduled_load_tss: 100 }],
       fitnessHistory: [{ date: "2026-05-18", ctl: 42, atl: 42 }],
@@ -334,7 +334,7 @@ describe("trainingPathUtils", () => {
 
     const currentWeek = model.weeks.find((week) => week.weekStart === "2026-05-18");
     expect(currentWeek?.fitness).toBe(40);
-    expect(currentWeek?.scheduledFitness).toBe(40);
+    expect(currentWeek?.scheduledFitness).toBeNull();
   });
 
   it("replays planned CTL through the requested chart window when ideal data ends sooner", () => {

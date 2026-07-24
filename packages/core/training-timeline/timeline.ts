@@ -21,6 +21,10 @@ import {
   trainingWeekSummarySchema,
 } from "./schemas";
 
+/**
+ * Compatibility input for the legacy TSS planning timeline. Its *_tss fields
+ * are not a Common Load transport; Common Load stays in effective-composition.
+ */
 type TrainingTimelineLoadPoint = Partial<TrainingLoadTimelinePoint> & {
   date: string;
   ideal_tss?: number | null;

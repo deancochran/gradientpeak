@@ -19,6 +19,12 @@ test.describe("completed activities and imports", () => {
       await expect(athletePage.getByRole("heading", { name: "Stream charts" })).toBeVisible();
       await expect(athletePage.getByRole("img", { name: "Heart rate over time" })).toBeVisible();
       await expect(athletePage.getByRole("heading", { name: "Stream analysis" })).toBeVisible();
+      await expect(athletePage.getByRole("heading", { name: "Session RPE" })).toBeVisible();
+      await expect(athletePage.getByLabel("Perceived exertion")).toHaveValue("5");
+      await athletePage.getByLabel("Perceived exertion").fill("6");
+      await athletePage.getByRole("button", { name: "Save RPE" }).click();
+      await expect(athletePage.getByText("Session RPE saved.")).toBeVisible();
+      await expect(athletePage.getByText(/Current RPE 6\/10/)).toBeVisible();
 
       await athletePage.route("**/api/trpc/social.toggleLike*", (route) => route.abort(), {
         times: 1,

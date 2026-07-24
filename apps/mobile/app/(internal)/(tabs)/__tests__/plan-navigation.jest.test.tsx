@@ -24,6 +24,50 @@ const readinessChartPropsMock = jest.fn();
 const projectionChartPropsMock = jest.fn();
 const mockTrainingPathSectionProps = jest.fn();
 const mockDashboardViewModelParams = jest.fn();
+const emptyCommonLoadAggregate = {
+  status: "unavailable" as const,
+  reason: "no_load_data" as const,
+  model: "gradientpeak_relative_load" as const,
+  version: "1" as const,
+  contributingDurationSeconds: 0,
+  knownDurationSeconds: null,
+  contributingActivityCount: 0,
+  partialActivityCount: 0,
+  unavailableActivityCount: 0,
+  totalActivityCount: 0,
+  activityCountCoverage: 0,
+  knownDurationCoverage: null,
+  unknownDurationActivityCount: 0,
+};
+const completeKnownEmptyEffectiveLoadResponse = {
+  status: "available" as const,
+  completed: emptyCommonLoadAggregate,
+  remaining: emptyCommonLoadAggregate,
+  tentative: emptyCommonLoadAggregate,
+  effective: {
+    status: "available" as const,
+    periodStartDate: "2026-03-30",
+    periodEndDate: "2026-10-04",
+    planningDate: "2026-04-05",
+    firmItems: [],
+    tentativeItems: [],
+    firm: { status: "known_zero" as const, load: 0, intensity: null },
+    tentative: emptyCommonLoadAggregate,
+    includingTentative: { status: "known_zero" as const, load: 0, intensity: null },
+  },
+  model: "gradientpeak_relative_load" as const,
+  version: "1" as const,
+  sourceCounts: { activities: 0, events: 0 },
+  resolvedRange: {
+    startDate: "2026-03-30",
+    endDate: "2026-10-04",
+    timezone: "America/Los_Angeles",
+  },
+  sourceCoverage: {
+    activities: { startDate: "2026-03-30", endDate: "2026-10-04", status: "complete" as const },
+    scheduledItems: { startDate: "2026-03-30", endDate: "2026-10-04", status: "complete" as const },
+  },
+};
 const defaultMockGoals = [
   {
     id: "goal-1",
@@ -765,6 +809,13 @@ jest.mock("@/lib/api", () => ({
     trainingPlans: {
       getActualCurve: {
         useQuery: () => ({ data: { dataPoints: [] }, isFetching: false, isLoading: false }),
+      },
+      getEffectiveLoad: {
+        useQuery: () => ({
+          data: completeKnownEmptyEffectiveLoadResponse,
+          isFetching: false,
+          isLoading: false,
+        }),
       },
       getActivePlan: {
         useQuery: (_input: unknown, options: QueryOptions) => {

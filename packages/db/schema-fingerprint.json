@@ -9,6 +9,10 @@
       "values": ["pending_upload", "uploaded", "processing", "ready", "failed"]
     },
     {
+      "name": "activity_session_rpe_source",
+      "values": ["user", "provider", "manual"]
+    },
+    {
       "name": "effort_type",
       "values": ["power", "speed", "heart_rate"]
     },
@@ -130,6 +134,12 @@
       "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
       "rls": true,
       "name": "activity_segments",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "activity_session_rpe_evidence",
       "forceRls": false
     },
     {
@@ -2190,6 +2200,136 @@
       "notNull": true,
       "identity": "",
       "position": 24,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "activity_session_rpe_evidence",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "profile_id",
+      "type": "uuid",
+      "table": "activity_session_rpe_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "activity_id",
+      "type": "uuid",
+      "table": "activity_session_rpe_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "recorded_at",
+      "type": "timestamp with time zone",
+      "table": "activity_session_rpe_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "corrected_at",
+      "type": "timestamp with time zone",
+      "table": "activity_session_rpe_evidence",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "rpe",
+      "type": "integer",
+      "table": "activity_session_rpe_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "scale",
+      "type": "text",
+      "table": "activity_session_rpe_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "scale_version",
+      "type": "text",
+      "table": "activity_session_rpe_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "source",
+      "type": "activity_session_rpe_source",
+      "table": "activity_session_rpe_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "operation_id",
+      "type": "uuid",
+      "table": "activity_session_rpe_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "correction_of_id",
+      "type": "uuid",
+      "table": "activity_session_rpe_evidence",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 11,
+      "generated": ""
+    },
+    {
+      "name": "provenance",
+      "type": "jsonb",
+      "table": "activity_session_rpe_evidence",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 12,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "activity_session_rpe_evidence",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 13,
       "generated": ""
     },
     {
@@ -6220,6 +6360,31 @@
       "definition": "CREATE INDEX idx_activity_segments_category ON public.activity_segments USING btree (category) WHERE (category IS NOT NULL)"
     },
     {
+      "name": "activity_session_rpe_evidence_id_activity_profile_unique",
+      "table": "activity_session_rpe_evidence",
+      "definition": "CREATE UNIQUE INDEX activity_session_rpe_evidence_id_activity_profile_unique ON public.activity_session_rpe_evidence USING btree (id, activity_id, profile_id)"
+    },
+    {
+      "name": "activity_session_rpe_evidence_one_replacement_per_evidence_uniq",
+      "table": "activity_session_rpe_evidence",
+      "definition": "CREATE UNIQUE INDEX activity_session_rpe_evidence_one_replacement_per_evidence_uniq ON public.activity_session_rpe_evidence USING btree (correction_of_id) WHERE (correction_of_id IS NOT NULL)"
+    },
+    {
+      "name": "activity_session_rpe_evidence_pkey",
+      "table": "activity_session_rpe_evidence",
+      "definition": "CREATE UNIQUE INDEX activity_session_rpe_evidence_pkey ON public.activity_session_rpe_evidence USING btree (id)"
+    },
+    {
+      "name": "activity_session_rpe_evidence_profile_operation_unique",
+      "table": "activity_session_rpe_evidence",
+      "definition": "CREATE UNIQUE INDEX activity_session_rpe_evidence_profile_operation_unique ON public.activity_session_rpe_evidence USING btree (profile_id, operation_id)"
+    },
+    {
+      "name": "idx_activity_session_rpe_evidence_activity_recorded",
+      "table": "activity_session_rpe_evidence",
+      "definition": "CREATE INDEX idx_activity_session_rpe_evidence_activity_recorded ON public.activity_session_rpe_evidence USING btree (activity_id, recorded_at, id) WHERE (correction_of_id IS NULL)"
+    },
+    {
       "name": "canonical_activity_categories_pkey",
       "table": "canonical_activity_categories",
       "definition": "CREATE UNIQUE INDEX canonical_activity_categories_pkey ON public.canonical_activity_categories USING btree (code)"
@@ -7002,6 +7167,12 @@
       "table": "activity_segments",
       "schema": "public",
       "definition": "CREATE CONSTRAINT TRIGGER activity_segments_validate_set AFTER INSERT OR DELETE OR UPDATE ON activity_segments DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION activity_segment_set_constraint_trigger()"
+    },
+    {
+      "name": "activity_session_rpe_evidence_reject_update",
+      "table": "activity_session_rpe_evidence",
+      "schema": "public",
+      "definition": "CREATE TRIGGER activity_session_rpe_evidence_reject_update BEFORE UPDATE ON activity_session_rpe_evidence FOR EACH ROW EXECUTE FUNCTION reject_activity_session_rpe_evidence_mutation()"
     }
   ],
   "functions": [
@@ -7076,6 +7247,15 @@
       "definition": "CREATE OR REPLACE FUNCTION public.purge_deleted_activity_artifact(target_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\nbegin\n  perform set_config('gradientpeak.artifact_hard_delete_authorized','on',true);\n  delete from public.activity_artifacts where id=target_id and availability='deleted';\n  if not found then raise exception 'artifact tombstone is not deletable'; end if;\nend $function$\n",
       "volatility": "v",
       "securityDefiner": true
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": ["search_path=public"],
+      "identity": "reject_activity_session_rpe_evidence_mutation()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.reject_activity_session_rpe_evidence_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nbegin\n  raise exception 'activity_session_rpe_evidence is immutable';\nend;\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
     },
     {
       "acl": "{postgres=X/postgres,service_role=X/postgres}",
@@ -7843,6 +8023,90 @@
       "table": "activity_segments",
       "validated": true,
       "definition": "CHECK (role <> 'unknown'::text OR num_nonnulls(raw_type_string, raw_type_integer, raw_sport_string, raw_sport_integer) > 0)"
+    },
+    {
+      "kind": "f",
+      "name": "activity_session_rpe_evidence_activity_id_fkey",
+      "table": "activity_session_rpe_evidence",
+      "validated": true,
+      "definition": "FOREIGN KEY (activity_id) REFERENCES activities(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "f",
+      "name": "activity_session_rpe_evidence_activity_profile_fkey",
+      "table": "activity_session_rpe_evidence",
+      "validated": true,
+      "definition": "FOREIGN KEY (activity_id, profile_id) REFERENCES activities(id, profile_id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "activity_session_rpe_evidence_correction_manual_check",
+      "table": "activity_session_rpe_evidence",
+      "validated": true,
+      "definition": "CHECK (correction_of_id IS NULL OR source = 'manual'::activity_session_rpe_source)"
+    },
+    {
+      "kind": "f",
+      "name": "activity_session_rpe_evidence_correction_same_activity_profile_",
+      "table": "activity_session_rpe_evidence",
+      "validated": true,
+      "definition": "FOREIGN KEY (correction_of_id, activity_id, profile_id) REFERENCES activity_session_rpe_evidence(id, activity_id, profile_id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "activity_session_rpe_evidence_correction_timestamp_check",
+      "table": "activity_session_rpe_evidence",
+      "validated": true,
+      "definition": "CHECK ((correction_of_id IS NULL) = (corrected_at IS NULL))"
+    },
+    {
+      "kind": "u",
+      "name": "activity_session_rpe_evidence_id_activity_profile_unique",
+      "table": "activity_session_rpe_evidence",
+      "validated": true,
+      "definition": "UNIQUE (id, activity_id, profile_id)"
+    },
+    {
+      "kind": "p",
+      "name": "activity_session_rpe_evidence_pkey",
+      "table": "activity_session_rpe_evidence",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "f",
+      "name": "activity_session_rpe_evidence_profile_id_fkey",
+      "table": "activity_session_rpe_evidence",
+      "validated": true,
+      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "activity_session_rpe_evidence_provenance_object_check",
+      "table": "activity_session_rpe_evidence",
+      "validated": true,
+      "definition": "CHECK (jsonb_typeof(provenance) = 'object'::text)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_session_rpe_evidence_rpe_bounds_check",
+      "table": "activity_session_rpe_evidence",
+      "validated": true,
+      "definition": "CHECK (rpe >= 1 AND rpe <= 10)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_session_rpe_evidence_scale_not_blank_check",
+      "table": "activity_session_rpe_evidence",
+      "validated": true,
+      "definition": "CHECK (btrim(scale) <> ''::text)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_session_rpe_evidence_scale_version_not_blank_check",
+      "table": "activity_session_rpe_evidence",
+      "validated": true,
+      "definition": "CHECK (btrim(scale_version) <> ''::text)"
     },
     {
       "kind": "p",
@@ -9205,6 +9469,14 @@
       "rls": true,
       "kind": "r",
       "name": "activity_segments",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "activity_session_rpe_evidence",
       "managed": true,
       "forceRls": false
     },

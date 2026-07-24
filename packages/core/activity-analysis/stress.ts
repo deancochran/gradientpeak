@@ -6,8 +6,10 @@ import {
   COMMON_RELATIVE_LOAD_VERSION,
   type CommonLoadMethod,
   type CommonLoadResult,
+  type CommonSessionRpeEvidence,
   type CommonThresholdEvidence,
   calculateAvailableCommonLoad,
+  calculateSessionRpeCommonLoad,
   commonLoadResultSchema,
   commonThresholdEvidenceSchema,
 } from "../load/common-relative-load";
@@ -55,6 +57,8 @@ export type ActivityAnalysisContext = {
     unit?: string | null;
     activity_category?: string | null;
   }>;
+  /** Effective owned manual session evidence for this activity, if any. */
+  sessionRpeEvidence?: CommonSessionRpeEvidence | null;
   profile: {
     dob?: string | null;
     gender?: "male" | "female" | "other" | null;
@@ -879,7 +883,7 @@ export function analyzeActivityDerivedMetrics(
     Number.isFinite(activity.duration_seconds) && activity.duration_seconds > 0;
   const eligibleDurationSeconds = resolveEligibleDurationSeconds(activity);
   const lthrCalibration = sport ? resolveLthrCalibration(context, sport) : null;
-  const commonLoad = !hasValidDuration
+  const directOrHeartRateCommonLoad = !hasValidDuration
     ? unavailableCommonLoad({
         sport: commonSport,
         computedAsOf,
@@ -936,6 +940,20 @@ export function analyzeActivityDerivedMetrics(
             contributingDurationSeconds: activity.duration_seconds,
             reason: "unsupported_modality",
           });
+  // Direct power/pace/HR evidence always wins. Effective session-RPE is an
+  // estimated fallback only after those stronger sources are unavailable.
+  const commonLoad =
+    directOrHeartRateCommonLoad.status === "unavailable" &&
+    eligibleDurationSeconds !== null &&
+    context.sessionRpeEvidence !== null &&
+    context.sessionRpeEvidence !== undefined
+      ? calculateSessionRpeCommonLoad({
+          sport: commonSport,
+          contributingDurationSeconds: eligibleDurationSeconds,
+          computedAsOf,
+          evidence: context.sessionRpeEvidence,
+        })
+      : directOrHeartRateCommonLoad;
 
   const trimp = resolveTrimp({
     avgHeartRate: activity.avg_heart_rate,

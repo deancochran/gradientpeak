@@ -9,6 +9,7 @@ import {
   activityPlans,
   activityRoutes,
   activitySegments,
+  activitySessionRpeEvidence,
   comments,
   conversationParticipants,
   conversations,
@@ -49,6 +50,7 @@ export const profilesRelations = relations(profiles, ({ many }) => ({
   activityArtifacts: many(activityArtifacts),
   activitySegments: many(activitySegments),
   activityFileIngestions: many(activityFileIngestions),
+  activitySessionRpeEvidence: many(activitySessionRpeEvidence),
   activityPlans: many(activityPlans),
   activityRoutes: many(activityRoutes),
   conversationParticipants: many(conversationParticipants),
@@ -327,6 +329,7 @@ export const activitiesRelations = relations(activities, ({ one, many }) => ({
     references: [activityPlans.id],
   }),
   efforts: many(activityEfforts),
+  sessionRpeEvidence: many(activitySessionRpeEvidence),
   fileIngestions: many(activityFileIngestions),
   artifactLinks: many(activityArtifactLinks),
   segments: many(activitySegments),
@@ -402,6 +405,25 @@ export const activityEffortsRelations = relations(activityEfforts, ({ one }) => 
     references: [activitySegments.id],
   }),
 }));
+
+export const activitySessionRpeEvidenceRelations = relations(
+  activitySessionRpeEvidence,
+  ({ one }) => ({
+    profile: one(profiles, {
+      fields: [activitySessionRpeEvidence.profile_id],
+      references: [profiles.id],
+    }),
+    activity: one(activities, {
+      fields: [activitySessionRpeEvidence.activity_id],
+      references: [activities.id],
+    }),
+    correctionOf: one(activitySessionRpeEvidence, {
+      fields: [activitySessionRpeEvidence.correction_of_id],
+      references: [activitySessionRpeEvidence.id],
+      relationName: "activitySessionRpeEvidenceCorrections",
+    }),
+  }),
+);
 
 export const integrationsRelations = relations(integrations, ({ one, many }) => ({
   profile: one(profiles, {
@@ -594,6 +616,7 @@ export const relationsSchema = {
   activityArtifactsRelations,
   activityFileIngestionsRelations,
   activityEffortsRelations,
+  activitySessionRpeEvidenceRelations,
   activitySegmentsRelations,
   integrationsRelations,
   integrationCredentialsRelations,

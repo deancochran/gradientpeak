@@ -51,26 +51,31 @@ describe("buildActivityInsights common load history", () => {
 
     const insight = buildActivityInsights({
       ...unrelatedInputs,
-      load: { status: "available", data: { points } },
+      load: {
+        status: "available",
+        data: { points, maturity: { status: "provisional" }, coverageStatus: "partial" },
+      },
     }).find(({ id }) => id === "training-load");
 
     expect(insight).toMatchObject({
       value: "84.0",
       rows: [
         { label: "Daily Load", value: "84.0" },
-        { label: "Long-term Load", value: "86.0" },
-        { label: "Recent Load", value: "88.0" },
-        { label: "Load Balance", value: "-2.0" },
+        { label: "Long-term Load (CTL)", value: "86.0" },
+        { label: "Recent Load (ATL)", value: "88.0" },
+        { label: "Load Balance (TSB)", value: "-2.0" },
+        { label: "History maturity", value: "Provisional" },
+        { label: "History coverage", value: "partial" },
       ],
     });
-    expect(insight?.summary).toContain("Daily Load through");
+    expect(insight?.summary).toContain("Provisional daily Load through");
     expect(insight?.detail).toContain("previous planning day");
     expect(insight?.points).toHaveLength(84);
     expect(insight?.series?.map(({ label }) => label)).toEqual([
       "Daily Load",
-      "Long-term Load",
-      "Recent Load",
-      "Load Balance",
+      "Long-term Load (CTL)",
+      "Recent Load (ATL)",
+      "Load Balance (TSB)",
     ]);
     expect(insight?.series?.every(({ points: seriesPoints }) => seriesPoints.length === 84)).toBe(
       true,
@@ -80,7 +85,7 @@ describe("buildActivityInsights common load history", () => {
     expect(insight?.points.at(-1)?.date?.getDate()).toBe(21);
 
     const copy = JSON.stringify(insight);
-    expect(copy).not.toMatch(/\b(?:TSS|IF|CTL|ATL|TSB|Fitness|Fatigue|Form|recovery)\b/i);
+    expect(copy).not.toMatch(/\b(?:TSS|IF|Fitness|Fatigue|Form|recovery)\b/i);
   });
 
   it("abstains explicitly for insufficient history without erasing unrelated insights", () => {

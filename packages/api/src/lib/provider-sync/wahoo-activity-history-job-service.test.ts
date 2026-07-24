@@ -145,7 +145,9 @@ describe("WahooActivityHistoryJobService", () => {
       metadata: {
         activityHistoryCoverage: {
           end: "2026-04-03T12:00:00.000Z",
+          highWatermark: "2026-04-03T12:00:00.000Z",
           start: "2025-04-03T12:00:00.000Z",
+          version: 1,
         },
       },
       provider: "wahoo",

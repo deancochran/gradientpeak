@@ -445,6 +445,13 @@ describe("trendsRouter", () => {
       result: {
         status: "available",
         policyVersion: "common_load_history_v1",
+        coverageStatus: "complete",
+        maturity: {
+          status: "mature",
+          replayedDays: 168,
+          requiredMatureDays: 168,
+          coverage: { completeDays: 168, partialDays: 0, ratio: 1 },
+        },
         identity: {
           policyVersion: "common_load_history_v1",
           planningTimezone: "UTC",
@@ -458,6 +465,7 @@ describe("trendsRouter", () => {
           date.setUTCDate(date.getUTCDate() + index);
           return {
             date: date.toISOString().slice(0, 10),
+            coverageStatus: "complete",
             dailyLoad: 0,
             longTermLoad: 21.2,
             recentLoad: 35.2,
@@ -475,7 +483,10 @@ describe("trendsRouter", () => {
 
     expect(result).toMatchObject({
       history: { status: "available", policyVersion: "common_load_history_v1" },
-      dataPoints: [{ date: "2026-04-01", dailyLoad: 0 }],
+      dataPoints: [
+        { date: "2026-03-31", dailyLoad: 0 },
+        { date: "2026-04-01", dailyLoad: 0 },
+      ],
       currentStatus: {
         longTermLoad: 21.2,
         recentLoad: 35.2,

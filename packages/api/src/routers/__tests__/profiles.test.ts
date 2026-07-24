@@ -505,12 +505,12 @@ describe("profilesRouter", () => {
 
     expect(result.profile).toEqual({
       threshold_hr: undefined,
-      ftp: undefined,
+      ftp: 295,
       weight_kg: 71,
       threshold_pace: undefined,
     });
     expect(result.heartRateZones).toBeNull();
-    expect(result.powerZones).toBeNull();
+    expect(result.powerZones).not.toBeNull();
   });
 
   it("rejects manual threshold updates", async () => {

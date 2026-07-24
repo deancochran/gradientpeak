@@ -101,7 +101,9 @@ export function createProviderSyncRepository({
             target: [schema.providerSyncState.integration_id, schema.providerSyncState.resource],
             set: {
               consecutive_failures: 0,
-              high_watermark: new Date(highWatermark),
+              // A successful narrower replay must never move the observed source
+              // boundary backwards. Exact interval truth remains in metadata.
+              high_watermark: sql`greatest(${schema.providerSyncState.high_watermark}, ${new Date(highWatermark)})`,
               last_error: null,
               last_sync_started_at: now,
               last_sync_succeeded_at: now,

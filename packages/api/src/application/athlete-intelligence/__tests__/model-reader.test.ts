@@ -541,8 +541,14 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     });
     expect(result.activities[0]).toMatchObject({ athleteId: profileId, sport: "bike" });
     expect(result.activities[0]?.metrics.trainingLoad).toMatchObject({
-      value: null,
-      identity: null,
+      value: 225,
+      identity: {
+        family: "tss",
+        method: "power_threshold",
+        sourceDefinition: "activity_analysis",
+        sport: "bike",
+        version: "1",
+      },
     });
     expect(result.efforts).toEqual(
       expect.arrayContaining([

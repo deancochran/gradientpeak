@@ -243,13 +243,13 @@ export function ActivityListCard({ activity, onOpen }: { activity: any; onOpen: 
           </Button>
         </div>
         <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
+          <MetricPill label={loadLabels.load} value={loadPresentation.load} />
+          <MetricPill label={loadLabels.intensity} value={loadPresentation.intensity} />
           <MetricPill
             label="Distance"
             value={formatDistance(activity.distance_meters, unitSystem)}
           />
           <MetricPill label="Duration" value={formatDuration(elapsedSeconds)} />
-          <MetricPill label={loadLabels.load} value={loadPresentation.load} />
-          <MetricPill label={loadLabels.intensity} value={loadPresentation.intensity} />
         </div>
         <p className="text-xs text-muted-foreground">{loadPresentation.explanation}</p>
         {calibrationText || thresholdAction ? (

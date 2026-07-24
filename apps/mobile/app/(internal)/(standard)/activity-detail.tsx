@@ -11,7 +11,7 @@ import { Skeleton } from "@repo/ui/components/skeleton";
 import { Text } from "@repo/ui/components/text";
 import { skipToken } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Activity, Heart, Lock, TrendingUp, Waves } from "lucide-react-native";
+import { Activity, Heart, Lock, Waves } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -25,6 +25,7 @@ import { ActivityPlanComparison, ZoneDistributionCard } from "@/components/activ
 import { ElevationProfileChart } from "@/components/activity/charts/ElevationProfileChart";
 import { StreamChart } from "@/components/activity/charts/StreamChart";
 import { ActivityRouteMap } from "@/components/activity/maps/ActivityRouteMap";
+import { SessionRpeCard } from "@/components/activity/SessionRpeCard";
 import {
   getStreamStats,
   useActivityDetailStreams,
@@ -37,6 +38,7 @@ import { EntityCommentsSection } from "@/components/social/EntityCommentsSection
 import {
   formatCalibrationQuality,
   getActivityLoadLabels,
+  getCommonLoadPresentation,
   getThresholdNextAction,
 } from "@/lib/activity-load-presentation";
 import {
@@ -358,6 +360,7 @@ function ActivityDetailScreen() {
   const derived = activityData?.derived;
   const loadMethod = derived?.stress.method;
   const loadLabels = getActivityLoadLabels(loadMethod);
+  const commonLoadPresentation = getCommonLoadPresentation(derived?.stress.common_load);
   const loadUnavailableText =
     derived?.stress.unavailable_reason === "private_data"
       ? "Training load is private."
@@ -667,6 +670,14 @@ function ActivityDetailScreen() {
             variant="detail"
           />
 
+          {isOwner ? (
+            <SessionRpeCard
+              activityId={activity.id}
+              effectiveSessionRpe={activity.effective_session_rpe}
+              {...(loadMethod ? { estimatedMethod: loadMethod } : {})}
+            />
+          ) : null}
+
           {routeCoordinates.length > 0 ? (
             <ActivityRouteMap coordinates={routeCoordinates} height={260} title="Route" />
           ) : isDetailedContentLoading ? (
@@ -790,41 +801,43 @@ function ActivityDetailScreen() {
             </Card>
           )}
 
-          {/* Training Load */}
-          {derived?.stress && (
+          {/* Canonical Load leads; sport-specific TSS/IF remains an advanced diagnostic. */}
+          {(commonLoadPresentation || derived?.stress) && (
             <Card>
               <CardHeader>
-                <CardTitle>Training Load</CardTitle>
+                <CardTitle>Load & Intensity</CardTitle>
               </CardHeader>
               <CardContent>
-                {derived.stress.tss == null ? (
-                  <Text className="text-sm text-muted-foreground">{loadUnavailableText}</Text>
-                ) : (
+                {commonLoadPresentation?.load ? (
                   <View className="flex-row gap-4">
                     <View className="flex-1">
-                      <View className="flex-row items-center gap-2 mb-1">
-                        <Icon as={TrendingUp} size={16} className="text-muted-foreground" />
-                        <Text className="text-xs text-muted-foreground uppercase">
-                          {loadLabels.load}
-                        </Text>
-                      </View>
-                      <Text className="text-3xl font-bold">
-                        {formatEstimatedTss(derived?.stress.tss, { includeUnit: false }) ?? "--"}
+                      <Text className="text-xs text-muted-foreground uppercase mb-1">Load</Text>
+                      <Text className="text-3xl font-bold">{commonLoadPresentation.load}</Text>
+                    </View>
+                    <View className="flex-1">
+                      <Text className="text-xs text-muted-foreground uppercase mb-1">
+                        Intensity
+                      </Text>
+                      <Text className="text-lg font-bold">
+                        {commonLoadPresentation.intensity ?? "Unavailable"}
                       </Text>
                     </View>
-
-                    {derived?.stress.intensity_factor != null && (
-                      <View className="flex-1">
-                        <Text className="text-xs text-muted-foreground uppercase mb-1">
-                          {loadLabels.intensity}
-                        </Text>
-                        <Text className="text-3xl font-bold">
-                          {formatEstimatedIntensityFactor(derived?.stress.intensity_factor) ?? "--"}
-                        </Text>
-                      </View>
-                    )}
                   </View>
+                ) : (
+                  <Text className="text-sm text-muted-foreground">
+                    {commonLoadPresentation?.unavailableText
+                      ? `${commonLoadPresentation.unavailableText}. ${loadUnavailableText}`
+                      : loadUnavailableText}
+                  </Text>
                 )}
+                {derived?.stress?.tss != null ? (
+                  <Text className="mt-3 text-xs text-muted-foreground">
+                    Advanced {loadLabels.load}: {formatEstimatedTss(derived.stress.tss)}
+                    {derived.stress.intensity_factor != null
+                      ? ` · ${loadLabels.intensity}: ${formatEstimatedIntensityFactor(derived.stress.intensity_factor)}`
+                      : ""}
+                  </Text>
+                ) : null}
                 {calibrationText ? (
                   <Text className="mt-3 text-xs text-muted-foreground">{calibrationText}</Text>
                 ) : null}

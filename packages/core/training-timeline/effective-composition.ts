@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import {
-  aggregateCommonLoad,
+  aggregateCommonLoadEnvelopes,
   commonLoadAggregateSchema,
   commonLoadResultSchema,
 } from "../load/common-relative-load";
@@ -31,6 +31,12 @@ const planningTimezoneSchema = z
     }
   }, "Planning timezone must be a valid IANA timezone");
 
+/** A completed multisport activity can retain its parent aggregate as one composition item. */
+export const commonLoadEnvelopeSchema = z.union([
+  commonLoadResultSchema,
+  commonLoadAggregateSchema,
+]);
+
 export const effectiveScheduledItemSchema = z
   .object({
     scheduledItemId: identitySchema,
@@ -38,7 +44,7 @@ export const effectiveScheduledItemSchema = z
     status: z.enum(["active", "cancelled"]),
     tentative: z.boolean(),
     linkedCompletedActivityId: identitySchema.nullable(),
-    commonLoad: commonLoadResultSchema,
+    commonLoad: commonLoadEnvelopeSchema,
   })
   .strict();
 
@@ -46,7 +52,7 @@ export const effectiveCompletedActivitySchema = z
   .object({
     completedActivityId: identitySchema,
     completedDate: calendarDateSchema,
-    commonLoad: commonLoadResultSchema,
+    commonLoad: commonLoadEnvelopeSchema,
   })
   .strict();
 
@@ -128,7 +134,7 @@ const composedScheduledItemSchema = z
     kind: z.literal("scheduled"),
     scheduledItemId: identitySchema,
     date: calendarDateSchema,
-    commonLoad: commonLoadResultSchema,
+    commonLoad: commonLoadEnvelopeSchema,
   })
   .strict();
 
@@ -138,7 +144,7 @@ const composedCompletedItemSchema = z
     completedActivityId: identitySchema,
     date: calendarDateSchema,
     replacedScheduledItemId: identitySchema.nullable(),
-    commonLoad: commonLoadResultSchema,
+    commonLoad: commonLoadEnvelopeSchema,
   })
   .strict();
 
@@ -226,6 +232,7 @@ export const effectiveCompositionResultSchema = z.discriminatedUnion("status", [
 
 export type EffectiveScheduledItem = z.infer<typeof effectiveScheduledItemSchema>;
 export type EffectiveCompletedActivity = z.infer<typeof effectiveCompletedActivitySchema>;
+export type CommonLoadEnvelope = z.infer<typeof commonLoadEnvelopeSchema>;
 export type CompletedSourceCompleteness = z.infer<typeof completedSourceCompletenessSchema>;
 export type EffectiveCompositionInput = z.infer<typeof effectiveCompositionInputSchema>;
 export type EffectiveCompositionItem = z.infer<typeof effectiveCompositionItemSchema>;
@@ -254,7 +261,7 @@ function effectiveAggregate(
   scheduledSource: CompletedSourceCompleteness,
   completedSource: CompletedSourceCompleteness,
 ): EffectiveLoadAggregate {
-  const commonLoad = aggregateCommonLoad(items.map((item) => item.commonLoad));
+  const commonLoad = aggregateCommonLoadEnvelopes(items.map((item) => item.commonLoad));
   const sourcesComplete =
     scheduledSource.status === "complete" && completedSource.status === "complete";
   if (items.length === 0 && sourcesComplete) {
@@ -381,7 +388,7 @@ export function composeEffectivePlanLoad(
     items,
     tentativeItems,
     aggregate: effectiveAggregate(items, parsed.scheduledSource, parsed.completedSource),
-    tentativeAggregate: aggregateCommonLoad(tentativeItems.map((item) => item.commonLoad)),
+    tentativeAggregate: aggregateCommonLoadEnvelopes(tentativeItems.map((item) => item.commonLoad)),
     includingTentativeAggregate: effectiveAggregate(
       [...items, ...tentativeItems],
       parsed.scheduledSource,

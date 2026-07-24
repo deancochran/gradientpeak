@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   aggregateCommonLoad,
   aggregateCommonLoadEnvelopes,
+  COMMON_LOAD_HISTORY_MATURE_DAYS,
   COMMON_LOAD_HISTORY_REQUIRED_DAYS,
   COMMON_RELATIVE_LOAD_MODEL,
   COMMON_RELATIVE_LOAD_VERSION,
@@ -40,7 +41,9 @@ async function hasCompleteActivitySourceCoverage(
   const relevant = integrationRows.filter((integration) =>
     supportsActivityHistorySync(integration.provider),
   );
-  if (relevant.length === 0) return true;
+  // Neither a never-completed first sync nor a disconnected provider (whose
+  // integration/state rows are deleted) proves that this history window is zero.
+  if (relevant.length === 0) return false;
   const syncRows = await db
     .select({
       integrationId: providerSyncState.integration_id,
@@ -92,6 +95,9 @@ async function hasCompleteActivitySourceCoverage(
     return (
       sync !== undefined &&
       sync.lastSucceededAt !== null &&
+      // An old successful read cannot remain complete merely because its metadata
+      // claimed a future boundary. Coverage must be refreshed through this window.
+      sync.lastSucceededAt.getTime() >= requiredEnd &&
       sync.highWatermark !== null &&
       sync.consecutiveFailures === 0 &&
       (sync.lastFailedAt === null || sync.lastSucceededAt >= sync.lastFailedAt) &&
@@ -127,11 +133,14 @@ function fingerprint(parts: readonly string[]): string {
   return `common-load-history:v1:sha256:${createHash("sha256").update(parts.join("\n")).digest("hex")}`;
 }
 
-function datesForWindow(currentPlanningDate: string): string[] {
-  const startDate = addCalendarDays(currentPlanningDate, -COMMON_LOAD_HISTORY_REQUIRED_DAYS);
-  return Array.from({ length: COMMON_LOAD_HISTORY_REQUIRED_DAYS }, (_, index) =>
-    addCalendarDays(startDate, index),
-  );
+function datesForWindow(
+  currentPlanningDate: string,
+  replayDays:
+    | typeof COMMON_LOAD_HISTORY_REQUIRED_DAYS
+    | typeof COMMON_LOAD_HISTORY_MATURE_DAYS = COMMON_LOAD_HISTORY_REQUIRED_DAYS,
+): string[] {
+  const startDate = addCalendarDays(currentPlanningDate, -replayDays);
+  return Array.from({ length: replayDays }, (_, index) => addCalendarDays(startDate, index));
 }
 
 function unavailableWindow(input: {
@@ -192,8 +201,9 @@ export function buildCommonLoadHistoryObservations(input: {
   currentPlanningDate: string;
   planningTimezone: string;
   coverageStatus?: "complete" | "partial";
+  replayDays?: typeof COMMON_LOAD_HISTORY_REQUIRED_DAYS | typeof COMMON_LOAD_HISTORY_MATURE_DAYS;
 }): CommonLoadHistoryDayObservation[] {
-  const dates = datesForWindow(input.currentPlanningDate);
+  const dates = datesForWindow(input.currentPlanningDate, input.replayDays);
   const startDate = dates[0];
   const endDate = dates.at(-1);
   if (!startDate || !endDate) throw new Error("Common Load history window must not be empty");
@@ -295,7 +305,8 @@ export async function getCommonLoadHistory(input: {
   currentPlanningDate: string;
   planningTimezone: string;
 }): Promise<CommonLoadHistoryResult> {
-  const dates = datesForWindow(input.currentPlanningDate);
+  // Read the full maturity horizon; Core returns only the latest 84 chart points.
+  const dates = datesForWindow(input.currentPlanningDate, COMMON_LOAD_HISTORY_MATURE_DAYS);
   const startDate = dates[0];
   const endDate = dates.at(-1);
   if (!startDate || !endDate) return unavailableWindow(input);
@@ -355,6 +366,7 @@ export async function getCommonLoadHistory(input: {
             currentPlanningDate: input.currentPlanningDate,
             planningTimezone: input.planningTimezone,
             coverageStatus: sourceCoverageComplete ? "complete" : "partial",
+            replayDays: COMMON_LOAD_HISTORY_MATURE_DAYS,
           }),
         });
       },

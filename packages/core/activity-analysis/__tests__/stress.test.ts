@@ -688,7 +688,7 @@ describe("activity analysis", () => {
       common_load: {
         status: "available",
         method: example.method,
-        evidenceFingerprint: example.fingerprint,
+        evidenceFingerprint: expect.stringMatching(/^activity-common-load:v1:/),
         computedAsOf: timestamps.started_at,
         thresholdEvidence: {
           type: example.thresholdType,
@@ -703,6 +703,7 @@ describe("activity analysis", () => {
     }
     expect(derived.stress.common_load.intensity).toBeCloseTo(0.8, 12);
     expect(derived.stress.common_load.load).toBeCloseTo(64, 12);
+    expect(derived.stress.common_load.evidenceFingerprint).toContain(example.fingerprint);
     expect(activityDerivedMetricsSchema.parse(derived)).toEqual(derived);
   });
 
@@ -815,8 +816,8 @@ describe("activity analysis", () => {
       calibration_quality: { evidence_fingerprint: "cycling-selected" },
       common_load: {
         status: "available",
-        evidenceFingerprint: "cycling-selected",
-        thresholdEvidence: { value: 250 },
+        evidenceFingerprint: expect.stringMatching(/^activity-common-load:v1:/),
+        thresholdEvidence: { value: 250, sourceFingerprint: "cycling-selected" },
       },
     });
   });
@@ -1018,7 +1019,8 @@ describe("activity analysis", () => {
       status: "available",
       method: "heart_rate_zones",
       contributingDurationSeconds: 3600,
-      evidenceFingerprint: "lthr-evidence",
+      evidenceFingerprint: expect.stringMatching(/^activity-common-load:v1:/),
+      thresholdEvidence: { sourceFingerprint: "lthr-evidence" },
     });
     expect(
       derived.stress.common_load?.status === "available" && derived.stress.common_load.load,
@@ -1233,5 +1235,55 @@ describe("activity analysis", () => {
         common_load: { ...summary.common_load, status: "partial" },
       }).success,
     ).toBe(false);
+  });
+  it("uses effective session-RPE for any sport only when direct evidence is unavailable", () => {
+    const sessionRpeEvidence = {
+      rpe: 7,
+      scale: "borg_cr10" as const,
+      scaleVersion: "1" as const,
+      source: "manual" as const,
+      recordedAt: "2026-07-20T12:00:00.000Z",
+      provenanceFingerprint: "effective-session-rpe",
+    };
+    const fallback = analyzeActivityDerivedMetrics({
+      activity: {
+        id: "strength-session-rpe",
+        type: "strength",
+        ...timestamps,
+        duration_seconds: 3600,
+      },
+      context: { ...emptyContext, sessionRpeEvidence },
+    });
+    const direct = analyzeActivityDerivedMetrics({
+      activity: {
+        id: "bike-direct-over-rpe",
+        type: "bike",
+        ...timestamps,
+        duration_seconds: 3600,
+        normalized_power: 200,
+      },
+      context: {
+        ...emptyContext,
+        profileMetrics: { ftp: 250 },
+        calibrationQuality: { ftp: completeQuality("direct-power") },
+        sessionRpeEvidence,
+      },
+    });
+
+    expect(fallback.stress.common_load).toMatchObject({
+      status: "available",
+      method: "session_rpe",
+      intensity: 1,
+      load: 100,
+      estimated: true,
+      thresholdEvidence: null,
+      sessionRpeEvidence,
+    });
+    expect(direct.stress.common_load).toMatchObject({
+      status: "available",
+      method: "power_threshold",
+      estimated: false,
+      sessionRpeEvidence: null,
+    });
   });
 });

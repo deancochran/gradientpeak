@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
   activityFileIngestionSourceEnum,
   activityFileIngestionStatusEnum,
+  activitySessionRpeSourceEnum,
   effortTypeEnum,
   eventStatusEnum,
   eventTypeEnum,
@@ -25,6 +26,7 @@ import {
   activityPlans,
   activityRoutes,
   activitySegments,
+  activitySessionRpeEvidence,
   comments,
   conversationParticipants,
   conversations,
@@ -53,6 +55,7 @@ export const publicActivityFileIngestionSourceSchema = z.enum(
 export const publicActivityFileIngestionStatusSchema = z.enum(
   activityFileIngestionStatusEnum.enumValues,
 );
+export const publicActivitySessionRpeSourceSchema = z.enum(activitySessionRpeSourceEnum.enumValues);
 export const publicEvidenceObservationSourceSchema = z.enum(
   evidenceObservationSourceEnum.enumValues,
 );
@@ -113,6 +116,27 @@ export const publicActivityEffortsRowSchema = createSelectSchema(activityEfforts
 });
 export const publicActivityEffortsInsertSchema = createInsertSchema(activityEfforts);
 export const publicActivityEffortsUpdateSchema = createUpdateSchema(activityEfforts);
+
+export const publicActivitySessionRpeEvidenceRowSchema = createSelectSchema(
+  activitySessionRpeEvidence,
+);
+export const publicActivitySessionRpeEvidenceInsertSchema = createInsertSchema(
+  activitySessionRpeEvidence,
+).superRefine((value, context) => {
+  if (
+    value.correction_of_id !== undefined &&
+    value.correction_of_id !== null &&
+    value.source !== "manual"
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["source"],
+      message: "Corrections must be manual evidence",
+    });
+  }
+});
+/** Immutable evidence has no supported update transport contract. */
+export const publicActivitySessionRpeEvidenceUpdateSchema = z.never();
 
 export const publicActivityFileIngestionsRowSchema = createSelectSchema(activityFileIngestions);
 export const publicActivityFileIngestionsInsertSchema = createInsertSchema(activityFileIngestions);
@@ -199,6 +223,7 @@ export type PublicActivityFileIngestionStatus = z.infer<
 >;
 export type PublicEvidenceObservationSource = z.infer<typeof publicEvidenceObservationSourceSchema>;
 export type PublicEffortType = z.infer<typeof publicEffortTypeSchema>;
+export type PublicActivitySessionRpeSource = z.infer<typeof publicActivitySessionRpeSourceSchema>;
 export type PublicEventStatus = z.infer<typeof publicEventStatusSchema>;
 export type PublicEventType = z.infer<typeof publicEventTypeSchema>;
 export type PublicGender = z.infer<typeof publicGenderSchema>;
@@ -229,6 +254,15 @@ export type PublicActivitiesUpdate = z.infer<typeof publicActivitiesUpdateSchema
 export type PublicActivityEffortsRow = z.infer<typeof publicActivityEffortsRowSchema>;
 export type PublicActivityEffortsInsert = z.infer<typeof publicActivityEffortsInsertSchema>;
 export type PublicActivityEffortsUpdate = z.infer<typeof publicActivityEffortsUpdateSchema>;
+export type PublicActivitySessionRpeEvidenceRow = z.infer<
+  typeof publicActivitySessionRpeEvidenceRowSchema
+>;
+export type PublicActivitySessionRpeEvidenceInsert = z.infer<
+  typeof publicActivitySessionRpeEvidenceInsertSchema
+>;
+export type PublicActivitySessionRpeEvidenceUpdate = z.infer<
+  typeof publicActivitySessionRpeEvidenceUpdateSchema
+>;
 export type PublicActivityFileIngestionsRow = z.infer<typeof publicActivityFileIngestionsRowSchema>;
 export type PublicActivityFileIngestionsInsert = z.infer<
   typeof publicActivityFileIngestionsInsertSchema

@@ -1,11 +1,9 @@
-import { calculateAvailableCommonLoad } from "@repo/core";
 import { describe, expect, it } from "vitest";
 
 import {
   buildCalendarEventUpdatePatch,
   buildWeeklyRecurrence,
   formatEventTimeRange,
-  getTrainingLoadPath,
   getWeekWindow,
   shiftDateKey,
 } from "./planning";
@@ -96,75 +94,5 @@ describe("planning navigation and recurrence", () => {
     expect(
       buildWeeklyRecurrence({ count: 1, scheduledDate: "2026-07-20", timezone: "UTC" }),
     ).toBeNull();
-  });
-});
-
-function planCommonLoad(durationSeconds: number, intensity: number) {
-  return calculateAvailableCommonLoad({
-    sport: "bike",
-    method: "power_threshold",
-    quality: {
-      source: "validated_test",
-      observed_at: "2026-07-20T12:00:00.000Z",
-      confidence: "high",
-      stale: false,
-      estimate: false,
-    },
-    thresholdEvidence: {
-      type: "ftp_watts",
-      value: 250,
-      unit: "watts",
-      source: "validated_test",
-      observedAt: "2026-07-20T12:00:00.000Z",
-      validAt: "2026-07-20T12:00:00.000Z",
-      freshness: "current",
-      calculationVersion: null,
-      sourceFingerprint: `threshold-${durationSeconds}`,
-    },
-    evidenceFingerprint: `plan-${durationSeconds}-${intensity}`,
-    computedAsOf: "2026-07-21T12:00:00.000Z",
-    estimated: true,
-    contributingDurationSeconds: durationSeconds,
-    intensity,
-  });
-}
-
-describe("training load path", () => {
-  it("aggregates persisted scheduled activity estimates into daily and weekly load", () => {
-    const path = getTrainingLoadPath([
-      {
-        id: "event-1",
-        scheduled_date: "2026-07-20",
-        activity_plan: {
-          id: "plan-1",
-          common_load: planCommonLoad(3_600, 0.6),
-        },
-      },
-      {
-        id: "event-2",
-        scheduled_date: "2026-07-20",
-        activity_plan: {
-          id: "plan-2",
-          common_load: planCommonLoad(3_600, 0.8),
-        },
-      },
-      {
-        id: "event-3",
-        scheduled_date: "2026-07-26",
-        activity_plan: {
-          id: "plan-3",
-          common_load: { status: "unavailable" },
-        },
-      },
-    ]);
-
-    expect(path.daily).toEqual([
-      { date: "2026-07-20", eventCount: 2, load: 100, status: "complete" },
-      { date: "2026-07-26", eventCount: 1, load: null, status: "unavailable" },
-    ]);
-    expect(path.weekly).toEqual([
-      { weekStart: "2026-07-19", eventCount: 2, load: 100, status: "complete" },
-      { weekStart: "2026-07-26", eventCount: 1, load: null, status: "unavailable" },
-    ]);
   });
 });

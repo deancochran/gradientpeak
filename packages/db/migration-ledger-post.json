@@ -85,6 +85,10 @@
     {
       "version": "20260721042443",
       "name": "add_activity_plan_route"
+    },
+    {
+      "version": "20260723221702",
+      "name": "add_activity_session_rpe_evidence"
     }
   ]
 }

@@ -108,6 +108,7 @@ type AuthStoreFixture = { ready: boolean; session: { user: { id: string } } };
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
+  commonLoadAggregateSchema: jest.requireActual("@repo/core").commonLoadAggregateSchema,
   commonLoadResultSchema: jest.requireActual("@repo/core").commonLoadResultSchema,
   formatGoalTypeLabel: () => "Race Day",
   getTrainingIntensityZone: jest.requireActual("@repo/core").getTrainingIntensityZone,

@@ -312,6 +312,13 @@ export function ActivityCard({
   const routeCoordinates = decodedPolylineCoordinates;
   const ingestionStatusText = getIngestionStatusText(activity);
   const calibrationText = getCalibrationText(activity);
+  const loadPresentation = getLoadPresentation(activity);
+  const loadCoverageMessage =
+    loadPresentation?.status === "partial"
+      ? "Load is incomplete because some activity evidence is missing. Open to review details."
+      : loadPresentation?.status === "unavailable"
+        ? "Load is unavailable until compatible activity evidence is available. Open to review details."
+        : null;
   const hasCommentAction = Boolean(onCommentPress);
   const hasFooterAccessory = Boolean(footerAccessory);
   const hasHeaderAccessory = Boolean(headerAccessory);
@@ -373,6 +380,10 @@ export function ActivityCard({
       />
 
       <ActivityMetricsRow activity={activity} compact={false} />
+
+      {loadCoverageMessage ? (
+        <Text className="text-xs text-muted-foreground">{loadCoverageMessage}</Text>
+      ) : null}
 
       {calibrationText ? (
         <Text className="text-xs text-muted-foreground">{calibrationText}</Text>

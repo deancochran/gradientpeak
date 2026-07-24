@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getPlanCategoryComposition } from "../home";
+import { getPlanCategoryComposition, projectCommonLoad } from "../home";
 
 const step = (id: string) => ({
   id,
@@ -9,6 +9,41 @@ const step = (id: string) => ({
 });
 
 describe("home plan card projection", () => {
+  it("uses effective common Load and abstains when a planned item lacks Load", () => {
+    expect(
+      projectCommonLoad({
+        current: { longTermLoad: 40, recentLoad: 50 },
+        currentDate: "2026-04-03",
+        days: 1,
+        items: [
+          {
+            date: "2026-04-04",
+            commonLoad: { status: "complete", load: 70 },
+          },
+        ],
+      }),
+    ).toEqual([expect.objectContaining({ date: "2026-04-04", plannedLoad: 70, plannedTss: null })]);
+    expect(
+      projectCommonLoad({
+        current: { longTermLoad: 40, recentLoad: 50 },
+        currentDate: "2026-04-03",
+        days: 1,
+        items: [{ date: "2026-04-04", commonLoad: { status: "unavailable" } }],
+      }),
+    ).toBeNull();
+  });
+
+  it("does not mark a projection complete when an effective item is partial", () => {
+    expect(
+      projectCommonLoad({
+        current: { longTermLoad: 40, recentLoad: 50 },
+        currentDate: "2026-04-03",
+        days: 1,
+        items: [{ date: "2026-04-04", commonLoad: { status: "partial", load: 70 } }],
+      }),
+    ).toEqual([expect.objectContaining({ status: "partial" })]);
+  });
+
   it("derives ordered repeated and multisport composition from V3 segments", () => {
     const structure = {
       version: 3 as const,

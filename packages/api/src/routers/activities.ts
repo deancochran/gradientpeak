@@ -36,6 +36,11 @@ import {
 } from "../application/activities/daily-common-load-observations";
 import { readCurrentProfileCommonLoadHistory } from "../application/activities/read-current-profile-common-load-history";
 import {
+  recordSessionRpe,
+  SessionRpeEvidenceConflictError,
+  SessionRpeEvidenceNotFoundError,
+} from "../application/activities/record-session-rpe";
+import {
   recordingSessionActivityId,
   submitActivity,
 } from "../application/activities/submit-activity";
@@ -73,6 +78,21 @@ const activityIngestionStatusSchema = z
     status: z.string(),
     source: z.string(),
     last_error_message: z.string().nullable().optional(),
+  })
+  .strict();
+
+const effectiveSessionRpeSchema = z
+  .object({
+    // This ID is intentionally returned to the owner so a correction can
+    // reference the exact immutable observation it supersedes.
+    id: z.string().uuid(),
+    rpe: z.number().int().min(1).max(10),
+    scale: z.literal("borg_cr10"),
+    scale_version: z.literal("1"),
+    source: z.enum(["user", "provider", "manual"]),
+    recorded_at: activityTimestampSchema,
+    corrected_at: activityTimestampSchema.nullable(),
+    provenance: z.record(z.string(), z.unknown()),
   })
   .strict();
 
@@ -133,6 +153,9 @@ const activityWithPlanSchema = activityRowSchema
     likes_count: z.number().int().nonnegative(),
     activity_plans: activityPlanReferenceSchema.nullable(),
     ingestion: activityIngestionStatusSchema.nullable().optional(),
+    // Owner-only evidence. Shared viewers receive null even when the activity
+    // is visible to them.
+    effective_session_rpe: effectiveSessionRpeSchema.nullable(),
     segments: activitySegmentReadSchema.array(),
     current_artifact: z
       .object({
@@ -333,6 +356,59 @@ const updateInputSchema = z
   .strict();
 
 const deleteInputSchema = z.object({ id: z.string().uuid() }).strict();
+
+const recordSessionRpeInputSchema = z
+  .object({
+    activity_id: z.string().uuid(),
+    operation_id: z.string().uuid(),
+    rpe: z.number().int().min(1).max(10),
+    scale: z.literal("borg_cr10").default("borg_cr10"),
+    scale_version: z.literal("1").default("1"),
+    source: z.enum(["user", "manual"]).default("user"),
+    correction_of_id: z.string().uuid().optional(),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (input.correction_of_id && input.source !== "manual") {
+      context.addIssue({
+        code: "custom",
+        message: "Corrections must be recorded as manual evidence",
+        path: ["source"],
+      });
+    }
+  });
+
+const sessionRpeEvidenceOutputSchema = z
+  .object({
+    id: z.string().uuid(),
+    activity_id: z.string().uuid(),
+    recorded_at: activityTimestampSchema,
+    corrected_at: activityTimestampSchema.nullable(),
+    rpe: z.number().int().min(1).max(10),
+    scale: z.literal("borg_cr10"),
+    scale_version: z.literal("1"),
+    source: z.enum(["user", "provider", "manual"]),
+    operation_id: z.string().uuid(),
+    correction_of_id: z.string().uuid().nullable(),
+    provenance: z.record(z.string(), z.unknown()),
+  })
+  .strict();
+
+function sessionRpeEvidenceResponse(evidence: Awaited<ReturnType<typeof recordSessionRpe>>) {
+  return sessionRpeEvidenceOutputSchema.parse({
+    id: evidence.id,
+    activity_id: evidence.activityId,
+    recorded_at: evidence.recordedAt,
+    corrected_at: evidence.correctedAt,
+    rpe: evidence.rpe,
+    scale: evidence.scale,
+    scale_version: evidence.scaleVersion,
+    source: evidence.source,
+    operation_id: evidence.operationId,
+    correction_of_id: evidence.correctionOfId,
+    provenance: evidence.provenance,
+  });
+}
 
 function aggregateSegmentTiming(segmentSet: z.infer<typeof completedActivitySegmentSetSchemaV1>) {
   const timings = segmentSet.segments.map((segment) => segment.summary.timing);
@@ -822,6 +898,34 @@ export const activitiesRouter = createTRPCRouter({
 
     return parseActivityRow(data);
   }),
+
+  recordSessionRpe: protectedProcedure
+    .input(recordSessionRpeInputSchema)
+    .output(sessionRpeEvidenceOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return sessionRpeEvidenceResponse(
+          await recordSessionRpe(getRequiredDb(ctx), {
+            activityId: input.activity_id,
+            operationId: input.operation_id,
+            profileId: ctx.session.user.id,
+            rpe: input.rpe,
+            scale: input.scale,
+            scaleVersion: input.scale_version,
+            source: input.source,
+            ...(input.correction_of_id ? { correctionOfId: input.correction_of_id } : {}),
+          }),
+        );
+      } catch (error) {
+        if (error instanceof SessionRpeEvidenceNotFoundError) {
+          throw new TRPCError({ code: "NOT_FOUND", message: error.message });
+        }
+        if (error instanceof SessionRpeEvidenceConflictError) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message });
+        }
+        throw error;
+      }
+    }),
 
   // Hard delete activity - permanently removes the record
   // Activity streams are automatically deleted via cascade

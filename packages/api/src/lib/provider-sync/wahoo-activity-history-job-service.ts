@@ -223,7 +223,12 @@ export class WahooActivityHistoryJobService {
               metadata: {
                 activityHistoryCoverage: {
                   end: historyEnd,
+                  // Written only after every page and import completes. This records a
+                  // bounded source read, not proof that an empty result means no older
+                  // provider activities exist.
+                  highWatermark: historyEnd,
                   start: historyStart,
+                  version: 1,
                 },
               },
               provider: "wahoo",

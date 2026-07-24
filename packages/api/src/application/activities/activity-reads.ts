@@ -21,6 +21,7 @@ import {
   mapActivityToDerivedResponse,
   mapActivityToListDerivedResponse,
 } from "../../lib/activity-analysis";
+import { findOwnedEffectiveSessionRpeEvidence } from "../../repositories/activity-session-rpe-repository";
 import { getLikeStats, loadLikeStats } from "../../repositories/like-stats";
 import { buildIndexPageInfo, parseIndexCursor } from "../../utils/index-cursor";
 import {
@@ -492,6 +493,16 @@ export async function getActivityByIdForViewer({
         computed_as_of: parentDerived.computed_as_of,
       }
     : derived;
+  // Session RPE is deliberately owner-only even when the activity itself is
+  // shared. It is manually-entered health/training evidence rather than
+  // activity metadata covered by the activity visibility contract.
+  const effectiveSessionRpe =
+    activity.profile_id === viewerId
+      ? await findOwnedEffectiveSessionRpeEvidence(db, {
+          activityId,
+          profileId: activity.profile_id,
+        })
+      : null;
   const response = mapActivityToDerivedResponse({
     activity: {
       ...decorateActivity(activity),
@@ -522,6 +533,18 @@ export async function getActivityByIdForViewer({
       segments: activity.segments,
       current_artifact: currentArtifact,
       ingestion: ingestion ?? null,
+      effective_session_rpe: effectiveSessionRpe
+        ? {
+            id: effectiveSessionRpe.id,
+            rpe: effectiveSessionRpe.rpe,
+            scale: effectiveSessionRpe.scale,
+            scale_version: effectiveSessionRpe.scaleVersion,
+            source: effectiveSessionRpe.source,
+            recorded_at: effectiveSessionRpe.recordedAt,
+            corrected_at: effectiveSessionRpe.correctedAt,
+            provenance: effectiveSessionRpe.provenance,
+          }
+        : null,
     },
   };
 }

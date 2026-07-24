@@ -23,6 +23,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Loader2, Lock, Share2, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { SessionRpeCard } from "../../../../components/activity/session-rpe-card";
 import {
   DetailMetricGrid,
   DetailPageIntro,
@@ -324,6 +325,8 @@ function ActivityDetailPage() {
 
       <DetailMetricGrid
         items={[
+          { label: loadLabels.load, value: loadPresentation.load },
+          { label: loadLabels.intensity, value: loadPresentation.intensity },
           {
             label: "Distance",
             value: formatDistance(activity.distance_meters, unitSystem),
@@ -352,8 +355,6 @@ function ActivityDetailPage() {
                 ? formatPace(activity.avg_speed_mps, unitSystem)
                 : formatSpeed(activity.avg_speed_mps, unitSystem),
           },
-          { label: loadLabels.load, value: loadPresentation.load },
-          { label: loadLabels.intensity, value: loadPresentation.intensity },
           {
             label: "Normalized power",
             value: formatPower(activity.normalized_power),
@@ -433,6 +434,14 @@ function ActivityDetailPage() {
             : streamsQuery.error?.message
         }
       />
+
+      {isOwner ? (
+        <SessionRpeCard
+          activityId={activity.id}
+          effectiveSessionRpe={activity.effective_session_rpe}
+          estimatedMethod={commonLoad && "method" in commonLoad ? commonLoad.method : null}
+        />
+      ) : null}
 
       <Card>
         <CardHeader>

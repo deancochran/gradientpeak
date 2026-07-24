@@ -1,4 +1,5 @@
 export * from "./activity-analysis-repository";
+export * from "./activity-session-rpe-repository";
 export * from "./event-completion-repository";
 export * from "./event-read-repository";
 export * from "./event-write-repository";

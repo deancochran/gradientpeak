@@ -99,7 +99,11 @@ type LoadPoint = {
 type TrainingLoadInput =
   | {
       status: "available";
-      data: { points: LoadPoint[] };
+      data: {
+        points: LoadPoint[];
+        maturity?: { status?: "mature" | "establishing_baseline" | "provisional" };
+        coverageStatus?: "complete" | "partial";
+      };
     }
   | {
       status: "unavailable";
@@ -234,6 +238,20 @@ function formatDistance(meters: number) {
   return `${formatNumber(kilometers, kilometers >= 10 ? 0 : 1)} km`;
 }
 
+function commonLoadMaturityLabel(load: TrainingLoadInput): string | null {
+  if (load.status !== "available") return null;
+  switch (load.data.maturity?.status) {
+    case "mature":
+      return "Canonical";
+    case "establishing_baseline":
+      return "Establishing";
+    case "provisional":
+      return "Provisional";
+    default:
+      return null;
+  }
+}
+
 function formatDate(value: string | Date) {
   const date = typeof value === "string" ? parseDateKey(value) : value;
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -322,6 +340,8 @@ export function buildActivityInsights({
   const loadPoints = load.status === "available" ? load.data.points : [];
   const latestLoad = loadPoints.at(-1) ?? null;
   const previousLoad = loadPoints.at(-2) ?? null;
+  const loadMaturity = commonLoadMaturityLabel(load);
+  const loadCoverage = load.status === "available" ? (load.data.coverageStatus ?? null) : null;
   const performancePoints = (performance?.dataPoints ?? []).filter(
     (point) => typeof point.avgPower === "number" || typeof point.avgSpeed === "number",
   );
@@ -346,7 +366,7 @@ export function buildActivityInsights({
       compactLayout: trainingLoadPolicy.compactLayout,
       value: latestLoad ? formatNumber(latestLoad.dailyLoad, 1) : "--",
       summary: latestLoad
-        ? `Daily Load through ${formatDate(latestLoad.date)}`
+        ? `${loadMaturity ?? "Common"} daily Load through ${formatDate(latestLoad.date)}${loadCoverage ? ` · ${loadCoverage} coverage` : ""}`
         : load.status === "loading"
           ? "Loading common load history"
           : load.status === "unavailable" && load.reason === "missing_planning_timezone"
@@ -378,7 +398,7 @@ export function buildActivityInsights({
           })),
         },
         {
-          label: "Long-term Load",
+          label: "Long-term Load (CTL)",
           tone: "blue",
           points: loadPoints.map((point) => ({
             label: formatDate(point.date),
@@ -387,7 +407,7 @@ export function buildActivityInsights({
           })),
         },
         {
-          label: "Recent Load",
+          label: "Recent Load (ATL)",
           tone: "green",
           points: loadPoints.map((point) => ({
             label: formatDate(point.date),
@@ -396,7 +416,7 @@ export function buildActivityInsights({
           })),
         },
         {
-          label: "Load Balance",
+          label: "Load Balance (TSB)",
           tone: "purple",
           points: loadPoints.map((point) => ({
             label: formatDate(point.date),
@@ -411,16 +431,24 @@ export function buildActivityInsights({
           value: latestLoad ? formatNumber(latestLoad.dailyLoad, 1) : "--",
         },
         {
-          label: "Long-term Load",
+          label: "Long-term Load (CTL)",
           value: latestLoad ? formatNumber(latestLoad.longTermLoad, 1) : "--",
         },
         {
-          label: "Recent Load",
+          label: "Recent Load (ATL)",
           value: latestLoad ? formatNumber(latestLoad.recentLoad, 1) : "--",
         },
         {
-          label: "Load Balance",
+          label: "Load Balance (TSB)",
           value: latestLoad ? formatNumber(latestLoad.loadBalance, 1) : "--",
+        },
+        {
+          label: "History maturity",
+          value: loadMaturity ?? "Unavailable",
+        },
+        {
+          label: "History coverage",
+          value: loadCoverage ?? "Unavailable",
         },
       ],
     },

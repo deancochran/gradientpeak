@@ -198,6 +198,77 @@ function toQuery(fragment: unknown) {
 }
 
 describe("drizzle-event-read-repository", () => {
+  it("derives the current Sunday-Saturday range from the owned planning timezone and marks empty sources complete", async () => {
+    const { db } = createSelectCaptureDb({
+      profiles: [{ planningTimezone: "America/Los_Angeles" }],
+      events: [],
+      activities: [],
+    });
+    const result = await createEventReadRepository(db).getEffectivePlanLoadInputs({
+      asOf: new Date("2026-07-20T01:00:00.000Z"),
+      profileId: "profile-1",
+    });
+
+    expect(result).toMatchObject({
+      planningTimezone: "America/Los_Angeles",
+      resolvedRange: { startDate: "2026-07-19", endDate: "2026-07-25" },
+      sourceCounts: { activities: 0, events: 0 },
+      sourceCoverage: {
+        activities: { startDate: "2026-07-19", endDate: "2026-07-25", status: "complete" },
+        scheduledItems: { startDate: "2026-07-19", endDate: "2026-07-25", status: "complete" },
+      },
+    });
+  });
+
+  it("uses profile-local date bounds rather than UTC midnights for the current week read", async () => {
+    const { db, selects } = createSelectCaptureDb({
+      profiles: [{ planningTimezone: "America/Los_Angeles" }],
+      events: [],
+      activities: [],
+    });
+
+    await createEventReadRepository(db).getEffectivePlanLoadInputs({
+      asOf: new Date("2026-07-20T01:00:00.000Z"),
+      profileId: "profile-1",
+    });
+
+    const activityQuery = toQuery(
+      selects.find((select) => select.table === "activities")?.whereArg,
+    );
+    expect(activityQuery.params).toContain("2026-07-18T07:00:00.000Z");
+    expect(activityQuery.params).toContain("2026-07-27T07:00:00.000Z");
+  });
+
+  it("reads effective-plan events by their persisted scheduled date even when starts_at is outside the UTC envelope", async () => {
+    const dateAnchoredEvent = createEventRow({
+      scheduled_date: "2026-07-19",
+      starts_at: new Date("2026-07-18T00:00:00.000Z"),
+    });
+    const { db, selects } = createSelectCaptureDb({
+      profiles: [{ planningTimezone: "America/Los_Angeles" }],
+      events: [dateAnchoredEvent],
+      activities: [],
+    });
+
+    const result = await createEventReadRepository(db).getEffectivePlanLoadInputs({
+      asOf: new Date("2026-07-20T01:00:00.000Z"),
+      profileId: "profile-1",
+    });
+
+    expect(result.events).toMatchObject([
+      {
+        id: "event-1",
+        scheduled_date: "2026-07-19",
+        starts_at: "2026-07-18T00:00:00.000Z",
+      },
+    ]);
+    const eventQuery = toQuery(selects.find((select) => select.table === "events")?.whereArg);
+    expect(eventQuery.params).toEqual(
+      expect.arrayContaining(["profile-1", "planned", "2026-07-19", "2026-07-25"]),
+    );
+    expect(eventQuery.params).not.toContain("2026-07-18T07:00:00.000Z");
+  });
+
   it("uses supplied asOf for route access-grant expiry while reading current route facts", async () => {
     const { db, selects } = createSelectCaptureDb({
       profiles: [],

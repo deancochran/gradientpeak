@@ -17,6 +17,7 @@ type UseTrainingPathViewModelParams = {
   selectedWeekStart?: string | null;
   range: TrainingPathRange;
   weekWindow?: TrainingPathWeekWindow | null;
+  allowLegacyTssProjection?: boolean;
   todayKey: string;
 };
 
@@ -32,10 +33,12 @@ export function useTrainingPathViewModel(params: UseTrainingPathViewModelParams)
         selectedWeekStart: params.selectedWeekStart,
         range: params.range,
         weekWindow: params.weekWindow,
+        allowLegacyTssProjection: params.allowLegacyTssProjection,
         todayKey: params.todayKey,
       }),
     [
       params.fitnessHistory,
+      params.allowLegacyTssProjection,
       params.goalMarkers,
       params.idealFitnessCurve,
       params.projectedFitness,

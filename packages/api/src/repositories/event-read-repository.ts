@@ -27,6 +27,13 @@ type SerializedActivityTime = Pick<ActivityRow, "activity_plan_id" | "id"> & {
   started_at: string;
 };
 type SerializedEventDate = { starts_at: string };
+/**
+ * Effective-plan scheduled items are calendar-date anchored records. This is
+ * intentionally narrower than the general event-completion record contract.
+ */
+export type EffectivePlanLoadEventRecord = EventCompletionEventRecord & {
+  scheduled_date: string;
+};
 type ConstraintActivityPlan = Pick<
   ActivityPlanRow,
   "id" | "gps_recording_enabled" | "structure" | "structure_hash"
@@ -100,6 +107,23 @@ type ProjectionPlannedActivity = Pick<EventRow, "training_plan_id"> & {
 type ProjectionTrainingPlan = Pick<TrainingPlanRow, "id" | "structure">;
 
 export interface EventReadRepository {
+  /** Profile-owned facts for the server-side effective Plan Load projection. */
+  getEffectivePlanLoadInputs(input: {
+    asOf: Date;
+    endDate?: string;
+    profileId: string;
+    startDate?: string;
+  }): Promise<{
+    activities: ActivityRow[];
+    events: EffectivePlanLoadEventRecord[];
+    planningTimezone: string | null;
+    resolvedRange: { endDate: string | null; startDate: string | null };
+    sourceCounts: { activities: number; events: number };
+    sourceCoverage: {
+      activities: { endDate: string; startDate: string; status: "complete" | "partial" } | null;
+      scheduledItems: { endDate: string; startDate: string; status: "complete" | "partial" } | null;
+    };
+  }>;
   countOwnedEventsInRange(input: {
     profileId: string;
     startsAtGte: string;

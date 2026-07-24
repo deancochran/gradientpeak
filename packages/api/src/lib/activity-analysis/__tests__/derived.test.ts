@@ -402,6 +402,7 @@ describe("segment-derived activity analysis", () => {
       expected: {
         status: "partial",
         contributingDurationSeconds: 1800,
+        eligibleDurationSeconds: 3600,
         sourceTimeCoverage: 0.5,
         reason: "duration_partial",
       },
@@ -427,10 +428,11 @@ describe("segment-derived activity analysis", () => {
       common_load: {
         ...expected,
         method: "heart_rate_zones",
-        evidenceFingerprint: expect.stringMatching(/^activity-metric:v1:sha256:/),
+        evidenceFingerprint: expect.stringMatching(/^activity-common-load:v1:/),
         thresholdEvidence: {
           observedAt: "2026-06-15T10:30:00.000Z",
           validAt: "2026-06-15T10:30:00.000Z",
+          sourceFingerprint: expect.stringMatching(/^activity-metric:v1:sha256:/),
         },
       },
     });
@@ -554,6 +556,55 @@ describe("segment-derived activity analysis", () => {
     expect(summaries.find((item) => item.activity_id === secondId)).toMatchObject({
       method: null,
       unavailable_reason: "threshold_missing",
+    });
+  });
+  it("loads effective owned session-RPE through the analysis store as a fallback", async () => {
+    const input = activity([
+      segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 3_600_000),
+    ]);
+    const analysisStore = {
+      getContextSnapshot: vi.fn(async () => ({
+        profile: { dob: null, gender: null },
+        profileMetrics: [],
+        recentEfforts: [],
+      })),
+      loadEffectiveSessionRpeEvidence: vi.fn(
+        async () =>
+          new Map([
+            [
+              input.id,
+              {
+                activityId: input.id,
+                recordedAt: new Date("2026-07-01T10:00:00.000Z"),
+                rpe: 7,
+                scale: "borg_cr10" as const,
+                scaleVersion: "1" as const,
+                source: "user" as const,
+                provenanceFingerprint: "effective-rpe",
+              },
+            ],
+          ]),
+      ),
+    };
+
+    const summaries = await buildActivitySegmentDerivedSummaries({
+      store: analysisStore as never,
+      profileId: PROFILE_ID,
+      activities: [input],
+    });
+
+    expect(analysisStore.loadEffectiveSessionRpeEvidence).toHaveBeenCalledWith({
+      activityIds: [input.id],
+      profileId: PROFILE_ID,
+    });
+    expect(summaries[0]).toMatchObject({
+      common_load: {
+        status: "available",
+        method: "session_rpe",
+        load: 100,
+        thresholdEvidence: null,
+        estimated: true,
+      },
     });
   });
 });

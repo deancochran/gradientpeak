@@ -1,4 +1,4 @@
-import { commonLoadResultSchema } from "@repo/core";
+import { commonLoadAggregateSchema, commonLoadResultSchema } from "@repo/core";
 import { formatDuration } from "./activity-route-helpers";
 
 function humanizeRole(value: string | null | undefined) {
@@ -83,27 +83,33 @@ export function getActivityPlanMetricSummary(
   commonLoad: unknown,
 ) {
   const summary: string[] = [];
+  const result = commonLoadResultSchema.safeParse(commonLoad);
+  const aggregate = commonLoadAggregateSchema.safeParse(commonLoad);
+  const parsed = result.success ? result.data : aggregate.success ? aggregate.data : null;
+  if (!parsed || parsed.status === "unavailable") {
+    summary.push("Load unavailable", "Intensity unavailable");
+    appendPlanDimensions(summary, metrics);
+    return summary;
+  }
+  if (parsed.load === null || parsed.intensity === null) {
+    summary.push("Load unavailable (partial data)", "Intensity unavailable (partial data)");
+    appendPlanDimensions(summary, metrics);
+    return summary;
+  }
+  const suffix = parsed.status === "partial" ? " (partial data)" : "";
+  summary.push(`Load ${Math.round(parsed.load)}${suffix}`);
+  summary.push(`Intensity ${parsed.intensity.toFixed(2)}${suffix}`);
+  appendPlanDimensions(summary, metrics);
+  return summary;
+}
+
+function appendPlanDimensions(summary: string[], metrics: ActivityPlanMetrics | null | undefined) {
   if (metrics && isPositiveFinite(metrics.estimated_duration)) {
     summary.push(formatDuration(metrics.estimated_duration));
   }
   if (metrics && isPositiveFinite(metrics.estimated_distance)) {
     summary.push(`${(metrics.estimated_distance / 1_000).toFixed(1)} km`);
   }
-
-  const parsed = commonLoadResultSchema.safeParse(commonLoad);
-  if (!parsed.success || parsed.data.status === "unavailable") {
-    summary.push("Load unavailable", "Intensity unavailable");
-    return summary;
-  }
-  const result = parsed.data;
-  if (result.load === null || result.intensity === null) {
-    summary.push("Load unavailable (partial data)", "Intensity unavailable (partial data)");
-    return summary;
-  }
-  const suffix = result.status === "partial" ? " (partial data)" : "";
-  summary.push(`Load ${Math.round(result.load)}${suffix}`);
-  summary.push(`Intensity ${result.intensity.toFixed(2)}${suffix}`);
-  return summary;
 }
 
 function isPositiveFinite(value: number | null | undefined): value is number {

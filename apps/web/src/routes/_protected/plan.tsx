@@ -46,6 +46,10 @@ function PlanPage() {
 
   const profileQuery = api.profiles.get.useQuery();
   const activePlanQuery = api.trainingPlans.getActivePlan.useQuery();
+  // An empty request explicitly asks the server to resolve the current week in
+  // the athlete's planning timezone. Date ranges are reserved for deliberate
+  // non-current views.
+  const effectiveLoadQuery = api.trainingPlans.getEffectiveLoad.useQuery({});
   const trainingPlansQuery = api.trainingPlans.list.useQuery({
     includeOwnOnly: true,
     includeSystemTemplates: false,
@@ -116,7 +120,11 @@ function PlanPage() {
         </div>
       ) : null}
 
-      <TrainingLoadPath events={upcomingEvents} />
+      <TrainingLoadPath
+        effectiveLoad={effectiveLoadQuery.data}
+        isError={effectiveLoadQuery.isError}
+        onRetry={() => void effectiveLoadQuery.refetch()}
+      />
 
       <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
         <Card>

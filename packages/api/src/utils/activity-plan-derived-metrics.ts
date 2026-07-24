@@ -275,6 +275,7 @@ function toFailedResult<TPlan extends EstimationActivityPlanInput>(
       method: null,
       quality: null,
       thresholdEvidence: null,
+      sessionRpeEvidence: null,
       evidenceFingerprint: null,
       computedAsOf: asOf.toISOString(),
       contributingDurationSeconds: null,

@@ -123,7 +123,6 @@ export class MetricEvidenceAdapter {
         ["ftp", "threshold_pace_seconds_per_km", "css_seconds_per_100m"].includes(row.metric_type),
     );
     const thresholds = resolveCanonicalThresholds({
-      allowDirectMetricEvidence: true,
       now: policy.asOf.toISOString(),
       freshnessWindowMs: policy.freshnessHalfLifeDays * DAY_MS,
       directMetrics: thresholdRows.flatMap((row) => {

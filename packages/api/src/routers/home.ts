@@ -1,6 +1,7 @@
 import {
   activityPlanStructureSchemaV3,
   activityTssIdentityMethodValues,
+  addDaysDateOnlyUtc,
   calculateAge,
   calculateRollingTrainingQuality,
   canonicalSportSchema,
@@ -12,18 +13,21 @@ import {
 } from "@repo/core/activity-plan";
 import {
   aggregateCommonLoadEnvelopes,
-  buildDailyTssByDateSeries,
   commonLoadAggregateSchema,
   commonLoadHistoryResultSchema,
   commonLoadResultSchema,
-  replayTrainingLoadByDate,
 } from "@repo/core/load";
+import { getScheduledDateKey, isValidIanaTimeZone } from "@repo/core/utils/schedule-date";
 import { schema, type TrainingPlanRow } from "@repo/db";
 import { and, asc, eq, gte, isNotNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { readCurrentProfileCommonLoadHistory } from "../application/activities/read-current-profile-common-load-history";
 import { loadPlannedActivitiesWithEstimations } from "../application/home/plannedActivities";
-import { readParsedProfileTrainingSettings } from "../application/profile-settings/profileTrainingSettings";
+import { getEffectivePlanLoad } from "../application/training-plan";
+import {
+  getCurrentPlanningWeek,
+  getPlanningDateRange,
+} from "../application/training-plan/current-planning-week";
 import { getRequiredDb } from "../db";
 import {
   createActivityAnalysisStore,
@@ -75,6 +79,7 @@ const profileRowSchema = z
   .object({
     dob: z.date().nullable().optional(),
     gender: z.enum(["male", "female"]).nullable().optional(),
+    planning_timezone: z.string().nullable().optional(),
   })
   .strict();
 
@@ -183,6 +188,8 @@ const dashboardResponseSchema = z
         recentLoad: z.number(),
         loadBalance: z.number(),
         loadBalanceStatus: z.string(),
+        maturity: z.enum(["establishing_baseline", "provisional", "mature"]),
+        coverageStatus: z.enum(["complete", "partial"]),
       })
       .strict()
       .nullable(),
@@ -193,7 +200,8 @@ const dashboardResponseSchema = z
         tsb: z.number(),
         loadBalanceStatus: z.string(),
       })
-      .strict(),
+      .strict()
+      .nullable(),
     trainingLoadState: z
       .object({
         status: z.enum(["available", "unavailable"]),
@@ -258,7 +266,10 @@ const dashboardResponseSchema = z
           ctl: z.number(),
           atl: z.number(),
           tsb: z.number(),
-          plannedTss: z.number(),
+          /** @deprecated Common Load is the primary projected dose. */
+          plannedTss: z.number().nullable(),
+          plannedLoad: z.number(),
+          status: z.enum(["complete", "partial"]),
         })
         .strict(),
     ),
@@ -296,6 +307,46 @@ const dashboardResponseSchema = z
       .strict(),
   })
   .strict();
+
+/**
+ * Projects the common Load state from the server-owned effective plan composition.
+ * This deliberately has no estimated-TSS fallback: an unavailable plan composition
+ * means that the dashboard must abstain instead of inventing zero load.
+ */
+export function projectCommonLoad(input: {
+  current: { longTermLoad: number; recentLoad: number };
+  currentDate: string;
+  days: number;
+  sourceComplete?: boolean;
+  items: Array<{ date: string; commonLoad: { status: string; load?: number | null } }>;
+}) {
+  const plannedByDate = new Map<string, number>();
+  let complete = input.sourceComplete ?? true;
+  for (const item of input.items) {
+    if (item.commonLoad.status === "unavailable" || item.commonLoad.load === null) return null;
+    if (typeof item.commonLoad.load !== "number") return null;
+    if (item.commonLoad.status !== "complete") complete = false;
+    plannedByDate.set(item.date, (plannedByDate.get(item.date) ?? 0) + item.commonLoad.load);
+  }
+
+  let longTermLoad = input.current.longTermLoad;
+  let recentLoad = input.current.recentLoad;
+  return Array.from({ length: input.days }, (_, index) => {
+    const date = addDaysDateOnlyUtc(input.currentDate, index + 1);
+    const plannedLoad = plannedByDate.get(date) ?? 0;
+    longTermLoad += (plannedLoad - longTermLoad) / 42;
+    recentLoad += (plannedLoad - recentLoad) / 7;
+    return {
+      date,
+      ctl: Math.round(longTermLoad * 10) / 10,
+      atl: Math.round(recentLoad * 10) / 10,
+      tsb: Math.round((longTermLoad - recentLoad) * 10) / 10,
+      plannedTss: null,
+      plannedLoad: Math.round(plannedLoad * 10) / 10,
+      status: complete ? ("complete" as const) : ("partial" as const),
+    };
+  });
+}
 
 type DashboardTrainingPlanRow = Pick<TrainingPlanRow, "id" | "name" | "description" | "structure">;
 
@@ -424,20 +475,35 @@ export const homeRouter = createTRPCRouter({
         db,
         profileId: userId,
       });
-      const latestCommonLoadPoint =
-        commonLoadHistory.result.status === "available"
-          ? (commonLoadHistory.result.points.at(-1) ?? null)
-          : null;
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      const availableCommonLoadHistory =
+        commonLoadHistory.result.status === "available" ? commonLoadHistory.result : null;
+      const latestCommonLoadPoint = availableCommonLoadHistory?.points.at(-1) ?? null;
+      const now = new Date();
 
       const [rawProfile] = await db
-        .select({ dob: schema.profiles.dob, gender: schema.profiles.gender })
+        .select({
+          dob: schema.profiles.dob,
+          gender: schema.profiles.gender,
+          planning_timezone: schema.profiles.planning_timezone,
+        })
         .from(schema.profiles)
         .where(eq(schema.profiles.id, userId))
         .limit(1);
 
       const profile = rawProfile ? profileRowSchema.parse(rawProfile) : null;
+      const profileTimezone = profile?.planning_timezone?.trim();
+      const planningTimezone =
+        profileTimezone && isValidIanaTimeZone(profileTimezone) ? profileTimezone : "UTC";
+      const todayDate = getScheduledDateKey(now.toISOString(), planningTimezone);
+      // Presentation uses the profile-local midnight, while completed-activity
+      // reads extend through that same local day's end.
+      const todayRange = getPlanningDateRange({
+        startDate: todayDate,
+        endDate: todayDate,
+        timezone: planningTimezone,
+      });
+      const today = todayRange.startInstant;
+      const endOfToday = new Date(todayRange.endExclusiveInstant.getTime() - 1);
 
       const userAge = calculateAge(profile?.dob?.toISOString() ?? null);
       const userGender =
@@ -446,26 +512,23 @@ export const homeRouter = createTRPCRouter({
       const effectiveGender = featureFlags.personalizationGenderAdjustment ? userGender : undefined;
 
       // --- 1. Fetch Active Plan & Settings ---
-      const [rawNextPlannedEvent, profileSettingsData] = await Promise.all([
-        db
-          .select({
-            training_plan_id: schema.events.training_plan_id,
-            starts_at: schema.events.starts_at,
-          })
-          .from(schema.events)
-          .where(
-            and(
-              eq(schema.events.profile_id, userId),
-              eq(schema.events.event_type, "planned"),
-              gte(schema.events.starts_at, today),
-              isNotNull(schema.events.training_plan_id),
-            ),
-          )
-          .orderBy(asc(schema.events.starts_at))
-          .limit(1)
-          .then((rows) => rows[0] ?? null),
-        readParsedProfileTrainingSettings(db, userId),
-      ]);
+      const rawNextPlannedEvent = await db
+        .select({
+          training_plan_id: schema.events.training_plan_id,
+          starts_at: schema.events.starts_at,
+        })
+        .from(schema.events)
+        .where(
+          and(
+            eq(schema.events.profile_id, userId),
+            eq(schema.events.event_type, "planned"),
+            gte(schema.events.starts_at, today),
+            isNotNull(schema.events.training_plan_id),
+          ),
+        )
+        .orderBy(asc(schema.events.starts_at))
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
 
       const nextPlannedEvent = rawNextPlannedEvent
         ? nextPlannedEventRowSchema.parse(rawNextPlannedEvent)
@@ -494,31 +557,33 @@ export const homeRouter = createTRPCRouter({
       // For trends: Need 42 days of history + 42 days buffer for CTL seeding
       const trendDays = 42;
       const seedDays = 42;
-      const historyStart = new Date(today);
-      historyStart.setDate(today.getDate() - (trendDays + seedDays));
+      const historyStartDate = addDaysDateOnlyUtc(todayDate, -(trendDays + seedDays));
+      const historyStart = getPlanningDateRange({
+        startDate: historyStartDate,
+        endDate: historyStartDate,
+        timezone: planningTimezone,
+      }).startInstant;
+      const chartStartDate = addDaysDateOnlyUtc(todayDate, -trendDays);
 
-      const chartStart = new Date(today);
-      chartStart.setDate(today.getDate() - trendDays);
-
-      // For schedule: Next N days
-      const scheduleEnd = new Date(today);
-      scheduleEnd.setDate(today.getDate() + upcomingDays);
+      // For schedule: Next N days, bounded by profile-local calendar dates.
+      const scheduleEndDate = addDaysDateOnlyUtc(todayDate, upcomingDays);
+      const scheduleEnd = getPlanningDateRange({
+        startDate: scheduleEndDate,
+        endDate: scheduleEndDate,
+        timezone: planningTimezone,
+      }).startInstant;
 
       // For weekly summary: Current Week (Sun-Sat)
-      const startOfWeek = new Date(today);
-      startOfWeek.setDate(today.getDate() - today.getDay());
-      startOfWeek.setHours(0, 0, 0, 0);
-
-      const endOfWeek = new Date(startOfWeek);
-      endOfWeek.setDate(startOfWeek.getDate() + 6);
-      endOfWeek.setHours(23, 59, 59, 999);
+      const currentWeek = getCurrentPlanningWeek(now, planningTimezone);
+      const startOfWeek = currentWeek.startInstant;
+      const endOfWeek = new Date(currentWeek.endExclusiveInstant.getTime() - 1);
 
       // --- 3. Fetch Activities (Actual) ---
       // Fetching enough history for trends and current week stats
       const activities = await listDashboardActivitiesInRange(db, {
         profileId: userId,
         startedAtGte: historyStart,
-        startedAtLte: today,
+        startedAtLte: endOfToday,
       });
 
       const dynamicStressSeries = await buildDynamicStressSeries({
@@ -528,7 +593,6 @@ export const homeRouter = createTRPCRouter({
       });
       const {
         byActivityId: derivedActivityMap,
-        byDate: tssByDate,
         segmentSummaries = [],
         complete: hasCompleteTssSeries = false,
         seriesIdentity = null,
@@ -559,125 +623,48 @@ export const homeRouter = createTRPCRouter({
           startsAtLt: scheduleEnd,
         });
 
-      // --- 6. Calculate Fitness Trends (CTL/ATL/TSB) ---
-      const fitnessTrends = [];
-      let todayStatus = {
-        ctl: 0,
-        atl: 0,
-        tsb: 0,
-        loadBalanceStatus: "unknown",
-      };
-
-      // Apply Global CTL Override if enabled
-      const settings = profileSettingsData?.settings;
-      const baselineFitness = settings?.baseline_fitness;
-      let effectiveHistoryStart = historyStart;
-      let initialCTL = 0;
-      let initialATL = 0;
-
-      if (baselineFitness?.is_enabled && baselineFitness.override_date) {
-        const overrideDate = new Date(baselineFitness.override_date);
-        if (!Number.isNaN(overrideDate.getTime())) {
-          initialCTL = baselineFitness.override_ctl ?? 0;
-          initialATL = baselineFitness.override_atl ?? 0;
-
-          // If the override date is before our history start, we need to decay it up to history start
-          if (overrideDate < historyStart) {
-            const decayEnd = new Date(historyStart);
-            decayEnd.setDate(historyStart.getDate() - 1);
-            if (decayEnd >= overrideDate) {
-              const decayed = replayTrainingLoadByDate({
-                dailyTss: buildDailyTssByDateSeries({
-                  startDate: overrideDate.toISOString().split("T")[0]!,
-                  endDate: decayEnd.toISOString().split("T")[0]!,
-                  tssByDate: {},
-                }),
-                initialCTL,
-                initialATL,
-                userAge: effectiveAge,
-                userGender: effectiveGender,
-                trainingQuality: rollingTrainingQuality,
-              });
-              const lastDecayPoint = decayed.at(-1);
-              if (lastDecayPoint) {
-                initialCTL = lastDecayPoint.ctl;
-                initialATL = lastDecayPoint.atl;
-              }
-            }
-          } else if (overrideDate > historyStart && overrideDate <= today) {
-            // If the override date is within our window, we start calculating from the override date
-            effectiveHistoryStart = new Date(overrideDate);
-            // Clear any TSS before the override date to avoid double counting
-            for (const [dateStr] of tssByDate.entries()) {
-              if (new Date(dateStr) < overrideDate) {
-                tssByDate.delete(dateStr);
-              }
-            }
+      // --- 6. Primary fitness trends use the canonical daily common Load history. ---
+      const commonHistoryPoints =
+        commonLoadHistory.result.status === "available" ? commonLoadHistory.result.points : [];
+      const fitnessTrends = commonHistoryPoints
+        .filter((point) => point.date >= chartStartDate)
+        .map((point) => ({
+          date: point.date,
+          ctl: Math.round(point.longTermLoad * 10) / 10,
+          atl: Math.round(point.recentLoad * 10) / 10,
+          tsb: Math.round(point.loadBalance * 10) / 10,
+        }));
+      const currentCTL = latestCommonLoadPoint?.longTermLoad ?? 0;
+      const currentATL = latestCommonLoadPoint?.recentLoad ?? 0;
+      const todayStatus = latestCommonLoadPoint
+        ? {
+            ctl: Math.round(latestCommonLoadPoint.longTermLoad * 10) / 10,
+            atl: Math.round(latestCommonLoadPoint.recentLoad * 10) / 10,
+            tsb: Math.round(latestCommonLoadPoint.loadBalance * 10) / 10,
+            loadBalanceStatus: getLoadBalanceStatus(latestCommonLoadPoint.loadBalance),
           }
-        }
-      }
-
-      const historicalReplay =
-        hasCompleteTssSeries && seriesIdentity
-          ? replayTrainingLoadByDate({
-              dailyTss: buildDailyTssByDateSeries({
-                startDate: effectiveHistoryStart.toISOString().split("T")[0]!,
-                endDate: today.toISOString().split("T")[0]!,
-                tssByDate,
-              }),
-              initialCTL,
-              initialATL,
-              userAge: effectiveAge,
-              userGender: effectiveGender,
-              trainingQuality: rollingTrainingQuality,
-            })
-          : [];
-
-      for (const point of historicalReplay) {
-        const date = new Date(`${point.date}T00:00:00.000Z`);
-        if (date >= chartStart) {
-          fitnessTrends.push({
-            date: point.date,
-            ctl: Math.round(point.ctl * 10) / 10,
-            atl: Math.round(point.atl * 10) / 10,
-            tsb: Math.round(point.tsb * 10) / 10,
-          });
-        }
-
-        if (point.date === today.toISOString().split("T")[0]) {
-          const loadBalanceStatus = getLoadBalanceStatus(point.tsb);
-          todayStatus = {
-            ctl: Math.round(point.ctl * 10) / 10,
-            atl: Math.round(point.atl * 10) / 10,
-            tsb: Math.round(point.tsb * 10) / 10,
-            loadBalanceStatus,
-          };
-        }
-      }
-
-      const latestHistoricalLoad = historicalReplay.at(-1);
-      const currentCTL = latestHistoricalLoad?.ctl ?? initialCTL;
-      const currentATL = latestHistoricalLoad?.atl ?? initialATL;
+        : null;
 
       // --- 7. Calculate Consistency (Streak) ---
       // Iterate backwards from yesterday
       let streak = 0;
       const uniqueActivityDays = new Set(
         activities
-          .map((activity) => activity.started_at.toISOString().split("T")[0])
+          .map((activity) =>
+            getScheduledDateKey(activity.started_at.toISOString(), planningTimezone),
+          )
           .filter(Boolean),
       );
       // Check today
-      if (uniqueActivityDays.has(today.toISOString().split("T")[0])) {
+      if (uniqueActivityDays.has(todayDate)) {
         streak++;
       }
       // Check previous days
-      const checkDate = new Date(today);
-      checkDate.setDate(checkDate.getDate() - 1);
+      let checkDate = addDaysDateOnlyUtc(todayDate, -1);
       while (true) {
-        if (uniqueActivityDays.has(checkDate.toISOString().split("T")[0])) {
+        if (uniqueActivityDays.has(checkDate)) {
           streak++;
-          checkDate.setDate(checkDate.getDate() - 1);
+          checkDate = addDaysDateOnlyUtc(checkDate, -1);
         } else {
           break;
         }
@@ -686,8 +673,11 @@ export const homeRouter = createTRPCRouter({
       // --- 8. Weekly Summary (Planned vs Actual) ---
       // Actuals
       const weeklyActuals = activities.filter((activity) => {
-        const d = new Date(activity.started_at);
-        return d >= startOfWeek && d <= endOfWeek;
+        const activityDate = getScheduledDateKey(
+          activity.started_at.toISOString(),
+          planningTimezone,
+        );
+        return activityDate >= currentWeek.startDate && activityDate <= currentWeek.endDate;
       });
       const weeklyActualLoad = summarizeSegmentTss(
         segmentSummaries,
@@ -707,8 +697,8 @@ export const homeRouter = createTRPCRouter({
       };
 
       // Planned
-      const startOfWeekStr = startOfWeek.toISOString().split("T")[0]!;
-      const endOfWeekStr = endOfWeek.toISOString().split("T")[0]!;
+      const startOfWeekStr = currentWeek.startDate;
+      const endOfWeekStr = currentWeek.endDate;
 
       const weeklyPlanned = activitiesWithEstimations.filter((pa: any) => {
         const scheduledDate = pa.scheduled_date?.split("T")[0];
@@ -737,8 +727,12 @@ export const homeRouter = createTRPCRouter({
       };
 
       // --- 9. Current Workload Envelopes (ACWR/Monotony) ---
-      const workloadWindowStart = new Date(today);
-      workloadWindowStart.setDate(today.getDate() - 27);
+      const workloadWindowStartDate = addDaysDateOnlyUtc(todayDate, -27);
+      const workloadWindowStart = getPlanningDateRange({
+        startDate: workloadWindowStartDate,
+        endDate: workloadWindowStartDate,
+        timezone: planningTimezone,
+      }).startInstant;
       const workload = buildWorkloadEnvelopes(
         activities.map((activity) => ({
           started_at: activity.started_at.toISOString(),
@@ -750,7 +744,7 @@ export const homeRouter = createTRPCRouter({
       );
 
       // --- 10. Schedule (Future) ---
-      const todayStr = today.toISOString().split("T")[0]!;
+      const todayStr = todayDate;
 
       // Check which planned activities have been completed by matching with actual activities
       const completedActivityMap = new Map<string, boolean>();
@@ -758,14 +752,15 @@ export const homeRouter = createTRPCRouter({
         if (!pa.scheduled_date) return;
         const paDate = pa.scheduled_date.split("T")[0];
         const hasActivity = activities.some(
-          (activity) => activity.started_at.toISOString().split("T")[0] === paDate,
+          (activity) =>
+            getScheduledDateKey(activity.started_at.toISOString(), planningTimezone) === paDate,
         );
         if (hasActivity) {
           completedActivityMap.set(pa.id, true);
         }
       });
 
-      const scheduleEndStr = scheduleEnd.toISOString().split("T")[0]!;
+      const scheduleEndStr = scheduleEndDate;
 
       const schedule = activitiesWithEstimations
         .filter((pa: any) => {
@@ -827,56 +822,37 @@ export const homeRouter = createTRPCRouter({
 
       // --- 11. Calculate Projected Fitness (Future CTL based on plan) ---
       const projectionDays = 42; // Project 42 days into future
-      const projectionEnd = new Date(today);
-      projectionEnd.setDate(today.getDate() + projectionDays);
-
-      // Fetch future planned activities for projection
-      const { activitiesWithEstimations: futureWithEstimations } =
-        await loadPlannedActivitiesWithEstimations(db, {
-          estimationStore,
-          profileId: userId,
-          startsAtGte: today,
-          startsAtLt: projectionEnd,
-        });
-
-      const projectedLoad = [];
-
-      // Create map of future TSS by date
-      const futureTssByDate = new Map<string, number>();
-      futureWithEstimations.forEach((pa) => {
-        if (!pa.scheduled_date) return;
-        const dateStr = pa.scheduled_date.split("T")[0]!; // Non-null assertion after check
-        const tss = readActivityPlanMetrics(pa.activity_plan).estimated_tss ?? 0;
-        futureTssByDate.set(dateStr, (futureTssByDate.get(dateStr) || 0) + tss);
-      });
-
-      const projectionReplay =
-        hasCompleteTssSeries && seriesIdentity
-          ? replayTrainingLoadByDate({
-              dailyTss: buildDailyTssByDateSeries({
-                startDate: new Date(today.getTime() + 24 * 60 * 60 * 1000)
-                  .toISOString()
-                  .split("T")[0]!,
-                endDate: projectionEnd.toISOString().split("T")[0]!,
-                tssByDate: futureTssByDate,
-              }),
-              initialCTL: currentCTL,
-              initialATL: currentATL,
-              userAge: effectiveAge,
-              userGender: effectiveGender,
-              trainingQuality: rollingTrainingQuality,
+      const projectionStartDate = commonLoadHistory.currentPlanningDate;
+      const projectionEndDate = projectionStartDate
+        ? addDaysDateOnlyUtc(projectionStartDate, projectionDays)
+        : null;
+      const effectiveProjection =
+        projectionStartDate && projectionEndDate
+          ? await getEffectivePlanLoad({
+              db,
+              profileId: userId,
+              repository: estimationStore,
+              request: { startDate: projectionStartDate, endDate: projectionEndDate },
             })
+          : null;
+      // Missing history or an unavailable effective plan intentionally produces no curve.
+      // In particular, missing planned Load is not treated as a rest day.
+      const projectedLoad =
+        latestCommonLoadPoint &&
+        projectionStartDate &&
+        effectiveProjection?.status === "available" &&
+        effectiveProjection.effective.status === "available"
+          ? (projectCommonLoad({
+              current: {
+                longTermLoad: latestCommonLoadPoint.longTermLoad,
+                recentLoad: latestCommonLoadPoint.recentLoad,
+              },
+              currentDate: projectionStartDate,
+              days: projectionDays,
+              sourceComplete: effectiveProjection.effective.firm.status === "complete",
+              items: effectiveProjection.effective.firmItems,
+            }) ?? [])
           : [];
-
-      for (const point of projectionReplay) {
-        projectedLoad.push({
-          date: point.date,
-          ctl: Math.round(point.ctl * 10) / 10,
-          atl: Math.round(point.atl * 10) / 10,
-          tsb: Math.round(point.tsb * 10) / 10,
-          plannedTss: point.tss,
-        });
-      }
 
       // --- 12. Calculate Ideal CTL Curve from Training Plan ---
       // This creates the "where you should be" line based on periodization
@@ -896,6 +872,7 @@ export const homeRouter = createTRPCRouter({
 
           if (targetCTL && targetDateStr) {
             const targetDate = new Date(targetDateStr);
+            const targetDateKey = targetDateStr.slice(0, 10);
 
             // Set goal metrics for display
             goalMetrics = {
@@ -906,18 +883,18 @@ export const homeRouter = createTRPCRouter({
 
             // Calculate the ideal curve from chart start to target date
             // This shows where user should be at each point in time
-            const curveStart = chartStart < new Date() ? chartStart : new Date();
+            const curveStart = chartStartDate < todayDate ? chartStartDate : todayDate;
             const daysToTarget = Math.floor(
-              (targetDate.getTime() - curveStart.getTime()) / (1000 * 60 * 60 * 24),
+              (new Date(`${targetDateKey}T00:00:00.000Z`).getTime() -
+                new Date(`${curveStart}T00:00:00.000Z`).getTime()) /
+                (1000 * 60 * 60 * 24),
             );
 
             if (daysToTarget > 0) {
               let idealCTL = startingCTL;
 
               for (let i = 0; i <= daysToTarget && i <= trendDays + projectionDays; i++) {
-                const date = new Date(curveStart);
-                date.setDate(curveStart.getDate() + i);
-                const dateStr = date.toISOString().split("T")[0]!;
+                const dateStr = addDaysDateOnlyUtc(curveStart, i);
 
                 // Calculate ideal CTL progression using exponential growth
                 // CTL should increase by rampRate per week
@@ -930,8 +907,7 @@ export const homeRouter = createTRPCRouter({
                 }
 
                 // Only add points that are in our display range
-                const dateObj = new Date(dateStr);
-                if (dateObj >= chartStart) {
+                if (dateStr >= chartStartDate) {
                   idealFitnessCurve.push({
                     date: dateStr,
                     ctl: Math.round(idealCTL * 10) / 10,
@@ -959,24 +935,42 @@ export const homeRouter = createTRPCRouter({
           : null;
       const weeklyActivityIds = new Set(
         activities
-          .filter(
-            (activity) => activity.started_at >= startOfWeek && activity.started_at <= endOfWeek,
-          )
+          .filter((activity) => {
+            const activityDate = getScheduledDateKey(
+              activity.started_at.toISOString(),
+              planningTimezone,
+            );
+            return activityDate >= currentWeek.startDate && activityDate <= currentWeek.endDate;
+          })
           .map((activity) => activity.id),
       );
+      const unavailableWeeklyEnvelope = () =>
+        commonLoadResultSchema.parse({
+          status: "unavailable",
+          model: "gradientpeak_relative_load",
+          version: "1",
+          sport: "other",
+          method: null,
+          quality: null,
+          thresholdEvidence: null,
+          evidenceFingerprint: null,
+          computedAsOf: new Date().toISOString(),
+          contributingDurationSeconds: null,
+          reason: "activity_data_missing",
+        });
       const weeklyActualCommonLoad = aggregateCommonLoadEnvelopes(
-        segmentSummaries.flatMap((summary) => {
-          if (!weeklyActivityIds.has(summary.activity_id)) return [];
-          const envelope = readCommonLoadEnvelope(summary.common_load);
-          return envelope === null ? [] : [envelope];
-        }),
+        [...weeklyActivityIds].map(
+          (activityId) =>
+            readCommonLoadEnvelope(derivedActivityMap.get(activityId)?.common_load) ??
+            unavailableWeeklyEnvelope(),
+        ),
       );
       const weeklyPlannedCommonLoad = aggregateCommonLoadEnvelopes(
-        weeklyPlanned.flatMap((plannedActivity) => {
+        weeklyPlanned.map((plannedActivity) => {
           const envelope = readCommonLoadEnvelope(
             (plannedActivity.activity_plan as { common_load?: unknown } | null)?.common_load,
           );
-          return envelope === null ? [] : [envelope];
+          return envelope ?? unavailableWeeklyEnvelope();
         }),
       );
 
@@ -996,13 +990,15 @@ export const homeRouter = createTRPCRouter({
           : null,
         commonLoadHistory: commonLoadHistory.result,
         currentLoadStatus:
-          latestCommonLoadPoint === null
+          latestCommonLoadPoint === null || availableCommonLoadHistory === null
             ? null
             : {
                 longTermLoad: latestCommonLoadPoint.longTermLoad,
                 recentLoad: latestCommonLoadPoint.recentLoad,
                 loadBalance: latestCommonLoadPoint.loadBalance,
                 loadBalanceStatus: getLoadBalanceStatus(latestCommonLoadPoint.loadBalance),
+                maturity: availableCommonLoadHistory.maturity.status,
+                coverageStatus: availableCommonLoadHistory.coverageStatus,
               },
         currentStatus: todayStatus,
         trainingLoadState: {

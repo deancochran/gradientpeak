@@ -9,6 +9,7 @@ import type {
   activityPlans,
   activityRoutes,
   activitySegments,
+  activitySessionRpeEvidence,
   coachesAthletes,
   coachingInvitations,
   comments,
@@ -135,6 +136,9 @@ export type ContentAccessGrantInsert = InferInsertModel<typeof contentAccessGran
 
 export type ActivityEffortRow = InferSelectModel<typeof activityEfforts>;
 export type ActivityEffortInsert = InferInsertModel<typeof activityEfforts>;
+
+export type ActivitySessionRpeEvidenceRow = InferSelectModel<typeof activitySessionRpeEvidence>;
+export type ActivitySessionRpeEvidenceInsert = InferInsertModel<typeof activitySessionRpeEvidence>;
 
 export type IntegrationRow = InferSelectModel<typeof integrations>;
 export type IntegrationInsert = InferInsertModel<typeof integrations>;

@@ -11,7 +11,7 @@ const mockCommonLoad = {
   sport: "bike" as const,
   method: "power_threshold" as const,
   load: 50,
-  intensity: 1,
+  intensity: Math.SQRT1_2,
   contributingDurationSeconds: 1800,
   quality: {
     source: "validated_test" as const,
@@ -102,6 +102,78 @@ let mockDailyCommonLoadObservations: Array<
 const mockDailyTssRefetch = jest.fn(async () => undefined);
 const mockActivePlanRefetch = jest.fn(async () => undefined);
 const mockExpandedActualCurveRefetch = jest.fn(async () => undefined);
+const mockEffectivePlanLoadRefetch = jest.fn(async () => undefined);
+const mockEffectiveLoadAggregate = {
+  model: "gradientpeak_relative_load" as const,
+  version: "1" as const,
+  status: "complete" as const,
+  load: 50,
+  intensity: 1,
+  contributingDurationSeconds: 3600,
+  knownDurationSeconds: 3600,
+  contributingActivityCount: 1,
+  partialActivityCount: 0,
+  unavailableActivityCount: 0,
+  unknownDurationActivityCount: 0,
+  totalActivityCount: 1,
+  activityCountCoverage: 1,
+  knownDurationCoverage: 1,
+};
+const mockEffectiveLoadResponseUnavailable = {
+  status: "unavailable" as const,
+  reason: "planning_timezone_missing" as const,
+  model: "gradientpeak_relative_load" as const,
+  version: "1" as const,
+  sourceCounts: { activities: 0, events: 0 },
+  resolvedRange: { startDate: null, endDate: null, timezone: null },
+  sourceCoverage: { activities: null, scheduledItems: null },
+};
+function buildAvailableEffectiveLoadResponse(input?: {
+  firmItems?: Array<Record<string, unknown>>;
+  firmStatus?: "complete" | "partial";
+}) {
+  const firmStatus = input?.firmStatus ?? "complete";
+  const firm = {
+    ...mockEffectiveLoadAggregate,
+    status: firmStatus,
+    partialActivityCount: firmStatus === "partial" ? 1 : 0,
+  };
+  return {
+    status: "available" as const,
+    completed: firm,
+    remaining: firm,
+    tentative: { ...firm, status: "known_zero" as const, load: 0, intensity: null },
+    effective: {
+      status: "available" as const,
+      periodStartDate: "2026-03-30",
+      periodEndDate: "2026-04-12",
+      planningDate: "2026-04-06",
+      firmItems: input?.firmItems ?? [],
+      tentativeItems: [],
+      firm,
+      tentative: { ...firm, status: "known_zero" as const, load: 0, intensity: null },
+      includingTentative: firm,
+    },
+    model: "gradientpeak_relative_load" as const,
+    version: "1" as const,
+    sourceCounts: { activities: 1, events: 1 },
+    resolvedRange: {
+      startDate: "2026-03-30",
+      endDate: "2026-04-12",
+      timezone: "America/Los_Angeles",
+    },
+    sourceCoverage: {
+      activities: { startDate: "2026-03-30", endDate: "2026-04-12", status: firmStatus },
+      scheduledItems: { startDate: "2026-03-30", endDate: "2026-04-12", status: firmStatus },
+    },
+  };
+}
+let mockEffectivePlanLoadResponse: Record<string, unknown> = mockEffectiveLoadResponseUnavailable;
+const mockEffectivePlanLoadUseQuery = jest.fn((_input?: unknown, _options?: unknown) => ({
+  ...queryResult,
+  data: mockEffectivePlanLoadResponse,
+  refetch: mockEffectivePlanLoadRefetch,
+}));
 const mockExpandedActualCurveUseQuery = jest.fn((_input?: unknown, _options?: unknown) => ({
   ...queryResult,
   data: { dataPoints: [] },
@@ -146,6 +218,10 @@ jest.mock("@/lib/api", () => ({
       getActualCurve: {
         useQuery: (input: unknown, options: unknown) =>
           mockExpandedActualCurveUseQuery(input, options),
+      },
+      getEffectiveLoad: {
+        useQuery: (input: unknown, options: unknown) =>
+          mockEffectivePlanLoadUseQuery(input, options),
       },
     },
     events: {
@@ -366,12 +442,18 @@ describe("usePlanTrainingPathData", () => {
     mockResolvedWeekWindow = { start: "2026-03-30", end: "2026-04-12" };
     mockSelectedWeekSummary = null;
     mockDailyCommonLoadObservations = [];
+    mockEffectivePlanLoadResponse = mockEffectiveLoadResponseUnavailable;
     queryResult = buildQueryResult();
     paginatedQueryResult = buildPaginatedQueryResult();
     snapshot = buildSnapshot();
     mockEventsListUseQuery.mockImplementation(() => paginatedQueryResult);
     mockGroupEventsUseQuery.mockImplementation(() => paginatedQueryResult);
     mockCompletedActivitiesUseInfiniteQuery.mockImplementation(() => paginatedQueryResult);
+    mockEffectivePlanLoadUseQuery.mockImplementation(() => ({
+      ...queryResult,
+      data: mockEffectivePlanLoadResponse,
+      refetch: mockEffectivePlanLoadRefetch,
+    }));
     mockUseTrainingPlanSnapshot.mockReturnValue(snapshot);
     mockUsePlanDashboardViewModel.mockImplementation(
       ({ snapshot: dashboardSnapshot }: { snapshot: typeof snapshot }) => ({
@@ -506,6 +588,22 @@ describe("usePlanTrainingPathData", () => {
         scheduled_load_tss: 0,
       },
     ]);
+    mockEffectivePlanLoadResponse = buildAvailableEffectiveLoadResponse({
+      firmItems: [
+        {
+          kind: "completed",
+          date: "2026-04-06",
+          completedActivityId: "activity-1",
+          commonLoad: mockEffectiveLoadAggregate,
+        },
+        {
+          kind: "completed",
+          date: "2026-04-07",
+          completedActivityId: "activity-2",
+          commonLoad: mockEffectiveLoadAggregate,
+        },
+      ],
+    });
 
     const { result } = renderHook(() => usePlanTrainingPathData());
 
@@ -514,7 +612,7 @@ describe("usePlanTrainingPathData", () => {
         date: "2026-04-06",
         effectiveLoadStatus: "complete",
         effectiveLoad: 50,
-        effectiveIntensity: 1,
+        effectiveIntensity: Math.SQRT1_2,
         effectiveCompletedLoad: 50,
         effectiveRemainingLoad: null,
       }),
@@ -522,7 +620,7 @@ describe("usePlanTrainingPathData", () => {
         date: "2026-04-07",
         effectiveLoadStatus: "complete",
         effectiveLoad: 50,
-        effectiveIntensity: 1,
+        effectiveIntensity: Math.SQRT1_2,
         effectiveCompletedLoad: 50,
         effectiveRemainingLoad: null,
       }),
@@ -531,7 +629,7 @@ describe("usePlanTrainingPathData", () => {
       expect.objectContaining({
         effectiveLoadStatus: "complete",
         effectiveLoad: 100,
-        effectiveIntensity: 1,
+        effectiveIntensity: Math.SQRT1_2,
         effectiveCompletedLoad: 100,
         effectiveRemainingLoad: null,
       }),

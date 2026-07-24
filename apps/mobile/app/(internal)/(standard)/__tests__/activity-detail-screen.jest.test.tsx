@@ -44,13 +44,14 @@ const activityData = {
   },
   derived: {
     stress: {
+      method: "run_pace_threshold",
       common_load: {
         status: "available" as const,
         model: "gradientpeak_relative_load" as const,
         version: "1" as const,
         sport: "run" as const,
         method: "run_pace_threshold" as const,
-        load: 84,
+        load: (3120 / 3600) * 0.88 ** 2 * 100,
         intensity: 0.88,
         contributingDurationSeconds: 3120,
         estimated: false,
@@ -75,6 +76,7 @@ const activityData = {
           calculationVersion: "threshold-v1",
           sourceFingerprint: "run-threshold",
         },
+        sessionRpeEvidence: null,
         evidenceFingerprint: "run-activity",
         computedAsOf: "2026-03-23T09:00:00.000Z",
       },
@@ -319,6 +321,10 @@ jest.mock("@/components/activity", () => ({
   ActivityPlanComparison: createHost("ActivityPlanComparison"),
   ZoneDistributionCard: createHost("ZoneDistributionCard"),
 }));
+jest.mock("@/components/activity/SessionRpeCard", () => ({
+  __esModule: true,
+  SessionRpeCard: createHost("SessionRpeCard"),
+}));
 jest.mock("@/components/activity/charts/ElevationProfileChart", () => ({
   __esModule: true,
   ElevationProfileChart: createHost("ElevationProfileChart"),
@@ -473,9 +479,9 @@ describe("activity detail screen", () => {
     expect(screen.getAllByText("10.4 km").length).toBeGreaterThan(0);
     expect(screen.getByText("Elapsed")).toBeTruthy();
     expect(screen.getAllByText("52:00").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Run-pace Load").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("84").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Run-pace Intensity").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Load").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("67").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Intensity").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/0\.88/).length).toBeGreaterThan(0);
     expect(unsafeRendered.UNSAFE_getAllByType("ZoneDistributionCard")[0]?.props.zones).toEqual(
       expect.arrayContaining([

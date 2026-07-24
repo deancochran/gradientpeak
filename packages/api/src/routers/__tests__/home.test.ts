@@ -1,5 +1,6 @@
 import { defaultAthletePreferenceProfile } from "@repo/core";
 import { schema } from "@repo/db";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const homeMocks = vi.hoisted(() => ({
@@ -20,6 +21,7 @@ const homeMocks = vi.hoisted(() => ({
   createEventReadRepository: vi.fn(),
   getActivityPlansDerivedMetrics: vi.fn(),
   getLoadBalanceStatus: vi.fn(),
+  getEffectivePlanLoad: vi.fn(),
   loadActivitySegmentsByActivityId: vi.fn(),
   replayTrainingLoadByDate: vi.fn(),
   readCurrentProfileCommonLoadHistory: vi.fn(),
@@ -46,6 +48,10 @@ vi.mock("@repo/core/load", async (importOriginal) => {
 
 vi.mock("../../application/activities/read-current-profile-common-load-history", () => ({
   readCurrentProfileCommonLoadHistory: homeMocks.readCurrentProfileCommonLoadHistory,
+}));
+
+vi.mock("../../application/training-plan", () => ({
+  getEffectivePlanLoad: homeMocks.getEffectivePlanLoad,
 }));
 
 vi.mock("../../infrastructure/repositories", () => ({
@@ -99,6 +105,7 @@ function getTableName(table: unknown): TableName {
 }
 
 function createDbMock(plan: DbPlan = {}) {
+  const whereCalls: Array<{ table: TableName; where: unknown }> = [];
   const selectQueues = {
     profiles: [...(plan.select?.profiles ?? [])],
     events: [...(plan.select?.events ?? [])],
@@ -119,7 +126,10 @@ function createDbMock(plan: DbPlan = {}) {
         },
         innerJoin: () => builder,
         leftJoin: () => builder,
-        where: () => builder,
+        where: (where: unknown) => {
+          if (tableName) whereCalls.push({ table: tableName, where });
+          return builder;
+        },
         orderBy: () => builder,
         limit: () => builder,
         then: (onFulfilled: (rows: unknown[]) => unknown) => {
@@ -135,7 +145,7 @@ function createDbMock(plan: DbPlan = {}) {
     }),
   };
 
-  return db;
+  return { ...db, whereCalls };
 }
 
 function createCaller(plan: DbPlan = {}) {
@@ -188,6 +198,25 @@ function buildActivityPlan(id: string, name: string, category: "bike" | "run") {
   };
 }
 
+function completeCommonLoad(load: number, contributingDurationSeconds: number) {
+  return {
+    model: "gradientpeak_relative_load" as const,
+    version: "1" as const,
+    status: "complete" as const,
+    load,
+    intensity: Math.sqrt(load / (100 * (contributingDurationSeconds / 3600))),
+    contributingDurationSeconds,
+    knownDurationSeconds: contributingDurationSeconds,
+    contributingActivityCount: 1,
+    partialActivityCount: 0,
+    unavailableActivityCount: 0,
+    unknownDurationActivityCount: 0,
+    totalActivityCount: 1,
+    activityCountCoverage: 1,
+    knownDurationCoverage: 1,
+  };
+}
+
 describe("homeRouter", () => {
   beforeEach(() => {
     homeMocks.readCurrentProfileCommonLoadHistory.mockResolvedValue({
@@ -200,6 +229,13 @@ describe("homeRouter", () => {
         reason: "insufficient_history",
         context: { requiredDays: 84, receivedDays: 0 },
       },
+    });
+    homeMocks.getEffectivePlanLoad.mockResolvedValue({
+      status: "unavailable",
+      reason: "planning_timezone_missing",
+      model: "gradientpeak_relative_load",
+      version: "1",
+      sourceCounts: { activities: 0, events: 0 },
     });
     homeMocks.loadActivitySegmentsByActivityId.mockImplementation(
       async (_db: unknown, activityIds: string[]) =>
@@ -228,17 +264,27 @@ describe("homeRouter", () => {
     homeMocks.createActivityAnalysisStore.mockReturnValue({ kind: "analysis-store" });
     homeMocks.buildDynamicStressSeries.mockResolvedValue({
       byActivityId: new Map([
-        ["activity-today", { tss: 50, intensity_factor: 0.9 }],
-        ["activity-yesterday", { tss: 30, intensity_factor: 0.82 }],
+        [
+          "activity-today",
+          { tss: 50, intensity_factor: 0.9, common_load: completeCommonLoad(50, 3600) },
+        ],
+        [
+          "activity-yesterday",
+          { tss: 30, intensity_factor: 0.82, common_load: completeCommonLoad(30, 1800) },
+        ],
       ]),
       byDate: new Map([
         ["2026-04-02", 30],
         ["2026-04-03", 50],
       ]),
       segmentSummaries: [
-        { activity_id: "activity-yesterday", tss: 30 },
-        { activity_id: "activity-today", tss: 20 },
-        { activity_id: "activity-today", tss: 30 },
+        {
+          activity_id: "activity-yesterday",
+          tss: 30,
+          common_load: completeCommonLoad(30, 1800),
+        },
+        { activity_id: "activity-today", tss: 20, common_load: completeCommonLoad(20, 1800) },
+        { activity_id: "activity-today", tss: 30, common_load: completeCommonLoad(30, 1800) },
       ],
       complete: true,
       seriesIdentity: {
@@ -261,16 +307,6 @@ describe("homeRouter", () => {
       monotony: { current: 1.4 },
       strain: { current: 280 },
     });
-    homeMocks.buildDailyTssByDateSeries.mockImplementation(({ tssByDate }) => tssByDate);
-    homeMocks.replayTrainingLoadByDate
-      .mockReturnValueOnce([
-        { date: "2026-04-02", ctl: 40.4, atl: 46.5, tsb: -6.1, tss: 30 },
-        { date: "2026-04-03", ctl: 42.2, atl: 51.1, tsb: -8.9, tss: 50 },
-      ])
-      .mockReturnValueOnce([
-        { date: "2026-04-04", ctl: 43.1, atl: 49.3, tsb: -6.2, tss: 90 },
-        { date: "2026-04-05", ctl: 44.6, atl: 48.2, tsb: -3.6, tss: 60 },
-      ]);
 
     const { caller } = createCaller({
       select: {
@@ -403,9 +439,8 @@ describe("homeRouter", () => {
 
     const result = await caller.getDashboard({ days: 2 });
 
-    expect(homeMocks.replayTrainingLoadByDate).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({ initialCTL: 55, initialATL: 60 }),
+    expect(homeMocks.getEffectivePlanLoad).toHaveBeenCalledWith(
+      expect.objectContaining({ request: { startDate: "2026-04-03", endDate: "2026-05-15" } }),
     );
 
     expect(result.activePlan).toEqual({
@@ -414,19 +449,20 @@ describe("homeRouter", () => {
       phase: "build",
       targetType: "power",
     });
-    expect(result.currentStatus).toEqual({
-      ctl: 42.2,
-      atl: 51.1,
-      tsb: -8.9,
-      loadBalanceStatus: "negative_balance",
-    });
+    expect(result.currentStatus).toBeNull();
     expect(result.consistency).toEqual({ streak: 2, weeklyCount: 2 });
     expect(result.weeklySummary).toMatchObject({
       actual: { distance: 25, duration: 5400, tss: 80, tssComplete: true, count: 2 },
       planned: { distance: 32, duration: 6000, tss: 150, count: 2 },
       adherence: 53,
       commonLoad: {
-        actual: { status: "unavailable", reason: "no_load_data" },
+        actual: {
+          status: "complete",
+          load: 80,
+          totalActivityCount: 2,
+          contributingActivityCount: 2,
+          activityCountCoverage: 1,
+        },
         planned: { status: "unavailable", reason: "no_load_data" },
       },
     });
@@ -476,10 +512,8 @@ describe("homeRouter", () => {
         intensity: null,
       }),
     );
-    expect(result.projectedLoad).toEqual([
-      { date: "2026-04-04", ctl: 43.1, atl: 49.3, tsb: -6.2, plannedTss: 90 },
-      { date: "2026-04-05", ctl: 44.6, atl: 48.2, tsb: -3.6, plannedTss: 60 },
-    ]);
+    expect(result.projectedLoad).toEqual([]);
+    expect(homeMocks.replayTrainingLoadByDate).not.toHaveBeenCalled();
     expect(result).not.toHaveProperty("projectedFitness");
     expect(JSON.stringify(result)).not.toMatch(/productive|fatigued|overreach/i);
     expect(result.goalMetrics).toEqual({
@@ -498,7 +532,117 @@ describe("homeRouter", () => {
       user_gender: "female",
       training_quality: 0.84,
     });
-    expect(homeMocks.getActivityPlansDerivedMetrics).toHaveBeenCalledTimes(2);
+    expect(homeMocks.getActivityPlansDerivedMetrics).toHaveBeenCalledOnce();
+  });
+
+  it("includes activities completed after presentation midnight on the profile's current day", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-03T18:00:00.000Z"));
+    homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
+    homeMocks.createActivityAnalysisStore.mockReturnValue({ kind: "analysis-store" });
+    homeMocks.buildDynamicStressSeries.mockResolvedValue({
+      byActivityId: new Map(),
+      segmentSummaries: [],
+      complete: false,
+      seriesIdentity: null,
+    });
+    homeMocks.buildWorkloadEnvelopes.mockReturnValue({ acwr: {}, monotony: {} });
+
+    const { caller, db } = createCaller({
+      select: {
+        profiles: [[{ dob: null, gender: null, planning_timezone: "America/Los_Angeles" }]],
+        events: [[], [], []],
+        activities: [[]],
+      },
+    });
+
+    await caller.getDashboard({ days: 1 });
+
+    const activityQuery = new PgDialect().sqlToQuery(
+      db.whereCalls.find((call: { table: TableName }) => call.table === "activities")?.where as any,
+    );
+    expect(
+      activityQuery.params.some(
+        (param) =>
+          (param instanceof Date ? param.getTime() : Date.parse(String(param))) ===
+          new Date("2026-04-04T06:59:59.999Z").getTime(),
+      ),
+    ).toBe(true);
+  });
+
+  it("uses profile-local date keys for an east-of-UTC dashboard day", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-03T15:30:00.000Z"));
+    homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
+    homeMocks.createActivityAnalysisStore.mockReturnValue({ kind: "analysis-store" });
+    homeMocks.buildDynamicStressSeries.mockResolvedValue({
+      byActivityId: new Map([
+        ["activity-local-today", { tss: 50, common_load: completeCommonLoad(50, 3600) }],
+      ]),
+      segmentSummaries: [
+        {
+          activity_id: "activity-local-today",
+          tss: 50,
+          common_load: completeCommonLoad(50, 3600),
+        },
+      ],
+      complete: true,
+      seriesIdentity: { sport: "bike", method: "power_threshold" },
+    });
+    homeMocks.buildWorkloadEnvelopes.mockReturnValue({ acwr: {}, monotony: {} });
+    homeMocks.getActivityPlansDerivedMetrics.mockImplementation(async (plans: Array<any>) => plans);
+
+    const { caller } = createCaller({
+      select: {
+        profiles: [[{ dob: null, gender: null, planning_timezone: "Asia/Tokyo" }]],
+        events: [
+          [],
+          [
+            {
+              id: "planned-local-today",
+              starts_at: new Date("2026-04-03T15:00:00.000Z"),
+              notes: null,
+              scheduled_date: "2026-04-04",
+              activity_plan: buildActivityPlan("plan-1", "Tokyo Ride", "bike"),
+            },
+          ],
+        ],
+        activities: [
+          [
+            {
+              id: "activity-local-today",
+              profile_id: "11111111-1111-4111-8111-111111111111",
+              started_at: new Date("2026-04-03T15:15:00.000Z"),
+              finished_at: new Date("2026-04-03T16:15:00.000Z"),
+              elapsed_ms: 3_600_000,
+              active_ms: 3_600_000,
+              moving_ms: 3_500_000,
+              timing_coverage: "complete",
+              distance_meters: 15000,
+              avg_heart_rate: 145,
+              max_heart_rate: 170,
+              avg_power: 220,
+              max_power: 340,
+              avg_speed_mps: 6.2,
+              max_speed_mps: 10.4,
+              normalized_power: 235,
+              normalized_speed_mps: 6.5,
+              normalized_graded_speed_mps: 6.6,
+            },
+          ],
+        ],
+      },
+    });
+
+    const result = await caller.getDashboard({ days: 1 });
+
+    expect(result.consistency).toEqual({ streak: 1, weeklyCount: 1 });
+    expect(result.schedule).toEqual([
+      expect.objectContaining({ id: "planned-local-today", date: "2026-04-04", isToday: true }),
+    ]);
+    expect(result.todaysActivity).toEqual(
+      expect.objectContaining({ id: "planned-local-today", isCompleted: true }),
+    );
   });
 
   it("getDashboard rejects invalid raw SQL plan rows", async () => {
@@ -516,8 +660,6 @@ describe("homeRouter", () => {
       acwr: { current: 1.1 },
       monotony: { current: 1.4 },
     });
-    homeMocks.buildDailyTssByDateSeries.mockImplementation(({ tssByDate }) => tssByDate);
-    homeMocks.replayTrainingLoadByDate.mockReturnValue([]);
     homeMocks.getActivityPlansDerivedMetrics.mockResolvedValue([]);
 
     const { caller } = createCaller({
@@ -568,10 +710,6 @@ describe("homeRouter", () => {
       acwr: { current: 1.1, previous: 0.9 },
       monotony: { current: 1.4 },
     });
-    homeMocks.buildDailyTssByDateSeries.mockImplementation(({ tssByDate }) => tssByDate);
-    homeMocks.replayTrainingLoadByDate
-      .mockReturnValueOnce([{ date: "2026-04-03", ctl: 42.2, atl: 51.1, tsb: -8.9, tss: 50 }])
-      .mockReturnValueOnce([{ date: "2026-04-04", ctl: 43.1, atl: 49.3, tsb: -6.2, tss: 90 }]);
 
     const { caller } = createCaller({
       select: {

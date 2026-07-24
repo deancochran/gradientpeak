@@ -200,7 +200,10 @@ export function TrendsDashboard() {
     label: "Functional threshold power",
     type: "ftp" as const,
   };
-  const commonLoadPoints = load.data?.status === "available" ? load.data.points : [];
+  const availableLoadHistory = load.data?.status === "available" ? load.data : null;
+  const commonLoadPoints = (availableLoadHistory?.points ?? []).filter(
+    (point) => point.date >= range.startDate && point.date <= range.endDate,
+  );
   const latestLoad = commonLoadPoints.at(-1);
   const latestZones = zones.data?.weeklyData.at(-1);
   const zoneEntries = latestZones ? Object.entries(latestZones.zones) : [];
@@ -375,16 +378,22 @@ export function TrendsDashboard() {
             </CardContent>
           </Card>
         ) : null}
-        {latestLoad ? (
+        {latestLoad && availableLoadHistory ? (
           <Card>
             <CardHeader>
               <CardTitle>Load evidence</CardTitle>
-              <CardDescription>Complete common Load history</CardDescription>
+              <CardDescription>
+                {availableLoadHistory.maturity.status} baseline ·{" "}
+                {availableLoadHistory.coverageStatus} coverage
+                <span className="block">
+                  Long-term / Recent / Balance use CTL / ATL / TSB only as advanced aliases.
+                </span>
+              </CardDescription>
             </CardHeader>
             <CardContent className="grid grid-cols-2 gap-3 text-sm">
               <Metric label="Long-term" value={number(latestLoad.longTermLoad)} />
-              <Metric label="Recent" value={number(latestLoad.recentLoad)} />
-              <Metric label="Balance" value={number(latestLoad.loadBalance)} />
+              <Metric label="Recent (ATL alias)" value={number(latestLoad.recentLoad)} />
+              <Metric label="Balance (TSB alias)" value={number(latestLoad.loadBalance)} />
               <Metric label="Daily" value={number(latestLoad.dailyLoad)} />
             </CardContent>
           </Card>

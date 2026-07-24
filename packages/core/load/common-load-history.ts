@@ -11,6 +11,9 @@ export const COMMON_LOAD_HISTORY_POLICY_VERSION = "common_load_history_v1" as co
 export const COMMON_LOAD_HISTORY_REQUIRED_DAYS = 84 as const;
 export const COMMON_LOAD_HISTORY_LONG_TERM_DAYS = 42 as const;
 export const COMMON_LOAD_HISTORY_RECENT_DAYS = 7 as const;
+/** Four long-term time constants are required before a zero initial state is mature. */
+export const COMMON_LOAD_HISTORY_MATURE_DAYS = 168 as const;
+const COMMON_LOAD_HISTORY_MAX_REPLAY_DAYS = 366 as const;
 
 export type DailyCommonLoadObservation = {
   date: string;
@@ -120,7 +123,7 @@ export const commonLoadHistoryReplayInputSchema = z
     planningTimezone: planningTimezoneSchema,
     observations: z
       .array(commonLoadHistoryDayObservationSchema)
-      .max(COMMON_LOAD_HISTORY_REQUIRED_DAYS),
+      .max(COMMON_LOAD_HISTORY_MAX_REPLAY_DAYS),
   })
   .strict();
 
@@ -154,6 +157,63 @@ export const commonLoadHistoryPointSchema = z
     loadBalance: z.number().finite(),
   })
   .strict();
+
+export const commonLoadHistoryMaturitySchema = z
+  .object({
+    /** A short zero-seeded replay must not be presented as an established CTL baseline. */
+    status: z.enum(["establishing_baseline", "provisional", "mature"]),
+    replayedDays: z.number().int().min(COMMON_LOAD_HISTORY_REQUIRED_DAYS),
+    requiredMatureDays: z.literal(COMMON_LOAD_HISTORY_MATURE_DAYS),
+    coverage: z
+      .object({
+        completeDays: z.number().int().nonnegative(),
+        partialDays: z.number().int().nonnegative(),
+        ratio: z.number().min(0).max(1),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((maturity, context) => {
+    if (maturity.coverage.completeDays + maturity.coverage.partialDays !== maturity.replayedDays) {
+      context.addIssue({
+        code: "custom",
+        message: "Maturity coverage must account for every replayed day",
+      });
+    }
+    const expectedRatio = maturity.coverage.completeDays / maturity.replayedDays;
+    if (Math.abs(maturity.coverage.ratio - expectedRatio) > Number.EPSILON * 8) {
+      context.addIssue({
+        code: "custom",
+        path: ["coverage", "ratio"],
+        message: "Maturity coverage ratio must use replayed days",
+      });
+    }
+    if (maturity.coverage.partialDays > 0 && maturity.status !== "provisional") {
+      context.addIssue({ code: "custom", message: "Partial history must be marked provisional" });
+    }
+    if (
+      maturity.coverage.partialDays === 0 &&
+      maturity.replayedDays < COMMON_LOAD_HISTORY_MATURE_DAYS &&
+      maturity.status !== "establishing_baseline"
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "A zero-seeded short replay is still establishing its baseline",
+      });
+    }
+    if (
+      maturity.coverage.partialDays === 0 &&
+      maturity.replayedDays >= COMMON_LOAD_HISTORY_MATURE_DAYS &&
+      maturity.status !== "mature"
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Complete mature replay history must be marked mature",
+      });
+    }
+  });
+
+export type CommonLoadHistoryMaturity = z.infer<typeof commonLoadHistoryMaturitySchema>;
 
 const unavailableResultBaseShape = {
   status: z.literal("unavailable"),
@@ -236,7 +296,10 @@ export const commonLoadHistoryResultSchema = z.union([
       status: z.literal("available"),
       policyVersion: z.literal(COMMON_LOAD_HISTORY_POLICY_VERSION),
       coverageStatus: z.enum(["complete", "partial"]),
+      maturity: commonLoadHistoryMaturitySchema,
       identity: commonLoadHistoryIdentitySchema,
+      // The output remains chart-bounded even when older replay history is
+      // supplied solely to establish the exponential baseline.
       points: z.array(commonLoadHistoryPointSchema).length(COMMON_LOAD_HISTORY_REQUIRED_DAYS),
     })
     .strict(),
@@ -261,9 +324,10 @@ function unavailableResult(
 }
 
 /**
- * Replays exactly the complete 84-day v1 window ending on the day before the
- * supplied profile-local planning date. The recurrence is zero-seeded and does
- * not read a clock, persistence, readiness, recovery, or form state.
+ * Replays 84–366 consecutive days ending on the day before the supplied
+ * profile-local planning date. It returns the latest 84 chart points while
+ * replaying older supplied days to establish the exponential baseline. The
+ * recurrence does not read a clock, persistence, readiness, recovery, or form state.
  */
 export function replayCommonLoadHistory(
   input: CommonLoadHistoryReplayInput,
@@ -327,10 +391,7 @@ export function replayCommonLoadHistory(
     });
   }
 
-  const startDate = addCalendarDays(
-    parsed.data.currentPlanningDate,
-    -COMMON_LOAD_HISTORY_REQUIRED_DAYS,
-  );
+  const startDate = addCalendarDays(parsed.data.currentPlanningDate, -observations.length);
   const endDate = addCalendarDays(parsed.data.currentPlanningDate, -1);
   for (const [index, observation] of observations.entries()) {
     const expectedDate = addCalendarDays(startDate, index);
@@ -364,7 +425,12 @@ export function replayCommonLoadHistory(
   let longTermLoad = 0;
   let recentLoad = 0;
   let coverageStatus: "complete" | "partial" = "complete";
-  const points = observations.map((observation) => {
+  let partialDays = 0;
+  const replayedPoints = observations.map((observation) => {
+    const isPartial =
+      observation.coverageStatus === "partial" ||
+      (observation.state === "observed" && observation.aggregate.status === "partial");
+    if (isPartial) partialDays += 1;
     if (observation.coverageStatus === "partial") coverageStatus = "partial";
     let dailyLoad: number;
     if (observation.state === "known_zero") {
@@ -379,17 +445,30 @@ export function replayCommonLoadHistory(
     recentLoad += recentAlpha * (dailyLoad - recentLoad);
     return {
       date: observation.date,
-      coverageStatus:
-        observation.coverageStatus === "partial" ||
-        (observation.state === "observed" && observation.aggregate.status === "partial")
-          ? "partial"
-          : "complete",
+      coverageStatus: isPartial ? "partial" : "complete",
       dailyLoad,
       longTermLoad,
       recentLoad,
       loadBalance: longTermLoad - recentLoad,
     };
   });
+
+  const completeDays = observations.length - partialDays;
+  const maturity = {
+    status:
+      partialDays > 0
+        ? ("provisional" as const)
+        : observations.length < COMMON_LOAD_HISTORY_MATURE_DAYS
+          ? ("establishing_baseline" as const)
+          : ("mature" as const),
+    replayedDays: observations.length,
+    requiredMatureDays: COMMON_LOAD_HISTORY_MATURE_DAYS,
+    coverage: {
+      completeDays,
+      partialDays,
+      ratio: completeDays / observations.length,
+    },
+  };
 
   const identity = {
     policyVersion: COMMON_LOAD_HISTORY_POLICY_VERSION,
@@ -409,7 +488,8 @@ export function replayCommonLoadHistory(
     status: "available",
     policyVersion: COMMON_LOAD_HISTORY_POLICY_VERSION,
     coverageStatus,
+    maturity,
     identity,
-    points,
+    points: replayedPoints.slice(-COMMON_LOAD_HISTORY_REQUIRED_DAYS),
   });
 }

@@ -25,6 +25,12 @@ export const activityFileIngestionStatusEnum = pgEnum("activity_file_ingestion_s
 
 export const effortTypeEnum = pgEnum("effort_type", ["power", "speed", "heart_rate"]);
 
+export const activitySessionRpeSourceEnum = pgEnum("activity_session_rpe_source", [
+  "user",
+  "provider",
+  "manual",
+]);
+
 export const integrationProviderEnum = pgEnum("integration_provider", [
   "strava",
   "wahoo",

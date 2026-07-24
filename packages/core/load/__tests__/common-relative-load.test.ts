@@ -11,8 +11,10 @@ import {
   type CommonLoadMethod,
   type CommonLoadResult,
   calculateAvailableCommonLoad,
+  calculateSessionRpeCommonLoad,
   commonLoadAggregateSchema,
   commonLoadResultSchema,
+  SESSION_RPE_COMMON_LOAD_CALIBRATION_VERSION,
 } from "../index";
 
 const computedAsOf = "2026-07-21T12:00:00.000Z";
@@ -41,7 +43,7 @@ const sportByMethod = {
   heart_rate_zones: "run",
 } as const;
 
-function metadata(method: CommonLoadMethod = "power_threshold") {
+function metadata(method: Exclude<CommonLoadMethod, "session_rpe"> = "power_threshold") {
   return {
     sport: sportByMethod[method],
     method,
@@ -72,7 +74,7 @@ function metadata(method: CommonLoadMethod = "power_threshold") {
 function available(
   durationSeconds: number,
   intensity: number,
-  method: CommonLoadMethod = "power_threshold",
+  method: Exclude<CommonLoadMethod, "session_rpe"> = "power_threshold",
 ): CommonLoadResult {
   return calculateAvailableCommonLoad({
     ...metadata(method),
@@ -149,6 +151,86 @@ function unavailableWithCompleteProvenance(
     reason,
   };
 }
+
+describe("session-RPE common Load", () => {
+  const evidence = {
+    rpe: 7,
+    scale: "borg_cr10" as const,
+    scaleVersion: "1" as const,
+    source: "user" as const,
+    recordedAt: "2026-07-20T12:00:00.000Z",
+    provenanceFingerprint: "session-rpe-evidence",
+  };
+
+  it("anchors Borg CR10 RPE 7 at Intensity 1.0 and preserves linear sRPE Load", () => {
+    const result = calculateSessionRpeCommonLoad({
+      sport: "strength",
+      contributingDurationSeconds: 3600,
+      computedAsOf,
+      evidence,
+    });
+    expect(result).toMatchObject({
+      status: "available",
+      method: "session_rpe",
+      intensity: 1,
+      load: 100,
+      estimated: true,
+      thresholdEvidence: null,
+      sessionRpeEvidence: evidence,
+      quality: {
+        source: "manual",
+        estimate: true,
+        calculation_version: SESSION_RPE_COMMON_LOAD_CALIBRATION_VERSION,
+      },
+    });
+  });
+
+  it("derives session-RPE Load from the full-precision intensity", () => {
+    const result = calculateSessionRpeCommonLoad({
+      sport: "strength",
+      contributingDurationSeconds: 2_700,
+      computedAsOf,
+      evidence: { ...evidence, rpe: 8 },
+    });
+
+    expect(result.status).toBe("available");
+    if (result.status !== "available") throw new Error("Expected available session-RPE Load");
+    expect(result.load).toBe(
+      (result.contributingDurationSeconds / 3600) * result.intensity ** 2 * 100,
+    );
+    expect(result.load).toBeCloseTo((2_700 / 3600) * (8 / 7) * 100, 12);
+  });
+
+  it("requires duration and rejects threshold evidence for session-RPE", () => {
+    expect(() =>
+      calculateSessionRpeCommonLoad({
+        sport: "other",
+        contributingDurationSeconds: 0,
+        computedAsOf,
+        evidence,
+      }),
+    ).toThrow();
+    expect(
+      commonLoadResultSchema.safeParse({
+        ...calculateSessionRpeCommonLoad({
+          sport: "other",
+          contributingDurationSeconds: 1800,
+          computedAsOf,
+          evidence,
+        }),
+        thresholdEvidence: {
+          ...thresholdByMethod.power_threshold,
+          source: "manual",
+          observedAt: computedAsOf,
+          validAt: computedAsOf,
+          freshness: "current",
+          calculationVersion: "x",
+          sourceFingerprint: "not-session-rpe",
+        },
+      }).success,
+    ).toBe(false);
+  });
+});
 
 describe("common relative Load activity contract and calculation", () => {
   it("exports the same stable contract and helpers from the load subpath and package root", () => {

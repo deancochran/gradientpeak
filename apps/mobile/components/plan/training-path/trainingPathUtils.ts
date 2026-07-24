@@ -27,6 +27,8 @@ type BuildTrainingPathInput = {
   selectedWeekStart?: string | null;
   range: TrainingPathRange;
   weekWindow?: TrainingPathWeekWindow | null;
+  /** Legacy TSS replay is only valid for explicitly advanced legacy charts. */
+  allowLegacyTssProjection?: boolean;
   todayKey: string;
 };
 
@@ -50,6 +52,7 @@ type NormalizedTrainingPathInput = {
   selectedWeekStart?: string | null;
   range: TrainingPathRange;
   weekWindow?: TrainingPathWeekWindow | null;
+  allowLegacyTssProjection: boolean;
   todayKey: string;
 };
 
@@ -488,6 +491,7 @@ function normalizeTrainingPathInput(input: BuildTrainingPathInput): NormalizedTr
     selectedWeekStart: input.selectedWeekStart,
     range: input.range,
     weekWindow: input.weekWindow,
+    allowLegacyTssProjection: input.allowLegacyTssProjection === true,
     todayKey: input.todayKey,
   };
 }
@@ -499,12 +503,14 @@ function buildSourceMaps(input: NormalizedTrainingPathInput): TrainingPathSource
     scheduledFitnessByWeek: scheduledFitnessByWeek(
       input.projectedFitness.length > 0
         ? input.projectedFitness
-        : buildScheduledFitnessTrend({
-            fitnessHistory: input.fitnessHistory,
-            idealFitnessCurve: input.idealFitnessCurve,
-            timeline: input.timeline,
-            todayKey: input.todayKey,
-          }),
+        : input.allowLegacyTssProjection
+          ? buildScheduledFitnessTrend({
+              fitnessHistory: input.fitnessHistory,
+              idealFitnessCurve: input.idealFitnessCurve,
+              timeline: input.timeline,
+              todayKey: input.todayKey,
+            })
+          : [],
       input.todayKey,
     ),
     idealFitnessByWeek: latestFitnessByWeek(input.idealFitnessCurve),

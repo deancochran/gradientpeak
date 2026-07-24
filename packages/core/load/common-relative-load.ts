@@ -5,6 +5,12 @@ import { type CanonicalSport, canonicalSportSchema } from "../schemas/sport";
 
 export const COMMON_RELATIVE_LOAD_MODEL = "gradientpeak_relative_load" as const;
 export const COMMON_RELATIVE_LOAD_VERSION = "1" as const;
+/**
+ * Session-RPE v1 preserves conventional sRPE linearity: Borg CR10 7 is
+ * Intensity 1.0, so hours × Intensity² × 100 is hours × RPE / 7 × 100.
+ */
+export const SESSION_RPE_COMMON_LOAD_CALIBRATION_VERSION =
+  "borg_cr10_anchor_7_intensity_1_v1" as const;
 
 export const commonLoadMethodSchema = z.enum([
   "power_threshold",
@@ -12,6 +18,7 @@ export const commonLoadMethodSchema = z.enum([
   "run_pace_threshold",
   "swim_pace_threshold",
   "heart_rate_zones",
+  "session_rpe",
 ]);
 
 const thresholdEvidenceBaseShape = {
@@ -74,6 +81,17 @@ export const commonThresholdEvidenceSchema = z.discriminatedUnion("type", [
     .strict(),
 ]);
 
+export const commonSessionRpeEvidenceSchema = z
+  .object({
+    rpe: z.number().int().min(1).max(10),
+    scale: z.literal("borg_cr10"),
+    scaleVersion: z.literal("1"),
+    source: z.enum(["user", "provider", "manual"]),
+    recordedAt: z.string().datetime({ offset: true }),
+    provenanceFingerprint: z.string().trim().min(1),
+  })
+  .strict();
+
 const commonLoadIdentityShape = {
   model: z.literal(COMMON_RELATIVE_LOAD_MODEL),
   version: z.literal(COMMON_RELATIVE_LOAD_VERSION),
@@ -85,6 +103,7 @@ const commonLoadProvenanceShape = {
   method: commonLoadMethodSchema.nullable(),
   quality: activityCalibrationQualitySchema.nullable(),
   thresholdEvidence: commonThresholdEvidenceSchema.nullable(),
+  sessionRpeEvidence: commonSessionRpeEvidenceSchema.nullable().default(null),
   evidenceFingerprint: z.string().trim().min(1).nullable(),
   computedAsOf: z.string().datetime({ offset: true }),
 };
@@ -98,7 +117,7 @@ const commonLoadAvailableSchema = z
     intensity: z.number().finite().min(0).max(1.5),
     contributingDurationSeconds: z.number().finite().positive(),
     quality: activityCalibrationQualitySchema,
-    thresholdEvidence: commonThresholdEvidenceSchema,
+    thresholdEvidence: commonThresholdEvidenceSchema.nullable(),
     evidenceFingerprint: z.string().trim().min(1),
     estimated: z.boolean(),
   })
@@ -249,6 +268,7 @@ const allowedSportsByMethod = {
   run_pace_threshold: ["run"],
   swim_pace_threshold: ["swim"],
   heart_rate_zones: ["run", "bike", "swim"],
+  session_rpe: ["run", "bike", "swim", "strength", "other"],
 } as const satisfies Record<z.infer<typeof commonLoadMethodSchema>, readonly CanonicalSport[]>;
 
 export const commonLoadResultSchema = z
@@ -281,9 +301,45 @@ export const commonLoadResultSchema = z
         message: "Common Load method is not compatible with the activity sport",
       });
     }
+    if (result.method === "session_rpe") {
+      if (result.thresholdEvidence !== null) {
+        context.addIssue({
+          code: "custom",
+          path: ["thresholdEvidence"],
+          message: "Session-RPE Load must not claim threshold evidence",
+        });
+      }
+      if (result.status !== "unavailable" && result.sessionRpeEvidence === null) {
+        context.addIssue({
+          code: "custom",
+          path: ["sessionRpeEvidence"],
+          message: "Session-RPE Load requires session-RPE evidence",
+        });
+      }
+    } else {
+      if (result.sessionRpeEvidence !== null) {
+        context.addIssue({
+          code: "custom",
+          path: ["sessionRpeEvidence"],
+          message: "Direct common Load methods must not claim session-RPE evidence",
+        });
+      }
+      if (
+        result.method !== null &&
+        result.status !== "unavailable" &&
+        result.thresholdEvidence === null
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["thresholdEvidence"],
+          message: "Direct common Load methods require threshold evidence",
+        });
+      }
+    }
     if (
       result.thresholdEvidence !== null &&
       (result.method === null ||
+        result.method === "session_rpe" ||
         result.thresholdEvidence.type !== expectedThresholdTypeByMethod[result.method])
     ) {
       context.addIssue({
@@ -473,8 +529,13 @@ export const commonLoadAggregateSchema = z
 
 export type CommonLoadMethod = z.infer<typeof commonLoadMethodSchema>;
 export type CommonThresholdEvidence = z.infer<typeof commonThresholdEvidenceSchema>;
+export type CommonSessionRpeEvidence = z.infer<typeof commonSessionRpeEvidenceSchema>;
 export type CommonLoadResult = z.infer<typeof commonLoadResultSchema>;
-export type AvailableCommonLoadCalculationInput = z.infer<
+/**
+ * Calculation callers may omit normalized defaults such as sessionRpeEvidence.
+ * The calculation parses this input and always returns the normalized output.
+ */
+export type AvailableCommonLoadCalculationInput = z.input<
   typeof availableCommonLoadCalculationInputSchema
 >;
 export type CommonLoadAggregate = z.infer<typeof commonLoadAggregateSchema>;
@@ -512,6 +573,58 @@ export function calculateAvailableCommonLoad(
     version: COMMON_RELATIVE_LOAD_VERSION,
     ...parsed,
     load,
+  });
+}
+
+/**
+ * Calculates an estimated manual session-RPE Load. This deliberately carries
+ * no sensor or threshold evidence; its sole intensity evidence is the owned
+ * effective Borg CR10 observation.
+ */
+export function calculateSessionRpeCommonLoad(input: {
+  sport: CanonicalSport;
+  contributingDurationSeconds: number;
+  computedAsOf: string;
+  evidence: CommonSessionRpeEvidence;
+}): CommonLoadResult {
+  const parsed = z
+    .object({
+      sport: canonicalSportSchema,
+      contributingDurationSeconds: z.number().finite().positive(),
+      computedAsOf: z.string().datetime({ offset: true }),
+      evidence: commonSessionRpeEvidenceSchema,
+    })
+    .strict()
+    .parse(input);
+  const intensity = Math.min(1.5, Math.sqrt(parsed.evidence.rpe / 7));
+  // Keep the unrounded intensity in the corresponding load calculation. The
+  // result contract checks this relationship, and rounding here would make
+  // non-anchor RPE observations internally inconsistent.
+  const load = (parsed.contributingDurationSeconds / 3600) * intensity ** 2 * 100;
+  return commonLoadResultSchema.parse({
+    status: "available",
+    model: COMMON_RELATIVE_LOAD_MODEL,
+    version: COMMON_RELATIVE_LOAD_VERSION,
+    sport: parsed.sport,
+    method: "session_rpe",
+    intensity,
+    load,
+    contributingDurationSeconds: parsed.contributingDurationSeconds,
+    quality: {
+      source: "manual",
+      observed_at: parsed.evidence.recordedAt,
+      valid_at: parsed.evidence.recordedAt,
+      confidence: "medium",
+      stale: false,
+      estimate: true,
+      calculation_version: SESSION_RPE_COMMON_LOAD_CALIBRATION_VERSION,
+      evidence_fingerprint: parsed.evidence.provenanceFingerprint,
+    },
+    thresholdEvidence: null,
+    sessionRpeEvidence: parsed.evidence,
+    evidenceFingerprint: parsed.evidence.provenanceFingerprint,
+    computedAsOf: parsed.computedAsOf,
+    estimated: true,
   });
 }
 

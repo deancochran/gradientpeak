@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   aggregateCommonLoad,
+  COMMON_LOAD_HISTORY_MATURE_DAYS,
   COMMON_LOAD_HISTORY_POLICY_VERSION,
   COMMON_RELATIVE_LOAD_MODEL,
   COMMON_RELATIVE_LOAD_VERSION,
@@ -133,6 +134,12 @@ describe("common Load history v1 replay", () => {
       status: "available",
       policyVersion: COMMON_LOAD_HISTORY_POLICY_VERSION,
       coverageStatus: "complete",
+      maturity: {
+        status: "establishing_baseline",
+        replayedDays: 84,
+        requiredMatureDays: COMMON_LOAD_HISTORY_MATURE_DAYS,
+        coverage: { completeDays: 84, partialDays: 0, ratio: 1 },
+      },
       identity: {
         policyVersion: COMMON_LOAD_HISTORY_POLICY_VERSION,
         planningTimezone: "America/Los_Angeles",
@@ -208,6 +215,29 @@ describe("common Load history v1 replay", () => {
     expect(result.points.at(-1)?.loadBalance).toBeCloseTo(-13.532913902425989, 12);
   });
 
+  it("uses longer replay history to establish a mature baseline while retaining an 84-day chart", () => {
+    const observations = Array.from({ length: COMMON_LOAD_HISTORY_MATURE_DAYS }, (_, index) => ({
+      state: "known_zero" as const,
+      date: addDays(planningDate, -COMMON_LOAD_HISTORY_MATURE_DAYS + index),
+      model: COMMON_RELATIVE_LOAD_MODEL,
+      version: COMMON_RELATIVE_LOAD_VERSION,
+      coverageStatus: "complete" as const,
+      evidenceFingerprints: [`source-${index}`],
+    }));
+    const result = replay(observations);
+
+    expect(result.status).toBe("available");
+    if (result.status !== "available") throw new Error("Expected available history");
+    expect(result.maturity).toEqual({
+      status: "mature",
+      replayedDays: COMMON_LOAD_HISTORY_MATURE_DAYS,
+      requiredMatureDays: COMMON_LOAD_HISTORY_MATURE_DAYS,
+      coverage: { completeDays: COMMON_LOAD_HISTORY_MATURE_DAYS, partialDays: 0, ratio: 1 },
+    });
+    expect(result.points).toHaveLength(84);
+    expect(result.points[0]?.date).toBe("2026-04-28");
+  });
+
   it("accepts a complete mixed-sport common aggregate", () => {
     const mixedAggregate = aggregateCommonLoad([available(100, "bike"), available(49, "run")]);
     expect(mixedAggregate.status).toBe("complete");
@@ -248,6 +278,12 @@ describe("common Load history v1 replay", () => {
     expect(partialResult).toMatchObject({ status: "available", coverageStatus: "partial" });
     if (partialResult.status !== "available")
       throw new Error("Expected partial common Load history");
+    expect(partialResult.maturity).toEqual({
+      status: "provisional",
+      replayedDays: 84,
+      requiredMatureDays: COMMON_LOAD_HISTORY_MATURE_DAYS,
+      coverage: { completeDays: 83, partialDays: 1, ratio: 83 / 84 },
+    });
     if (partialAggregate.status !== "partial") {
       throw new Error("Expected partial common Load aggregate");
     }

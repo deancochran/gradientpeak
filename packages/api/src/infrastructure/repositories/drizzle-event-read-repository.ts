@@ -17,6 +17,10 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import {
+  getCurrentPlanningWeek,
+  getPlanningDateRange,
+} from "../../application/training-plan/current-planning-week";
 import type { EventReadRepository } from "../../repositories";
 import {
   filterSupersededProfileOverrides,
@@ -25,13 +29,19 @@ import {
 } from "../../utils/profile-override-observations";
 
 type EventReadDb = {
-  execute: any;
-  query: any;
-  select: any;
+  execute: unknown;
+  query: unknown;
+  select: unknown;
 };
 
 function resolveDb(dbInput: EventReadDb | { db: EventReadDb }) {
   return "db" in dbInput ? dbInput.db : dbInput;
+}
+
+function addCalendarDays(date: string, days: number): string {
+  const value = new Date(`${date}T00:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
 }
 
 function serializeActivityPlanRow(activityPlan: typeof schema.activityPlans.$inferSelect | null) {
@@ -130,6 +140,121 @@ export function createEventReadRepository(
   const db = resolveDb(dbInput) as DrizzleDbClient;
 
   return {
+    async getEffectivePlanLoadInputs({
+      asOf,
+      endDate: requestedEndDate,
+      profileId,
+      startDate: requestedStartDate,
+    }) {
+      const profile = await db
+        .select({ planningTimezone: schema.profiles.planning_timezone })
+        .from(schema.profiles)
+        .where(eq(schema.profiles.id, profileId))
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
+      const planningTimezone = profile?.planningTimezone?.trim() || null;
+      let range: ReturnType<typeof getPlanningDateRange> | null = null;
+      if (requestedStartDate && requestedEndDate && planningTimezone) {
+        try {
+          range = getPlanningDateRange({
+            startDate: requestedStartDate,
+            endDate: requestedEndDate,
+            timezone: planningTimezone,
+          });
+        } catch {
+          // The application returns the profile-owned timezone failure without treating it as zero.
+        }
+      }
+      if (!range && planningTimezone) {
+        try {
+          range = getCurrentPlanningWeek(asOf, planningTimezone);
+        } catch {
+          // The application returns the profile-owned timezone failure without treating it as zero.
+        }
+      }
+      if (!range || !planningTimezone) {
+        return {
+          activities: [],
+          events: [],
+          planningTimezone,
+          resolvedRange: { startDate: null, endDate: null },
+          sourceCounts: { activities: 0, events: 0 },
+          sourceCoverage: { activities: null, scheduledItems: null },
+        };
+      }
+      const { startDate, endDate } = range;
+      const envelopeStart = getPlanningDateRange({
+        startDate: addCalendarDays(startDate, -1),
+        endDate: addCalendarDays(startDate, -1),
+        timezone: planningTimezone,
+      }).startInstant;
+      const envelopeEnd = getPlanningDateRange({
+        startDate: addCalendarDays(endDate, 1),
+        endDate: addCalendarDays(endDate, 1),
+        timezone: planningTimezone,
+      }).endExclusiveInstant;
+      const boundedLimit = 10_001;
+      const [eventRows, activityRows] = await Promise.all([
+        db
+          .select({ ...eventColumns, activity_plan: schema.activityPlans })
+          .from(schema.events)
+          .leftJoin(
+            schema.activityPlans,
+            eq(schema.events.activity_plan_id, schema.activityPlans.id),
+          )
+          .where(
+            and(
+              eq(schema.events.profile_id, profileId),
+              eq(schema.events.event_type, "planned"),
+              gte(schema.events.scheduled_date, startDate),
+              lte(schema.events.scheduled_date, endDate),
+            ),
+          )
+          .orderBy(
+            asc(schema.events.scheduled_date),
+            asc(schema.events.starts_at),
+            asc(schema.events.id),
+          )
+          .limit(boundedLimit),
+        db
+          .select()
+          .from(schema.activities)
+          .where(
+            and(
+              eq(schema.activities.profile_id, profileId),
+              gte(schema.activities.started_at, envelopeStart),
+              lt(schema.activities.started_at, envelopeEnd),
+            ),
+          )
+          .orderBy(asc(schema.activities.started_at), asc(schema.activities.id))
+          .limit(boundedLimit),
+      ]);
+      const activitiesStatus = activityRows.length === boundedLimit ? "partial" : "complete";
+      const scheduledItemsStatus = eventRows.length === boundedLimit ? "partial" : "complete";
+      return {
+        activities: activityRows.slice(0, boundedLimit - 1),
+        events: eventRows.slice(0, boundedLimit - 1).map((row) => {
+          if (row.scheduled_date === null) {
+            throw new Error("Effective-plan scheduled event is missing scheduled_date.");
+          }
+          return {
+            ...serializeEventRow(row),
+            scheduled_date: row.scheduled_date,
+          };
+        }),
+        planningTimezone,
+        resolvedRange: range,
+        sourceCounts: {
+          activities: Math.min(activityRows.length, boundedLimit - 1),
+          events: Math.min(eventRows.length, boundedLimit - 1),
+        },
+        sourceCoverage: {
+          activities: { ...range, status: activitiesStatus },
+          scheduledItems: { ...range, status: scheduledItemsStatus },
+        },
+      };
+    },
+
     async getOwnedEventById({ eventId, profileId }) {
       const [row] = await db
         .select({

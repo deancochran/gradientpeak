@@ -28,6 +28,7 @@ import { canonicalActivityCategoryDbValues } from "./canonical-categories";
 import {
   activityFileIngestionSourceEnum,
   activityFileIngestionStatusEnum,
+  activitySessionRpeSourceEnum,
   effortTypeEnum,
   eventStatusEnum,
   eventTypeEnum,
@@ -1478,6 +1479,77 @@ export const activityEfforts = pgTable(
     check(
       "activity_efforts_provenance_object_check",
       sql`${table.provenance} is null or jsonb_typeof(${table.provenance}) = 'object'`,
+    ),
+  ],
+);
+
+/** Immutable session-RPE observations; corrections append a replacement row. */
+export const activitySessionRpeEvidence = pgTable(
+  "activity_session_rpe_evidence",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    activity_id: uuid("activity_id")
+      .notNull()
+      .references(() => activities.id, { onDelete: "cascade" }),
+    recorded_at: timestamp("recorded_at", { withTimezone: true, mode: "date" }).notNull(),
+    corrected_at: timestamp("corrected_at", { withTimezone: true, mode: "date" }),
+    rpe: integer("rpe").notNull(),
+    scale: text("scale").notNull(),
+    scale_version: text("scale_version").notNull(),
+    source: activitySessionRpeSourceEnum("source").notNull(),
+    operation_id: uuid("operation_id").notNull(),
+    correction_of_id: uuid("correction_of_id"),
+    provenance: jsonb("provenance").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("activity_session_rpe_evidence_id_activity_profile_unique").on(
+      table.id,
+      table.activity_id,
+      table.profile_id,
+    ),
+    foreignKey({
+      columns: [table.activity_id, table.profile_id],
+      foreignColumns: [activities.id, activities.profile_id],
+      name: "activity_session_rpe_evidence_activity_profile_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.correction_of_id, table.activity_id, table.profile_id],
+      foreignColumns: [table.id, table.activity_id, table.profile_id],
+      name: "activity_session_rpe_evidence_correction_same_activity_profile_fkey",
+    }).onDelete("restrict"),
+    uniqueIndex("activity_session_rpe_evidence_profile_operation_unique").on(
+      table.profile_id,
+      table.operation_id,
+    ),
+    uniqueIndex("activity_session_rpe_evidence_one_replacement_per_evidence_unique")
+      .on(table.correction_of_id)
+      .where(sql`${table.correction_of_id} is not null`),
+    index("idx_activity_session_rpe_evidence_activity_recorded")
+      .on(table.activity_id, table.recorded_at, table.id)
+      .where(sql`${table.correction_of_id} is null`),
+    check("activity_session_rpe_evidence_rpe_bounds_check", sql`${table.rpe} between 1 and 10`),
+    check("activity_session_rpe_evidence_scale_not_blank_check", sql`btrim(${table.scale}) <> ''`),
+    check(
+      "activity_session_rpe_evidence_scale_version_not_blank_check",
+      sql`btrim(${table.scale_version}) <> ''`,
+    ),
+    check(
+      "activity_session_rpe_evidence_correction_timestamp_check",
+      sql`(${table.correction_of_id} is null) = (${table.corrected_at} is null)`,
+    ),
+    check(
+      "activity_session_rpe_evidence_correction_manual_check",
+      sql`${table.correction_of_id} is null or ${table.source} = 'manual'`,
+    ),
+    check(
+      "activity_session_rpe_evidence_provenance_object_check",
+      sql`jsonb_typeof(${table.provenance}) = 'object'`,
     ),
   ],
 );

@@ -29,6 +29,43 @@ const emptyPlan = {
   metricUpdate: null,
 };
 
+const analysisResult = {
+  effortsToInsert: [],
+  detectedLTHR: null,
+  activityCompletedAt: new Date("2026-01-01T11:00:00Z"),
+  summaryValues: {
+    active_ms: null,
+    aerobic_decoupling: null,
+    avg_cadence: null,
+    avg_heart_rate: null,
+    avg_power: null,
+    avg_speed_mps: null,
+    avg_temperature: null,
+    calories: null,
+    distance_meters: 0,
+    efficiency_factor: null,
+    elevation_gain_meters: null,
+    elapsed_ms: 3_600_000,
+    max_cadence: null,
+    max_heart_rate: null,
+    max_power: null,
+    max_speed_mps: null,
+    moving_ms: null,
+    normalized_graded_speed_mps: null,
+    normalized_power: 220,
+    normalized_speed_mps: 8,
+    timing_coverage: "unavailable" as const,
+  },
+  segmentSet: {
+    segments: [
+      {
+        id: "segment-1",
+        summary: { version: 1, timing: { timingCoverage: "unavailable" as const } },
+      },
+    ],
+  },
+};
+
 function activity(activityId: string) {
   return {
     activityId,
@@ -50,7 +87,12 @@ describe("replayParsedActivityFileEvidenceProfile", () => {
     const generatedThresholds: number[] = [];
     const generatedEfforts: string[] = [];
     const observedEvidence: Array<{ efforts: string[]; thresholds: number[] }> = [];
-    const tx = { execute: vi.fn() };
+    const tx = {
+      execute: vi.fn(),
+      update: vi.fn(() => ({
+        set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
+      })),
+    };
     const db = {
       transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) => {
         const thresholdSnapshot = [...generatedThresholds];
@@ -69,11 +111,7 @@ describe("replayParsedActivityFileEvidenceProfile", () => {
         efforts: [...generatedEfforts],
         thresholds: [...generatedThresholds],
       });
-      return {
-        effortsToInsert: [],
-        detectedLTHR: input.activityId === "activity-1" ? 162 : 165,
-        activityCompletedAt: new Date("2026-01-01T11:00:00Z"),
-      };
+      return { ...analysisResult, detectedLTHR: input.activityId === "activity-1" ? 162 : 165 };
     });
     mocks.reconcile.mockImplementation(
       async (_tx, input: { activityId: string; detectedLTHR: number | null }) => {
@@ -97,6 +135,7 @@ describe("replayParsedActivityFileEvidenceProfile", () => {
     expect(generatedThresholds).toEqual([]);
     expect(generatedEfforts).toEqual([]);
     expect(tx.execute).toHaveBeenCalledOnce();
+    expect(tx.update).toHaveBeenCalledTimes(4);
     expect(mocks.reconcile).toHaveBeenCalledTimes(2);
   });
 
@@ -117,6 +156,9 @@ describe("replayParsedActivityFileEvidenceProfile", () => {
               await previousLock;
               events.push("lock");
             }),
+            update: vi.fn(() => ({
+              set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
+            })),
           };
           try {
             return await callback(tx);
@@ -129,11 +171,7 @@ describe("replayParsedActivityFileEvidenceProfile", () => {
     mocks.analyze.mockImplementation(async (_tx, input: { activityId: string }) => {
       events.push(`analyze:${input.activityId}`);
       await Promise.resolve();
-      return {
-        effortsToInsert: [],
-        detectedLTHR: null,
-        activityCompletedAt: new Date("2026-01-01T11:00:00Z"),
-      };
+      return analysisResult;
     });
     mocks.reconcile.mockResolvedValue(emptyPlan);
 
@@ -162,7 +200,12 @@ describe("replayParsedActivityFileEvidenceProfile", () => {
 
   it("rolls back and propagates a profile failure", async () => {
     const persisted = ["before"];
-    const tx = { execute: vi.fn() };
+    const tx = {
+      execute: vi.fn(),
+      update: vi.fn(() => ({
+        set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
+      })),
+    };
     const db = {
       transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) => {
         const snapshot = [...persisted];
@@ -174,11 +217,7 @@ describe("replayParsedActivityFileEvidenceProfile", () => {
         }
       }),
     };
-    mocks.analyze.mockResolvedValue({
-      effortsToInsert: [],
-      detectedLTHR: null,
-      activityCompletedAt: new Date("2026-01-01T11:00:00Z"),
-    });
+    mocks.analyze.mockResolvedValue(analysisResult);
     mocks.reconcile
       .mockImplementationOnce(async () => {
         persisted.push("activity-1");

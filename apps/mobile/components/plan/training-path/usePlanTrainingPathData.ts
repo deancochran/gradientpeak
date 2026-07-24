@@ -17,7 +17,7 @@ import { useProfileSettings } from "@/lib/hooks/useProfileSettings";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { refreshPlanTabData } from "@/lib/scheduling/refreshScheduleViews";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { buildEffectivePlanMetricSummaries } from "@/lib/training-path/effectivePlanLoad";
+import { buildServerEffectiveLoadSummaries } from "@/lib/training-path/serverEffectiveLoadSummaries";
 import {
   buildDailyTrainingAdjustmentPointsFromTimelineWindow,
   buildEffectiveCompletedObservationsByDate,
@@ -45,7 +45,7 @@ import type {
   TrainingPathScheduledItem,
   TrainingPathSelectedGoal,
 } from "./trainingPathTypes";
-import { buildScheduledFitnessTrend, getWeekStartDateKey } from "./trainingPathUtils";
+import { getWeekStartDateKey } from "./trainingPathUtils";
 import { useScrollableTrainingPathWindow } from "./useScrollableTrainingPathWindow";
 import { useTrainingPathViewModel } from "./useTrainingPathViewModel";
 
@@ -211,8 +211,7 @@ export function usePlanTrainingPathData() {
   const [pendingSelectedWeekStart, setPendingSelectedWeekStart] = useState<string | null>(null);
   const lastProjectionRefreshKeyRef = useRef<string | null>(null);
   const planningTimezone = profile?.planning_timezone ?? null;
-  const { todayKey: planningTodayKey, asOfInstant: effectiveAsOfInstant } =
-    useTrainingPathTodayKey(planningTimezone);
+  const { todayKey: planningTodayKey } = useTrainingPathTodayKey(planningTimezone);
   const planningTimezoneState = profileLoading
     ? "loading"
     : planningTodayKey
@@ -659,23 +658,6 @@ export function usePlanTrainingPathData() {
       }),
     [completedObservationMerge.completedObservationsByDate, scheduledWindowEnd, todayKey],
   );
-  const loadTimelinePoints = useMemo(
-    () =>
-      completedObservationMerge.timeline.map((point) => {
-        const completedObservation = effectiveCompletedObservationsByDate.get(point.date);
-        const hasTargetLoad = targetLoadDates.has(point.date);
-        return {
-          ...point,
-          completed_observation_state: completedObservation?.state,
-          completed_common_load_identity: completedObservation?.identity ?? null,
-          has_unavailable_completed_activity:
-            completedObservation?.hasUnavailableCompletedActivity === true,
-          ideal_tss: hasTargetLoad ? point.ideal_tss : null,
-          recommended_load_tss: hasTargetLoad ? point.recommended_load_tss : null,
-        };
-      }),
-    [completedObservationMerge.timeline, effectiveCompletedObservationsByDate, targetLoadDates],
-  );
   const idealFitnessCurve = useMemo(
     () =>
       localProjectionPreview.previewIdealCurve.length > 0
@@ -683,17 +665,9 @@ export function usePlanTrainingPathData() {
         : dashboard.idealFitnessCurve,
     [dashboard.idealFitnessCurve, localProjectionPreview.previewIdealCurve],
   );
-  const scheduledFitnessTrend = useMemo(
-    () =>
-      buildScheduledFitnessTrend({
-        fitnessHistory: dashboard.fitnessHistory,
-        idealFitnessCurve,
-        timeline: loadTimelinePoints,
-        todayKey,
-        endDate: scheduledWindowEnd,
-      }),
-    [dashboard.fitnessHistory, idealFitnessCurve, loadTimelinePoints, scheduledWindowEnd, todayKey],
-  );
+  // The Plan path is not an advanced legacy TSS chart. Do not replay a local, zero-filled
+  // schedule into fitness while the authoritative effective Load composition is partial or absent.
+  const scheduledFitnessTrend = useMemo<[]>(() => [], []);
   const canonicalTimelineWindow = useMemo(
     () =>
       buildTrainingTimelineWindowFromLoadTimeline({
@@ -707,13 +681,16 @@ export function usePlanTrainingPathData() {
     [completedObservationMerge.timeline, scheduledWindowEnd, scheduledWindowStart, todayKey],
   );
   const trainingPath = useTrainingPathViewModel({
-    timeline: planningTodayKey ? loadTimelinePoints : [],
+    // Canonical Plan load metrics are attached below from getEffectiveLoad. The local timeline
+    // remains a legacy adjustment-chart adapter and must not define this path's load values.
+    timeline: [],
     fitnessHistory: planningTodayKey ? fitnessHistoryForWindow : [],
     projectedFitness: planningTodayKey ? scheduledFitnessTrend : [],
     idealFitnessCurve: planningTodayKey ? idealFitnessCurve : [],
     goalMarkers: planningTodayKey ? dashboard.goalMarkers : [],
     selectedWeekStart,
     range: "season",
+    allowLegacyTssProjection: false,
     weekWindow: trainingPathWindow.resolvedWeekWindow,
     todayKey,
   });
@@ -739,41 +716,6 @@ export function usePlanTrainingPathData() {
 
   const selectedWeekRangeStart = trainingPath.selectedWeekSummary?.weekStart ?? null;
   const selectedWeekRangeEnd = trainingPath.selectedWeekSummary?.weekEnd ?? null;
-  const effectiveScheduledEvents = useMemo(
-    () => [
-      ...planningPlannedEvents,
-      ...planningGroupScheduledActivityPlanEvents.map((event) => ({
-        ...event,
-        id: `group:${event.id}`,
-      })),
-    ],
-    [planningGroupScheduledActivityPlanEvents, planningPlannedEvents],
-  );
-  const completedSourceComplete =
-    recentQueryEnabled &&
-    !completedActivitiesQuery.isError &&
-    !completedActivitiesQuery.isLoading &&
-    !completedActivitiesQuery.hasNextPage &&
-    !completedActivitiesQuery.isPlaceholderData;
-  const scheduledSourceComplete =
-    scheduleQueriesEnabled &&
-    (!upcomingQueryEnabled ||
-      (!upcomingPlannedEventsQuery.isError &&
-        !upcomingPlannedEventsQuery.isLoading &&
-        !upcomingPlannedEventsQuery.hasNextPage &&
-        !upcomingPlannedEventsQuery.isPlaceholderData)) &&
-    (!recentQueryEnabled ||
-      (!recentPlannedEventsQuery.isError &&
-        !recentPlannedEventsQuery.isLoading &&
-        !recentPlannedEventsQuery.hasNextPage &&
-        !recentPlannedEventsQuery.isPlaceholderData)) &&
-    !groupCalendarEventsQuery.isError &&
-    !groupCalendarEventsQuery.isLoading &&
-    !groupCalendarEventsQuery.hasNextPage &&
-    !groupCalendarEventsQuery.isPlaceholderData &&
-    !selectedGroupActivityPlansQuery.isError &&
-    !selectedGroupActivityPlansQuery.isLoading &&
-    !selectedGroupActivityPlansQuery.isPlaceholderData;
   const effectiveMetricPeriods = useMemo(
     () => [
       ...dailyTrainingPathPoints.map((point) => ({
@@ -801,32 +743,24 @@ export function usePlanTrainingPathData() {
     ],
     [dailyTrainingPathPoints, trainingPath.selectedWeekSummary, trainingPath.weeks],
   );
+  const effectivePlanLoadQuery = api.trainingPlans.getEffectiveLoad.useQuery(
+    {
+      startDate: dataWindowStart,
+      endDate: dataWindowEnd,
+    },
+    {
+      ...scheduleAwareReadQueryOptions,
+      enabled: scheduleQueriesEnabled && dataWindowStart <= dataWindowEnd,
+      placeholderData: keepPreviousData,
+    },
+  );
   const effectiveMetricSummaries = useMemo(
     () =>
-      planningTimezone
-        ? buildEffectivePlanMetricSummaries({
-            asOfInstant: effectiveAsOfInstant,
-            completedActivities,
-            completedSourceComplete,
-            coverageEndDate: dataWindowEnd,
-            coverageStartDate: dataWindowStart,
-            periods: effectiveMetricPeriods,
-            planningTimezone,
-            scheduledEvents: effectiveScheduledEvents,
-            scheduledSourceComplete,
-          })
-        : new Map(),
-    [
-      completedActivities,
-      completedSourceComplete,
-      dataWindowEnd,
-      dataWindowStart,
-      effectiveAsOfInstant,
-      effectiveMetricPeriods,
-      effectiveScheduledEvents,
-      planningTimezone,
-      scheduledSourceComplete,
-    ],
+      buildServerEffectiveLoadSummaries({
+        periods: effectiveMetricPeriods,
+        response: effectivePlanLoadQuery.data,
+      }),
+    [effectiveMetricPeriods, effectivePlanLoadQuery.data],
   );
   const effectiveSelectedWeekSummary = selectedWeekRangeStart
     ? (effectiveMetricSummaries.get(`week:${selectedWeekRangeStart}`) ?? null)
@@ -838,13 +772,14 @@ export function usePlanTrainingPathData() {
       return {
         ...point,
         effectiveLoadStatus: summary.status,
-        effectiveLoad: summary.load,
+        effectiveLoad: summary.commonLoad,
         effectiveIntensity: summary.intensity,
         effectiveCompletedLoad: summary.completedLoad,
         effectiveRemainingLoad: summary.remainingLoad,
         effectiveTentativeLoad: summary.tentativeLoad,
         hasCompletedActivityWithoutLoad:
-          summary.hasUnavailableCompletedLoad || point.hasCompletedActivityWithoutLoad,
+          summary.hasUnavailableCompletedLoad === true ||
+          point.hasCompletedActivityWithoutLoad === true,
       };
     });
   }, [dailyTrainingPathPoints, effectiveMetricSummaries]);
@@ -855,13 +790,14 @@ export function usePlanTrainingPathData() {
         ? {
             ...week,
             effectiveLoadStatus: summary.status,
-            effectiveLoad: summary.load,
+            effectiveLoad: summary.commonLoad,
             effectiveIntensity: summary.intensity,
             effectiveCompletedLoad: summary.completedLoad,
             effectiveRemainingLoad: summary.remainingLoad,
             effectiveTentativeLoad: summary.tentativeLoad,
             completedLoadUnavailable:
-              summary.hasUnavailableCompletedLoad || week.completedLoadUnavailable,
+              summary.hasUnavailableCompletedLoad === true ||
+              week.completedLoadUnavailable === true,
           }
         : week;
     });
@@ -874,14 +810,14 @@ export function usePlanTrainingPathData() {
       selectedWeekSummary: {
         ...trainingPath.selectedWeekSummary,
         effectiveLoadStatus: effectiveSelectedWeekSummary.status,
-        effectiveLoad: effectiveSelectedWeekSummary.load,
+        effectiveLoad: effectiveSelectedWeekSummary.commonLoad,
         effectiveIntensity: effectiveSelectedWeekSummary.intensity,
         effectiveCompletedLoad: effectiveSelectedWeekSummary.completedLoad,
         effectiveRemainingLoad: effectiveSelectedWeekSummary.remainingLoad,
         effectiveTentativeLoad: effectiveSelectedWeekSummary.tentativeLoad,
         completedLoadUnavailable:
-          effectiveSelectedWeekSummary.hasUnavailableCompletedLoad ||
-          trainingPath.selectedWeekSummary.completedLoadUnavailable,
+          effectiveSelectedWeekSummary.hasUnavailableCompletedLoad === true ||
+          trainingPath.selectedWeekSummary.completedLoadUnavailable === true,
       },
     };
   }, [effectiveMetricSummaries, effectiveSelectedWeekSummary, trainingPath]);
@@ -990,6 +926,7 @@ export function usePlanTrainingPathData() {
     upcomingPlannedEventsQuery.isLoading ||
     recentPlannedEventsQuery.isLoading ||
     dailyCommonLoadObservationsQuery.isLoading ||
+    effectivePlanLoadQuery.isLoading ||
     profileSettings.isLoading;
   const queryFailureCount =
     [
@@ -1000,6 +937,7 @@ export function usePlanTrainingPathData() {
       selectedGroupActivityPlansQuery.isError,
       completedActivitiesQuery.isError,
       dailyCommonLoadObservationsQuery.isError,
+      effectivePlanLoadQuery.isError,
       expandedActualCurveQuery.isError,
       goals.isError,
       profileSettings.isError,
@@ -1113,6 +1051,7 @@ export function usePlanTrainingPathData() {
         dailyCommonLoadQueryEnabled
           ? dailyCommonLoadObservationsQuery.refetch()
           : Promise.resolve(null),
+        scheduleQueriesEnabled ? effectivePlanLoadQuery.refetch() : Promise.resolve(null),
         expandedActualCurveEnabled ? expandedActualCurveQuery.refetch() : Promise.resolve(null),
         refreshProfile(),
         profileSettings.refetch(),
@@ -1124,6 +1063,7 @@ export function usePlanTrainingPathData() {
     completedActivitiesQuery.refetch,
     dailyCommonLoadObservationsQuery.refetch,
     dailyCommonLoadQueryEnabled,
+    effectivePlanLoadQuery,
     eventsQueryEnabled,
     expandedActualCurveEnabled,
     expandedActualCurveQuery.refetch,

@@ -121,6 +121,8 @@ import {
   updateFromCreationConfigUseCase,
   updateTrainingPlanUseCase,
 } from "../../../application/training-plan";
+import { getCurrentPlanningWeek } from "../../../application/training-plan/current-planning-week";
+import { getEffectivePlanLoad } from "../../../application/training-plan/get-effective-plan-load";
 import { getRequiredDb } from "../../../db";
 import {
   createPlanningTemplateRepository,
@@ -4207,23 +4209,37 @@ const trainingPlansProcedures = {
     });
 
     const today = new Date();
+    const [planningProfile] = await db
+      .select({ planningTimezone: schema.profiles.planning_timezone })
+      .from(schema.profiles)
+      .where(eq(schema.profiles.id, ctx.session.user.id))
+      .limit(1);
+    const parsedPlanningTimezone = ianaTimezoneSchema.safeParse(planningProfile?.planningTimezone);
+    // Preserve the effective-load use case's explicit unavailable response for a
+    // missing/invalid profile timezone while retaining deterministic legacy reads.
+    const planningTimezone = parsedPlanningTimezone.success ? parsedPlanningTimezone.data : "UTC";
+    const weekBounds = getCurrentPlanningWeek(today, planningTimezone);
     const commonLoadHistory = await readCurrentProfileCommonLoadHistory({
       db,
       profileId: ctx.session.user.id,
       now: today,
     });
-    const latestLoadState =
-      commonLoadHistory.result.status === "available"
-        ? (commonLoadHistory.result.points.at(-1) ?? null)
-        : null;
+    const availableLoadHistory =
+      commonLoadHistory.result.status === "available" ? commonLoadHistory.result : null;
+    const latestLoadState = availableLoadHistory?.points.at(-1) ?? null;
 
     // Get this week's progress
-    const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - today.getDay()); // Sunday
-    startOfWeek.setHours(0, 0, 0, 0);
-
-    const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(startOfWeek.getDate() + 7);
+    const weekStartDate = weekBounds.startDate;
+    const weekEndDate = weekBounds.endDate;
+    // This is the primary status/progress source. It resolves completed activity
+    // Load and remaining scheduled Load with server-owned effective composition;
+    // unavailable inputs stay unavailable rather than becoming zero.
+    const effectiveWeekLoad = await getEffectivePlanLoad({
+      db,
+      profileId: ctx.session.user.id,
+      repository: createEventReadRepository(db),
+      request: { startDate: weekStartDate, endDate: weekEndDate },
+    });
 
     // Get completed activities this week
     const weekActivities = await db
@@ -4232,8 +4248,8 @@ const trainingPlansProcedures = {
       .where(
         and(
           eq(schema.activities.profile_id, ctx.session.user.id),
-          gte(schema.activities.started_at, startOfWeek),
-          lt(schema.activities.started_at, endOfWeek),
+          gte(schema.activities.started_at, weekBounds.startInstant),
+          lt(schema.activities.started_at, weekBounds.endExclusiveInstant),
         ),
       );
 
@@ -4251,9 +4267,6 @@ const trainingPlansProcedures = {
     const completedWeeklyTSS = completedWeeklyLoad.tss;
 
     // Get planned activities this week with their activity plans
-    const weekStartDate = startOfWeek.toISOString().split("T")[0] || "";
-    const weekEndDate = endOfWeek.toISOString().split("T")[0] || "";
-
     const plannedActivitiesEvents = await db
       .select({
         starts_at: schema.events.starts_at,
@@ -4267,8 +4280,8 @@ const trainingPlansProcedures = {
         and(
           eq(schema.events.profile_id, ctx.session.user.id),
           eq(schema.events.event_type, plannedEventType),
-          gte(schema.events.starts_at, new Date(toDayStartIso(weekStartDate))),
-          lt(schema.events.starts_at, new Date(toDayStartIso(weekEndDate))),
+          gte(schema.events.starts_at, weekBounds.startInstant),
+          lt(schema.events.starts_at, weekBounds.endExclusiveInstant),
         ),
       );
 
@@ -4389,9 +4402,10 @@ const trainingPlansProcedures = {
 
     return {
       asOf: commonLoadHistory.computedAt,
+      weekBounds,
       loadHistory: commonLoadHistory.result,
       currentLoadStatus:
-        latestLoadState === null
+        latestLoadState === null || availableLoadHistory === null
           ? null
           : {
               longTermLoad: Math.round(latestLoadState.longTermLoad * 10) / 10,
@@ -4399,6 +4413,8 @@ const trainingPlansProcedures = {
               loadBalance: Math.round(latestLoadState.loadBalance * 10) / 10,
               loadBalanceStatus: getFormStatus(latestLoadState.loadBalance),
               recordedAt: commonLoadHistory.computedAt,
+              maturity: availableLoadHistory.maturity.status,
+              coverageStatus: availableLoadHistory.coverageStatus,
             },
       /** @deprecated Use currentLoadStatus.longTermLoad. */
       ctl: latestLoadState === null ? null : Math.round(latestLoadState.longTermLoad * 10) / 10,
@@ -4408,6 +4424,21 @@ const trainingPlansProcedures = {
       tsb: latestLoadState === null ? null : Math.round(latestLoadState.loadBalance * 10) / 10,
       /** @deprecated Use currentLoadStatus.loadBalanceStatus. */
       form: latestLoadState === null ? null : getFormStatus(latestLoadState.loadBalance),
+      commonWeekProgress:
+        effectiveWeekLoad.status === "available"
+          ? {
+              status: effectiveWeekLoad.effective.status,
+              completed: effectiveWeekLoad.completed,
+              remaining: effectiveWeekLoad.remaining,
+              tentative: effectiveWeekLoad.tentative,
+              effective: effectiveWeekLoad.effective,
+              sourceCounts: effectiveWeekLoad.sourceCounts,
+            }
+          : {
+              status: "unavailable" as const,
+              reason: effectiveWeekLoad.reason,
+              sourceCounts: effectiveWeekLoad.sourceCounts,
+            },
       legacyTssWeekProgress: {
         completedTSS: Math.round(completedWeeklyTSS * 10) / 10,
         tssComplete: completedWeeklyLoad.complete,

@@ -1,4 +1,4 @@
-import { calculateAvailableCommonLoad } from "@repo/core";
+import { aggregateCommonLoadEnvelopes, calculateAvailableCommonLoad } from "@repo/core";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -79,7 +79,15 @@ describe("activity plan presentation", () => {
         { estimated_distance: 12_500, estimated_duration: 4_500 },
         commonLoad,
       ),
-    ).toEqual(["1h 15m", "12.5 km", "Load 88", "Intensity 0.84"]);
+    ).toEqual(["Load 88", "Intensity 0.84", "1h 15m", "12.5 km"]);
+  });
+
+  it("presents an aggregate common Load without falling back to legacy TSS", () => {
+    const aggregate = aggregateCommonLoadEnvelopes([commonLoad]);
+    expect(getActivityPlanMetricSummary(undefined, aggregate)).toEqual([
+      "Load 88",
+      "Intensity 0.84",
+    ]);
   });
 
   it("omits unavailable and invalid estimates", () => {

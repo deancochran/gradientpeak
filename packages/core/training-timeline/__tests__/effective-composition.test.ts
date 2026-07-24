@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  aggregateCommonLoad,
   COMMON_RELATIVE_LOAD_MODEL,
   COMMON_RELATIVE_LOAD_VERSION,
   type CommonLoadResult,
@@ -56,6 +57,7 @@ function unavailable(durationSeconds: number | null = 3600): CommonLoadResult {
     method: null,
     quality: null,
     thresholdEvidence: null,
+    sessionRpeEvidence: null,
     evidenceFingerprint: null,
     computedAsOf,
     contributingDurationSeconds: durationSeconds,
@@ -66,7 +68,7 @@ function unavailable(durationSeconds: number | null = 3600): CommonLoadResult {
 function scheduled(
   scheduledItemId: string,
   scheduledDate: string,
-  commonLoad: CommonLoadResult,
+  commonLoad: EffectiveScheduledItem["commonLoad"],
   overrides: Partial<EffectiveScheduledItem> = {},
 ): EffectiveScheduledItem {
   return {
@@ -134,6 +136,74 @@ describe("effective Plan Load composition", () => {
     expect(result.aggregate).toMatchObject({
       status: "complete",
       commonLoad: { load: 50, totalActivityCount: 1 },
+    });
+  });
+
+  it("retains a compatible multisport parent aggregate as one completed item", () => {
+    const parentAggregate = aggregateCommonLoad([available(1800, 0.5), available(3600, 1)]);
+    const result = composed(
+      composeEffectivePlanLoad(
+        input({
+          completedActivities: [
+            {
+              completedActivityId: "multisport-1",
+              completedDate: "2026-07-21",
+              commonLoad: parentAggregate,
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        kind: "completed",
+        completedActivityId: "multisport-1",
+        commonLoad: parentAggregate,
+      }),
+    ]);
+    expect(result.aggregate).toMatchObject({
+      status: "complete",
+      commonLoad: {
+        totalActivityCount: 1,
+        contributingActivityCount: 1,
+        contributingDurationSeconds: 5400,
+        knownDurationSeconds: 5400,
+        load: 112.5,
+      },
+    });
+    if (result.aggregate.status !== "complete") throw new Error("Expected complete aggregate");
+    if (result.aggregate.commonLoad.status === "unavailable") {
+      throw new Error("Expected known common Load aggregate");
+    }
+    expect(result.aggregate.commonLoad.intensity).toBeCloseTo(Math.sqrt(112.5 / 150), 12);
+  });
+
+  it("retains a compatible multisport parent aggregate as one planned item", () => {
+    const parentAggregate = aggregateCommonLoad([available(1800, 0.5), available(3600, 1)]);
+    const result = composed(
+      composeEffectivePlanLoad(
+        input({
+          scheduledItems: [scheduled("multisport-plan", "2026-07-22", parentAggregate)],
+        }),
+      ),
+    );
+
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        kind: "scheduled",
+        scheduledItemId: "multisport-plan",
+        commonLoad: parentAggregate,
+      }),
+    ]);
+    expect(result.aggregate).toMatchObject({
+      status: "complete",
+      commonLoad: {
+        totalActivityCount: 1,
+        contributingActivityCount: 1,
+        knownDurationSeconds: 5400,
+        load: 112.5,
+      },
     });
   });
 

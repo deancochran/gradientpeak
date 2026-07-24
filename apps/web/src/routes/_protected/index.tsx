@@ -10,6 +10,7 @@ import { Activity, CalendarDays, Target } from "lucide-react";
 import { ActivityFeed } from "../../components/feed/activity-feed";
 import { SearchLauncher } from "../../components/protected/search-launcher";
 import { useAuth } from "../../components/providers/auth-provider";
+import { getCommonLoadPresentation } from "../../lib/activity-load-presentation";
 import { api } from "../../lib/api/client";
 
 export const Route = createFileRoute("/_protected/")({
@@ -35,6 +36,36 @@ function DashboardPage() {
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <MetricCard
+          title="Long-term"
+          value={
+            dashboard?.currentLoadStatus
+              ? String(dashboard.currentLoadStatus.longTermLoad)
+              : "Unavailable"
+          }
+          description={
+            dashboard?.currentLoadStatus
+              ? `Common Load · CTL alias · ${dashboard.currentLoadStatus.maturity}`
+              : dashboard
+                ? "Complete common Load history is unavailable"
+                : "Loading common Load history"
+          }
+          icon={<Activity className="h-4 w-4" />}
+        />
+        <MetricCard
+          title="Recent"
+          value={
+            dashboard?.currentLoadStatus
+              ? String(dashboard.currentLoadStatus.recentLoad)
+              : "Unavailable"
+          }
+          description={
+            dashboard?.currentLoadStatus
+              ? "Common Load · ATL alias"
+              : "Complete common Load history is unavailable"
+          }
+          icon={<Activity className="h-4 w-4" />}
+        />
+        <MetricCard
           title="Balance"
           value={
             dashboard?.currentLoadStatus
@@ -43,10 +74,8 @@ function DashboardPage() {
           }
           description={
             dashboard?.currentLoadStatus
-              ? `Long-term ${dashboard.currentLoadStatus.longTermLoad} / Recent ${dashboard.currentLoadStatus.recentLoad}`
-              : dashboard
-                ? "Complete common Load history is unavailable"
-                : "Loading common Load history"
+              ? `Common Load · TSB alias · ${dashboard.currentLoadStatus.coverageStatus} coverage`
+              : "Complete common Load history is unavailable"
           }
           icon={<Activity className="h-4 w-4" />}
         />
@@ -102,7 +131,11 @@ function DashboardPage() {
                           ? "Duration unavailable"
                           : `${Math.round(item.estimatedDuration / 60)} min`}
                       </p>
-                      <p>Load unavailable</p>
+                      <p>
+                        {getCommonLoadPresentation(item.commonLoad).status === "unavailable"
+                          ? "Load unavailable"
+                          : `Load ${getCommonLoadPresentation(item.commonLoad).load} · Intensity ${getCommonLoadPresentation(item.commonLoad).intensity}`}
+                      </p>
                     </div>
                   </div>
                 ))}

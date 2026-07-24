@@ -7,9 +7,17 @@ import { createQueryMapDbMock, type QueryMap, type QueryResult } from "../../tes
 import { deriveProfileAwareCreationContext, trainingPlansRouter } from "../planning/training-plans";
 
 const currentLoadHistoryMock = vi.hoisted(() => vi.fn());
+const effectivePlanLoadMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../../application/activities/read-current-profile-common-load-history", () => ({
   readCurrentProfileCommonLoadHistory: currentLoadHistoryMock,
+}));
+
+vi.mock("../../application/training-plan/get-effective-plan-load", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../../application/training-plan/get-effective-plan-load")
+  >()),
+  getEffectivePlanLoad: effectivePlanLoadMock,
 }));
 
 function currentHistoryResult(
@@ -33,11 +41,19 @@ function currentHistoryResult(
         };
         points: Array<{
           date: string;
+          coverageStatus: "complete" | "partial";
           dailyLoad: number;
           longTermLoad: number;
           recentLoad: number;
           loadBalance: number;
         }>;
+        coverageStatus: "complete" | "partial";
+        maturity: {
+          status: "establishing_baseline" | "provisional" | "mature";
+          replayedDays: number;
+          requiredMatureDays: number;
+          coverage: { completeDays: number; partialDays: number; ratio: number };
+        };
       },
 ) {
   return {
@@ -59,7 +75,7 @@ const unavailableCurrentHistory = currentHistoryResult({
   },
 });
 
-function availableCurrentHistory() {
+function availableCurrentHistory(partial = false) {
   return currentHistoryResult({
     status: "available",
     policyVersion: "common_load_history_v1",
@@ -71,8 +87,18 @@ function availableCurrentHistory() {
       commonLoad: { model: "gradientpeak_relative_load", version: "1" },
       evidenceFingerprints: ["history-fixture"],
     },
+    coverageStatus: partial ? "partial" : "complete",
+    maturity: {
+      status: partial ? "provisional" : "mature",
+      replayedDays: 168,
+      requiredMatureDays: 168,
+      coverage: partial
+        ? { completeDays: 167, partialDays: 1, ratio: 167 / 168 }
+        : { completeDays: 168, partialDays: 0, ratio: 1 },
+    },
     points: Array.from({ length: 84 }, (_, index) => ({
       date: new Date(Date.UTC(2026, 3, 30 + index)).toISOString().slice(0, 10),
+      coverageStatus: partial && index === 83 ? "partial" : "complete",
       dailyLoad: index === 83 ? 70 : 0,
       longTermLoad: index === 83 ? 45 : 0,
       recentLoad: index === 83 ? 52 : 0,
@@ -84,6 +110,15 @@ function availableCurrentHistory() {
 beforeEach(() => {
   currentLoadHistoryMock.mockReset();
   currentLoadHistoryMock.mockResolvedValue(unavailableCurrentHistory);
+  effectivePlanLoadMock.mockResolvedValue({
+    status: "unavailable",
+    reason: "planning_timezone_missing",
+    model: "gradientpeak_relative_load",
+    version: "1",
+    sourceCounts: { activities: 0, events: 0 },
+    resolvedRange: { startDate: null, endDate: null, timezone: null },
+    sourceCoverage: { activities: null, scheduledItems: null },
+  });
 });
 
 const systemActivityPlanId = buildSystemActivityTemplateCatalog()[0]?.template_id;
@@ -3190,6 +3225,7 @@ describe("trainingPlansRouter analytics endpoints", () => {
       activities: { data: [unknown], error: null },
       training_plans: { data: null, error: null },
     }).getCurrentStatus();
+    currentLoadHistoryMock.mockResolvedValueOnce(availableCurrentHistory(true));
     const partialResult = await createTrainingPlansCaller({
       ...loadEvidenceResults,
       activities: { data: [known, unknown], error: null },
@@ -3210,6 +3246,31 @@ describe("trainingPlansRouter analytics endpoints", () => {
 
   it("returns current load after adequate history", async () => {
     currentLoadHistoryMock.mockResolvedValueOnce(availableCurrentHistory());
+    effectivePlanLoadMock.mockResolvedValueOnce({
+      status: "available",
+      completed: { status: "complete", load: 45 },
+      remaining: { status: "complete", load: 70 },
+      tentative: { status: "known_zero", load: 0 },
+      effective: {
+        status: "available",
+        periodStartDate: "2026-07-19",
+        periodEndDate: "2026-07-25",
+        planningDate: "2026-07-23",
+        firmItems: [],
+        tentativeItems: [],
+        firm: { status: "known_zero", load: 0, intensity: null },
+        tentative: { status: "known_zero", load: 0 },
+        includingTentative: { status: "known_zero", load: 0, intensity: null },
+      },
+      model: "gradientpeak_relative_load",
+      version: "1",
+      sourceCounts: { activities: 1, events: 1 },
+      resolvedRange: { startDate: "2026-07-19", endDate: "2026-07-25", timezone: "UTC" },
+      sourceCoverage: {
+        activities: { startDate: "2026-07-19", endDate: "2026-07-25", status: "complete" },
+        scheduledItems: { startDate: "2026-07-19", endDate: "2026-07-25", status: "complete" },
+      },
+    });
     const recent = new Date();
     recent.setUTCDate(recent.getUTCDate() - 7);
     const activity = buildLoadActivity("known", recent);
@@ -3227,8 +3288,21 @@ describe("trainingPlansRouter analytics endpoints", () => {
       loadBalance: -7,
       loadBalanceStatus: expect.any(String),
       recordedAt: "2026-07-23T12:00:00.000Z",
+      maturity: "mature",
+      coverageStatus: "complete",
     });
     expect(result).toMatchObject({ ctl: 45, atl: 52, tsb: -7, form: expect.any(String) });
+    expect(result?.commonWeekProgress).toMatchObject({
+      status: "available",
+      completed: { load: 45 },
+      remaining: { load: 70 },
+      tentative: { load: 0 },
+    });
+    expect(effectivePlanLoadMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        request: { startDate: expect.any(String), endDate: expect.any(String) },
+      }),
+    );
     expect(result?.weekProgress).toEqual(result?.legacyTssWeekProgress);
   });
 

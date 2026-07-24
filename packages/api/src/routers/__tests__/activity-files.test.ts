@@ -303,7 +303,16 @@ beforeEach(() => {
     throw new Error("Unsupported activity file type");
   });
 
-  mocks.calculateBestEfforts.mockReturnValue([{ duration: 1200, value: 300, startIndex: 0 }]);
+  mocks.calculateBestEfforts.mockImplementation((_, timestamps: number[]) => [
+    {
+      duration: 1200,
+      value: 300,
+      startIndex: 0,
+      endIndex: 0,
+      startTimeSeconds: timestamps[0],
+      endTimeSeconds: (timestamps[0] ?? 0) + 1200,
+    },
+  ]);
   mocks.calculateDecouplingFromStreams.mockReturnValue(0.03);
   mocks.calculateEfficiencyFactor.mockReturnValue(1.55);
   mocks.calculateGradedSpeedStream.mockReturnValue([4.5, 4.7]);

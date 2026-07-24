@@ -428,6 +428,7 @@ function createDbMock(options: {
   activityGeometryRows?: any[];
   activityLapRows?: any[];
   currentArtifactRows?: any[];
+  sessionRpeEvidenceRows?: any[];
   profileRows?: any[];
   integrationRows?: any[];
   providerSyncRows?: any[];
@@ -499,6 +500,7 @@ function createDbMock(options: {
     if (tableName === "activity_geometry") return options.activityGeometryRows ?? [];
     if (tableName === "activity_laps") return options.activityLapRows ?? [];
     if (tableName === "activity_artifact_links") return options.currentArtifactRows ?? [];
+    if (tableName === "activity_session_rpe_evidence") return options.sessionRpeEvidenceRows ?? [];
     if (tableName === "events") return options.queryEventsFindFirst ?? [];
     return options.activityRows ?? [];
   }
@@ -565,7 +567,9 @@ function createDbMock(options: {
                 orderBy:
                   getTableName(table) === "activities"
                     ? orderBy
-                    : vi.fn(() => ({ limit: vi.fn(resolveRows) })),
+                    : getTableName(table) === "activity_session_rpe_evidence"
+                      ? vi.fn(() => Promise.resolve(rows))
+                      : vi.fn(() => ({ limit: vi.fn(resolveRows) })),
                 then: (onFulfilled: (value: unknown[]) => unknown) =>
                   Promise.resolve(rows).then(onFulfilled),
               };
@@ -1675,6 +1679,23 @@ describe("activitiesRouter", () => {
       ],
       joinedRows: [{ activity, activityPlan }],
       likeRows: [{ entity_id: ACTIVITY_ID, likes_count: 5, has_liked: true }],
+      sessionRpeEvidenceRows: [
+        {
+          id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          profileId: OTHER_ID,
+          activityId: ACTIVITY_ID,
+          recordedAt: new Date("2026-01-09T08:46:00.000Z"),
+          correctedAt: null,
+          rpe: 8,
+          scale: "borg_cr10",
+          scaleVersion: "1",
+          source: "manual",
+          operationId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          correctionOfId: null,
+          provenance: { observation_type: "completed_session_rpe" },
+          createdAt: new Date("2026-01-09T08:46:00.000Z"),
+        },
+      ],
     });
 
     mockActivityAnalysis.resolveActivityContextAsOf.mockResolvedValue({
@@ -1696,6 +1717,7 @@ describe("activitiesRouter", () => {
         matched_category_summary: null,
         current_artifact: null,
         ingestion: null,
+        effective_session_rpe: null,
       },
       has_liked: true,
       derived: privateDerived,
@@ -1703,6 +1725,71 @@ describe("activitiesRouter", () => {
     });
     expect(mockActivityAnalysis.resolveActivityContextAsOf).not.toHaveBeenCalled();
     expect(mockActivityAnalysis.analyzeActivityDerivedMetrics).not.toHaveBeenCalled();
+  });
+
+  it("returns the latest effective session RPE evidence only to the activity owner", async () => {
+    const activity = buildActivityRow({ profile_id: OWNER_ID });
+    const firstEvidenceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const effectiveEvidenceId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const db = createDbMock({
+      queryActivitiesFindFirst: [
+        { profile_id: OWNER_ID, is_private: false, content_visibility: "public" },
+      ],
+      joinedRows: [{ activity, activityPlan: null }],
+      sessionRpeEvidenceRows: [
+        {
+          id: firstEvidenceId,
+          profileId: OWNER_ID,
+          activityId: ACTIVITY_ID,
+          recordedAt: new Date("2026-01-10T08:46:00.000Z"),
+          correctedAt: null,
+          rpe: 6,
+          scale: "borg_cr10",
+          scaleVersion: "1",
+          source: "user",
+          operationId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+          correctionOfId: null,
+          provenance: { observation_type: "completed_session_rpe", entered_by: "athlete" },
+          createdAt: new Date("2026-01-10T08:46:00.000Z"),
+        },
+        {
+          id: effectiveEvidenceId,
+          profileId: OWNER_ID,
+          activityId: ACTIVITY_ID,
+          recordedAt: new Date("2026-01-10T08:47:00.000Z"),
+          correctedAt: new Date("2026-01-10T08:48:00.000Z"),
+          rpe: 7,
+          scale: "borg_cr10",
+          scaleVersion: "1",
+          source: "manual",
+          operationId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+          correctionOfId: firstEvidenceId,
+          provenance: {
+            observation_type: "completed_session_rpe",
+            entered_by: "athlete",
+            correction_of_id: firstEvidenceId,
+          },
+          createdAt: new Date("2026-01-10T08:48:00.000Z"),
+        },
+      ],
+    });
+
+    const result = await createCaller(db).getById({ id: ACTIVITY_ID });
+
+    expect(result.activity.effective_session_rpe).toEqual({
+      id: effectiveEvidenceId,
+      rpe: 7,
+      scale: "borg_cr10",
+      scale_version: "1",
+      source: "manual",
+      recorded_at: new Date("2026-01-10T08:47:00.000Z"),
+      corrected_at: new Date("2026-01-10T08:48:00.000Z"),
+      provenance: {
+        observation_type: "completed_session_rpe",
+        entered_by: "athlete",
+        correction_of_id: firstEvidenceId,
+      },
+    });
   });
 
   it("uses canonical parent detail values and preserves lap order", async () => {
