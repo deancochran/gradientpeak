@@ -1,3 +1,4 @@
+import { describe, expect, it } from "vitest";
 import { buildElevationProfilePoints } from "../elevationProfile";
 
 describe("buildElevationProfilePoints", () => {

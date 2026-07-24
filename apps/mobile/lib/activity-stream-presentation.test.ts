@@ -1,4 +1,5 @@
 import type { ActivityStreamAnalysis } from "@repo/core";
+import { describe, expect, it } from "vitest";
 import {
   getStreamArtifactMessage,
   presentActivityStreamAnalysis,
