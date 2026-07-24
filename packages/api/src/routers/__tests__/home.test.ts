@@ -242,7 +242,19 @@ describe("homeRouter", () => {
         new Map(
           activityIds.map((activityId) => [
             activityId,
-            [{ id: `${activityId}-segment`, role: "activity", category: "bike", ordinal: 0 }],
+            [
+              {
+                id: `${activityId}-segment`,
+                role: "activity",
+                category: "bike",
+                ordinal: 0,
+                summary: {
+                  version: 1,
+                  timing: { timingCoverage: "unavailable" },
+                  normalizedPowerWatts: 247.5,
+                },
+              },
+            ],
           ]),
         ),
     );
@@ -369,7 +381,6 @@ describe("homeRouter", () => {
               max_power: 320,
               avg_speed_mps: 6,
               max_speed_mps: 10,
-              normalized_power: 225,
               normalized_speed_mps: 6.3,
               normalized_graded_speed_mps: 6.4,
             },
@@ -389,7 +400,6 @@ describe("homeRouter", () => {
               max_power: 340,
               avg_speed_mps: 6.2,
               max_speed_mps: 10.4,
-              normalized_power: 235,
               normalized_speed_mps: 6.5,
               normalized_graded_speed_mps: 6.6,
             },
@@ -438,6 +448,15 @@ describe("homeRouter", () => {
     });
 
     const result = await caller.getDashboard({ days: 2 });
+
+    expect(homeMocks.buildDynamicStressSeries).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activities: expect.arrayContaining([
+          expect.objectContaining({ id: "activity-yesterday", normalized_power: 248 }),
+          expect.objectContaining({ id: "activity-today", normalized_power: 248 }),
+        ]),
+      }),
+    );
 
     expect(homeMocks.getEffectivePlanLoad).toHaveBeenCalledWith(
       expect.objectContaining({ request: { startDate: "2026-04-03", endDate: "2026-05-15" } }),
@@ -625,7 +644,6 @@ describe("homeRouter", () => {
               max_power: 340,
               avg_speed_mps: 6.2,
               max_speed_mps: 10.4,
-              normalized_power: 235,
               normalized_speed_mps: 6.5,
               normalized_graded_speed_mps: 6.6,
             },
@@ -758,7 +776,6 @@ describe("homeRouter", () => {
               max_power: 340,
               avg_speed_mps: 6.2,
               max_speed_mps: 10.4,
-              normalized_power: 235,
               normalized_speed_mps: 6.5,
               normalized_graded_speed_mps: 6.6,
             },

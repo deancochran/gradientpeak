@@ -1,14 +1,8 @@
-import { createHash } from "node:crypto";
 import { CRITICAL_POWER_CANONICAL_DURATIONS } from "@repo/core/calculations";
 import { schema } from "@repo/db";
 import { and, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import type { DrizzleQueryExecutor } from "../../db";
-import type {
-  ActivityAnalysisContextSnapshot,
-  ActivityAnalysisStore,
-  ActivitySessionRpeEvidenceSnapshot,
-} from "../../repositories";
-import { listOwnedEffectiveSessionRpeEvidenceForActivities } from "../../repositories";
+import type { ActivityAnalysisContextSnapshot, ActivityAnalysisStore } from "../../repositories";
 
 const metricTypes = [
   "weight_kg",
@@ -198,57 +192,8 @@ export function createActivityAnalysisStore(db: DrizzleQueryExecutor): ActivityA
     return evidenceByProfileId;
   };
 
-  const loadEffectiveSessionRpeEvidence: NonNullable<
-    ActivityAnalysisStore["loadEffectiveSessionRpeEvidence"]
-  > = async ({ activityIds, profileId }) => {
-    const rows = await listOwnedEffectiveSessionRpeEvidenceForActivities(db, {
-      activityIds,
-      profileId,
-    });
-    const effective = new Map<string, (typeof rows)[number]>();
-    // The repository returns chronological effective observations. If legacy
-    // rows contain more than one active observation, the newest remains the
-    // only RPE projection admitted to one activity context.
-    for (const row of rows) effective.set(row.activityId, row);
-    const snapshots = new Map<string, ActivitySessionRpeEvidenceSnapshot>();
-    for (const row of effective.values()) {
-      if (
-        row.scale !== "borg_cr10" ||
-        row.scaleVersion !== "1" ||
-        (row.source !== "user" && row.source !== "provider" && row.source !== "manual")
-      ) {
-        continue;
-      }
-      const provenanceFingerprint = `session-rpe:v1:sha256:${createHash("sha256")
-        .update(
-          JSON.stringify([
-            row.operationId,
-            row.recordedAt.toISOString(),
-            row.rpe,
-            row.scale,
-            row.scaleVersion,
-            row.source,
-            row.correctionOfId,
-            row.provenance,
-          ]),
-        )
-        .digest("hex")}`;
-      snapshots.set(row.activityId, {
-        activityId: row.activityId,
-        recordedAt: row.recordedAt,
-        rpe: row.rpe,
-        scale: row.scale,
-        scaleVersion: row.scaleVersion,
-        source: row.source,
-        provenanceFingerprint,
-      });
-    }
-    return snapshots;
-  };
-
   return {
     loadContextEvidence,
-    loadEffectiveSessionRpeEvidence,
     async getContextSnapshot({ asOf, effortLookbackAsOf, profileId, evidenceScope }) {
       const evidence = await loadContextEvidence({
         requests: [

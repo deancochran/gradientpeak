@@ -11,10 +11,8 @@ import {
   type CommonLoadMethod,
   type CommonLoadResult,
   calculateAvailableCommonLoad,
-  calculateSessionRpeCommonLoad,
   commonLoadAggregateSchema,
   commonLoadResultSchema,
-  SESSION_RPE_COMMON_LOAD_CALIBRATION_VERSION,
 } from "../index";
 
 const computedAsOf = "2026-07-21T12:00:00.000Z";
@@ -43,7 +41,7 @@ const sportByMethod = {
   heart_rate_zones: "run",
 } as const;
 
-function metadata(method: Exclude<CommonLoadMethod, "session_rpe"> = "power_threshold") {
+function metadata(method: CommonLoadMethod = "power_threshold") {
   return {
     sport: sportByMethod[method],
     method,
@@ -74,7 +72,7 @@ function metadata(method: Exclude<CommonLoadMethod, "session_rpe"> = "power_thre
 function available(
   durationSeconds: number,
   intensity: number,
-  method: Exclude<CommonLoadMethod, "session_rpe"> = "power_threshold",
+  method: CommonLoadMethod = "power_threshold",
 ): CommonLoadResult {
   return calculateAvailableCommonLoad({
     ...metadata(method),
@@ -152,83 +150,19 @@ function unavailableWithCompleteProvenance(
   };
 }
 
-describe("session-RPE common Load", () => {
-  const evidence = {
-    rpe: 7,
-    scale: "borg_cr10" as const,
-    scaleVersion: "1" as const,
-    source: "user" as const,
-    recordedAt: "2026-07-20T12:00:00.000Z",
-    provenanceFingerprint: "session-rpe-evidence",
-  };
-
-  it("anchors Borg CR10 RPE 7 at Intensity 1.0 and preserves linear sRPE Load", () => {
-    const result = calculateSessionRpeCommonLoad({
-      sport: "strength",
-      contributingDurationSeconds: 3600,
-      computedAsOf,
-      evidence,
-    });
-    expect(result).toMatchObject({
-      status: "available",
-      method: "session_rpe",
-      intensity: 1,
-      load: 100,
-      estimated: true,
-      thresholdEvidence: null,
-      sessionRpeEvidence: evidence,
-      quality: {
-        source: "manual",
-        estimate: true,
-        calculation_version: SESSION_RPE_COMMON_LOAD_CALIBRATION_VERSION,
-      },
-    });
-  });
-
-  it("derives session-RPE Load from the full-precision intensity", () => {
-    const result = calculateSessionRpeCommonLoad({
-      sport: "strength",
-      contributingDurationSeconds: 2_700,
-      computedAsOf,
-      evidence: { ...evidence, rpe: 8 },
-    });
-
-    expect(result.status).toBe("available");
-    if (result.status !== "available") throw new Error("Expected available session-RPE Load");
-    expect(result.load).toBe(
-      (result.contributingDurationSeconds / 3600) * result.intensity ** 2 * 100,
+describe("session-RPE common Load exclusion", () => {
+  it("rejects session-RPE methods and non-null compatibility evidence", () => {
+    const result = available(3600, 1);
+    expect(commonLoadResultSchema.safeParse({ ...result, method: "session_rpe" }).success).toBe(
+      false,
     );
-    expect(result.load).toBeCloseTo((2_700 / 3600) * (8 / 7) * 100, 12);
-  });
-
-  it("requires duration and rejects threshold evidence for session-RPE", () => {
-    expect(() =>
-      calculateSessionRpeCommonLoad({
-        sport: "other",
-        contributingDurationSeconds: 0,
-        computedAsOf,
-        evidence,
-      }),
-    ).toThrow();
     expect(
       commonLoadResultSchema.safeParse({
-        ...calculateSessionRpeCommonLoad({
-          sport: "other",
-          contributingDurationSeconds: 1800,
-          computedAsOf,
-          evidence,
-        }),
-        thresholdEvidence: {
-          ...thresholdByMethod.power_threshold,
-          source: "manual",
-          observedAt: computedAsOf,
-          validAt: computedAsOf,
-          freshness: "current",
-          calculationVersion: "x",
-          sourceFingerprint: "not-session-rpe",
-        },
+        ...result,
+        sessionRpeEvidence: { rpe: 7 },
       }).success,
     ).toBe(false);
+    expect(result.sessionRpeEvidence).toBeNull();
   });
 });
 
@@ -269,6 +203,32 @@ describe("common relative Load activity contract and calculation", () => {
       evidenceFingerprint: null,
       computedAsOf,
     });
+  });
+
+  it("requires coherent canonical coverage facts only for unavailable insufficient coverage", () => {
+    const insufficient = {
+      ...unavailable({ duration: 1_200 }),
+      reason: "insufficient_coverage" as const,
+      eligibleDurationSeconds: 3_600,
+      sourceTimeCoverage: 1 / 3,
+    };
+    expect(commonLoadResultSchema.parse(insufficient)).toMatchObject({
+      eligibleDurationSeconds: 3_600,
+      sourceTimeCoverage: 1 / 3,
+    });
+    expect(
+      commonLoadResultSchema.safeParse({ ...insufficient, sourceTimeCoverage: 0.5 }).success,
+    ).toBe(false);
+    expect(
+      commonLoadResultSchema.safeParse({ ...insufficient, eligibleDurationSeconds: undefined })
+        .success,
+    ).toBe(false);
+    expect(
+      commonLoadResultSchema.safeParse({
+        ...unavailable({ duration: null }),
+        eligibleDurationSeconds: 3_600,
+      }).success,
+    ).toBe(false);
   });
 
   it.each([

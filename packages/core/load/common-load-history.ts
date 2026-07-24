@@ -282,7 +282,7 @@ const commonLoadHistoryUnavailableResultSchema = z.discriminatedUnion("reason", 
       context: z
         .object({
           date: calendarDateSchema,
-          observationState: z.enum(["observed", "unavailable"]),
+          observationState: z.enum(["observed", "known_zero", "unavailable"]),
           observationReason: z.string().min(1),
         })
         .strict(),
@@ -413,8 +413,35 @@ export function replayCommonLoadHistory(
         reason: "incomplete_observation",
         context: {
           date: observation.date,
-          observationState: observation.state,
+          observationState: "unavailable",
           observationReason: observation.reason,
+        },
+      });
+    }
+    if (observation.coverageStatus === "partial") {
+      return unavailableResult({
+        status: "unavailable",
+        policyVersion: COMMON_LOAD_HISTORY_POLICY_VERSION,
+        reason: "incomplete_observation",
+        context: {
+          date: observation.date,
+          observationState: observation.state,
+          observationReason: "partial_source_day",
+        },
+      });
+    }
+    if (observation.state === "observed" && observation.aggregate.status !== "complete") {
+      return unavailableResult({
+        status: "unavailable",
+        policyVersion: COMMON_LOAD_HISTORY_POLICY_VERSION,
+        reason: "incomplete_observation",
+        context: {
+          date: observation.date,
+          observationState: "observed",
+          observationReason:
+            observation.aggregate.status === "partial"
+              ? "partial_common_load"
+              : "common_load_unavailable",
         },
       });
     }
@@ -424,20 +451,12 @@ export function replayCommonLoadHistory(
   const recentAlpha = 1 - Math.exp(-1 / COMMON_LOAD_HISTORY_RECENT_DAYS);
   let longTermLoad = 0;
   let recentLoad = 0;
-  let coverageStatus: "complete" | "partial" = "complete";
-  let partialDays = 0;
   const replayedPoints = observations.map((observation) => {
-    const isPartial =
-      observation.coverageStatus === "partial" ||
-      (observation.state === "observed" && observation.aggregate.status === "partial");
-    if (isPartial) partialDays += 1;
-    if (observation.coverageStatus === "partial") coverageStatus = "partial";
     let dailyLoad: number;
     if (observation.state === "known_zero") {
       dailyLoad = 0;
-    } else if (observation.state === "observed" && observation.aggregate.status !== "unavailable") {
+    } else if (observation.state === "observed" && observation.aggregate.status === "complete") {
       dailyLoad = observation.aggregate.load;
-      if (observation.aggregate.status === "partial") coverageStatus = "partial";
     } else {
       throw new Error("Complete common Load history observation expected");
     }
@@ -445,7 +464,7 @@ export function replayCommonLoadHistory(
     recentLoad += recentAlpha * (dailyLoad - recentLoad);
     return {
       date: observation.date,
-      coverageStatus: isPartial ? "partial" : "complete",
+      coverageStatus: "complete" as const,
       dailyLoad,
       longTermLoad,
       recentLoad,
@@ -453,19 +472,17 @@ export function replayCommonLoadHistory(
     };
   });
 
-  const completeDays = observations.length - partialDays;
+  const completeDays = observations.length;
   const maturity = {
     status:
-      partialDays > 0
-        ? ("provisional" as const)
-        : observations.length < COMMON_LOAD_HISTORY_MATURE_DAYS
-          ? ("establishing_baseline" as const)
-          : ("mature" as const),
+      observations.length < COMMON_LOAD_HISTORY_MATURE_DAYS
+        ? ("establishing_baseline" as const)
+        : ("mature" as const),
     replayedDays: observations.length,
     requiredMatureDays: COMMON_LOAD_HISTORY_MATURE_DAYS,
     coverage: {
       completeDays,
-      partialDays,
+      partialDays: 0,
       ratio: completeDays / observations.length,
     },
   };
@@ -487,7 +504,7 @@ export function replayCommonLoadHistory(
   return commonLoadHistoryResultSchema.parse({
     status: "available",
     policyVersion: COMMON_LOAD_HISTORY_POLICY_VERSION,
-    coverageStatus,
+    coverageStatus: "complete",
     maturity,
     identity,
     points: replayedPoints.slice(-COMMON_LOAD_HISTORY_REQUIRED_DAYS),

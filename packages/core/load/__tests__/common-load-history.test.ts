@@ -263,7 +263,7 @@ describe("common Load history v1 replay", () => {
     expect(result.points.at(-1)?.dailyLoad).toBe(149);
   });
 
-  it("retains partial common Load coverage for fitness and fatigue projection inputs", () => {
+  it("rejects partial and unavailable observations before CTL/ATL recurrence", () => {
     const partialAggregate = aggregateCommonLoad([available(100), unavailableActivity()]);
     expect(partialAggregate.status).toBe("partial");
     const partialDays = knownZeroDays().map(
@@ -275,33 +275,11 @@ describe("common Load history v1 replay", () => {
       planningTimezone: "UTC",
       observations: partialDays,
     });
-    expect(partialResult).toMatchObject({ status: "available", coverageStatus: "partial" });
-    if (partialResult.status !== "available")
-      throw new Error("Expected partial common Load history");
-    expect(partialResult.maturity).toEqual({
-      status: "provisional",
-      replayedDays: 84,
-      requiredMatureDays: COMMON_LOAD_HISTORY_MATURE_DAYS,
-      coverage: { completeDays: 83, partialDays: 1, ratio: 83 / 84 },
+    expect(partialResult).toMatchObject({
+      status: "unavailable",
+      reason: "incomplete_observation",
+      context: { observationState: "observed", observationReason: "partial_common_load" },
     });
-    if (partialAggregate.status !== "partial") {
-      throw new Error("Expected partial common Load aggregate");
-    }
-    expect(partialResult.points[20]).toMatchObject({
-      coverageStatus: "partial",
-      dailyLoad: partialAggregate.load,
-    });
-
-    // Long-term Load, Recent Load, and Load Balance remain source values for
-    // fitness, fatigue, and form projections even when their coverage is partial.
-    expect(partialResult.points.at(-1)).toMatchObject({
-      longTermLoad: expect.any(Number),
-      recentLoad: expect.any(Number),
-      loadBalance: expect.any(Number),
-    });
-
-    // An unavailable day is distinct from a partial numeric aggregate and cannot
-    // be silently converted to a zero-load projection input.
 
     const unavailableDays = knownZeroDays().map(
       (day, index): CommonLoadHistoryDayObservation =>
@@ -324,6 +302,29 @@ describe("common Load history v1 replay", () => {
       status: "unavailable",
       reason: "incomplete_observation",
       context: { observationState: "unavailable", observationReason: "source_incomplete" },
+    });
+
+    const unavailableAggregate = aggregateCommonLoad([unavailableActivity()]);
+    expect(unavailableAggregate.status).toBe("unavailable");
+    const unavailableAggregateDays = knownZeroDays().map((day, index) =>
+      index === 20 ? { ...day, state: "observed" as const, aggregate: unavailableAggregate } : day,
+    );
+    expect(replay(unavailableAggregateDays)).toMatchObject({
+      status: "unavailable",
+      reason: "incomplete_observation",
+      context: { observationState: "observed", observationReason: "common_load_unavailable" },
+    });
+
+    expect(
+      replay(
+        knownZeroDays().map((day, index) =>
+          index === 20 ? { ...day, coverageStatus: "partial" as const } : day,
+        ),
+      ),
+    ).toMatchObject({
+      status: "unavailable",
+      reason: "incomplete_observation",
+      context: { observationState: "known_zero", observationReason: "partial_source_day" },
     });
   });
 

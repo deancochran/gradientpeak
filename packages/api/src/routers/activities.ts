@@ -347,7 +347,6 @@ const getByIdInputSchema = z.object({ id: z.string().uuid() }).strict();
 const updateInputSchema = z
   .object({
     id: z.string().uuid(),
-    normalized_power: z.number().finite().optional(),
     name: z.string().optional(),
     notes: z.string().nullable().optional(),
     is_private: z.boolean().optional(),

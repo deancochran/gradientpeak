@@ -234,4 +234,49 @@ describe("replayParsedActivityFileEvidenceProfile", () => {
     ).rejects.toThrow("reconciliation failed");
     expect(persisted).toEqual(["before"]);
   });
+
+  it("derives the parent normalized-power compatibility projection from segments", async () => {
+    const parentUpdates: Array<Record<string, unknown>> = [];
+    const tx = {
+      execute: vi.fn(),
+      update: vi.fn(() => ({
+        set: vi.fn((values) => {
+          parentUpdates.push(values);
+          return { where: vi.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+    };
+    const db = {
+      transaction: vi.fn((callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx)),
+    };
+    mocks.analyze.mockResolvedValue({
+      ...analysisResult,
+      summaryValues: { ...analysisResult.summaryValues, normalized_power: 999 },
+      segmentSet: {
+        segments: [
+          {
+            id: "segment-1",
+            role: "activity",
+            summary: {
+              version: 1,
+              timing: { timingCoverage: "unavailable" },
+              normalizedPowerWatts: 247.5,
+            },
+          },
+        ],
+      },
+    });
+    mocks.reconcile.mockResolvedValue(emptyPlan);
+
+    await replayParsedActivityFileEvidenceProfile(db as never, {
+      profileId: "profile-1",
+      activities: [activity("activity-1")],
+      write: true,
+    });
+
+    expect(parentUpdates[0]).toMatchObject({ normalized_power: 248 });
+    expect(parentUpdates[1]).toMatchObject({
+      summary: expect.objectContaining({ normalizedPowerWatts: 247.5 }),
+    });
+  });
 });

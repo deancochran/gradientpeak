@@ -1027,6 +1027,151 @@ describe("activity analysis", () => {
     ).toBeCloseTo(79.625, 12);
   });
 
+  it("uses eligible direct power ahead of HR zones and HR zones when direct power is absent", () => {
+    const base = {
+      activity: {
+        id: "bike-evidence-priority",
+        type: "bike",
+        ...timestamps,
+        duration_seconds: 3600,
+        avg_heart_rate: 150,
+      },
+      context: {
+        profileMetrics: { ftp: 250, lthr: 150 },
+        calibrationQuality: {
+          ftp: completeQuality("priority-ftp"),
+          lthr: completeQuality("priority-lthr"),
+        },
+        recentEfforts: [],
+        profile: {},
+      },
+      heartRateDistribution: {
+        coverageSeconds: 3600,
+        buckets: [{ bpm: 150, seconds: 3600 }],
+      },
+    };
+    const heartRateFallback = analyzeActivityDerivedMetrics(base);
+    const direct = analyzeActivityDerivedMetrics({
+      ...base,
+      activity: { ...base.activity, normalized_power: 200 },
+    });
+
+    expect(heartRateFallback.stress.common_load).toMatchObject({
+      status: "available",
+      method: "heart_rate_zones",
+    });
+    expect(direct.stress.common_load).toMatchObject({
+      status: "available",
+      method: "power_threshold",
+    });
+  });
+
+  it("falls back from a stale direct power candidate to valid full-coverage HR zones", () => {
+    const derived = analyzeActivityDerivedMetrics({
+      activity: {
+        id: "stale-direct-power",
+        type: "bike",
+        ...timestamps,
+        duration_seconds: 3600,
+        normalized_power: 200,
+        avg_heart_rate: 150,
+      },
+      context: {
+        profileMetrics: { ftp: 250, lthr: 150 },
+        calibrationQuality: {
+          ftp: { ...completeQuality("stale-direct"), stale: true },
+          lthr: completeQuality("fallback-hr"),
+        },
+        recentEfforts: [],
+        profile: {},
+      },
+      heartRateDistribution: {
+        coverageSeconds: 3600,
+        buckets: [{ bpm: 150, seconds: 3600 }],
+      },
+    });
+
+    expect(derived.stress.common_load).toMatchObject({
+      status: "available",
+      method: "heart_rate_zones",
+      thresholdEvidence: { sourceFingerprint: "fallback-hr" },
+    });
+  });
+
+  it("selects qualifying partial HR zones when stale direct power is unavailable", () => {
+    const derived = analyzeActivityDerivedMetrics({
+      activity: {
+        id: "stale-direct-partial-hr",
+        type: "bike",
+        ...timestamps,
+        duration_seconds: 3600,
+        normalized_power: 200,
+        avg_heart_rate: 150,
+      },
+      context: {
+        profileMetrics: { ftp: 250, lthr: 150 },
+        calibrationQuality: {
+          ftp: { ...completeQuality("stale-direct-partial"), stale: true },
+          lthr: completeQuality("partial-fallback-hr"),
+        },
+        recentEfforts: [],
+        profile: {},
+      },
+      heartRateDistribution: {
+        coverageSeconds: 1800,
+        buckets: [{ bpm: 150, seconds: 1800 }],
+      },
+    });
+
+    expect(derived.stress.common_load).toMatchObject({
+      status: "partial",
+      method: "heart_rate_zones",
+      contributingDurationSeconds: 1800,
+      eligibleDurationSeconds: 3600,
+      sourceTimeCoverage: 0.5,
+      reason: "duration_partial",
+    });
+  });
+
+  it.each([
+    {
+      name: "invalid direct power",
+      activity: { normalized_power: -1, avg_heart_rate: 150 },
+      profileMetrics: { ftp: 250, lthr: 150 },
+      calibrationQuality: { ftp: completeQuality("invalid-power"), lthr: completeQuality("hr") },
+      expected: { reason: "invalid_data", method: null },
+    },
+    {
+      name: "power with missing direct threshold",
+      activity: { normalized_power: 200, avg_heart_rate: 150 },
+      profileMetrics: { lthr: 150 },
+      calibrationQuality: { lthr: completeQuality("hr") },
+      expected: { reason: "threshold_missing", method: "power_threshold" },
+    },
+  ] as const)("retains precise direct failure when HR is unavailable: $name", (example) => {
+    const derived = analyzeActivityDerivedMetrics({
+      activity: {
+        id: `direct-failure-${example.name}`,
+        type: "bike",
+        ...timestamps,
+        duration_seconds: 3600,
+        ...example.activity,
+      },
+      context: {
+        profileMetrics: example.profileMetrics,
+        calibrationQuality: example.calibrationQuality,
+        recentEfforts: [],
+        profile: {},
+      },
+    });
+
+    expect(derived.stress.method).toBe("heart_rate_threshold");
+    expect(derived.stress.common_load).toMatchObject({
+      status: "unavailable",
+      ...example.expected,
+    });
+  });
+
   it("emits coherent partial common Load for qualifying partial HR coverage", () => {
     const derived = analyzeActivityDerivedMetrics({
       activity: {
@@ -1205,6 +1350,13 @@ describe("activity analysis", () => {
       status: "unavailable",
       method: "heart_rate_zones",
       reason: example.reason,
+      ...(example.reason === "insufficient_coverage"
+        ? {
+            contributingDurationSeconds: 1200,
+            eligibleDurationSeconds: 3600,
+            sourceTimeCoverage: 1 / 3,
+          }
+        : {}),
     });
   });
 
@@ -1236,23 +1388,15 @@ describe("activity analysis", () => {
       }).success,
     ).toBe(false);
   });
-  it("uses effective session-RPE for any sport only when direct evidence is unavailable", () => {
-    const sessionRpeEvidence = {
-      rpe: 7,
-      scale: "borg_cr10" as const,
-      scaleVersion: "1" as const,
-      source: "manual" as const,
-      recordedAt: "2026-07-20T12:00:00.000Z",
-      provenanceFingerprint: "effective-session-rpe",
-    };
-    const fallback = analyzeActivityDerivedMetrics({
+  it("excludes session-RPE from canonical common Load while retaining direct and HR priority", () => {
+    const unavailable = analyzeActivityDerivedMetrics({
       activity: {
         id: "strength-session-rpe",
         type: "strength",
         ...timestamps,
         duration_seconds: 3600,
       },
-      context: { ...emptyContext, sessionRpeEvidence },
+      context: emptyContext,
     });
     const direct = analyzeActivityDerivedMetrics({
       activity: {
@@ -1266,19 +1410,10 @@ describe("activity analysis", () => {
         ...emptyContext,
         profileMetrics: { ftp: 250 },
         calibrationQuality: { ftp: completeQuality("direct-power") },
-        sessionRpeEvidence,
       },
     });
 
-    expect(fallback.stress.common_load).toMatchObject({
-      status: "available",
-      method: "session_rpe",
-      intensity: 1,
-      load: 100,
-      estimated: true,
-      thresholdEvidence: null,
-      sessionRpeEvidence,
-    });
+    expect(unavailable.stress.common_load).toMatchObject({ status: "unavailable" });
     expect(direct.stress.common_load).toMatchObject({
       status: "available",
       method: "power_threshold",

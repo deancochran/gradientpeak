@@ -31,16 +31,6 @@ export type ActivityAnalysisEffortSnapshot = Omit<
   source?: string | null;
 };
 
-export type ActivitySessionRpeEvidenceSnapshot = {
-  activityId: string;
-  recordedAt: Date;
-  rpe: number;
-  scale: "borg_cr10";
-  scaleVersion: "1";
-  source: "user" | "provider" | "manual";
-  provenanceFingerprint: string;
-};
-
 export type ActivityAnalysisContextSnapshot = {
   profile: ActivityAnalysisProfileSnapshot;
   profileMetrics: ActivityAnalysisMetricSnapshot[];
@@ -58,8 +48,4 @@ export interface ActivityAnalysisStore {
     requests: Array<{ asOf: Date; effortLookbackAsOf?: Date; profileId: string }>;
     evidenceScope?: "thresholds";
   }): Promise<Map<string, ActivityAnalysisContextSnapshot>>;
-  loadEffectiveSessionRpeEvidence?(input: {
-    activityIds: string[];
-    profileId: string;
-  }): Promise<Map<string, ActivitySessionRpeEvidenceSnapshot>>;
 }

@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { decodeFeedCursor } from "../application/feed/feedPage";
 import type { getRequiredDb } from "../db";
+import { deriveNormalizedPowerCompatibilityProjectionFromSegments } from "../lib/activity-analysis/activity-normalized-power";
 import { buildUuidInList, parseCountValue } from "../utils/sql";
 import { getLikeStats, type LikeStats } from "./like-stats";
 
@@ -63,7 +64,6 @@ const feedActivityRowSchema = z
     max_power: nullableNumericSchema.optional(),
     avg_speed_mps: nullableNumericSchema.optional(),
     max_speed_mps: nullableNumericSchema.optional(),
-    normalized_power: nullableNumericSchema.optional(),
     normalized_speed_mps: nullableNumericSchema.optional(),
     normalized_graded_speed_mps: nullableNumericSchema.optional(),
     ingestion_status: z.string().nullable().optional(),
@@ -75,7 +75,6 @@ const feedActivityDetailRowSchema = feedActivityRowSchema.extend({
   notes: z.string().nullable(),
   max_power: nullableNumericSchema,
   max_cadence: z.number().int().nullable(),
-  normalized_power: nullableNumericSchema,
   elevation_loss_meters: nullableNumericSchema,
   map_bounds: z.unknown().nullable(),
   viewer_follows_owner: z.boolean(),
@@ -233,7 +232,7 @@ export async function listFeedActivityRows(
       a.distance_meters, a.elapsed_ms, a.active_ms, a.moving_ms, a.timing_coverage,
       a.avg_heart_rate,
       a.max_heart_rate, a.avg_power, a.max_power, a.avg_cadence, a.avg_speed_mps,
-      a.max_speed_mps, a.normalized_power, a.normalized_speed_mps,
+       a.max_speed_mps, a.normalized_speed_mps,
       a.normalized_graded_speed_mps, a.elevation_gain_meters, a.calories, a.polyline,
       a.is_private, a.content_visibility, a.created_at,
       p.username as profile_username, p.avatar_url as profile_avatar_url,
@@ -291,7 +290,7 @@ export async function loadFeedActivityDetail(db: DbClient, viewerId: string, act
       a.distance_meters, a.elapsed_ms, a.active_ms, a.moving_ms, a.timing_coverage,
       a.avg_heart_rate,
       a.max_heart_rate, a.avg_power, a.max_power, a.avg_cadence, a.max_cadence,
-      a.normalized_power, a.elevation_gain_meters, a.elevation_loss_meters,
+       a.elevation_gain_meters, a.elevation_loss_meters,
       a.calories, a.polyline, a.map_bounds, a.is_private, a.content_visibility,
       a.created_at, p.username as profile_username, p.avatar_url as profile_avatar_url,
       exists (
@@ -351,6 +350,7 @@ export function mapFeedActivityDetail(
   activity: FeedActivityDetailRow,
   likeStats: Map<string, LikeStats>,
   comments: z.infer<typeof activityCommentDtoSchema>[],
+  segments: readonly { role: string; summary: unknown }[],
 ) {
   const category =
     activity.category_composition.length === 1 ? (activity.category_composition[0] ?? null) : null;
@@ -381,7 +381,7 @@ export function mapFeedActivityDetail(
     max_power: activity.max_power,
     avg_cadence: activity.avg_cadence,
     max_cadence: activity.max_cadence,
-    normalized_power: activity.normalized_power,
+    normalized_power: deriveNormalizedPowerCompatibilityProjectionFromSegments(segments),
     elevation_gain_meters: activity.elevation_gain_meters,
     elevation_loss_meters: activity.elevation_loss_meters,
     calories: activity.calories,

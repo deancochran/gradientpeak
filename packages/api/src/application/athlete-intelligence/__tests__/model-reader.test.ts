@@ -364,6 +364,13 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     expect(selects[4]?.fields).toMatchObject({
       activityId: activityEfforts.activity_id,
     });
+    const normalizedPowerSql = querySql(
+      (selects[3]?.fields as { normalizedPower: SQL }).normalizedPower,
+    ).sql;
+    expect(normalizedPowerSql).toContain('"activity_segments"."summary"');
+    expect(normalizedPowerSql).toContain("normalizedPowerWatts");
+    expect(normalizedPowerSql).toContain("::double precision");
+    expect(normalizedPowerSql).not.toContain('"activities"."normalized_power"');
     expect(selects[6]).toMatchObject({
       limit: modelReaderBounds.schedule + 1,
       orderBy: [expect.anything(), expect.anything(), expect.anything()],
@@ -590,6 +597,44 @@ describe("materializeAthleteIntelligenceModelInput", () => {
         (item) => item.athleteId === profileId && Date.parse(item.observedAt) <= asOf.getTime(),
       ),
     ).toBe(true);
+  });
+
+  it("uses segment-row normalized power for intelligence output and load", async () => {
+    const withSegmentNormalizedPower = (normalizedPower: number) => {
+      const value = rows();
+      value.efforts = [];
+      value.metrics = value.metrics.filter((metric) => metric.type !== "ftp");
+      value.metrics.push({
+        profileId,
+        id: "segment-load-ftp",
+        referenceActivityId: null,
+        type: "ftp",
+        value: 250,
+        unit: "watts",
+        recordedAt: new Date("2026-05-31T00:00:00.000Z"),
+        createdAt: new Date("2026-05-31T00:00:00.000Z"),
+        updatedAt: new Date("2026-05-31T00:00:00.000Z"),
+      });
+      value.activities[0] = { ...first(value.activities), normalizedPower };
+      return value;
+    };
+    const baseline = await materializeAthleteIntelligenceModelInput({
+      dataSource: readRows(withSegmentNormalizedPower(220)),
+      profileId,
+      asOf,
+    });
+    // Model-reader activity rows are activity_segments; 300 is the segment summary value,
+    // independent of any divergent parent activities.normalized_power compatibility value.
+    const result = await materializeAthleteIntelligenceModelInput({
+      dataSource: readRows(withSegmentNormalizedPower(300)),
+      profileId,
+      asOf,
+    });
+
+    expect(result.activities[0]?.metrics.normalizedPowerWatts.value).toBe(300);
+    expect(result.activities[0]?.metrics.trainingLoad.value).not.toBe(
+      baseline.activities[0]?.metrics.trainingLoad.value,
+    );
   });
 
   it("materializes canonical running threshold pace and swimming CSS metrics with sport scope", async () => {

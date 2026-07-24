@@ -381,6 +381,54 @@ describe("submitActivity", () => {
     );
   });
 
+  it("overrides caller and provider normalized power with the segment projection", async () => {
+    const canonicalSegmentSet: NonNullable<ActivitySubmission["segmentSet"]> = {
+      version: 1,
+      elapsedMs: 3_600_000,
+      segments: [
+        {
+          id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          ordinal: 0,
+          role: "activity",
+          category: "bike",
+          startOffsetMs: 0,
+          endOffsetMs: 3_600_000,
+          summary: {
+            version: 1,
+            timing: { timingCoverage: "unavailable" },
+            normalizedPowerWatts: 247.5,
+          },
+        },
+      ],
+    };
+    const created = createDb(undefined, null);
+    await submitActivity(created.db, {
+      ...createInput(),
+      normalizedPower: 999,
+      segmentSet: canonicalSegmentSet,
+    });
+    expect(created.insertedValues.find(({ table }) => table === activities)?.values).toMatchObject({
+      normalized_power: 248,
+    });
+
+    const enriched = createDb();
+    await submitActivity(enriched.db, {
+      kind: "enrich",
+      activityId: "activity-1",
+      profileId: "profile-1",
+      deviceManufacturer: null,
+      deviceProduct: null,
+      summaryValues: { normalized_power: 999 },
+      segmentSet: canonicalSegmentSet,
+      efforts: [],
+      detectedLTHR: null,
+      activityCompletedAt: new Date(),
+    });
+    expect(enriched.updatedValues.find(({ table }) => table === activities)?.values).toMatchObject({
+      normalized_power: 248,
+    });
+  });
+
   it("upserts an existing activity enrichment in one transaction", async () => {
     const { db, committed } = createDb();
     await submitActivity(db, {

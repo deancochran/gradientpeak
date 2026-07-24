@@ -325,6 +325,7 @@ export async function getCommonLoadHistory(input: {
           profileId: input.profileId,
           startDate,
         });
+        if (!sourceCoverageComplete) return unavailableWindow(input);
         const activityRows = await tx
           .select()
           .from(activities)
@@ -365,7 +366,7 @@ export async function getCommonLoadHistory(input: {
             segmentSummaries,
             currentPlanningDate: input.currentPlanningDate,
             planningTimezone: input.planningTimezone,
-            coverageStatus: sourceCoverageComplete ? "complete" : "partial",
+            coverageStatus: "complete",
             replayDays: COMMON_LOAD_HISTORY_MATURE_DAYS,
           }),
         });

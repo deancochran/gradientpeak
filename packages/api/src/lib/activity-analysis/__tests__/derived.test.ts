@@ -558,9 +558,18 @@ describe("segment-derived activity analysis", () => {
       unavailable_reason: "threshold_missing",
     });
   });
-  it("loads effective owned session-RPE through the analysis store as a fallback", async () => {
+  it("does not load or inject effective session-RPE into canonical analysis", async () => {
+    const rpeOnlySegment = segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 3_600_000);
     const input = activity([
-      segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 3_600_000),
+      {
+        ...rpeOnlySegment,
+        summary: {
+          ...rpeOnlySegment.summary,
+          averagePowerWatts: undefined,
+          averageHeartRateBpm: 150,
+          heartRateDistribution: undefined,
+        },
+      },
     ]);
     const analysisStore = {
       getContextSnapshot: vi.fn(async () => ({
@@ -593,17 +602,12 @@ describe("segment-derived activity analysis", () => {
       activities: [input],
     });
 
-    expect(analysisStore.loadEffectiveSessionRpeEvidence).toHaveBeenCalledWith({
-      activityIds: [input.id],
-      profileId: PROFILE_ID,
-    });
+    expect(analysisStore.loadEffectiveSessionRpeEvidence).not.toHaveBeenCalled();
     expect(summaries[0]).toMatchObject({
       common_load: {
-        status: "available",
-        method: "session_rpe",
-        load: 100,
-        thresholdEvidence: null,
-        estimated: true,
+        status: "unavailable",
+        method: "heart_rate_zones",
+        reason: "threshold_missing",
       },
     });
   });

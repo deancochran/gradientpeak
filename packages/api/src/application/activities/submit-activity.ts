@@ -16,6 +16,7 @@ import {
 } from "@repo/db";
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
+import { deriveNormalizedPowerCompatibilityProjection } from "../../lib/activity-analysis/activity-normalized-power";
 import { reconcileGeneratedActivityEvidence } from "./reconcile-activity-evidence";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
@@ -475,10 +476,7 @@ export async function updateCanonicalActivityFields(
     activityId: string;
     profileId: string;
     fields: Partial<
-      Pick<
-        typeof activities.$inferInsert,
-        "name" | "notes" | "is_private" | "normalized_power" | "content_visibility"
-      >
+      Pick<typeof activities.$inferInsert, "name" | "notes" | "is_private" | "content_visibility">
     >;
     now?: Date;
   },
@@ -630,6 +628,9 @@ export async function submitActivity(
     if (!input.segmentSet)
       throw new Error("Activity submission requires an ordered segment manifest");
     const segmentSet = completedActivitySegmentSetSchemaV1.parse(input.segmentSet);
+    // `activities.normalized_power` is retained solely for legacy consumers. Never accept
+    // caller/provider parent values over the validated provenance-bearing segment summary.
+    const normalizedPowerProjection = deriveNormalizedPowerCompatibilityProjection(segmentSet);
     const revision = (existing?.segments_revision ?? 0) + 1;
     const parserVersion = SUBMISSION_PARSER_VERSION;
     const laps =
@@ -677,6 +678,7 @@ export async function submitActivity(
         activity_id: _activityId,
         profile_id: _profileId,
         created_at: _createdAt,
+        normalized_power: _normalizedPower,
         ...safeSummaryValues
       } = summaryValues as typeof summaryValues & { activity_id?: string };
       const [updated] = await tx
@@ -684,6 +686,7 @@ export async function submitActivity(
         .set({
           ...safeSummaryValues,
           ...baseValues,
+          normalized_power: normalizedPowerProjection,
           device_manufacturer: stringOrNull(input.deviceManufacturer),
           device_product: stringOrNull(input.deviceProduct),
           ...(input.mapBounds === undefined ? {} : { map_bounds: input.mapBounds }),
@@ -714,7 +717,7 @@ export async function submitActivity(
         max_heart_rate: input.maxHeartRate,
         avg_power: input.avgPower,
         max_power: input.maxPower,
-        normalized_power: input.normalizedPower,
+        normalized_power: normalizedPowerProjection,
         avg_cadence: input.avgCadence,
         max_cadence: input.maxCadence,
         avg_speed_mps: input.avgSpeedMps,

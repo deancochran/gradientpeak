@@ -11,7 +11,6 @@ type ActivitiesDb = ReturnType<typeof getRequiredDb>;
 
 export type UpdateActivityForProfileInput = {
   id: string;
-  normalized_power?: number;
   name?: string;
   notes?: string | null;
   is_private?: boolean;
@@ -27,7 +26,15 @@ export async function updateActivityForProfile({
   input: UpdateActivityForProfileInput;
   profileId: string;
 }) {
-  const { id, ...updates } = input;
+  // Defend the application boundary as well as the strict transport schema: legacy callers
+  // cannot restore parent normalized power as a writable authority by bypassing TypeScript.
+  const {
+    id,
+    normalized_power: _normalizedPower,
+    ...updates
+  } = input as UpdateActivityForProfileInput & {
+    normalized_power?: unknown;
+  };
   const fields =
     updates.content_visibility !== undefined
       ? { ...updates, is_private: updates.content_visibility === "private" }

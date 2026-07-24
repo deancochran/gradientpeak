@@ -189,13 +189,6 @@ export async function buildActivitySegmentDerivedSummaries(input: {
     });
   }
 
-  const sessionRpeByActivityId = store.loadEffectiveSessionRpeEvidence
-    ? await store.loadEffectiveSessionRpeEvidence({
-        activityIds: activities.map((activity) => activity.id),
-        profileId,
-      })
-    : new Map();
-
   const output: SegmentDerivedSummary[] = [];
   for (const activity of activities) {
     const evidence = (store.loadContextEvidence
@@ -216,20 +209,7 @@ export async function buildActivitySegmentDerivedSummaries(input: {
       activityTimestamp: activity.started_at,
       activityId: activity.id,
     });
-    const sessionRpe = sessionRpeByActivityId.get(activity.id);
-    const context = {
-      ...resolvedContext,
-      sessionRpeEvidence: sessionRpe
-        ? {
-            rpe: sessionRpe.rpe,
-            scale: sessionRpe.scale,
-            scaleVersion: sessionRpe.scaleVersion,
-            source: sessionRpe.source,
-            recordedAt: sessionRpe.recordedAt.toISOString(),
-            provenanceFingerprint: sessionRpe.provenanceFingerprint,
-          }
-        : null,
-    };
+    const context = resolvedContext;
     for (const segment of orderedActivitySegments(activity.segments)) {
       const summary = segmentSummarySchemaV1.parse(segment.summary);
       const timing = summary.timing;

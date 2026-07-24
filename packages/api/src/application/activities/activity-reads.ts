@@ -21,6 +21,7 @@ import {
   mapActivityToDerivedResponse,
   mapActivityToListDerivedResponse,
 } from "../../lib/activity-analysis";
+import { deriveNormalizedPowerCompatibilityProjectionFromSegments } from "../../lib/activity-analysis/activity-normalized-power";
 import { findOwnedEffectiveSessionRpeEvidence } from "../../repositories/activity-session-rpe-repository";
 import { getLikeStats, loadLikeStats } from "../../repositories/like-stats";
 import { buildIndexPageInfo, parseIndexCursor } from "../../utils/index-cursor";
@@ -63,6 +64,9 @@ function decorateActivity(
   const { segments: _segments, ...publicActivity } = activity;
   return {
     ...publicActivity,
+    // Repair historical divergent compatibility values at the DTO boundary; keep the raw
+    // database column internal so it cannot become an authority again.
+    normalized_power: deriveNormalizedPowerCompatibilityProjectionFromSegments(activity.segments),
     ...describeActivityComposition(activity.segments),
     matched_category_summary: matchedCategorySummary,
   };

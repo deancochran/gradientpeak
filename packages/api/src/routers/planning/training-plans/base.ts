@@ -137,6 +137,7 @@ import {
   buildActivitySegmentDerivedSummaries,
   buildDynamicStressSeries,
   deriveActivityDurations,
+  deriveNormalizedPowerCompatibilityProjectionFromSegments,
   loadActivitySegmentsByActivityId,
   orderedActivitySegments,
   summarizeSegmentTss,
@@ -242,7 +243,6 @@ const activitySummaryColumns = {
   max_power: schema.activities.max_power,
   avg_speed_mps: schema.activities.avg_speed_mps,
   max_speed_mps: schema.activities.max_speed_mps,
-  normalized_power: schema.activities.normalized_power,
   normalized_speed_mps: schema.activities.normalized_speed_mps,
   normalized_graded_speed_mps: schema.activities.normalized_graded_speed_mps,
 } as const;
@@ -250,14 +250,21 @@ const activitySummaryColumns = {
 async function attachActivitySegments<
   T extends Omit<
     Parameters<typeof buildActivityDerivedSummaryMap>[0]["activities"][number],
-    "segments"
+    "normalized_power" | "segments"
   >,
 >(db: DbClient, rows: T[]) {
   const segments = await loadActivitySegmentsByActivityId(
     db,
     rows.map((row) => row.id),
   );
-  return rows.map((row) => ({ ...row, segments: segments.get(row.id) ?? [] }));
+  return rows.map((row) => {
+    const activitySegments = segments.get(row.id) ?? [];
+    return {
+      ...row,
+      normalized_power: deriveNormalizedPowerCompatibilityProjectionFromSegments(activitySegments),
+      segments: activitySegments,
+    };
+  });
 }
 
 function getSqlRows<T>(result: unknown) {
@@ -2597,7 +2604,7 @@ export async function deriveProfileAwareCreationContext(input: {
           input.supabase
             ?.from("activities")
             .select(
-              "id, profile_id, started_at, finished_at, elapsed_ms, active_ms, moving_ms, timing_coverage, distance_meters, avg_heart_rate, max_heart_rate, avg_power, max_power, avg_speed_mps, max_speed_mps, normalized_power, normalized_speed_mps, normalized_graded_speed_mps",
+              "id, profile_id, started_at, finished_at, elapsed_ms, active_ms, moving_ms, timing_coverage, distance_meters, avg_heart_rate, max_heart_rate, avg_power, max_power, avg_speed_mps, max_speed_mps, normalized_speed_mps, normalized_graded_speed_mps",
             )
             .eq("profile_id", input.profileId)
             .gte("started_at", recentActivitiesCutoff.toISOString())

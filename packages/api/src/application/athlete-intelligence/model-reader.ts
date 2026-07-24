@@ -471,7 +471,9 @@ export function createDrizzleAthleteIntelligenceDataSource(
               number | null
             >`(${activitySegments.summary} ->> 'averagePowerWatts')::double precision`,
             maximumPower: sql<null>`null`,
-            normalizedPower: sql<null>`null`,
+            normalizedPower: sql<
+              number | null
+            >`(${activitySegments.summary} ->> 'normalizedPowerWatts')::double precision`,
             averageCadence: sql<
               number | null
             >`(${activitySegments.summary} ->> 'averageCadenceRpm')::double precision`,

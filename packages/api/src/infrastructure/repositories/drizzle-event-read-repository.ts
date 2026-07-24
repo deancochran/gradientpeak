@@ -21,6 +21,10 @@ import {
   getCurrentPlanningWeek,
   getPlanningDateRange,
 } from "../../application/training-plan/current-planning-week";
+import {
+  deriveNormalizedPowerCompatibilityProjectionFromSegments,
+  loadActivitySegmentsByActivityId,
+} from "../../lib/activity-analysis";
 import type { EventReadRepository } from "../../repositories";
 import {
   filterSupersededProfileOverrides,
@@ -620,7 +624,6 @@ export function createEventReadRepository(
           max_power: schema.activities.max_power,
           avg_speed_mps: schema.activities.avg_speed_mps,
           max_speed_mps: schema.activities.max_speed_mps,
-          normalized_power: schema.activities.normalized_power,
           normalized_speed_mps: schema.activities.normalized_speed_mps,
           normalized_graded_speed_mps: schema.activities.normalized_graded_speed_mps,
         })
@@ -632,6 +635,10 @@ export function createEventReadRepository(
             lt(schema.activities.started_at, new Date(endDateExclusiveIso)),
           ),
         );
+      const actualSegmentsByActivityId = await loadActivitySegmentsByActivityId(
+        db,
+        actualActivities.map((activity) => activity.id),
+      );
 
       return {
         trainingPlan,
@@ -644,6 +651,9 @@ export function createEventReadRepository(
         })),
         actualActivities: actualActivities.map((activity) => ({
           ...activity,
+          normalized_power: deriveNormalizedPowerCompatibilityProjectionFromSegments(
+            actualSegmentsByActivityId.get(activity.id) ?? [],
+          ),
           started_at: activity.started_at.toISOString(),
           finished_at: activity.finished_at.toISOString(),
         })),

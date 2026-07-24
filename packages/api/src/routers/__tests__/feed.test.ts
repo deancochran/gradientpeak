@@ -370,6 +370,23 @@ describe("feedRouter", () => {
 
   it("getActivity returns detail data including likes and ordered comments", async () => {
     const startedAt = new Date("2026-04-03T10:00:00.000Z");
+    analysisMocks.loadActivitySegmentsByActivityId.mockResolvedValue(
+      new Map([
+        [
+          ACTIVITY_ID,
+          [
+            {
+              role: "activity",
+              summary: {
+                version: 1,
+                timing: { timingCoverage: "unavailable" },
+                normalizedPowerWatts: 247.5,
+              },
+            },
+          ],
+        ],
+      ]),
+    );
 
     const { caller, db } = createCaller({
       execute: [
@@ -393,7 +410,6 @@ describe("feedRouter", () => {
             max_power: 510,
             avg_cadence: 88,
             max_cadence: 105,
-            normalized_power: 240,
             elevation_gain_meters: 450,
             elevation_loss_meters: "445.75",
             calories: 900,
@@ -443,7 +459,7 @@ describe("feedRouter", () => {
       max_power: 510,
       avg_cadence: 88,
       max_cadence: 105,
-      normalized_power: 240,
+      normalized_power: 248,
       elevation_gain_meters: 450,
       elevation_loss_meters: 445.75,
       calories: 900,
@@ -500,7 +516,6 @@ describe("feedRouter", () => {
             max_power: null,
             avg_cadence: null,
             max_cadence: null,
-            normalized_power: null,
             elevation_gain_meters: null,
             elevation_loss_meters: null,
             calories: null,
@@ -546,7 +561,6 @@ describe("feedRouter", () => {
             max_power: null,
             avg_cadence: null,
             max_cadence: null,
-            normalized_power: null,
             elevation_gain_meters: null,
             elevation_loss_meters: null,
             calories: null,
@@ -592,7 +606,6 @@ describe("feedRouter", () => {
             max_power: 510,
             avg_cadence: 88,
             max_cadence: 105,
-            normalized_power: 240,
             elevation_gain_meters: 450,
             elevation_loss_meters: 445,
             calories: 900,

@@ -1,6 +1,7 @@
 import { activities, activitySegments } from "@repo/db";
 import { and, eq } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
+import { deriveNormalizedPowerCompatibilityProjection } from "../../lib/activity-analysis/activity-normalized-power";
 import {
   acquireActivityEvidenceProfileLock,
   reconcileGeneratedActivityEvidenceWithProfileLockHeld,
@@ -54,6 +55,9 @@ async function reconcileParsedActivityFileEvidenceWithProfileLockHeld(
     activityCompletedAt: analysis.activityCompletedAt,
     now: new Date(),
   });
+  const normalizedPowerProjection = deriveNormalizedPowerCompatibilityProjection(
+    analysis.segmentSet,
+  );
   // These are derived projections from retained bytes. They deliberately do not
   // change the artifact, provider identity, or source linkage. Segment summaries
   // are the durable inputs to modern common-Load evidence fingerprints.
@@ -78,7 +82,8 @@ async function reconcileParsedActivityFileEvidenceWithProfileLockHeld(
       max_speed_mps: analysis.summaryValues.max_speed_mps,
       moving_ms: analysis.summaryValues.moving_ms,
       normalized_graded_speed_mps: analysis.summaryValues.normalized_graded_speed_mps,
-      normalized_power: analysis.summaryValues.normalized_power,
+      // Integer compatibility projection only; source segment summaries retain precision.
+      normalized_power: normalizedPowerProjection,
       normalized_speed_mps: analysis.summaryValues.normalized_speed_mps,
       timing_coverage: analysis.summaryValues.timing_coverage,
       updated_at: new Date(),

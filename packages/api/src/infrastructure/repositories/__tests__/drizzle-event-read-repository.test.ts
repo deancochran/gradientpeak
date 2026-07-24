@@ -490,7 +490,29 @@ describe("drizzle-event-read-repository", () => {
         error: null,
       },
       activities: {
-        data: [createActivityRow()],
+        data: [createActivityRow({ normalized_power: 999 })],
+        error: null,
+      },
+      activity_segments: {
+        data: [
+          {
+            id: "segment-1",
+            activity_id: "activity-1",
+            ordinal: 0,
+            role: "activity",
+            category: "bike",
+            start_offset_ms: 0,
+            end_offset_ms: 4_080_000,
+            timing_coverage: "complete",
+            active_ms: 3_960_000,
+            moving_ms: 3_900_000,
+            summary: {
+              version: 1,
+              timing: { timingCoverage: "unavailable" },
+              normalizedPowerWatts: 247.5,
+            },
+          },
+        ],
         error: null,
       },
     });
@@ -515,13 +537,19 @@ describe("drizzle-event-read-repository", () => {
       ],
       actualActivities: [
         {
-          ...createActivityRow(),
+          ...createActivityRow({ normalized_power: 999 }),
+          normalized_power: 248,
           started_at: "2026-04-15T07:03:00.000Z",
           finished_at: "2026-04-15T08:11:00.000Z",
         },
       ],
     });
-    expect(callLog.map((entry) => entry.table)).toEqual(["training_plans", "events", "activities"]);
+    expect(callLog.map((entry) => entry.table)).toEqual([
+      "training_plans",
+      "events",
+      "activities",
+      "activity_segments",
+    ]);
   });
 
   it("skips training-plan lookup when projection is requested without a plan id", async () => {

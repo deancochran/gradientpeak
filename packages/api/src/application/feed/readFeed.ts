@@ -76,13 +76,14 @@ export async function getFeedActivityForViewer({
   activityId: string;
 }) {
   const activity = await loadFeedActivityDetail(db, viewerId, activityId);
-  const [likeStats, comments] = await Promise.all([
+  const [likeStats, comments, segmentMap] = await Promise.all([
     loadLikeStats(db, {
       entityType: "activity",
       entityIds: [activityId],
       viewerProfileId: viewerId,
     }),
     loadFeedActivityComments(db, activityId),
+    loadActivitySegmentsByActivityId(db, [activityId]),
   ]);
-  return mapFeedActivityDetail(activity, likeStats, comments);
+  return mapFeedActivityDetail(activity, likeStats, comments, segmentMap.get(activityId) ?? []);
 }

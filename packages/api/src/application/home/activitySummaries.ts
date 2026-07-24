@@ -2,6 +2,7 @@ import { publicActivityCategorySchema, schema } from "@repo/db";
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 import { z } from "zod";
 import type { getRequiredDb } from "../../db";
+import { deriveNormalizedPowerCompatibilityProjectionFromSegments } from "../../lib/activity-analysis/activity-normalized-power";
 import {
   deriveActivityDurations,
   deriveActivityParentClassification,
@@ -54,7 +55,6 @@ export async function listActivitySummariesInRange(
       max_power: schema.activities.max_power,
       avg_speed_mps: schema.activities.avg_speed_mps,
       max_speed_mps: schema.activities.max_speed_mps,
-      normalized_power: schema.activities.normalized_power,
       normalized_speed_mps: schema.activities.normalized_speed_mps,
       normalized_graded_speed_mps: schema.activities.normalized_graded_speed_mps,
     })
@@ -91,7 +91,9 @@ export async function listActivitySummariesInRange(
         max_power: categoryCompatible ? row.max_power : null,
         avg_speed_mps: categoryCompatible ? row.avg_speed_mps : null,
         max_speed_mps: categoryCompatible ? row.max_speed_mps : null,
-        normalized_power: categoryCompatible ? row.normalized_power : null,
+        normalized_power: deriveNormalizedPowerCompatibilityProjectionFromSegments(
+          segments.get(row.id) ?? [],
+        ),
         normalized_speed_mps: categoryCompatible ? row.normalized_speed_mps : null,
         normalized_graded_speed_mps: categoryCompatible ? row.normalized_graded_speed_mps : null,
       };

@@ -700,7 +700,27 @@ describe("activitiesRouter", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-21T16:00:00.000Z"));
     try {
-      const result = await createCaller(createDbMock({})).commonLoadHistory();
+      const coverageCompletedAt = new Date("2026-07-21T16:00:00.000Z");
+      const result = await createCaller(
+        createDbMock({
+          integrationRows: [{ id: "wahoo-history", provider: "wahoo" }],
+          providerSyncRows: [
+            {
+              integrationId: "wahoo-history",
+              lastSucceededAt: coverageCompletedAt,
+              lastFailedAt: null,
+              consecutiveFailures: 0,
+              highWatermark: coverageCompletedAt,
+              metadata: {
+                activityHistoryCoverage: {
+                  start: "2026-01-01T00:00:00.000Z",
+                  end: "2026-07-21T04:00:00.000Z",
+                },
+              },
+            },
+          ],
+        }),
+      ).commonLoadHistory();
 
       expect(result.status).toBe("available");
       if (result.status !== "available") throw new Error("Available common Load history expected");
@@ -1805,7 +1825,18 @@ describe("activitiesRouter", () => {
       polyline: "legacy-polyline",
       map_bounds: { legacy: true },
       laps: [{ legacy: true }],
+      normalized_power: 999,
     });
+    const canonicalSegment = buildSegmentReadRow(ACTIVITY_ID, 0, "run", {
+      summary: {
+        version: 1,
+        timing: { timingCoverage: "complete", activeMs: 1_000, movingMs: 900 },
+        normalizedPowerWatts: 247.5,
+      },
+    });
+    mockActivityAnalysis.loadActivitySegmentsByActivityId.mockResolvedValue(
+      new Map([[ACTIVITY_ID, [canonicalSegment]]]),
+    );
     const db = createDbMock({
       queryActivitiesFindFirst: [
         {
@@ -1855,6 +1886,7 @@ describe("activitiesRouter", () => {
       elapsed_ms: 2_000,
       active_ms: 2_000,
       moving_ms: 1_900,
+      normalized_power: 248,
       external_id: "legacy-external-id",
       polyline: "legacy-polyline",
       map_bounds: { legacy: true },
@@ -1865,7 +1897,7 @@ describe("activitiesRouter", () => {
         availability: "accepted",
       }),
     });
-    expect(result.activity.segments).toEqual([buildSegmentReadRow(ACTIVITY_ID, 0, "run")]);
+    expect(result.activity.segments).toEqual([canonicalSegment]);
     expect(result.activity).toMatchObject({
       activity_kind: "single",
       activity_segment_count: 1,
@@ -1896,6 +1928,64 @@ describe("activitiesRouter", () => {
 
     expect(result).toEqual(updated);
     expect(db.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("strictly rejects legacy normalized_power updates without persisting them", async () => {
+    const db = createDbMock({ updatedRows: [buildActivityRow()] });
+
+    await expect(
+      createCaller(db).update({ id: ACTIVITY_ID, normalized_power: 999 } as never),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it("projects divergent parent normalized_power from canonical segments in list DTOs", async () => {
+    const row = buildActivityRow({ normalized_power: 999, category: "bike" });
+    mockActivityAnalysis.loadActivitySegmentsByActivityId.mockResolvedValue(
+      new Map([
+        [
+          ACTIVITY_ID,
+          [
+            buildSegmentReadRow(ACTIVITY_ID, 0, "bike", {
+              summary: {
+                version: 1,
+                timing: { timingCoverage: "complete", activeMs: 1_000, movingMs: 900 },
+                normalizedPowerWatts: 247.5,
+              },
+            }),
+          ],
+        ],
+      ]),
+    );
+
+    const result = await createCaller(createDbMock({ activityRows: [row] })).listPaginated({});
+    expect(result.items[0]?.normalized_power).toBe(248);
+  });
+
+  it("returns null normalized_power for malformed or ambiguous canonical segments", async () => {
+    const rows = [
+      buildActivityRow({ id: ACTIVITY_ID, normalized_power: 999 }),
+      buildActivityRow({ id: ACTIVITY_ID_2, normalized_power: 999 }),
+      buildActivityRow({ id: ACTIVITY_ID_3, normalized_power: 999 }),
+    ];
+    mockActivityAnalysis.loadActivitySegmentsByActivityId.mockResolvedValue(
+      new Map([
+        [ACTIVITY_ID, [{ ...buildSegmentReadRow(ACTIVITY_ID, 0, "bike"), summary: {} }]],
+        [ACTIVITY_ID_2, [{ ...buildSegmentReadRow(ACTIVITY_ID_2, 0, "bike"), role: "transition" }]],
+        [
+          ACTIVITY_ID_3,
+          [
+            buildSegmentReadRow(ACTIVITY_ID_3, 0, "bike"),
+            buildSegmentReadRow(ACTIVITY_ID_3, 1, "run"),
+          ],
+        ],
+      ]),
+    );
+
+    const result = await createCaller(createDbMock({ activityRows: rows })).listPaginated({
+      limit: 3,
+    });
+    expect(result.items.map((item) => item.normalized_power)).toEqual([null, null, null]);
   });
 
   it("deletes an owned activity", async () => {

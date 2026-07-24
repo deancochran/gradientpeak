@@ -38,6 +38,7 @@ import {
   loadActivitySegmentsByActivityId,
   summarizeSegmentTss,
 } from "../lib/activity-analysis";
+import { deriveNormalizedPowerCompatibilityProjectionFromSegments } from "../lib/activity-analysis/activity-normalized-power";
 import { featureFlags } from "../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { buildWorkloadEnvelopes } from "../utils/workload";
@@ -372,6 +373,7 @@ const dashboardActivitySchema = z
     normalized_graded_speed_mps: z.number().nullable(),
   })
   .strict();
+const dashboardActivitySourceSchema = dashboardActivitySchema.omit({ normalized_power: true });
 
 async function listDashboardActivitiesInRange(
   db: ReturnType<typeof getRequiredDb>,
@@ -394,7 +396,6 @@ async function listDashboardActivitiesInRange(
       max_power: schema.activities.max_power,
       avg_speed_mps: schema.activities.avg_speed_mps,
       max_speed_mps: schema.activities.max_speed_mps,
-      normalized_power: schema.activities.normalized_power,
       normalized_speed_mps: schema.activities.normalized_speed_mps,
       normalized_graded_speed_mps: schema.activities.normalized_graded_speed_mps,
     })
@@ -408,15 +409,21 @@ async function listDashboardActivitiesInRange(
     )
     .orderBy(asc(schema.activities.started_at));
 
-  const activities = dashboardActivitySchema.array().parse(rows);
+  const activities = dashboardActivitySourceSchema.array().parse(rows);
   const segmentsByActivityId = await loadActivitySegmentsByActivityId(
     db,
     activities.map((activity) => activity.id),
   );
-  return activities.map((activity) => ({
-    ...activity,
-    segments: segmentsByActivityId.get(activity.id) ?? [],
-  }));
+  return activities.map((activity) => {
+    const segments = segmentsByActivityId.get(activity.id) ?? [];
+    return {
+      ...dashboardActivitySchema.parse({
+        ...activity,
+        normalized_power: deriveNormalizedPowerCompatibilityProjectionFromSegments(segments),
+      }),
+      segments,
+    };
+  });
 }
 
 export function getPlanCategoryComposition(structure: unknown) {

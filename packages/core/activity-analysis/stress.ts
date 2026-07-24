@@ -6,10 +6,8 @@ import {
   COMMON_RELATIVE_LOAD_VERSION,
   type CommonLoadMethod,
   type CommonLoadResult,
-  type CommonSessionRpeEvidence,
   type CommonThresholdEvidence,
   calculateAvailableCommonLoad,
-  calculateSessionRpeCommonLoad,
   commonLoadResultSchema,
   commonThresholdEvidenceSchema,
 } from "../load/common-relative-load";
@@ -57,8 +55,6 @@ export type ActivityAnalysisContext = {
     unit?: string | null;
     activity_category?: string | null;
   }>;
-  /** Effective owned manual session evidence for this activity, if any. */
-  sessionRpeEvidence?: CommonSessionRpeEvidence | null;
   profile: {
     dob?: string | null;
     gender?: "male" | "female" | "other" | null;
@@ -227,6 +223,13 @@ type ResolvedTssMethod = {
 type TssMethodResolution =
   | { status: "resolved"; value: ResolvedTssMethod }
   | { status: "invalid_data" | "activity_data_missing" | "threshold_missing" };
+
+type DirectTssSelection = {
+  attempted: boolean;
+  failedMethod: CommonLoadMethod | null;
+  reason: ActivityStressUnavailableReason;
+  resolved: ResolvedTssMethod | null;
+};
 
 function resolveLthrCalibration(
   context: ActivityAnalysisContext,
@@ -526,6 +529,54 @@ function resolveTssSelection(input: {
   return { resolved: null, reason: "threshold_missing" };
 }
 
+function resolveDirectTssSelection(input: {
+  activity: ActivitySummaryForAnalysis;
+  context: ActivityAnalysisContext;
+  sport: Extract<CanonicalSport, "bike" | "run" | "swim">;
+}): DirectTssSelection {
+  const { activity, context, sport } = input;
+  const policyMethods = completedActivityCalculationPolicy[sport].tssMethods.filter(
+    (method): method is Exclude<ActivityTssMethod, "heart_rate_threshold"> =>
+      method !== "heart_rate_threshold",
+  );
+  const methods =
+    sport === "bike" && context.profileMetrics.cycling_power_method
+      ? [context.profileMetrics.cycling_power_method]
+      : policyMethods;
+  const attempted =
+    sport === "bike"
+      ? activity.normalized_power != null || activity.avg_power != null
+      : sport === "run"
+        ? activity.normalized_graded_speed_mps != null ||
+          activity.normalized_speed_mps != null ||
+          activity.avg_speed_mps != null
+        : activity.normalized_speed_mps != null || activity.avg_speed_mps != null;
+  const resolutions = methods.map((method) =>
+    resolveTssMethod({ method, sport, activity, context }),
+  );
+  const resolved = resolutions.find(
+    (resolution): resolution is Extract<TssMethodResolution, { status: "resolved" }> =>
+      resolution.status === "resolved",
+  );
+  if (resolved) {
+    return {
+      attempted: true,
+      resolved: resolved.value,
+      failedMethod: null,
+      reason: "threshold_missing",
+    };
+  }
+
+  const failedMethod = methods[0] ?? null;
+  if (resolutions.some((resolution) => resolution.status === "invalid_data")) {
+    return { attempted, resolved: null, failedMethod, reason: "invalid_data" };
+  }
+  if (resolutions.some((resolution) => resolution.status === "activity_data_missing")) {
+    return { attempted, resolved: null, failedMethod, reason: "activity_data_missing" };
+  }
+  return { attempted, resolved: null, failedMethod, reason: "threshold_missing" };
+}
+
 function resolveTrainingEffect(
   intensityFactor: number | null,
 ): ActivityDerivedMetrics["stress"]["training_effect"] {
@@ -579,6 +630,8 @@ function unavailableCommonLoad(input: {
   computedAsOf: string;
   contributingDurationSeconds: number | null;
   reason: Extract<CommonLoadResult, { status: "unavailable" }>["reason"];
+  eligibleDurationSeconds?: number | null;
+  sourceTimeCoverage?: number | null;
   method?: CommonLoadMethod | null;
   provenance?: CompleteCommonProvenance | null;
 }): CommonLoadResult {
@@ -594,6 +647,12 @@ function unavailableCommonLoad(input: {
     evidenceFingerprint: provenance?.evidenceFingerprint ?? null,
     computedAsOf: input.computedAsOf,
     contributingDurationSeconds: input.contributingDurationSeconds,
+    ...(input.eligibleDurationSeconds === undefined
+      ? {}
+      : { eligibleDurationSeconds: input.eligibleDurationSeconds }),
+    ...(input.sourceTimeCoverage === undefined
+      ? {}
+      : { sourceTimeCoverage: input.sourceTimeCoverage }),
     reason: input.reason,
   });
 }
@@ -794,6 +853,8 @@ function resolveHeartRateCommonLoad(input: {
       sport: input.sport,
       computedAsOf: input.computedAsOf,
       contributingDurationSeconds: distribution.coverageSeconds,
+      eligibleDurationSeconds: input.durationSeconds,
+      sourceTimeCoverage,
       reason: "insufficient_coverage",
       method,
       provenance,
@@ -883,77 +944,87 @@ export function analyzeActivityDerivedMetrics(
     Number.isFinite(activity.duration_seconds) && activity.duration_seconds > 0;
   const eligibleDurationSeconds = resolveEligibleDurationSeconds(activity);
   const lthrCalibration = sport ? resolveLthrCalibration(context, sport) : null;
-  const directOrHeartRateCommonLoad = !hasValidDuration
+  const directSelection =
+    sport === "run" || sport === "bike" || sport === "swim"
+      ? resolveDirectTssSelection({ activity, context, sport })
+      : null;
+  const directCommonLoad: CommonLoadResult | null =
+    hasValidDuration && directSelection?.attempted
+      ? directSelection.resolved
+        ? eligibleDurationSeconds === null
+          ? unavailableCommonLoad({
+              sport: commonSport,
+              computedAsOf,
+              contributingDurationSeconds: null,
+              reason: "invalid_data",
+            })
+          : resolveDirectCommonLoad({
+              sport: commonSport,
+              durationSeconds: eligibleDurationSeconds,
+              computedAsOf,
+              resolved: directSelection.resolved,
+              evidenceFingerprint: `activity-common-load:v1:${JSON.stringify([
+                activity.id,
+                sport,
+                directSelection.resolved.method,
+                activity.duration_seconds,
+                activity.normalized_power ?? null,
+                activity.avg_power ?? null,
+                activity.normalized_graded_speed_mps ?? null,
+                activity.normalized_speed_mps ?? null,
+                activity.avg_speed_mps ?? null,
+                directSelection.resolved.calibrationQuality?.evidence_fingerprint ?? null,
+              ])}`,
+            })
+        : unavailableCommonLoad({
+            sport: commonSport,
+            computedAsOf,
+            contributingDurationSeconds: activity.duration_seconds,
+            reason: directSelection.reason,
+            method:
+              directSelection.reason === "threshold_missing" ? directSelection.failedMethod : null,
+          })
+      : null;
+  // Direct threshold evidence is authoritative when eligible. If it cannot
+  // produce a canonical result, the approved HR-zone adapter may still do so.
+  const commonLoad = !hasValidDuration
     ? unavailableCommonLoad({
         sport: commonSport,
         computedAsOf,
         contributingDurationSeconds: null,
         reason: "invalid_data",
       })
-    : resolvedMethod && directCommonMethod(resolvedMethod.method)
-      ? eligibleDurationSeconds === null
-        ? unavailableCommonLoad({
-            sport: commonSport,
-            computedAsOf,
-            contributingDurationSeconds: null,
-            reason: "invalid_data",
-          })
-        : resolveDirectCommonLoad({
-            sport: commonSport,
-            durationSeconds: eligibleDurationSeconds,
-            computedAsOf,
-            resolved: resolvedMethod,
-            evidenceFingerprint: `activity-common-load:v1:${JSON.stringify([
-              activity.id,
-              sport,
-              resolvedMethod.method,
-              activity.duration_seconds,
-              activity.normalized_power ?? null,
-              activity.avg_power ?? null,
-              activity.normalized_graded_speed_mps ?? null,
-              activity.normalized_speed_mps ?? null,
-              activity.avg_speed_mps ?? null,
-              resolvedMethod.calibrationQuality?.evidence_fingerprint ?? null,
-            ])}`,
-          })
-      : sport === "run" || sport === "bike" || sport === "swim"
-        ? resolveHeartRateCommonLoad({
-            sport,
-            // Persisted HR distributions integrate active elapsed intervals and are not
-            // moving-time filtered, so their denominator is the activity's active duration.
-            durationSeconds: activity.duration_seconds,
-            computedAsOf,
-            lthr: lthrCalibration?.value ?? null,
-            quality: lthrCalibration?.quality ?? null,
-            distribution: heartRateDistribution,
-            evidenceFingerprint: `activity-common-load:v1:${JSON.stringify([
-              activity.id,
-              sport,
-              activity.duration_seconds,
-              heartRateDistribution ?? null,
-              lthrCalibration?.quality?.evidence_fingerprint ?? null,
-            ])}`,
-          })
-        : unavailableCommonLoad({
-            sport: commonSport,
-            computedAsOf,
-            contributingDurationSeconds: activity.duration_seconds,
-            reason: "unsupported_modality",
-          });
-  // Direct power/pace/HR evidence always wins. Effective session-RPE is an
-  // estimated fallback only after those stronger sources are unavailable.
-  const commonLoad =
-    directOrHeartRateCommonLoad.status === "unavailable" &&
-    eligibleDurationSeconds !== null &&
-    context.sessionRpeEvidence !== null &&
-    context.sessionRpeEvidence !== undefined
-      ? calculateSessionRpeCommonLoad({
+    : sport !== "run" && sport !== "bike" && sport !== "swim"
+      ? unavailableCommonLoad({
           sport: commonSport,
-          contributingDurationSeconds: eligibleDurationSeconds,
           computedAsOf,
-          evidence: context.sessionRpeEvidence,
+          contributingDurationSeconds: activity.duration_seconds,
+          reason: "unsupported_modality",
         })
-      : directOrHeartRateCommonLoad;
+      : directCommonLoad !== null && directCommonLoad.status !== "unavailable"
+        ? directCommonLoad
+        : (() => {
+            const heartRateCommonLoad = resolveHeartRateCommonLoad({
+              sport,
+              // Persisted HR distributions integrate active elapsed intervals and are not
+              // moving-time filtered, so their denominator is the activity's active duration.
+              durationSeconds: activity.duration_seconds,
+              computedAsOf,
+              lthr: lthrCalibration?.value ?? null,
+              quality: lthrCalibration?.quality ?? null,
+              distribution: heartRateDistribution,
+              evidenceFingerprint: `activity-common-load:v1:${JSON.stringify([
+                activity.id,
+                sport,
+                activity.duration_seconds,
+                heartRateDistribution ?? null,
+                lthrCalibration?.quality?.evidence_fingerprint ?? null,
+              ])}`,
+            });
+            return directCommonLoad !== null && heartRateCommonLoad.status === "unavailable"
+              ? directCommonLoad
+              : heartRateCommonLoad;
+          })();
 
   const trimp = resolveTrimp({
     avgHeartRate: activity.avg_heart_rate,
