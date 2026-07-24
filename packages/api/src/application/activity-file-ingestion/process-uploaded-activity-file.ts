@@ -11,7 +11,12 @@ import type { getRequiredDb } from "../../db";
 import { getApiStorageService } from "../../storage-service";
 import type { ActivityArtifactSubmission } from "../activities/submit-activity";
 import { cleanupActivityArtifactStaging, promoteActivityArtifact } from "./artifact-storage";
-import { markFailed, markProcessing, markUploaded } from "./ingestion-state";
+import {
+  ActivityFileIngestionClaimLostError,
+  markFailed,
+  markProcessing,
+  markUploaded,
+} from "./ingestion-state";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
@@ -61,14 +66,6 @@ export interface ProcessUploadedActivityFileResult {
   ingestion: Pick<ActivityFileIngestionRow, "id" | "status" | "activity_id">;
 }
 
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  return "Unknown error";
-}
-
 function getErrorDetails(error: unknown) {
   if (error instanceof Error) {
     return {
@@ -83,6 +80,41 @@ function getErrorDetails(error: unknown) {
     errorStack: undefined,
     errorName: undefined,
   };
+}
+
+function failureDetails(error: unknown) {
+  return {
+    errorCode:
+      error instanceof TRPCError && error.code === "BAD_REQUEST"
+        ? "parse_failed"
+        : "process_failed",
+    errorMessage:
+      error instanceof TRPCError && error.code === "BAD_REQUEST"
+        ? "Unable to parse activity file"
+        : "Activity file processing failed",
+  };
+}
+
+function toClientSafeError(error: unknown): TRPCError {
+  if (error instanceof ActivityFileIngestionClaimLostError)
+    return new TRPCError({
+      code: "CONFLICT",
+      message: "Activity file ingestion is already being processed",
+    });
+  if (error instanceof TRPCError) {
+    if (error.code === "FORBIDDEN" || error.code === "NOT_FOUND") return error;
+    if (error.code === "CONFLICT")
+      return new TRPCError({
+        code: "CONFLICT",
+        message: "Activity file ingestion is already being processed",
+      });
+    if (error.code === "BAD_REQUEST")
+      return new TRPCError({ code: "BAD_REQUEST", message: "Unable to parse activity file" });
+  }
+  return new TRPCError({
+    code: "INTERNAL_SERVER_ERROR",
+    message: "Activity file processing failed",
+  });
 }
 
 async function markIngestionFailed(
@@ -147,12 +179,13 @@ async function promoteArtifact(input: ProcessUploadedActivityFileInput, data: Ui
   });
 }
 
-async function advanceUploadedIngestion(
+export async function advanceUploadedIngestion(
   db: DbClient,
   input: ProcessUploadedActivityFileInput,
   ingestion: ActivityFileIngestionRow,
 ) {
   let processingIngestion = ingestion;
+  let acquiredClaim = false;
   const currentStatus = String(ingestion.status);
 
   if (currentStatus === "pending_upload" || currentStatus === "failed") {
@@ -163,6 +196,16 @@ async function advanceUploadedIngestion(
   }
 
   if (String(processingIngestion.status) === "uploaded") {
+    processingIngestion = await markProcessing(db, {
+      id: input.ingestionId,
+      profileId: input.userId,
+    });
+    acquiredClaim = true;
+  }
+
+  if (String(processingIngestion.status) === "processing" && !acquiredClaim) {
+    // Never borrow a token read from another worker. This conditional reclaim
+    // only succeeds after the database observes the five-minute lease expired.
     processingIngestion = await markProcessing(db, {
       id: input.ingestionId,
       profileId: input.userId,
@@ -225,32 +268,18 @@ export async function processUploadedActivityFile<TParsedData>(
       ingestion: readyIngestion,
     };
   } catch (error) {
-    if (error instanceof TRPCError && error.code !== "FORBIDDEN" && error.code !== "NOT_FOUND") {
+    deps.logger.error("Activity file processing failed", getErrorDetails(error));
+    const safeError = toClientSafeError(error);
+    if (safeError.code !== "FORBIDDEN" && safeError.code !== "NOT_FOUND" && claimToken) {
+      const failure = failureDetails(error);
       await markIngestionFailed(db, deps.logger, {
         ingestionId: input.ingestionId,
         profileId: input.userId,
-        errorCode: error.code === "BAD_REQUEST" ? "parse_failed" : "process_failed",
-        errorMessage: error.message,
+        errorCode: failure.errorCode,
+        errorMessage: failure.errorMessage,
         claimToken,
       });
     }
-
-    if (error instanceof TRPCError) {
-      throw error;
-    }
-
-    await markIngestionFailed(db, deps.logger, {
-      ingestionId: input.ingestionId,
-      profileId: input.userId,
-      errorCode: "process_failed",
-      errorMessage: getErrorMessage(error),
-      claimToken,
-    });
-
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: `Activity file processing failed: ${getErrorMessage(error)}`,
-      cause: error,
-    });
+    throw safeError;
   }
 }

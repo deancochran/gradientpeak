@@ -27,5 +27,6 @@ export interface PlannedWorkoutProviderAdapter {
   enqueueUnsyncEvent(input: {
     eventId: string;
     profileId: string;
+    unsyncTarget?: { externalId: string; resourceLinkId: string };
   }): Promise<PlannedWorkoutProviderQueueResult>;
 }

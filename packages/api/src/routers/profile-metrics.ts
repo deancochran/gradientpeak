@@ -16,13 +16,11 @@ import {
   profileMetricTypeSchema,
   updateProfileMetricInputSchema,
 } from "@repo/core/athlete-inputs";
-import { cssTestProtocolSchema } from "@repo/core/calculations";
 import { activities, profileMetrics, publicProfileMetricsRowSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, lte } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { listProfileMetricHistory } from "../application/profile-metrics/listProfileMetricHistory";
-import { CSS_TEST_CALCULATION_VERSION } from "../application/profile-metrics/persist-css-test";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { indexCursorSchema } from "../utils/index-cursor";
@@ -51,13 +49,6 @@ const listProfileMetricsInputSchema = z
   })
   .strict();
 
-const getProfileMetricAtDateInputSchema = z
-  .object({
-    metric_type: profileMetricTypeSchema,
-    date: z.date(),
-  })
-  .strict();
-
 const getProfileMetricByIdInputSchema = z.object({ id: z.string().uuid() }).strict();
 
 const deleteProfileMetricInputSchema = z.object({ id: z.string().uuid() }).strict();
@@ -74,56 +65,6 @@ const profileMetricListOutputSchema = z
   })
   .strict();
 const deleteProfileMetricOutputSchema = z.object({ success: z.literal(true) }).strict();
-
-const recordCssTestInputSchema = z
-  .object({
-    time_400_seconds: z.number(),
-    time_200_seconds: z.number(),
-    recorded_at: z.date(),
-    operation_id: z.string().uuid(),
-  })
-  .strict()
-  .superRefine((input, ctx) => {
-    const result = cssTestProtocolSchema.safeParse({
-      time400Seconds: input.time_400_seconds,
-      time200Seconds: input.time_200_seconds,
-      operationId: input.operation_id,
-    });
-    if (result.success) return;
-    for (const issue of result.error.issues) {
-      const field = issue.path[0];
-      ctx.addIssue({
-        code: "custom",
-        message: issue.message,
-        path: [
-          field === "operationId"
-            ? "operation_id"
-            : field === "time200Seconds"
-              ? "time_200_seconds"
-              : "time_400_seconds",
-        ],
-      });
-    }
-  });
-
-const recordCssTestOutputSchema = z
-  .object({
-    test_id: z.string().uuid(),
-    css_seconds_per_100m: z.number().positive(),
-    recorded_at: z.date(),
-    source: z.literal("validated_test"),
-    calculation_version: z.literal(CSS_TEST_CALCULATION_VERSION),
-    efforts: z
-      .object({
-        distance_meters: z.union([z.literal(400), z.literal(200)]),
-        time_seconds: z.number().positive(),
-        speed_meters_per_second: z.number().positive(),
-      })
-      .strict()
-      .array()
-      .length(2),
-  })
-  .strict();
 
 const MANUAL_PROFILE_METRIC_METHOD = "manual_entry";
 const MANUAL_PROFILE_METRIC_PROVENANCE = {
@@ -150,16 +91,6 @@ function assertUserWritableMetric(metricType: z.infer<typeof profileMetricTypeSc
 }
 
 export const profileMetricsRouter = createTRPCRouter({
-  recordCssTest: protectedProcedure
-    .input(recordCssTestInputSchema)
-    .output(recordCssTestOutputSchema)
-    .mutation(async () => {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "Swim threshold is calculated from trusted recorded activities.",
-      });
-    }),
-
   /**
    * List all profile metric logs for current user.
    * Supports filtering by metric type and date range.
@@ -175,33 +106,6 @@ export const profileMetricsRouter = createTRPCRouter({
       nextCursor: history.nextCursor,
     });
   }),
-
-  /**
-   * Get profile metric at a specific date.
-   *
-   * Returns the most recent metric at or before the specified date.
-   * Used for weight-adjusted TSS calculations at activity date.
-   */
-  getAtDate: protectedProcedure
-    .input(getProfileMetricAtDateInputSchema)
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-
-      const [data] = await db
-        .select()
-        .from(profileMetrics)
-        .where(
-          and(
-            eq(profileMetrics.profile_id, ctx.session.user.id),
-            eq(profileMetrics.metric_type, input.metric_type),
-            lte(profileMetrics.recorded_at, input.date),
-          ),
-        )
-        .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.idx))
-        .limit(1);
-
-      return parseNullableProfileMetricRow(data && !isClearedProfileOverride(data) ? data : null);
-    }),
 
   /**
    * Get specific metric by ID.

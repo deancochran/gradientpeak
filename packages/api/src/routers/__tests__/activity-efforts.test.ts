@@ -163,63 +163,16 @@ describe("activityEffortsRouter", () => {
     expect(spies.delete).not.toHaveBeenCalled();
   });
 
-  it("rejects user create, update, and delete mutations without touching storage", async () => {
+  it("rejects user update and delete mutations without touching storage", async () => {
     const { caller, spies } = createCaller();
-    await expect(
-      caller.create({
-        activity_id: null,
-        activity_category: "run",
-        duration_seconds: 600,
-        effort_type: "speed",
-        value: 4.2,
-        recorded_at: "2026-03-02T12:34:56.000Z",
-      }),
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(
       caller.update({ id: "22222222-2222-4222-8222-222222222222", value: 4.8 }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(
       caller.delete({ id: "22222222-2222-4222-8222-222222222222" }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect(spies.insert).not.toHaveBeenCalled();
     expect(spies.update).not.toHaveBeenCalled();
     expect(spies.delete).not.toHaveBeenCalled();
-  });
-
-  it("rejects unexpected create input keys at the router boundary", async () => {
-    const { caller, spies } = createCaller();
-
-    await expect(
-      caller.create({
-        activity_id: null,
-        activity_category: "run",
-        duration_seconds: 600,
-        effort_type: "speed",
-        value: 4.2,
-        start_offset: 30,
-        recorded_at: "2026-03-02T12:34:56.000Z",
-        extra: true,
-      } as any),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-
-    expect(spies.insert).not.toHaveBeenCalled();
-  });
-
-  it("rejects activity categories outside the shared effort subset", async () => {
-    const { caller, spies } = createCaller();
-
-    await expect(
-      caller.create({
-        activity_id: null,
-        activity_category: "strength",
-        duration_seconds: 600,
-        effort_type: "speed",
-        value: 4.2,
-        recorded_at: "2026-03-02T12:34:56.000Z",
-      }),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-
-    expect(spies.insert).not.toHaveBeenCalled();
   });
 
   it("rejects malformed effort rows before returning them", async () => {

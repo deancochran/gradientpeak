@@ -1,6 +1,7 @@
 import type { DrizzleDbClient } from "@repo/db";
 import { schema } from "@repo/db";
 import { and, eq, gt, isNull, lt } from "drizzle-orm";
+import type { DrizzleQueryExecutor } from "../../db";
 import {
   decryptNullableProviderToken,
   decryptProviderToken,
@@ -10,14 +11,98 @@ import {
 } from "../../lib/provider-token-crypto";
 import type { IntegrationsRepositories } from "../../repositories";
 
+type OAuthIntegrationUpsertInput = Parameters<
+  IntegrationsRepositories["integrations"]["upsertFromOAuthState"]
+>[0];
+
+async function upsertFromOAuthState(
+  db: DrizzleQueryExecutor,
+  {
+    state,
+    now,
+    profileId,
+    provider,
+    externalId,
+    accessToken,
+    refreshToken,
+    expiresAt,
+    scope,
+  }: OAuthIntegrationUpsertInput,
+) {
+  const [consumedState] = await db
+    .delete(schema.oauthStates)
+    .where(
+      and(
+        eq(schema.oauthStates.state, state),
+        eq(schema.oauthStates.profile_id, profileId),
+        eq(schema.oauthStates.provider, provider),
+        gt(schema.oauthStates.expires_at, now),
+      ),
+    )
+    .returning({ id: schema.oauthStates.id });
+
+  if (!consumedState) return null;
+
+  const [integration] = await db
+    .insert(schema.integrations)
+    .values({
+      profile_id: profileId,
+      provider,
+      external_id: externalId,
+    })
+    .onConflictDoUpdate({
+      target: [schema.integrations.profile_id, schema.integrations.provider],
+      set: {
+        external_id: externalId,
+        updated_at: now,
+      },
+    })
+    .returning();
+
+  if (!integration) throw new Error("Failed to upsert integration");
+
+  const [credentials] = await db
+    .insert(schema.integrationCredentials)
+    .values({
+      integration_id: integration.id,
+      access_token: encryptProviderToken(accessToken),
+      refresh_token: refreshToken == null ? null : encryptProviderToken(refreshToken),
+      expires_at: expiresAt,
+      scope,
+    })
+    .onConflictDoUpdate({
+      target: schema.integrationCredentials.integration_id,
+      set: {
+        access_token: encryptProviderToken(accessToken),
+        refresh_token: refreshToken == null ? null : encryptProviderToken(refreshToken),
+        expires_at: expiresAt,
+        scope,
+        updated_at: now,
+      },
+    })
+    .returning({ id: schema.integrationCredentials.integration_id });
+
+  if (!credentials) throw new Error("Failed to upsert integration credentials");
+  return integration;
+}
+
+export async function listIntegrationsByProfileId(
+  db: DrizzleQueryExecutor,
+  profileId: string,
+  options: { forUpdate?: boolean } = {},
+) {
+  const query = db
+    .select()
+    .from(schema.integrations)
+    .where(eq(schema.integrations.profile_id, profileId));
+  return options.forUpdate ? query.for("update") : query;
+}
+
 export function createIntegrationsRepositories(db: DrizzleDbClient): IntegrationsRepositories {
   return {
     integrations: {
       async listByProfileId(profileId) {
-        return db
-          .select()
-          .from(schema.integrations)
-          .where(eq(schema.integrations.profile_id, profileId));
+        return listIntegrationsByProfileId(db, profileId);
       },
 
       async findByProfileIdAndProvider({ profileId, provider }) {
@@ -165,74 +250,12 @@ export function createIntegrationsRepositories(db: DrizzleDbClient): Integration
         return row;
       },
 
-      async upsertFromOAuthState({
-        state,
-        now,
-        profileId,
-        provider,
-        externalId,
-        accessToken,
-        refreshToken,
-        expiresAt,
-        scope,
-      }) {
-        return db.transaction(async (tx) => {
-          const [consumedState] = await tx
-            .delete(schema.oauthStates)
-            .where(
-              and(
-                eq(schema.oauthStates.state, state),
-                eq(schema.oauthStates.profile_id, profileId),
-                eq(schema.oauthStates.provider, provider),
-                gt(schema.oauthStates.expires_at, now),
-              ),
-            )
-            .returning({ id: schema.oauthStates.id });
+      async upsertFromOAuthState(input) {
+        return db.transaction((tx) => upsertFromOAuthState(tx, input));
+      },
 
-          if (!consumedState) return null;
-
-          const [integration] = await tx
-            .insert(schema.integrations)
-            .values({
-              profile_id: profileId,
-              provider,
-              external_id: externalId,
-            })
-            .onConflictDoUpdate({
-              target: [schema.integrations.profile_id, schema.integrations.provider],
-              set: {
-                external_id: externalId,
-                updated_at: now,
-              },
-            })
-            .returning();
-
-          if (!integration) throw new Error("Failed to upsert integration");
-
-          const [credentials] = await tx
-            .insert(schema.integrationCredentials)
-            .values({
-              integration_id: integration.id,
-              access_token: encryptProviderToken(accessToken),
-              refresh_token: refreshToken == null ? null : encryptProviderToken(refreshToken),
-              expires_at: expiresAt,
-              scope,
-            })
-            .onConflictDoUpdate({
-              target: schema.integrationCredentials.integration_id,
-              set: {
-                access_token: encryptProviderToken(accessToken),
-                refresh_token: refreshToken == null ? null : encryptProviderToken(refreshToken),
-                expires_at: expiresAt,
-                scope,
-                updated_at: now,
-              },
-            })
-            .returning({ id: schema.integrationCredentials.integration_id });
-
-          if (!credentials) throw new Error("Failed to upsert integration credentials");
-          return integration;
-        });
+      async upsertFromOAuthStateInTransaction(transaction, input) {
+        return upsertFromOAuthState(transaction, input);
       },
 
       async updateTokensByProfileIdAndProvider({

@@ -5,7 +5,7 @@ import {
 } from "../../../application/training-plan";
 import { getRequiredDb } from "../../../db";
 import { createEventReadRepository } from "../../../infrastructure/repositories";
-import { createTRPCRouter, protectedProcedure } from "../../../trpc";
+import { protectedProcedure } from "../../../trpc";
 
 /** Transport boundary for the server-owned effective Plan Load use case. */
 export const trainingPlansEffectiveLoadProcedures = {
@@ -22,7 +22,3 @@ export const trainingPlansEffectiveLoadProcedures = {
       });
     }),
 };
-
-export const trainingPlansEffectiveLoadRouter = createTRPCRouter(
-  trainingPlansEffectiveLoadProcedures,
-);

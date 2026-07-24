@@ -1,11 +1,13 @@
 import { providerHasCapability } from "@repo/core";
 import type { DrizzleDbClient, PublicIntegrationProvider } from "@repo/db";
 import { TRPCError } from "@trpc/server";
+import type { DrizzleTransactionClient } from "../../db";
 import {
   createIntegrationsRepositories,
   createProviderSyncRepository,
 } from "../../infrastructure/repositories";
 import { logger } from "../../lib/logger";
+import type { ProviderSyncRepository } from "../../repositories/provider-sync-repository";
 import { OnboardingProviderEnrichmentService } from "../onboarding-provider-enrichment";
 import { supportsActivityHistorySync } from "./syncOverviewUseCase";
 
@@ -24,7 +26,8 @@ export async function enqueueActivityHistoryReconcile(input: {
   integrationId: string;
   profileId: string;
   provider: PublicIntegrationProvider;
-  providerSyncRepository: ReturnType<typeof createProviderSyncRepository>;
+  providerSyncRepository: ProviderSyncRepository;
+  transaction?: DrizzleTransactionClient;
   trigger: "connect" | "manual";
 }) {
   if (input.provider !== "wahoo" || !supportsActivityHistorySync(input.provider)) {
@@ -35,7 +38,7 @@ export async function enqueueActivityHistoryReconcile(input: {
   }
 
   try {
-    const job = await input.providerSyncRepository.enqueueJob({
+    const jobInput = {
       dedupeKey: `provider-history-reconcile:${input.integrationId}:activity`,
       integrationId: input.integrationId,
       jobType: wahooActivityHistoryJobType,
@@ -44,11 +47,14 @@ export async function enqueueActivityHistoryReconcile(input: {
       provider: "wahoo",
       resourceKind: "activity",
       runAt: new Date().toISOString(),
-    });
+    } as const;
+    const job = input.transaction
+      ? await input.providerSyncRepository.enqueueJobInTransaction(input.transaction, jobInput)
+      : await input.providerSyncRepository.enqueueJob(jobInput);
 
     return { jobId: job.id, queued: job.status === "queued" };
   } catch (error) {
-    if (!isProviderSyncPersistenceUnavailable(error)) throw error;
+    if (input.transaction || !isProviderSyncPersistenceUnavailable(error)) throw error;
 
     logger.warn("Provider sync jobs are unavailable; skipping activity history enqueue", {
       error: error instanceof Error ? error.message : "Unknown error",

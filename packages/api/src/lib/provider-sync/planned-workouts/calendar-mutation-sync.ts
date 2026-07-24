@@ -1,11 +1,14 @@
 import { getProvidersWithCapability } from "@repo/core";
 import type { DrizzleDbClient } from "@repo/db";
+import type { DrizzleTransactionClient } from "../../../db";
 import {
   createIntegrationsRepositories,
   createProviderSyncRepository,
   createWahooRepository,
+  listIntegrationsByProfileId,
 } from "../../../infrastructure/repositories";
 import type { ProviderSyncJobRecord } from "../../../repositories/provider-sync-repository";
+import { logger } from "../../logger";
 import { drainDueWahooPlannedWorkoutJobs } from "../wahoo-planned-workout-drain";
 import { PlannedWorkoutSyncService } from "./planned-workout-sync-service";
 import type { PlannedWorkoutQueueResult, PlannedWorkoutSyncOperation } from "./types";
@@ -17,6 +20,7 @@ export type CalendarMutationPlannedWorkoutSyncInput = {
   eventIds: string[];
   operation: PlannedWorkoutSyncOperation;
   profileId: string;
+  transaction?: DrizzleTransactionClient;
 };
 
 export type EventPlannedWorkoutSyncStatus =
@@ -28,13 +32,25 @@ export type EventPlannedWorkoutSyncStatus =
   | "failed"
   | "needs_reconnect";
 
-export function createPlannedWorkoutSyncServiceForDb(db: DrizzleDbClient) {
+export function createPlannedWorkoutSyncServiceForDb(
+  db: DrizzleDbClient,
+  transaction?: DrizzleTransactionClient,
+) {
   const providerSyncRepository = createProviderSyncRepository({ db });
-  const wahooRepository = createWahooRepository({ db });
+  const wahooRepository = createWahooRepository({ db: transaction ?? db });
 
   return new PlannedWorkoutSyncService({
     adapters: {
-      wahoo: new WahooPlannedWorkoutProvider({ providerSyncRepository, wahooRepository }),
+      wahoo: new WahooPlannedWorkoutProvider({
+        providerSyncRepository,
+        wahooRepository,
+        ...(transaction
+          ? {
+              enqueueJob: (input) =>
+                providerSyncRepository.enqueueJobInTransaction(transaction, input),
+            }
+          : {}),
+      }),
     },
   });
 }
@@ -127,14 +143,30 @@ export async function enqueuePlannedWorkoutSyncAfterCalendarMutation(
   const eventIds = [...new Set(input.eventIds)].filter(Boolean);
   if (eventIds.length === 0) return null;
 
-  const repositories = createIntegrationsRepositories(input.db);
-  const integrations = await repositories.integrations.listByProfileId(input.profileId);
-
-  const result = await createPlannedWorkoutSyncServiceForDb(input.db).enqueue({
+  const queryExecutor = input.transaction ?? input.db;
+  const integrations = await listIntegrationsByProfileId(queryExecutor, input.profileId, {
+    forUpdate: Boolean(input.transaction),
+  });
+  const wahooRepository = createWahooRepository({ db: queryExecutor });
+  const unsyncTargets = new Map<string, { externalId: string; resourceLinkId: string }>();
+  if (input.operation === "unsync") {
+    for (const eventId of eventIds) {
+      const link = await wahooRepository.getEventResourceLink({
+        eventId,
+        forUpdate: Boolean(input.transaction),
+        profileId: input.profileId,
+        provider: "wahoo",
+      });
+      if (link)
+        unsyncTargets.set(eventId, { externalId: link.externalId, resourceLinkId: link.id });
+    }
+  }
+  const result = await createPlannedWorkoutSyncServiceForDb(input.db, input.transaction).enqueue({
     connectedProviders: integrations.map((integration) => integration.provider),
     eventIds,
     operation: input.operation,
     profileId: input.profileId,
+    unsyncTargets,
   });
 
   if (input.drainDueJobs !== false && result?.queued) {
@@ -144,8 +176,11 @@ export async function enqueuePlannedWorkoutSyncAfterCalendarMutation(
         limit: 3,
         workerId: "calendar-mutation-planned-workout-drain",
       });
-    } catch (error) {
-      console.error("Failed to drain due planned workout sync jobs after enqueue:", error);
+    } catch {
+      logger.error("Failed to drain due planned workout sync jobs after enqueue", {
+        category: "upstream",
+        provider: "wahoo",
+      });
     }
   }
 

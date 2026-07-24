@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  createFromCreationConfigInputSchema,
-  getCreationSuggestionsInputSchema,
-} from "../../contracts";
+import { previewCreationConfigInputSchema } from "../../contracts";
 import {
   minimalTrainingPlanCreateSchema,
   periodizedPlanCreateSchema,
@@ -115,8 +112,8 @@ describe("training plan schema simplification guardrails", () => {
         }).success,
       },
       {
-        name: "create input rejects removed legacy mode field",
-        ok: createFromCreationConfigInputSchema.safeParse({
+        name: "preview input rejects removed legacy mode field",
+        ok: previewCreationConfigInputSchema.safeParse({
           minimal_plan: {
             goals: [
               {
@@ -131,21 +128,13 @@ describe("training plan schema simplification guardrails", () => {
           },
         }).success,
       },
-      {
-        name: "suggestions input rejects alias recent_influence_score",
-        ok: getCreationSuggestionsInputSchema.safeParse({
-          existing_values: {
-            recent_influence_score: 0.4,
-          },
-        }).success,
-      },
     ];
 
     expect(cases.every((entry) => entry.ok === false)).toBe(true);
   });
 
   it("keeps calibration override behavior stable: partial accepted, invalid rejected", () => {
-    const partialAccepted = createFromCreationConfigInputSchema.safeParse({
+    const partialAccepted = previewCreationConfigInputSchema.safeParse({
       minimal_plan: {
         goals: [
           {
@@ -166,7 +155,7 @@ describe("training plan schema simplification guardrails", () => {
       },
     });
 
-    const invalidParsed = createFromCreationConfigInputSchema.parse({
+    const invalidParsed = previewCreationConfigInputSchema.parse({
       minimal_plan: {
         goals: [
           {

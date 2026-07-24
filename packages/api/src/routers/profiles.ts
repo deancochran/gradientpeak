@@ -233,43 +233,6 @@ export const profilesRouter = createTRPCRouter({
       }
     }),
 
-  list: protectedProcedure.input(profileListFiltersSchema).query(async ({ ctx, input }) => {
-    const db = getRequiredDb(ctx);
-
-    try {
-      return await listProfiles(db, input);
-    } catch (error) {
-      if (error instanceof TRPCError) {
-        throw error;
-      }
-
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Failed to fetch profiles",
-      });
-    }
-  }),
-
-  getStats: protectedProcedure.input(profileStatsSchema).query(async ({ ctx, input }) => {
-    const db = getRequiredDb(ctx);
-
-    try {
-      return await getProfileStats(db, {
-        profileId: ctx.session.user.id,
-        period: input.period,
-      });
-    } catch (error) {
-      if (error instanceof TRPCError) {
-        throw error;
-      }
-
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Failed to get profile stats",
-      });
-    }
-  }),
-
   getZones: protectedProcedure.query(async ({ ctx }) => {
     const db = getRequiredDb(ctx);
 
@@ -494,12 +457,5 @@ export const profilesRouter = createTRPCRouter({
         message: "Failed to get training zones",
       });
     }
-  }),
-
-  updateZones: protectedProcedure.input(trainingZonesUpdateSchema).mutation(async () => {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Training thresholds are calculated from trusted activity evidence.",
-    });
   }),
 });

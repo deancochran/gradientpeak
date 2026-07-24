@@ -108,15 +108,10 @@ export async function invalidateActivityPlanQueries(
   utils: ApiReactUtils,
   options: {
     planId?: string | null;
-    includeCount?: boolean;
     includeDetail?: boolean;
   } = {},
 ) {
   const refreshTasks: Promise<unknown>[] = [utils.activityPlans.list.invalidate()];
-
-  if (options.includeCount !== false) {
-    refreshTasks.push(utils.activityPlans.getUserPlansCount.invalidate());
-  }
 
   if (options.includeDetail && options.planId) {
     refreshTasks.push(utils.activityPlans.getById.invalidate({ id: options.planId }));

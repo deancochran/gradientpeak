@@ -162,7 +162,6 @@ export const useAuth = () => {
   const completeOnboarding = useCallback(async () => {
     if (!user) return;
     try {
-      // Note: The DB update is now handled by the completeOnboarding API mutation.
       // This function simply updates the local store to reflect the change immediately
       // and prevent navigation loops while the profile query re-fetches.
       const currentStore = useAuthStore.getState();

@@ -1,6 +1,24 @@
 import type { DrizzleDbClient } from "@repo/db";
+import type { DrizzleTransactionClient } from "../db";
 
 export type ProviderSyncJobStatus = "queued" | "running" | "completed" | "failed" | "dead_lettered";
+
+export type EnqueueProviderSyncJobInput = {
+  dedupeKey?: string;
+  integrationId: string;
+  internalResourceId?: string;
+  jobType: string;
+  maxAttempts?: number;
+  operation?: string;
+  payload: unknown;
+  payloadHash?: string;
+  profileId: string;
+  provider: "wahoo";
+  resourceKind?: "event" | "activity_plan" | "activity_route" | "activity";
+  runAt: string;
+  supersedesJobId?: string;
+  syncLaneKey?: string;
+};
 
 export type ProviderSyncJobRecord = {
   attempt: number;
@@ -82,22 +100,13 @@ export interface ProviderSyncRepository {
     lockExpiresAt: string;
     provider?: "wahoo";
   }): Promise<ProviderSyncJobRecord[]>;
-  enqueueJob(input: {
-    dedupeKey?: string;
-    integrationId: string;
-    internalResourceId?: string;
-    jobType: string;
-    maxAttempts?: number;
-    operation?: string;
-    payload: unknown;
-    payloadHash?: string;
-    profileId: string;
-    provider: "wahoo";
-    resourceKind?: "event" | "activity_plan" | "activity_route" | "activity";
-    runAt: string;
-    supersedesJobId?: string;
-    syncLaneKey?: string;
-  }): Promise<{ id: string; status: ProviderSyncJobStatus }>;
+  enqueueJob(
+    input: EnqueueProviderSyncJobInput,
+  ): Promise<{ id: string; status: ProviderSyncJobStatus }>;
+  enqueueJobInTransaction(
+    tx: DrizzleTransactionClient,
+    input: EnqueueProviderSyncJobInput,
+  ): Promise<{ id: string; status: ProviderSyncJobStatus }>;
   markJobFailed(input: {
     id: string;
     lastError: string;

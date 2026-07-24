@@ -10,21 +10,15 @@ import type {
   BackendPlanningState,
 } from "./types";
 
-const plannedOperations: BackendPlanningOperation[] = [
-  "getCreationSuggestions",
-  "previewCreationConfig",
-  "createFromCreationConfig",
-  "updateFromCreationConfig",
-];
+const plannedOperations: BackendPlanningOperation[] = ["previewCreationConfig"];
 
 export { createPlanningContextFingerprint, mapPlanningContextToPreviewCreationConfigInput };
 
 export function getBackendPlanningClientStatus(): BackendPlanningClientStatus {
   return {
-    available: false,
-    enabledOperations: [],
-    reason:
-      "Backend planning adapter scaffolded; local projection remains authoritative for this pass.",
+    available: true,
+    enabledOperations: getPlannedBackendPlanningOperations(),
+    reason: "Backend planning preview is enabled.",
   };
 }
 
@@ -45,12 +39,7 @@ export function deriveBackendPlanningState(
   const previewMapping = mapPlanningContextToPreviewCreationConfigInput(context);
   return {
     status: previewMapping.ok
-      ? {
-          available: false,
-          enabledOperations: [],
-          reason:
-            "Backend planning input is mapped; network preview remains disabled for this pass.",
-        }
+      ? getBackendPlanningClientStatus()
       : {
           available: false,
           enabledOperations: [],

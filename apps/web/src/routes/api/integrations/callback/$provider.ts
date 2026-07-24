@@ -1,42 +1,40 @@
-import { appRouter, createApiContext, handleOAuthCallback } from "@repo/api/server";
-import { resolveAuthSession } from "@repo/auth/server";
+import { handleOAuthCallback } from "@repo/api/server";
 import { db } from "@repo/db/client";
 import { createFileRoute } from "@tanstack/react-router";
+
+export async function handleOAuthCallbackRequest({
+  params,
+  request,
+}: {
+  params: { provider: string };
+  request: Request;
+}) {
+  const requestUrl = new URL(request.url);
+  const searchParams = requestUrl.searchParams;
+  const canUseLocalWebFallback = ["127.0.0.1", "localhost"].includes(requestUrl.hostname);
+  const fallbackRedirect =
+    process.env.NODE_ENV !== "production" &&
+    process.env.PROVIDER_OAUTH_TEST_ADAPTER === "1" &&
+    searchParams.get("test_return") === "web" &&
+    canUseLocalWebFallback
+      ? `${requestUrl.origin}/integrations?integration=failed`
+      : process.env.NEXT_PUBLIC_MOBILE_REDIRECT_FALLBACK || "gradientpeak://integrations";
+  const result = await handleOAuthCallback({
+    db,
+    code: searchParams.get("code"),
+    error: searchParams.get("error"),
+    fallbackRedirect,
+    provider: params.provider,
+    state: searchParams.get("state"),
+  });
+
+  return Response.redirect(result.redirectUrl, result.status);
+}
 
 export const Route = createFileRoute("/api/integrations/callback/$provider")({
   server: {
     handlers: {
-      GET: async ({ params, request }) => {
-        const searchParams = new URL(request.url).searchParams;
-        const code = searchParams.get("code");
-        const state = searchParams.get("state");
-        const error = searchParams.get("error");
-        const provider = params.provider;
-        const ctx = await createApiContext({
-          headers: new Headers(request.headers),
-          auth: {
-            resolveSession: resolveAuthSession,
-          },
-          db,
-        });
-        const caller = appRouter.createCaller(ctx);
-        const fallbackRedirect =
-          process.env.NODE_ENV !== "production" &&
-          process.env.PROVIDER_OAUTH_TEST_ADAPTER === "1" &&
-          searchParams.get("test_return") === "web"
-            ? `${new URL(request.url).origin}/integrations?integration=failed`
-            : process.env.NEXT_PUBLIC_MOBILE_REDIRECT_FALLBACK || "gradientpeak://integrations";
-        const result = await handleOAuthCallback({
-          caller,
-          code,
-          error,
-          fallbackRedirect,
-          provider,
-          state,
-        });
-
-        return Response.redirect(result.redirectUrl, result.status);
-      },
+      GET: handleOAuthCallbackRequest,
     },
   },
 });

@@ -35,22 +35,22 @@ export interface ParsedActivityFileForAnalysis {
   summary: {
     totalTime: number;
     totalDistance: number;
-    calories?: number;
-    totalAscent?: number;
-    avgHeartRate?: number;
-    maxHeartRate?: number;
-    avgPower?: number;
-    maxPower?: number;
-    avgCadence?: number;
-    maxCadence?: number;
-    avgSpeed?: number;
-    maxSpeed?: number;
+    calories?: number | undefined;
+    totalAscent?: number | undefined;
+    avgHeartRate?: number | undefined;
+    maxHeartRate?: number | undefined;
+    avgPower?: number | undefined;
+    maxPower?: number | undefined;
+    avgCadence?: number | undefined;
+    maxCadence?: number | undefined;
+    avgSpeed?: number | undefined;
+    maxSpeed?: number | undefined;
   } & Record<string, unknown>;
   records: Array<ActivityFileStreamRecord & { sessionMessageIndex?: number }>;
-  laps?: unknown[];
-  segments?: ActivitySegment[];
-  sessions?: ActivitySession[];
-  decodedArtifact?: DecodedActivityArtifact;
+  laps?: unknown[] | undefined;
+  segments?: ActivitySegment[] | undefined;
+  sessions?: ActivitySession[] | undefined;
+  decodedArtifact?: DecodedActivityArtifact | undefined;
 }
 
 function recordsForCompletedSegment(

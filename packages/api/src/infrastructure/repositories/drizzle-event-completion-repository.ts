@@ -257,9 +257,9 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
       return rows;
     },
 
-    async deleteOwnedEventsForScope({ anchorEvent, profileId, scope }) {
+    async deleteOwnedEventsForScope({ anchorEvent, beforeDelete, profileId, scope }) {
       const rows = await db.transaction(async (tx) => {
-        const candidates = await tx
+        const candidateQuery = tx
           .select({
             activity_plan_id: schema.events.activity_plan_id,
             id: schema.events.id,
@@ -267,6 +267,15 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
           })
           .from(schema.events)
           .where(applyDeleteScopeFilters({ anchorEvent, profileId, scope }));
+        const lockableCandidateQuery = candidateQuery as typeof candidateQuery & {
+          for?: (strength: "update") => typeof candidateQuery;
+        };
+        const candidates = await (lockableCandidateQuery.for
+          ? lockableCandidateQuery.for("update")
+          : candidateQuery);
+        if (candidates.length === 0) throw new Error("Event delete scope changed before deletion");
+
+        await beforeDelete?.({ candidates, tx });
 
         if (scope === "single" && anchorEvent.series_id === null) {
           await tx
@@ -280,9 +289,15 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
             );
         }
 
-        await tx
-          .delete(schema.events)
-          .where(applyDeleteScopeFilters({ anchorEvent, profileId, scope }));
+        await tx.delete(schema.events).where(
+          and(
+            eq(schema.events.profile_id, profileId),
+            inArray(
+              schema.events.id,
+              candidates.map((candidate) => candidate.id),
+            ),
+          ),
+        );
 
         return candidates;
       });

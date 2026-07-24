@@ -16,6 +16,7 @@ import {
 } from "@repo/db";
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
+import { ActivityFileIngestionClaimLostError } from "../activity-file-ingestion/ingestion-state";
 import { reconcileGeneratedActivityEvidence } from "./reconcile-activity-evidence";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
@@ -85,6 +86,10 @@ export function providerActivityId(
   externalId: string,
 ): string {
   return uuidFromIdentity(`provider-activity:${profileId}:${provider}:${externalId}`);
+}
+
+export function manualImportActivityId(profileId: string, sha256: string): string {
+  return uuidFromIdentity(`manual-import:${profileId}:sha256:${sha256}`);
 }
 
 export interface ActivityArtifactSubmission {
@@ -426,11 +431,11 @@ async function persistReadyActivityFileIngestion(
           eq(activityFileIngestions.operation_key, operationKey),
           eq(activityFileIngestions.status, "processing"),
           eq(activityFileIngestions.claim_token, input.ingestion.claimToken),
-          gt(activityFileIngestions.lease_expires_at, input.now),
+          gt(activityFileIngestions.lease_expires_at, sql`clock_timestamp()`),
         ),
       )
       .returning({ id: activityFileIngestions.id });
-    if (!ready) throw new Error("Activity file ingestion claim was lost before ready commit");
+    if (!ready) throw new ActivityFileIngestionClaimLostError();
     return;
   }
   const [ready] = await tx
@@ -514,11 +519,11 @@ export async function submitActivity(
             eq(activityFileIngestions.operation_key, ingestionOperationKey(ingestion, activityId)),
             eq(activityFileIngestions.status, "processing"),
             eq(activityFileIngestions.claim_token, ingestion.claimToken),
-            gt(activityFileIngestions.lease_expires_at, now),
+            gt(activityFileIngestions.lease_expires_at, sql`clock_timestamp()`),
           ),
         )
         .limit(1);
-      if (!claim) throw new Error("Activity file ingestion claim was lost before projection");
+      if (!claim) throw new ActivityFileIngestionClaimLostError();
     }
     if (provenance) {
       const [byProviderIdentity] = await tx
@@ -809,6 +814,9 @@ export async function submitActivity(
         now,
       });
     }
+    if (input.kind !== "enrich" && input.composition) {
+      compositionResult = await input.composition.persist(tx, { activityId, now });
+    }
     if (ingestion && artifactId) {
       await persistReadyActivityFileIngestion(tx, {
         activityId,
@@ -817,9 +825,6 @@ export async function submitActivity(
         ingestion,
         now,
       });
-    }
-    if (input.kind !== "enrich" && input.composition) {
-      compositionResult = await input.composition.persist(tx, { activityId, now });
     }
   });
   return { id: activityId, compositionResult, noOp };

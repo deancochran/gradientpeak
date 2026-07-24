@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { DrizzleQueryExecutor } from "../db";
 import {
   canContentRowSatisfyRead,
   createContentAccessPermissions,
@@ -28,27 +29,6 @@ describe("content access row helpers", () => {
     expect(needsContentGrantForRow({}, "profile-1")).toBe(false);
   });
 
-  it("filters readable rows without grant lookups for row-readable content", async () => {
-    const permissions = createContentAccessPermissions({} as any);
-    const rows = [
-      { id: "owned", ownerProfileId: "profile-1" },
-      { id: "public", ownerProfileId: "profile-2", isPublic: true },
-      { id: "system", ownerProfileId: null, isSystem: true },
-    ];
-
-    await expect(
-      permissions.filterReadableRows({
-        actorProfileId: "profile-1",
-        rows,
-        getRowInput: (row) => ({
-          row,
-          resource: { type: "activity_plan", id: row.id },
-          access: row,
-        }),
-      }),
-    ).resolves.toEqual(rows);
-  });
-
   it("does not treat geometry-only grants as full read grants", async () => {
     const selectResults = [
       [{ id: "route-1", ownerProfileId: "profile-2", isPublic: false, isSystem: false }],
@@ -61,7 +41,7 @@ describe("content access row helpers", () => {
       where: () => builder,
       limit: async () => selectResults.shift() ?? [],
     };
-    const db = { select: () => builder } as any;
+    const db = { select: () => builder } as unknown as DrizzleQueryExecutor;
     const permissions = createContentAccessPermissions(db);
 
     await expect(

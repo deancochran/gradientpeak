@@ -6,7 +6,6 @@ import {
   socialCommentEntityTypeSchema,
 } from "@repo/core";
 import { activities, events, follows, likes } from "@repo/db";
-import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { getRequiredDb } from "../db";
@@ -24,7 +23,6 @@ const commentInsertRowSchema = z
     created_at: z.union([z.date(), z.string()]),
   })
   .strict();
-const commentOwnerRowSchema = z.object({ profile_id: z.string().uuid() }).strict();
 const commentListRowSchema = z
   .object({
     id: z.string().uuid(),
@@ -140,23 +138,6 @@ export async function addContentCommentRecord(
   `);
   const insertedComment = commentInsertRowSchema.parse(insertResult.rows[0]);
   return { ...insertedComment, created_at: toIsoString(insertedComment.created_at) };
-}
-
-export async function deleteOwnedCommentRecord(db: DbClient, viewerId: string, commentId: string) {
-  return db.transaction(async (tx) => {
-    const commentResult = await tx.execute(sql`
-      select profile_id from comments where id = ${commentId}::uuid limit 1
-    `);
-    const existingComment = commentResult.rows[0]
-      ? commentOwnerRowSchema.parse(commentResult.rows[0])
-      : null;
-    if (!existingComment) throw new TRPCError({ code: "NOT_FOUND", message: "Comment not found" });
-    if (existingComment.profile_id !== viewerId) {
-      throw new TRPCError({ code: "FORBIDDEN", message: "You can only delete your own comments" });
-    }
-    await tx.execute(sql`delete from comments where id = ${commentId}::uuid`);
-    return { success: true };
-  });
 }
 
 export async function loadContentComments(

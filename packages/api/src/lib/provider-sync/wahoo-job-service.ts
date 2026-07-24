@@ -16,6 +16,7 @@ type WahooJobPayload = {
   eventId: string;
   operation: "publish" | "unsync";
   projectionHash?: string;
+  unsyncTarget?: { externalId: string; resourceLinkId: string };
 };
 
 class WahooSyncResultError extends Error {
@@ -42,7 +43,14 @@ function isWahooJobPayload(value: unknown): value is WahooJobPayload {
       typeof value.eventId === "string" &&
       "operation" in value &&
       (value.operation === "publish" || value.operation === "unsync") &&
-      (!("projectionHash" in value) || typeof value.projectionHash === "string"),
+      (!("projectionHash" in value) || typeof value.projectionHash === "string") &&
+      (!("unsyncTarget" in value) ||
+        (typeof value.unsyncTarget === "object" &&
+          value.unsyncTarget !== null &&
+          "externalId" in value.unsyncTarget &&
+          typeof value.unsyncTarget.externalId === "string" &&
+          "resourceLinkId" in value.unsyncTarget &&
+          typeof value.unsyncTarget.resourceLinkId === "string")),
   );
 }
 
@@ -161,10 +169,13 @@ export class WahooSyncJobService {
                 );
               }
             } else if (job.jobType === WAHOO_UNSYNC_EVENT_JOB) {
-              const result = await this.deps.syncService.unsyncEvent(
-                job.payload.eventId,
-                job.profileId,
-              );
+              const result = job.payload.unsyncTarget
+                ? await this.deps.syncService.unsyncEvent(
+                    job.payload.eventId,
+                    job.profileId,
+                    job.payload.unsyncTarget,
+                  )
+                : await this.deps.syncService.unsyncEvent(job.payload.eventId, job.profileId);
               if (
                 !result.success &&
                 result.action === "no_change" &&

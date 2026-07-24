@@ -1,7 +1,4 @@
-import {
-  createActivityEffortInputSchema,
-  updateActivityEffortInputSchema,
-} from "@repo/core/athlete-inputs";
+import { updateActivityEffortInputSchema } from "@repo/core/athlete-inputs";
 import { activityEfforts, publicActivityEffortsRowSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
@@ -70,11 +67,6 @@ export const activityEffortsRouter = createTRPCRouter({
       const parsed = activityEffortRowSchema.parse(row);
       return parsed.source === "manual" && isClearedProfileOverride(parsed) ? null : parsed;
     }),
-
-  create: protectedProcedure
-    .input(createActivityEffortInputSchema)
-    .output(activityEffortRowSchema)
-    .mutation(async () => thresholdEvidenceIsReadOnly()),
 
   update: protectedProcedure
     .input(updateActivityEffortInputSchema)

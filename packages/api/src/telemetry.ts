@@ -1,8 +1,5 @@
 import * as Sentry from "@sentry/node";
-import { PostHog } from "posthog-node";
-
-let serverTelemetryInitialized = false;
-let posthogClient: PostHog | null = null;
+import { sanitizeTelemetryContext } from "./telemetry-sanitizer.mjs";
 
 const EXPECTED_TRPC_CODES = new Set([
   "BAD_REQUEST",
@@ -22,88 +19,8 @@ const EXPECTED_TRPC_CODES = new Set([
   "CLIENT_CLOSED_REQUEST",
 ]);
 const CANCELLATION_CODES = new Set(["ABORT_ERR", "ERR_CANCELED", "CLIENT_CLOSED_REQUEST"]);
-const SENSITIVE_CONTEXT_KEY =
-  /(?:authorization|cookie|password|passcode|secret|token|api[-_]?key|email|phone|username|user[-_]?id|session|credential)/i;
-const MAX_CONTEXT_DEPTH = 4;
-const MAX_CONTEXT_ENTRIES = 25;
-const MAX_CONTEXT_ARRAY_LENGTH = 20;
-const MAX_CONTEXT_STRING_LENGTH = 500;
 
-export function initServerTelemetry() {
-  if (serverTelemetryInitialized) {
-    return;
-  }
-
-  serverTelemetryInitialized = true;
-
-  const environment = process.env.APP_ENV ?? process.env.NODE_ENV ?? "development";
-  const posthogKey = process.env.POSTHOG_KEY;
-  if (posthogKey) {
-    const secretKey = process.env.POSTHOG_SECRET_KEY ?? process.env.POSTHOG_PERSONAL_API_KEY;
-    posthogClient = new PostHog(posthogKey, {
-      host: process.env.POSTHOG_HOST ?? "https://us.i.posthog.com",
-      flushAt: 1,
-      flushInterval: 0,
-      ...(secretKey !== undefined ? { secretKey } : {}),
-    });
-
-    posthogClient.capture({
-      distinctId: "gradientpeak-server",
-      event: "server_telemetry_initialized",
-      properties: {
-        app_surface: "api",
-        environment,
-        source: "local-dev-or-runtime",
-      },
-    });
-  }
-}
-
-export function sanitizeTelemetryContext(
-  context?: Record<string, unknown>,
-): Record<string, unknown> {
-  if (!context) {
-    return {};
-  }
-
-  const seen = new WeakSet<object>();
-  const sanitize = (value: unknown, depth: number): unknown => {
-    if (value === null || typeof value === "boolean" || typeof value === "number") {
-      return value;
-    }
-    if (typeof value === "string") {
-      return value.slice(0, MAX_CONTEXT_STRING_LENGTH);
-    }
-    if (typeof value === "bigint" || typeof value === "symbol") {
-      return String(value).slice(0, MAX_CONTEXT_STRING_LENGTH);
-    }
-    if (typeof value === "undefined" || typeof value === "function") {
-      return undefined;
-    }
-    if (depth >= MAX_CONTEXT_DEPTH) {
-      return "[Truncated]";
-    }
-    if (seen.has(value)) {
-      return "[Circular]";
-    }
-
-    seen.add(value);
-    if (Array.isArray(value)) {
-      return value.slice(0, MAX_CONTEXT_ARRAY_LENGTH).map((entry) => sanitize(entry, depth + 1));
-    }
-
-    return Object.fromEntries(
-      Object.entries(value)
-        .slice(0, MAX_CONTEXT_ENTRIES)
-        .map(([key, entry]) => [
-          key,
-          SENSITIVE_CONTEXT_KEY.test(key) ? "[Redacted]" : sanitize(entry, depth + 1),
-        ]),
-    );
-  };
-
-  return sanitize(context, 0) as Record<string, unknown>;
-}
+export { sanitizeTelemetryContext } from "./telemetry-sanitizer.mjs";
 
 function readErrorField(error: object, field: string): unknown {
   return field in error ? (error as Record<string, unknown>)[field] : undefined;
@@ -151,8 +68,6 @@ export function isExpectedApiError(error: unknown): boolean {
 }
 
 export function captureApiError(error: unknown, context?: Record<string, unknown>): boolean {
-  initServerTelemetry();
-
   if (isExpectedApiError(error)) {
     return false;
   }
@@ -161,23 +76,13 @@ export function captureApiError(error: unknown, context?: Record<string, unknown
   return true;
 }
 
-export function captureApiEvent(
-  event: string,
-  properties?: Record<string, unknown>,
-  distinctId = "gradientpeak-server",
-) {
-  initServerTelemetry();
-
-  posthogClient?.capture({
-    distinctId,
-    event,
-    ...(properties !== undefined ? { properties } : {}),
-  });
+export function captureApiProcedureMetric(context: Record<string, unknown>) {
+  try {
+    Sentry.captureMessage("api.procedure", {
+      level: "info",
+      extra: sanitizeTelemetryContext(context),
+    });
+  } catch {
+    // Observability transport must not affect a procedure result or error.
+  }
 }
-
-export function getPostHogClient() {
-  initServerTelemetry();
-  return posthogClient;
-}
-
-export { Sentry };

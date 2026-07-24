@@ -23,14 +23,7 @@ const RANGE_OPTIONS = [
   { days: 365, label: "1 year" },
 ] as const;
 
-type TrendSourceName =
-  | "Profile metrics"
-  | "Volume"
-  | "Training load"
-  | "Consistency"
-  | "Performance"
-  | "Intensity mix"
-  | "Peak power";
+type TrendSourceName = "Profile metrics" | "Dashboard" | "Training load" | "Peak power";
 
 export function TrendPartialFailure({
   failedSources,
@@ -128,66 +121,30 @@ export function TrendsDashboard() {
     end_date: range.end,
     limit: 100,
   });
-  const volume = api.trends.getVolumeTrends.useQuery({
+  const dashboard = api.trends.getDashboard.useQuery({
     start_date: range.startDate,
     end_date: range.endDate,
     groupBy: "week",
   });
   const load = api.activities.commonLoadHistory.useQuery();
-  const consistency = api.trends.getConsistencyMetrics.useQuery({
-    start_date: range.startDate,
-    end_date: range.endDate,
-  });
-  const performance = api.trends.getPerformanceTrends.useQuery({
-    start_date: range.startDate,
-    end_date: range.endDate,
-  });
-  const zones = api.trends.getZoneDistributionTrends.useQuery({
-    start_date: range.startDate,
-    end_date: range.endDate,
-    metric: "power",
-  });
   const peakPower = api.trends.getPeakPerformances.useQuery({ metric: "power", limit: 5 });
 
   const sourceStates = [
     { isError: profileMetrics.isError, name: "Profile metrics" as const },
-    { isError: volume.isError, name: "Volume" as const },
+    { isError: dashboard.isError, name: "Dashboard" as const },
     { isError: load.isError, name: "Training load" as const },
-    { isError: consistency.isError, name: "Consistency" as const },
-    { isError: performance.isError, name: "Performance" as const },
-    { isError: zones.isError, name: "Intensity mix" as const },
     { isError: peakPower.isError, name: "Peak power" as const },
   ];
   const failedSources = getFailedTrendSources(sourceStates);
-  const isInitialLoading = [
-    profileMetrics,
-    volume,
-    load,
-    consistency,
-    performance,
-    zones,
-    peakPower,
-  ].every((query) => query.data === undefined && query.isLoading);
-  const isRetrying = [
-    profileMetrics,
-    volume,
-    load,
-    consistency,
-    performance,
-    zones,
-    peakPower,
-  ].some((query) => query.isRefetching);
+  const isInitialLoading = [profileMetrics, dashboard, load, peakPower].every(
+    (query) => query.data === undefined && query.isLoading,
+  );
+  const isRetrying = [profileMetrics, dashboard, load, peakPower].some(
+    (query) => query.isRefetching,
+  );
 
   const retryFailedSources = async () => {
-    await retryFailedTrendQueries([
-      profileMetrics,
-      volume,
-      load,
-      consistency,
-      performance,
-      zones,
-      peakPower,
-    ]);
+    await retryFailedTrendQueries([profileMetrics, dashboard, load, peakPower]);
   };
 
   const metricRows = (profileMetrics.data?.items ?? []).filter(
@@ -205,10 +162,10 @@ export function TrendsDashboard() {
     (point) => point.date >= range.startDate && point.date <= range.endDate,
   );
   const latestLoad = commonLoadPoints.at(-1);
-  const latestZones = zones.data?.weeklyData.at(-1);
+  const latestZones = dashboard.data?.zones.weeklyData.at(-1);
   const zoneEntries = latestZones ? Object.entries(latestZones.zones) : [];
   const performanceUsesPower =
-    performance.data?.dataPoints.some((point) => point.avgPower != null) ?? false;
+    dashboard.data?.performance.dataPoints.some((point) => point.avgPower != null) ?? false;
 
   if (isInitialLoading) {
     return (
@@ -283,17 +240,17 @@ export function TrendsDashboard() {
             </CardHeader>
           </Card>
         )}
-        {volume.data ? (
+        {dashboard.data ? (
           <SimpleTrendChart
             axisLabels={{ x: "Week", y: "Hours" }}
             description={
-              volume.data.totals
-                ? `${volume.data.totals.totalActivities} activities · ${number(volume.data.totals.totalDistance / 1000)} km total`
+              dashboard.data.volume.totals
+                ? `${dashboard.data.volume.totals.totalActivities} activities · ${number(dashboard.data.volume.totals.totalDistance / 1000)} km total`
                 : "Weekly activity volume in this range."
             }
             emptyMessage="Complete activities to build weekly volume."
             formatValue={(value) => `${number(value)} h`}
-            points={volume.data.dataPoints.map((point) => ({
+            points={dashboard.data.volume.dataPoints.map((point) => ({
               id: point.date,
               label: formatDate(point.date),
               value: point.totalTime / 3600,
@@ -302,7 +259,7 @@ export function TrendsDashboard() {
             title="Training volume"
           />
         ) : null}
-        {performance.data ? (
+        {dashboard.data ? (
           <SimpleTrendChart
             axisLabels={{
               x: "Activity",
@@ -315,7 +272,7 @@ export function TrendsDashboard() {
             }
             emptyMessage={`No activities with ${performanceUsesPower ? "power" : "speed"} are available.`}
             formatValue={(value) => `${number(value)} ${performanceUsesPower ? "W" : "km/h"}`}
-            points={performance.data.dataPoints.map((point) => ({
+            points={dashboard.data.performance.dataPoints.map((point) => ({
               id: point.activityId,
               label: `${formatDate(point.date)} · ${point.activityName}`,
               value: performanceUsesPower
@@ -364,17 +321,26 @@ export function TrendsDashboard() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        {consistency.data ? (
+        {dashboard.data ? (
           <Card>
             <CardHeader>
               <CardTitle>Consistency</CardTitle>
               <CardDescription>Activity rhythm in this range.</CardDescription>
             </CardHeader>
             <CardContent className="grid grid-cols-2 gap-3 text-sm">
-              <Metric label="Current streak" value={`${consistency.data.currentStreak} days`} />
-              <Metric label="Longest streak" value={`${consistency.data.longestStreak} days`} />
-              <Metric label="Weekly average" value={number(consistency.data.weeklyAvg)} />
-              <Metric label="Activities" value={String(consistency.data.totalActivities)} />
+              <Metric
+                label="Current streak"
+                value={`${dashboard.data.consistency.currentStreak} days`}
+              />
+              <Metric
+                label="Longest streak"
+                value={`${dashboard.data.consistency.longestStreak} days`}
+              />
+              <Metric label="Weekly average" value={number(dashboard.data.consistency.weeklyAvg)} />
+              <Metric
+                label="Activities"
+                value={String(dashboard.data.consistency.totalActivities)}
+              />
             </CardContent>
           </Card>
         ) : null}
@@ -398,7 +364,7 @@ export function TrendsDashboard() {
             </CardContent>
           </Card>
         ) : null}
-        {zones.data ? (
+        {dashboard.data ? (
           <Card>
             <CardHeader>
               <CardTitle>Intensity mix</CardTitle>
@@ -409,7 +375,7 @@ export function TrendsDashboard() {
                 zoneEntries.map(([zone, value]) => (
                   <div className="flex items-center justify-between gap-3" key={zone}>
                     <span className="capitalize text-muted-foreground">{zone}</span>
-                    <span className="font-medium">{number(value)}%</span>
+                    <span className="font-medium">{number(value as number)}%</span>
                   </div>
                 ))
               ) : (

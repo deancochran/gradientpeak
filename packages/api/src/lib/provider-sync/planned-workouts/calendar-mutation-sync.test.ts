@@ -7,23 +7,29 @@ import {
 const {
   drainDueWahooPlannedWorkoutJobs,
   enqueueJob,
+  enqueueJobInTransaction,
   findCredentialsByProfileIdAndProvider,
   findWahooIntegrationByProfileId,
+  getEventResourceLink,
   getPlannedEventForSync,
   getProfileSyncMetrics,
   integrationsListByProfileId,
   listEventResourceLinks,
+  listIntegrationsByProfileId,
   listJobs,
   touchSyncState,
 } = vi.hoisted(() => ({
   drainDueWahooPlannedWorkoutJobs: vi.fn(),
   enqueueJob: vi.fn(),
+  enqueueJobInTransaction: vi.fn(),
   findCredentialsByProfileIdAndProvider: vi.fn(),
   findWahooIntegrationByProfileId: vi.fn(),
+  getEventResourceLink: vi.fn(),
   getPlannedEventForSync: vi.fn(),
   getProfileSyncMetrics: vi.fn(),
   integrationsListByProfileId: vi.fn(),
   listEventResourceLinks: vi.fn(),
+  listIntegrationsByProfileId: vi.fn(),
   listJobs: vi.fn(),
   touchSyncState: vi.fn(),
 }));
@@ -37,6 +43,7 @@ vi.mock("../../../infrastructure/repositories", () => ({
   })),
   createProviderSyncRepository: vi.fn(() => ({
     enqueueJob,
+    enqueueJobInTransaction,
     listJobs,
     touchSyncState,
   })),
@@ -44,8 +51,10 @@ vi.mock("../../../infrastructure/repositories", () => ({
     findWahooIntegrationByProfileId,
     getPlannedEventForSync,
     getProfileSyncMetrics,
+    getEventResourceLink,
     listEventResourceLinks,
   })),
+  listIntegrationsByProfileId,
 }));
 
 vi.mock("../wahoo-planned-workout-drain", () => ({
@@ -55,7 +64,7 @@ vi.mock("../wahoo-planned-workout-drain", () => ({
 describe("enqueuePlannedWorkoutSyncAfterCalendarMutation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    integrationsListByProfileId.mockResolvedValue([{ id: "integration-1", provider: "wahoo" }]);
+    listIntegrationsByProfileId.mockResolvedValue([{ id: "integration-1", provider: "wahoo" }]);
     findWahooIntegrationByProfileId.mockResolvedValue({ id: "integration-1" });
     getPlannedEventForSync.mockResolvedValue({
       id: "event-1",
@@ -100,6 +109,7 @@ describe("enqueuePlannedWorkoutSyncAfterCalendarMutation", () => {
       thresholdHr: null,
     });
     enqueueJob.mockResolvedValue({ id: "job-1", status: "queued" });
+    enqueueJobInTransaction.mockResolvedValue({ id: "job-1", status: "queued" });
     drainDueWahooPlannedWorkoutJobs.mockResolvedValue({ completed: 1, failed: 0, processed: 1 });
   });
 
@@ -126,7 +136,9 @@ describe("enqueuePlannedWorkoutSyncAfterCalendarMutation", () => {
       success: true,
     });
 
-    expect(integrationsListByProfileId).toHaveBeenCalledWith("athlete-profile-id");
+    expect(listIntegrationsByProfileId).toHaveBeenCalledWith({}, "athlete-profile-id", {
+      forUpdate: false,
+    });
     expect(findWahooIntegrationByProfileId).toHaveBeenCalledWith("athlete-profile-id");
     expect(getPlannedEventForSync).toHaveBeenCalledWith({
       eventId: "event-1",
@@ -168,13 +180,13 @@ describe("enqueuePlannedWorkoutSyncAfterCalendarMutation", () => {
     });
 
     expect(console.error).toHaveBeenCalledWith(
-      "Failed to drain due planned workout sync jobs after enqueue:",
-      expect.any(Error),
+      "Failed to drain due planned workout sync jobs after enqueue",
+      { category: "upstream", provider: "wahoo" },
     );
   });
 
   it("does not enqueue when the owner has no planned-push provider connected", async () => {
-    integrationsListByProfileId.mockResolvedValue([{ id: "integration-1", provider: "strava" }]);
+    listIntegrationsByProfileId.mockResolvedValue([{ id: "integration-1", provider: "strava" }]);
 
     await expect(
       enqueuePlannedWorkoutSyncAfterCalendarMutation({
@@ -202,6 +214,82 @@ describe("enqueuePlannedWorkoutSyncAfterCalendarMutation", () => {
 
     expect(enqueueJob).toHaveBeenCalled();
     expect(drainDueWahooPlannedWorkoutJobs).not.toHaveBeenCalled();
+  });
+
+  it("queues a no-link unsync in the publish lane through the supplied transaction", async () => {
+    const tx = { marker: "transaction" } as never;
+
+    await expect(
+      enqueuePlannedWorkoutSyncAfterCalendarMutation({
+        db: {} as never,
+        drainDueJobs: false,
+        eventIds: ["event-1"],
+        operation: "unsync",
+        profileId: "athlete-profile-id",
+        transaction: tx,
+      }),
+    ).resolves.toMatchObject({ queued: true, success: true });
+
+    expect(listIntegrationsByProfileId).toHaveBeenCalledWith(tx, "athlete-profile-id", {
+      forUpdate: true,
+    });
+    expect(enqueueJobInTransaction).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        dedupeKey: "wahoo:unsync:event:event-1",
+        syncLaneKey: "wahoo:integration-1:planned_workout:event-1",
+        payload: { eventId: "event-1", operation: "unsync" },
+      }),
+    );
+    expect(enqueueJob).not.toHaveBeenCalled();
+  });
+
+  it("captures an existing resource link in the transactional unsync payload", async () => {
+    const tx = { marker: "transaction" } as never;
+    getEventResourceLink.mockResolvedValueOnce({ externalId: "wahoo-workout-7", id: "link-7" });
+
+    await enqueuePlannedWorkoutSyncAfterCalendarMutation({
+      db: {} as never,
+      drainDueJobs: false,
+      eventIds: ["event-1"],
+      operation: "unsync",
+      profileId: "athlete-profile-id",
+      transaction: tx,
+    });
+
+    expect(getEventResourceLink).toHaveBeenCalledWith({
+      eventId: "event-1",
+      forUpdate: true,
+      profileId: "athlete-profile-id",
+      provider: "wahoo",
+    });
+    expect(enqueueJobInTransaction).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        payload: {
+          eventId: "event-1",
+          operation: "unsync",
+          unsyncTarget: { externalId: "wahoo-workout-7", resourceLinkId: "link-7" },
+        },
+      }),
+    );
+  });
+
+  it("does not create an unsync job when Wahoo is disconnected", async () => {
+    listIntegrationsByProfileId.mockResolvedValueOnce([]);
+
+    await expect(
+      enqueuePlannedWorkoutSyncAfterCalendarMutation({
+        db: {} as never,
+        drainDueJobs: false,
+        eventIds: ["event-1"],
+        operation: "unsync",
+        profileId: "athlete-profile-id",
+      }),
+    ).resolves.toBeNull();
+
+    expect(enqueueJob).not.toHaveBeenCalled();
+    expect(enqueueJobInTransaction).not.toHaveBeenCalled();
   });
 });
 

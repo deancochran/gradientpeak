@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildActivityDerivedSummaryMap,
   buildActivitySegmentDerivedSummaries,
+  buildDynamicStressSeries,
   deriveActivityParentClassification,
 } from "../derived";
 
@@ -41,11 +42,15 @@ function segment(
   };
 }
 
-function activity(segments: ReturnType<typeof segment>[]) {
+function activity(
+  segments: ReturnType<typeof segment>[],
+  id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  startedAt = new Date("2026-07-01T08:00:00.000Z"),
+) {
   return {
-    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    id,
     profile_id: PROFILE_ID,
-    started_at: new Date("2026-07-01T08:00:00.000Z"),
+    started_at: startedAt,
     finished_at: new Date("2026-07-01T09:00:00.000Z"),
     elapsed_ms: 3_600_000,
     active_ms: 3_600_000,
@@ -54,7 +59,7 @@ function activity(segments: ReturnType<typeof segment>[]) {
     distance_meters: 25_000,
     avg_heart_rate: null,
     max_heart_rate: null,
-    segments,
+    segments: segments.map((value) => ({ ...value, activity_id: id })),
   };
 }
 
@@ -345,6 +350,69 @@ describe("segment-derived activity analysis", () => {
       ),
       2,
     );
+  });
+
+  it("groups segment summaries by parent without mixing multiple activities", async () => {
+    const first = activity(
+      [
+        segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 1_200_000),
+        segment("22222222-2222-4222-8222-222222222222", 1, "bike", 1_200_000, 2_400_000),
+      ],
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    );
+    const second = activity(
+      [
+        segment("33333333-3333-4333-8333-333333333333", 0, "run", 0, 600_000),
+        segment("44444444-4444-4444-8444-444444444444", 1, "run", 600_000, 1_200_000),
+      ],
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    );
+
+    const summaries = await buildActivityDerivedSummaryMap({
+      store: store() as never,
+      profileId: PROFILE_ID,
+      activities: [first, second],
+    });
+
+    expect(summaries.get(first.id)).toMatchObject({
+      activity_id: first.id,
+      common_load: { totalActivityCount: 2 },
+      segment_id: first.segments[0]?.id,
+    });
+    expect(summaries.get(second.id)).toMatchObject({
+      activity_id: second.id,
+      common_load: { totalActivityCount: 2 },
+      segment_id: second.segments[0]?.id,
+    });
+    expect(summaries.size).toBe(6);
+  });
+
+  it("builds a complete multi-activity dynamic stress series by activity date", async () => {
+    const first = activity(
+      [segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 1_800_000)],
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      new Date("2026-07-01T08:00:00.000Z"),
+    );
+    const second = activity(
+      [segment("22222222-2222-4222-8222-222222222222", 0, "bike", 0, 3_600_000)],
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      new Date("2026-07-02T08:00:00.000Z"),
+    );
+
+    const series = await buildDynamicStressSeries({
+      store: store() as never,
+      profileId: PROFILE_ID,
+      activities: [first, second],
+    });
+
+    expect(series.complete).toBe(true);
+    expect(series.seriesIdentity).not.toBeNull();
+    expect(series.byActivityId.has(first.id)).toBe(true);
+    expect(series.byActivityId.has(second.id)).toBe(true);
+    expect([...series.byDate.entries()]).toEqual([
+      ["2026-07-01", series.segmentSummaries[0]?.tss],
+      ["2026-07-02", series.segmentSummaries[1]?.tss],
+    ]);
   });
 
   it("does not use an effort from the activity interval to score that activity", async () => {

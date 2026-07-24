@@ -1,4 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { deleteEventUseCase } from "../../application/events/deleteEventUseCase";
+
+const { drainDueWahooPlannedWorkoutJobs, enqueuePlannedWorkoutSyncAfterCalendarMutation } =
+  vi.hoisted(() => ({
+    drainDueWahooPlannedWorkoutJobs: vi.fn(),
+    enqueuePlannedWorkoutSyncAfterCalendarMutation: vi.fn(),
+  }));
+
+vi.mock("../../lib/provider-sync/planned-workouts/calendar-mutation-sync", () => ({
+  enqueuePlannedWorkoutSyncAfterCalendarMutation,
+}));
+
+vi.mock("../../lib/provider-sync/wahoo-planned-workout-drain", () => ({
+  drainDueWahooPlannedWorkoutJobs,
+}));
 
 vi.mock("../../utils/estimation-helpers", () => ({
   addEstimationToPlan: vi.fn(async (plan: unknown) => plan),
@@ -318,9 +333,16 @@ function createCompletionRepository(params: {
   logFilter: (table: string, type: string, column: string, value: unknown) => void;
 }) {
   return {
-    async deleteOwnedEventsForScope() {
+    async deleteOwnedEventsForScope(input: {
+      beforeDelete?: (input: {
+        candidates: Array<Record<string, unknown>>;
+        tx: unknown;
+      }) => Promise<void>;
+    }) {
+      const candidates = params.nextResult("events").data ?? [];
+      await input.beforeDelete?.({ candidates, tx: {} });
       params.callLog.push({ table: "events", operation: "delete" });
-      return params.nextResult("events").data ?? [];
+      return candidates;
     },
     async getOwnedActivityForCompletion() {
       return params.nextResult("activities").data ?? null;
@@ -362,9 +384,68 @@ function createCompletionRepository(params: {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.clearAllMocks();
 });
 
 describe("eventsRouter generalization", () => {
+  it("revokes grants and queues only planned candidates with activity plans in the delete callback", async () => {
+    const beforeDeleteCalls: Array<(input: { candidates: any[]; tx: any }) => Promise<void>> = [];
+    const revokeEventGrants = vi.fn(async () => undefined);
+    const candidates = [
+      { activity_plan_id: "plan-1", event_type: "planned", id: "planned-1" },
+      { activity_plan_id: null, event_type: "planned", id: "unplanned-1" },
+      { activity_plan_id: "plan-2", event_type: "custom", id: "custom-1" },
+    ];
+    const completionRepository = {
+      getOwnedEventForCompletion: vi.fn(async () =>
+        createEventRow({ id: "anchor-1", event_type: "planned" }),
+      ),
+      deleteOwnedEventsForScope: vi.fn(async ({ beforeDelete }) => {
+        beforeDeleteCalls.push(beforeDelete);
+        await beforeDelete({ candidates, tx: { id: "tx-1" } });
+        return candidates;
+      }),
+    };
+    const enqueueProviderPlannedActivityJobs = vi.fn(async () => ({
+      affectedCount: 1,
+      jobId: "job-1",
+      operation: "unsync" as const,
+      queued: true,
+      success: true,
+    }));
+
+    await expect(
+      deleteEventUseCase({
+        ctx: { db: {}, session: { user: { id: "profile-123" } } } as any,
+        input: { id: "anchor-1" },
+        dependencies: {
+          buildInsightRefreshHint: () => null,
+          enqueueProviderPlannedActivityJobs,
+          getContentPermissions: (_ctx, tx) => (tx ? ({ revokeEventGrants } as any) : null),
+          getEventCompletionRepository: () => completionRepository as any,
+          plannedEventType: "planned",
+          toCoreEventType: (eventType) => eventType,
+          toDateKey: (value) => value.slice(0, 10),
+        },
+      }),
+    ).resolves.toMatchObject({ affected_event_ids: candidates.map((candidate) => candidate.id) });
+
+    expect(beforeDeleteCalls).toHaveLength(1);
+    expect(enqueueProviderPlannedActivityJobs).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        drainDueJobs: false,
+        eventIds: ["planned-1"],
+        operation: "unsync",
+        transaction: { id: "tx-1" },
+      }),
+    );
+    expect(revokeEventGrants).toHaveBeenCalledTimes(3);
+    expect(revokeEventGrants).toHaveBeenNthCalledWith(1, "planned-1");
+    expect(revokeEventGrants).toHaveBeenNthCalledWith(2, "unplanned-1");
+    expect(revokeEventGrants).toHaveBeenNthCalledWith(3, "custom-1");
+  });
+
   it("list returns mixed event types with normalized event_type values", async () => {
     const { caller } = createCaller({
       events: {
@@ -1448,6 +1529,77 @@ describe("eventsRouter generalization", () => {
     expect(result.success).toBe(true);
     expect(result.mutation_scope).toBe("series");
     expect(result.affected_count).toBe(2);
+  });
+
+  it("queues unsync only for planned candidates with an activity plan before deleting", async () => {
+    const eventId = "00000000-0000-4000-8000-000000000061";
+    const plannedId = "00000000-0000-4000-8000-000000000062";
+    const { caller, callLog } = createCaller({
+      events: [
+        { data: createEventRow({ id: eventId, event_type: "planned" }), error: null },
+        {
+          data: [
+            createEventRow({ id: plannedId, event_type: "planned", activity_plan_id: "plan-1" }),
+            createEventRow({ id: "custom-1", event_type: "custom", activity_plan_id: "plan-2" }),
+            createEventRow({ id: "unplanned-1", event_type: "planned", activity_plan_id: null }),
+          ],
+          error: null,
+        },
+      ],
+    });
+
+    const result = await caller.delete({ id: eventId, scope: "series" });
+
+    expect(enqueuePlannedWorkoutSyncAfterCalendarMutation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        drainDueJobs: false,
+        eventIds: [plannedId],
+        operation: "unsync",
+        transaction: {},
+      }),
+    );
+    expect(callLog.filter((call) => call.operation === "delete")).toHaveLength(1);
+    expect(result.affected_event_ids).toEqual([plannedId, "custom-1", "unplanned-1"]);
+  });
+
+  it("maps unsync enqueue failure to a stable client-safe delete error before deletion", async () => {
+    enqueuePlannedWorkoutSyncAfterCalendarMutation.mockResolvedValueOnce({
+      error: "queue unavailable",
+      queued: false,
+      success: false,
+    });
+    const eventId = "00000000-0000-4000-8000-000000000063";
+    const { caller, callLog } = createCaller({
+      events: [
+        { data: createEventRow({ id: eventId, event_type: "planned" }), error: null },
+        { data: [createEventRow({ id: eventId, activity_plan_id: "plan-1" })], error: null },
+      ],
+    });
+
+    await expect(caller.delete({ id: eventId })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Failed to delete events",
+    });
+
+    expect(callLog.some((call) => call.operation === "delete")).toBe(false);
+  });
+
+  it("preserves a successful delete when the post-commit drain rejects", async () => {
+    drainDueWahooPlannedWorkoutJobs.mockRejectedValueOnce(new Error("worker unavailable"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const eventId = "00000000-0000-4000-8000-000000000064";
+    const { caller } = createCaller({
+      events: [
+        { data: createEventRow({ id: eventId, event_type: "custom" }), error: null },
+        { data: [createEventRow({ id: eventId, event_type: "custom" })], error: null },
+      ],
+    });
+
+    await expect(caller.delete({ id: eventId })).resolves.toMatchObject({ success: true });
+    expect(console.error).toHaveBeenCalledWith(
+      "Failed to drain planned workout unsync jobs after event deletion",
+      { category: "upstream", provider: "wahoo" },
+    );
   });
 
   it("blocks mutable update for imported events", async () => {

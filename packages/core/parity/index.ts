@@ -97,7 +97,11 @@ export const parityRegistry = [
   },
   {
     area: "onboarding",
-    backendOperations: ["profiles.get", "integrations.getAuthUrl", "onboarding.completeOnboarding"],
+    backendOperations: [
+      "profiles.get",
+      "integrations.getAuthUrl",
+      "onboarding.completeLifecycleSetup",
+    ],
     id: "account.onboarding",
     mobileRoute: "/(internal)/(standard)/onboarding",
     policy: "required_on_web",
@@ -427,11 +431,7 @@ export const parityRegistry = [
   },
   {
     area: "training_plans",
-    backendOperations: [
-      "trainingPlans.getCreationSuggestions",
-      "trainingPlans.createFromCreationConfig",
-      "trainingPlans.update",
-    ],
+    backendOperations: ["trainingPlans.previewCreationConfig", "trainingPlans.update"],
     id: "training_plans.create",
     mobileRoute: "/(internal)/(standard)/training-plan-create",
     policy: "required_on_web",
@@ -441,7 +441,7 @@ export const parityRegistry = [
     area: "training_plans",
     backendOperations: [
       "trainingPlans.get",
-      "trainingPlans.updateFromCreationConfig",
+      "trainingPlans.previewCreationConfig",
       "trainingPlans.update",
     ],
     id: "training_plans.edit",
@@ -488,13 +488,7 @@ export const parityRegistry = [
   },
   {
     area: "profile",
-    backendOperations: [
-      "analytics.getSeasonBestCurve",
-      "profileMetrics.getAtDate",
-      "storage.getSignedUrl",
-      "storage.createSignedUploadUrl",
-      "profiles.update",
-    ],
+    backendOperations: ["storage.getSignedUrl", "storage.createSignedUploadUrl", "profiles.update"],
     id: "profile.edit",
     mobileRoute: "/(internal)/(standard)/profile-edit",
     policy: "required_on_web",
@@ -588,7 +582,7 @@ export const parityRegistry = [
   },
   {
     area: "coaching",
-    backendOperations: ["coaching.getRoster"],
+    backendOperations: ["organizations.coachingAccess"],
     id: "coaching.dashboard",
     mobileRoute: "/(web-only)",
     policy: "web_only",

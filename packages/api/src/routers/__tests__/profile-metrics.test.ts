@@ -183,34 +183,6 @@ function createCaller(plan: QueryPlan = {}, userId = "11111111-1111-4111-8111-11
 }
 
 describe("profileMetricsRouter", () => {
-  it("rejects athlete-entered CSS threshold tests", async () => {
-    const { caller, callLog } = createCaller();
-
-    await expect(
-      caller.recordCssTest({
-        operation_id: "22222222-2222-4222-8222-222222222222",
-        time_400_seconds: 360,
-        time_200_seconds: 168,
-        recorded_at: new Date("2026-07-14T09:00:00.000Z"),
-      }),
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect(callLog).toEqual([]);
-  });
-
-  it("rejects an invalid CSS relationship before starting a transaction", async () => {
-    const { caller, callLog } = createCaller();
-
-    await expect(
-      caller.recordCssTest({
-        operation_id: "22222222-2222-4222-8222-222222222222",
-        time_400_seconds: 336,
-        time_200_seconds: 168,
-        recorded_at: new Date("2026-07-14T09:00:00.000Z"),
-      }),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(callLog.some(({ operation }) => operation === "transaction.begin")).toBe(false);
-  });
-
   it("lists metrics and forwards pagination to the db query", async () => {
     const rows = [
       createProfileMetricRow(),
@@ -252,29 +224,6 @@ describe("profileMetricsRouter", () => {
         extra: true,
       } as any),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-  });
-
-  it("gets the latest metric at or before a requested date", async () => {
-    const row = createProfileMetricRow({
-      id: "00000000-0000-4000-8000-000000000003",
-      metric_type: "resting_hr",
-      unit: "bpm",
-      value: 49,
-    });
-    const { caller, callLog } = createCaller({ selectResult: [row] });
-
-    const result = await caller.getAtDate({
-      metric_type: "resting_hr",
-      date: new Date("2026-03-15T00:00:00.000Z"),
-    });
-
-    expect(result).toEqual(row);
-    expect(callLog).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ operation: "select.orderBy" }),
-        expect.objectContaining({ operation: "select.limit", value: 1 }),
-      ]),
-    );
   });
 
   it("returns null when getById cannot find an owned metric", async () => {

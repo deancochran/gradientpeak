@@ -54,6 +54,19 @@
     "packages/db": {
       "ignoreDependencies": ["supabase"]
     },
+    "packages/api": {
+      "entry": [
+        "src/client.ts",
+        "src/context.ts",
+        "src/query-client.ts",
+        "src/react.ts",
+        "src/server.ts",
+        "src/telemetry.ts",
+        "src/telemetry-sanitizer.mjs",
+        "src/webhooks.ts",
+        "scripts/backfill-activity-evidence.ts"
+      ]
+    },
     "packages/ui": {
       "ignoreDependencies": ["@radix-ui/.+"]
     }

@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  createFromCreationConfigInputSchema,
-  createFromCreationConfigResponseCompatSchema,
-  getCreationSuggestionsInputSchema,
   previewCreationConfigInputSchema,
   previewCreationConfigResponseCompatSchema,
 } from "../../contracts";
@@ -54,18 +51,7 @@ describe("training plan creation contracts", () => {
     expect(parsed.preview_baseline?.feasibility_state).toBe("aggressive");
   });
 
-  it("create schema extends preview with is_active default and preview snapshot token", () => {
-    const parsed = createFromCreationConfigInputSchema.parse({
-      minimal_plan: minimalPlan,
-      creation_input: {},
-      preview_snapshot_token: "token-1",
-    });
-
-    expect(parsed.is_active).toBe(true);
-    expect(parsed.preview_snapshot_token).toBe("token-1");
-  });
-
-  it("accepts additive override_policy contract in preview/create inputs", () => {
+  it("accepts the additive override_policy contract in preview input", () => {
     const previewParsed = previewCreationConfigInputSchema.parse({
       minimal_plan: minimalPlan,
       creation_input: {},
@@ -76,31 +62,12 @@ describe("training plan creation contracts", () => {
       },
     });
 
-    const createParsed = createFromCreationConfigInputSchema.parse({
-      minimal_plan: minimalPlan,
-      creation_input: {},
-      override_policy: {
-        allow_blocking_conflicts: true,
-        scope: "objective_risk_budget",
-      },
-    });
-
     expect(previewParsed.override_policy?.allow_blocking_conflicts).toBe(true);
-    expect(createParsed.override_policy?.scope).toBe("objective_risk_budget");
-  });
-
-  it("rejects empty preview snapshot token in create schema", () => {
-    const result = createFromCreationConfigInputSchema.safeParse({
-      minimal_plan: minimalPlan,
-      creation_input: {},
-      preview_snapshot_token: "",
-    });
-
-    expect(result.success).toBe(false);
+    expect(previewParsed.override_policy?.scope).toBe("objective_risk_budget");
   });
 
   it("accepts creation_input user overrides without legacy mode/risk fields", () => {
-    const result = createFromCreationConfigInputSchema.safeParse({
+    const result = previewCreationConfigInputSchema.safeParse({
       minimal_plan: minimalPlan,
       creation_input: {
         user_values: {
@@ -178,9 +145,9 @@ describe("training plan creation contracts", () => {
           }).success,
       },
       {
-        name: "create input rejects legacy mode/risk/policy and removed cap keys",
+        name: "preview input rejects legacy mode/risk/policy and removed cap keys",
         run: () =>
-          createFromCreationConfigInputSchema.safeParse({
+          previewCreationConfigInputSchema.safeParse({
             minimal_plan: minimalPlan,
             creation_input: {
               mode: "risk_accepted",
@@ -200,9 +167,9 @@ describe("training plan creation contracts", () => {
           }).success,
       },
       {
-        name: "create input rejects removed cap aliases",
+        name: "preview input rejects removed cap aliases",
         run: () =>
-          createFromCreationConfigInputSchema.safeParse({
+          previewCreationConfigInputSchema.safeParse({
             minimal_plan: minimalPlan,
             creation_input: {
               user_values: {
@@ -213,9 +180,9 @@ describe("training plan creation contracts", () => {
           }).success,
       },
       {
-        name: "create input rejects legacy projection_control_v2 alias",
+        name: "preview input rejects legacy projection_control_v2 alias",
         run: () =>
-          createFromCreationConfigInputSchema.safeParse({
+          previewCreationConfigInputSchema.safeParse({
             minimal_plan: minimalPlan,
             creation_input: {
               user_values: {
@@ -227,9 +194,9 @@ describe("training plan creation contracts", () => {
           }).success,
       },
       {
-        name: "create input rejects inferred duplicate alias recent_influence_score",
+        name: "preview input rejects inferred duplicate alias recent_influence_score",
         run: () =>
-          createFromCreationConfigInputSchema.safeParse({
+          previewCreationConfigInputSchema.safeParse({
             minimal_plan: minimalPlan,
             creation_input: {
               user_values: {
@@ -239,18 +206,9 @@ describe("training plan creation contracts", () => {
           }).success,
       },
       {
-        name: "suggestions input rejects inferred duplicate alias recent_influence_score",
+        name: "preview input rejects client-provided projection artifacts",
         run: () =>
-          getCreationSuggestionsInputSchema.safeParse({
-            existing_values: {
-              recent_influence_score: 0.4,
-            },
-          }).success,
-      },
-      {
-        name: "create input rejects client-provided projection artifacts",
-        run: () =>
-          createFromCreationConfigInputSchema.safeParse({
+          previewCreationConfigInputSchema.safeParse({
             minimal_plan: minimalPlan,
             creation_input: {},
             projection_chart: {
@@ -271,7 +229,7 @@ describe("training plan creation contracts", () => {
   });
 
   it("accepts partial calibration overrides in creation input", () => {
-    const result = createFromCreationConfigInputSchema.safeParse({
+    const result = previewCreationConfigInputSchema.safeParse({
       minimal_plan: minimalPlan,
       creation_input: {
         user_values: {
@@ -293,7 +251,7 @@ describe("training plan creation contracts", () => {
     expect(result.success).toBe(true);
   });
 
-  it("parses legacy preview/create response shapes without additive diagnostics", () => {
+  it("parses the preview response shape without additive diagnostics", () => {
     const previewResult = previewCreationConfigResponseCompatSchema.safeParse({
       projection_chart: {
         start_date: "2026-01-01",
@@ -301,20 +259,10 @@ describe("training plan creation contracts", () => {
       },
     });
 
-    const createResult = createFromCreationConfigResponseCompatSchema.safeParse({
-      creation_summary: {
-        projection_chart: {
-          start_date: "2026-01-01",
-          end_date: "2026-03-01",
-        },
-      },
-    });
-
     expect(previewResult.success).toBe(true);
-    expect(createResult.success).toBe(true);
   });
 
-  it("parses additive WS-E diagnostics fields in preview/create responses", () => {
+  it("parses additive WS-E diagnostics fields in preview responses", () => {
     const additiveDiagnostics = {
       inferred_current_state: {
         mean: { ctl: 40, atl: 48, tsb: -8 },
@@ -347,29 +295,19 @@ describe("training plan creation contracts", () => {
       },
     });
 
-    const createParsed = createFromCreationConfigResponseCompatSchema.parse({
-      creation_summary: {
-        projection_chart: {
-          start_date: "2026-01-01",
-          end_date: "2026-03-01",
-          ...additiveDiagnostics,
-        },
-      },
-    });
-
     expect(previewParsed.projection_chart.prediction_uncertainty).toEqual(
       additiveDiagnostics.prediction_uncertainty,
     );
-    expect(createParsed.creation_summary.projection_chart.goal_target_distributions).toEqual(
+    expect(previewParsed.projection_chart.goal_target_distributions).toEqual(
       additiveDiagnostics.goal_target_distributions,
     );
-    expect(createParsed.creation_summary.projection_chart.optimization_tradeoff_summary).toEqual(
+    expect(previewParsed.projection_chart.optimization_tradeoff_summary).toEqual(
       additiveDiagnostics.optimization_tradeoff_summary,
     );
   });
 
   it("rejects invalid calibration composite weight sums during normalization", () => {
-    const parsed = createFromCreationConfigInputSchema.parse({
+    const parsed = previewCreationConfigInputSchema.parse({
       minimal_plan: minimalPlan,
       creation_input: {
         user_values: {

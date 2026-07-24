@@ -26,6 +26,7 @@ type WahooJobPayload = {
   operation: "publish" | "unsync";
   projectionHash?: string;
   projectionSnapshot?: WahooProjectionSnapshot;
+  unsyncTarget?: { externalId: string; resourceLinkId: string };
 };
 
 export class WahooPlannedWorkoutProvider implements PlannedWorkoutProviderAdapter {
@@ -35,6 +36,7 @@ export class WahooPlannedWorkoutProvider implements PlannedWorkoutProviderAdapte
     private readonly deps: {
       providerSyncRepository: ProviderSyncRepository;
       wahooRepository: WahooRepository;
+      enqueueJob?: ProviderSyncRepository["enqueueJob"];
     },
   ) {}
 
@@ -148,7 +150,10 @@ export class WahooPlannedWorkoutProvider implements PlannedWorkoutProviderAdapte
       syncMode: policy.syncMode,
     });
 
-    const queued = await this.deps.providerSyncRepository.enqueueJob({
+    const queued = await (
+      this.deps.enqueueJob ??
+      this.deps.providerSyncRepository.enqueueJob.bind(this.deps.providerSyncRepository)
+    )({
       dedupeKey: `wahoo:publish:event:${input.eventId}`,
       integrationId: integration.id,
       internalResourceId: input.eventId,
@@ -170,7 +175,11 @@ export class WahooPlannedWorkoutProvider implements PlannedWorkoutProviderAdapte
     return { jobId: queued.id, queued: queued.status === "queued" };
   }
 
-  async enqueueUnsyncEvent(input: { eventId: string; profileId: string }) {
+  async enqueueUnsyncEvent(input: {
+    eventId: string;
+    profileId: string;
+    unsyncTarget?: { externalId: string; resourceLinkId: string };
+  }) {
     const integration = await this.deps.wahooRepository.findWahooIntegrationByProfileId(
       input.profileId,
     );
@@ -181,9 +190,13 @@ export class WahooPlannedWorkoutProvider implements PlannedWorkoutProviderAdapte
     const payload = {
       eventId: input.eventId,
       operation: "unsync" satisfies WahooJobPayload["operation"],
+      ...(input.unsyncTarget ? { unsyncTarget: input.unsyncTarget } : {}),
     };
 
-    const queued = await this.deps.providerSyncRepository.enqueueJob({
+    const queued = await (
+      this.deps.enqueueJob ??
+      this.deps.providerSyncRepository.enqueueJob.bind(this.deps.providerSyncRepository)
+    )({
       dedupeKey: `wahoo:unsync:event:${input.eventId}`,
       integrationId: integration.id,
       internalResourceId: input.eventId,

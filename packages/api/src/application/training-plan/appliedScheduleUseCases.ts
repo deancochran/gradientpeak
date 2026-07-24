@@ -6,9 +6,11 @@ import {
 import { schema } from "@repo/db";
 import type { DrizzleDbClient } from "@repo/db/client";
 import { TRPCError } from "@trpc/server";
-import { and, eq, gte, ne } from "drizzle-orm";
+import { and, eq, gte, inArray, ne } from "drizzle-orm";
+import type { DrizzleTransactionClient } from "../../db";
 import { logger } from "../../lib/logger";
 import { enqueuePlannedWorkoutSyncAfterCalendarMutation } from "../../lib/provider-sync/planned-workouts";
+import { drainDueWahooPlannedWorkoutJobs } from "../../lib/provider-sync/wahoo-planned-workout-drain";
 import type { TrainingPlanRepository } from "../../repositories";
 
 const plannedEventType = "planned" as const;
@@ -29,22 +31,19 @@ function getRequiredPlanningTimezone(value: string | null | undefined): string {
 
 async function enqueuePlannedWorkoutSyncForCalendarWrite(input: {
   db: DrizzleDbClient;
+  drainDueJobs?: boolean;
   eventIds: string[];
   operation: "publish" | "unsync";
   profileId: string;
+  transaction?: DrizzleTransactionClient;
 }) {
-  try {
-    await enqueuePlannedWorkoutSyncAfterCalendarMutation(input);
-  } catch (error) {
-    logger.error("Failed to enqueue planned workout sync after calendar write", {
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
-  }
+  return enqueuePlannedWorkoutSyncAfterCalendarMutation(input);
 }
 
 export async function removeAppliedScheduleUseCase(input: {
   db: DrizzleDbClient;
   permissions: ContentPermissions;
+  permissionsFactory?: (db: DrizzleTransactionClient) => ContentPermissions;
   profileId: string;
   scheduleBatchId: string;
 }) {
@@ -59,36 +58,67 @@ export async function removeAppliedScheduleUseCase(input: {
     time: "00:00",
     timeZone: planningTimezone,
   });
-  const deletedEvents = await input.db
-    .delete(schema.events)
-    .where(
-      and(
-        eq(schema.events.profile_id, input.profileId),
-        eq(schema.events.event_type, plannedEventType),
-        eq(schema.events.schedule_batch_id, input.scheduleBatchId),
-        gte(schema.events.starts_at, new Date(todayStart)),
-        ne(schema.events.status, "completed"),
+  const deletedEvents = await input.db.transaction(async (tx) => {
+    const candidateQuery = tx
+      .select({ id: schema.events.id })
+      .from(schema.events)
+      .where(
+        and(
+          eq(schema.events.profile_id, input.profileId),
+          eq(schema.events.event_type, plannedEventType),
+          eq(schema.events.schedule_batch_id, input.scheduleBatchId),
+          gte(schema.events.starts_at, new Date(todayStart)),
+          ne(schema.events.status, "completed"),
+        ),
+      );
+    const lockableQuery = candidateQuery as typeof candidateQuery & {
+      for?: (strength: "update") => typeof candidateQuery;
+    };
+    const candidates = await (lockableQuery.for ? lockableQuery.for("update") : candidateQuery);
+    if (candidates.length === 0) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "No future scheduled sessions found" });
+    }
+
+    const permissions = input.permissionsFactory?.(tx) ?? input.permissions;
+    await Promise.all(candidates.map((event) => permissions.revokeEventGrants(event.id)));
+    const queueResult = await enqueuePlannedWorkoutSyncForCalendarWrite({
+      db: input.db,
+      drainDueJobs: false,
+      eventIds: candidates.map((event) => event.id),
+      operation: "unsync",
+      profileId: input.profileId,
+      transaction: tx,
+    });
+    if (queueResult && !queueResult.success) {
+      throw new Error("Failed to enqueue planned workout unsync jobs");
+    }
+    await tx.delete(schema.events).where(
+      inArray(
+        schema.events.id,
+        candidates.map((event) => event.id),
       ),
-    )
-    .returning({ id: schema.events.id });
-
-  if (deletedEvents.length === 0) {
-    throw new TRPCError({ code: "NOT_FOUND", message: "No future scheduled sessions found" });
-  }
-
-  await Promise.all(deletedEvents.map((event) => input.permissions.revokeEventGrants(event.id)));
-  await enqueuePlannedWorkoutSyncForCalendarWrite({
-    db: input.db,
-    eventIds: deletedEvents.map((event) => event.id),
-    operation: "unsync",
-    profileId: input.profileId,
+    );
+    return candidates;
   });
 
-  return {
+  const result = {
     success: true,
     schedule_batch_id: input.scheduleBatchId,
     scheduled_sessions_removed: deletedEvents.length,
   };
+  try {
+    await drainDueWahooPlannedWorkoutJobs({
+      db: input.db,
+      limit: 3,
+      workerId: "remove-applied-schedule-planned-workout-drain",
+    });
+  } catch {
+    logger.error("Failed to drain planned workout unsync jobs after schedule removal", {
+      category: "upstream",
+      provider: "wahoo",
+    });
+  }
+  return result;
 }
 
 export async function getActivePlanUseCase(input: {

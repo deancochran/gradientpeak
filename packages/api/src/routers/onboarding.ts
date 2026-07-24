@@ -19,32 +19,12 @@ import {
   completeLifecycleSetup,
   lifecycleSettingsPatchSchema,
 } from "../application/onboarding/complete-lifecycle-setup";
-import {
-  completeRequiredOnboarding,
-  OnboardingProviderPreconditionError,
-  OnboardingRequiredWriteError,
-} from "../application/onboarding/complete-onboarding";
 import { OnboardingProfileNotFoundError } from "../application/onboarding/persist-onboarding-profile";
 import { OnboardingProviderEnrichmentService } from "../application/onboarding-provider-enrichment";
 import type { Context } from "../context";
 import { getRequiredDb } from "../db";
 import { OnboardingProfileNotFoundForLockError } from "../repositories/onboarding-lifecycle-repository";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-
-const completeOnboardingOutputSchema = z
-  .object({
-    success: z.literal(true),
-    created: z
-      .object({
-        profile_metrics: z.number().int().nonnegative(),
-        activity_efforts: z.number().int().nonnegative(),
-      })
-      .strict(),
-    baseline_used: z.boolean(),
-    confidence: z.enum(["high", "medium", "low"]),
-    warnings: z.array(z.string()),
-  })
-  .strict();
 
 const lifecycleSectionFailureCodeSchema = z.enum(["content_conflict", "temporarily_unavailable"]);
 const lifecycleGoalStatusSchema = z
@@ -226,20 +206,8 @@ function throwCompletionError(error: unknown): never {
   ) {
     throw new TRPCError({ code: "NOT_FOUND", message: "Profile not found" });
   }
-  if (error instanceof OnboardingProviderPreconditionError) {
-    throw new TRPCError({ code: "PRECONDITION_FAILED", message: error.message });
-  }
   if (isUsernameConflict(error)) {
     throw new TRPCError({ code: "CONFLICT", message: "That username is already taken" });
-  }
-  if (error instanceof OnboardingRequiredWriteError) {
-    const message =
-      error.stage === "profile"
-        ? "Failed to update profile during onboarding"
-        : error.stage === "metrics"
-          ? "Failed to insert onboarding metrics"
-          : "Failed to insert onboarding efforts";
-    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message, cause: error });
   }
   throw new TRPCError({
     code: "INTERNAL_SERVER_ERROR",
@@ -307,54 +275,6 @@ export const onboardingRouter = createTRPCRouter({
           profileId: ctx.session.user.id,
           ...input,
         });
-      } catch (error) {
-        throwCompletionError(error);
-      }
-    }),
-
-  /**
-   * Complete onboarding with smart derivations.
-   *
-   * Creates profile_metrics and activity_efforts from minimal input.
-   * Supports experience-based baseline profiles for beginners and intermediate users.
-   *
-   * @example
-   * // Beginner: Auto-apply defaults
-   * completeOnboarding({
-   *   experience_level: 'beginner',
-   *   dob: '1990-01-01',
-   *   weight_kg: 70,
-   *   gender: 'male',
-   *   primary_sport: 'cycling'
-   * })
-   * // Returns: 16 records created (5 metrics + 10 efforts + 1 profile update)
-   *
-   * @example
-   * // Advanced: Manual entry
-   * completeOnboarding({
-   *   experience_level: 'advanced',
-   *   dob: '1990-01-01',
-   *   weight_kg: 70,
-   *   gender: 'male',
-   *   primary_sport: 'triathlon',
-   *   ftp: 250,
-   *   threshold_pace_seconds_per_km: 270,
-   *   max_hr: 190,
-   *   resting_hr: 55
-   * })
-   * // Returns: 26 records created (5 metrics + 20 efforts + 1 profile update)
-   */
-  completeOnboarding: protectedProcedure
-    .input(completeOnboardingSchema)
-    .output(completeOnboardingOutputSchema)
-    .mutation(async ({ ctx, input }) => {
-      try {
-        const { status: _status, ...legacyResult } = await completeRequiredOnboarding({
-          db: getRequiredDb(ctx),
-          profileId: ctx.session.user.id,
-          data: input,
-        });
-        return legacyResult;
       } catch (error) {
         throwCompletionError(error);
       }

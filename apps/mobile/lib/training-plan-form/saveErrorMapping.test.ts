@@ -28,7 +28,7 @@ describe("mapTrainingPlanSaveErrorMessage", () => {
 
   it("maps stale preview commit errors to refresh guidance", () => {
     const mapped = mapTrainingPlanSaveErrorMessage(
-      "Creation preview is stale or invalid. Refresh previewCreationConfig and retry createFromCreationConfig.",
+      "Creation preview is stale or invalid. Refresh the preview and retry.",
     );
 
     expect(mapped).toContain("Preview is out of date");

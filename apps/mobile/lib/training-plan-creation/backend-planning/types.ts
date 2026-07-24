@@ -1,12 +1,8 @@
-import type { CreateFromCreationConfigInput, PreviewCreationConfigInput } from "@repo/core";
+import type { PreviewCreationConfigInput } from "@repo/core";
 import type { TrainingPlanPlanningContext } from "../planning-context";
 import type { BuilderDailyTrainingPathChartViewModel } from "../view-model";
 
-export type BackendPlanningOperation =
-  | "getCreationSuggestions"
-  | "previewCreationConfig"
-  | "createFromCreationConfig"
-  | "updateFromCreationConfig";
+export type BackendPlanningOperation = "previewCreationConfig";
 
 export type BackendPlanningClientStatus = {
   available: boolean;
@@ -93,16 +89,4 @@ export type ScheduleInspectorBackendInsight = {
 
 export type BackendCreationConfigMappingResult =
   | { ok: true; input: PreviewCreationConfigInput }
-  | { ok: false; reason: string };
-
-export type BackendCreateCommitMappingResult =
-  | { ok: true; input: CreateFromCreationConfigInput }
-  | { ok: false; reason: string };
-
-export type UpdateFromCreationConfigInput = CreateFromCreationConfigInput & {
-  plan_id: string;
-};
-
-export type BackendUpdateCommitMappingResult =
-  | { ok: true; input: UpdateFromCreationConfigInput }
   | { ok: false; reason: string };

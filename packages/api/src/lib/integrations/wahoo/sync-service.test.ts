@@ -986,6 +986,71 @@ describe("WahooSyncService", () => {
     expect(wahooClient.createPlan).toHaveBeenCalled();
   });
 
+  it("does not call Wahoo when an unsync job has no captured or persisted link", async () => {
+    const repository = createRepositoryMock();
+    const wahooClient = createClientMock();
+    createWahooClientMock.mockReturnValueOnce(wahooClient);
+    const service = new WahooSyncService({ repository, storage: { downloadRouteGpx: vi.fn() } });
+
+    await expect(service.unsyncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      failureCode: "missing_event",
+      success: false,
+    });
+
+    expect(wahooClient.deleteWorkout).not.toHaveBeenCalled();
+    expect(repository.findWahooIntegrationByProfileId).not.toHaveBeenCalled();
+  });
+
+  it("prefers the newer persisted link over a stale captured unsync target", async () => {
+    const repository = createRepositoryMock();
+    repository.getEventResourceLink.mockResolvedValueOnce({
+      externalId: "workout-new",
+      id: "link-new",
+      updatedAt: "2026-04-03T12:00:00.000Z",
+    });
+    const wahooClient = createClientMock();
+    createWahooClientMock.mockReturnValueOnce(wahooClient);
+    const service = new WahooSyncService({ repository, storage: { downloadRouteGpx: vi.fn() } });
+
+    await expect(
+      service.unsyncEvent("event-1", "profile-1", {
+        externalId: "workout-stale",
+        resourceLinkId: "link-stale",
+      }),
+    ).resolves.toMatchObject({ success: true });
+
+    expect(repository.getEventResourceLink).toHaveBeenCalledWith({
+      eventId: "event-1",
+      profileId: "profile-1",
+      provider: "wahoo",
+    });
+    expect(wahooClient.deleteWorkout).toHaveBeenCalledWith("workout-new");
+    expect(wahooClient.deleteWorkout).not.toHaveBeenCalledWith("workout-stale");
+    expect(repository.deleteEventResourceLink).toHaveBeenCalledWith("link-new");
+  });
+
+  it("deletes a captured Wahoo target after its event and link have already been removed", async () => {
+    const repository = createRepositoryMock();
+    const wahooClient = createClientMock();
+    createWahooClientMock.mockReturnValueOnce(wahooClient);
+    const service = new WahooSyncService({ repository, storage: { downloadRouteGpx: vi.fn() } });
+
+    await expect(
+      service.unsyncEvent("deleted-event", "profile-1", {
+        externalId: "workout-77",
+        resourceLinkId: "deleted-link",
+      }),
+    ).resolves.toMatchObject({ success: true });
+
+    expect(repository.getEventResourceLink).toHaveBeenCalledWith({
+      eventId: "deleted-event",
+      profileId: "profile-1",
+      provider: "wahoo",
+    });
+    expect(wahooClient.deleteWorkout).toHaveBeenCalledWith("workout-77");
+    expect(repository.deleteEventResourceLink).toHaveBeenCalledWith("deleted-link");
+  });
+
   it("recreates the Wahoo workout when the activity plan structure is newer", async () => {
     const repository = createRepositoryMock();
     repository.getEventResourceLink.mockResolvedValueOnce({
