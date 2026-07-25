@@ -1584,9 +1584,7 @@ describe("eventsRouter generalization", () => {
     expect(callLog.some((call) => call.operation === "delete")).toBe(false);
   });
 
-  it("preserves a successful delete when the post-commit drain rejects", async () => {
-    drainDueWahooPlannedWorkoutJobs.mockRejectedValueOnce(new Error("worker unavailable"));
-    vi.spyOn(console, "error").mockImplementation(() => {});
+  it("does not inline-drain disabled Wahoo planned-workout work after deletion", async () => {
     const eventId = "00000000-0000-4000-8000-000000000064";
     const { caller } = createCaller({
       events: [
@@ -1596,10 +1594,7 @@ describe("eventsRouter generalization", () => {
     });
 
     await expect(caller.delete({ id: eventId })).resolves.toMatchObject({ success: true });
-    expect(console.error).toHaveBeenCalledWith(
-      "Failed to drain planned workout unsync jobs after event deletion",
-      { category: "upstream", provider: "wahoo" },
-    );
+    expect(drainDueWahooPlannedWorkoutJobs).not.toHaveBeenCalled();
   });
 
   it("blocks mutable update for imported events", async () => {

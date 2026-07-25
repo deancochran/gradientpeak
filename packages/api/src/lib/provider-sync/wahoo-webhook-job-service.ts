@@ -65,6 +65,7 @@ export class WahooWebhookJobService {
   ) {}
 
   private async enqueueReceiptJob(input: {
+    integrationGeneration: number;
     integrationId: string;
     profileId: string;
     receiptId: string;
@@ -72,6 +73,7 @@ export class WahooWebhookJobService {
     const job = await this.deps.providerSyncRepository.enqueueJob({
       dedupeKey: `wahoo:webhook:${input.receiptId}`,
       integrationId: input.integrationId,
+      integrationGeneration: input.integrationGeneration,
       jobType: WAHOO_WEBHOOK_RECEIPT_JOB,
       maxAttempts: 5,
       payload: { receiptId: input.receiptId },
@@ -106,6 +108,7 @@ export class WahooWebhookJobService {
     const receipt = await this.deps.providerSyncRepository.storeWebhookReceipt({
       eventType: payload.event_type,
       integrationId: integration?.integrationId,
+      integrationGeneration: integration?.integrationGeneration,
       objectId: providerEventId,
       objectType: payload.event_type,
       payload,
@@ -115,7 +118,7 @@ export class WahooWebhookJobService {
       providerEventId,
     });
 
-    if (!integration || !receipt.inserted) {
+    if (!integration || !receipt.inserted || !receipt.captured) {
       return {
         jobId: null,
         queued: false,
@@ -127,6 +130,7 @@ export class WahooWebhookJobService {
     try {
       queuedJob = await this.enqueueReceiptJob({
         integrationId: integration.integrationId,
+        integrationGeneration: integration.integrationGeneration,
         profileId: integration.profileId,
         receiptId: receipt.id,
       });
@@ -166,31 +170,33 @@ export class WahooWebhookJobService {
         continue;
       }
 
-      if (!receipt.providerAccountId) {
+      if (!receipt.integrationId || !receipt.integrationGeneration) {
         await this.deps.providerSyncRepository.markWebhookReceiptProcessed({
           id: receipt.id,
-          lastError: "Pending Wahoo webhook receipt has no provider account id",
-          status: "failed",
+          lastError: "integration_inactive_at_receipt",
+          status: "processed",
         });
         skipped += 1;
         continue;
       }
 
-      const integration = await this.deps.wahooRepository.findWahooIntegrationByExternalId(
-        receipt.providerAccountId,
-      );
+      const integration = await this.deps.wahooRepository.findWahooIntegrationByIdAndGeneration({
+        integrationGeneration: receipt.integrationGeneration,
+        integrationId: receipt.integrationId,
+      });
       if (!integration) {
         await this.deps.providerSyncRepository.markWebhookReceiptProcessed({
           id: receipt.id,
-          lastError: "No Wahoo integration found for pending webhook receipt",
-          status: "failed",
+          lastError: "integration_generation_inactive",
+          status: "processed",
         });
         skipped += 1;
         continue;
       }
 
       await this.enqueueReceiptJob({
-        integrationId: integration.integrationId,
+        integrationId: receipt.integrationId,
+        integrationGeneration: receipt.integrationGeneration,
         profileId: integration.profileId,
         receiptId: receipt.id,
       });
@@ -245,6 +251,12 @@ export class WahooWebhookJobService {
             workerId,
           }),
         processJob: async (job, { signal }) => {
+          const isActive = () =>
+            this.deps.providerSyncRepository.isIntegrationGenerationActive?.({
+              generation: job.integrationGeneration ?? 1,
+              integrationId: job.integrationId,
+              profileId: job.profileId,
+            }) ?? Promise.resolve(true);
           if (!isWebhookJobPayload(job.payload)) {
             const finalized = await this.deps.providerSyncRepository.markJobFailed({
               id: job.id,
@@ -268,9 +280,25 @@ export class WahooWebhookJobService {
             return finalized === false ? "failed" : "dead_lettered";
           }
 
+          const finalizeInactive = async () => {
+            await this.deps.providerSyncRepository.finalizeWebhookReceiptJob({
+              jobId: job.id,
+              jobStatus: "completed",
+              lastError: "integration_generation_inactive",
+              receiptId: receipt.id,
+              receiptStatus: "processed",
+              workerId,
+            });
+            return "completed" as const;
+          };
+          if (!(await isActive())) return finalizeInactive();
+
           try {
+            // Receipt loading is outside the import transaction. A disconnect can
+            // linearize while it is in flight, so re-check before any importer work.
+            if (!(await isActive())) return finalizeInactive();
             if (!isWahooWebhookPayload(receipt.payload)) {
-              throw new Error("Invalid Wahoo webhook payload");
+              throw new Error("invalid_webhook_payload");
             }
 
             if (
@@ -289,13 +317,18 @@ export class WahooWebhookJobService {
             }
 
             signal.throwIfAborted();
+            if (!(await isActive())) return finalizeInactive();
             const result = await this.deps.importer.importWorkoutSummary(
               receipt.payload.user.id,
               receipt.payload.workout_summary as never,
-              { signal },
+              {
+                integrationGeneration: job.integrationGeneration ?? 1,
+                integrationId: job.integrationId,
+                signal,
+              },
             );
             if (!result.success) {
-              throw new Error(result.error ?? "Failed to import Wahoo webhook workout summary");
+              throw new Error("webhook_import_failed");
             }
 
             signal.throwIfAborted();
@@ -308,8 +341,14 @@ export class WahooWebhookJobService {
             });
             return finalized === false ? "failed" : "completed";
           } catch (error) {
-            const lastError =
-              error instanceof Error ? error.message : "Unknown Wahoo webhook job failure";
+            const message = error instanceof Error ? error.message : "";
+            const lastError = new Set([
+              "invalid_webhook_payload",
+              "webhook_import_failed",
+              "integration_generation_inactive",
+            ]).has(message)
+              ? message
+              : "provider_sync_failed";
             const shouldDeadLetter = job.attempt >= job.maxAttempts;
             const finalized = await this.deps.providerSyncRepository.finalizeWebhookReceiptJob({
               jobId: job.id,

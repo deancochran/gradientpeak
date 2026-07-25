@@ -8,8 +8,6 @@ import {
   listIntegrationsByProfileId,
 } from "../../../infrastructure/repositories";
 import type { ProviderSyncJobRecord } from "../../../repositories/provider-sync-repository";
-import { logger } from "../../logger";
-import { drainDueWahooPlannedWorkoutJobs } from "../wahoo-planned-workout-drain";
 import { PlannedWorkoutSyncService } from "./planned-workout-sync-service";
 import type { PlannedWorkoutQueueResult, PlannedWorkoutSyncOperation } from "./types";
 import { WahooPlannedWorkoutProvider } from "./wahoo-planned-workout-provider";
@@ -168,21 +166,6 @@ export async function enqueuePlannedWorkoutSyncAfterCalendarMutation(
     profileId: input.profileId,
     unsyncTargets,
   });
-
-  if (input.drainDueJobs !== false && result?.queued) {
-    try {
-      await drainDueWahooPlannedWorkoutJobs({
-        db: input.db,
-        limit: 3,
-        workerId: "calendar-mutation-planned-workout-drain",
-      });
-    } catch {
-      logger.error("Failed to drain due planned workout sync jobs after enqueue", {
-        category: "upstream",
-        provider: "wahoo",
-      });
-    }
-  }
 
   return result;
 }

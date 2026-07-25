@@ -771,9 +771,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
     );
   });
 
-  it("preserves successful schedule removal when the post-commit drain rejects", async () => {
-    drainDueWahooPlannedWorkoutJobs.mockRejectedValueOnce(new Error("worker unavailable"));
-    vi.spyOn(console, "error").mockImplementation(() => {});
+  it("does not inline-drain disabled Wahoo planned-workout work after schedule removal", async () => {
     const { caller } = createCaller({
       events: { data: [{ id: "event-1" }], error: null },
     });
@@ -784,9 +782,6 @@ describe("trainingPlansRouter.applyTemplate", () => {
       }),
     ).resolves.toMatchObject({ scheduled_sessions_removed: 1, success: true });
 
-    expect(console.error).toHaveBeenCalledWith(
-      "Failed to drain planned workout unsync jobs after schedule removal",
-      { category: "upstream", provider: "wahoo" },
-    );
+    expect(drainDueWahooPlannedWorkoutJobs).not.toHaveBeenCalled();
   });
 });

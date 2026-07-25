@@ -1,6 +1,7 @@
 import type { StandardActivity } from "@repo/core";
 import type { getRequiredDb } from "../../db";
 import type { ImportedActivityCreateInput } from "../../lib/provider-sync/imported-activity";
+import type { ActivitySubmissionTransaction } from "../activities/submit-activity";
 import { submitImportedActivityArtifact } from "./submit-imported-activity-artifact";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
@@ -11,11 +12,13 @@ export async function enrichImportedActivityArtifact(
   input: {
     activityId: string;
     activity: ImportedActivityCreateInput;
+    beforePersist: (tx: ActivitySubmissionTransaction) => Promise<void>;
     parsedActivity: StandardActivity;
   },
 ) {
   const submitted = await submitImportedActivityArtifact(db, {
     activity: input.activity,
+    beforePersist: input.beforePersist,
     parsedActivity: input.parsedActivity,
   });
   if (submitted.id !== input.activityId) {

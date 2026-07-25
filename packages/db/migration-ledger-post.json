@@ -97,6 +97,22 @@
     {
       "version": "20260724150000",
       "name": "harden_coaching_access"
+    },
+    {
+      "version": "20260724160000",
+      "name": "harden_provider_credentials"
+    },
+    {
+      "version": "20260724170000",
+      "name": "harden_provider_disconnect"
+    },
+    {
+      "version": "20260724180000",
+      "name": "fix_webhook_receipt_generation_fk"
+    },
+    {
+      "version": "20260724190000",
+      "name": "enforce_provider_account_ownership"
     }
   ]
 }

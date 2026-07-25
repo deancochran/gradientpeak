@@ -7,7 +7,12 @@ import {
   deriveOAuthCodeVerifier,
   issueLocalOAuthAuthorizationCode,
 } from "../../lib/integrations/oauth-pkce";
-import type { IntegrationsRepositories } from "../../repositories/integrations-repository";
+import { createOAuthStateBinding } from "../../lib/integrations/oauth-state-binding";
+import {
+  IntegrationDisconnectPendingError,
+  IntegrationLifecycleChangedError,
+  type IntegrationsRepositories,
+} from "../../repositories/integrations-repository";
 import type { ProviderSyncRepository } from "../../repositories/provider-sync-repository";
 import { handleOAuthCallback } from "./oauthCallbackUseCase";
 
@@ -16,8 +21,16 @@ const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
 const INTEGRATION_ID = "77777777-7777-4777-8777-777777777777";
 const originalEnv = { ...process.env };
 
-function createDependencies(provider: "wahoo" | "strava" = "wahoo") {
+function createDependencies(
+  provider: "wahoo" | "strava" = "wahoo",
+  bindingOverride: Partial<{
+    callback_uri: string;
+    requested_scope: string;
+    verifier_hash: string;
+  }> = {},
+) {
   let available = true;
+  const config = getProviderOAuthConfig(provider);
   const transaction = { kind: "test-transaction" } as unknown as DrizzleTransactionClient;
   const oauthStates = {
     deleteByState: vi.fn(async () => {
@@ -26,6 +39,21 @@ function createDependencies(provider: "wahoo" | "strava" = "wahoo") {
     findValidByState: vi.fn(async () =>
       available
         ? {
+            ...(config
+              ? Object.fromEntries(
+                  Object.entries(
+                    createOAuthStateBinding({
+                      config,
+                      provider,
+                      state: STATE_ID,
+                    }),
+                  ).map(([key, value]) => [
+                    key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`),
+                    value,
+                  ]),
+                )
+              : {}),
+            ...bindingOverride,
             profile_id: PROFILE_ID,
             provider,
             mobile_redirect_uri: "http://localhost:3000/integrations",
@@ -34,6 +62,7 @@ function createDependencies(provider: "wahoo" | "strava" = "wahoo") {
     ),
   };
   const integrations = {
+    listByProfileId: vi.fn(async () => []),
     upsertFromOAuthStateInTransaction: vi.fn(async () => {
       if (!available) return null;
       available = false;
@@ -123,6 +152,7 @@ describe("OAuth callback use case", () => {
       deps.transaction,
       expect.objectContaining({
         state: STATE_ID,
+        expectedIntegration: { kind: "absent" },
         profileId: PROFILE_ID,
         provider: "wahoo",
         accessToken: expect.any(String),
@@ -154,6 +184,30 @@ describe("OAuth callback use case", () => {
     expect(new URL(result.redirectUrl).searchParams.get("error")).toBe("invalid_state");
     expect(deps.oauthStates.deleteByState).toHaveBeenCalledWith(STATE_ID);
     expect(deps.integrations.upsertFromOAuthStateInTransaction).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["callback", { callback_uri: "https://attacker.example/callback" }],
+    ["scope", { requested_scope: "workouts_read" }],
+    ["verifier", { verifier_hash: "not-a-verifier-hash" }],
+  ])("consumes a %s-bound state before token exchange", async (_name, bindingOverride) => {
+    const deps = createDependencies("wahoo", bindingOverride);
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+
+    const result = await handleOAuthCallback({
+      ...deps,
+      code: "provider-code",
+      error: null,
+      fallbackRedirect: "http://localhost:3000/integrations",
+      provider: "wahoo",
+      state: STATE_ID,
+    });
+
+    expect(new URL(result.redirectUrl).searchParams.get("error")).toBe("invalid_state");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(deps.integrations.upsertFromOAuthStateInTransaction).not.toHaveBeenCalled();
+    expect(deps.oauthStates.deleteByState).toHaveBeenCalledWith(STATE_ID);
+    expect(result.redirectUrl).not.toContain("wahoo-client-secret");
   });
 
   it("rejects a replay after the atomic consume", async () => {
@@ -196,6 +250,95 @@ describe("OAuth callback use case", () => {
     });
 
     expect(new URL(result.redirectUrl).searchParams.get("error")).toBe("store_integration_failed");
+    expect(deps.oauthStates.deleteByState).toHaveBeenCalledWith(STATE_ID);
+  });
+
+  it("returns a generic failure when provider-account ownership conflicts", async () => {
+    const deps = createDependencies();
+    deps.integrations.upsertFromOAuthStateInTransaction.mockRejectedValueOnce(
+      new Error(
+        'duplicate key value violates unique constraint "integrations_provider_external_id_unique"',
+      ),
+    );
+    const result = await handleOAuthCallback({
+      ...deps,
+      code: createLocalCode(),
+      error: null,
+      fallbackRedirect: "http://localhost:3000/integrations",
+      provider: "wahoo",
+      state: STATE_ID,
+    });
+
+    const redirect = new URL(result.redirectUrl);
+    expect(redirect.searchParams.get("error")).toBe("store_integration_failed");
+    expect(redirect.toString()).not.toContain("integrations_provider_external_id_unique");
+    expect(deps.oauthStates.deleteByState).toHaveBeenCalledWith(STATE_ID);
+  });
+
+  it("reports a pending disconnect without activating the integration", async () => {
+    const deps = createDependencies();
+    deps.integrations.upsertFromOAuthStateInTransaction.mockRejectedValueOnce(
+      new IntegrationDisconnectPendingError(),
+    );
+    const result = await handleOAuthCallback({
+      ...deps,
+      code: createLocalCode(),
+      error: null,
+      fallbackRedirect: "http://localhost:3000/integrations",
+      provider: "wahoo",
+      state: STATE_ID,
+    });
+
+    const redirect = new URL(result.redirectUrl);
+    expect(redirect.searchParams.get("error")).toBe("disconnect_in_progress");
+    expect(redirect.searchParams.get("integration")).toBe("failed");
+    expect(deps.providerSyncRepositoryMock.enqueueJobInTransaction).not.toHaveBeenCalled();
+    expect(deps.oauthStates.deleteByState).toHaveBeenCalledWith(STATE_ID);
+  });
+
+  it("rejects a lifecycle change that races the provider token exchange", async () => {
+    const deps = createDependencies();
+    deps.integrations.upsertFromOAuthStateInTransaction.mockRejectedValueOnce(
+      new IntegrationLifecycleChangedError(),
+    );
+    const result = await handleOAuthCallback({
+      ...deps,
+      code: createLocalCode(),
+      error: null,
+      fallbackRedirect: "http://localhost:3000/integrations",
+      provider: "wahoo",
+      state: STATE_ID,
+    });
+
+    expect(new URL(result.redirectUrl).searchParams.get("error")).toBe("integration_state_changed");
+    expect(deps.providerSyncRepositoryMock.enqueueJobInTransaction).not.toHaveBeenCalled();
+    expect(deps.oauthStates.deleteByState).toHaveBeenCalledWith(STATE_ID);
+  });
+
+  it("does not redeem a provider code while disconnect is already pending", async () => {
+    useRemoteWahooConfig();
+    const deps = createDependencies();
+    deps.integrations.listByProfileId.mockResolvedValueOnce([
+      {
+        generation: 2,
+        lifecycle_status: "disconnect_pending",
+        provider: "wahoo",
+      },
+    ] as never);
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+
+    const result = await handleOAuthCallback({
+      ...deps,
+      code: "provider-code",
+      error: null,
+      fallbackRedirect: "http://localhost:3000/integrations",
+      provider: "wahoo",
+      state: STATE_ID,
+    });
+
+    expect(new URL(result.redirectUrl).searchParams.get("error")).toBe("disconnect_in_progress");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(deps.integrations.upsertFromOAuthStateInTransaction).not.toHaveBeenCalled();
     expect(deps.oauthStates.deleteByState).toHaveBeenCalledWith(STATE_ID);
   });
 

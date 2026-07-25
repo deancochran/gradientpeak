@@ -14,6 +14,7 @@ import {
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import {
+  ActivityArtifactLifecycleRetryableError,
   type ActivitySubmission,
   activityArtifactId,
   type ExistingActivityEnrichmentSubmission,
@@ -191,6 +192,55 @@ afterEach(async () => {
 afterAll(async () => pool.end());
 
 describe("canonical activity persistence against PostgreSQL", () => {
+  it("fails closed while a conflicting content artifact is pending deletion", async () => {
+    const profileId = await seedProfile();
+    const acceptedArtifact = artifact(profileId, "d", 42);
+    const first = await submitActivity(db, {
+      ...submission(profileId),
+      analysis: {
+        efforts: [],
+        detectedLTHR: null,
+        activityCompletedAt: new Date("2026-01-01T11:00:00.000Z"),
+        ingestion: {
+          source: "manual_import",
+          artifact: acceptedArtifact,
+          operationKey: `first:${randomUUID()}`,
+        },
+      },
+    });
+    const artifactId = activityArtifactId(
+      profileId,
+      acceptedArtifact.sha256,
+      acceptedArtifact.byteSize,
+    );
+    await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select set_config('gradientpeak.artifact_lifecycle_authorized', 'on', true)`,
+      );
+      await tx
+        .update(activityArtifacts)
+        .set({ availability: "deletion_pending", deletion_requested_at: new Date() })
+        .where(eq(activityArtifacts.id, artifactId));
+    });
+
+    await expect(
+      submitActivity(db, {
+        ...submission(profileId, { name: "Retry after deletion repair" }),
+        analysis: {
+          efforts: [],
+          detectedLTHR: null,
+          activityCompletedAt: new Date("2026-01-01T11:00:00.000Z"),
+          ingestion: {
+            source: "manual_import",
+            artifact: acceptedArtifact,
+            operationKey: `retry:${randomUUID()}`,
+          },
+        },
+      }),
+    ).rejects.toBeInstanceOf(ActivityArtifactLifecycleRetryableError);
+    expect(await db.select().from(activities).where(eq(activities.id, first.id))).toHaveLength(1);
+  });
+
   it("rolls back the complete projection when composed persistence fails", async () => {
     const profileId = await seedProfile();
     const activityId = randomUUID();

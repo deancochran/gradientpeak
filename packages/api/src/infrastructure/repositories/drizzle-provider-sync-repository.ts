@@ -1,5 +1,6 @@
 import { schema } from "@repo/db";
 import { and, asc, desc, eq, gt, inArray, or, sql } from "drizzle-orm";
+import { decryptProviderToken } from "../../lib/provider-token-crypto";
 import type {
   CreateProviderSyncRepositoryOptions,
   ProviderSyncJobRecord,
@@ -14,11 +15,37 @@ function getSqlRows<T>(result: unknown) {
   return ((result as { rows?: T[] }).rows ?? []) as T[];
 }
 
+/** Only durable, provider-neutral failure categories may cross the job/state boundary. */
+function toBoundedProviderSyncError(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "activity_history_failed") return "activity_history_failed";
+  if (normalized === "activity_history_budget_exceeded") return "activity_history_budget_exceeded";
+  if (
+    normalized === "invalid wahoo activity history job payload" ||
+    normalized === "invalid wahoo job payload"
+  )
+    return "invalid_job_payload";
+  if (normalized === "integration_generation_inactive") return "integration_generation_inactive";
+  if (normalized === "integration_inactive_at_receipt") return "integration_inactive_at_receipt";
+  if (normalized === "invalid_webhook_payload") return "invalid_webhook_payload";
+  if (normalized === "webhook_receipt_missing") return "webhook_receipt_missing";
+  if (normalized === "webhook_import_failed") return "webhook_import_failed";
+  if (normalized === "disconnect_attempt_uncertain") return "disconnect_attempt_uncertain";
+  if (normalized === "disconnect_response_uncertain") return "disconnect_response_uncertain";
+  if (normalized === "disconnect_failed") return "disconnect_failed";
+  if (normalized === "invalid_wahoo_staging_cleanup_payload")
+    return "invalid_wahoo_staging_cleanup_payload";
+  if (normalized === "wahoo_staging_cleanup_failed") return "wahoo_staging_cleanup_failed";
+  if (normalized === "wahoo_staging_cleanup_uncertain") return "wahoo_staging_cleanup_uncertain";
+  return "provider_sync_failed";
+}
+
 type ProviderSyncJobSqlRow = {
   attempt: number;
   dedupeKey: string | null;
   id: string;
   integrationId: string;
+  integrationGeneration: number;
   internalResourceId: string | null;
   jobType: string;
   lastError: string | null;
@@ -53,6 +80,7 @@ export function createProviderSyncRepository({
   return {
     async completeJobWithSyncState({
       highWatermark,
+      expectedIntegrationGeneration,
       id,
       integrationId,
       metadata,
@@ -80,6 +108,13 @@ export function createProviderSyncRepository({
               eq(schema.providerSyncJobs.status, "running"),
               eq(schema.providerSyncJobs.locked_by, workerId),
               gt(schema.providerSyncJobs.lock_expires_at, now),
+              expectedIntegrationGeneration === undefined
+                ? undefined
+                : sql`exists (
+                select 1 from integrations where integrations.id = ${schema.providerSyncJobs.integration_id}
+                  and integrations.lifecycle_status = 'active'
+                  and integrations.generation = ${expectedIntegrationGeneration}
+              )`,
             ),
           )
           .returning({ id: schema.providerSyncJobs.id });
@@ -172,9 +207,30 @@ export function createProviderSyncRepository({
           await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${identity}, 0))`);
         }
 
+        const [integration] = await tx
+          .select({
+            generation: schema.integrations.generation,
+            lifecycleStatus: schema.integrations.lifecycle_status,
+          })
+          .from(schema.integrations)
+          .where(
+            and(
+              eq(schema.integrations.id, input.integrationId),
+              eq(schema.integrations.profile_id, input.profileId),
+              eq(schema.integrations.provider, input.provider),
+            ),
+          )
+          .limit(1)
+          .for("update");
+        if (!integration) throw new Error("Provider sync integration was not found");
+        if (integration.lifecycleStatus !== "active" && input.jobType !== "wahoo.disconnect") {
+          throw new Error("Provider sync integration is not active");
+        }
+        const integrationGeneration = input.integrationGeneration ?? integration.generation;
         const desiredQueuedValues = {
           dedupe_key: input.dedupeKey ?? null,
           integration_id: input.integrationId,
+          integration_generation: integrationGeneration,
           internal_resource_id: input.internalResourceId ?? null,
           job_type: input.jobType,
           max_attempts: input.maxAttempts ?? 8,
@@ -362,6 +418,7 @@ export function createProviderSyncRepository({
             provider_sync_jobs.dedupe_key as "dedupeKey",
             provider_sync_jobs.id,
             provider_sync_jobs.integration_id as "integrationId",
+            provider_sync_jobs.integration_generation as "integrationGeneration",
             provider_sync_jobs.internal_resource_id as "internalResourceId",
             provider_sync_jobs.job_type as "jobType",
             provider_sync_jobs.last_error as "lastError",
@@ -384,7 +441,231 @@ export function createProviderSyncRepository({
       });
     },
 
-    async markJobSucceeded(id, workerId) {
+    async isIntegrationGenerationActive({ generation, integrationId, profileId }) {
+      const [row] = await db
+        .select({ id: schema.integrations.id })
+        .from(schema.integrations)
+        .where(
+          and(
+            eq(schema.integrations.id, integrationId),
+            eq(schema.integrations.profile_id, profileId),
+            eq(schema.integrations.lifecycle_status, "active"),
+            eq(schema.integrations.generation, generation),
+          ),
+        )
+        .limit(1);
+      return Boolean(row);
+    },
+
+    async requestWahooDisconnect({ profileId }) {
+      return db.transaction(async (tx) => {
+        const now = new Date();
+        const [integration] = await tx
+          .select()
+          .from(schema.integrations)
+          .where(
+            and(
+              eq(schema.integrations.profile_id, profileId),
+              eq(schema.integrations.provider, "wahoo"),
+            ),
+          )
+          .limit(1)
+          .for("update");
+        if (!integration)
+          return {
+            generation: null,
+            integrationId: null,
+            jobId: null,
+            status: "not_found" as const,
+          };
+        if (integration.lifecycle_status === "disconnected") {
+          return {
+            generation: integration.generation,
+            integrationId: integration.id,
+            jobId: null,
+            status: "disconnected" as const,
+          };
+        }
+        let generation = integration.generation;
+        if (integration.lifecycle_status === "active") {
+          generation += 1;
+          await tx
+            .update(schema.integrations)
+            .set({
+              disconnect_requested_at: now,
+              generation,
+              lifecycle_status: "disconnect_pending",
+              remote_revoked_at: null,
+              updated_at: now,
+            })
+            .where(eq(schema.integrations.id, integration.id));
+          await tx
+            .update(schema.providerSyncJobs)
+            .set({
+              last_error: "Fenced by integration disconnect",
+              lock_expires_at: null,
+              locked_at: null,
+              locked_by: null,
+              status: "completed",
+              updated_at: now,
+            })
+            .where(
+              and(
+                eq(schema.providerSyncJobs.integration_id, integration.id),
+                sql`${schema.providerSyncJobs.job_type} not in ('wahoo.disconnect', 'wahoo.staging_cleanup')`,
+                inArray(schema.providerSyncJobs.status, ["queued", "failed", "running"]),
+              ),
+            );
+          await tx
+            .update(schema.providerWebhookReceipts)
+            .set({
+              last_error: "integration_generation_inactive",
+              processed_at: now,
+              processing_status: "processed",
+            })
+            .where(
+              and(
+                eq(schema.providerWebhookReceipts.integration_id, integration.id),
+                eq(schema.providerWebhookReceipts.integration_generation, generation - 1),
+                eq(schema.providerWebhookReceipts.processing_status, "pending"),
+              ),
+            );
+        }
+        const enqueued = await this.enqueueJobInTransaction(tx, {
+          dedupeKey: `wahoo.disconnect:${integration.id}:${generation}`,
+          integrationGeneration: generation,
+          integrationId: integration.id,
+          jobType: "wahoo.disconnect",
+          payload: { expectedGeneration: generation },
+          profileId,
+          provider: "wahoo",
+          runAt: now.toISOString(),
+        });
+        return {
+          generation,
+          integrationId: integration.id,
+          jobId: enqueued.id,
+          status: "pending" as const,
+        };
+      });
+    },
+
+    async beginWahooDisconnectAttempt({ generation, integrationId, jobId, workerId }) {
+      return db.transaction(async (tx) => {
+        const now = new Date();
+        const [job] = await tx
+          .update(schema.providerSyncJobs)
+          .set({
+            last_error: "disconnect_attempt_uncertain",
+            updated_at: now,
+          })
+          .where(
+            and(
+              eq(schema.providerSyncJobs.id, jobId),
+              eq(schema.providerSyncJobs.integration_id, integrationId),
+              eq(schema.providerSyncJobs.integration_generation, generation),
+              eq(schema.providerSyncJobs.job_type, "wahoo.disconnect"),
+              eq(schema.providerSyncJobs.status, "running"),
+              eq(schema.providerSyncJobs.locked_by, workerId),
+              gt(schema.providerSyncJobs.lock_expires_at, now),
+            ),
+          )
+          .returning({ id: schema.providerSyncJobs.id });
+        if (!job) return null;
+        const [integration] = await tx
+          .select({
+            generation: schema.integrations.generation,
+            lifecycleStatus: schema.integrations.lifecycle_status,
+          })
+          .from(schema.integrations)
+          .where(eq(schema.integrations.id, integrationId))
+          .limit(1);
+        if (!integration) return { disposition: "invalid" };
+        if (
+          integration.generation !== generation ||
+          integration.lifecycleStatus === "disconnected"
+        ) {
+          return { disposition: "superseded" };
+        }
+        if (integration.lifecycleStatus !== "disconnect_pending") {
+          return { disposition: "invalid" };
+        }
+        const [credential] = await tx
+          .select({ accessToken: schema.integrationCredentials.access_token })
+          .from(schema.integrationCredentials)
+          .where(eq(schema.integrationCredentials.integration_id, integrationId))
+          .limit(1);
+        return credential
+          ? { accessToken: decryptProviderToken(credential.accessToken), disposition: "ready" }
+          : { disposition: "invalid" };
+      });
+    },
+
+    async finalizeWahooDisconnect({ generation, integrationId, jobId, outcome, workerId }) {
+      return db.transaction(async (tx) => {
+        const now = new Date();
+        const owned = and(
+          eq(schema.providerSyncJobs.id, jobId),
+          eq(schema.providerSyncJobs.integration_id, integrationId),
+          eq(schema.providerSyncJobs.integration_generation, generation),
+          eq(schema.providerSyncJobs.status, "running"),
+          eq(schema.providerSyncJobs.locked_by, workerId),
+          gt(schema.providerSyncJobs.lock_expires_at, now),
+        );
+        if (outcome === "retry" || outcome === "dead_lettered") {
+          const [updated] = await tx
+            .update(schema.providerSyncJobs)
+            .set({
+              last_error:
+                outcome === "retry" ? "disconnect_response_uncertain" : "disconnect_failed",
+              lock_expires_at: null,
+              locked_at: null,
+              locked_by: null,
+              run_at: outcome === "retry" ? new Date(now.getTime() + 5 * 60_000) : undefined,
+              status: outcome === "retry" ? "failed" : "dead_lettered",
+              updated_at: now,
+            })
+            .where(owned)
+            .returning({ id: schema.providerSyncJobs.id });
+          return Boolean(updated);
+        }
+        const [integration] = await tx
+          .update(schema.integrations)
+          .set({
+            disconnected_at: now,
+            lifecycle_status: "disconnected",
+            remote_revoked_at: now,
+            updated_at: now,
+          })
+          .where(
+            and(
+              eq(schema.integrations.id, integrationId),
+              eq(schema.integrations.generation, generation),
+              eq(schema.integrations.lifecycle_status, "disconnect_pending"),
+            ),
+          )
+          .returning({ id: schema.integrations.id });
+        if (!integration) return false;
+        await tx
+          .delete(schema.integrationCredentials)
+          .where(eq(schema.integrationCredentials.integration_id, integrationId));
+        const [job] = await tx
+          .update(schema.providerSyncJobs)
+          .set({
+            last_error: null,
+            lock_expires_at: null,
+            locked_at: null,
+            locked_by: null,
+            status: "completed",
+            updated_at: now,
+          })
+          .where(owned)
+          .returning({ id: schema.providerSyncJobs.id });
+        return Boolean(job);
+      });
+    },
+
+    async markJobSucceeded(id, workerId, expectedIntegrationGeneration) {
       const [updated] = await db
         .update(schema.providerSyncJobs)
         .set({
@@ -401,6 +682,13 @@ export function createProviderSyncRepository({
             eq(schema.providerSyncJobs.status, "running"),
             eq(schema.providerSyncJobs.locked_by, workerId),
             gt(schema.providerSyncJobs.lock_expires_at, new Date()),
+            expectedIntegrationGeneration === undefined
+              ? undefined
+              : sql`exists (
+              select 1 from integrations where integrations.id = ${schema.providerSyncJobs.integration_id}
+                and integrations.lifecycle_status = 'active'
+                and integrations.generation = ${expectedIntegrationGeneration}
+            )`,
           ),
         )
         .returning({ id: schema.providerSyncJobs.id });
@@ -428,7 +716,7 @@ export function createProviderSyncRepository({
         const [ownedJob] = await tx
           .update(schema.providerSyncJobs)
           .set({
-            last_error: input.lastError ?? null,
+            last_error: input.lastError ? toBoundedProviderSyncError(input.lastError) : null,
             lock_expires_at: null,
             locked_at: null,
             locked_by: null,
@@ -450,7 +738,7 @@ export function createProviderSyncRepository({
         const [updatedReceipt] = await tx
           .update(schema.providerWebhookReceipts)
           .set({
-            last_error: input.lastError ?? null,
+            last_error: input.lastError ? toBoundedProviderSyncError(input.lastError) : null,
             processed_at: input.receiptStatus === "processed" ? new Date() : null,
             processing_status: input.receiptStatus,
           })
@@ -469,45 +757,69 @@ export function createProviderSyncRepository({
     },
 
     async storeWebhookReceipt(input) {
-      if (input.providerEventId && input.providerAccountId) {
-        const [existing] = await db
-          .select({ id: schema.providerWebhookReceipts.id })
-          .from(schema.providerWebhookReceipts)
-          .where(
-            and(
-              eq(schema.providerWebhookReceipts.provider, input.provider),
-              eq(schema.providerWebhookReceipts.provider_account_id, input.providerAccountId),
-              eq(schema.providerWebhookReceipts.provider_event_id, input.providerEventId),
-            ),
-          )
-          .limit(1);
+      return db.transaction(async (tx) => {
+        if (input.providerEventId && input.providerAccountId) {
+          const [existing] = await tx
+            .select({ id: schema.providerWebhookReceipts.id })
+            .from(schema.providerWebhookReceipts)
+            .where(
+              and(
+                eq(schema.providerWebhookReceipts.provider, input.provider),
+                eq(schema.providerWebhookReceipts.provider_account_id, input.providerAccountId),
+                eq(schema.providerWebhookReceipts.provider_event_id, input.providerEventId),
+              ),
+            )
+            .limit(1);
 
-        if (existing) {
-          return { id: existing.id, inserted: false };
+          if (existing) {
+            return { id: existing.id, inserted: false, captured: false };
+          }
         }
-      }
 
-      const [created] = await db
-        .insert(schema.providerWebhookReceipts)
-        .values({
-          event_type: input.eventType,
-          integration_id: input.integrationId,
-          object_id: input.objectId,
-          object_type: input.objectType,
-          payload: input.payload,
-          payload_hash: input.payloadHash,
-          processing_status: "pending",
-          provider: input.provider,
-          provider_account_id: input.providerAccountId,
-          provider_event_id: input.providerEventId,
-        })
-        .returning({ id: schema.providerWebhookReceipts.id });
+        const activeIntegration =
+          input.integrationId && input.integrationGeneration
+            ? (
+                await tx
+                  .select({ id: schema.integrations.id })
+                  .from(schema.integrations)
+                  .where(
+                    and(
+                      eq(schema.integrations.id, input.integrationId),
+                      eq(schema.integrations.generation, input.integrationGeneration),
+                      eq(schema.integrations.lifecycle_status, "active"),
+                      eq(schema.integrations.provider, input.provider),
+                    ),
+                  )
+                  .limit(1)
+                  .for("update")
+              )[0]
+            : undefined;
+        const captured = Boolean(activeIntegration);
 
-      if (!created) {
-        throw new Error("Failed to store provider webhook receipt");
-      }
+        const [created] = await tx
+          .insert(schema.providerWebhookReceipts)
+          .values({
+            event_type: input.eventType,
+            integration_id: captured ? input.integrationId : null,
+            integration_generation: captured ? input.integrationGeneration : null,
+            object_id: input.objectId,
+            object_type: input.objectType,
+            payload: input.payload,
+            payload_hash: input.payloadHash,
+            processing_status: captured ? "pending" : "processed",
+            provider: input.provider,
+            provider_account_id: input.providerAccountId,
+            provider_event_id: input.providerEventId,
+            last_error: captured ? null : "integration_inactive_at_receipt",
+          })
+          .returning({ id: schema.providerWebhookReceipts.id });
 
-      return { id: created.id, inserted: true };
+        if (!created) {
+          throw new Error("Failed to store provider webhook receipt");
+        }
+
+        return { id: created.id, inserted: true, captured };
+      });
     },
 
     async setWebhookReceiptJob({ id, jobId }) {
@@ -524,6 +836,7 @@ export function createProviderSyncRepository({
           eventType: schema.providerWebhookReceipts.event_type,
           id: schema.providerWebhookReceipts.id,
           integrationId: schema.providerWebhookReceipts.integration_id,
+          integrationGeneration: schema.providerWebhookReceipts.integration_generation,
           jobId: schema.providerWebhookReceipts.job_id,
           lastError: schema.providerWebhookReceipts.last_error,
           payload: schema.providerWebhookReceipts.payload,
@@ -560,6 +873,7 @@ export function createProviderSyncRepository({
           dedupeKey: schema.providerSyncJobs.dedupe_key,
           id: schema.providerSyncJobs.id,
           integrationId: schema.providerSyncJobs.integration_id,
+          integrationGeneration: schema.providerSyncJobs.integration_generation,
           internalResourceId: schema.providerSyncJobs.internal_resource_id,
           jobType: schema.providerSyncJobs.job_type,
           lastError: schema.providerSyncJobs.last_error,
@@ -639,6 +953,7 @@ export function createProviderSyncRepository({
           eventType: schema.providerWebhookReceipts.event_type,
           id: schema.providerWebhookReceipts.id,
           integrationId: schema.providerWebhookReceipts.integration_id,
+          integrationGeneration: schema.providerWebhookReceipts.integration_generation,
           jobId: schema.providerWebhookReceipts.job_id,
           lastError: schema.providerWebhookReceipts.last_error,
           payload: schema.providerWebhookReceipts.payload,
@@ -741,18 +1056,25 @@ export function createProviderSyncRepository({
       await db
         .update(schema.providerWebhookReceipts)
         .set({
-          last_error: lastError ?? null,
+          last_error: lastError ? toBoundedProviderSyncError(lastError) : null,
           processed_at: status === "processed" ? new Date() : null,
           processing_status: status,
         })
         .where(eq(schema.providerWebhookReceipts.id, id));
     },
 
-    async markJobFailed({ id, lastError, nextRunAt, status, workerId }) {
+    async markJobFailed({
+      expectedIntegrationGeneration,
+      id,
+      lastError,
+      nextRunAt,
+      status,
+      workerId,
+    }) {
       const [updated] = await db
         .update(schema.providerSyncJobs)
         .set({
-          last_error: lastError,
+          last_error: toBoundedProviderSyncError(lastError),
           lock_expires_at: null,
           locked_at: null,
           locked_by: null,
@@ -766,6 +1088,13 @@ export function createProviderSyncRepository({
             eq(schema.providerSyncJobs.status, "running"),
             eq(schema.providerSyncJobs.locked_by, workerId),
             gt(schema.providerSyncJobs.lock_expires_at, new Date()),
+            expectedIntegrationGeneration === undefined
+              ? undefined
+              : sql`exists (
+              select 1 from integrations where integrations.id = ${schema.providerSyncJobs.integration_id}
+                and integrations.lifecycle_status = 'active'
+                and integrations.generation = ${expectedIntegrationGeneration}
+            )`,
           ),
         )
         .returning({ id: schema.providerSyncJobs.id });
@@ -861,6 +1190,7 @@ export function createProviderSyncRepository({
       provider,
       resource,
     }) {
+      const boundedError = toBoundedProviderSyncError(lastError);
       await db
         .insert(schema.providerSyncState)
         .values({
@@ -869,7 +1199,7 @@ export function createProviderSyncRepository({
           resource,
           sync_mode: "push_windowed",
           next_sync_at: nextSyncAt ? new Date(nextSyncAt) : null,
-          last_error: lastError,
+          last_error: boundedError,
           consecutive_failures: 1,
           last_sync_failed_at: new Date(),
         })
@@ -877,7 +1207,7 @@ export function createProviderSyncRepository({
           target: [schema.providerSyncState.integration_id, schema.providerSyncState.resource],
           set: {
             consecutive_failures: sql`${schema.providerSyncState.consecutive_failures} + 1`,
-            last_error: lastError,
+            last_error: boundedError,
             last_sync_failed_at: new Date(),
             next_sync_at: nextSyncAt ? new Date(nextSyncAt) : schema.providerSyncState.next_sync_at,
             updated_at: new Date(),

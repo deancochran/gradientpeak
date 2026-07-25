@@ -217,6 +217,8 @@ describe("WahooClient", () => {
     fetchMock.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
+          page: 2,
+          total: 31,
           workouts: [
             {
               id: 456,
@@ -251,6 +253,18 @@ describe("WahooClient", () => {
                 edited: false,
               },
             },
+            {
+              id: 457,
+              name: "Older without summary",
+              starts: "2025-03-03T10:00:00.000Z",
+              minutes: 60,
+              workout_type_id: 0,
+              plan_id: 0,
+              plan_ids: [],
+              workout_token: "token",
+              created_at: "2025-03-03T10:00:00.000Z",
+              updated_at: "2025-03-03T10:00:00.000Z",
+            },
           ],
         }),
         { status: 200 },
@@ -266,7 +280,10 @@ describe("WahooClient", () => {
         startDate: "2025-04-03T12:00:00.000Z",
       }),
     ).resolves.toMatchObject({
-      sourceCount: 1,
+      page: 2,
+      reachedStartBoundary: true,
+      sourceCount: 2,
+      total: 31,
       summaries: [
         {
           id: 123,
@@ -279,6 +296,10 @@ describe("WahooClient", () => {
 
     const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://api.wahooligan.com/v1/workouts?page=2&per_page=25");
+    expect([...new URL(url).searchParams.entries()]).toEqual([
+      ["page", "2"],
+      ["per_page", "25"],
+    ]);
     expect(options.method).toBe("GET");
     expect(options.headers).toMatchObject({ Authorization: "Bearer access-token" });
   });

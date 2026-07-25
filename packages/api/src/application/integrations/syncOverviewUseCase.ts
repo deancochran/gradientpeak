@@ -104,20 +104,28 @@ function getCurrentSyncError(input: {
     return null;
   }
 
-  return input.lastError;
+  return toSafeProviderSyncCopy(input.lastError);
 }
 
-function looksLikeReconnectError(error: string | null | undefined): boolean {
-  if (!error) return false;
-  const normalized = error.toLowerCase();
-  return (
-    normalized.includes("reconnect required") ||
-    normalized.includes("unauthorized") ||
-    normalized.includes("401") ||
-    normalized.includes("invalid token") ||
-    normalized.includes("expired") ||
-    normalized.includes("refresh token")
-  );
+function toSafeProviderSyncCopy(error: string): string {
+  switch (error) {
+    case "activity_history_failed":
+      return "Activity history sync failed";
+    case "activity_history_budget_exceeded":
+      return "Activity history sync will retry";
+    case "invalid_job_payload":
+      return "Sync job could not be processed";
+    case "integration_generation_inactive":
+      return "Sync was stopped";
+    case "disconnect_attempt_uncertain":
+    case "disconnect_response_uncertain":
+      return "Disconnect is being retried";
+    case "disconnect_failed":
+      return "Disconnect failed";
+    default:
+      // Compatibility boundary for rows written before durable error categories.
+      return "Provider sync failed";
+  }
 }
 
 function getCompactProviderSummary(input: {
@@ -243,13 +251,16 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
     await repositories.integrations.listByProfileId(input.profileId),
     "Integrations repository returned invalid rows",
   );
-  const integrationIds = integrations.map((integration) => integration.id);
+  const activeIntegrations = integrations.filter(
+    (integration) => integration.lifecycle_status === "active",
+  );
+  const integrationIds = activeIntegrations.map((integration) => integration.id);
   const [syncStates, activeJobs] = await Promise.all([
     readProviderSyncOverviewState(providerSyncRepository, integrationIds),
     readActiveProviderSyncJobs(providerSyncRepository, input.profileId),
   ]);
   const integrationsByProvider = new Map(
-    integrations.map((integration) => [integration.provider, integration]),
+    activeIntegrations.map((integration) => [integration.provider, integration]),
   );
 
   return Promise.all(
@@ -346,15 +357,16 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
                 ? "failed"
                 : "automatic";
         const providerHealthLastError = activityLastError ?? setupLastError ?? plannedLastError;
-        const providerHealthStatus = !integration
+        const connected = integration?.lifecycle_status === "active";
+        const providerHealthStatus = !connected
           ? "unsupported"
-          : looksLikeReconnectError(providerHealthLastError)
+          : grant?.reconnect_required_at
             ? "needs_reconnect"
             : "connected";
         const label = getProviderCapabilityDefinition(definition.id).label;
         const summary = getCompactProviderSummary({
           activityStatus: activityHistoryStatus,
-          connected: Boolean(integration),
+          connected,
           configured,
           label,
           plannedStatus,
@@ -365,7 +377,7 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
         return {
           actions: getAllowedActions({
             configured,
-            connected: Boolean(integration),
+            connected,
             grantedScope: grant?.scope,
             provider: definition.id,
             providerHealthStatus,
@@ -395,11 +407,11 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
             lastSucceededAt: setupState?.lastSyncSucceededAt ?? null,
             status: setupStatus,
           },
-          connected: Boolean(integration),
+          connected,
           integrationId: integration?.id ?? null,
           label,
           primaryAction: getPrimaryProviderAction({
-            connected: Boolean(integration),
+            connected,
             configured,
             providerHealthStatus,
           }),

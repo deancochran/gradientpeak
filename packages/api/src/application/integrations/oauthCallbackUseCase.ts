@@ -9,8 +9,14 @@ import {
   deriveOAuthCodeVerifier,
   redeemLocalOAuthAuthorizationCode,
 } from "../../lib/integrations/oauth-pkce";
+import { createOAuthStateBinding } from "../../lib/integrations/oauth-state-binding";
 import { logger } from "../../lib/logger";
-import type { IntegrationsRepositories } from "../../repositories/integrations-repository";
+import {
+  IntegrationDisconnectPendingError,
+  IntegrationLifecycleChangedError,
+  type IntegrationsRepositories,
+  type OAuthIntegrationExpectation,
+} from "../../repositories/integrations-repository";
 import type { ProviderSyncRepository } from "../../repositories/provider-sync-repository";
 import { enqueueActivityHistoryReconcile } from "./syncNowUseCase";
 import { supportsActivityHistorySync } from "./syncOverviewUseCase";
@@ -214,6 +220,20 @@ export async function handleOAuthCallback({
       status: 302,
     };
   }
+  const config = getProviderOAuthConfig(provider);
+  const expectedBinding = config ? createOAuthStateBinding({ config, provider, state }) : null;
+  if (
+    !expectedBinding ||
+    storedState.callback_uri !== expectedBinding.callbackUri ||
+    storedState.requested_scope !== expectedBinding.requestedScope ||
+    storedState.verifier_hash !== expectedBinding.verifierHash
+  ) {
+    await cleanupState();
+    return {
+      redirectUrl: buildRedirectUrl(mobileRedirectUri, { error: "invalid_state" }),
+      status: 302,
+    };
+  }
   if (error) {
     await cleanupState();
     return {
@@ -225,6 +245,58 @@ export async function handleOAuthCallback({
     await cleanupState();
     return {
       redirectUrl: buildRedirectUrl(mobileRedirectUri, { error: "missing_code" }),
+      status: 302,
+    };
+  }
+
+  let expectedIntegration: OAuthIntegrationExpectation;
+  try {
+    const existingIntegration = (
+      await repositories.integrations.listByProfileId(storedState.profile_id)
+    ).find((candidate) => candidate.provider === provider);
+    if (existingIntegration?.lifecycle_status === "disconnect_pending") {
+      await cleanupState();
+      return {
+        redirectUrl: buildRedirectUrl(mobileRedirectUri, {
+          error: "disconnect_in_progress",
+          integration: "failed",
+          provider,
+        }),
+        status: 302,
+      };
+    }
+    if (
+      existingIntegration &&
+      existingIntegration.lifecycle_status !== "active" &&
+      existingIntegration.lifecycle_status !== "disconnected"
+    ) {
+      throw new IntegrationLifecycleChangedError();
+    }
+    expectedIntegration = existingIntegration
+      ? existingIntegration.lifecycle_status === "active"
+        ? {
+            generation: existingIntegration.generation,
+            kind: "present",
+            lifecycleStatus: "active",
+          }
+        : {
+            generation: existingIntegration.generation,
+            kind: "present",
+            lifecycleStatus: "disconnected",
+          }
+      : { kind: "absent" };
+  } catch (caughtError) {
+    logger.warn("OAuth callback lifecycle preflight failed", {
+      provider,
+      errorName: caughtError instanceof Error ? caughtError.name : "unknown",
+    });
+    await cleanupState();
+    return {
+      redirectUrl: buildRedirectUrl(mobileRedirectUri, {
+        error: "store_integration_failed",
+        integration: "failed",
+        provider,
+      }),
       status: 302,
     };
   }
@@ -272,6 +344,7 @@ export async function handleOAuthCallback({
         {
           state,
           now: new Date(),
+          expectedIntegration,
           profileId: storedState.profile_id,
           provider,
           externalId,
@@ -303,7 +376,12 @@ export async function handleOAuthCallback({
     await cleanupState();
     return {
       redirectUrl: buildRedirectUrl(mobileRedirectUri, {
-        error: "store_integration_failed",
+        error:
+          caughtError instanceof IntegrationDisconnectPendingError
+            ? "disconnect_in_progress"
+            : caughtError instanceof IntegrationLifecycleChangedError
+              ? "integration_state_changed"
+              : "store_integration_failed",
         integration: "failed",
         provider,
       }),

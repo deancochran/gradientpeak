@@ -8,8 +8,14 @@ export type WahooIntegrationRecord = {
   accessToken: string;
   expiresAt: string | null;
   externalId: string;
+  /** Version of the credential row; changes on refresh/rekey. */
+  credentialGeneration: number;
+  /** Lifecycle fence; changes on reconnect/disconnect only. */
+  integrationGeneration: number;
   id: string;
+  lifecycleStatus: "active" | "disconnect_pending" | "disconnected";
   profileId: string;
+  reconnectRequiredAt: string | null;
   refreshToken: string | null;
 };
 
@@ -42,7 +48,11 @@ export interface WahooRepository {
   findWahooIntegrationByProfileId(profileId: string): Promise<WahooIntegrationRecord | null>;
   findWahooIntegrationByExternalId(
     externalId: string,
-  ): Promise<{ integrationId: string; profileId: string } | null>;
+  ): Promise<{ integrationGeneration: number; integrationId: string; profileId: string } | null>;
+  findWahooIntegrationByIdAndGeneration(input: {
+    integrationGeneration: number;
+    integrationId: string;
+  }): Promise<{ profileId: string } | null>;
   findImportedActivityLinkByExternalId(input: {
     externalId: string;
     integrationId: string;
@@ -68,6 +78,7 @@ export interface WahooRepository {
     activityId: string;
     externalId: string;
     integrationId: string;
+    integrationGeneration: number;
     profileId: string;
     provider: "wahoo";
     providerUpdatedAt: string | null;
@@ -138,10 +149,17 @@ export interface WahooRepository {
   }): Promise<void>;
   updateWahooIntegrationTokens(input: {
     accessToken: string;
+    expectedCredentialGeneration: number;
+    expectedIntegrationGeneration: number;
     expiresAt: string | null;
     id: string;
     refreshToken: string | null;
-  }): Promise<void>;
+  }): Promise<number | null>;
+  markWahooReconnectRequired(input: {
+    expectedCredentialGeneration: number;
+    expectedIntegrationGeneration: number;
+    id: string;
+  }): Promise<boolean>;
 }
 
 export interface CreateWahooRepositoryOptions {

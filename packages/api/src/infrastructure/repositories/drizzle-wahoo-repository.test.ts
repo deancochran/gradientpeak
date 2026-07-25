@@ -30,6 +30,25 @@ describe("Wahoo repository activity persistence boundary", () => {
     expect(repository).toHaveProperty("createImportedActivityResourceLink");
   });
 
+  it("fails closed rather than attributing an ambiguous Wahoo account", async () => {
+    const limit = vi.fn().mockResolvedValue([
+      { integrationGeneration: 1, integrationId: "integration-1", profileId: "profile-1" },
+      { integrationGeneration: 1, integrationId: "integration-2", profileId: "profile-2" },
+    ]);
+    const db = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({ where: vi.fn(() => ({ limit })) })),
+      })),
+    };
+
+    await expect(
+      createWahooRepository({ db: db as never }).findWahooIntegrationByExternalId(
+        "provider-account",
+      ),
+    ).resolves.toBeNull();
+    expect(limit).toHaveBeenCalledWith(2);
+  });
+
   it("scopes sync route lookup to owned, public, or system routes", async () => {
     let whereCondition: unknown;
     const limit = vi.fn(async () => []);

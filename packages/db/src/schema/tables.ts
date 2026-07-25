@@ -1615,6 +1615,14 @@ export const integrations = pgTable(
       .references(() => profiles.id, { onDelete: "cascade" }),
     provider: integrationProviderEnum("provider").notNull(),
     external_id: text("external_id").notNull(),
+    lifecycle_status: text("lifecycle_status").notNull().default("active"),
+    generation: integer("generation").notNull().default(1),
+    disconnect_requested_at: timestamp("disconnect_requested_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    disconnected_at: timestamp("disconnected_at", { withTimezone: true, mode: "date" }),
+    remote_revoked_at: timestamp("remote_revoked_at", { withTimezone: true, mode: "date" }),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -1624,6 +1632,9 @@ export const integrations = pgTable(
   },
   (table) => [
     unique("unique_integration_type").on(table.profile_id, table.provider),
+    uniqueIndex("integrations_provider_external_id_unique")
+      .on(table.provider, table.external_id)
+      .where(sql`${table.external_id} is not null`),
     index("idx_integrations_profile_id").on(table.profile_id),
     index("idx_integrations_external_id").on(table.external_id),
     index("idx_integrations_provider").on(table.provider),
@@ -1640,6 +1651,11 @@ export const integrationCredentials = pgTable(
     refresh_token: text("refresh_token"),
     expires_at: timestamp("expires_at", { withTimezone: true, mode: "date" }),
     scope: text("scope"),
+    generation: integer("generation").default(1).notNull(),
+    reconnect_required_at: timestamp("reconnect_required_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -1764,6 +1780,9 @@ export const oauthStates = pgTable(
       .references(() => profiles.id, { onDelete: "cascade" }),
     provider: integrationProviderEnum("provider").notNull(),
     mobile_redirect_uri: text("mobile_redirect_uri").notNull(),
+    callback_uri: text("callback_uri"),
+    requested_scope: text("requested_scope"),
+    verifier_hash: text("verifier_hash"),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -1880,6 +1899,7 @@ export const providerSyncJobs = pgTable(
       .notNull()
       .references(() => integrations.id, { onDelete: "cascade" }),
     provider: integrationProviderEnum("provider").notNull(),
+    integration_generation: integer("integration_generation").notNull().default(1),
     job_type: text("job_type").notNull(),
     operation: text("operation"),
     resource_kind: integrationResourceKindEnum("resource_kind"),
@@ -1914,6 +1934,11 @@ export const providerSyncJobs = pgTable(
     index("idx_provider_sync_jobs_dedupe_key").on(table.dedupe_key),
     index("idx_provider_sync_jobs_lane_status").on(table.sync_lane_key, table.status, table.run_at),
     index("idx_provider_sync_jobs_integration_id").on(table.integration_id),
+    index("idx_provider_sync_jobs_integration_generation_status").on(
+      table.integration_id,
+      table.integration_generation,
+      table.status,
+    ),
     index("idx_provider_sync_jobs_profile_id").on(table.profile_id),
     index("idx_provider_sync_jobs_supersedes_job_id")
       .on(table.supersedes_job_id)
@@ -1934,8 +1959,10 @@ export const providerWebhookReceipts = pgTable(
     processed_at: timestamp("processed_at", { withTimezone: true, mode: "date" }),
     provider: integrationProviderEnum("provider").notNull(),
     integration_id: uuid("integration_id").references(() => integrations.id, {
-      onDelete: "set null",
+      onDelete: "cascade",
     }),
+    // Immutable ingress fence: never bind a receipt to a later reconnect.
+    integration_generation: integer("integration_generation"),
     provider_account_id: text("provider_account_id"),
     provider_event_id: text("provider_event_id"),
     event_type: text("event_type").notNull(),
@@ -1961,6 +1988,17 @@ export const providerWebhookReceipts = pgTable(
     index("idx_provider_webhook_receipts_integration_id")
       .on(table.integration_id)
       .where(sql`${table.integration_id} is not null`),
+    index("idx_provider_webhook_receipts_integration_generation_status")
+      .on(table.integration_id, table.integration_generation, table.processing_status)
+      .where(sql`${table.integration_id} is not null`),
+    check(
+      "provider_webhook_receipts_integration_generation_pair_check",
+      sql`(${table.integration_id} is null) = (${table.integration_generation} is null)`,
+    ),
+    check(
+      "provider_webhook_receipts_integration_generation_positive_check",
+      sql`${table.integration_generation} is null or ${table.integration_generation} > 0`,
+    ),
   ],
 );
 

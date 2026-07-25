@@ -36,6 +36,8 @@ export interface PromotedActivityArtifact {
   mediaType: string;
   format: ActivityFileType;
   stagingPath: string;
+  /** True only when this promotion, rather than a concurrent writer, created `path`. */
+  createdDestination: boolean;
 }
 
 export function activityArtifactSha256(bytes: Uint8Array): string {
@@ -100,6 +102,7 @@ export async function promoteActivityArtifact(
     contentType: mediaType,
     upsert: false,
   });
+  const createdDestination = !error;
   if (error) {
     const conflict =
       String(error.statusCode) === "409" ||
@@ -120,6 +123,7 @@ export async function promoteActivityArtifact(
     mediaType,
     format: input.format,
     stagingPath: input.stagingPath,
+    createdDestination,
   };
 }
 
@@ -139,4 +143,17 @@ export async function cleanupActivityArtifactStaging(
   ) {
     throw new Error("Failed to remove staged activity artifact");
   }
+}
+
+/** Remove only a destination that the current promotion invocation created. */
+export async function cleanupOwnedPromotedActivityArtifact(
+  storage: ActivityArtifactStorage,
+  artifact: Pick<PromotedActivityArtifact, "bucket" | "path" | "createdDestination">,
+) {
+  if (!artifact.createdDestination) return { removed: false, skipped: true } as const;
+  const result = await storage.storage.from(artifact.bucket).remove([artifact.path]);
+  if (result && typeof result === "object" && "error" in result && result.error) {
+    throw new Error("Failed to remove owned promoted activity artifact");
+  }
+  return { removed: true, skipped: false } as const;
 }

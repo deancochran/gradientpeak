@@ -148,6 +148,7 @@ describe("submitImportedActivityArtifact", () => {
         externalId: "123",
         finishedAt: completedAt.toISOString(),
         integrationId: "integration-1",
+        integrationGeneration: 1,
         isPrivate: true,
         movingSeconds: 3500,
         name: "bike Activity",

@@ -3989,6 +3989,26 @@
       "generated": ""
     },
     {
+      "name": "generation",
+      "type": "integer",
+      "table": "integration_credentials",
+      "default": "1",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "reconnect_required_at",
+      "type": "timestamp with time zone",
+      "table": "integration_credentials",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
       "name": "id",
       "type": "uuid",
       "table": "integration_resource_links",
@@ -4176,6 +4196,56 @@
       "notNull": true,
       "identity": "",
       "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "lifecycle_status",
+      "type": "text",
+      "table": "integrations",
+      "default": "'active'::text",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "generation",
+      "type": "integer",
+      "table": "integrations",
+      "default": "1",
+      "notNull": true,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "disconnect_requested_at",
+      "type": "timestamp with time zone",
+      "table": "integrations",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "disconnected_at",
+      "type": "timestamp with time zone",
+      "table": "integrations",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 11,
+      "generated": ""
+    },
+    {
+      "name": "remote_revoked_at",
+      "type": "timestamp with time zone",
+      "table": "integrations",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 12,
       "generated": ""
     },
     {
@@ -4606,6 +4676,36 @@
       "notNull": true,
       "identity": "",
       "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "callback_uri",
+      "type": "text",
+      "table": "oauth_states",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "requested_scope",
+      "type": "text",
+      "table": "oauth_states",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "verifier_hash",
+      "type": "text",
+      "table": "oauth_states",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 11,
       "generated": ""
     },
     {
@@ -5609,6 +5709,16 @@
       "generated": ""
     },
     {
+      "name": "integration_generation",
+      "type": "integer",
+      "table": "provider_sync_jobs",
+      "default": "1",
+      "notNull": true,
+      "identity": "",
+      "position": 27,
+      "generated": ""
+    },
+    {
       "name": "id",
       "type": "uuid",
       "table": "provider_sync_state",
@@ -5936,6 +6046,16 @@
       "notNull": false,
       "identity": "",
       "position": 17,
+      "generated": ""
+    },
+    {
+      "name": "integration_generation",
+      "type": "integer",
+      "table": "provider_webhook_receipts",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 18,
       "generated": ""
     },
     {
@@ -7001,6 +7121,11 @@
       "definition": "CREATE UNIQUE INDEX integrations_pkey ON public.integrations USING btree (id)"
     },
     {
+      "name": "integrations_provider_external_id_unique",
+      "table": "integrations",
+      "definition": "CREATE UNIQUE INDEX integrations_provider_external_id_unique ON public.integrations USING btree (provider, external_id) WHERE (external_id IS NOT NULL)"
+    },
+    {
       "name": "unique_integration_type",
       "table": "integrations",
       "definition": "CREATE UNIQUE INDEX unique_integration_type ON public.integrations USING btree (profile_id, provider)"
@@ -7216,6 +7341,11 @@
       "definition": "CREATE INDEX idx_provider_sync_jobs_dedupe_key ON public.provider_sync_jobs USING btree (dedupe_key)"
     },
     {
+      "name": "idx_provider_sync_jobs_integration_generation_status",
+      "table": "provider_sync_jobs",
+      "definition": "CREATE INDEX idx_provider_sync_jobs_integration_generation_status ON public.provider_sync_jobs USING btree (integration_id, integration_generation, status)"
+    },
+    {
       "name": "idx_provider_sync_jobs_integration_id",
       "table": "provider_sync_jobs",
       "definition": "CREATE INDEX idx_provider_sync_jobs_integration_id ON public.provider_sync_jobs USING btree (integration_id)"
@@ -7269,6 +7399,11 @@
       "name": "provider_sync_state_pkey",
       "table": "provider_sync_state",
       "definition": "CREATE UNIQUE INDEX provider_sync_state_pkey ON public.provider_sync_state USING btree (id)"
+    },
+    {
+      "name": "idx_provider_webhook_receipts_integration_generation_status",
+      "table": "provider_webhook_receipts",
+      "definition": "CREATE INDEX idx_provider_webhook_receipts_integration_generation_status ON public.provider_webhook_receipts USING btree (integration_id, integration_generation, processing_status) WHERE (integration_id IS NOT NULL)"
     },
     {
       "name": "idx_provider_webhook_receipts_integration_id",
@@ -9022,6 +9157,13 @@
       "definition": "CHECK (btrim(slug) <> ''::text)"
     },
     {
+      "kind": "c",
+      "name": "integration_credentials_generation_positive",
+      "table": "integration_credentials",
+      "validated": false,
+      "definition": "CHECK (generation > 0) NOT VALID"
+    },
+    {
       "kind": "f",
       "name": "integration_credentials_integration_id_integrations_id_fk",
       "table": "integration_credentials",
@@ -9069,6 +9211,27 @@
       "table": "integration_resource_links",
       "validated": true,
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "integrations_disconnect_timestamps_check",
+      "table": "integrations",
+      "validated": false,
+      "definition": "CHECK (lifecycle_status = 'active'::text AND disconnect_requested_at IS NULL AND disconnected_at IS NULL OR lifecycle_status = 'disconnect_pending'::text AND disconnect_requested_at IS NOT NULL AND disconnected_at IS NULL OR lifecycle_status = 'disconnected'::text AND disconnect_requested_at IS NOT NULL AND disconnected_at IS NOT NULL) NOT VALID"
+    },
+    {
+      "kind": "c",
+      "name": "integrations_generation_positive_check",
+      "table": "integrations",
+      "validated": false,
+      "definition": "CHECK (generation > 0) NOT VALID"
+    },
+    {
+      "kind": "c",
+      "name": "integrations_lifecycle_status_check",
+      "table": "integrations",
+      "validated": false,
+      "definition": "CHECK (lifecycle_status = ANY (ARRAY['active'::text, 'disconnect_pending'::text, 'disconnected'::text])) NOT VALID"
     },
     {
       "kind": "p",
@@ -9491,6 +9654,13 @@
       "definition": "CHECK (preferred_units IS NULL OR (preferred_units = ANY (ARRAY['metric'::text, 'imperial'::text])))"
     },
     {
+      "kind": "c",
+      "name": "provider_sync_jobs_integration_generation_positive_check",
+      "table": "provider_sync_jobs",
+      "validated": false,
+      "definition": "CHECK (integration_generation > 0) NOT VALID"
+    },
+    {
       "kind": "f",
       "name": "provider_sync_jobs_integration_id_integrations_id_fk",
       "table": "provider_sync_jobs",
@@ -9540,11 +9710,25 @@
       "definition": "UNIQUE (provider, provider_account_id, provider_event_id)"
     },
     {
+      "kind": "c",
+      "name": "provider_webhook_receipts_integration_generation_pair_check",
+      "table": "provider_webhook_receipts",
+      "validated": false,
+      "definition": "CHECK ((integration_id IS NULL) = (integration_generation IS NULL)) NOT VALID"
+    },
+    {
+      "kind": "c",
+      "name": "provider_webhook_receipts_integration_generation_positive_check",
+      "table": "provider_webhook_receipts",
+      "validated": false,
+      "definition": "CHECK (integration_generation IS NULL OR integration_generation > 0) NOT VALID"
+    },
+    {
       "kind": "f",
       "name": "provider_webhook_receipts_integration_id_integrations_id_fk",
       "table": "provider_webhook_receipts",
       "validated": true,
-      "definition": "FOREIGN KEY (integration_id) REFERENCES integrations(id) ON DELETE SET NULL"
+      "definition": "FOREIGN KEY (integration_id) REFERENCES integrations(id) ON DELETE CASCADE"
     },
     {
       "kind": "f",

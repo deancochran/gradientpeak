@@ -20,6 +20,7 @@ describe("buildImportedActivityCreateInput", () => {
         providerUpdatedAt: "2026-04-03T11:00:00.000Z",
         startedAt: "2026-04-03T10:00:00.000Z",
       },
+      integrationGeneration: 1,
       integrationId: "integration-1",
       parsedActivity: {
         metadata: {
@@ -63,6 +64,7 @@ describe("buildImportedActivityCreateInput", () => {
       elevationGainMeters: 222,
       externalId: "external-1",
       finishedAt: "2026-04-03T10:25:00.000Z",
+      integrationGeneration: 1,
       integrationId: "integration-1",
       isPrivate: true,
       movingSeconds: 3300,
@@ -95,6 +97,7 @@ describe("buildImportedActivityCreateInput", () => {
         normalizedPower: 210.5,
         startedAt: "2026-04-03T10:00:00.000Z",
       },
+      integrationGeneration: 1,
       integrationId: "integration-1",
       parsedActivity: null,
       profileId: "profile-1",

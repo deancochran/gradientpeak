@@ -1,11 +1,8 @@
 import { TRPCError } from "@trpc/server";
 import type { Context } from "../../context";
 import type { DrizzleTransactionClient } from "../../db";
-import { getRequiredDb } from "../../db";
 import type { createEventCompletionRepository } from "../../infrastructure/repositories";
-import { logger } from "../../lib/logger";
 import type { PlannedWorkoutQueueResult } from "../../lib/provider-sync/planned-workouts";
-import { drainDueWahooPlannedWorkoutJobs } from "../../lib/provider-sync/wahoo-planned-workout-drain";
 import type { createContentAccessPermissions } from "../../permissions/content-access";
 
 type ProtectedContext = Context & {
@@ -125,18 +122,6 @@ export async function deleteEventUseCase<
         changeAt: existingEvent.updated_at,
       }),
     };
-    try {
-      await drainDueWahooPlannedWorkoutJobs({
-        db: getRequiredDb(ctx),
-        limit: 3,
-        workerId: "event-delete-planned-workout-drain",
-      });
-    } catch {
-      logger.error("Failed to drain planned workout unsync jobs after event deletion", {
-        category: "upstream",
-        provider: "wahoo",
-      });
-    }
     return result;
   } catch {
     throw new TRPCError({

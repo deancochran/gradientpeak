@@ -18,5 +18,5 @@ export {
 } from "./lib/provider-sync/job-execution";
 export { WahooActivityHistoryJobService } from "./lib/provider-sync/wahoo-activity-history-job-service";
 export { WahooSyncJobService } from "./lib/provider-sync/wahoo-job-service";
-export { drainDueWahooPlannedWorkoutJobs } from "./lib/provider-sync/wahoo-planned-workout-drain";
+export { createWahooStagingCleanupReservation } from "./lib/provider-sync/wahoo-staging-cleanup";
 export { WahooWebhookJobService } from "./lib/provider-sync/wahoo-webhook-job-service";

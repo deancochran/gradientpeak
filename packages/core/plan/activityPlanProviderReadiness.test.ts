@@ -96,21 +96,21 @@ describe("activity plan provider readiness", () => {
         provider: "wahoo",
         structure: absoluteRun,
       }).status,
-    ).toBe("ready");
+    ).toBe("unsupported_provider");
     expect(
       getActivityPlanProviderReadiness({
         activityCategory: "run",
         provider: "wahoo",
         structure: relativeRun,
       }).status,
-    ).toBe("missing_anchor");
+    ).toBe("unsupported_provider");
     expect(
       getActivityPlanProviderReadiness({
         activityCategory: "swim",
         provider: "wahoo",
         structure: structureWithTargets([{ type: "RPE", intensity: 5 }], "swim"),
       }).status,
-    ).toBe("unsupported_sport");
+    ).toBe("unsupported_provider");
     expect(
       getActivityPlanProviderReadiness({
         activityCategory: "run",
@@ -150,16 +150,16 @@ describe("activity plan provider readiness", () => {
         structure,
       });
 
-      if (!isProviderRuntimeEnabled(provider)) {
+      if (
+        !isProviderRuntimeEnabled(provider) ||
+        !providerHasCapability(provider, "planned_activity_push")
+      ) {
         expect(result).toMatchObject({
           status: "unsupported_provider",
           issues: expect.arrayContaining([
             expect.objectContaining({ code: "unsupported_provider", blockedBy: "external" }),
           ]),
         });
-      } else {
-        expect(providerHasCapability(provider, "planned_activity_push")).toBe(true);
-        expect(result.status).toBe("ready");
       }
     }
   });
@@ -190,29 +190,14 @@ describe("activity plan provider readiness", () => {
       ]),
     });
 
-    expect(result.status).toBe("unsupported_target");
-    expect(result.issues).toContainEqual(
-      expect.objectContaining({
-        targetType: "RPE",
-        path: ["structure", "segments", 0, "intervals", 0, "steps", 0, "targets", 1],
-      }),
-    );
+    expect(result.status).toBe("unsupported_provider");
   });
 
   it("classifies every compiled occurrence semantic exactly once", () => {
     const structure = structureWithTargets([{ type: "speed", intensity: 5 }]);
     const result = getActivityPlanProviderReadiness({ provider: "wahoo", structure });
 
-    expect(result.projection.disposition).toBe("compatible");
-    expect(result.projection.findings.map((finding) => finding.semantic)).toEqual([
-      "occurrence_role",
-      "activity_category",
-      "duration",
-      "target",
-    ]);
-    expect(
-      result.projection.findings.every((finding) => finding.disposition === "compatible"),
-    ).toBe(true);
+    expect(result.projection.disposition).toBe("unsupported");
   });
 
   it("continues exhaustive semantic inventory behind an evidence-gated provider blocker", () => {

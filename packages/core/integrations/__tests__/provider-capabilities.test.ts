@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getConfigurableProviderActions,
+  getProviderCapabilityUnavailableReason,
   getProviderPlannedWorkoutCapability,
   getProviderSyncMode,
   getProvidersWithCapability,
@@ -48,13 +49,19 @@ describe("provider capability registry", () => {
   it("filters connected providers by capability", () => {
     expect(
       getProvidersWithCapability(["wahoo", "strava", "trainingpeaks"], "planned_activity_push"),
-    ).toEqual(["wahoo"]);
+    ).toEqual([]);
   });
 
-  it("keeps planned-workout delivery evidence-gated except for Wahoo", () => {
+  it("fails closed for Wahoo outbound planned workouts and routes", () => {
+    expect(providerHasCapability("wahoo", "planned_activity_push")).toBe(false);
+    expect(providerHasCapability("wahoo", "route_push")).toBe(false);
+    expect(getProviderSyncMode("wahoo", "planned_activity_push")).toBe("unsupported");
+    expect(getProviderCapabilityUnavailableReason("wahoo", "planned_activity_push")).toBe(
+      "Wahoo planned-workout creation is disabled because uncertain create outcomes cannot be reconciled under the documented API.",
+    );
     expect(getProviderPlannedWorkoutCapability("wahoo")).toMatchObject({
-      maturity: "available",
-      supportedSports: ["run", "bike"],
+      maturity: "evidence_gated",
+      supportedSports: [],
       supportsBoundaries: false,
     });
     expect(getProviderPlannedWorkoutCapability("garmin")).toMatchObject({

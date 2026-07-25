@@ -3,6 +3,7 @@
  * Handles communication with Wahoo's API for plans and workouts
  */
 
+import { logger } from "../../logger";
 import type { WahooActivityType } from "./activity-type-utils";
 import { WahooReconnectRequiredError } from "./credentials";
 
@@ -241,7 +242,7 @@ export class WahooClient {
       body.workout.route_id = workoutData.routeId;
     }
 
-    console.log("[Wahoo API] Creating workout with payload:", body);
+    logger.info("Wahoo API request", { operation: "create_workout", provider: "wahoo" });
 
     const response = await this.makeRequest<WahooWorkout>("/v1/workouts", {
       method: "POST",
@@ -251,12 +252,10 @@ export class WahooClient {
       body: JSON.stringify(body),
     });
 
-    console.log("[Wahoo API] Workout created:", {
-      id: response.id,
-      name: response.name,
-      starts: response.starts,
-      workout_type_id: response.workout_type_id,
-      plan_id: response.plan_id,
+    logger.info("Wahoo API request completed", {
+      operation: "create_workout",
+      outcome: "success",
+      provider: "wahoo",
     });
 
     return response;
@@ -346,24 +345,50 @@ export class WahooClient {
    * Fetch completed workout summaries for a bounded history window.
    */
   async listWorkoutSummaries(input: WahooWorkoutSummaryListInput): Promise<{
+    page: number;
+    reachedStartBoundary: boolean;
     sourceCount: number;
     summaries: WahooWorkoutSummary[];
+    total: number | null;
   }> {
     const params = new URLSearchParams({
       page: String(input.page ?? 1),
-      per_page: String(input.perPage ?? 50),
+      per_page: String(input.perPage ?? 30),
     });
-    const response = await this.makeRequest<{ workouts?: WahooWorkout[] }>(
-      `/v1/workouts?${params.toString()}`,
-      {
-        method: "GET",
-      },
-    );
+    const response = await this.makeRequest<{
+      page?: unknown;
+      total?: unknown;
+      workouts?: unknown;
+    }>(`/v1/workouts?${params.toString()}`, {
+      method: "GET",
+    });
 
     const start = new Date(input.startDate).getTime();
     const end = new Date(input.endDate).getTime();
 
-    const workouts = response.workouts ?? [];
+    if (!Array.isArray(response.workouts)) throw new Error("Invalid Wahoo workouts response");
+    if (
+      typeof response.page !== "number" ||
+      !Number.isSafeInteger(response.page) ||
+      response.page < 1
+    ) {
+      throw new Error("Invalid Wahoo workouts page response");
+    }
+    if (
+      typeof response.total !== "number" ||
+      !Number.isSafeInteger(response.total) ||
+      response.total < 0
+    ) {
+      throw new Error("Invalid Wahoo workouts total response");
+    }
+    const page = response.page;
+    const total = response.total;
+    const workouts = response.workouts as WahooWorkout[];
+    const rawStarts = workouts.map((workout) => Date.parse(workout.starts));
+    if (rawStarts.some((starts) => !Number.isFinite(starts))) {
+      throw new Error("Invalid Wahoo workout starts response");
+    }
+    const reachedStartBoundary = rawStarts.some((starts) => starts < start);
     const summaries = workouts
       .filter((workout) => {
         const starts = new Date(workout.starts).getTime();
@@ -384,7 +409,7 @@ export class WahooClient {
           },
         ];
       });
-    return { sourceCount: workouts.length, summaries };
+    return { page, reachedStartBoundary, sourceCount: workouts.length, summaries, total };
   }
 
   /**
@@ -448,6 +473,12 @@ export class WahooClient {
       method: "DELETE",
     });
 
+    return { success: true };
+  }
+
+  /** Revoke the bearer grant. Wahoo documents this as DELETE /v1/permissions. */
+  async disconnect(): Promise<{ success: boolean }> {
+    await this.makeRequest("/v1/permissions", { method: "DELETE" });
     return { success: true };
   }
 
@@ -517,9 +548,10 @@ export class WahooClient {
     error.status = response.status;
     error.code = errorCode;
 
-    console.error("[Wahoo API] Final error:", {
-      message: errorMessage,
-      code: errorCode,
+    logger.warn("Wahoo API request failed", {
+      operation: "request",
+      outcome: "failure",
+      provider: "wahoo",
       status: response.status,
     });
 

@@ -13,6 +13,7 @@ import {
   activityFileIngestions,
   activitySegments,
   integrationResourceLinks,
+  integrations,
 } from "@repo/db";
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
@@ -21,11 +22,19 @@ import { ActivityFileIngestionClaimLostError } from "../activity-file-ingestion/
 import { reconcileGeneratedActivityEvidence } from "./reconcile-activity-evidence";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
-type TransactionClient = Parameters<Parameters<DbClient["transaction"]>[0]>[0];
+export type ActivitySubmissionTransaction = Parameters<Parameters<DbClient["transaction"]>[0]>[0];
 
 export const DECODED_CONTRACT_VERSION = "decoded-activity-artifact-v1";
 export const MATERIALIZER_VERSION = "activity-segments-v1";
 export const SUBMISSION_PARSER_VERSION = "canonical-submission-v1";
+
+/** A lifecycle repair owns the bytes; retry after it converges rather than reviving it. */
+export class ActivityArtifactLifecycleRetryableError extends Error {
+  constructor() {
+    super("Activity artifact lifecycle is pending repair");
+    this.name = "ActivityArtifactLifecycleRetryableError";
+  }
+}
 
 export function providerProjectionDecision(input: {
   existingProviderUpdatedAt: Date | null;
@@ -104,7 +113,10 @@ export interface ActivityArtifactSubmission {
 }
 
 export interface ActivitySubmissionComposition<Result = unknown> {
-  persist(tx: TransactionClient, context: { activityId: string; now: Date }): Promise<Result>;
+  persist(
+    tx: ActivitySubmissionTransaction,
+    context: { activityId: string; now: Date },
+  ): Promise<Result>;
 }
 
 interface ReadyIngestionSubmission {
@@ -196,6 +208,7 @@ export interface ActivitySubmission {
     provider: "wahoo";
     externalId: string;
     integrationId: string;
+    integrationGeneration?: number;
     providerUpdatedAt: string | null;
   };
   segmentSet?: CompletedActivitySegmentSetV1;
@@ -240,7 +253,7 @@ function stringOrNull(value: unknown) {
 }
 
 async function persistArtifactAndLink(
-  tx: TransactionClient,
+  tx: ActivitySubmissionTransaction,
   input: {
     activityId: string;
     profileId: string;
@@ -260,6 +273,12 @@ async function persistArtifactAndLink(
     input.profileId,
     input.artifact.sha256,
     input.artifact.byteSize,
+  );
+  // Artifact lifecycle and failed-promotion cleanup serialize on the immutable
+  // profile/digest identity. This is deliberately distinct from the activity
+  // link lock below.
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtext(${`${input.profileId}:${input.artifact.sha256}`}))`,
   );
   const [createdArtifact] = await tx
     .insert(activityArtifacts)
@@ -281,7 +300,11 @@ async function persistArtifactAndLink(
     .returning({ id: activityArtifacts.id });
   if (!createdArtifact) {
     const [verified] = await tx
-      .select({ id: activityArtifacts.id, path: activityArtifacts.path })
+      .select({
+        availability: activityArtifacts.availability,
+        id: activityArtifacts.id,
+        path: activityArtifacts.path,
+      })
       .from(activityArtifacts)
       .where(
         and(
@@ -294,6 +317,7 @@ async function persistArtifactAndLink(
       )
       .limit(1);
     if (!verified) throw new Error("Artifact acceptance conflict did not match immutable bytes");
+    if (verified.availability !== "accepted") throw new ActivityArtifactLifecycleRetryableError();
   }
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${input.activityId}))`);
   const [existingLink] = await tx
@@ -356,7 +380,7 @@ async function persistArtifactAndLink(
 }
 
 async function replaceSegments(
-  tx: TransactionClient,
+  tx: ActivitySubmissionTransaction,
   input: {
     activityId: string;
     profileId: string;
@@ -406,7 +430,7 @@ async function replaceSegments(
 }
 
 async function persistReadyActivityFileIngestion(
-  tx: TransactionClient,
+  tx: ActivitySubmissionTransaction,
   input: {
     activityId: string;
     artifactId: string;
@@ -519,7 +543,7 @@ async function persistReadyActivityFileIngestion(
 }
 
 export async function updateCanonicalActivityFields(
-  tx: TransactionClient,
+  tx: ActivitySubmissionTransaction,
   input: {
     activityId: string;
     profileId: string;
@@ -541,6 +565,7 @@ export async function updateCanonicalActivityFields(
 export async function submitActivity(
   db: DbClient,
   input: ActivitySubmission | ExistingActivityEnrichmentSubmission,
+  options: { beforePersist?: (tx: ActivitySubmissionTransaction) => Promise<void> } = {},
 ) {
   let activityId =
     input.kind === "enrich" ? input.activityId : (input.requestedActivityId ?? randomUUID());
@@ -550,6 +575,25 @@ export async function submitActivity(
     const now = new Date();
     const provenance = input.kind === "enrich" ? undefined : input.providerProvenance;
     const ingestion = input.kind === "enrich" ? input.ingestion : input.analysis?.ingestion;
+    // Lock and verify the lifecycle fence in this same transaction as every
+    // activity/artifact/link/ingestion write.
+    if (provenance?.provider === "wahoo" && provenance.integrationGeneration !== undefined) {
+      const [activeIntegration] = await tx
+        .select({ id: integrations.id })
+        .from(integrations)
+        .where(
+          and(
+            eq(integrations.id, provenance.integrationId),
+            eq(integrations.profile_id, input.profileId),
+            eq(integrations.provider, "wahoo"),
+            eq(integrations.lifecycle_status, "active"),
+            eq(integrations.generation, provenance.integrationGeneration),
+          ),
+        )
+        .limit(1)
+        .for("share");
+      if (!activeIntegration) throw new Error("integration_generation_inactive");
+    }
     if (ingestion?.claimToken) {
       if (!ingestion.ingestionId) {
         throw new Error("Claimed activity file ingestion requires an ingestion ID");
@@ -724,6 +768,7 @@ export async function submitActivity(
       updated_at: now,
     };
 
+    await options.beforePersist?.(tx);
     if (existing) {
       const summaryValues = input.kind === "enrich" ? input.summaryValues : {};
       const {

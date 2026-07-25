@@ -7,6 +7,7 @@ import {
   type ActivityPlanStructureV3,
   activityPlanStructureSchemaV3,
   compileActivityPlanV3,
+  getProviderCapabilityUnavailableReason,
 } from "@repo/core";
 import {
   type ActivityEffortThresholdEvidence,
@@ -15,6 +16,7 @@ import {
   type ThresholdMetricSource,
 } from "@repo/core/athlete-inputs";
 import type { PublicActivityCategory } from "@repo/db";
+import { logger } from "../../logger";
 import { hashPlannedWorkoutPayload } from "../../provider-sync/planned-workouts/planned-workout-hash";
 import {
   isWahooSupported,
@@ -72,18 +74,28 @@ interface WahooRepository {
   deleteEventResourceLink(id: string): Promise<void>;
   findWahooIntegrationByProfileId(profileId: string): Promise<{
     accessToken: string;
-    expiresAt?: string | null;
+    expiresAt: string | null;
     externalId: string;
+    credentialGeneration: number;
+    integrationGeneration: number;
     id: string;
     profileId: string;
+    reconnectRequiredAt: string | null;
     refreshToken: string | null;
   } | null>;
   updateWahooIntegrationTokens(input: {
     accessToken: string;
+    expectedCredentialGeneration: number;
+    expectedIntegrationGeneration: number;
     expiresAt: string | null;
     id: string;
     refreshToken: string | null;
-  }): Promise<void>;
+  }): Promise<number | null>;
+  markWahooReconnectRequired?(input: {
+    expectedCredentialGeneration: number;
+    expectedIntegrationGeneration: number;
+    id: string;
+  }): Promise<boolean>;
   getPlannedEventForSync(input: { eventId: string; profileId: string }): Promise<{
     activityPlan: {
       activityCategory: string;
@@ -243,7 +255,8 @@ export type SyncFailureCode =
   | "missing_event"
   | "missing_integration"
   | "reconnect_required"
-  | "provider_failure";
+  | "provider_failure"
+  | "capability_disabled";
 
 export type SyncResult =
   | {
@@ -353,6 +366,15 @@ export class WahooSyncService {
     profileId: string,
     execution?: { expectedProjectionHash?: string },
   ): Promise<SyncResult> {
+    const disabledReason = getProviderCapabilityUnavailableReason("wahoo", "planned_activity_push");
+    if (disabledReason) {
+      return createSyncFailure({
+        category: "integration",
+        code: "capability_disabled",
+        error: disabledReason,
+        retryable: false,
+      });
+    }
     try {
       // 1. Fetch planned-activity event with all related data
       const planned = await this.repository.getPlannedEventForSync({
@@ -510,7 +532,11 @@ export class WahooSyncService {
                 startLng: startCoords?.longitude,
               };
             } catch (error) {
-              console.warn("Failed to load route file:", error);
+              logger.warn("Wahoo sync route preparation failed", {
+                operation: "prepare_route",
+                outcome: "failure",
+                provider: "wahoo",
+              });
               // Continue without route
             }
           }
@@ -559,7 +585,21 @@ export class WahooSyncService {
           ...integration,
           expiresAt: integration.expiresAt ?? null,
         },
-        persistTokens: (tokens) => this.repository.updateWahooIntegrationTokens(tokens),
+        persistTokens: (tokens) =>
+          this.repository.updateWahooIntegrationTokens({
+            ...tokens,
+            expectedCredentialGeneration: tokens.credentialGeneration ?? 1,
+            expectedIntegrationGeneration:
+              tokens.integrationGeneration ?? integration.integrationGeneration,
+          }),
+        markReconnectRequired: ({ credentialGeneration, id, integrationGeneration }) =>
+          this.repository.markWahooReconnectRequired?.({
+            expectedCredentialGeneration: credentialGeneration ?? 1,
+            expectedIntegrationGeneration:
+              integrationGeneration ?? integration.integrationGeneration,
+            id,
+          }) ?? Promise.resolve(false),
+        readCurrentCredentials: () => this.repository.findWahooIntegrationByProfileId(profileId),
         refreshAccessToken: refreshWahooAccessToken,
       });
       const wahooClient = createWahooClient({
@@ -604,7 +644,11 @@ export class WahooSyncService {
         );
       }
     } catch (error) {
-      console.error("Wahoo sync error:", error);
+      logger.warn("Wahoo sync failed", {
+        operation: "sync",
+        outcome: "failure",
+        provider: "wahoo",
+      });
       if (error instanceof WahooReconnectRequiredError) {
         return createSyncFailure({
           category: "integration",
@@ -684,7 +728,7 @@ export class WahooSyncService {
     }
 
     // Create plan in Wahoo's library
-    console.log(`[Wahoo Sync] Creating plan for "${planned.activity_plan.name}"`);
+    logger.info("Wahoo sync request", { operation: "create_plan", provider: "wahoo" });
     await this.deleteExistingPlansForExternalId(wahooClient, planned.activity_plan.id);
     const plan = await wahooClient.createPlan({
       structure: wahooPlan,
@@ -693,7 +737,11 @@ export class WahooSyncService {
       activityType,
       externalId: planned.activity_plan.id,
     });
-    console.log(`[Wahoo Sync] Plan created with ID: ${plan.id}`);
+    logger.info("Wahoo sync request completed", {
+      operation: "create_plan",
+      outcome: "success",
+      provider: "wahoo",
+    });
 
     // Get workout type ID and duration
     const workoutTypeId = toWahooWorkoutTypeId(activityType, {
@@ -717,21 +765,15 @@ export class WahooSyncService {
       (scheduledDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
     );
 
-    console.log(`[Wahoo Sync] Workout details:`, {
-      name: planned.activity_plan.name,
-      scheduledDate: scheduledDate.toISOString(),
-      daysUntilWorkout,
-      workoutTypeId,
-      durationMinutes,
-      planId: plan.id,
-      routeId: wahooRouteId,
-    });
+    logger.info("Wahoo sync request", { operation: "create_workout", provider: "wahoo" });
 
     // Warn if workout is outside Wahoo's 6-day window
     if (daysUntilWorkout > 6) {
-      console.warn(
-        `[Wahoo Sync] WARNING: Workout scheduled ${daysUntilWorkout} days from now. Wahoo only displays workouts scheduled within 6 days on devices.`,
-      );
+      logger.warn("Wahoo sync window warning", {
+        operation: "create_workout",
+        outcome: "outside_window",
+        provider: "wahoo",
+      });
       warnings = [
         ...(warnings || []),
         `Workout scheduled ${daysUntilWorkout} days from now. It will only appear on your device when within 6 days of the scheduled date.`,
@@ -749,7 +791,11 @@ export class WahooSyncService {
       durationMinutes: durationMinutes,
     });
 
-    console.log(`[Wahoo Sync] Workout created successfully with ID: ${workout.id}`);
+    logger.info("Wahoo sync request completed", {
+      operation: "create_workout",
+      outcome: "success",
+      provider: "wahoo",
+    });
 
     // Store sync record (only workout_id, not plan_id)
     await this.repository.createEventResourceLink({
@@ -825,7 +871,11 @@ export class WahooSyncService {
         },
       };
     } catch (error) {
-      console.error("Failed to sync route to Wahoo:", error);
+      logger.warn("Wahoo sync failed", {
+        operation: "sync_route",
+        outcome: "failure",
+        provider: "wahoo",
+      });
       if (input.requireRoute) {
         return {
           success: false,
@@ -1032,7 +1082,11 @@ export class WahooSyncService {
       try {
         await wahooClient.deletePlan(providerMetadata.planId);
       } catch (error) {
-        console.warn("Failed to delete old Wahoo plan:", error);
+        logger.warn("Wahoo cleanup failed", {
+          operation: "delete_plan",
+          outcome: "failure",
+          provider: "wahoo",
+        });
       }
     }
 
@@ -1049,7 +1103,11 @@ export class WahooSyncService {
     try {
       await wahooClient.deleteWorkout(existingSync.externalId);
     } catch (error) {
-      console.warn("Failed to delete old Wahoo workout:", error);
+      logger.warn("Wahoo cleanup failed", {
+        operation: "delete_workout",
+        outcome: "failure",
+        provider: "wahoo",
+      });
     }
 
     await this.repository.updateEventResourceLink({
@@ -1090,7 +1148,11 @@ export class WahooSyncService {
         await wahooClient.deletePlan(storedPlanId);
         deletedPlanIds.add(storedPlanId);
       } catch (error) {
-        console.warn("Failed to delete stored Wahoo plan before replacement:", error);
+        logger.warn("Wahoo cleanup failed", {
+          operation: "delete_plan",
+          outcome: "failure",
+          provider: "wahoo",
+        });
       }
     }
 
@@ -1114,6 +1176,15 @@ export class WahooSyncService {
     profileId: string,
     capturedTarget?: { externalId: string; resourceLinkId: string },
   ): Promise<SyncResult> {
+    const disabledReason = getProviderCapabilityUnavailableReason("wahoo", "planned_activity_push");
+    if (disabledReason) {
+      return createSyncFailure({
+        category: "integration",
+        code: "capability_disabled",
+        error: disabledReason,
+        retryable: false,
+      });
+    }
     try {
       // 1. Fetch sync record
       const persistedSync = await this.repository.getEventResourceLink({
@@ -1154,7 +1225,21 @@ export class WahooSyncService {
           ...integration,
           expiresAt: integration.expiresAt ?? null,
         },
-        persistTokens: (tokens) => this.repository.updateWahooIntegrationTokens(tokens),
+        persistTokens: (tokens) =>
+          this.repository.updateWahooIntegrationTokens({
+            ...tokens,
+            expectedCredentialGeneration: tokens.credentialGeneration ?? 1,
+            expectedIntegrationGeneration:
+              tokens.integrationGeneration ?? integration.integrationGeneration,
+          }),
+        markReconnectRequired: ({ credentialGeneration, id, integrationGeneration }) =>
+          this.repository.markWahooReconnectRequired?.({
+            expectedCredentialGeneration: credentialGeneration ?? 1,
+            expectedIntegrationGeneration:
+              integrationGeneration ?? integration.integrationGeneration,
+            id,
+          }) ?? Promise.resolve(false),
+        readCurrentCredentials: () => this.repository.findWahooIntegrationByProfileId(profileId),
         refreshAccessToken: refreshWahooAccessToken,
       });
       const wahooClient = createWahooClient({
@@ -1172,7 +1257,11 @@ export class WahooSyncService {
         action: "updated",
       };
     } catch (error) {
-      console.error("Wahoo unsync error:", error);
+      logger.warn("Wahoo sync failed", {
+        operation: "unsync",
+        outcome: "failure",
+        provider: "wahoo",
+      });
       if (error instanceof WahooReconnectRequiredError) {
         return createSyncFailure({
           category: "integration",

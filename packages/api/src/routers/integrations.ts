@@ -6,7 +6,10 @@ import { getProviderSyncOverview, syncIntegrationNow } from "../application/inte
 import { OnboardingProviderEnrichmentService } from "../application/onboarding-provider-enrichment";
 import type { Context } from "../context";
 import { getRequiredDb } from "../db";
-import { createIntegrationsRepositories } from "../infrastructure/repositories";
+import {
+  createIntegrationsRepositories,
+  createProviderSyncRepository,
+} from "../infrastructure/repositories";
 import {
   isLocalProviderOAuthTestAdapterEnabled,
   isProviderOAuthConfigured,
@@ -17,6 +20,10 @@ import {
   deriveOAuthCodeVerifier,
   issueLocalOAuthAuthorizationCode,
 } from "../lib/integrations/oauth-pkce";
+import {
+  createOAuthStateBinding,
+  getOAuthCallbackUrl,
+} from "../lib/integrations/oauth-state-binding";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 const providerSchema = publicIntegrationProviderSchema;
@@ -196,8 +203,11 @@ export const integrationsRouter = createTRPCRouter({
     await repositories.oauthStates.deleteExpired({ profileId: ctx.session.user.id, now });
     const state = crypto.randomUUID();
     const returnUri = requireAllowedOAuthReturn(input.redirectUri);
-    const callbackUrl = getCallbackUrl(input.provider);
+    const config = requireProviderOAuthConfig(input.provider);
+    const callbackUrl = getOAuthCallbackUrl(input.provider);
+    const binding = createOAuthStateBinding({ config, provider: input.provider, state });
     await repositories.oauthStates.create({
+      ...binding,
       state,
       profileId: ctx.session.user.id,
       provider: input.provider,
@@ -207,12 +217,18 @@ export const integrationsRouter = createTRPCRouter({
     });
     return parseBoundaryValue(
       authUrlResultSchema,
-      { url: buildOAuthUrl(input.provider, state, callbackUrl, returnUri), state },
+      { url: buildOAuthUrl(input.provider, state, callbackUrl, returnUri, config), state },
       "OAuth URL was invalid",
     );
   }),
 
   disconnect: protectedProcedure.input(disconnectInputSchema).mutation(async ({ ctx, input }) => {
+    if (input.provider === "wahoo") {
+      await createProviderSyncRepository({ db: getRequiredDb(ctx) }).requestWahooDisconnect({
+        profileId: ctx.session.user.id,
+      });
+      return strictSuccessSchema.parse({ success: true });
+    }
     await getIntegrationsRepositories(ctx).integrations.deleteByProfileIdAndProvider({
       profileId: ctx.session.user.id,
       provider: input.provider,
@@ -229,10 +245,6 @@ function getApplicationBaseUrl(): string {
     process.env.NEXT_PUBLIC_APP_URL ||
     "http://localhost:3000"
   );
-}
-
-function getCallbackUrl(provider: z.infer<typeof providerSchema>): string {
-  return `${getApplicationBaseUrl()}/api/integrations/callback/${provider}`;
 }
 
 function getDefaultMobileRedirect(): string {
@@ -264,8 +276,8 @@ function buildOAuthUrl(
   state: string,
   callbackUrl: string,
   returnUri: string,
+  config = requireProviderOAuthConfig(provider),
 ): string {
-  const config = requireProviderOAuthConfig(provider);
   const verifier = deriveOAuthCodeVerifier({ clientSecret: config.clientSecret, provider, state });
   const challenge = createOAuthCodeChallenge(verifier);
   if (config.adapter === "local-test") {

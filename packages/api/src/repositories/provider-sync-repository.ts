@@ -6,6 +6,7 @@ export type ProviderSyncJobStatus = "queued" | "running" | "completed" | "failed
 export type EnqueueProviderSyncJobInput = {
   dedupeKey?: string;
   integrationId: string;
+  integrationGeneration?: number;
   internalResourceId?: string;
   jobType: string;
   maxAttempts?: number;
@@ -25,6 +26,7 @@ export type ProviderSyncJobRecord = {
   dedupeKey: string | null;
   id: string;
   integrationId: string;
+  integrationGeneration?: number;
   internalResourceId: string | null;
   jobType: string;
   lastError: string | null;
@@ -67,6 +69,7 @@ export type ProviderWebhookReceiptRecord = {
   eventType: string;
   id: string;
   integrationId: string | null;
+  integrationGeneration?: number | null;
   jobId?: string | null;
   lastError?: string | null;
   payload: unknown;
@@ -77,8 +80,14 @@ export type ProviderWebhookReceiptRecord = {
   receivedAt?: string | null;
 };
 
+export type WahooDisconnectAttemptResult =
+  | { accessToken: string; disposition: "ready" }
+  | { disposition: "invalid" }
+  | { disposition: "superseded" };
+
 export interface ProviderSyncRepository {
   completeJobWithSyncState(input: {
+    expectedIntegrationGeneration?: number;
     highWatermark: string;
     id: string;
     integrationId: string;
@@ -108,13 +117,42 @@ export interface ProviderSyncRepository {
     input: EnqueueProviderSyncJobInput,
   ): Promise<{ id: string; status: ProviderSyncJobStatus }>;
   markJobFailed(input: {
+    expectedIntegrationGeneration?: number;
     id: string;
     lastError: string;
     nextRunAt?: string;
     status: Extract<ProviderSyncJobStatus, "queued" | "failed" | "dead_lettered">;
     workerId: string;
   }): Promise<boolean>;
-  markJobSucceeded(id: string, workerId: string): Promise<boolean>;
+  isIntegrationGenerationActive?(input: {
+    generation: number;
+    integrationId: string;
+    profileId: string;
+  }): Promise<boolean>;
+  requestWahooDisconnect(input: { profileId: string }): Promise<{
+    generation: number | null;
+    integrationId: string | null;
+    jobId: string | null;
+    status: "disconnected" | "pending" | "not_found";
+  }>;
+  beginWahooDisconnectAttempt(input: {
+    generation: number;
+    integrationId: string;
+    jobId: string;
+    workerId: string;
+  }): Promise<WahooDisconnectAttemptResult | null>;
+  finalizeWahooDisconnect(input: {
+    generation: number;
+    integrationId: string;
+    jobId: string;
+    outcome: "confirmed" | "retry" | "dead_lettered";
+    workerId: string;
+  }): Promise<boolean>;
+  markJobSucceeded(
+    id: string,
+    workerId: string,
+    expectedIntegrationGeneration?: number,
+  ): Promise<boolean>;
   renewJobLease(input: { id: string; lockExpiresAt: string; workerId: string }): Promise<boolean>;
   finalizeWebhookReceiptJob(input: {
     jobId: string;
@@ -133,6 +171,7 @@ export interface ProviderSyncRepository {
   storeWebhookReceipt(input: {
     eventType: string;
     integrationId?: string;
+    integrationGeneration?: number;
     objectId?: string;
     objectType?: string;
     payload: unknown;
@@ -140,7 +179,7 @@ export interface ProviderSyncRepository {
     provider: "wahoo";
     providerAccountId?: string;
     providerEventId?: string;
-  }): Promise<{ id: string; inserted: boolean }>;
+  }): Promise<{ id: string; inserted: boolean; captured: boolean }>;
   setWebhookReceiptJob(input: { id: string; jobId: string }): Promise<void>;
   getWebhookReceipt(id: string): Promise<ProviderWebhookReceiptRecord | null>;
   listJobs(input: {

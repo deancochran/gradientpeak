@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getProviderSyncOverview: vi.fn(),
   syncIntegrationNow: vi.fn(),
   refreshSetupData: vi.fn(),
+  providerSyncRepository: { requestWahooDisconnect: vi.fn() },
   repositories: {
     integrations: { deleteByProfileIdAndProvider: vi.fn(), listByProfileId: vi.fn() },
     oauthStates: { create: vi.fn(), deleteExpired: vi.fn() },
@@ -28,6 +29,7 @@ vi.mock("../../application/onboarding-provider-enrichment", () => ({
 }));
 vi.mock("../../infrastructure/repositories", () => ({
   createIntegrationsRepositories: vi.fn(() => mocks.repositories),
+  createProviderSyncRepository: vi.fn(() => mocks.providerSyncRepository),
 }));
 vi.mock("@repo/db", () => ({
   publicIntegrationProviderSchema: z.enum(["strava", "wahoo", "trainingpeaks", "garmin", "zwift"]),

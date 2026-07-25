@@ -49,9 +49,11 @@ function createRepositoryMock() {
     findImportedActivityByProviderExternalId: vi.fn().mockResolvedValue(null),
     findImportedActivityLinkByExternalId: vi.fn().mockResolvedValue(null),
     findLinkedPlannedEventId: vi.fn().mockResolvedValue(null),
-    findWahooIntegrationByExternalId: vi
-      .fn()
-      .mockResolvedValue({ integrationId: "integration-1", profileId: "profile-1" }),
+    findWahooIntegrationByExternalId: vi.fn().mockResolvedValue({
+      integrationGeneration: 1,
+      integrationId: "integration-1",
+      profileId: "profile-1",
+    }),
     getEventActivityPlanId: vi.fn().mockResolvedValue(null),
   };
 }
@@ -77,12 +79,58 @@ const defaultActivityFileParser = vi.fn().mockReturnValue({
 });
 
 function createTestImporter(
-  deps: Parameters<typeof createActivityImporter>[0],
-): ReturnType<typeof createActivityImporter> {
-  return createActivityImporter({
+  deps: Omit<
+    Parameters<typeof createActivityImporter>[0],
+    "enrichActivity" | "generationGuard" | "stagingCleanup"
+  > &
+    Partial<
+      Pick<
+        Parameters<typeof createActivityImporter>[0],
+        "enrichActivity" | "generationGuard" | "stagingCleanup"
+      >
+    >,
+) {
+  const enrichActivity = deps.enrichActivity ?? vi.fn().mockResolvedValue({ id: "activity-1" });
+  const stagingCleanup = deps.stagingCleanup ?? {
+    reserve: vi
+      .fn()
+      .mockImplementation(({ integrationGeneration, integrationId, profileId, summaryId }) =>
+        Promise.resolve({
+          path: `activities/${profileId}/providers/wahoo/staging/${integrationId}/${integrationGeneration}/${summaryId}/11111111-1111-4111-8111-111111111111.fit`,
+          recordOutcome: vi.fn().mockResolvedValue(true),
+        }),
+      ),
+  };
+  const importer = createActivityImporter({
     ...deps,
     activityFileParser: deps.activityFileParser ?? defaultActivityFileParser,
+    generationGuard: deps.generationGuard ?? vi.fn().mockResolvedValue(undefined),
+    stagingCleanup,
+    submitActivity: (activity, parsedActivity, _options) =>
+      (
+        deps.submitActivity as (
+          input: typeof activity,
+          parsed: typeof parsedActivity,
+        ) => Promise<{ id: string }>
+      )(activity, parsedActivity),
+    enrichActivity: (activityId, activity, parsedActivity, _options) =>
+      (
+        enrichActivity as (
+          id: typeof activityId,
+          input: typeof activity,
+          parsed: typeof parsedActivity,
+        ) => Promise<{ id: string }>
+      )(activityId, activity, parsedActivity),
   });
+  return {
+    importWorkoutSummary(
+      wahooUserId: number,
+      summary: WahooWorkoutSummary,
+      options = { integrationGeneration: 1, integrationId: "integration-1" },
+    ) {
+      return importer.importWorkoutSummary(wahooUserId, summary, options);
+    },
+  };
 }
 
 describe("activity-importer", () => {
@@ -117,7 +165,7 @@ describe("activity-importer", () => {
 
     await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
       success: false,
-      error: "No integration found for Wahoo user 77",
+      error: "Wahoo integration is unavailable",
     });
 
     expect(repository.findImportedActivityLinkByExternalId).not.toHaveBeenCalled();
@@ -185,6 +233,7 @@ describe("activity-importer", () => {
     expect(repository.createImportedActivityResourceLink).toHaveBeenCalledWith({
       activityId: "existing-activity",
       externalId: "123",
+      integrationGeneration: 1,
       integrationId: "integration-1",
       profileId: "profile-1",
       provider: "wahoo",
@@ -255,9 +304,81 @@ describe("activity-importer", () => {
 
     await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
       success: false,
-      error: "Failed to parse Wahoo FIT file for summary 123",
+      error: "Wahoo activity import failed",
     });
     expect(repository.submitActivity).not.toHaveBeenCalled();
+  });
+
+  it("does not download when disconnect wins the pre-download generation fence", async () => {
+    const repository = createRepositoryMock();
+    repository.findWahooIntegrationByExternalId
+      .mockResolvedValueOnce({
+        integrationGeneration: 1,
+        integrationId: "integration-1",
+        profileId: "profile-1",
+      })
+      .mockResolvedValueOnce(null);
+    const activityFileStorage = { uploadActivityFile: vi.fn() };
+    const importer = createTestImporter({
+      activityFileStorage,
+      repository,
+      submitActivity: repository.submitActivity,
+    });
+
+    await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
+      success: false,
+      error: "Wahoo activity import failed",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(activityFileStorage.uploadActivityFile).not.toHaveBeenCalled();
+    expect(repository.submitActivity).not.toHaveBeenCalled();
+  });
+
+  it("removes its staged object when disconnect wins after upload", async () => {
+    const repository = createRepositoryMock();
+    repository.findWahooIntegrationByExternalId
+      .mockResolvedValueOnce({
+        integrationGeneration: 1,
+        integrationId: "integration-1",
+        profileId: "profile-1",
+      })
+      .mockResolvedValueOnce({
+        integrationGeneration: 1,
+        integrationId: "integration-1",
+        profileId: "profile-1",
+      })
+      .mockResolvedValueOnce({
+        integrationGeneration: 1,
+        integrationId: "integration-1",
+        profileId: "profile-1",
+      })
+      .mockResolvedValueOnce({
+        integrationGeneration: 1,
+        integrationId: "integration-1",
+        profileId: "profile-1",
+      })
+      .mockResolvedValueOnce(null);
+    const activityFileStorage = {
+      removeOwnedActivityFile: vi.fn().mockResolvedValue({ cleanupPending: false, removed: true }),
+      uploadActivityFile: vi.fn().mockResolvedValue(undefined),
+    };
+    const importer = createTestImporter({
+      activityFileStorage,
+      repository,
+      submitActivity: repository.submitActivity,
+    });
+    fetchMock.mockResolvedValueOnce(activityFileResponse(new Uint8Array([1, 2, 3])));
+
+    await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
+      success: false,
+      error: "Wahoo activity import failed",
+    });
+    expect(repository.submitActivity).not.toHaveBeenCalled();
+    expect(activityFileStorage.removeOwnedActivityFile).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^activities\/profile-1\/providers\/wahoo\/staging\/integration-1\/1\/123\/.+\.fit$/,
+      ),
+    );
   });
 
   it("fails a cross-profile provider identity collision without disclosing its activity ID", async () => {
@@ -314,10 +435,13 @@ describe("activity-importer", () => {
     expect(activityFileStorage.uploadActivityFile).toHaveBeenCalledWith({
       bytes: fitBytes,
       contentType: "application/octet-stream",
-      path: "activities/profile-1/providers/wahoo/123.fit",
+      path: expect.stringMatching(
+        /^activities\/profile-1\/providers\/wahoo\/staging\/integration-1\/1\/123\/.+\.fit$/,
+      ),
     });
     expect(repository.submitActivity).toHaveBeenCalledWith(
       {
+        integrationGeneration: 1,
         integrationId: "integration-1",
         isPrivate: true,
         profileId: "profile-1",
@@ -339,12 +463,54 @@ describe("activity-importer", () => {
         avgHeartRate: 149,
         avgCadence: 92,
         avgSpeedMps: 8.9,
-        activityFilePath: "activities/profile-1/providers/wahoo/123.fit",
+        activityFilePath: expect.stringMatching(
+          /^activities\/profile-1\/providers\/wahoo\/staging\/integration-1\/1\/123\/.+\.fit$/,
+        ),
         activityFileSize: fitBytes.byteLength,
         polyline: null,
       },
       expect.any(Object),
     );
+  });
+
+  it("reserves durable cleanup authority before uploading a unique staging object", async () => {
+    const repository = createRepositoryMock();
+    const sequence: string[] = [];
+    const recordOutcome = vi.fn().mockResolvedValue(true);
+    const stagingCleanup = {
+      reserve: vi.fn().mockImplementation(async () => {
+        sequence.push("reserve");
+        return {
+          path: "activities/profile-1/providers/wahoo/staging/integration-1/1/123/11111111-1111-4111-8111-111111111111.fit",
+          recordOutcome,
+        };
+      }),
+    };
+    const activityFileStorage = {
+      uploadActivityFile: vi.fn().mockImplementation(async () => {
+        sequence.push("upload");
+      }),
+    };
+    const importer = createTestImporter({
+      activityFileStorage,
+      repository,
+      stagingCleanup,
+      submitActivity: repository.submitActivity,
+    });
+    fetchMock.mockResolvedValueOnce(activityFileResponse(new Uint8Array([1, 2, 3])));
+
+    await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toMatchObject({
+      success: true,
+    });
+
+    expect(sequence).toEqual(["reserve", "upload"]);
+    expect(recordOutcome).toHaveBeenCalledWith("committed");
+    expect(stagingCleanup.reserve).toHaveBeenCalledWith({
+      integrationGeneration: 1,
+      integrationId: "integration-1",
+      profileId: "profile-1",
+      summaryId: 123,
+    });
   });
 
   it.each([
@@ -365,7 +531,7 @@ describe("activity-importer", () => {
       importer.importWorkoutSummary(77, createSummary({ file: { url } })),
     ).resolves.toEqual({
       success: false,
-      error: "Failed to fetch/store Wahoo FIT file for summary 123",
+      error: "Wahoo activity file could not be imported",
     });
 
     expect(fetchMock).not.toHaveBeenCalled();
@@ -551,7 +717,9 @@ describe("activity-importer", () => {
 
     expect(activityFileParser).toHaveBeenCalledWith({
       bytes: fitBytes,
-      fileName: "activities/profile-1/providers/wahoo/123.fit",
+      fileName: expect.stringMatching(
+        /^activities\/profile-1\/providers\/wahoo\/staging\/integration-1\/1\/123\/.+\.fit$/,
+      ),
     });
     expect(repository.submitActivity).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -589,10 +757,34 @@ describe("activity-importer", () => {
 
     await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
       success: false,
-      error: "Failed to fetch/store Wahoo FIT file for summary 123",
+      error: "Wahoo activity file could not be imported",
     });
 
     expect(repository.submitActivity).not.toHaveBeenCalled();
+  });
+
+  it("attempts immediate removal when a staging upload has an uncertain failure", async () => {
+    const repository = createRepositoryMock();
+    const activityFileStorage = {
+      removeOwnedActivityFile: vi.fn().mockResolvedValue({ cleanupPending: false, removed: true }),
+      uploadActivityFile: vi.fn().mockRejectedValue(new Error("connection lost after upload")),
+    };
+    const importer = createTestImporter({
+      activityFileStorage,
+      repository,
+      submitActivity: repository.submitActivity,
+    });
+    fetchMock.mockResolvedValueOnce(activityFileResponse(new Uint8Array([1, 2, 3])));
+
+    await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
+      success: false,
+      error: "Wahoo activity file could not be imported",
+    });
+    expect(activityFileStorage.removeOwnedActivityFile).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^activities\/profile-1\/providers\/wahoo\/staging\/integration-1\/1\/123\/.+\.fit$/,
+      ),
+    );
   });
 
   it("resolves a provider uniqueness race to the existing activity and repairs its link", async () => {
@@ -631,6 +823,7 @@ describe("activity-importer", () => {
     expect(repository.createImportedActivityResourceLink).toHaveBeenCalledWith({
       activityId: "concurrent-activity",
       externalId: "123",
+      integrationGeneration: 1,
       integrationId: "integration-1",
       profileId: "profile-1",
       provider: "wahoo",
@@ -698,7 +891,7 @@ describe("activity-importer", () => {
     );
 
     const result = await importer.importWorkoutSummary(77, createSummary());
-    expect(result).toEqual({ success: false, error: "Database error: connection lost" });
+    expect(result).toEqual({ success: false, error: "Wahoo activity persistence failed" });
     expect(repository.findImportedActivityByProviderExternalId).toHaveBeenCalledOnce();
     expect(repository.createImportedActivityResourceLink).not.toHaveBeenCalled();
   });

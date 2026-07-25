@@ -2,7 +2,7 @@ import { coachesAthletes } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import type { Context } from "../../context";
-import { getRequiredDb } from "../../db";
+import { type DrizzleQueryExecutor, getRequiredDb } from "../../db";
 
 type AssertProfileAccessParams = {
   ctx: Context;
@@ -61,7 +61,7 @@ export async function assertProfileAccess({
 export async function withProfileWriteAccess<T>(input: {
   ctx: Context;
   profileId: string;
-  write: (db: ReturnType<typeof getRequiredDb>) => Promise<T>;
+  write: (db: DrizzleQueryExecutor) => Promise<T>;
 }): Promise<T> {
   const actorId = input.ctx.session?.user?.id;
   if (!actorId) throw new TRPCError({ code: "UNAUTHORIZED" });
@@ -86,7 +86,7 @@ export async function withProfileWriteAccess<T>(input: {
       });
     }
 
-    return input.write(tx as unknown as ReturnType<typeof getRequiredDb>);
+    return input.write(tx);
   });
 }
 

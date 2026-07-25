@@ -90,8 +90,12 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           accessToken: schema.integrationCredentials.access_token,
           expiresAt: schema.integrationCredentials.expires_at,
           externalId: schema.integrations.external_id,
+          credentialGeneration: schema.integrationCredentials.generation,
           id: schema.integrations.id,
+          integrationGeneration: schema.integrations.generation,
+          lifecycleStatus: schema.integrations.lifecycle_status,
           profileId: schema.integrations.profile_id,
+          reconnectRequiredAt: schema.integrationCredentials.reconnect_required_at,
           refreshToken: schema.integrationCredentials.refresh_token,
         })
         .from(schema.integrations)
@@ -103,6 +107,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           and(
             eq(schema.integrations.profile_id, profileId),
             eq(schema.integrations.provider, "wahoo"),
+            eq(schema.integrations.lifecycle_status, "active"),
           ),
         )
         .limit(1);
@@ -115,23 +120,33 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         !isEncryptedProviderToken(row.accessToken) ||
         (row.refreshToken !== null && !isEncryptedProviderToken(row.refreshToken));
 
+      let rekeyed: { generation: number } | undefined;
       if (hasLegacyCredential && hasProviderTokenEncryptionKey()) {
-        await db
+        [rekeyed] = await db
           .update(schema.integrationCredentials)
           .set({
             access_token: encryptProviderToken(accessToken),
+            generation: sql`${schema.integrationCredentials.generation} + 1`,
             refresh_token: refreshToken === null ? null : encryptProviderToken(refreshToken),
             updated_at: new Date(),
           })
           .where(
             and(
               eq(schema.integrationCredentials.integration_id, row.id),
+              eq(schema.integrationCredentials.generation, row.credentialGeneration),
+              sql`exists (
+                  select 1 from integrations
+                  where integrations.id = ${row.id}
+                    and integrations.lifecycle_status = 'active'
+                    and integrations.generation = ${row.integrationGeneration}
+                )`,
               eq(schema.integrationCredentials.access_token, row.accessToken),
               row.refreshToken === null
                 ? isNull(schema.integrationCredentials.refresh_token)
                 : eq(schema.integrationCredentials.refresh_token, row.refreshToken),
             ),
-          );
+          )
+          .returning({ generation: schema.integrationCredentials.generation });
       }
 
       return {
@@ -139,12 +154,16 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         accessToken,
         refreshToken,
         expiresAt: toIsoString(row.expiresAt),
+        reconnectRequiredAt: toIsoString(row.reconnectRequiredAt),
+        credentialGeneration: rekeyed?.generation ?? row.credentialGeneration,
+        lifecycleStatus: row.lifecycleStatus as "active" | "disconnect_pending" | "disconnected",
       };
     },
 
     async findWahooIntegrationByExternalId(externalId) {
-      const [row] = await db
+      const rows = await db
         .select({
+          integrationGeneration: schema.integrations.generation,
           integrationId: schema.integrations.id,
           profileId: schema.integrations.profile_id,
         })
@@ -153,10 +172,27 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           and(
             eq(schema.integrations.provider, "wahoo"),
             eq(schema.integrations.external_id, externalId),
+            eq(schema.integrations.lifecycle_status, "active"),
+          ),
+        )
+        .limit(2);
+
+      return rows.length === 1 ? (rows[0] ?? null) : null;
+    },
+
+    async findWahooIntegrationByIdAndGeneration({ integrationGeneration, integrationId }) {
+      const [row] = await db
+        .select({ profileId: schema.integrations.profile_id })
+        .from(schema.integrations)
+        .where(
+          and(
+            eq(schema.integrations.id, integrationId),
+            eq(schema.integrations.generation, integrationGeneration),
+            eq(schema.integrations.lifecycle_status, "active"),
+            eq(schema.integrations.provider, "wahoo"),
           ),
         )
         .limit(1);
-
       return row ?? null;
     },
 
@@ -253,28 +289,45 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
     },
 
     async createImportedActivityResourceLink(input) {
-      await db
-        .insert(schema.integrationResourceLinks)
-        .values({
-          id: randomUUID(),
-          created_at: new Date(),
-          external_id: input.externalId,
-          integration_id: input.integrationId,
-          internal_resource_id: input.activityId,
-          profile_id: input.profileId,
-          provider: input.provider,
-          provider_updated_at: input.providerUpdatedAt ? new Date(input.providerUpdatedAt) : null,
-          resource_kind: "activity",
-          synced_at: new Date(),
-          updated_at: new Date(),
-        })
-        .onConflictDoNothing({
-          target: [
-            schema.integrationResourceLinks.integration_id,
-            schema.integrationResourceLinks.resource_kind,
-            schema.integrationResourceLinks.external_id,
-          ],
-        });
+      await db.transaction(async (tx) => {
+        const [activeIntegration] = await tx
+          .select({ id: schema.integrations.id })
+          .from(schema.integrations)
+          .where(
+            and(
+              eq(schema.integrations.id, input.integrationId),
+              eq(schema.integrations.profile_id, input.profileId),
+              eq(schema.integrations.provider, "wahoo"),
+              eq(schema.integrations.lifecycle_status, "active"),
+              eq(schema.integrations.generation, input.integrationGeneration),
+            ),
+          )
+          .limit(1)
+          .for("share");
+        if (!activeIntegration) throw new Error("integration_generation_inactive");
+        await tx
+          .insert(schema.integrationResourceLinks)
+          .values({
+            id: randomUUID(),
+            created_at: new Date(),
+            external_id: input.externalId,
+            integration_id: input.integrationId,
+            internal_resource_id: input.activityId,
+            profile_id: input.profileId,
+            provider: input.provider,
+            provider_updated_at: input.providerUpdatedAt ? new Date(input.providerUpdatedAt) : null,
+            resource_kind: "activity",
+            synced_at: new Date(),
+            updated_at: new Date(),
+          })
+          .onConflictDoNothing({
+            target: [
+              schema.integrationResourceLinks.integration_id,
+              schema.integrationResourceLinks.resource_kind,
+              schema.integrationResourceLinks.external_id,
+            ],
+          });
+      });
     },
 
     async findLinkedPlannedEventId({ profileId, externalWorkoutId }) {
@@ -613,30 +666,66 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         .where(eq(schema.integrationResourceLinks.id, id));
     },
 
-    async updateWahooIntegrationTokens({ accessToken, expiresAt, id, refreshToken }) {
-      await db
-        .insert(schema.integrationCredentials)
-        .values({
+    async updateWahooIntegrationTokens({
+      accessToken,
+      expectedCredentialGeneration,
+      expectedIntegrationGeneration,
+      expiresAt,
+      id,
+      refreshToken,
+    }) {
+      const [updated] = await db
+        .update(schema.integrationCredentials)
+        .set({
           access_token: encryptProviderToken(accessToken),
           expires_at: expiresAt ? new Date(expiresAt) : null,
-          integration_id: id,
+          generation: sql`${schema.integrationCredentials.generation} + 1`,
+          reconnect_required_at: null,
           refresh_token: refreshToken === null ? null : encryptProviderToken(refreshToken),
           updated_at: new Date(),
         })
-        .onConflictDoUpdate({
-          target: schema.integrationCredentials.integration_id,
-          set: {
-            access_token: encryptProviderToken(accessToken),
-            expires_at: expiresAt ? new Date(expiresAt) : null,
-            refresh_token: refreshToken === null ? null : encryptProviderToken(refreshToken),
-            updated_at: new Date(),
-          },
-        });
+        .from(schema.integrations)
+        .where(
+          and(
+            eq(schema.integrationCredentials.integration_id, id),
+            eq(schema.integrationCredentials.generation, expectedCredentialGeneration),
+            isNull(schema.integrationCredentials.reconnect_required_at),
+            eq(schema.integrations.id, id),
+            eq(schema.integrations.provider, "wahoo"),
+            eq(schema.integrations.lifecycle_status, "active"),
+            eq(schema.integrations.generation, expectedIntegrationGeneration),
+          ),
+        )
+        .returning({ generation: schema.integrationCredentials.generation });
+      return updated?.generation ?? null;
+    },
 
-      await db
-        .update(schema.integrations)
-        .set({ updated_at: new Date() })
-        .where(and(eq(schema.integrations.id, id), eq(schema.integrations.provider, "wahoo")));
+    async markWahooReconnectRequired({
+      expectedCredentialGeneration,
+      expectedIntegrationGeneration,
+      id,
+    }) {
+      const [updated] = await db
+        .update(schema.integrationCredentials)
+        .set({
+          generation: sql`${schema.integrationCredentials.generation} + 1`,
+          reconnect_required_at: new Date(),
+          updated_at: new Date(),
+        })
+        .from(schema.integrations)
+        .where(
+          and(
+            eq(schema.integrationCredentials.integration_id, id),
+            eq(schema.integrationCredentials.generation, expectedCredentialGeneration),
+            isNull(schema.integrationCredentials.reconnect_required_at),
+            eq(schema.integrations.id, id),
+            eq(schema.integrations.provider, "wahoo"),
+            eq(schema.integrations.lifecycle_status, "active"),
+            eq(schema.integrations.generation, expectedIntegrationGeneration),
+          ),
+        )
+        .returning({ id: schema.integrationCredentials.integration_id });
+      return Boolean(updated);
     },
   };
 }

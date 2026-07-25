@@ -1,6 +1,6 @@
 import type { DrizzleDbClient } from "@repo/db";
 import { schema } from "@repo/db";
-import { and, eq, gt, isNull, lt } from "drizzle-orm";
+import { and, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import type { DrizzleQueryExecutor } from "../../db";
 import {
   decryptNullableProviderToken,
@@ -9,7 +9,11 @@ import {
   hasProviderTokenEncryptionKey,
   isEncryptedProviderToken,
 } from "../../lib/provider-token-crypto";
-import type { IntegrationsRepositories } from "../../repositories";
+import {
+  IntegrationDisconnectPendingError,
+  IntegrationLifecycleChangedError,
+  type IntegrationsRepositories,
+} from "../../repositories";
 
 type OAuthIntegrationUpsertInput = Parameters<
   IntegrationsRepositories["integrations"]["upsertFromOAuthState"]
@@ -27,6 +31,7 @@ async function upsertFromOAuthState(
     refreshToken,
     expiresAt,
     scope,
+    expectedIntegration,
   }: OAuthIntegrationUpsertInput,
 ) {
   const [consumedState] = await db
@@ -43,23 +48,63 @@ async function upsertFromOAuthState(
 
   if (!consumedState) return null;
 
-  const [integration] = await db
-    .insert(schema.integrations)
-    .values({
-      profile_id: profileId,
-      provider,
-      external_id: externalId,
+  const [existingIntegration] = await db
+    .select({
+      generation: schema.integrations.generation,
+      lifecycleStatus: schema.integrations.lifecycle_status,
     })
-    .onConflictDoUpdate({
-      target: [schema.integrations.profile_id, schema.integrations.provider],
-      set: {
-        external_id: externalId,
-        updated_at: now,
-      },
-    })
-    .returning();
+    .from(schema.integrations)
+    .where(
+      and(
+        eq(schema.integrations.profile_id, profileId),
+        eq(schema.integrations.provider, provider),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  if (existingIntegration?.lifecycleStatus === "disconnect_pending") {
+    throw new IntegrationDisconnectPendingError();
+  }
+  const lifecycleChanged =
+    expectedIntegration.kind === "absent"
+      ? existingIntegration !== undefined
+      : !existingIntegration ||
+        existingIntegration.generation !== expectedIntegration.generation ||
+        existingIntegration.lifecycleStatus !== expectedIntegration.lifecycleStatus;
+  if (lifecycleChanged) throw new IntegrationLifecycleChangedError();
 
-  if (!integration) throw new Error("Failed to upsert integration");
+  const [integration] =
+    expectedIntegration.kind === "absent"
+      ? await db
+          .insert(schema.integrations)
+          .values({
+            profile_id: profileId,
+            provider,
+            external_id: externalId,
+          })
+          .returning()
+      : await db
+          .update(schema.integrations)
+          .set({
+            disconnect_requested_at: null,
+            disconnected_at: null,
+            external_id: externalId,
+            generation: sql`${schema.integrations.generation} + 1`,
+            lifecycle_status: "active",
+            remote_revoked_at: null,
+            updated_at: now,
+          })
+          .where(
+            and(
+              eq(schema.integrations.profile_id, profileId),
+              eq(schema.integrations.provider, provider),
+              eq(schema.integrations.generation, expectedIntegration.generation),
+              eq(schema.integrations.lifecycle_status, expectedIntegration.lifecycleStatus),
+            ),
+          )
+          .returning();
+
+  if (!integration) throw new IntegrationLifecycleChangedError();
 
   const [credentials] = await db
     .insert(schema.integrationCredentials)
@@ -76,6 +121,8 @@ async function upsertFromOAuthState(
         access_token: encryptProviderToken(accessToken),
         refresh_token: refreshToken == null ? null : encryptProviderToken(refreshToken),
         expires_at: expiresAt,
+        generation: sql`${schema.integrationCredentials.generation} + 1`,
+        reconnect_required_at: null,
         scope,
         updated_at: now,
       },
@@ -113,6 +160,7 @@ export function createIntegrationsRepositories(db: DrizzleDbClient): Integration
             and(
               eq(schema.integrations.profile_id, profileId),
               eq(schema.integrations.provider, provider),
+              eq(schema.integrations.lifecycle_status, "active"),
             ),
           )
           .limit(1);
@@ -132,6 +180,7 @@ export function createIntegrationsRepositories(db: DrizzleDbClient): Integration
             and(
               eq(schema.integrations.profile_id, profileId),
               eq(schema.integrations.provider, provider),
+              eq(schema.integrations.lifecycle_status, "active"),
             ),
           )
           .limit(1);
@@ -145,28 +194,33 @@ export function createIntegrationsRepositories(db: DrizzleDbClient): Integration
           (row.credentials.refresh_token !== null &&
             !isEncryptedProviderToken(row.credentials.refresh_token));
 
+        let rekeyed: { generation: number } | undefined;
         if (hasLegacyCredential && hasProviderTokenEncryptionKey()) {
-          await db
+          [rekeyed] = await db
             .update(schema.integrationCredentials)
             .set({
               access_token: encryptProviderToken(accessToken),
+              generation: sql`${schema.integrationCredentials.generation} + 1`,
               refresh_token: refreshToken === null ? null : encryptProviderToken(refreshToken),
               updated_at: new Date(),
             })
             .where(
               and(
                 eq(schema.integrationCredentials.integration_id, row.credentials.integration_id),
+                eq(schema.integrationCredentials.generation, row.credentials.generation),
                 eq(schema.integrationCredentials.access_token, row.credentials.access_token),
                 row.credentials.refresh_token === null
                   ? isNull(schema.integrationCredentials.refresh_token)
                   : eq(schema.integrationCredentials.refresh_token, row.credentials.refresh_token),
               ),
-            );
+            )
+            .returning({ generation: schema.integrationCredentials.generation });
         }
 
         return {
           ...row.credentials,
           access_token: accessToken,
+          generation: rekeyed?.generation ?? row.credentials.generation,
           refresh_token: refreshToken,
         };
       },
@@ -175,6 +229,7 @@ export function createIntegrationsRepositories(db: DrizzleDbClient): Integration
         const [row] = await db
           .select({
             expires_at: schema.integrationCredentials.expires_at,
+            reconnect_required_at: schema.integrationCredentials.reconnect_required_at,
             scope: schema.integrationCredentials.scope,
           })
           .from(schema.integrations)
@@ -186,6 +241,7 @@ export function createIntegrationsRepositories(db: DrizzleDbClient): Integration
             and(
               eq(schema.integrations.profile_id, profileId),
               eq(schema.integrations.provider, provider),
+              eq(schema.integrations.lifecycle_status, "active"),
             ),
           )
           .limit(1);
@@ -312,7 +368,17 @@ export function createIntegrationsRepositories(db: DrizzleDbClient): Integration
     },
 
     oauthStates: {
-      async create({ state, profileId, provider, mobileRedirectUri, createdAt, expiresAt }) {
+      async create({
+        state,
+        profileId,
+        provider,
+        mobileRedirectUri,
+        callbackUri,
+        requestedScope,
+        verifierHash,
+        createdAt,
+        expiresAt,
+      }) {
         await db.insert(schema.oauthStates).values({
           id: crypto.randomUUID(),
           created_at: createdAt,
@@ -320,6 +386,9 @@ export function createIntegrationsRepositories(db: DrizzleDbClient): Integration
           provider,
           state,
           mobile_redirect_uri: mobileRedirectUri,
+          callback_uri: callbackUri,
+          requested_scope: requestedScope,
+          verifier_hash: verifierHash,
           expires_at: expiresAt,
         });
       },

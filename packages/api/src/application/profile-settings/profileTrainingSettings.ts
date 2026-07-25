@@ -7,9 +7,9 @@ import { type ProfileTrainingSettingsRow, profileTrainingSettings } from "@repo/
 import { and, eq, lte } from "drizzle-orm";
 import type { z } from "zod";
 
-import type { getRequiredDb } from "../../db";
+import type { DrizzleQueryExecutor } from "../../db";
 
-type DbClient = ReturnType<typeof getRequiredDb>;
+type DbClient = DrizzleQueryExecutor;
 
 type ProfileTrainingSettingsSqlRow = Pick<
   ProfileTrainingSettingsRow,

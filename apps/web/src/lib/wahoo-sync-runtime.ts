@@ -4,6 +4,7 @@ import {
   createWahooImportActivityFileStorage,
   createWahooRepository,
   createWahooRouteStorage,
+  createWahooStagingCleanupReservation,
   enrichImportedActivityArtifact,
   getProcessProviderSyncLimiter,
   submitImportedActivityArtifact,
@@ -12,9 +13,12 @@ import {
   WahooSyncService,
   WahooWebhookJobService,
 } from "@repo/api/webhooks";
+import { schema } from "@repo/db";
 import { db } from "@repo/db/client";
 import { createClient } from "@supabase/supabase-js";
+import { and, eq } from "drizzle-orm";
 import { getProviderSyncRequestTimeoutMs } from "../../scripts/provider-sync-config.mjs";
+import { createBoundedFetch } from "./bounded-fetch";
 
 const serverSupabaseUrl =
   process.env.NEXT_PRIVATE_SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -40,7 +44,12 @@ type RouteStorageClient = {
 };
 
 function isDefiniteStorageNotFound(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "status" in error && error.status === 404;
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (("status" in error && (error.status === 404 || error.status === "404")) ||
+      ("statusCode" in error && (error.statusCode === 404 || error.statusCode === "404")))
+  );
 }
 
 export function createSupabaseWahooRouteStorage(storage: RouteStorageClient) {
@@ -66,7 +75,18 @@ export function createWahooSyncRuntime() {
   if (!serverSupabaseUrl || !serverSupabaseSecretKey) {
     throw new Error("Wahoo sync runtime requires server-side Supabase configuration");
   }
-  const supabase = createClient(serverSupabaseUrl, serverSupabaseSecretKey);
+  const createBoundedSupabaseClient = (operationSignal?: AbortSignal) =>
+    createClient(serverSupabaseUrl, serverSupabaseSecretKey, {
+      // Supabase forwards global.fetch to its Storage client. The request timer
+      // is capped at nine seconds, far below the 45-minute cleanup grace.
+      global: {
+        fetch: createBoundedFetch({
+          ...(operationSignal === undefined ? {} : { operationSignal }),
+          timeoutMs: config.requestTimeoutMs,
+        }),
+      },
+    });
+  const supabase = createBoundedSupabaseClient();
 
   const wahooRepository = createWahooRepository({ db });
   const providerSyncRepository = createProviderSyncRepository({ db });
@@ -75,10 +95,37 @@ export function createWahooSyncRuntime() {
       .map((host) => host.trim())
       .filter(Boolean),
     repository: wahooRepository,
-    submitActivity: (activity, parsedActivity) =>
-      submitImportedActivityArtifact(db, { activity, parsedActivity }),
-    enrichActivity: (activityId, activity, parsedActivity) =>
-      enrichImportedActivityArtifact(db, { activityId, activity, parsedActivity }),
+    generationGuard: async (tx, expected) => {
+      const [activeIntegration] = await tx
+        .select({ id: schema.integrations.id })
+        .from(schema.integrations)
+        .where(
+          and(
+            eq(schema.integrations.id, expected.integrationId),
+            eq(schema.integrations.profile_id, expected.profileId),
+            eq(schema.integrations.provider, "wahoo"),
+            eq(schema.integrations.lifecycle_status, "active"),
+            eq(schema.integrations.generation, expected.integrationGeneration),
+          ),
+        )
+        .limit(1)
+        .for("share");
+      if (!activeIntegration) throw new Error("integration_generation_inactive");
+    },
+    stagingCleanup: createWahooStagingCleanupReservation({ providerSyncRepository }),
+    submitActivity: (activity, parsedActivity, options) =>
+      submitImportedActivityArtifact(db, {
+        activity,
+        beforePersist: options.beforePersist,
+        parsedActivity,
+      }),
+    enrichActivity: (activityId, activity, parsedActivity, options) =>
+      enrichImportedActivityArtifact(db, {
+        activityId,
+        activity,
+        beforePersist: options.beforePersist,
+        parsedActivity,
+      }),
     activityFileStorage: createWahooImportActivityFileStorage({
       async readActivityFile(path) {
         const { data, error } = await supabase.storage.from("activity-files").download(path);
@@ -107,6 +154,13 @@ export function createWahooSyncRuntime() {
           throw error;
         }
       },
+      async removeOwnedActivityFile(path) {
+        const { error } = await supabase.storage.from("activity-files").remove([path]);
+        if (error) {
+          throw error;
+        }
+        return { cleanupPending: false, removed: true };
+      },
     }),
   });
 
@@ -126,6 +180,11 @@ export function createWahooSyncRuntime() {
       executionLimiter,
       providerSyncRepository,
       syncService,
+      async removeWahooStagingObject(path, signal) {
+        const cleanupSupabase = createBoundedSupabaseClient(signal);
+        const { error } = await cleanupSupabase.storage.from("activity-files").remove([path]);
+        if (error && !isDefiniteStorageNotFound(error)) throw error;
+      },
       wahooRepository,
     }),
     webhookJobs: new WahooWebhookJobService({

@@ -35,6 +35,7 @@ describe("activity artifact promotion", () => {
     });
     expect(result.path).toBe(activityArtifactContentPath("profile-1", result.sha256));
     expect(result.path).not.toBe(result.stagingPath);
+    expect(result.createdDestination).toBe(true);
     expect(fake.upload).toHaveBeenCalledWith(result.path, fake.source, {
       contentType: "application/octet-stream",
       upsert: false,
@@ -51,7 +52,7 @@ describe("activity artifact promotion", () => {
         bytes: matching.source,
         format: "fit",
       }),
-    ).resolves.toMatchObject({ byteSize: 3 });
+    ).resolves.toMatchObject({ byteSize: 3, createdDestination: false });
 
     const mismatched = storage({
       uploadError: { message: "already exists", statusCode: 409 },

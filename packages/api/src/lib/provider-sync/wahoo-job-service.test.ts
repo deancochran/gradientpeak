@@ -1,459 +1,385 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WahooSyncJobService } from "./wahoo-job-service";
+import { WAHOO_STAGING_CLEANUP_JOB } from "./wahoo-staging-cleanup";
 
-function createDeps() {
+function cleanupJob(overrides: Record<string, unknown> = {}) {
   return {
-    providerSyncRepository: {
-      claimDueJobs: vi.fn(),
-      enqueueJob: vi.fn(),
-      markJobFailed: vi.fn(),
-      markJobSucceeded: vi.fn(),
-      renewJobLease: vi.fn().mockResolvedValue(true),
-      touchSyncState: vi.fn(),
-      updateSyncStateAfterFailure: vi.fn(),
-      updateSyncStateAfterRun: vi.fn(),
+    attempt: 1,
+    id: "cleanup-1",
+    integrationGeneration: 2,
+    integrationId: "integration-1",
+    jobType: WAHOO_STAGING_CLEANUP_JOB,
+    maxAttempts: 3,
+    payload: {
+      path: "activities/profile-1/providers/wahoo/staging/integration-1/2/123/11111111-1111-4111-8111-111111111111.fit",
+      uploadOutcome: "committed",
     },
-    syncService: {
-      syncEvent: vi.fn(),
-      unsyncEvent: vi.fn(),
-    },
-    wahooRepository: {
-      findWahooIntegrationByProfileId: vi.fn(),
-      getPlannedEventForSync: vi.fn(),
-      getProfileSyncMetrics: vi.fn().mockResolvedValue({
-        bikePowerEfforts: [],
-        ftpMetrics: [],
-        maxHr: null,
-        thresholdHr: null,
-      }),
-      getRouteForSync: vi.fn(),
-    },
+    profileId: "profile-1",
+    provider: "wahoo",
+    runAt: new Date().toISOString(),
+    status: "running",
+    ...overrides,
   };
 }
 
 describe("WahooSyncJobService", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("schedules publish jobs when an event is outside the Wahoo display horizon", async () => {
-    const deps = createDeps();
-    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue({ id: "integration-1" });
-    deps.wahooRepository.getPlannedEventForSync.mockResolvedValue({
-      id: "event-1",
-      startsAt: "2026-04-15T09:00:00.000Z",
-      activityPlan: {
-        id: "plan-1",
-        name: "Bike",
-        routeId: null,
-        updatedAt: "2026-04-01T00:00:00.000Z",
-        structure: {
-          version: 3,
-          segments: [
-            {
-              id: "10000000-0000-4000-8000-000000000001",
-              role: "activity",
-              category: "bike",
-              name: "Bike",
-              intervals: [
-                {
-                  id: "10000000-0000-4000-8000-000000000002",
-                  name: "Set",
-                  repetitions: 1,
-                  steps: [
-                    {
-                      id: "10000000-0000-4000-8000-000000000003",
-                      name: "Work",
-                      duration: { type: "time", seconds: 600 },
-                      targets: [{ type: "watts", intensity: 200 }],
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
+  afterEach(() => vi.useRealTimers());
+  it("terminally drains legacy planned-workout jobs without provider or credential calls", async () => {
+    const repository = {
+      claimDueJobs: vi.fn().mockResolvedValue([
+        {
+          attempt: 1,
+          id: "job-1",
+          integrationGeneration: 1,
+          integrationId: "integration-1",
+          jobType: "wahoo.publish_event",
+          maxAttempts: 3,
+          payload: { eventId: "event-1", operation: "publish" },
+          profileId: "profile-1",
+          provider: "wahoo",
+          runAt: new Date().toISOString(),
+          status: "running",
         },
-      },
-    });
-    deps.providerSyncRepository.enqueueJob.mockResolvedValue({ id: "job-1", status: "queued" });
-
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-01T12:00:00.000Z"));
-
-    const service = new WahooSyncJobService(deps as never);
-
-    await expect(
-      service.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" }),
-    ).resolves.toEqual({
-      jobId: "job-1",
-      queued: true,
-    });
-
-    expect(deps.providerSyncRepository.touchSyncState).toHaveBeenCalledWith(
-      expect.objectContaining({
-        integrationId: "integration-1",
-        nextSyncAt: "2026-04-09T09:00:00.000Z",
-        provider: "wahoo",
-        publishHorizonDays: 6,
-        resource: "planned_workouts",
-      }),
-    );
-    expect(deps.providerSyncRepository.enqueueJob).toHaveBeenCalledWith(
-      expect.objectContaining({
-        dedupeKey: "wahoo:publish:event:event-1",
-        integrationId: "integration-1",
-        internalResourceId: "event-1",
-        jobType: "wahoo.publish_event",
-        operation: "publish",
-        payloadHash: expect.any(String),
-        runAt: "2026-04-09T09:00:00.000Z",
-        syncLaneKey: "wahoo:integration-1:planned_workout:event-1",
-      }),
-    );
-    const firstEnqueue = deps.providerSyncRepository.enqueueJob.mock.calls[0]?.[0];
-    expect(firstEnqueue?.payload).toMatchObject({
-      projectionHash: expect.any(String),
-      projectionSnapshot: {
-        plan: {
-          header: expect.not.objectContaining({
-            ftp: expect.anything(),
-            max_hr: expect.anything(),
-          }),
-          intervals: expect.any(Array),
-        },
-      },
+      ]),
+      getQueueTelemetry: vi
+        .fn()
+        .mockResolvedValue({ deadLetterDepth: 0, oldestDueAt: null, queueDepth: 0 }),
+      isIntegrationGenerationActive: vi.fn().mockResolvedValue(true),
+      markJobSucceeded: vi.fn().mockResolvedValue(true),
+      renewJobLease: vi.fn().mockResolvedValue(true),
+    };
+    const syncService = { syncEvent: vi.fn(), unsyncEvent: vi.fn() };
+    const wahooRepository = { findWahooIntegrationByProfileId: vi.fn() };
+    const service = new WahooSyncJobService({
+      providerSyncRepository: repository as never,
+      syncService: syncService as never,
+      wahooRepository: wahooRepository as never,
     });
 
-    deps.wahooRepository.getProfileSyncMetrics.mockResolvedValue({
-      bikePowerEfforts: [],
-      ftpMetrics: [],
-      maxHr: 190,
-      thresholdHr: null,
-    });
-    deps.providerSyncRepository.enqueueJob.mockResolvedValue({ id: "job-2", status: "queued" });
-    await service.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" });
-    const secondEnqueue = deps.providerSyncRepository.enqueueJob.mock.calls[1]?.[0];
-    expect(secondEnqueue?.payload.projectionSnapshot.plan.header.max_hr).toBeUndefined();
-    expect(secondEnqueue?.payloadHash).toBe(firstEnqueue?.payloadHash);
-    expect(secondEnqueue?.payload.projectionHash).toBe(firstEnqueue?.payload.projectionHash);
-
-    const planned = await deps.wahooRepository.getPlannedEventForSync();
-    deps.wahooRepository.getPlannedEventForSync.mockResolvedValue({
-      ...planned,
-      activityPlan: { ...planned.activityPlan, routeId: "missing-route" },
-    });
-    deps.wahooRepository.getRouteForSync.mockResolvedValue(null);
-    await expect(
-      service.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" }),
-    ).rejects.toThrow(/linked route is missing/);
-    expect(deps.providerSyncRepository.enqueueJob).toHaveBeenCalledTimes(2);
-
-    vi.useRealTimers();
-  });
-
-  it("rejects unsupported compiled semantics before enqueue", async () => {
-    const deps = createDeps();
-    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue({ id: "integration-1" });
-    deps.wahooRepository.getPlannedEventForSync.mockResolvedValue({
-      id: "event-1",
-      startsAt: "2026-04-15T09:00:00.000Z",
-      activityPlan: {
-        id: "plan-1",
-        name: "Swim",
-        routeId: null,
-        updatedAt: "2026-04-01T00:00:00.000Z",
-        structure: {
-          version: 3,
-          segments: [
-            {
-              id: "20000000-0000-4000-8000-000000000001",
-              role: "activity",
-              category: "swim",
-              name: "Swim",
-              intervals: [
-                {
-                  id: "20000000-0000-4000-8000-000000000002",
-                  name: "Set",
-                  repetitions: 1,
-                  steps: [
-                    {
-                      id: "20000000-0000-4000-8000-000000000003",
-                      name: "Work",
-                      duration: { type: "time", seconds: 600 },
-                      targets: [{ type: "RPE", intensity: 5 }],
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
-        },
-      },
-    });
-
-    const service = new WahooSyncJobService(deps as never);
-    await expect(
-      service.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" }),
-    ).rejects.toThrow(/single-sport run or bike/);
-    expect(deps.providerSyncRepository.touchSyncState).not.toHaveBeenCalled();
-    expect(deps.providerSyncRepository.enqueueJob).not.toHaveBeenCalled();
-  });
-
-  it("processes due publish jobs through the existing Wahoo sync service", async () => {
-    const deps = createDeps();
-    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
-      {
-        attempt: 1,
-        dedupeKey: "wahoo:publish:event:event-1",
-        id: "job-1",
-        integrationId: "integration-1",
-        internalResourceId: "event-1",
-        jobType: "wahoo.publish_event",
-        maxAttempts: 8,
-        payload: { eventId: "event-1", operation: "publish", projectionHash: "projection-1" },
-        profileId: "profile-1",
-        provider: "wahoo",
-        resourceKind: "event",
-        runAt: "2026-04-01T12:00:00.000Z",
-        status: "running",
-      },
-    ]);
-    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue({ id: "integration-1" });
-    deps.syncService.syncEvent.mockResolvedValue({ success: true });
-
-    const service = new WahooSyncJobService(deps as never);
-
-    await expect(service.processDueJobs({ limit: 5, workerId: "worker-1" })).resolves.toEqual({
+    await expect(service.processDueJobs({ workerId: "test" })).resolves.toEqual({
       completed: 1,
       failed: 0,
       processed: 1,
     });
-
-    expect(deps.syncService.syncEvent).toHaveBeenCalledWith("event-1", "profile-1", {
-      expectedProjectionHash: "projection-1",
-    });
-    expect(deps.providerSyncRepository.claimDueJobs).toHaveBeenCalledWith(
-      expect.objectContaining({
-        limit: 4,
-        workerId: expect.stringMatching(/^worker-1:/),
-      }),
-    );
-    expect(deps.providerSyncRepository.markJobSucceeded).toHaveBeenCalledWith(
+    expect(repository.markJobSucceeded).toHaveBeenCalledWith(
       "job-1",
-      expect.stringMatching(/^worker-1:/),
+      expect.stringMatching(/^test:/),
+      1,
     );
-    expect(deps.providerSyncRepository.updateSyncStateAfterRun).toHaveBeenCalledWith(
-      expect.objectContaining({
-        integrationId: "integration-1",
-        provider: "wahoo",
-        resource: "planned_workouts",
-        succeeded: true,
-      }),
-    );
+    expect(syncService.syncEvent).not.toHaveBeenCalled();
+    expect(wahooRepository.findWahooIntegrationByProfileId).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ["missing_metric", "A positive FTP is required before this workout can sync."],
-    ["unsupported_target", "RPE targets are not supported by Wahoo."],
-    ["invalid_plan", "Linked route no longer exists."],
-  ])("terminally skips a deterministic worker-time %s result", async (failureCode, error) => {
-    const deps = createDeps();
-    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
-      {
-        attempt: 1,
-        dedupeKey: "wahoo:publish:event:event-1",
-        id: "job-1",
-        integrationId: "integration-1",
-        internalResourceId: "event-1",
-        jobType: "wahoo.publish_event",
-        maxAttempts: 8,
-        payload: { eventId: "event-1", operation: "publish" },
-        profileId: "profile-1",
-        provider: "wahoo",
-        resourceKind: "event",
-        runAt: "2026-04-01T12:00:00.000Z",
-        status: "running",
-      },
-    ]);
-    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue({ id: "integration-1" });
-    deps.syncService.syncEvent.mockResolvedValue({
-      success: false,
-      action: "no_change",
-      error,
-      failureCode,
-      failureCategory: "eligibility",
-      retryable: false,
+  it("converges a stale ordinary job without provider work or a generation finalizer", async () => {
+    const repository = {
+      claimDueJobs: vi.fn().mockResolvedValue([
+        {
+          attempt: 1,
+          id: "job-1",
+          integrationGeneration: 1,
+          integrationId: "integration-1",
+          jobType: "wahoo.publish_event",
+          maxAttempts: 3,
+          payload: { eventId: "event-1", operation: "publish" },
+          profileId: "profile-1",
+          provider: "wahoo",
+          runAt: new Date().toISOString(),
+          status: "running",
+        },
+      ]),
+      getQueueTelemetry: vi
+        .fn()
+        .mockResolvedValue({ deadLetterDepth: 0, oldestDueAt: null, queueDepth: 0 }),
+      isIntegrationGenerationActive: vi.fn().mockResolvedValue(false),
+      markJobSucceeded: vi.fn().mockResolvedValue(false),
+      renewJobLease: vi.fn().mockResolvedValue(true),
+    };
+    const syncService = { syncEvent: vi.fn(), unsyncEvent: vi.fn() };
+    const wahooRepository = { findWahooIntegrationByProfileId: vi.fn() };
+    const service = new WahooSyncJobService({
+      providerSyncRepository: repository as never,
+      syncService: syncService as never,
+      wahooRepository: wahooRepository as never,
     });
 
-    const service = new WahooSyncJobService(deps as never);
-
-    await expect(service.processDueJobs({ limit: 1, workerId: "worker-1" })).resolves.toEqual({
+    await expect(service.processDueJobs({ workerId: "test" })).resolves.toEqual({
       completed: 1,
       failed: 0,
       processed: 1,
     });
-    expect(deps.providerSyncRepository.markJobSucceeded).toHaveBeenCalledWith(
+    expect(repository.markJobSucceeded).toHaveBeenCalledWith(
       "job-1",
-      expect.stringMatching(/^worker-1:/),
+      expect.stringMatching(/^test:/),
     );
-    expect(deps.providerSyncRepository.markJobFailed).not.toHaveBeenCalled();
+    expect(syncService.syncEvent).not.toHaveBeenCalled();
+    expect(wahooRepository.findWahooIntegrationByProfileId).not.toHaveBeenCalled();
   });
 
-  it("keeps corrupt queue payloads in the dead-letter path", async () => {
-    const deps = createDeps();
-    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
-      {
-        attempt: 1,
-        id: "job-corrupt",
-        integrationId: "integration-1",
-        jobType: "wahoo.publish_event",
-        maxAttempts: 8,
-        payload: { corrupted: true },
-        profileId: "profile-1",
-        provider: "wahoo",
-        runAt: "2026-04-01T12:00:00.000Z",
-        status: "running",
-      },
-    ]);
-    const service = new WahooSyncJobService(deps as never);
+  it("cleans an owned staging object after disconnect without active credentials", async () => {
+    const repository = {
+      claimDueJobs: vi.fn().mockResolvedValue([cleanupJob()]),
+      getQueueTelemetry: vi
+        .fn()
+        .mockResolvedValue({ deadLetterDepth: 0, oldestDueAt: null, queueDepth: 0 }),
+      isIntegrationGenerationActive: vi.fn().mockResolvedValue(false),
+      markJobSucceeded: vi.fn().mockResolvedValue(true),
+      renewJobLease: vi.fn().mockResolvedValue(true),
+    };
+    const removeWahooStagingObject = vi.fn().mockResolvedValue(undefined);
+    const service = new WahooSyncJobService({
+      providerSyncRepository: repository as never,
+      removeWahooStagingObject,
+      syncService: {} as never,
+      wahooRepository: {} as never,
+    });
 
-    await expect(service.processDueJobs({ limit: 1, workerId: "worker-1" })).resolves.toEqual({
+    await expect(service.processDueJobs({ workerId: "test" })).resolves.toEqual({
+      completed: 1,
+      failed: 0,
+      processed: 1,
+    });
+    expect(removeWahooStagingObject).toHaveBeenCalledWith(
+      "activities/profile-1/providers/wahoo/staging/integration-1/2/123/11111111-1111-4111-8111-111111111111.fit",
+      expect.any(AbortSignal),
+    );
+    expect(repository.isIntegrationGenerationActive).not.toHaveBeenCalled();
+    expect(repository.markJobSucceeded).toHaveBeenCalledWith(
+      "cleanup-1",
+      expect.stringMatching(/^test:/),
+    );
+  });
+
+  it("completes a conclusively not-started cleanup after idempotent removal", async () => {
+    const repository = {
+      claimDueJobs: vi.fn().mockResolvedValue([
+        cleanupJob({
+          payload: {
+            path: "activities/profile-1/providers/wahoo/staging/integration-1/2/123/11111111-1111-4111-8111-111111111111.fit",
+            uploadOutcome: "not_started",
+          },
+        }),
+      ]),
+      getQueueTelemetry: vi
+        .fn()
+        .mockResolvedValue({ deadLetterDepth: 0, oldestDueAt: null, queueDepth: 0 }),
+      markJobSucceeded: vi.fn().mockResolvedValue(true),
+      renewJobLease: vi.fn().mockResolvedValue(true),
+    };
+    const service = new WahooSyncJobService({
+      providerSyncRepository: repository as never,
+      removeWahooStagingObject: vi.fn().mockResolvedValue(undefined),
+      syncService: {} as never,
+      wahooRepository: {} as never,
+    });
+
+    await expect(service.processDueJobs({ workerId: "test" })).resolves.toEqual({
+      completed: 1,
+      failed: 0,
+      processed: 1,
+    });
+    expect(repository.markJobSucceeded).toHaveBeenCalled();
+  });
+
+  it("never completes an uncertain cleanup even when removal reports success", async () => {
+    const repository = {
+      claimDueJobs: vi.fn().mockResolvedValue([
+        cleanupJob({
+          payload: {
+            path: "activities/profile-1/providers/wahoo/staging/integration-1/2/123/11111111-1111-4111-8111-111111111111.fit",
+            uploadOutcome: "uncertain",
+          },
+        }),
+      ]),
+      getQueueTelemetry: vi
+        .fn()
+        .mockResolvedValue({ deadLetterDepth: 0, oldestDueAt: null, queueDepth: 0 }),
+      markJobFailed: vi.fn().mockResolvedValue(true),
+      markJobSucceeded: vi.fn(),
+      renewJobLease: vi.fn().mockResolvedValue(true),
+    };
+    const service = new WahooSyncJobService({
+      providerSyncRepository: repository as never,
+      removeWahooStagingObject: vi.fn().mockResolvedValue(undefined),
+      syncService: {} as never,
+      wahooRepository: {} as never,
+    });
+
+    await expect(service.processDueJobs({ workerId: "test" })).resolves.toEqual({
       completed: 0,
       failed: 1,
       processed: 1,
     });
-    expect(deps.providerSyncRepository.markJobFailed).toHaveBeenCalledWith({
-      id: "job-corrupt",
-      lastError: "Invalid Wahoo job payload",
-      status: "dead_lettered",
-      workerId: expect.stringMatching(/^worker-1:/),
-    });
+    expect(repository.markJobSucceeded).not.toHaveBeenCalled();
+    expect(repository.markJobFailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lastError: "wahoo_staging_cleanup_uncertain",
+        status: "failed",
+      }),
+    );
+    expect(repository.markJobFailed.mock.calls[0]?.[0].lastError).not.toContain("activities/");
   });
 
-  it("keeps a first-attempt transient provider failure retryable with backoff", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-01T12:00:00.000Z"));
-    const deps = createDeps();
-    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
-      {
-        attempt: 1,
-        dedupeKey: "wahoo:publish:event:event-1",
-        id: "job-1",
-        integrationId: "integration-1",
-        internalResourceId: "event-1",
-        jobType: "wahoo.publish_event",
-        maxAttempts: 8,
-        payload: { eventId: "event-1", operation: "publish" },
-        profileId: "profile-1",
-        provider: "wahoo",
-        resourceKind: "event",
-        runAt: "2026-04-01T12:00:00.000Z",
-        status: "running",
-      },
-    ]);
-    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue({ id: "integration-1" });
-    deps.syncService.syncEvent.mockResolvedValue({
-      success: false,
-      action: "no_change",
-      error: "Wahoo is temporarily unavailable.",
-      failureCode: "provider_failure",
-      failureCategory: "provider",
-      retryable: true,
+  it("dead-letters an uncertain cleanup after its bounded attempts", async () => {
+    const repository = {
+      claimDueJobs: vi.fn().mockResolvedValue([
+        cleanupJob({
+          attempt: 3,
+          payload: {
+            path: "activities/profile-1/providers/wahoo/staging/integration-1/2/123/11111111-1111-4111-8111-111111111111.fit",
+            uploadOutcome: "uncertain",
+          },
+        }),
+      ]),
+      getQueueTelemetry: vi
+        .fn()
+        .mockResolvedValue({ deadLetterDepth: 0, oldestDueAt: null, queueDepth: 0 }),
+      markJobFailed: vi.fn().mockResolvedValue(true),
+      markJobSucceeded: vi.fn(),
+      renewJobLease: vi.fn().mockResolvedValue(true),
+    };
+    const service = new WahooSyncJobService({
+      providerSyncRepository: repository as never,
+      removeWahooStagingObject: vi.fn().mockResolvedValue(undefined),
+      syncService: {} as never,
+      wahooRepository: {} as never,
     });
 
-    const service = new WahooSyncJobService(deps as never);
-
-    await expect(service.processDueJobs({ limit: 1, workerId: "worker-1" })).resolves.toEqual({
+    await expect(service.processDueJobs({ workerId: "test" })).resolves.toEqual({
       completed: 0,
       failed: 1,
       processed: 1,
     });
-    expect(deps.providerSyncRepository.markJobFailed).toHaveBeenCalledWith({
-      id: "job-1",
-      lastError: "Wahoo is temporarily unavailable.",
-      nextRunAt: "2026-04-01T12:05:00.000Z",
-      status: "failed",
-      workerId: expect.stringMatching(/^worker-1:/),
-    });
+    expect(repository.markJobSucceeded).not.toHaveBeenCalled();
+    expect(repository.markJobFailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lastError: "wahoo_staging_cleanup_uncertain",
+        status: "dead_lettered",
+      }),
+    );
   });
 
-  it("completes due jobs without syncing when the integration was disconnected", async () => {
-    const deps = createDeps();
-    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
-      {
-        attempt: 1,
-        dedupeKey: "wahoo:publish:event:event-1",
-        id: "job-1",
-        integrationId: "integration-1",
-        internalResourceId: "event-1",
-        jobType: "wahoo.publish_event",
-        maxAttempts: 8,
-        payload: { eventId: "event-1", operation: "publish" },
-        profileId: "profile-1",
-        provider: "wahoo",
-        resourceKind: "event",
-        runAt: "2026-04-01T12:00:00.000Z",
-        status: "running",
-      },
-    ]);
-    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue(null);
-
-    const service = new WahooSyncJobService(deps as never);
-
-    await expect(service.processDueJobs({ limit: 5, workerId: "worker-1" })).resolves.toEqual({
-      completed: 1,
-      failed: 0,
-      processed: 1,
+  it("dead-letters an invalid cleanup payload without passing its path to storage", async () => {
+    const repository = {
+      claimDueJobs: vi
+        .fn()
+        .mockResolvedValue([cleanupJob({ payload: { path: "activities/other/file.fit" } })]),
+      getQueueTelemetry: vi
+        .fn()
+        .mockResolvedValue({ deadLetterDepth: 0, oldestDueAt: null, queueDepth: 0 }),
+      markJobFailed: vi.fn().mockResolvedValue(true),
+      renewJobLease: vi.fn().mockResolvedValue(true),
+    };
+    const removeWahooStagingObject = vi.fn();
+    const service = new WahooSyncJobService({
+      providerSyncRepository: repository as never,
+      removeWahooStagingObject,
+      syncService: {} as never,
+      wahooRepository: {} as never,
     });
 
-    expect(deps.syncService.syncEvent).not.toHaveBeenCalled();
-    expect(deps.providerSyncRepository.markJobSucceeded).toHaveBeenCalledWith(
-      "job-1",
-      expect.stringMatching(/^worker-1:/),
+    await expect(service.processDueJobs({ workerId: "test" })).resolves.toEqual({
+      completed: 0,
+      failed: 1,
+      processed: 1,
+    });
+    expect(removeWahooStagingObject).not.toHaveBeenCalled();
+    expect(repository.markJobFailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lastError: "invalid_wahoo_staging_cleanup_payload",
+        status: "dead_lettered",
+      }),
     );
-    expect(deps.providerSyncRepository.updateSyncStateAfterRun).not.toHaveBeenCalled();
   });
 
-  it("treats unsync jobs without an existing provider record as no-ops", async () => {
-    const deps = createDeps();
-    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
-      {
-        attempt: 1,
-        dedupeKey: "wahoo:unsync:event:event-1",
-        id: "job-1",
-        integrationId: "integration-1",
-        internalResourceId: "event-1",
-        jobType: "wahoo.unsync_event",
-        maxAttempts: 8,
-        payload: { eventId: "event-1", operation: "unsync" },
-        profileId: "profile-1",
-        provider: "wahoo",
-        resourceKind: "event",
-        runAt: "2026-04-01T12:00:00.000Z",
-        status: "running",
-      },
-    ]);
-    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue({ id: "integration-1" });
-    deps.syncService.unsyncEvent.mockResolvedValue({
-      success: false,
-      action: "no_change",
-      error: "Sync record not found",
+  it("does not claim cleanup jobs in a drain without a storage remover", async () => {
+    const repository = {
+      claimDueJobs: vi.fn().mockResolvedValue([]),
+      getQueueTelemetry: vi
+        .fn()
+        .mockResolvedValue({ deadLetterDepth: 0, oldestDueAt: null, queueDepth: 0 }),
+    };
+    const service = new WahooSyncJobService({
+      providerSyncRepository: repository as never,
+      syncService: {} as never,
+      wahooRepository: {} as never,
     });
 
-    const service = new WahooSyncJobService(deps as never);
+    await service.processDueJobs({ workerId: "test" });
+    expect(repository.claimDueJobs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobTypes: expect.not.arrayContaining([WAHOO_STAGING_CLEANUP_JOB]),
+      }),
+    );
+  });
 
-    await expect(service.processDueJobs({ limit: 5, workerId: "worker-1" })).resolves.toEqual({
-      completed: 1,
-      failed: 0,
+  it("requeues a failed staging cleanup with bounded backoff and no path in the durable error", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-24T12:00:00.000Z"));
+    const repository = {
+      claimDueJobs: vi.fn().mockResolvedValue([cleanupJob()]),
+      getQueueTelemetry: vi
+        .fn()
+        .mockResolvedValue({ deadLetterDepth: 0, oldestDueAt: null, queueDepth: 0 }),
+      markJobFailed: vi.fn().mockResolvedValue(true),
+      renewJobLease: vi.fn().mockResolvedValue(true),
+    };
+    const removeWahooStagingObject = vi
+      .fn()
+      .mockRejectedValue(new DOMException("request timed out", "AbortError"));
+    const service = new WahooSyncJobService({
+      providerSyncRepository: repository as never,
+      removeWahooStagingObject,
+      syncService: {} as never,
+      wahooRepository: {} as never,
+    });
+
+    await expect(service.processDueJobs({ workerId: "test" })).resolves.toEqual({
+      completed: 0,
+      failed: 1,
       processed: 1,
     });
-
-    expect(deps.syncService.unsyncEvent).toHaveBeenCalledWith("event-1", "profile-1");
-    expect(deps.providerSyncRepository.markJobSucceeded).toHaveBeenCalledWith(
-      "job-1",
-      expect.stringMatching(/^worker-1:/),
+    expect(repository.markJobFailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lastError: "wahoo_staging_cleanup_failed",
+        nextRunAt: "2026-07-24T12:05:00.000Z",
+        status: "failed",
+      }),
     );
-    expect(deps.providerSyncRepository.markJobFailed).not.toHaveBeenCalled();
-    expect(deps.providerSyncRepository.updateSyncStateAfterRun).not.toHaveBeenCalled();
+    expect(repository.markJobFailed.mock.calls[0]?.[0].lastError).not.toContain("activities/");
+    expect(removeWahooStagingObject).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("dead-letters the final failed staging cleanup attempt without its path", async () => {
+    const repository = {
+      claimDueJobs: vi.fn().mockResolvedValue([cleanupJob({ attempt: 3 })]),
+      getQueueTelemetry: vi
+        .fn()
+        .mockResolvedValue({ deadLetterDepth: 0, oldestDueAt: null, queueDepth: 0 }),
+      markJobFailed: vi.fn().mockResolvedValue(true),
+      renewJobLease: vi.fn().mockResolvedValue(true),
+    };
+    const service = new WahooSyncJobService({
+      providerSyncRepository: repository as never,
+      removeWahooStagingObject: vi.fn().mockRejectedValue(new Error("storage unavailable")),
+      syncService: {} as never,
+      wahooRepository: {} as never,
+    });
+
+    await expect(service.processDueJobs({ workerId: "test" })).resolves.toEqual({
+      completed: 0,
+      failed: 1,
+      processed: 1,
+    });
+    expect(repository.markJobFailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lastError: "wahoo_staging_cleanup_failed",
+        status: "dead_lettered",
+      }),
+    );
+    expect(repository.markJobFailed.mock.calls[0]?.[0]).not.toHaveProperty("nextRunAt");
+    expect(repository.markJobFailed.mock.calls[0]?.[0].lastError).not.toContain("activities/");
   });
 });

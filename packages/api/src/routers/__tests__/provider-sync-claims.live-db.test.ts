@@ -13,6 +13,7 @@ import {
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { handleOAuthCallback } from "../../application/integrations/oauthCallbackUseCase";
+import { getProviderSyncOverview } from "../../application/integrations/syncOverviewUseCase";
 import {
   createIntegrationsRepositories,
   createProviderSyncRepository,
@@ -23,6 +24,7 @@ import {
   deriveOAuthCodeVerifier,
   issueLocalOAuthAuthorizationCode,
 } from "../../lib/integrations/oauth-pkce";
+import { createOAuthStateBinding } from "../../lib/integrations/oauth-state-binding";
 
 const userIds: string[] = [];
 
@@ -408,6 +410,7 @@ describe("provider sync PostgreSQL claims", () => {
     const repository = createIntegrationsRepositories(db).integrations;
     const input = {
       accessToken: "access-token",
+      expectedIntegration: { kind: "absent" as const },
       expiresAt: new Date(Date.now() + 3_600_000),
       externalId: "wahoo-account",
       now: new Date(),
@@ -459,6 +462,7 @@ describe("provider sync PostgreSQL claims", () => {
     await expect(
       repository.upsertFromOAuthState({
         accessToken: "access-token",
+        expectedIntegration: { kind: "absent" },
         expiresAt: null,
         externalId: "wahoo-account",
         now: new Date(),
@@ -496,6 +500,7 @@ describe("provider sync PostgreSQL claims", () => {
       db.transaction(async (tx) => {
         const integration = await integrationRepository.upsertFromOAuthStateInTransaction(tx, {
           accessToken: "access-token",
+          expectedIntegration: { kind: "absent" },
           expiresAt: new Date(Date.now() + 3_600_000),
           externalId: "wahoo-account",
           now: new Date(),
@@ -529,13 +534,89 @@ describe("provider sync PostgreSQL claims", () => {
     ).toHaveLength(0);
   });
 
+  it("persists bounded sync failure categories and never exposes legacy provider diagnostics", async () => {
+    const owner = await seedOwner();
+    const repository = createProviderSyncRepository({ db });
+    const workerId = `worker:${randomUUID()}`;
+    const jobId = await seedRunningJob({
+      integrationId: owner.integrationId,
+      lockExpiresAt: new Date(Date.now() + 60_000),
+      profileId: owner.profileId,
+      workerId,
+    });
+    const canary = "wahoo-id-9182 token=canary https://provider.test/private/workout/secret-name";
+
+    await expect(
+      repository.markJobFailed({
+        id: jobId,
+        lastError: canary,
+        status: "failed",
+        workerId,
+      }),
+    ).resolves.toBe(true);
+    await repository.updateSyncStateAfterFailure({
+      integrationId: owner.integrationId,
+      lastError: canary,
+      provider: "wahoo",
+      resource: "historical_activities",
+    });
+
+    expect(
+      await db
+        .select({ lastError: providerSyncJobs.last_error })
+        .from(providerSyncJobs)
+        .where(eq(providerSyncJobs.id, jobId)),
+    ).toEqual([{ lastError: "provider_sync_failed" }]);
+    expect(
+      await db
+        .select({ lastError: providerSyncState.last_error })
+        .from(providerSyncState)
+        .where(eq(providerSyncState.integration_id, owner.integrationId)),
+    ).toEqual([{ lastError: "provider_sync_failed" }]);
+
+    // Simulate a row written before bounded failure categories existed.
+    await db
+      .update(providerSyncState)
+      .set({ last_error: canary })
+      .where(eq(providerSyncState.integration_id, owner.integrationId));
+    const overview = await getProviderSyncOverview({ db, profileId: owner.profileId });
+    const publicJson = JSON.stringify(overview);
+    expect(publicJson).toContain("Provider sync failed");
+    expect(publicJson).not.toContain(canary);
+    expect(publicJson).not.toContain("token=canary");
+    expect(publicJson).not.toContain("provider.test");
+    expect(publicJson).not.toContain("secret-name");
+  });
+
+  it("derives the reconnect overview and primary action from the durable credential marker", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("PROVIDER_OAUTH_TEST_ADAPTER", "1");
+    const owner = await seedOwner();
+    await db.insert(integrationCredentials).values({
+      access_token: "encrypted-placeholder",
+      integration_id: owner.integrationId,
+      reconnect_required_at: new Date(),
+      refresh_token: "encrypted-placeholder",
+    });
+    const overview = await getProviderSyncOverview({ db, profileId: owner.profileId });
+    expect(overview.find((provider) => provider.provider === "wahoo")).toMatchObject({
+      primaryAction: "reconnect",
+      providerHealth: { status: "needs_reconnect" },
+      summary: { health: "needs_reconnect" },
+    });
+  });
+
   it("returns callback failure without committing credentials or a queued history job", async () => {
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("PROVIDER_OAUTH_TEST_ADAPTER", "1");
     const owner = await seedOwner();
     await db.delete(integrations).where(eq(integrations.id, owner.integrationId));
     const state = randomUUID();
+    const config = getProviderOAuthConfig("wahoo");
+    if (!config) throw new Error("Expected local OAuth adapter configuration");
+    const binding = createOAuthStateBinding({ config, provider: "wahoo", state });
     await db.insert(oauthStates).values({
+      callback_uri: binding.callbackUri,
       created_at: new Date(),
       expires_at: new Date(Date.now() + 60_000),
       id: randomUUID(),
@@ -543,9 +624,9 @@ describe("provider sync PostgreSQL claims", () => {
       profile_id: owner.profileId,
       provider: "wahoo",
       state,
+      requested_scope: binding.requestedScope,
+      verifier_hash: binding.verifierHash,
     });
-    const config = getProviderOAuthConfig("wahoo");
-    if (!config) throw new Error("Expected local OAuth adapter configuration");
     const code = issueLocalOAuthAuthorizationCode({
       challenge: createOAuthCodeChallenge(
         deriveOAuthCodeVerifier({ clientSecret: config.clientSecret, provider: "wahoo", state }),
@@ -594,6 +675,56 @@ describe("provider sync PostgreSQL claims", () => {
     ).toHaveLength(0);
     // The provider code was redeemed, so terminal state cleanup remains intentionally one-time.
     expect(await db.select().from(oauthStates).where(eq(oauthStates.state, state))).toHaveLength(0);
+  });
+
+  it("rejects malformed provider identity before PostgreSQL credential persistence or enqueue", async () => {
+    vi.stubEnv("WAHOO_CLIENT_ID", "live-db-wahoo-client");
+    vi.stubEnv("WAHOO_CLIENT_SECRET", "live-db-wahoo-secret");
+    const owner = await seedOwner();
+    await db.delete(integrations).where(eq(integrations.id, owner.integrationId));
+    const state = randomUUID();
+    const config = getProviderOAuthConfig("wahoo");
+    if (!config) throw new Error("Expected Wahoo OAuth configuration");
+    const binding = createOAuthStateBinding({ config, provider: "wahoo", state });
+    await db.insert(oauthStates).values({
+      callback_uri: binding.callbackUri,
+      created_at: new Date(),
+      expires_at: new Date(Date.now() + 60_000),
+      id: randomUUID(),
+      mobile_redirect_uri: "http://localhost:3000/integrations",
+      profile_id: owner.profileId,
+      provider: "wahoo",
+      requested_scope: binding.requestedScope,
+      state,
+      verifier_hash: binding.verifierHash,
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ access_token: "access-token", athlete: { id: " " } }), {
+        status: 200,
+      }),
+    );
+
+    const result = await handleOAuthCallback({
+      code: "provider-code",
+      error: null,
+      fallbackRedirect: "http://localhost:3000/integrations",
+      provider: "wahoo",
+      providerSyncRepository: createProviderSyncRepository({ db }),
+      repositories: createIntegrationsRepositories(db),
+      runInTransaction: (operation) => db.transaction(operation),
+      state,
+    });
+
+    expect(new URL(result.redirectUrl).searchParams.get("error")).toBe("provider_identity_failed");
+    expect(
+      await db.select().from(integrations).where(eq(integrations.profile_id, owner.profileId)),
+    ).toHaveLength(0);
+    expect(
+      await db
+        .select()
+        .from(providerSyncJobs)
+        .where(eq(providerSyncJobs.profile_id, owner.profileId)),
+    ).toHaveLength(0);
   });
 
   it("coalesces concurrent enqueues with the same dedupe key into one active job", async () => {
@@ -1037,6 +1168,7 @@ describe("provider sync PostgreSQL claims", () => {
       event_type: "workout_summary",
       id: receiptId,
       integration_id: owner.integrationId,
+      integration_generation: 1,
       job_id: jobId,
       payload: { event_type: "workout_summary", user: { id: 42 } },
       processing_status: "pending",

@@ -11,14 +11,29 @@ export class WahooReconnectRequiredError extends Error {
   }
 }
 
+export class WahooCredentialConflictError extends Error {
+  constructor() {
+    super("Wahoo credentials changed while refreshing; retry the operation");
+    this.name = "WahooCredentialConflictError";
+  }
+}
+
 type WahooCredentials = {
   accessToken: string;
   expiresAt: string | null;
+  credentialGeneration?: number;
+  /** @deprecated compatibility for callers not yet split into credential/lifecycle versions. */
+  generation?: number;
   id: string;
+  integrationGeneration?: number;
+  reconnectRequiredAt?: string | null;
   refreshToken: string | null;
 };
 
-type RefreshedWahooCredentials = Omit<WahooCredentials, "id">;
+type RefreshedWahooCredentials = Pick<
+  WahooCredentials,
+  "accessToken" | "expiresAt" | "refreshToken"
+>;
 const refreshesByIntegrationId = new Map<string, Promise<WahooCredentials>>();
 
 function isDefinitiveCredentialFailure(error: unknown): boolean {
@@ -33,21 +48,37 @@ function isDefinitiveCredentialFailure(error: unknown): boolean {
 export async function resolveWahooCredentials<T extends WahooCredentials>(input: {
   integration: T;
   now?: number;
-  persistTokens(tokens: WahooCredentials): Promise<void>;
+  markReconnectRequired?(
+    input: Pick<WahooCredentials, "credentialGeneration" | "id" | "integrationGeneration">,
+  ): Promise<boolean>;
+  persistTokens(tokens: WahooCredentials): Promise<number | null>;
+  readCurrentCredentials?(): Promise<T | null>;
   refreshAccessToken(refreshToken: string): Promise<RefreshedWahooCredentials>;
   refreshWindowMs?: number;
+  /** One durable CAS loss may refresh the winner; further loss is retryable. */
+  casRetries?: number;
 }): Promise<T> {
   const expiresAt = input.integration.expiresAt
     ? Date.parse(input.integration.expiresAt)
     : Number.POSITIVE_INFINITY;
   const refreshWindowMs = input.refreshWindowMs ?? 60_000;
 
+  if (input.integration.reconnectRequiredAt) throw new WahooReconnectRequiredError();
   if (expiresAt > (input.now ?? Date.now()) + refreshWindowMs) {
     return input.integration;
   }
 
   if (!input.integration.refreshToken) {
-    throw new WahooReconnectRequiredError();
+    if (await input.markReconnectRequired?.(input.integration))
+      throw new WahooReconnectRequiredError();
+    const current = await input.readCurrentCredentials?.();
+    if (!current || current.reconnectRequiredAt) throw new WahooReconnectRequiredError();
+    if ((input.casRetries ?? 0) >= 1) throw new WahooCredentialConflictError();
+    return resolveWahooCredentials({
+      ...input,
+      casRetries: (input.casRetries ?? 0) + 1,
+      integration: current,
+    });
   }
   const refreshToken = input.integration.refreshToken;
 
@@ -62,19 +93,42 @@ export async function resolveWahooCredentials<T extends WahooCredentials>(input:
       refreshed = await input.refreshAccessToken(refreshToken);
     } catch (error) {
       if (isDefinitiveCredentialFailure(error)) {
-        throw new WahooReconnectRequiredError();
+        if (await input.markReconnectRequired?.(input.integration))
+          throw new WahooReconnectRequiredError();
+        const current = await input.readCurrentCredentials?.();
+        if (!current || current.reconnectRequiredAt) throw new WahooReconnectRequiredError();
+        if ((input.casRetries ?? 0) >= 1) throw new WahooCredentialConflictError();
+        return resolveWahooCredentials({
+          ...input,
+          casRetries: (input.casRetries ?? 0) + 1,
+          integration: current,
+        });
       }
       throw error;
     }
 
-    const credentials = {
+    const credentials: WahooCredentials = {
       accessToken: refreshed.accessToken,
       expiresAt: refreshed.expiresAt,
+      credentialGeneration:
+        input.integration.credentialGeneration ?? input.integration.generation ?? 1,
+      ...(input.integration.integrationGeneration === undefined
+        ? {}
+        : { integrationGeneration: input.integration.integrationGeneration }),
       id: input.integration.id,
+      reconnectRequiredAt: null,
       refreshToken: refreshed.refreshToken,
     };
-    await input.persistTokens(credentials);
-    return credentials;
+    const generation = await input.persistTokens(credentials);
+    if (generation !== null) return { ...credentials, credentialGeneration: generation };
+    const current = await input.readCurrentCredentials?.();
+    if (!current || current.reconnectRequiredAt) throw new WahooReconnectRequiredError();
+    if ((input.casRetries ?? 0) >= 1) throw new WahooCredentialConflictError();
+    return resolveWahooCredentials({
+      ...input,
+      casRetries: (input.casRetries ?? 0) + 1,
+      integration: current,
+    });
   })();
   refreshesByIntegrationId.set(input.integration.id, refresh);
 

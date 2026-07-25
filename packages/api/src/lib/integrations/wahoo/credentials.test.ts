@@ -29,7 +29,7 @@ describe("resolveWahooCredentials", () => {
   });
 
   it("refreshes near-expiry credentials and persists token rotation", async () => {
-    const persistTokens = vi.fn().mockResolvedValue(undefined);
+    const persistTokens = vi.fn().mockResolvedValue(2);
     const refreshAccessToken = vi.fn().mockResolvedValue({
       accessToken: "access-2",
       expiresAt: "2026-04-03T14:00:00.000Z",
@@ -48,13 +48,17 @@ describe("resolveWahooCredentials", () => {
       }),
     ).resolves.toMatchObject({
       accessToken: "access-2",
+      credentialGeneration: 2,
       refreshToken: "refresh-2",
     });
     expect(refreshAccessToken).toHaveBeenCalledWith("refresh-1");
     expect(persistTokens).toHaveBeenCalledWith({
       accessToken: "access-2",
       expiresAt: "2026-04-03T14:00:00.000Z",
+      credentialGeneration: 1,
+      integrationGeneration: undefined,
       id: "integration-1",
+      reconnectRequiredAt: null,
       refreshToken: "refresh-2",
     });
   });
@@ -68,7 +72,7 @@ describe("resolveWahooCredentials", () => {
           refreshToken: null,
         },
         now: Date.parse("2026-04-03T12:00:00.000Z"),
-        persistTokens: vi.fn(),
+        persistTokens: vi.fn().mockResolvedValue(2),
         refreshAccessToken: vi.fn(),
       }),
     ).rejects.toMatchObject({
@@ -91,7 +95,7 @@ describe("resolveWahooCredentials", () => {
           expiresAt: "2026-04-03T11:00:00.000Z",
         },
         now: Date.parse("2026-04-03T12:00:00.000Z"),
-        persistTokens: vi.fn(),
+        persistTokens: vi.fn().mockResolvedValue(2),
         refreshAccessToken: vi.fn().mockRejectedValue(error),
       }),
     ).rejects.toMatchObject({
@@ -111,7 +115,7 @@ describe("resolveWahooCredentials", () => {
           expiresAt: "2026-04-03T11:00:00.000Z",
         },
         now: Date.parse("2026-04-03T12:00:00.000Z"),
-        persistTokens: vi.fn(),
+        persistTokens: vi.fn().mockResolvedValue(2),
         refreshAccessToken: vi.fn().mockRejectedValue(error),
       }),
     ).rejects.toBe(error);
@@ -143,5 +147,40 @@ describe("resolveWahooCredentials", () => {
     expect(persistTokens).toHaveBeenCalledTimes(1);
     expect(historyCredentials.accessToken).toBe("rotated-access");
     expect(plannedCredentials.accessToken).toBe("rotated-access");
+  });
+
+  it("uses a winning token after a refresh CAS loss without overwriting its rotated refresh token", async () => {
+    const winner = {
+      ...freshIntegration,
+      accessToken: "winner-access",
+      expiresAt: "2026-04-03T14:00:00.000Z",
+      credentialGeneration: 2,
+      reconnectRequiredAt: null,
+      refreshToken: "winner-refresh",
+    };
+    const persistTokens = vi.fn().mockResolvedValue(null);
+    const refreshAccessToken = vi.fn().mockResolvedValue({
+      accessToken: "loser-access",
+      expiresAt: "2026-04-03T14:00:00.000Z",
+      refreshToken: "loser-refresh",
+    });
+
+    await expect(
+      resolveWahooCredentials({
+        integration: {
+          ...freshIntegration,
+          expiresAt: "2026-04-03T11:00:00.000Z",
+          credentialGeneration: 1,
+        },
+        now: Date.parse("2026-04-03T12:00:00.000Z"),
+        persistTokens,
+        readCurrentCredentials: vi.fn().mockResolvedValue(winner),
+        refreshAccessToken,
+      }),
+    ).resolves.toMatchObject({ accessToken: "winner-access", refreshToken: "winner-refresh" });
+    expect(persistTokens).toHaveBeenCalledWith(
+      expect.objectContaining({ credentialGeneration: 1, refreshToken: "loser-refresh" }),
+    );
+    expect(refreshAccessToken).toHaveBeenCalledTimes(1);
   });
 });

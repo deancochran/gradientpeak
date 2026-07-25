@@ -50,6 +50,8 @@ export type ProviderPlannedWorkoutCapability = {
 
 export type ProviderCapabilityDefinition = {
   capabilities: readonly ProviderCapability[];
+  /** A stable, user-safe explanation for capabilities deliberately withheld. */
+  unavailableReasons?: Partial<Record<ProviderCapability, string>>;
   id: IntegrationProviderId;
   label: string;
   plannedWorkouts: ProviderPlannedWorkoutCapability;
@@ -76,22 +78,13 @@ const providerCapabilityMap = {
   wahoo: {
     id: "wahoo",
     label: "Wahoo",
-    plannedWorkouts: {
-      maturity: "available",
-      supportedDurations: ["time", "distance"],
-      supportedSports: ["run", "bike"],
-      supportedTargets: ["%FTP", "%MaxHR", "%ThresholdHR", "watts", "bpm", "speed", "cadence"],
-      supportsBoundaries: false,
-      supportsMultipleTargets: false,
-    },
+    plannedWorkouts: evidenceGatedPlannedWorkouts,
     runtimeStatus: "enabled",
     capabilities: [
       "profile_enrichment_read",
       "activity_history_read",
       "activity_file_download",
       "activity_file_format_fit",
-      "planned_activity_push",
-      "route_push",
       "webhook_activity_updates",
     ],
     syncModes: {
@@ -99,9 +92,13 @@ const providerCapabilityMap = {
       activity_history_read: "automatic",
       activity_file_download: "automatic",
       activity_file_format_fit: "automatic",
-      planned_activity_push: "automatic",
-      route_push: "automatic",
       webhook_activity_updates: "automatic",
+    },
+    unavailableReasons: {
+      planned_activity_push:
+        "Wahoo planned-workout creation is disabled because uncertain create outcomes cannot be reconciled under the documented API.",
+      route_push:
+        "Wahoo route push is disabled because uncertain create outcomes cannot be reconciled under the documented API.",
     },
   },
   strava: {
@@ -169,6 +166,16 @@ export function providerHasCapability(
   capability: ProviderCapability,
 ): boolean {
   return getProviderCapabilityDefinition(provider).capabilities.includes(capability);
+}
+
+export function getProviderCapabilityUnavailableReason(
+  provider: IntegrationProviderId,
+  capability: ProviderCapability,
+): string | null {
+  const definition = getProviderCapabilityDefinition(provider);
+  return definition.capabilities.includes(capability)
+    ? null
+    : (definition.unavailableReasons?.[capability] ?? null);
 }
 
 export function getProvidersWithCapability(

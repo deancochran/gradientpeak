@@ -17,7 +17,15 @@ import {
 const WAHOO_ACTIVITY_HISTORY_JOB = "wahoo.activity_history_reconcile";
 const WAHOO_ACTIVITY_HISTORY_RESOURCE = "historical_activities";
 const DEFAULT_HISTORY_WINDOW_MONTHS = 12;
-const DEFAULT_PAGE_SIZE = 50;
+const DEFAULT_PAGE_SIZE = 30;
+const MAX_HISTORY_PAGES = 24;
+const MAX_HISTORY_WORKOUTS = 720;
+
+class StaleIntegrationGenerationError extends Error {
+  constructor() {
+    super("integration_generation_inactive");
+  }
+}
 
 type WahooActivityHistoryPayload = {
   trigger: "connect" | "manual" | "scheduled";
@@ -30,7 +38,13 @@ type WahooWorkoutSummaryClient = {
     page?: number;
     perPage?: number;
     startDate: string;
-  }): Promise<{ sourceCount: number; summaries: WahooWorkoutSummary[] }>;
+  }): Promise<{
+    page?: number;
+    reachedStartBoundary?: boolean;
+    sourceCount: number;
+    summaries: WahooWorkoutSummary[];
+    total?: number | null;
+  }>;
   getWorkoutSummary?(workoutSummaryId: string): Promise<WahooWorkoutSummary>;
 };
 
@@ -42,7 +56,13 @@ function addMinutes(isoString: string, minutes: number): string {
 
 function subtractMonths(isoString: string, months: number): string {
   const date = new Date(isoString);
+  const dayOfMonth = date.getUTCDate();
+  date.setUTCDate(1);
   date.setUTCMonth(date.getUTCMonth() - months);
+  const lastDayOfTargetMonth = new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  date.setUTCDate(Math.min(dayOfMonth, lastDayOfTargetMonth));
   return date.toISOString();
 }
 
@@ -56,7 +76,10 @@ function isActivityHistoryPayload(value: unknown): value is WahooActivityHistory
         value.trigger === "scheduled") &&
       (!("windowMonths" in value) ||
         value.windowMonths === undefined ||
-        (typeof value.windowMonths === "number" && value.windowMonths > 0)),
+        (typeof value.windowMonths === "number" &&
+          Number.isInteger(value.windowMonths) &&
+          value.windowMonths > 0 &&
+          value.windowMonths <= 24)),
   );
 }
 
@@ -79,10 +102,17 @@ export class WahooActivityHistoryJobService {
         findWahooIntegrationByProfileId(profileId: string): Promise<WahooIntegrationRecord | null>;
         updateWahooIntegrationTokens(input: {
           accessToken: string;
+          expectedCredentialGeneration: number;
+          expectedIntegrationGeneration: number;
           expiresAt: string | null;
           id: string;
           refreshToken: string | null;
-        }): Promise<void>;
+        }): Promise<number | null>;
+        markWahooReconnectRequired?(input: {
+          expectedCredentialGeneration: number;
+          expectedIntegrationGeneration: number;
+          id: string;
+        }): Promise<boolean>;
       };
     },
   ) {}
@@ -130,6 +160,16 @@ export class WahooActivityHistoryJobService {
             workerId,
           }),
         processJob: async (job) => {
+          if (
+            !(await (this.deps.providerSyncRepository.isIntegrationGenerationActive?.({
+              generation: job.integrationGeneration ?? 1,
+              integrationId: job.integrationId,
+              profileId: job.profileId,
+            }) ?? true))
+          ) {
+            await this.deps.providerSyncRepository.markJobSucceeded(job.id, workerId);
+            return "completed";
+          }
           if (!isActivityHistoryPayload(job.payload)) {
             const finalized = await this.deps.providerSyncRepository.markJobFailed({
               id: job.id,
@@ -152,15 +192,46 @@ export class WahooActivityHistoryJobService {
               return finalized === false ? "failed" : "completed";
             }
 
+            const generation = job.integrationGeneration ?? 1;
+            const assertActive = async () => {
+              if (
+                !(await (this.deps.providerSyncRepository.isIntegrationGenerationActive?.({
+                  generation,
+                  integrationId: job.integrationId,
+                  profileId: job.profileId,
+                }) ?? true))
+              ) {
+                throw new StaleIntegrationGenerationError();
+              }
+            };
+            await assertActive();
+
             if (!/^\d+$/.test(integration.externalId)) {
               throw new Error("Wahoo integration external ID is not numeric");
             }
             const resolvedIntegration = await resolveWahooCredentials({
               integration,
               persistTokens: (tokens) =>
-                this.deps.wahooRepository.updateWahooIntegrationTokens(tokens),
+                this.deps.wahooRepository.updateWahooIntegrationTokens({
+                  ...tokens,
+                  expectedCredentialGeneration:
+                    tokens.credentialGeneration ?? integration.credentialGeneration,
+                  expectedIntegrationGeneration:
+                    tokens.integrationGeneration ?? integration.integrationGeneration,
+                }),
+              markReconnectRequired: ({ credentialGeneration, id, integrationGeneration }) =>
+                this.deps.wahooRepository.markWahooReconnectRequired?.({
+                  expectedCredentialGeneration:
+                    credentialGeneration ?? integration.credentialGeneration,
+                  expectedIntegrationGeneration:
+                    integrationGeneration ?? integration.integrationGeneration,
+                  id,
+                }) ?? Promise.resolve(false),
+              readCurrentCredentials: () =>
+                this.deps.wahooRepository.findWahooIntegrationByProfileId(job.profileId),
               refreshAccessToken: this.deps.refreshAccessToken ?? refreshWahooAccessToken,
             });
+            await assertActive();
             const providerUserId = Number.parseInt(resolvedIntegration.externalId, 10);
             const windowMonths = job.payload.windowMonths ?? DEFAULT_HISTORY_WINDOW_MONTHS;
             const historyStart = subtractMonths(now, windowMonths);
@@ -168,13 +239,17 @@ export class WahooActivityHistoryJobService {
             const client = (this.deps.wahooClientFactory ?? createDefaultWahooClient)(
               resolvedIntegration,
             );
-            const summaries = await this.listAllSummaries(client, {
-              endDate: historyEnd,
-              startDate: historyStart,
-            });
+            const history = await this.listAllSummaries(
+              client,
+              {
+                endDate: historyEnd,
+                startDate: historyStart,
+              },
+              assertActive,
+            );
 
             const importErrors: string[] = [];
-            for (const summary of summaries) {
+            for (const summary of history.summaries) {
               const importSummary = summary.file?.url
                 ? summary
                 : await (async () => {
@@ -189,7 +264,9 @@ export class WahooActivityHistoryJobService {
                         `Wahoo summary ${summary.id} omitted its artifact URL and workout identity`,
                       );
                     }
+                    await assertActive();
                     const detail = await client.getWorkoutSummary(workoutId.toString());
+                    await assertActive();
                     return {
                       ...summary,
                       ...detail,
@@ -198,10 +275,13 @@ export class WahooActivityHistoryJobService {
                       started_at: detail.started_at ?? summary.started_at,
                     };
                   })();
+              await assertActive();
               const result = await this.deps.importer.importWorkoutSummary(
                 providerUserId,
                 importSummary,
+                { integrationGeneration: generation, integrationId: job.integrationId },
               );
+              await assertActive();
               if (!result.success) {
                 importErrors.push(result.error ?? "Failed to import Wahoo summary");
                 logger.warn("Wahoo activity history summary import failed", {
@@ -211,12 +291,12 @@ export class WahooActivityHistoryJobService {
               }
             }
             if (importErrors.length > 0) {
-              throw new Error(
-                `Wahoo activity history partially failed: ${importErrors.slice(0, 3).join("; ")}`,
-              );
+              throw new Error("activity_history_import_failed");
             }
 
+            await assertActive();
             const finalized = await this.deps.providerSyncRepository.completeJobWithSyncState({
+              expectedIntegrationGeneration: job.integrationGeneration ?? 1,
               highWatermark: historyEnd,
               id: job.id,
               integrationId: job.integrationId,
@@ -228,7 +308,9 @@ export class WahooActivityHistoryJobService {
                   // provider activities exist.
                   highWatermark: historyEnd,
                   start: historyStart,
-                  version: 1,
+                  itemCount: history.itemCount,
+                  pageCount: history.pageCount,
+                  version: 2,
                 },
               },
               provider: "wahoo",
@@ -238,8 +320,14 @@ export class WahooActivityHistoryJobService {
             if (finalized === false) return "failed";
             return "completed";
           } catch (error) {
+            if (error instanceof StaleIntegrationGenerationError) {
+              await this.deps.providerSyncRepository.markJobSucceeded(job.id, workerId);
+              return "completed";
+            }
             const lastError =
-              error instanceof Error ? error.message : "Unknown Wahoo activity history job failure";
+              error instanceof Error && error.message === "activity_history_budget_exceeded"
+                ? "activity_history_budget_exceeded"
+                : "activity_history_failed";
             const shouldDeadLetter = job.attempt >= job.maxAttempts;
             const nextRunAt = shouldDeadLetter
               ? undefined
@@ -271,21 +359,35 @@ export class WahooActivityHistoryJobService {
   private async listAllSummaries(
     client: WahooWorkoutSummaryClient,
     input: { endDate: string; startDate: string },
-  ): Promise<WahooWorkoutSummary[]> {
+    assertActive: () => Promise<void>,
+  ): Promise<{ summaries: WahooWorkoutSummary[]; itemCount: number; pageCount: number }> {
     const summaries: WahooWorkoutSummary[] = [];
+    let itemCount = 0;
 
-    for (let page = 1; ; page += 1) {
+    for (let page = 1; page <= MAX_HISTORY_PAGES; page += 1) {
+      await assertActive();
       const pageResult = await client.listWorkoutSummaries({
         ...input,
         page,
         perPage: DEFAULT_PAGE_SIZE,
       });
+      await assertActive();
+      if (pageResult.page !== undefined && pageResult.page !== page) {
+        throw new Error("activity_history_budget_exceeded");
+      }
+      itemCount += pageResult.sourceCount;
+      if (itemCount > MAX_HISTORY_WORKOUTS) throw new Error("activity_history_budget_exceeded");
       summaries.push(...pageResult.summaries);
 
-      if (pageResult.sourceCount < DEFAULT_PAGE_SIZE) {
-        return summaries;
-      }
+      const terminal =
+        (pageResult.total !== undefined &&
+          pageResult.total !== null &&
+          page * DEFAULT_PAGE_SIZE >= pageResult.total) ||
+        pageResult.sourceCount < DEFAULT_PAGE_SIZE ||
+        pageResult.reachedStartBoundary === true;
+      if (terminal) return { summaries, itemCount, pageCount: page };
     }
+    throw new Error("activity_history_budget_exceeded");
   }
 }
 

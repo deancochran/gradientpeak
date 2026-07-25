@@ -14,7 +14,7 @@ import {
   type ProfileGoalRecord,
 } from "../application/goals/getProfileGoalById";
 import { profileGoalWriteDataSchema } from "../application/goals/profile-goal-write";
-import { getRequiredDb } from "../db";
+import { type DrizzleQueryExecutor, getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
 import { assertProfileAccess, withProfileWriteAccess } from "./account/profile-access";
@@ -139,7 +139,7 @@ async function listProfileGoals(input: {
 }
 
 async function createProfileGoal(input: {
-  db: ReturnType<typeof getRequiredDb>;
+  db: DrizzleQueryExecutor;
   values: z.infer<typeof profileGoalCreateSchema>;
 }): Promise<ProfileGoalRecord> {
   const [row] = await input.db
@@ -169,7 +169,7 @@ async function createProfileGoal(input: {
 }
 
 async function updateProfileGoal(input: {
-  db: ReturnType<typeof getRequiredDb>;
+  db: DrizzleQueryExecutor;
   id: string;
   profileId: string;
   data: ProfileGoalRecord;
@@ -199,7 +199,7 @@ async function updateProfileGoal(input: {
 }
 
 async function deleteProfileGoal(input: {
-  db: ReturnType<typeof getRequiredDb>;
+  db: DrizzleQueryExecutor;
   id: string;
   profileId: string;
 }): Promise<boolean> {
@@ -280,8 +280,6 @@ export const goalsRouter = createTRPCRouter({
   }),
 
   create: protectedProcedure.input(profileGoalWriteSchema).mutation(async ({ ctx, input }) => {
-    const db = getRequiredDb(ctx);
-
     try {
       const createdGoal = await withProfileWriteAccess({
         ctx,

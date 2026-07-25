@@ -8,9 +8,7 @@ import type { DrizzleDbClient } from "@repo/db/client";
 import { TRPCError } from "@trpc/server";
 import { and, eq, gte, inArray, ne } from "drizzle-orm";
 import type { DrizzleTransactionClient } from "../../db";
-import { logger } from "../../lib/logger";
 import { enqueuePlannedWorkoutSyncAfterCalendarMutation } from "../../lib/provider-sync/planned-workouts";
-import { drainDueWahooPlannedWorkoutJobs } from "../../lib/provider-sync/wahoo-planned-workout-drain";
 import type { TrainingPlanRepository } from "../../repositories";
 
 const plannedEventType = "planned" as const;
@@ -101,24 +99,11 @@ export async function removeAppliedScheduleUseCase(input: {
     return candidates;
   });
 
-  const result = {
+  return {
     success: true,
     schedule_batch_id: input.scheduleBatchId,
     scheduled_sessions_removed: deletedEvents.length,
   };
-  try {
-    await drainDueWahooPlannedWorkoutJobs({
-      db: input.db,
-      limit: 3,
-      workerId: "remove-applied-schedule-planned-workout-drain",
-    });
-  } catch {
-    logger.error("Failed to drain planned workout unsync jobs after schedule removal", {
-      category: "upstream",
-      provider: "wahoo",
-    });
-  }
-  return result;
 }
 
 export async function getActivePlanUseCase(input: {

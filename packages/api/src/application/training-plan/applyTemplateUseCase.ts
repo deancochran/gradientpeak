@@ -10,9 +10,7 @@ import type { DrizzleDbClient } from "@repo/db/client";
 import { TRPCError } from "@trpc/server";
 import { and, eq, gte, ne, sql } from "drizzle-orm";
 import type { z } from "zod";
-import { logger } from "../../lib/logger";
 import { enqueuePlannedWorkoutSyncAfterCalendarMutation } from "../../lib/provider-sync/planned-workouts";
-import { drainDueWahooPlannedWorkoutJobs } from "../../lib/provider-sync/wahoo-planned-workout-drain";
 import { needsContentGrantForRow } from "../../permissions/content-access";
 import type { TrainingPlanRepository } from "../../repositories";
 import { materializeAppliedTrainingPlan } from "./schedulingUtils";
@@ -294,13 +292,12 @@ export async function applyTrainingPlanTemplateUseCase(input: {
     });
   }
 
-  const { insertedEvents, removedEvents, shouldDrainProviderJobs } = await db.transaction(
+  const { insertedEvents, removedEvents } = await db.transaction(
     async (
       tx,
     ): Promise<{
       insertedEvents: InsertedEventIdentity[];
       removedEvents: InsertedEventIdentity[];
-      shouldDrainProviderJobs: boolean;
     }> => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${profileId}, 0))`);
       // The transaction exposes Drizzle's query/write surface but omits the root
@@ -415,24 +412,9 @@ export async function applyTrainingPlanTemplateUseCase(input: {
       return {
         insertedEvents,
         removedEvents,
-        shouldDrainProviderJobs: Boolean(unsyncResult?.queued || publishResult?.queued),
       };
     },
   );
-
-  if (shouldDrainProviderJobs) {
-    try {
-      await drainDueWahooPlannedWorkoutJobs({
-        db,
-        limit: 3,
-        workerId: "training-plan-application-planned-workout-drain",
-      });
-    } catch (error) {
-      logger.error("Failed to drain queued provider jobs after training plan application", {
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
-    }
-  }
 
   return {
     applied_plan_id: appliedPlanId,
