@@ -3,6 +3,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 import { parseFreshLocationBuffer, serializeLocationBuffer } from "./locationBuffer";
+import {
+  allocateRecordingEvidenceSession,
+  appendHeadlessGpsLocations,
+} from "./recordingEvidenceJournal";
 
 const BACKGROUND_LOCATION_TASK = "background-location-task";
 const LOCATION_BUFFER_KEY = "location_buffer";
@@ -48,6 +52,9 @@ TaskManager.defineTask(
         lastBackgroundLogTime = now;
       }
 
+      // SQLite evidence is authoritative in headless execution and never depends on providers.
+      await appendHeadlessGpsLocations(locations);
+
       // Process each location through callbacks
       for (const location of locations) {
         // Validate location quality
@@ -72,7 +79,7 @@ TaskManager.defineTask(
         }
       }
 
-      // Keep a small crash-recovery buffer, but do not write AsyncStorage every GPS tick.
+      // Keep bounded non-authoritative UI metadata only; evidence was committed above.
       if (now - lastBackgroundStorageWriteTime >= BACKGROUND_STORAGE_INTERVAL_MS) {
         await AsyncStorage.setItem("last_location_time", now.toString());
         await bufferLocations(locations);
@@ -292,11 +299,11 @@ export class LocationManager {
   }
 
   // --- Background GPS ---
-  async startBackgroundTracking(sessionId?: string): Promise<void> {
+  async startBackgroundTracking(sessionId?: string, profileId?: string): Promise<void> {
     try {
-      if (sessionId) {
-        await AsyncStorage.setItem("background_location_session_id", sessionId);
-      }
+      if (!sessionId || !profileId) throw new Error("Profile-owned recording evidence is required");
+      await allocateRecordingEvidenceSession({ sessionId, profileId });
+      await AsyncStorage.setItem("background_location_session_id", sessionId);
 
       // Check if already running to avoid duplicate starts
       const isRunning = await Location.hasStartedLocationUpdatesAsync(this.taskName);

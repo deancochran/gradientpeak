@@ -31,6 +31,20 @@ jest.mock("./finalizedArtifactStorage", () => ({
   persistPendingFinalizedArtifact: (artifact: unknown) => mockPersistArtifact(artifact),
 }));
 
+jest.mock("./recordingEvidenceJournal", () => ({
+  allocateRecordingEvidenceSession: jest.fn(async () => undefined),
+  createRecordingStreamJournalAdapter: jest.fn(() => ({})),
+  fenceRecordingEvidenceSession: jest.fn(async () => undefined),
+  commitFinalizedArtifactAndHandoff: jest.fn(async () => undefined),
+  rollbackRecordingEvidenceSession: jest.fn(async () => undefined),
+  quarantineRecordingEvidenceSession: jest.fn(async () => true),
+  recoverHeadlessGpsLocations: jest.fn(async () => []),
+}));
+
+jest.mock("../activitySubmissionQueue/localArtifact", () => ({
+  getLocalActivityArtifactMetadata: jest.fn(async () => ({ byteSize: 1, sha256: "0".repeat(64) })),
+}));
+
 jest.mock("./checkpointStorage", () => ({
   clearRecordingCheckpoint: jest.fn(async () => undefined),
   hashRecordingPlan: jest.fn(async () => "0".repeat(64)),
@@ -52,11 +66,13 @@ jest.mock("./StreamBuffer", () => {
         replay,
       })),
       deleteDurableDirectories: jest.fn(),
+      mergeRecoveredLocations: jest.fn((value) => value),
     },
   };
 });
 
 jest.mock("../fit/GarminFitEncoder", () => ({
+  validateFinalizedFitFile: jest.fn(async () => ({ byteSize: 1 })),
   GarminFitEncoder: jest.fn().mockImplementation(() => {
     const encoder = {
       initialize: jest.fn(async () => undefined),
@@ -145,6 +161,10 @@ const checkpointStorageMocks = jest.requireMock("./checkpointStorage") as {
   clearRecordingCheckpoint: jest.Mock;
   persistRecordingCheckpoint: jest.Mock;
 };
+const evidenceJournalMocks = jest.requireMock("./recordingEvidenceJournal") as {
+  rollbackRecordingEvidenceSession: jest.Mock;
+  quarantineRecordingEvidenceSession: jest.Mock;
+};
 const streamBufferMocks = jest.requireMock("./StreamBuffer") as {
   __replay: { sensorReadings: unknown[]; locations: unknown[]; fitRecords: unknown[] };
   StreamBuffer: { deleteDurableDirectories: jest.Mock };
@@ -172,6 +192,8 @@ function createService() {
     liveMetricsFinalized: false,
     fitFinalized: false,
     finalizationFailed: false,
+    producerFenceClosed: false,
+    evidenceFenced: false,
     pausedTime: 0,
     laps: [],
     lastLapTime: 0,
@@ -187,6 +209,7 @@ function createService() {
     liveMetricsManager: {
       setGpsRecordingEnabled: jest.fn(),
       setActivityCategory: jest.fn(),
+      bindEvidenceSession: jest.fn(),
       startRecording: jest.fn(async () => undefined),
       finishRecording: jest.fn(async () => undefined),
       pauseRecording: jest.fn(),
@@ -288,6 +311,13 @@ type DistancePlanMutableRecorder = {
   startTime: number;
   occurrenceStartedAt: number;
   recordingMetadata: { startedAt: string; profileId: string };
+};
+
+type StartFailureMutableRecorder = {
+  _gpsRecordingEnabled: boolean;
+  sensorsManager: { reconnectAll: jest.Mock };
+  locationManager: { startForegroundTracking: jest.Mock };
+  liveMetricsManager: { startRecording: jest.Mock };
 };
 
 function configureDistancePlan(mutable: DistancePlanMutableRecorder, includeRest = false) {
@@ -409,6 +439,60 @@ describe("ActivityRecorderService lifecycle", () => {
     expect(mutable.sensorsManager.setAutoReconnectEnabled).toHaveBeenLastCalledWith(false);
   });
 
+  it.each([
+    [
+      "initial SQLite checkpoint",
+      () => {
+        checkpointStorageMocks.persistRecordingCheckpoint.mockRejectedValueOnce(
+          new Error("checkpoint failed"),
+        );
+      },
+    ],
+    [
+      "BLE reconnect",
+      (mutable: StartFailureMutableRecorder) => {
+        mutable.sensorsManager.reconnectAll.mockRejectedValueOnce(new Error("ble failed"));
+      },
+    ],
+    [
+      "GPS setup",
+      (mutable: StartFailureMutableRecorder) => {
+        mutable._gpsRecordingEnabled = true;
+        mutable.locationManager.startForegroundTracking.mockRejectedValueOnce(
+          new Error("gps failed"),
+        );
+      },
+    ],
+    [
+      "producer start",
+      (mutable: StartFailureMutableRecorder) => {
+        mutable.liveMetricsManager.startRecording.mockRejectedValueOnce(
+          new Error("producer failed"),
+        );
+      },
+    ],
+  ])("releases the active allocation and subscriptions when %s fails", async (_stage, configure) => {
+    const { service, mutable } = createService();
+    configure(mutable as StartFailureMutableRecorder);
+
+    await expect(service.startRecording()).rejects.toThrow();
+
+    expect(service.state).toBe("pending");
+    expect(evidenceJournalMocks.rollbackRecordingEvidenceSession).toHaveBeenCalledWith(
+      "session-1",
+      expect.any(String),
+    );
+    expect(mutable.sensorsManager.disconnectAll).toHaveBeenCalledTimes(1);
+    expect(mutable.sensorsManager.setAutoReconnectEnabled).toHaveBeenLastCalledWith(false);
+    if (mutable.liveMetricsManager.startRecording.mock.calls.length > 0) {
+      expect(mutable.liveMetricsManager.finishRecording).toHaveBeenCalledTimes(1);
+    }
+
+    mutable.hasConfiguredSetup = true;
+    await expect(service.startRecording()).resolves.toBeUndefined();
+    expect(service.state).toBe("recording");
+  });
+
   it("accounts for the outstanding pause before entering finalization", async () => {
     const { service, mutable } = createService();
     await service.startRecording();
@@ -429,32 +513,26 @@ describe("ActivityRecorderService lifecycle", () => {
     );
   });
 
-  it("keeps a failed finalization non-active and retries completed stages safely", async () => {
+  it("keeps finalization successful when the compatibility artifact mirror fails", async () => {
     const { service, mutable } = createService();
     await service.startRecording();
     mockPersistArtifact.mockRejectedValueOnce(new Error("storage unavailable"));
 
-    await expect(service.finishRecording()).rejects.toThrow("storage unavailable");
-    expect(service.state).toBe("finishing");
-    expect(mutable.sensorsManager.setAutoReconnectEnabled).toHaveBeenLastCalledWith(false);
-
     await service.finishRecording();
     expect(service.state).toBe("finished");
+    expect(mutable.sensorsManager.setAutoReconnectEnabled).toHaveBeenLastCalledWith(false);
     expect(mutable.liveMetricsManager.finishRecording).toHaveBeenCalledTimes(1);
     expect(mockFitInstances[0]?.finalize).toHaveBeenCalledTimes(1);
-    expect(mockPersistArtifact).toHaveBeenCalledTimes(2);
+    expect(mockPersistArtifact).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses cleanup while failed finalization remains retryable", async () => {
+  it("permits cleanup when the compatibility artifact mirror fails", async () => {
     const { service } = createService();
     await service.startRecording();
     mockPersistArtifact.mockRejectedValueOnce(new Error("storage unavailable"));
-    await expect(service.finishRecording()).rejects.toThrow("storage unavailable");
-
-    await expect(service.cleanup()).rejects.toThrow(
-      "Recording finalization must be retried before cleanup",
-    );
-    expect(service.state).toBe("finishing");
+    await service.finishRecording();
+    await service.cleanup();
+    expect(service.state).toBe("pending");
   });
 
   it("can clean up and reuse the same provider-owned service", async () => {
@@ -1402,6 +1480,40 @@ describe("ActivityRecorderService lifecycle", () => {
     expect(checkpointStorageMocks.clearRecordingCheckpoint).toHaveBeenCalledWith(
       checkpoint.sessionId,
     );
+    expect(evidenceJournalMocks.quarantineRecordingEvidenceSession).toHaveBeenCalledWith({
+      sessionId: checkpoint.sessionId,
+      profileId: "profile-1",
+      reason: "recovered-recording-discarded",
+    });
     expect(service.state).toBe("pending");
+  });
+
+  it("stages an unplanned checkpoint without a plan and preserves its operation identity", async () => {
+    const { service, mutable } = createService();
+    const checkpoint = {
+      schemaVersion: 3 as const,
+      variant: "unplanned" as const,
+      sessionId: "profile-1:unplanned-operation",
+      profileId: "profile-1",
+      lifecycle: "recording" as const,
+      revision: 1,
+      start: { startedAt: "2026-01-01T10:00:00.000Z", updatedAt: "2026-01-01T10:00:01.000Z" },
+      draft: { activityCategory: "run", gpsMode: "off" as const },
+      summary: { elapsedSeconds: 1, movingSeconds: 1, distanceMeters: 0 },
+      executionState: { timerEvents: [] },
+      streamArtifactPaths: ["/streams"],
+    };
+
+    await service.stageRecoveredCheckpoint(checkpoint);
+
+    expect(mutable.planExecution.clear).toHaveBeenCalled();
+    expect(mutable._plan).toBeUndefined();
+    expect(mutable.sessionController.resetForNewSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        identity: expect.objectContaining({ sessionId: checkpoint.sessionId }),
+      }),
+    );
+    expect(mutable.recoveredCheckpoint).toEqual(checkpoint);
+    expect(service.state).toBe("paused");
   });
 });

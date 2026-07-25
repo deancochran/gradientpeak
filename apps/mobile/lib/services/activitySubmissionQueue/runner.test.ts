@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { runActivitySubmissionQueueJob } from "./runner";
+import * as queueStorage from "./storage";
 import type { ActivitySubmissionQueueJob, ActivitySubmissionQueueRunnerDeps } from "./types";
 
 const persistedJobs: ActivitySubmissionQueueJob[] = [];
 const persistedHistory: ActivitySubmissionQueueJob[] = [];
+const leases = new Map<string, ActivitySubmissionQueueJob>();
 const executionManifest = {
   version: 1 as const,
   compilerVersion: 1,
@@ -13,16 +15,59 @@ const executionManifest = {
 };
 
 vi.mock("./storage", () => ({
-  upsertActivitySubmissionQueueJob: vi.fn(async (job: ActivitySubmissionQueueJob) => {
-    persistedHistory.push(job);
-    const index = persistedJobs.findIndex((candidate) => candidate.id === job.id);
-    if (index >= 0) {
-      persistedJobs[index] = job;
-      return;
-    }
+  claimDueActivitySubmissionQueueJob: vi.fn(
+    async (id: string, owner: string, token: string, leaseMs: number, now: number) => {
+      const current = leases.get(id) ?? { ...baseJob, id };
+      if (current.leaseExpiresAt && Date.parse(current.leaseExpiresAt) > now) return null;
+      const claimed = {
+        ...current,
+        leaseOwner: owner,
+        leaseToken: token,
+        leaseExpiresAt: new Date(now + leaseMs).toISOString(),
+      };
+      leases.set(id, claimed);
+      return claimed;
+    },
+  ),
+  renewClaimedActivitySubmissionQueueJob: vi.fn(
+    async (id: string, owner: string, token: string, leaseMs: number, now: number) => {
+      const current = leases.get(id);
+      if (
+        !current ||
+        current.leaseOwner !== owner ||
+        current.leaseToken !== token ||
+        Date.parse(current.leaseExpiresAt ?? "") <= now
+      )
+        return null;
+      const renewed = { ...current, leaseExpiresAt: new Date(now + leaseMs).toISOString() };
+      leases.set(id, renewed);
+      return renewed;
+    },
+  ),
+  transitionClaimedActivitySubmissionQueueJob: vi.fn(
+    async (job: ActivitySubmissionQueueJob, owner: string, token: string, now: number) => {
+      const current = leases.get(job.id);
+      // Mirror the SQL fence: a matching token is insufficient after expiry.
+      if (
+        !current ||
+        current.leaseOwner !== owner ||
+        current.leaseToken !== token ||
+        Date.parse(current.leaseExpiresAt ?? "") <= now
+      )
+        return false;
+      persistedHistory.push(job);
+      const index = persistedJobs.findIndex((candidate) => candidate.id === job.id);
+      if (index >= 0) {
+        persistedJobs[index] = job;
+        leases.set(job.id, job);
+        return true;
+      }
 
-    persistedJobs.push(job);
-  }),
+      persistedJobs.push(job);
+      leases.set(job.id, job);
+      return true;
+    },
+  ),
 }));
 
 const baseJob: ActivitySubmissionQueueJob = {
@@ -90,6 +135,7 @@ describe("activity submission queue runner", () => {
   beforeEach(() => {
     persistedJobs.length = 0;
     persistedHistory.length = 0;
+    leases.clear();
     vi.clearAllMocks();
   });
 
@@ -113,6 +159,89 @@ describe("activity submission queue runner", () => {
       { status: "complete" },
     ]);
     expect(createFromRecordingSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a long-running effect fenced with repeated heartbeats and prevents a second runner effect", async () => {
+    vi.useFakeTimers();
+    try {
+      let clock = Date.parse("2026-01-01T11:01:00.000Z");
+      let releaseUpload!: () => void;
+      const uploadGate = new Promise<void>((resolve) => {
+        releaseUpload = resolve;
+      });
+      const uploadToSignedUrl = vi.fn(async () => {
+        await uploadGate;
+        return { success: true };
+      });
+      const deps = createDeps({
+        now: () => new Date(clock).toISOString(),
+        uploadToSignedUrl,
+      });
+      const first = runActivitySubmissionQueueJob(baseJob, deps);
+      await vi.advanceTimersByTimeAsync(0);
+      // Metadata and claim have settled; the upload is deliberately in flight.
+      clock += 45_000;
+      await vi.advanceTimersByTimeAsync(45_000);
+      expect(
+        vi.mocked(queueStorage.renewClaimedActivitySubmissionQueueJob).mock.calls.length,
+      ).toBeGreaterThanOrEqual(3);
+      const second = runActivitySubmissionQueueJob(baseJob, deps);
+      expect(uploadToSignedUrl).toHaveBeenCalledTimes(1);
+      releaseUpload();
+      await expect(Promise.all([first, second])).resolves.toEqual(
+        expect.arrayContaining([expect.objectContaining({ status: "complete" })]),
+      );
+      expect(uploadToSignedUrl).toHaveBeenCalledTimes(1);
+      expect(persistedHistory.at(-1)).toMatchObject({ status: "complete" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects stale completion when heartbeat renewal is lost mid-effect without a fallback duplicate", async () => {
+    vi.useFakeTimers();
+    try {
+      let clock = Date.parse("2026-01-01T11:01:00.000Z");
+      let releaseUpload!: () => void;
+      const uploadGate = new Promise<void>((resolve) => {
+        releaseUpload = resolve;
+      });
+      let renewals = 0;
+      vi.mocked(queueStorage.renewClaimedActivitySubmissionQueueJob).mockImplementation(
+        async (id, owner, token, leaseMs, now) => {
+          renewals += 1;
+          if (renewals === 4) return null;
+          const current = leases.get(id);
+          if (!current) return null;
+          const renewed = {
+            ...current,
+            leaseOwner: owner,
+            leaseToken: token,
+            leaseExpiresAt: new Date((now ?? Date.now()) + leaseMs).toISOString(),
+          };
+          leases.set(id, renewed);
+          return renewed;
+        },
+      );
+      const uploadToSignedUrl = vi.fn(async () => {
+        await uploadGate;
+        return { success: true };
+      });
+      const result = runActivitySubmissionQueueJob(
+        baseJob,
+        createDeps({ now: () => new Date(clock).toISOString(), uploadToSignedUrl }),
+      );
+      const rejected = expect(result).rejects.toThrow("lease was lost");
+      await vi.advanceTimersByTimeAsync(0);
+      clock += 20_000;
+      await vi.advanceTimersByTimeAsync(20_000);
+      releaseUpload();
+      await rejected;
+      expect(uploadToSignedUrl).toHaveBeenCalledTimes(1);
+      expect(persistedHistory.at(-1)).not.toMatchObject({ status: "complete" });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("creates, uploads, processes, and persists progress after each step", async () => {
@@ -181,9 +310,27 @@ describe("activity submission queue runner", () => {
     expect(result).toMatchObject({
       status: "failed",
       attempts: 1,
-      lastError: "network down",
+      lastError: "transient",
     });
-    expect(persistedJobs.at(-1)).toMatchObject({ status: "failed", lastError: "network down" });
+    expect(result.nextAttemptAt).toBe("2026-01-01T11:01:02.137Z");
+    expect(persistedJobs.at(-1)).toMatchObject({ status: "failed", lastError: "transient" });
+  });
+
+  it("retains a permanent error without scheduling another attempt", async () => {
+    const result = await runActivitySubmissionQueueJob(
+      baseJob,
+      createDeps({
+        beginMobileRecordingUpload: vi.fn(async () => {
+          throw new Error("invalid metadata");
+        }),
+      }),
+    );
+    expect(result).toMatchObject({
+      status: "failed",
+      attempts: 1,
+      retryClass: "validation",
+      nextAttemptAt: null,
+    });
   });
 
   it("completes a retry with an existing accepted activity without duplicate create", async () => {
@@ -197,6 +344,7 @@ describe("activity submission queue runner", () => {
       attempts: 1,
       lastError: "previous failure",
     };
+    leases.set(retryJob.id, retryJob);
 
     const result = await runActivitySubmissionQueueJob(retryJob, deps);
 
@@ -256,6 +404,7 @@ describe("activity submission queue runner", () => {
       status: "failed",
       attempts: 1,
     };
+    leases.set(legacyJob.id, legacyJob);
 
     const result = await runActivitySubmissionQueueJob(legacyJob, deps);
     expect(result.status).toBe("complete");
@@ -276,7 +425,7 @@ describe("activity submission queue runner", () => {
   it("re-uploads retained local evidence after server acceptance fails", async () => {
     const createFromRecordingSummary = vi
       .fn()
-      .mockRejectedValueOnce(new Error("server acceptance failed"))
+      .mockRejectedValueOnce(new Error("network unavailable"))
       .mockResolvedValueOnce({
         id: "activity-1",
         ingestion: { id: "ingestion-1", status: "ready", source: "mobile_recording" },

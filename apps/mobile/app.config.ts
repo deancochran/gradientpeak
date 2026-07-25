@@ -112,6 +112,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       "expo-web-browser",
       "expo-build-properties",
       "expo-secure-store",
+      "expo-sqlite",
       "expo-localization",
       "posthog-react-native/expo",
       [

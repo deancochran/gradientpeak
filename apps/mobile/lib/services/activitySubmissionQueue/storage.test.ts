@@ -1,12 +1,16 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  claimDueActivitySubmissionQueueJob,
   clearActivitySubmissionQueueJobs,
   incompleteQueueJobReferencesLocalFiles,
   loadActivitySubmissionQueueJobByArtifactId,
   loadActivitySubmissionQueueJobs,
   removeActivitySubmissionQueueJob,
+  renewClaimedActivitySubmissionQueueJob,
   saveActivitySubmissionQueueJobs,
+  setActivitySubmissionQueueJobsForTests,
+  transitionClaimedActivitySubmissionQueueJob,
   upsertActivitySubmissionQueueJob,
 } from "./storage";
 import type { ActivitySubmissionQueueJob } from "./types";
@@ -59,6 +63,7 @@ const baseJob: ActivitySubmissionQueueJob = {
 describe("activity submission queue storage", () => {
   beforeEach(() => {
     storage.clear();
+    setActivitySubmissionQueueJobsForTests(new Map());
     vi.clearAllMocks();
   });
 
@@ -66,10 +71,7 @@ describe("activity submission queue storage", () => {
     await saveActivitySubmissionQueueJobs([baseJob]);
 
     await expect(loadActivitySubmissionQueueJobs()).resolves.toEqual([baseJob]);
-    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-      "activity-submission-queue:v3:jobs",
-      JSON.stringify([baseJob]),
-    );
+    expect(AsyncStorage.setItem).not.toHaveBeenCalled();
   });
 
   it("upserts jobs by local id", async () => {
@@ -127,6 +129,123 @@ describe("activity submission queue storage", () => {
         streamArtifactPaths: [],
       }),
     ).toBe(false);
+  });
+
+  it("fences duplicate drain claims until the lease expires", async () => {
+    await upsertActivitySubmissionQueueJob(baseJob);
+    const first = await claimDueActivitySubmissionQueueJob(
+      "job-1",
+      "runner-a",
+      "token-a",
+      1_000,
+      10,
+    );
+    const competing = await claimDueActivitySubmissionQueueJob(
+      "job-1",
+      "runner-b",
+      "token-b",
+      1_000,
+      11,
+    );
+    const recovered = await claimDueActivitySubmissionQueueJob(
+      "job-1",
+      "runner-b",
+      "token-b",
+      1_000,
+      1_011,
+    );
+    expect(first?.leaseToken).toBe("token-a");
+    expect(competing).toBeNull();
+    expect(recovered?.leaseToken).toBe("token-b");
+  });
+
+  it("renews only a live owner fence and rejects an expired owner before an effect", async () => {
+    await upsertActivitySubmissionQueueJob(baseJob);
+    await claimDueActivitySubmissionQueueJob("job-1", "runner-a", "token-a", 1_000, 10);
+    await expect(
+      renewClaimedActivitySubmissionQueueJob("job-1", "runner-a", "token-a", 1_000, 900),
+    ).resolves.toMatchObject({
+      leaseExpiresAt: new Date(1_900).toISOString(),
+    });
+    await expect(
+      renewClaimedActivitySubmissionQueueJob("job-1", "runner-b", "token-b", 1_000, 901),
+    ).resolves.toBeNull();
+    await expect(
+      renewClaimedActivitySubmissionQueueJob("job-1", "runner-a", "token-a", 1_000, 1_900),
+    ).resolves.toBeNull();
+  });
+
+  it("only exposes transient failed jobs once their persisted due time arrives", async () => {
+    await upsertActivitySubmissionQueueJob({
+      ...baseJob,
+      status: "failed",
+      retryClass: "transient",
+      nextAttemptAt: "2026-01-01T11:10:00.000Z",
+    });
+    const early = await claimDueActivitySubmissionQueueJob(
+      "job-1",
+      "runner",
+      "token",
+      1000,
+      Date.parse("2026-01-01T11:09:00.000Z"),
+    );
+    const due = await claimDueActivitySubmissionQueueJob(
+      "job-1",
+      "runner",
+      "token",
+      1000,
+      Date.parse("2026-01-01T11:10:00.000Z"),
+    );
+    expect(early).toBeNull();
+    expect(due).not.toBeNull();
+  });
+
+  it("rejects a stale worker completion after an expired lease is reclaimed", async () => {
+    await upsertActivitySubmissionQueueJob(baseJob);
+    const first = await claimDueActivitySubmissionQueueJob(
+      "job-1",
+      "runner-a",
+      "token-a",
+      1_000,
+      10,
+    );
+    const second = await claimDueActivitySubmissionQueueJob(
+      "job-1",
+      "runner-b",
+      "token-b",
+      1_000,
+      1_011,
+    );
+    if (!first || !second) throw new Error("test setup failed");
+
+    await expect(
+      transitionClaimedActivitySubmissionQueueJob(
+        { ...first, status: "complete", leaseOwner: null, leaseToken: null, leaseExpiresAt: null },
+        "runner-a",
+        "token-a",
+        1_011,
+      ),
+    ).resolves.toBe(false);
+    await expect(
+      transitionClaimedActivitySubmissionQueueJob(
+        { ...second, status: "complete", leaseOwner: null, leaseToken: null, leaseExpiresAt: null },
+        "runner-b",
+        "token-b",
+        1_011,
+      ),
+    ).resolves.toBe(true);
+  });
+
+  it("does not schedule permanent failures", async () => {
+    await upsertActivitySubmissionQueueJob({
+      ...baseJob,
+      status: "failed",
+      retryClass: "permanent",
+      nextAttemptAt: null,
+    });
+    await expect(
+      claimDueActivitySubmissionQueueJob("job-1", "runner", "token", 1000, Date.now()),
+    ).resolves.toBeNull();
   });
 
   it("removes and clears queue jobs", async () => {

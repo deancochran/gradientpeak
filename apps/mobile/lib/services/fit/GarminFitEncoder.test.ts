@@ -8,7 +8,12 @@ import { Buffer } from "buffer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fitTimerSeconds } from "./fit-time";
-import { type FitFinalizeOptions, type FitSessionData, GarminFitEncoder } from "./GarminFitEncoder";
+import {
+  type FitFinalizeOptions,
+  type FitSessionData,
+  GarminFitEncoder,
+  validateFinalizedFitFile,
+} from "./GarminFitEncoder";
 
 const files = new Map<string, Uint8Array>();
 
@@ -50,6 +55,9 @@ vi.mock("expo-file-system", () => ({
     }
     async base64() {
       return Buffer.from(files.get(this.uri) ?? []).toString("base64");
+    }
+    async bytes() {
+      return Uint8Array.from(files.get(this.uri) ?? []);
     }
   },
 }));
@@ -139,6 +147,32 @@ describe("GarminFitEncoder semantic FIT round-trip", () => {
     expect(activity.summary.totalDistance).toBe(200);
     expect(activity.summary.avgSpeed).toBe(3.333);
     expect(activity.summary.maxSpeed).toBe(4);
+  });
+
+  it("accepts only a decodable candidate with required messages and fenced bounds", async () => {
+    const encoder = new GarminFitEncoder("validation", "athlete");
+    await encoder.initialize([], new Date(ORIGIN));
+    await encoder.addRecord({ timestamp: ORIGIN, distance: 0 });
+    await encoder.addRecord({ timestamp: ORIGIN + 59_000, distance: 100 });
+    await encoder.finalize(
+      session({
+        startTime: ORIGIN,
+        endedAt: ORIGIN + 60_000,
+        distance: 100,
+        sport: "running",
+        subSport: "street",
+      }),
+    );
+    await expect(
+      validateFinalizedFitFile(encoder.getFilePath(), {
+        startTime: ORIGIN,
+        endedAt: ORIGIN + 60_000,
+        durationMs: 60_000,
+        distanceMeters: 100,
+      }),
+    ).resolves.toEqual(expect.objectContaining({ byteSize: expect.any(Number) }));
+    files.set(encoder.getFilePath(), Uint8Array.of(0, 1, 2));
+    await expect(validateFinalizedFitFile(encoder.getFilePath())).rejects.toThrow("decode");
   });
 
   it("encodes ordered triathlon, repeated sport, transitions, laps, and pauses", async () => {

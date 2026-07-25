@@ -73,6 +73,13 @@ export const activitySubmissionQueueJobSchema = z
     status: activitySubmissionQueueJobStatusSchema,
     attempts: z.number().int().nonnegative(),
     lastError: z.string().nullable().optional(),
+    /** Persisted scheduler/lease metadata. Error text is never used as a durable category. */
+    retryClass: z.enum(["none", "transient", "permanent", "auth", "validation"]).optional(),
+    nextAttemptAt: z.string().datetime({ offset: true }).nullable().optional(),
+    errorCategory: z.string().max(80).nullable().optional(),
+    leaseOwner: z.string().min(1).nullable().optional(),
+    leaseToken: z.string().min(1).nullable().optional(),
+    leaseExpiresAt: z.string().datetime({ offset: true }).nullable().optional(),
     createdAt: z.string().min(1),
     updatedAt: z.string().min(1),
   })

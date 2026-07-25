@@ -19,7 +19,8 @@ import type {
   PublicActivityMetric,
   PublicActivityMetricDataType,
 } from "@repo/core";
-import { Directory, File, Paths } from "expo-file-system";
+import { Directory, Paths } from "expo-file-system";
+import type { RecordingStreamJournalAdapter } from "./recordingEvidenceJournal";
 import type { LocationReading, SensorReading } from "./types";
 
 // ================================
@@ -34,13 +35,6 @@ interface StreamChunk {
   sampleCount: number;
   startTime: Date;
   endTime: Date;
-}
-
-interface StreamChunkCommit {
-  version: 1;
-  chunkIndex: number;
-  files: string[];
-  committedAt: string;
 }
 
 export interface DurableStreamReplay {
@@ -74,29 +68,53 @@ export class StreamBuffer {
   private sessionId: string;
   private storageDir: Directory;
 
-  constructor(storageDirUri?: string) {
+  private journal: RecordingStreamJournalAdapter;
+
+  constructor(
+    storageDirUri?: string,
+    journal: RecordingStreamJournalAdapter = {
+      append: async () => {
+        throw new Error("Recording stream is not bound to an evidence session");
+      },
+      recover: async () => {
+        throw new Error("Recording stream is not bound to an evidence session");
+      },
+    },
+  ) {
     this.lastFlushTime = new Date();
     this.sessionId = `recording_${Date.now()}`;
     this.storageDir = storageDirUri
       ? new Directory(storageDirUri)
-      : new Directory(Paths.cache, this.sessionId);
+      : new Directory(Paths.document ?? Paths.cache, this.sessionId);
+    this.journal = journal;
   }
 
   /** Opens validated durable chunks and prepares the same directory for append-only continuation. */
-  static async reopenForRecovery(storageDirUris: string | readonly string[]): Promise<{
+  static async reopenForRecovery(
+    storageDirUris: string | readonly string[],
+    journal: RecordingStreamJournalAdapter,
+  ): Promise<{
     streamBuffer: StreamBuffer;
     replay: DurableStreamReplay;
   }> {
     const paths = typeof storageDirUris === "string" ? [storageDirUris] : [...storageDirUris];
     const appendPath = paths.at(-1);
     if (!appendPath) throw new Error("Recording checkpoint has no stream directory");
-    const streamBuffer = new StreamBuffer(appendPath);
-    const chunks: Array<{ chunkIndex: number; chunk: StreamChunk }> = [];
-    for (const path of paths) {
-      const source = path === appendPath ? streamBuffer : new StreamBuffer(path);
-      if (!source.storageDir.exists) throw new Error("Recording stream directory is missing");
-      chunks.push(...source.readValidatedChunks());
-    }
+    const streamBuffer = new StreamBuffer(appendPath, journal);
+    const chunks = (await journal.recover()).map((envelope) => {
+      const raw = JSON.parse(envelope.payload) as StreamChunk;
+      if (
+        !raw ||
+        raw.sampleCount !== raw.values?.length ||
+        raw.values.length !== raw.timestamps?.length
+      ) {
+        throw new Error("Corrupt SQLite recording stream chunk");
+      }
+      return {
+        chunkIndex: envelope.order,
+        chunk: { ...raw, startTime: new Date(raw.startTime), endTime: new Date(raw.endTime) },
+      };
+    });
     const maxChunkIndex = chunks.reduce((max, item) => Math.max(max, item.chunkIndex), -1);
     streamBuffer.chunkIndex = maxChunkIndex + 1;
     streamBuffer.lastFlushTime = chunks.reduce(
@@ -115,85 +133,35 @@ export class StreamBuffer {
     }
   }
 
-  private readValidatedChunks(): Array<{ chunkIndex: number; chunk: StreamChunk }> {
-    const contents = this.storageDir.list();
-    const files = contents.filter(
-      (item): item is File => item instanceof File && item.uri.includes("chunk_"),
+  /** Deterministic foreground/headless GPS union used before FIT replay/finalization. */
+  static mergeRecoveredLocations(
+    replay: DurableStreamReplay,
+    headless: readonly LocationReading[],
+  ): DurableStreamReplay {
+    const identity = (location: LocationReading) =>
+      `${location.timestamp}:${location.latitude.toFixed(7)}:${location.longitude.toFixed(7)}`;
+    const locations = new Map(replay.locations.map((location) => [identity(location), location]));
+    for (const location of headless) locations.set(identity(location), location);
+    const ordered = [...locations.values()].sort(
+      (left, right) =>
+        left.timestamp - right.timestamp || identity(left).localeCompare(identity(right)),
     );
-    const committedFiles = new Set<string>();
-    const committedIndices = new Set<number>();
-    const commits = contents.filter(
-      (item): item is File => item instanceof File && item.uri.includes("commit_"),
-    );
-    for (const commitFile of commits) {
-      const filename = commitFile.uri.split("/").at(-1) ?? "";
-      const raw = JSON.parse(commitFile.textSync()) as Partial<StreamChunkCommit>;
-      if (
-        raw.version !== 1 ||
-        typeof raw.chunkIndex !== "number" ||
-        !Number.isInteger(raw.chunkIndex) ||
-        !Array.isArray(raw.files) ||
-        raw.files.length === 0 ||
-        raw.files.some((file) => typeof file !== "string")
-      ) {
-        throw new Error(`Corrupt recording stream commit: ${filename}`);
-      }
-      committedIndices.add(raw.chunkIndex);
-      for (const file of raw.files) committedFiles.add(file);
+    const fitByTimestamp = new Map(replay.fitRecords.map((record) => [record.timestamp, record]));
+    for (const location of ordered) {
+      fitByTimestamp.set(location.timestamp, {
+        ...(fitByTimestamp.get(location.timestamp) ?? { timestamp: location.timestamp }),
+        latitude: location.latitude,
+        longitude: location.longitude,
+        ...(location.altitude === undefined ? {} : { altitude: location.altitude }),
+      });
     }
-    const maxCommittedIndex = committedIndices.size > 0 ? Math.max(...committedIndices) : -1;
-    for (const orphan of files.filter(
-      (file) => !committedFiles.has(file.uri.split("/").at(-1) ?? ""),
-    )) {
-      const orphanIndex = Number((orphan.uri.split("/").at(-1) ?? "").split("_")[1]);
-      if (!Number.isInteger(orphanIndex) || orphanIndex <= maxCommittedIndex) {
-        throw new Error(`Corrupt uncommitted recording stream chunk: ${orphan.uri}`);
-      }
-      orphan.delete();
-    }
-    for (const filename of committedFiles) {
-      if (!new File(this.storageDir.uri, filename).exists) {
-        throw new Error(`Incomplete recording stream commit: ${filename}`);
-      }
-    }
-    return files
-      .filter((file) => committedFiles.has(file.uri.split("/").at(-1) ?? ""))
-      .map((file) => {
-        const filename = file.uri.split("/").at(-1) ?? "";
-        const chunkIndex = Number(filename.split("_")[1]);
-        const raw = JSON.parse(file.textSync()) as Partial<StreamChunk>;
-        if (
-          !Number.isInteger(chunkIndex) ||
-          typeof raw.metric !== "string" ||
-          !Array.isArray(raw.values) ||
-          !Array.isArray(raw.timestamps) ||
-          raw.values.length !== raw.timestamps.length ||
-          raw.timestamps.some((timestamp) => !Number.isFinite(timestamp)) ||
-          raw.sampleCount !== raw.values.length ||
-          typeof raw.startTime !== "string" ||
-          typeof raw.endTime !== "string"
-        ) {
-          throw new Error(`Corrupt recording stream chunk: ${filename}`);
-        }
-        const startTime = new Date(raw.startTime);
-        const endTime = new Date(raw.endTime);
-        if (!Number.isFinite(startTime.getTime()) || !Number.isFinite(endTime.getTime())) {
-          throw new Error(`Corrupt recording stream chunk timing: ${filename}`);
-        }
-        return {
-          chunkIndex,
-          chunk: {
-            metric: raw.metric as PublicActivityMetric,
-            dataType: raw.dataType as PublicActivityMetricDataType,
-            values: raw.values as number[] | number[][],
-            timestamps: raw.timestamps,
-            sampleCount: raw.sampleCount,
-            startTime,
-            endTime,
-          },
-        };
-      })
-      .sort((left, right) => left.chunkIndex - right.chunkIndex);
+    return {
+      ...replay,
+      locations: ordered,
+      fitRecords: [...fitByTimestamp.values()].sort(
+        (left, right) => left.timestamp - right.timestamp,
+      ),
+    };
   }
 
   private static buildReplay(chunks: StreamChunk[]): DurableStreamReplay {
@@ -283,15 +251,7 @@ export class StreamBuffer {
    * Initialize storage directory
    */
   async initialize(): Promise<void> {
-    try {
-      if (!this.storageDir.exists) {
-        this.storageDir.create({ intermediates: true });
-      }
-      console.log("[StreamBuffer] Initialized storage:", this.storageDir.uri);
-    } catch (error) {
-      console.error("[StreamBuffer] Failed to initialize storage:", error);
-      throw error;
-    }
+    // The URI remains a compatibility/checkpoint identifier only. Raw streams are SQLite-only.
   }
 
   /**
@@ -347,7 +307,7 @@ export class StreamBuffer {
     const endTime = new Date();
 
     try {
-      const committedFilenames: string[] = [];
+      const envelopes: Array<{ streamKind: string; timestamp: number; payload: string }> = [];
       // Write sensor readings by metric
       for (const [metric, readings] of this.readings.entries()) {
         if (readings.length === 0) continue;
@@ -362,7 +322,11 @@ export class StreamBuffer {
           endTime,
         };
 
-        committedFilenames.push(await this.writeChunk(metric, chunk));
+        envelopes.push({
+          streamKind: metric,
+          timestamp: endTime.getTime(),
+          payload: JSON.stringify(chunk),
+        });
       }
 
       // Write location data
@@ -377,7 +341,11 @@ export class StreamBuffer {
           endTime,
         };
 
-        committedFilenames.push(await this.writeChunk("latlng", latlngChunk));
+        envelopes.push({
+          streamKind: "latlng",
+          timestamp: endTime.getTime(),
+          payload: JSON.stringify(latlngChunk),
+        });
 
         // Write altitude separately if available
         const altitudes = this.locations.filter(
@@ -394,17 +362,15 @@ export class StreamBuffer {
             endTime,
           };
 
-          committedFilenames.push(await this.writeChunk("altitude", altitudeChunk));
+          envelopes.push({
+            streamKind: "altitude",
+            timestamp: endTime.getTime(),
+            payload: JSON.stringify(altitudeChunk),
+          });
         }
       }
 
-      const commit: StreamChunkCommit = {
-        version: 1,
-        chunkIndex: this.chunkIndex,
-        files: committedFilenames,
-        committedAt: endTime.toISOString(),
-      };
-      new File(this.storageDir.uri, `commit_${this.chunkIndex}.json`).write(JSON.stringify(commit));
+      await this.journal.append(envelopes);
 
       console.log(
         `[StreamBuffer] Flushed chunk ${this.chunkIndex} (${this.readings.size} metrics, ${this.locations.length} locations) in ${Date.now() - flushStartTime}ms`,
@@ -423,23 +389,6 @@ export class StreamBuffer {
   }
 
   /**
-   * Write a single chunk to file
-   */
-  private async writeChunk(metric: PublicActivityMetric, chunk: StreamChunk): Promise<string> {
-    const filename = `chunk_${this.chunkIndex}_${metric}.json`;
-    const file = new File(this.storageDir.uri, filename);
-
-    try {
-      file.write(JSON.stringify(chunk));
-      console.log(`[StreamBuffer] Wrote chunk ${filename} (${chunk.sampleCount} samples)`);
-      return filename;
-    } catch (error) {
-      console.error(`[StreamBuffer] Failed to write chunk ${filename}:`, error);
-      throw error;
-    }
-  }
-
-  /**
    * Read and aggregate all chunks for final processing
    * Called when recording finishes
    */
@@ -448,36 +397,61 @@ export class StreamBuffer {
     console.log("[StreamBuffer] Starting aggregation...");
 
     try {
-      // List all chunk files
-      const chunkFiles = this.readValidatedChunks().map(
-        ({ chunkIndex, chunk }) => `chunk_${chunkIndex}_${chunk.metric}.json`,
-      );
-
-      console.log(`[StreamBuffer] Found ${chunkFiles.length} chunk files`);
-
-      // Group files by metric
-      const filesByMetric = new Map<string, string[]>();
-      for (const file of chunkFiles) {
-        const metric = this.extractMetricFromFilename(file);
-        if (!filesByMetric.has(metric)) {
-          filesByMetric.set(metric, []);
+      const chunksByMetric = new Map<string, StreamChunk[]>();
+      for (const envelope of await this.journal.recover()) {
+        const chunk = JSON.parse(envelope.payload) as StreamChunk;
+        if (
+          !chunk ||
+          chunk.metric !== envelope.streamKind ||
+          chunk.values.length !== chunk.timestamps.length
+        ) {
+          throw new Error("Corrupt SQLite recording stream chunk");
         }
-        filesByMetric.get(metric)?.push(file);
+        const metricChunks = chunksByMetric.get(chunk.metric) ?? [];
+        metricChunks.push(chunk);
+        chunksByMetric.set(chunk.metric, metricChunks);
       }
 
       // Aggregate each metric
       const aggregated = new Map<string, AggregatedStream>();
 
-      for (const [metric, files] of filesByMetric.entries()) {
-        // Sort files by chunk index
-        files.sort((a, b) => {
-          const indexA = parseInt(a.split("_")[1], 10);
-          const indexB = parseInt(b.split("_")[1], 10);
-          return indexA - indexB;
-        });
-
-        const aggregatedStream = await this.aggregateMetricChunks(metric, files);
-        aggregated.set(metric, aggregatedStream);
+      for (const [metric, chunks] of chunksByMetric.entries()) {
+        const firstChunk = chunks[0];
+        if (!firstChunk) continue;
+        const values: Array<number | number[]> = [];
+        for (const chunk of chunks) values.push(...(chunk.values as Array<number | number[]>));
+        const timestamps = chunks.flatMap((chunk) => chunk.timestamps);
+        if (firstChunk.dataType === "latlng") {
+          aggregated.set(metric, {
+            metric: metric as PublicActivityMetric,
+            dataType: firstChunk.dataType,
+            values: values as number[][],
+            timestamps,
+            sampleCount: values.length,
+            minValue: undefined,
+            maxValue: undefined,
+            avgValue: undefined,
+          });
+        } else {
+          const numeric = values as number[];
+          const finite = numeric.filter(
+            (value): value is number => typeof value === "number" && Number.isFinite(value),
+          );
+          if (finite.length !== numeric.length)
+            throw new Error(`Corrupt numeric stream value for ${metric}`);
+          aggregated.set(metric, {
+            metric: metric as PublicActivityMetric,
+            dataType: firstChunk.dataType,
+            values: numeric,
+            timestamps,
+            sampleCount: numeric.length,
+            minValue: finite.length ? Math.min(...finite) : undefined,
+            maxValue: finite.length ? Math.max(...finite) : undefined,
+            avgValue: finite.length
+              ? finite.reduce((sum, value) => sum + value, 0) / finite.length
+              : undefined,
+          });
+        }
       }
 
       console.log(
@@ -489,106 +463,6 @@ export class StreamBuffer {
       console.error("[StreamBuffer] Aggregation failed:", error);
       throw error;
     }
-  }
-
-  /**
-   * Aggregate all chunks for a single metric
-   */
-  private async aggregateMetricChunks(
-    metric: string,
-    filenames: string[],
-  ): Promise<AggregatedStream> {
-    const chunks: StreamChunk[] = [];
-
-    // Read all chunk files
-    for (const filename of filenames) {
-      try {
-        const file = new File(this.storageDir.uri, filename);
-        const content = file.textSync();
-        const chunk = JSON.parse(content) as StreamChunk;
-        chunks.push(chunk);
-      } catch (error) {
-        console.error(`[StreamBuffer] Failed to read chunk ${filename}:`, error);
-        throw error;
-      }
-    }
-
-    if (chunks.length === 0) {
-      throw new Error(`No chunks found for metric: ${metric}`);
-    }
-
-    const firstChunk = chunks[0];
-
-    // Handle latlng data differently
-    if (firstChunk.dataType === "latlng") {
-      const allLatLngPairs: number[][] = [];
-      const allTimestamps: number[] = [];
-
-      for (const chunk of chunks) {
-        allLatLngPairs.push(...(chunk.values as number[][]));
-        allTimestamps.push(...chunk.timestamps);
-      }
-
-      return {
-        metric: metric as PublicActivityMetric,
-        dataType: firstChunk.dataType,
-        values: allLatLngPairs,
-        timestamps: allTimestamps,
-        sampleCount: allLatLngPairs.length,
-        minValue: undefined,
-        maxValue: undefined,
-        avgValue: undefined,
-      };
-    }
-
-    // Handle regular numeric data
-    const allValues: number[] = [];
-    const allTimestamps: number[] = [];
-
-    for (const chunk of chunks) {
-      allValues.push(...(chunk.values as number[]));
-      allTimestamps.push(...chunk.timestamps);
-    }
-
-    // Calculate statistics
-    let minValue: number | undefined;
-    let maxValue: number | undefined;
-    let avgValue: number | undefined;
-
-    if (allValues.length > 0) {
-      let sum = 0;
-      minValue = allValues[0];
-      maxValue = allValues[0];
-
-      for (const val of allValues) {
-        sum += val;
-        if (val < minValue) minValue = val;
-        if (val > maxValue) maxValue = val;
-      }
-
-      avgValue = sum / allValues.length;
-    }
-
-    return {
-      metric: metric as PublicActivityMetric,
-      dataType: firstChunk.dataType,
-      values: allValues,
-      timestamps: allTimestamps,
-      sampleCount: allValues.length,
-      minValue,
-      maxValue,
-      avgValue,
-    };
-  }
-
-  /**
-   * Extract metric name from chunk filename
-   */
-  private extractMetricFromFilename(filename: string): string {
-    // Format: chunk_{index}_{metric}.json
-    const parts = filename.split("_");
-    const metricWithExt = parts.slice(2).join("_"); // Handle metrics with underscores
-    return metricWithExt.replace(".json", "");
   }
 
   /**

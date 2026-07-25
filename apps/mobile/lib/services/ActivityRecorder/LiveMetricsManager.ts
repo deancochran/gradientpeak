@@ -24,6 +24,7 @@ import {
 import { EventEmitter } from "expo";
 import { MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
 import { DataBuffer, type LatLngBufferedReading } from "./DataBuffer";
+import { createRecordingStreamJournalAdapter } from "./recordingEvidenceJournal";
 import {
   convertToSimplifiedMetrics,
   getSensorModel,
@@ -140,6 +141,15 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
   public setGpsRecordingEnabled(enabled: boolean): void {
     this.gpsRecordingEnabled = enabled;
+  }
+
+  /** Must run before recording starts; foreground streams never discover a global active session. */
+  public bindEvidenceSession(sessionId: string, profileId: string): void {
+    if (this.isActive) throw new Error("Cannot rebind recording evidence while active");
+    this.streamBuffer = new StreamBuffer(
+      undefined,
+      createRecordingStreamJournalAdapter({ sessionId, profileId }),
+    );
   }
 
   public setGpsSpeedFallbackEnabled(enabled: boolean): void {

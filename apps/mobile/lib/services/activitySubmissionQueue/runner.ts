@@ -1,4 +1,8 @@
-import { upsertActivitySubmissionQueueJob } from "./storage";
+import {
+  claimDueActivitySubmissionQueueJob,
+  renewClaimedActivitySubmissionQueueJob,
+  transitionClaimedActivitySubmissionQueueJob,
+} from "./storage";
 import type {
   ActivitySubmissionQueueJob,
   ActivitySubmissionQueueJobStatus,
@@ -16,6 +20,39 @@ function getErrorMessage(error: unknown): string {
   }
 
   return String(error || "Unknown error");
+}
+
+function classifyFailure(error: unknown): "transient" | "permanent" | "auth" | "validation" {
+  const message = getErrorMessage(error).toLowerCase();
+  if (/unauthori[sz]ed|forbidden|auth|token/.test(message)) return "auth";
+  if (/invalid|validation|metadata|owner|different upload claim/.test(message)) return "validation";
+  if (/network|timeout|temporar|unavailable|5\d\d/.test(message)) return "transient";
+  return "permanent";
+}
+
+function retryAt(attempts: number, now: () => string): string {
+  const base = 1_000;
+  const cap = 5 * 60_000;
+  // Deterministic bounded jitter avoids synchronized retries while remaining testable.
+  const jitter = (attempts * 137) % 500;
+  return new Date(
+    Date.parse(now()) + Math.min(cap, base * 2 ** Math.min(attempts, 8)) + jitter,
+  ).toISOString();
+}
+
+const MAX_TRANSIENT_ATTEMPTS = 8;
+const LEASE_DURATION_MS = 60_000;
+let leaseSequence = 0;
+
+function leaseValue(prefix: string): string {
+  leaseSequence += 1;
+  return `${prefix}:${Date.now().toString(36)}:${leaseSequence.toString(36)}`;
+}
+
+class LeaseLostError extends Error {
+  constructor() {
+    super("Activity submission queue lease was lost");
+  }
 }
 
 function getFileName(filePath: string): string {
@@ -46,7 +83,17 @@ async function persistJob(
     updatedAt: now(),
   });
 
-  await upsertActivitySubmissionQueueJob(nextJob);
+  if (!job.leaseOwner || !job.leaseToken) throw new LeaseLostError();
+  if (
+    !(await transitionClaimedActivitySubmissionQueueJob(
+      nextJob,
+      job.leaseOwner,
+      job.leaseToken,
+      Date.parse(now()),
+    ))
+  ) {
+    throw new LeaseLostError();
+  }
   return nextJob;
 }
 
@@ -64,17 +111,106 @@ async function persistJobProgress(
 
 const activeJobs = new Map<string, Promise<ActivitySubmissionQueueJob>>();
 
+async function renewLease(
+  job: ActivitySubmissionQueueJob,
+  now: () => string,
+): Promise<ActivitySubmissionQueueJob> {
+  if (!job.leaseOwner || !job.leaseToken) throw new LeaseLostError();
+  const renewed = await renewClaimedActivitySubmissionQueueJob(
+    job.id,
+    job.leaseOwner,
+    job.leaseToken,
+    LEASE_DURATION_MS,
+    Date.parse(now()),
+  );
+  if (!renewed) throw new LeaseLostError();
+  return renewed;
+}
+
+/** Keep the durable fence live while an uninterruptible native/network upload is in flight. */
+async function withLeaseHeartbeat<T>(
+  job: ActivitySubmissionQueueJob,
+  now: () => string,
+  onRenewed: (job: ActivitySubmissionQueueJob) => void,
+  effect: () => Promise<T>,
+): Promise<T> {
+  let lost = false;
+  const renew = async () => {
+    try {
+      onRenewed(await renewLease(job, now));
+    } catch {
+      lost = true;
+    }
+  };
+  await renew();
+  if (lost) throw new LeaseLostError();
+  const timer = setInterval(
+    () => {
+      void renew();
+    },
+    Math.max(250, Math.floor(LEASE_DURATION_MS / 3)),
+  );
+  try {
+    const result = await effect();
+    if (lost) throw new LeaseLostError();
+    return result;
+  } finally {
+    clearInterval(timer);
+  }
+}
+
+async function completeJob(
+  job: ActivitySubmissionQueueJob,
+  now: () => string,
+  deps: ActivitySubmissionQueueRunnerDeps,
+): Promise<ActivitySubmissionQueueJob> {
+  const complete = await persistJobProgress(job, "complete", now, deps, {
+    retryClass: "none",
+    nextAttemptAt: null,
+    errorCategory: null,
+    leaseOwner: null,
+    leaseToken: null,
+    leaseExpiresAt: null,
+  });
+  // Best-effort cleanup only happens after the durable complete transition; retention failures keep evidence.
+  try {
+    const { garbageCollectAcceptedQueueEvidence } = await import(
+      "../ActivityRecorder/finalizedArtifactStorage"
+    );
+    await garbageCollectAcceptedQueueEvidence(complete);
+    const { garbageCollectExpiredRecordingEvidence } = await import(
+      "../ActivityRecorder/recordingEvidenceJournal"
+    );
+    await garbageCollectExpiredRecordingEvidence();
+  } catch {}
+  return complete;
+}
+
 async function runActivitySubmissionQueueJobOnce(
   initialJob: ActivitySubmissionQueueJob,
   deps: ActivitySubmissionQueueRunnerDeps,
 ): Promise<ActivitySubmissionQueueJob> {
   const now = deps.now ?? defaultNow;
+  const initial = activitySubmissionQueueJobSchema.parse(initialJob);
+  const nowMs = Date.parse(now());
+  const owner = leaseValue("mobile-runner");
+  const token = leaseValue("lease");
+  const claimed = await claimDueActivitySubmissionQueueJob(
+    initial.id,
+    owner,
+    token,
+    LEASE_DURATION_MS,
+    Number.isFinite(nowMs) ? nowMs : Date.now(),
+  );
+  // Another drain owns this operation (or it is not due). Do not invoke any effect.
+  if (!claimed) return initial;
   let job: ActivitySubmissionQueueJob = activitySubmissionQueueJobSchema.parse({
-    ...initialJob,
+    ...claimed,
     lastError: null,
   });
 
   if (job.status === "complete") return job;
+  if (job.status === "failed" && job.retryClass && job.retryClass !== "transient") return job;
 
   try {
     const recordingSessionId = job.draft.recordingSessionId ?? job.sessionId ?? job.artifactId;
@@ -85,7 +221,14 @@ async function runActivitySubmissionQueueJobOnce(
 
     if (!job.artifactSha256 || !job.localActivityFileSize) {
       job = await persistJobProgress(job, "uploading", now, deps);
-      const artifactMetadata = await deps.getLocalArtifactMetadata(job.localActivityFilePath);
+      const artifactMetadata = await withLeaseHeartbeat(
+        job,
+        now,
+        (renewed) => {
+          job = renewed;
+        },
+        () => deps.getLocalArtifactMetadata(job.localActivityFilePath),
+      );
       job = await persistJobProgress(job, "uploading", now, deps, {
         localActivityFileSize: artifactMetadata.byteSize,
         artifactSha256: artifactMetadata.sha256,
@@ -100,13 +243,22 @@ async function runActivitySubmissionQueueJobOnce(
       !job.activityId
     ) {
       try {
-        const legacyClaim = await deps.claimLegacyMobileRecordingUpload({
-          recordingSessionId,
-          stagingPath: job.remoteFilePath,
-          byteSize: job.localActivityFileSize,
-          sha256: job.artifactSha256,
-          format: getFileType(job.localActivityFilePath),
-        });
+        const { remoteFilePath, localActivityFileSize, artifactSha256 } = job;
+        const legacyClaim = await withLeaseHeartbeat(
+          job,
+          now,
+          (renewed) => {
+            job = renewed;
+          },
+          () =>
+            deps.claimLegacyMobileRecordingUpload({
+              recordingSessionId,
+              stagingPath: remoteFilePath,
+              byteSize: localActivityFileSize,
+              sha256: artifactSha256,
+              format: getFileType(job.localActivityFilePath),
+            }),
+        );
         if (job.ingestionId && job.ingestionId !== legacyClaim.ingestionId) {
           throw new Error("Legacy recording upload claim changed during retry");
         }
@@ -116,13 +268,14 @@ async function runActivitySubmissionQueueJobOnce(
             ingestionId: legacyClaim.ingestionId,
             uploadCompletedAt: now(),
           });
-          return persistJobProgress(job, "complete", now, deps);
+          return completeJob(job, now, deps);
         }
         job = await persistJobProgress(job, "uploading", now, deps, {
           ingestionId: legacyClaim.ingestionId,
           uploadCompletedAt: now(),
         });
-      } catch {
+      } catch (error) {
+        if (error instanceof LeaseLostError) throw error;
         // The legacy object may have expired or predate strict ownership metadata.
         // Fall back to re-uploading the retained local artifact through a new URL.
       }
@@ -133,12 +286,21 @@ async function runActivitySubmissionQueueJobOnce(
         throw new Error("Recording artifact metadata is incomplete");
       }
       const fileType = getFileType(job.localActivityFilePath);
-      const uploadClaim = await deps.beginMobileRecordingUpload({
-        recordingSessionId,
-        byteSize: job.localActivityFileSize,
-        sha256: job.artifactSha256,
-        format: fileType,
-      });
+      const { localActivityFileSize, artifactSha256 } = job;
+      const uploadClaim = await withLeaseHeartbeat(
+        job,
+        now,
+        (renewed) => {
+          job = renewed;
+        },
+        () =>
+          deps.beginMobileRecordingUpload({
+            recordingSessionId,
+            byteSize: localActivityFileSize,
+            sha256: artifactSha256,
+            format: fileType,
+          }),
+      );
       if (job.ingestionId && job.ingestionId !== uploadClaim.ingestionId) {
         throw new Error("Recording upload claim changed during retry");
       }
@@ -148,15 +310,19 @@ async function runActivitySubmissionQueueJobOnce(
           ingestionId: uploadClaim.ingestionId,
           uploadCompletedAt: now(),
         });
-        return persistJobProgress(job, "complete", now, deps);
+        return completeJob(job, now, deps);
       }
 
       job = await persistJobProgress(job, "uploading", now, deps, {
         ingestionId: uploadClaim.ingestionId,
       });
-      const uploadResult = await deps.uploadToSignedUrl(
-        job.localActivityFilePath,
-        uploadClaim.signedUrl,
+      const uploadResult = await withLeaseHeartbeat(
+        job,
+        now,
+        (renewed) => {
+          job = renewed;
+        },
+        () => deps.uploadToSignedUrl(job.localActivityFilePath, uploadClaim.signedUrl),
       );
       if (uploadResult && !uploadResult.success) {
         throw new Error(uploadResult.error || "Failed to upload activity file");
@@ -172,25 +338,33 @@ async function runActivitySubmissionQueueJobOnce(
       }
       const ingestionId = job.ingestionId;
       job = await persistJobProgress(job, "creating_activity", now, deps);
-      const created = await deps.createFromRecordingSummary({
-        profileId: job.draft.profileId,
-        recordingSessionId,
-        name: job.draft.name,
-        notes: job.draft.notes,
-        is_private: job.draft.is_private,
-        content_visibility: job.draft.content_visibility,
-        startedAt: job.draft.startedAt,
-        finishedAt: job.draft.finishedAt,
-        activityPlanId: job.draft.activityPlanId,
-        executionManifest: job.executionManifest,
-        artifactSource: "uploadedArtifact",
-        uploadedArtifact: { ingestionId },
-        summary: {
-          distanceMeters: Math.round(job.draft.distanceMeters),
-          calories: job.draft.calories ?? null,
+      const created = await withLeaseHeartbeat(
+        job,
+        now,
+        (renewed) => {
+          job = renewed;
         },
-        source: "mobile_recording",
-      });
+        () =>
+          deps.createFromRecordingSummary({
+            profileId: job.draft.profileId,
+            recordingSessionId,
+            name: job.draft.name,
+            notes: job.draft.notes,
+            is_private: job.draft.is_private,
+            content_visibility: job.draft.content_visibility,
+            startedAt: job.draft.startedAt,
+            finishedAt: job.draft.finishedAt,
+            activityPlanId: job.draft.activityPlanId,
+            executionManifest: job.executionManifest,
+            artifactSource: "uploadedArtifact",
+            uploadedArtifact: { ingestionId },
+            summary: {
+              distanceMeters: Math.round(job.draft.distanceMeters),
+              calories: job.draft.calories ?? null,
+            },
+            source: "mobile_recording",
+          }),
+      );
 
       if (!created.ingestion?.id) {
         throw new Error("Activity file ingestion was not returned");
@@ -205,11 +379,23 @@ async function runActivitySubmissionQueueJobOnce(
       });
     }
 
-    return persistJobProgress(job, "complete", now, deps);
+    return completeJob(job, now, deps);
   } catch (error) {
+    if (error instanceof LeaseLostError) throw error;
+    const retryClass = classifyFailure(error);
+    const attempts = job.attempts + 1;
+    const exhausted = retryClass === "transient" && attempts >= MAX_TRANSIENT_ATTEMPTS;
+    const persistedRetryClass = exhausted ? "permanent" : retryClass;
     return persistJobProgress(job, "failed", now, deps, {
-      attempts: job.attempts + 1,
-      lastError: getErrorMessage(error),
+      attempts,
+      // Do not retain server messages, paths, or payloads in the durable queue.
+      lastError: persistedRetryClass,
+      errorCategory: persistedRetryClass,
+      retryClass: persistedRetryClass,
+      nextAttemptAt: persistedRetryClass === "transient" ? retryAt(attempts, now) : null,
+      leaseOwner: null,
+      leaseToken: null,
+      leaseExpiresAt: null,
       ...(job.activityId ? {} : { uploadCompletedAt: undefined }),
     });
   }

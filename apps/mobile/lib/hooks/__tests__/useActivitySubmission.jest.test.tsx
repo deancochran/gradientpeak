@@ -1,9 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react-native";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import type { ActivitySubmissionQueueJob } from "@/lib/services/activitySubmissionQueue";
 
-const upsertJobMock = jest.fn(async () => undefined);
-const loadJobMock = jest.fn(async (): Promise<ActivitySubmissionQueueJob | null> => null);
 const createFromRecordingSummaryMock = jest.fn(async () => ({
   id: "activity-1",
   ingestion: { id: "ingestion-1", status: "pending_upload", source: "mobile_recording" },
@@ -69,17 +66,6 @@ jest.mock("expo-file-system", () => ({
     size = 1234;
   },
 }));
-
-jest.mock("@/lib/services/activitySubmissionQueue", () => {
-  const runner = jest.requireActual("@/lib/services/activitySubmissionQueue/runner");
-  return {
-    __esModule: true,
-    runActivitySubmissionQueueJob: runner.runActivitySubmissionQueueJob,
-    loadActivitySubmissionQueueJobByArtifactId: (...args: unknown[]) =>
-      (loadJobMock as jest.Mock)(...args),
-    upsertActivitySubmissionQueueJob: (...args: unknown[]) => (upsertJobMock as jest.Mock)(...args),
-  };
-});
 
 jest.mock("@/lib/services/ActivityRecorder/finalizedArtifactStorage", () => ({
   __esModule: true,
@@ -167,12 +153,17 @@ const service = {
 };
 
 const { useActivitySubmission } = require("../useActivitySubmission");
+const queueStorage = jest.requireActual(
+  "@/lib/services/activitySubmissionQueue/storage",
+) as typeof import("@/lib/services/activitySubmissionQueue/storage");
 
 describe("useActivitySubmission", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    loadJobMock.mockResolvedValue(null);
+    queueStorage.setActivitySubmissionQueueJobsForTests(new Map());
   });
+
+  afterEach(() => queueStorage.setActivitySubmissionQueueJobsForTests());
 
   it("queues a finalized artifact, creates the backend activity, and continues upload processing", async () => {
     const { result } = renderHook(() =>
@@ -191,10 +182,12 @@ describe("useActivitySubmission", () => {
       ).resolves.toBe(true);
     });
 
-    expect(upsertJobMock).toHaveBeenCalledWith(
+    await expect(
+      queueStorage.loadActivitySubmissionQueueJobByArtifactId("session-1", "profile-1"),
+    ).resolves.toMatchObject(
       expect.objectContaining({
         id: "session-1",
-        status: "queued",
+        status: "complete",
         localActivityFilePath: "file:///activity.fit",
         draft: expect.objectContaining({
           name: "Queued ride",
@@ -223,7 +216,7 @@ describe("useActivitySubmission", () => {
   });
 
   it("continues a persisted failed job without rebuilding completed progress", async () => {
-    loadJobMock.mockResolvedValue({
+    await queueStorage.upsertActivitySubmissionQueueJob({
       schemaVersion: 2,
       id: "session-1",
       artifactId: "session-1",
@@ -249,6 +242,8 @@ describe("useActivitySubmission", () => {
       status: "failed",
       attempts: 3,
       lastError: "app restarted",
+      retryClass: "transient",
+      nextAttemptAt: "2026-01-01T11:05:00.000Z",
       createdAt: "2026-01-01T11:00:00.000Z",
       updatedAt: "2026-01-01T11:05:00.000Z",
     });
@@ -262,7 +257,6 @@ describe("useActivitySubmission", () => {
       await expect(result.current.submit()).resolves.toBe(true);
     });
 
-    expect(loadJobMock).toHaveBeenCalledWith("session-1", "profile-1");
     expect(createFromRecordingSummaryMock).not.toHaveBeenCalled();
     expect(beginMobileRecordingUploadMock).not.toHaveBeenCalled();
     expect(uploadToSignedUrlMock).not.toHaveBeenCalled();
@@ -271,7 +265,7 @@ describe("useActivitySubmission", () => {
   });
 
   it("keeps finalized artifact files when continuation fails", async () => {
-    loadJobMock.mockResolvedValue({
+    await queueStorage.upsertActivitySubmissionQueueJob({
       schemaVersion: 2,
       id: "session-1",
       artifactId: "session-1",
@@ -294,6 +288,8 @@ describe("useActivitySubmission", () => {
       artifactSha256: "a".repeat(64),
       status: "failed",
       attempts: 1,
+      retryClass: "transient",
+      nextAttemptAt: "2026-01-01T11:05:00.000Z",
       createdAt: "2026-01-01T11:00:00.000Z",
       updatedAt: "2026-01-01T11:05:00.000Z",
     });
@@ -325,7 +321,7 @@ describe("useActivitySubmission", () => {
     );
     await waitFor(() => expect(result.current.error).toContain("different profile"));
 
-    expect(upsertJobMock).not.toHaveBeenCalled();
+    await expect(queueStorage.loadActivitySubmissionQueueJobs()).resolves.toEqual([]);
     expect(createFromRecordingSummaryMock).not.toHaveBeenCalled();
   });
 });

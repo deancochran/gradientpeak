@@ -23,6 +23,7 @@
  */
 
 import { Encoder, Profile, Utils } from "@garmin/fitsdk";
+import { safeDecodeFitFile } from "@repo/core/activity-files/fit-parser";
 import { Buffer } from "buffer";
 import { Directory, File, Paths } from "expo-file-system";
 import { Platform } from "react-native";
@@ -130,6 +131,111 @@ export interface FitFinalizeOptions {
   multisportMode?: "manual" | "automatic";
 }
 
+export const MAX_FINALIZED_FIT_BYTES = 25 * 1024 * 1024;
+
+export type FinalizedFitExpectation = {
+  startTime?: number;
+  endedAt?: number;
+  durationMs?: number;
+  distanceMeters?: number;
+};
+
+function decodedTimestamp(value: unknown): number | undefined {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "string") {
+    const timestamp = Date.parse(value);
+    return Number.isFinite(timestamp) ? timestamp : undefined;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Utils.convertDateTimeToDate(value).getTime();
+  }
+  return undefined;
+}
+
+/**
+ * Validates an unreferenced FIT candidate before it can be recorded as the
+ * session artifact. The SDK decoder is deliberately part of this gate rather
+ * than a best-effort post-upload diagnostic.
+ */
+export async function validateFinalizedFitFile(
+  path: string,
+  expected: FinalizedFitExpectation = {},
+): Promise<{ byteSize: number }> {
+  const file = new File(path);
+  if (!file.exists || file.size <= 0 || file.size > MAX_FINALIZED_FIT_BYTES) {
+    throw new Error("Finalized FIT file has an invalid size.");
+  }
+  const bytes = await file.bytes();
+  if (bytes.byteLength !== file.size)
+    throw new Error("Finalized FIT file size does not match bytes.");
+  const decoded = safeDecodeFitFile(Buffer.from(bytes));
+  if (decoded.errors.length || !decoded.messages)
+    throw new Error("Finalized FIT file does not decode cleanly.");
+  const sessions = decoded.messages.sessionMesgs ?? [];
+  const activities = decoded.messages.activityMesgs ?? [];
+  const records = decoded.messages.recordMesgs ?? [];
+  if (!sessions.length || !activities.length || !records.length) {
+    throw new Error(
+      "Finalized FIT file is missing required session, activity, or record messages.",
+    );
+  }
+
+  let previousTimestamp = -1;
+  let previousDistance = -Number.EPSILON;
+  for (const record of records) {
+    const timestamp = decodedTimestamp(record.timestamp);
+    const distance = record.distance;
+    if (timestamp === undefined || timestamp < previousTimestamp) {
+      throw new Error("Finalized FIT records have invalid timestamp ordering.");
+    }
+    if (
+      distance !== undefined &&
+      (typeof distance !== "number" ||
+        !Number.isFinite(distance) ||
+        distance < 0 ||
+        distance + 0.01 < previousDistance)
+    ) {
+      throw new Error("Finalized FIT records have invalid distance ordering.");
+    }
+    previousTimestamp = timestamp;
+    if (typeof distance === "number") previousDistance = distance;
+  }
+
+  const first = sessions[0] as Record<string, unknown>;
+  const last = sessions.at(-1) as Record<string, unknown>;
+  const start = decodedTimestamp(first.startTime);
+  const end = decodedTimestamp(last.timestamp);
+  if (start === undefined || end === undefined || end <= start) {
+    throw new Error("Finalized FIT session time range is invalid.");
+  }
+  const duration = last.totalElapsedTime;
+  if (typeof duration !== "number" || !Number.isFinite(duration) || duration <= 0) {
+    throw new Error("Finalized FIT session duration is invalid.");
+  }
+  const toleranceMs = 1_500;
+  if (expected.startTime !== undefined && Math.abs(start - expected.startTime) > toleranceMs) {
+    throw new Error("Finalized FIT session start does not match fenced evidence.");
+  }
+  if (expected.endedAt !== undefined && Math.abs(end - expected.endedAt) > toleranceMs) {
+    throw new Error("Finalized FIT session end does not match fenced evidence.");
+  }
+  if (
+    expected.durationMs !== undefined &&
+    Math.abs(end - start - expected.durationMs) > toleranceMs
+  ) {
+    throw new Error("Finalized FIT session duration does not match fenced evidence.");
+  }
+  if (
+    expected.distanceMeters !== undefined &&
+    (typeof last.totalDistance !== "number" ||
+      !Number.isFinite(last.totalDistance) ||
+      Math.abs(last.totalDistance - expected.distanceMeters) > 0.1)
+  ) {
+    throw new Error("Finalized FIT session distance does not match fenced evidence.");
+  }
+  return { byteSize: file.size };
+}
+
 export interface FitLapData {
   lapNumber: number;
   startTime: number;
@@ -178,7 +284,7 @@ export class GarminFitEncoder {
   constructor(recordingId: string, userId: string, _config?: Partial<EncoderConfig>) {
     this.recordingId = recordingId;
     this.userId = userId;
-    const baseDir = Paths.cache.uri || Paths.document.uri || "";
+    const baseDir = Paths.document.uri || Paths.cache.uri || "";
     this.storageUri = `${baseDir}fit_encoding_${recordingId}/`;
     this.outputFilePath = `${this.storageUri}activity.fit`;
     this.encoder = new Encoder();
@@ -204,7 +310,7 @@ export class GarminFitEncoder {
       this.isInitialized = true;
       console.log(`[GarminFitEncoder] Initialized for recording ${this.recordingId}`);
     } catch (error) {
-      console.error(`[GarminFitEncoder] Failed to initialize:`, error);
+      console.error(error instanceof Error && error.name ? error.name.slice(0, 80) : "failed");
       throw error;
     }
   }
@@ -1421,7 +1527,7 @@ export class GarminFitEncoder {
       this.isFinalized = true;
       console.log(`[GarminFitEncoder] Finalized, ${this.recordCount} records written`);
     } catch (error) {
-      console.error(`[GarminFitEncoder] Finalize failed:`, error);
+      console.error(error instanceof Error && error.name ? error.name.slice(0, 80) : "failed");
       throw error;
     }
   }
@@ -1432,7 +1538,7 @@ export class GarminFitEncoder {
       file.create({ intermediates: true, overwrite: true });
     }
     await file.write(bytes);
-    console.log(`[GarminFitEncoder] Wrote ${file.size ?? 0} bytes to ${this.outputFilePath}`);
+    console.log(`[GarminFitEncoder] Wrote ${file.size ?? 0} FIT bytes`);
 
     if (Platform.OS === "ios") {
       await new Promise((resolve) => setTimeout(resolve, 1000));
