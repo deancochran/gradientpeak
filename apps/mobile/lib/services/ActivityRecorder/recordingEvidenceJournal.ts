@@ -459,14 +459,17 @@ async function recoverStreamEnvelopes(
       await quarantineEvidence(tx, sessionId, "profile-session-mismatch");
       throw new Error("profile-session-mismatch");
     }
-    const rows = await tx.getAllAsync<
-      RecordingStreamEnvelope & {
-        byte_size: number;
-        sha256: string;
-        commit_marker: string;
-        version: number;
-      }
-    >(
+    const rows = await tx.getAllAsync<{
+      streamKind: string;
+      sequence: number;
+      streamOrder: number;
+      timestamp: number;
+      payload: string;
+      byte_size: number;
+      sha256: string;
+      commit_marker: string;
+      version: number;
+    }>(
       "SELECT stream_kind AS streamKind, sequence, stream_order AS streamOrder, timestamp, payload, byte_size, sha256, commit_marker, version FROM recording_stream_envelopes WHERE session_id = ? ORDER BY stream_order",
       sessionId,
     );
@@ -475,7 +478,7 @@ async function recoverStreamEnvelopes(
     let previousTimestamp = -Infinity;
     try {
       for (const row of rows) {
-        const order = (row as unknown as { streamOrder: number }).streamOrder;
+        const order = row.streamOrder;
         const next = expected.get(row.streamKind) ?? 0;
         if (
           !row.streamKind ||

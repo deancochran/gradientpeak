@@ -145,7 +145,7 @@ export function prepareMobileRecordingStartup(
       checkpoint,
       queueJobs,
       hasQuarantinedEvidence: await hasQuarantinedRecordingEvidence(),
-      evidence,
+      ...(evidence === undefined ? {} : { evidence }),
       finalizedArtifactRecovery,
     };
   })().catch((error) => {

@@ -421,7 +421,7 @@ describe("recording evidence native SQLite migrations", () => {
     for (const [sessionId, checkpoint] of [
       ["schema-invalid", JSON.stringify({ schemaVersion: 3, variant: "unplanned" })],
       ["owner-mismatch", JSON.stringify(unplannedCheckpoint("other-session", "other-profile"))],
-    ]) {
+    ] as const) {
       await allocateRecordingEvidenceSession({ sessionId, profileId: "profile" });
       await native.executor.runAsync(
         "UPDATE recording_evidence_sessions SET checkpoint_json = ?, checkpoint_digest = ? WHERE session_id = ?",

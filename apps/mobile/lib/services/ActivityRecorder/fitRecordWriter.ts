@@ -8,8 +8,8 @@ interface FitRecordSink {
 export interface RecordingRewindEvidenceBoundary {
   supersededFrom: string;
   rewoundAt: string;
-  sourceDistanceMeters?: number;
-  destinationDistanceMeters?: number;
+  sourceDistanceMeters?: number | undefined;
+  destinationDistanceMeters?: number | undefined;
 }
 
 export function rebaseRetainedFitRecordDistances<

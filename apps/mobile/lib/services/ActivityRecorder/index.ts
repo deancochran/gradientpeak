@@ -468,7 +468,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   };
 
   // === Plan State (minimal tracking) ===
-  private _plan?: RecordingActivityPlanV3Input;
+  private _plan: RecordingActivityPlanV3Input | undefined;
   private _eventId?: string;
 
   // === GPS Availability Cache ===
@@ -503,7 +503,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   /** Closes foreground producer scheduling before the durable SQLite fence. */
   private producerFenceClosed = false;
   private evidenceFenced = false;
-  private unregisterFinalizationRecoveryOwner?: () => void;
+  private unregisterFinalizationRecoveryOwner: (() => void) | undefined;
 
   // === Lap Tracking ===
   private laps: number[] = []; // Array of lap times (moving time in seconds)
@@ -3675,12 +3675,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         );
         this.recordingMetadata.activityFilePath = this.fitEncoder.getFilePath();
         await validateFinalizedFitFile(this.recordingMetadata.activityFilePath, {
-          startTime: this.startTime,
-          endedAt: this.recordingEndTime,
-          durationMs:
-            this.startTime && this.recordingEndTime
-              ? this.recordingEndTime - this.startTime
-              : undefined,
+          ...(this.startTime === undefined ? {} : { startTime: this.startTime }),
+          ...(this.recordingEndTime === undefined ? {} : { endedAt: this.recordingEndTime }),
+          ...(this.startTime === undefined || this.recordingEndTime === undefined
+            ? {}
+            : { durationMs: this.recordingEndTime - this.startTime }),
           distanceMeters: stats.distance,
         });
         const artifactMetadata = await getLocalActivityArtifactMetadata(

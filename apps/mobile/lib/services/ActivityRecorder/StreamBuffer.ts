@@ -428,9 +428,6 @@ export class StreamBuffer {
             values: values as number[][],
             timestamps,
             sampleCount: values.length,
-            minValue: undefined,
-            maxValue: undefined,
-            avgValue: undefined,
           });
         } else {
           const numeric = values as number[];
@@ -445,11 +442,13 @@ export class StreamBuffer {
             values: numeric,
             timestamps,
             sampleCount: numeric.length,
-            minValue: finite.length ? Math.min(...finite) : undefined,
-            maxValue: finite.length ? Math.max(...finite) : undefined,
-            avgValue: finite.length
-              ? finite.reduce((sum, value) => sum + value, 0) / finite.length
-              : undefined,
+            ...(finite.length === 0
+              ? {}
+              : {
+                  minValue: Math.min(...finite),
+                  maxValue: Math.max(...finite),
+                  avgValue: finite.reduce((sum, value) => sum + value, 0) / finite.length,
+                }),
           });
         }
       }
