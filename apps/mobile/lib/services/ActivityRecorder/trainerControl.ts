@@ -1,5 +1,5 @@
+import { FTMS_SERVICE_UUIDS } from "@deancochran/ftms";
 import {
-  BLE_SERVICE_UUIDS,
   type CompiledActivityStepOccurrence,
   metersPerSecondToKph,
   type RecordingTrainerControlIntent,
@@ -51,10 +51,12 @@ export class TrainerControl {
   public async neutralizeForBoundary(): Promise<boolean> {
     this.resetAdaptiveState();
     this.lastRouteGradePercent = null;
-    if (!this.deps.sensorsManager.getControllableTrainer()) return true;
-    const success = await this.deps.sensorsManager.resetTrainerControl();
-    this.captureControllerStatus();
-    if (!success) this.deps.onError("Failed to reset trainer control at activity boundary.");
+    if (!this.deps.sensorsManager.getSelectedFTMSTrainer()) return true;
+    const success = await this.deps.sensorsManager.resetTrainerControl(
+      this.commandContext("step_change", "reset"),
+    );
+    if (!success && this.lastCommandStatus?.outcome !== "superseded")
+      this.deps.onError("Failed to reset trainer control at activity boundary.");
     return success;
   }
 
@@ -87,10 +89,16 @@ export class TrainerControl {
     }
 
     if (sensor.connectionState === "connected") {
-      this.controlState = sensor.isControllable ? "controllable" : "control_rejected";
-      this.hadControllableTrainer = this.hadControllableTrainer || Boolean(sensor.isControllable);
-      if (sensor.isControllable) {
+      if (sensor.ftmsController?.hasControlPermission()) {
+        this.controlState = "controllable";
+        this.hadControllableTrainer = true;
         this.captureControllerStatus();
+      } else {
+        this.controlState = sensor.isControllable
+          ? this.hadControllableTrainer
+            ? "control_lost"
+            : "eligible"
+          : "not_applicable";
       }
       return;
     }
@@ -191,8 +199,8 @@ export class TrainerControl {
 
     for (const intent of resolution.intents) {
       const success = await this.dispatchIntent(intent, trainer);
-      this.captureControllerStatus();
       if (!success) {
+        if (this.lastCommandStatus?.outcome === "superseded") return;
         if (source === "reconnect_recovery") {
           this.recoveryState = "failed";
           this.controlState = this.controlState === "controllable" ? "failed" : this.controlState;
@@ -238,20 +246,17 @@ export class TrainerControl {
             windResistance: 0.51,
           },
           {
-            source: "periodic_refinement",
-            coalesceKey: "route_grade",
+            ...this.commandContext("periodic_refinement", "route_grade"),
           },
         )
       : trainer.ftmsFeatures?.inclinationTargetSettingSupported
         ? await this.deps.sensorsManager.setTargetInclination(percent, {
-            source: "periodic_refinement",
-            coalesceKey: "route_grade",
+            ...this.commandContext("periodic_refinement", "route_grade"),
           })
         : false;
-    this.captureControllerStatus();
     if (success) {
       this.lastRouteGradePercent = percent;
-    } else {
+    } else if (this.lastCommandStatus?.outcome !== "superseded") {
       this.deps.onError(`Failed to set route grade: ${percent.toFixed(1)}%`);
     }
   }
@@ -264,9 +269,8 @@ export class TrainerControl {
     }
 
     const success = await this.dispatchIntent(intent, trainer);
-    this.captureControllerStatus();
 
-    if (!success) {
+    if (!success && this.lastCommandStatus?.outcome !== "superseded") {
       this.deps.onError(`Failed to apply trainer command: ${intent.type}`);
     }
 
@@ -283,29 +287,25 @@ export class TrainerControl {
       case "set_speed":
         return trainer.ftmsFeatures?.speedTargetSettingSupported
           ? this.deps.sensorsManager.setTargetSpeed(metersPerSecondToKph(intent.metersPerSecond), {
-              source: intent.source,
-              coalesceKey: intent.type,
+              ...this.commandContext(intent.source, intent.type),
             })
           : this.recordUnsupportedIntent(intent, trainer);
       case "set_cadence":
         return trainer.ftmsFeatures?.targetedCadenceSupported
           ? this.deps.sensorsManager.setTargetCadence(intent.rpm, {
-              source: intent.source,
-              coalesceKey: intent.type,
+              ...this.commandContext(intent.source, intent.type),
             })
           : this.recordUnsupportedIntent(intent, trainer);
       case "set_incline":
         return trainer.ftmsFeatures?.inclinationTargetSettingSupported
           ? this.deps.sensorsManager.setTargetInclination(intent.inclinePercent, {
-              source: intent.source,
-              coalesceKey: intent.type,
+              ...this.commandContext(intent.source, intent.type),
             })
           : this.recordUnsupportedIntent(intent, trainer);
       case "set_resistance":
         return trainer.ftmsFeatures?.resistanceTargetSettingSupported
           ? this.deps.sensorsManager.setResistanceTarget(intent.resistance, {
-              source: intent.source,
-              coalesceKey: intent.type,
+              ...this.commandContext(intent.source, intent.type),
             })
           : this.recordUnsupportedIntent(intent, trainer);
       case "set_simulation":
@@ -318,8 +318,7 @@ export class TrainerControl {
                 windResistance: intent.aerodynamicDragCoefficient,
               },
               {
-                source: intent.source,
-                coalesceKey: intent.type,
+                ...this.commandContext(intent.source, intent.type),
               },
             )
           : this.recordUnsupportedIntent(intent, trainer);
@@ -337,6 +336,19 @@ export class TrainerControl {
       this.controlState = "controllable";
       this.hadControllableTrainer = true;
       return trainer;
+    }
+
+    const eligibleTrainer = this.deps.sensorsManager.getSelectedFTMSTrainer();
+    if (
+      eligibleTrainer?.connectionState === "connected" &&
+      eligibleTrainer.isControllable &&
+      eligibleTrainer.ftmsController
+    ) {
+      this.controlState =
+        source === "reconnect_recovery" || this.hadControllableTrainer
+          ? "recovering_control"
+          : "requesting_control";
+      return eligibleTrainer;
     }
 
     this.lastCommandStatus = {
@@ -379,7 +391,7 @@ export class TrainerControl {
 
     if (this.hasEligibleTrainerCandidate()) {
       if (this.controlState !== "control_rejected" && this.controlState !== "failed") {
-        this.controlState = "eligible";
+        this.controlState = this.hadControllableTrainer ? "control_lost" : "eligible";
       }
       return;
     }
@@ -388,9 +400,11 @@ export class TrainerControl {
   }
 
   private hasEligibleTrainerCandidate(): boolean {
+    const selected = this.deps.sensorsManager.getSelectedFTMSTrainer();
+    if (selected?.connectionState === "connected" && selected.isControllable) return true;
     return this.deps.sensorsManager
       .getConnectedSensors()
-      .some((sensor) => this.isFtmsCandidate(sensor));
+      .some((sensor) => this.isFtmsCandidate(sensor) && Boolean(sensor.isControllable));
   }
 
   private isFtmsCandidate(sensor: ConnectedSensor): boolean {
@@ -398,24 +412,35 @@ export class TrainerControl {
       return false;
     }
 
-    const ftmsService = BLE_SERVICE_UUIDS.FITNESS_MACHINE.toLowerCase();
+    const ftmsService = FTMS_SERVICE_UUIDS.FITNESS_MACHINE.toLowerCase();
     return sensor.services.some((service) => service.toLowerCase() === ftmsService);
   }
 
-  private captureControllerStatus(): void {
-    const status = this.deps.sensorsManager.getLastTrainerCommandStatus();
+  private captureControllerStatus(
+    status = this.deps.sensorsManager.getLastTrainerCommandStatus(),
+  ): void {
     if (!status) {
       return;
     }
 
     this.lastCommandStatus = status;
-    if (!status.success && status.outcome === "control_conflict") {
+    if (status.outcome === "superseded") {
+      // Expected preemption leaves the current permission state unchanged.
+    } else if (!status.success && status.outcome === "control_conflict") {
       this.controlState = "control_lost";
     } else if (status.success) {
       this.controlState = "controllable";
       this.hadControllableTrainer = true;
     }
     this.deps.onCommandStatus?.(status);
+  }
+
+  private commandContext(source: RecordingTrainerIntentSource, coalesceKey: string) {
+    return {
+      source,
+      coalesceKey,
+      onStatus: (status: RecordingTrainerCommandStatus) => this.captureControllerStatus(status),
+    };
   }
 
   private recordUnsupportedIntent(
@@ -443,10 +468,10 @@ export class TrainerControl {
     trainer: ConnectedSensor,
   ): Promise<boolean> {
     if (trainer.ftmsFeatures?.powerTargetSettingSupported) {
-      return this.deps.sensorsManager.setPowerTarget(intent.watts, {
-        source: intent.source,
-        coalesceKey: intent.type,
-      });
+      return this.deps.sensorsManager.setPowerTarget(
+        intent.watts,
+        this.commandContext(intent.source, intent.type),
+      );
     }
 
     if (!trainer.ftmsFeatures?.resistanceTargetSettingSupported) {
@@ -467,10 +492,10 @@ export class TrainerControl {
       trainer.ftmsFeatures,
     );
 
-    return this.deps.sensorsManager.setResistanceTarget(resistance, {
-      source: intent.source,
-      coalesceKey: intent.type,
-    });
+    return this.deps.sensorsManager.setResistanceTarget(
+      resistance,
+      this.commandContext(intent.source, intent.type),
+    );
   }
 }
 

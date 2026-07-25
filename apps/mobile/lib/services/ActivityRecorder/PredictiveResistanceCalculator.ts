@@ -11,10 +11,10 @@
  * Resistance = Torque / DeviceSpecificConstant
  */
 
-import type { FTMSFeatures } from "@repo/core/ftms-types";
+import type { FTMSDeviceType, FTMSFeatures } from "@deancochran/ftms";
 import { RollingBuffer } from "./RollingBuffer";
 
-export type FTMSDeviceType = "bike" | "rower" | "elliptical" | "treadmill";
+export type { FTMSDeviceType } from "@deancochran/ftms";
 
 /**
  * Device-specific constants for torque-to-resistance mapping

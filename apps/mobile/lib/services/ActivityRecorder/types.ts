@@ -1,6 +1,6 @@
+import type { ControlMode, FtmsAvailableMode, FtmsControlMode } from "@deancochran/ftms";
 import type {
   CompiledActivityPlanOccurrence,
-  ControlMode,
   CurrentMetricValue as CoreCurrentMetricValue,
   RecordingSessionLifecycleState as CoreRecorderLifecycleState,
   RecordingDegradedState as CoreRecordingDegradedState,
@@ -10,8 +10,6 @@ import type {
   RecordingSessionOverrideState as CoreRecordingSessionOverrideState,
   RecordingSessionSnapshot as CoreRecordingSessionSnapshot,
   RecordingSourceChangeEvent as CoreRecordingSourceChangeEvent,
-  FtmsAvailableMode,
-  FtmsControlMode,
   PublicActivityMetric,
   PublicActivityMetricDataType,
   RecordingActivityCategory,

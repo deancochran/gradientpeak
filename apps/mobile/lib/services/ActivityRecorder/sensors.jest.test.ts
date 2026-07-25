@@ -49,63 +49,6 @@ jest.mock("@repo/core", () => ({
     HEART_RATE: "heart_rate",
     CADENCE: "cadence",
   },
-  FTMS_FEATURE_BITS: {
-    AVERAGE_SPEED_SUPPORTED: 0,
-    CADENCE_SUPPORTED: 1,
-    TOTAL_DISTANCE_SUPPORTED: 2,
-    INCLINATION_SUPPORTED: 3,
-    ELEVATION_GAIN_SUPPORTED: 4,
-    PACE_SUPPORTED: 5,
-    STEP_COUNT_SUPPORTED: 6,
-    RESISTANCE_LEVEL_SUPPORTED: 7,
-    STRIDE_COUNT_SUPPORTED: 8,
-    EXPENDED_ENERGY_SUPPORTED: 9,
-    HEART_RATE_MEASUREMENT_SUPPORTED: 10,
-    METABOLIC_EQUIVALENT_SUPPORTED: 11,
-    ELAPSED_TIME_SUPPORTED: 12,
-    REMAINING_TIME_SUPPORTED: 13,
-    POWER_MEASUREMENT_SUPPORTED: 14,
-    FORCE_ON_BELT_SUPPORTED: 15,
-    USER_DATA_RETENTION_SUPPORTED: 16,
-  },
-  FTMS_TARGET_SETTING_BITS: {
-    SPEED_TARGET_SETTING_SUPPORTED: 0,
-    INCLINATION_TARGET_SETTING_SUPPORTED: 1,
-    RESISTANCE_TARGET_SETTING_SUPPORTED: 2,
-    POWER_TARGET_SETTING_SUPPORTED: 3,
-    HEART_RATE_TARGET_SETTING_SUPPORTED: 4,
-    TARGETED_EXPENDED_ENERGY_SUPPORTED: 5,
-    TARGETED_STEP_NUMBER_SUPPORTED: 6,
-    TARGETED_STRIDE_NUMBER_SUPPORTED: 7,
-    TARGETED_DISTANCE_SUPPORTED: 8,
-    TARGETED_TRAINING_TIME_SUPPORTED: 9,
-    TARGETED_TIME_TWO_HR_ZONES_SUPPORTED: 10,
-    TARGETED_TIME_THREE_HR_ZONES_SUPPORTED: 11,
-    TARGETED_TIME_FIVE_HR_ZONES_SUPPORTED: 12,
-    INDOOR_BIKE_SIMULATION_SUPPORTED: 13,
-    WHEEL_CIRCUMFERENCE_SUPPORTED: 14,
-    SPIN_DOWN_CONTROL_SUPPORTED: 15,
-    TARGETED_CADENCE_SUPPORTED: 16,
-  },
-  FTMS_OPCODES: {
-    REQUEST_CONTROL: 0,
-    RESET: 1,
-    SET_TARGET_SPEED: 2,
-    SET_TARGET_INCLINATION: 3,
-    SET_TARGET_RESISTANCE: 4,
-    SET_TARGET_POWER: 5,
-    SET_TARGET_HEART_RATE: 6,
-    SET_INDOOR_BIKE_SIMULATION: 17,
-    SET_TARGETED_CADENCE: 20,
-    RESPONSE_CODE: 128,
-  },
-  FTMS_RESULT_CODES: {
-    SUCCESS: 1,
-    NOT_SUPPORTED: 2,
-    INVALID_PARAMETER: 3,
-    OPERATION_FAILED: 4,
-    CONTROL_NOT_PERMITTED: 5,
-  },
   canTrainerIntentPreempt: jest.fn(() => false),
   detectFtmsMachineType: jest.fn(({ characteristicUuids }) => {
     const present = new Set(characteristicUuids ?? []);
@@ -204,7 +147,7 @@ jest.mock("@repo/core", () => ({
           strokeRateSpm: null,
           strokeCount: null,
         },
-        status: { code: 1, label: "Reset" },
+        status: { code: 0xff, label: "control_permission_lost" },
         diagnostics: { truncated: false, bytesRead: 1, byteLength: 1 },
       })),
     },
@@ -221,13 +164,6 @@ jest.mock("@repo/core", () => ({
     nextState: {},
     truncated: false,
   })),
-  parseFtmsIndoorBikeData: jest.fn(() => ({
-    speedMps: 8.5,
-    cadenceRpm: 91,
-    powerWatts: 245,
-    hrBpm: 151,
-    truncated: false,
-  })),
   parseHeartRateMeasurement: jest.fn(() => null),
   parseRunningSpeedAndCadenceMeasurement: jest.fn(() => ({
     powerWatts: null,
@@ -236,6 +172,24 @@ jest.mock("@repo/core", () => ({
     hrBpm: null,
   })),
 }));
+
+jest.mock("@deancochran/ftms", () => {
+  const actual = jest.requireActual<typeof import("@deancochran/ftms")>("@deancochran/ftms");
+  const core = jest.requireMock("@repo/core") as {
+    BLE_SERVICE_UUIDS: { FITNESS_MACHINE: string };
+    FTMS_CHARACTERISTICS: typeof actual.FTMS_CHARACTERISTICS;
+    detectFtmsMachineType: typeof actual.detectFtmsMachineType;
+    listFtmsParserDefinitions: typeof actual.listFtmsParserDefinitions;
+  };
+
+  return {
+    ...actual,
+    FTMS_SERVICE_UUIDS: { FITNESS_MACHINE: core.BLE_SERVICE_UUIDS.FITNESS_MACHINE },
+    FTMS_CHARACTERISTICS: core.FTMS_CHARACTERISTICS,
+    detectFtmsMachineType: core.detectFtmsMachineType,
+    listFtmsParserDefinitions: core.listFtmsParserDefinitions,
+  };
+});
 
 jest.mock("react-native-ble-plx", () => ({
   __esModule: true,
@@ -273,9 +227,11 @@ interface SensorsManagerInternals {
     setAutoReconnectSuppressed(sensorId: string, suppressed: boolean): Promise<void>;
   };
   connectedSensors: Map<string, ConnectedSensor>;
+  gattQueues: DeviceGattQueueRegistry;
   controllableTrainer: ConnectedSensor | undefined;
   trainerState: unknown;
   reconnectionTimers: Map<string, unknown>;
+  ftmsCandidates: Map<string, { controlState: string }>;
   attemptReconnection(sensorId: string, attempt: number): Promise<void>;
   cancelReconnectionAttempts(sensorId: string): void;
   stopConnectionMonitoring(): void;
@@ -654,6 +610,69 @@ describe("SensorsManager QA regressions", () => {
     expect(events).toEqual(["a:first:start", "b:other", "a:first:end", "a:second"]);
   });
 
+  it("interrupts a hung GATT operation for disconnect without releasing its reconnect fence", async () => {
+    const manager = new SensorsManager();
+    const internals = getManagerInternals(manager);
+    let releaseHungOperation: (() => void) | undefined;
+    const hungOperation = new Promise<void>((resolve) => {
+      releaseHungOperation = resolve;
+    });
+    const cancelConnection = jest.fn(async () => undefined);
+    const sensor = createSensor({
+      id: "sensor-hung-disconnect",
+      name: "Hung Disconnect Strap",
+      connectionState: "connected",
+      device: { cancelConnection } as never,
+    });
+    internals.connectedSensors = new Map([[sensor.id, sensor]]);
+
+    const active = internals.gattQueues.enqueue(sensor.id, "hung-read", () => hungOperation);
+    await Promise.resolve();
+
+    await expect(manager.disconnectSensor(sensor.id)).resolves.toBeUndefined();
+    await expect(active).rejects.toThrow("Sensor disconnecting");
+    expect(cancelConnection).toHaveBeenCalledTimes(1);
+
+    let replacementStarted = false;
+    const replacement = internals.gattQueues.enqueue(sensor.id, "replacement", async () => {
+      replacementStarted = true;
+    });
+    await Promise.resolve();
+    expect(replacementStarted).toBe(false);
+
+    releaseHungOperation?.();
+    await expect(replacement).resolves.toBeUndefined();
+    expect(replacementStarted).toBe(true);
+    internals.stopConnectionMonitoring();
+  });
+
+  it("coalesces concurrent disconnect requests for the same sensor", async () => {
+    const manager = new SensorsManager();
+    let releaseDisconnect: (() => void) | undefined;
+    const nativeDisconnect = new Promise<void>((resolve) => {
+      releaseDisconnect = resolve;
+    });
+    const cancelConnection = jest.fn(() => nativeDisconnect);
+    const sensor = createSensor({
+      id: "sensor-concurrent-disconnect",
+      name: "Concurrent Disconnect Strap",
+      connectionState: "connected",
+      device: { cancelConnection } as never,
+    });
+    getManagerInternals(manager).connectedSensors = new Map([[sensor.id, sensor]]);
+
+    const first = manager.disconnectSensor(sensor.id);
+    const second = manager.disconnectSensor(sensor.id);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(cancelConnection).toHaveBeenCalledTimes(1);
+
+    releaseDisconnect?.();
+    await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
+    expect(manager.getConnectedSensors()).toEqual([]);
+    getManagerInternals(manager).stopConnectionMonitoring();
+  });
+
   it("publishes an FTMS candidate without requesting control on discovery", async () => {
     const manager = new SensorsManager();
     const requestControl = jest.fn(async () => ({ value: Buffer.alloc(8).toString("base64") }));
@@ -687,6 +706,38 @@ describe("SensorsManager QA regressions", () => {
     );
     expect(manager.getFTMSController(trainer.id)).toBeDefined();
 
+    getManagerInternals(manager).stopConnectionMonitoring();
+  });
+
+  it("keeps a feature-eligible FTMS candidate distinct from granted control", async () => {
+    const manager = new SensorsManager();
+    const featuresPayload = Buffer.alloc(8);
+    featuresPayload.writeUInt32LE(1 << 3, 4);
+    const trainer = createSensor({
+      id: "trainer-eligible",
+      name: "Eligible Trainer",
+      connectionState: "connected",
+      device: {
+        id: "trainer-eligible",
+        readCharacteristicForService: jest.fn(async (_service: string, characteristic: string) => ({
+          value:
+            characteristic === "ftms-feature"
+              ? featuresPayload.toString("base64")
+              : Buffer.from([100, 0, 0x90, 1, 5, 0]).toString("base64"),
+        })),
+      } as never,
+      characteristics: new Map([["ftms-indoor-bike-data", "fitness-machine"]]),
+    });
+    getManagerInternals(manager).connectedSensors = new Map([[trainer.id, trainer]]);
+
+    await getManagerInternals(manager).setupFTMSRuntime(trainer);
+
+    expect(manager.getSelectedFTMSTrainer()).toBe(trainer);
+    expect(manager.getControllableTrainer()).toBeUndefined();
+    expect(manager.getFTMSCandidates().get(trainer.id)).toMatchObject({
+      controlState: "eligible",
+      supportsControl: true,
+    });
     getManagerInternals(manager).stopConnectionMonitoring();
   });
 
@@ -893,15 +944,41 @@ describe("SensorsManager QA regressions", () => {
       characteristics: new Map(characteristics.map((char) => [char.uuid, "fitness-machine"])),
     });
     const readings: unknown[] = [];
+    const handleMachineStatus = jest.fn(() => true);
+    trainer.ftmsController = { handleMachineStatus } as never;
 
     getManagerInternals(manager).connectedSensors = new Map([[trainer.id, trainer]]);
+    getManagerInternals(manager).ftmsCandidates = new Map([
+      [trainer.id, { controlState: "controllable" }],
+    ]);
+    getManagerInternals(manager).trainerState = {
+      deviceId: trainer.id,
+      deviceName: trainer.name,
+      connectionState: "connected",
+      dataFlowState: "flowing",
+      controlState: "controllable",
+      lastServiceError: null,
+    };
     manager.subscribe((reading) => readings.push(reading));
+    const connectionChanges: ConnectedSensor[] = [];
+    manager.subscribeConnection((sensor) => connectionChanges.push(sensor));
 
     await getManagerInternals(manager).monitorFTMSStreams(trainer);
 
     expect(monitorCallbacks.has("ftms-indoor-bike-data")).toBe(true);
     expect(monitorCallbacks.has("ftms-treadmill-data")).toBe(true);
     expect(monitorCallbacks.has("ftms-status")).toBe(true);
+
+    monitorCallbacks.get("ftms-status")?.(null, {
+      value: Buffer.from([0xff]).toString("base64"),
+    });
+    expect(handleMachineStatus).toHaveBeenCalledWith(0xff);
+    expect(trainer.currentControlMode).toBeUndefined();
+    expect(getManagerInternals(manager).ftmsCandidates.get(trainer.id)?.controlState).toBe(
+      "control_lost",
+    );
+    expect(manager.getTrainerState().controlState).toBe("control_lost");
+    expect(connectionChanges).toEqual([trainer]);
 
     monitorCallbacks.get("ftms-indoor-bike-data")?.(null, {
       value: Buffer.from([0, 0]).toString("base64"),

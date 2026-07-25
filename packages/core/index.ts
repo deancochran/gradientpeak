@@ -12,7 +12,16 @@
  * - Keep server-only runtime dependencies behind explicit server subpaths
  */
 
-export * from "./ftms";
+export type {
+  FtmsMachineTypeDetectionInput,
+  FtmsMachineTypeDetectionResult,
+} from "./ftms";
+export {
+  detectFtmsMachineType,
+  FTMS_MACHINE_DATA_CHARACTERISTIC_UUIDS,
+  FTMS_MACHINE_TYPE_BY_DATA_CHARACTERISTIC_UUID,
+  FTMS_MEASUREMENT_AND_STATUS_CHARACTERISTIC_UUIDS,
+} from "./ftms";
 // ============================================================================
 // FTMS (Fitness Machine Service) Types
 // ============================================================================
