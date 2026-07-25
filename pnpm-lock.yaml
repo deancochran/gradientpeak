@@ -71,8 +71,8 @@ importers:
   apps/mobile:
     dependencies:
       '@deancochran/ftms':
-        specifier: 0.1.0
-        version: 0.1.0
+        specifier: 0.1.11
+        version: 0.1.11
       '@garmin/fitsdk':
         specifier: ^21.188.0
         version: 21.188.0
@@ -708,8 +708,8 @@ importers:
   packages/core:
     dependencies:
       '@deancochran/ftms':
-        specifier: 0.1.0
-        version: 0.1.0
+        specifier: 0.1.11
+        version: 0.1.11
       '@garmin/fitsdk':
         specifier: ^21.188.0
         version: 21.188.0
@@ -2065,8 +2065,8 @@ packages:
     resolution: {integrity: sha512-QxULHAm7cNu72w97JUNCBFODFaXpbDg+dP8b/oWFAZ2MTRppA3U00Y2L1HqaS4J6yBqxwa/Y3nMBaxVKbB/NsA==}
     engines: {node: '>=20.19.0'}
 
-  '@deancochran/ftms@0.1.0':
-    resolution: {integrity: sha512-c8xlI7WGCuPpk+4BL1yt/uQMhm83XGNfpq4HWSGKS3kVygtnUSDJ16h0abj9UFdhXLdE3yUZ+WBIgBOcC6wJWg==}
+  '@deancochran/ftms@0.1.11':
+    resolution: {integrity: sha512-4mRFFC8M02Ab9EadlmFmZJEFKgIhKFrv/5bW/PW5mTirAsDJRGJ+4V/Iv2gwjPrdmr+KBZjJziknAiwgQsZc2w==}
     engines: {node: '>=20'}
 
   '@drizzle-team/brocli@0.10.2':
@@ -13280,7 +13280,7 @@ snapshots:
 
   '@csstools/css-tokenizer@4.0.0': {}
 
-  '@deancochran/ftms@0.1.0': {}
+  '@deancochran/ftms@0.1.11': {}
 
   '@drizzle-team/brocli@0.10.2': {}
 
