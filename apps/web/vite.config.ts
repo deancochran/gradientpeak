@@ -32,7 +32,11 @@ const config = defineConfig(({ mode }) => {
     plugins: [
       devtools(),
       tailwindcss(),
-      tanstackStart(),
+      tanstackStart({
+        router: {
+          routeFileIgnorePattern: "\\.(test|spec)\\.tsx?$",
+        },
+      }),
       viteReact(),
       nitro({ rollupConfig: { external: [/^@sentry\//] } }),
       sentryTanstackStart({

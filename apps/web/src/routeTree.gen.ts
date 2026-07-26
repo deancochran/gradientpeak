@@ -9,103 +9,103 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as OnboardingRouteImport } from './routes/onboarding'
-import { Route as ProtectedRouteImport } from './routes/_protected'
 import { Route as CoachingRouteImport } from './routes/_coaching'
+import { Route as ProtectedRouteImport } from './routes/_protected'
+import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as ProtectedIndexRouteImport } from './routes/_protected/index'
-import { Route as AuthVerifyRouteImport } from './routes/auth/verify'
-import { Route as AuthVerificationSuccessRouteImport } from './routes/auth/verification-success'
-import { Route as AuthUpdatePasswordRouteImport } from './routes/auth/update-password'
-import { Route as AuthSignUpSuccessRouteImport } from './routes/auth/sign-up-success'
-import { Route as AuthSignUpRouteImport } from './routes/auth/sign-up'
-import { Route as AuthLoginRouteImport } from './routes/auth/login'
-import { Route as AuthForgotPasswordRouteImport } from './routes/auth/forgot-password'
-import { Route as AuthErrorRouteImport } from './routes/auth/error'
-import { Route as AuthConfirmRouteImport } from './routes/auth/confirm'
-import { Route as ApiReadyRouteImport } from './routes/api/ready'
-import { Route as ApiHealthRouteImport } from './routes/api/health'
-import { Route as ProtectedTrendsRouteImport } from './routes/_protected/trends'
-import { Route as ProtectedTrainingPreferencesRouteImport } from './routes/_protected/training-preferences'
-import { Route as ProtectedSettingsRouteImport } from './routes/_protected/settings'
-import { Route as ProtectedSearchRouteImport } from './routes/_protected/search'
-import { Route as ProtectedScheduledActivitiesRouteImport } from './routes/_protected/scheduled-activities'
-import { Route as ProtectedRecordRouteImport } from './routes/_protected/record'
-import { Route as ProtectedPlanRouteImport } from './routes/_protected/plan'
-import { Route as ProtectedNotificationsRouteImport } from './routes/_protected/notifications'
-import { Route as ProtectedMessagesRouteImport } from './routes/_protected/messages'
-import { Route as ProtectedIntegrationsRouteImport } from './routes/_protected/integrations'
-import { Route as ProtectedGoalsRouteImport } from './routes/_protected/goals'
 import { Route as ProtectedCalendarRouteImport } from './routes/_protected/calendar'
-import { Route as ProtectedTrainingPlansIndexRouteImport } from './routes/_protected/training-plans/index'
-import { Route as ProtectedScheduledActivitiesIndexRouteImport } from './routes/_protected/scheduled-activities/index'
-import { Route as ProtectedRoutesIndexRouteImport } from './routes/_protected/routes/index'
-import { Route as ProtectedRecordIndexRouteImport } from './routes/_protected/record/index'
-import { Route as ProtectedProfileMetricsIndexRouteImport } from './routes/_protected/profile-metrics/index'
-import { Route as ProtectedGroupsIndexRouteImport } from './routes/_protected/groups/index'
-import { Route as ProtectedGoalsIndexRouteImport } from './routes/_protected/goals/index'
-import { Route as ProtectedCalendarIndexRouteImport } from './routes/_protected/calendar/index'
-import { Route as ProtectedActivityPlansIndexRouteImport } from './routes/_protected/activity-plans/index'
-import { Route as ProtectedActivityEffortsIndexRouteImport } from './routes/_protected/activity-efforts/index'
-import { Route as ProtectedActivitiesIndexRouteImport } from './routes/_protected/activities/index'
-import { Route as ShareWorkoutsWorkoutIdRouteImport } from './routes/share/workouts/$workoutId'
-import { Route as ShareTrainingPlansTrainingPlanIdRouteImport } from './routes/share/training-plans/$trainingPlanId'
-import { Route as ShareActivitiesActivityIdRouteImport } from './routes/share/activities/$activityId'
-import { Route as ApiWebhooksWahooRouteImport } from './routes/api/webhooks/wahoo'
-import { Route as ApiTrpcSplatRouteImport } from './routes/api/trpc/$'
-import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
-import { Route as ProtectedTrainingPlansReorderRouteImport } from './routes/_protected/training-plans/reorder'
-import { Route as ProtectedTrainingPlansCreateRouteImport } from './routes/_protected/training-plans/create'
-import { Route as ProtectedScheduledActivitiesEventIdRouteImport } from './routes/_protected/scheduled-activities/$eventId'
-import { Route as ProtectedRoutesUploadRouteImport } from './routes/_protected/routes/upload'
-import { Route as ProtectedRecordSessionRouteImport } from './routes/_protected/record/session'
-import { Route as ProtectedRecordPlanRouteImport } from './routes/_protected/record/plan'
-import { Route as ProtectedGroupsNewRouteImport } from './routes/_protected/groups/new'
-import { Route as ProtectedGoalsNewRouteImport } from './routes/_protected/goals/new'
-import { Route as ProtectedCalendarNewRouteImport } from './routes/_protected/calendar/new'
-import { Route as ProtectedActivityPlansActivityPlanIdRouteImport } from './routes/_protected/activity-plans/$activityPlanId'
-import { Route as ProtectedActivityEffortsNewRouteImport } from './routes/_protected/activity-efforts/new'
-import { Route as ProtectedActivitiesImportRouteImport } from './routes/_protected/activities/import'
+import { Route as ProtectedGoalsRouteImport } from './routes/_protected/goals'
+import { Route as ProtectedIntegrationsRouteImport } from './routes/_protected/integrations'
+import { Route as ProtectedMessagesRouteImport } from './routes/_protected/messages'
+import { Route as ProtectedNotificationsRouteImport } from './routes/_protected/notifications'
+import { Route as ProtectedPlanRouteImport } from './routes/_protected/plan'
+import { Route as ProtectedRecordRouteImport } from './routes/_protected/record'
+import { Route as ProtectedScheduledActivitiesRouteImport } from './routes/_protected/scheduled-activities'
+import { Route as ProtectedSearchRouteImport } from './routes/_protected/search'
+import { Route as ProtectedSettingsRouteImport } from './routes/_protected/settings'
+import { Route as ProtectedTrainingPreferencesRouteImport } from './routes/_protected/training-preferences'
+import { Route as ProtectedTrendsRouteImport } from './routes/_protected/trends'
+import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as ApiReadyRouteImport } from './routes/api/ready'
+import { Route as AuthConfirmRouteImport } from './routes/auth/confirm'
+import { Route as AuthErrorRouteImport } from './routes/auth/error'
+import { Route as AuthForgotPasswordRouteImport } from './routes/auth/forgot-password'
+import { Route as AuthLoginRouteImport } from './routes/auth/login'
+import { Route as AuthSignUpRouteImport } from './routes/auth/sign-up'
+import { Route as AuthSignUpSuccessRouteImport } from './routes/auth/sign-up-success'
+import { Route as AuthUpdatePasswordRouteImport } from './routes/auth/update-password'
+import { Route as AuthVerificationSuccessRouteImport } from './routes/auth/verification-success'
+import { Route as AuthVerifyRouteImport } from './routes/auth/verify'
 import { Route as CoachingOrganizationsOrganizationIdRouteImport } from './routes/_coaching/organizations/$organizationId'
-import { Route as ProtectedUserUserIdIndexRouteImport } from './routes/_protected/user/$userId/index'
-import { Route as ProtectedTrainingPlansPlanIdIndexRouteImport } from './routes/_protected/training-plans/$planId/index'
-import { Route as ProtectedRoutesRouteIdIndexRouteImport } from './routes/_protected/routes/$routeId/index'
-import { Route as ProtectedRecordRouteIndexRouteImport } from './routes/_protected/record/route/index'
-import { Route as ProtectedGroupsGroupIdIndexRouteImport } from './routes/_protected/groups/$groupId/index'
-import { Route as ProtectedGoalsGoalIdIndexRouteImport } from './routes/_protected/goals/$goalId/index'
-import { Route as ProtectedActivityEffortsEffortIdIndexRouteImport } from './routes/_protected/activity-efforts/$effortId/index'
-import { Route as ProtectedActivitiesActivityIdIndexRouteImport } from './routes/_protected/activities/$activityId/index'
+import { Route as ProtectedActivitiesIndexRouteImport } from './routes/_protected/activities/index'
+import { Route as ProtectedActivitiesImportRouteImport } from './routes/_protected/activities/import'
+import { Route as ProtectedActivityEffortsIndexRouteImport } from './routes/_protected/activity-efforts/index'
+import { Route as ProtectedActivityEffortsNewRouteImport } from './routes/_protected/activity-efforts/new'
+import { Route as ProtectedActivityPlansIndexRouteImport } from './routes/_protected/activity-plans/index'
+import { Route as ProtectedActivityPlansActivityPlanIdRouteImport } from './routes/_protected/activity-plans/$activityPlanId'
+import { Route as ProtectedCalendarIndexRouteImport } from './routes/_protected/calendar/index'
+import { Route as ProtectedCalendarNewRouteImport } from './routes/_protected/calendar/new'
+import { Route as ProtectedGoalsIndexRouteImport } from './routes/_protected/goals/index'
+import { Route as ProtectedGoalsNewRouteImport } from './routes/_protected/goals/new'
+import { Route as ProtectedGroupsIndexRouteImport } from './routes/_protected/groups/index'
+import { Route as ProtectedGroupsNewRouteImport } from './routes/_protected/groups/new'
+import { Route as ProtectedProfileMetricsIndexRouteImport } from './routes/_protected/profile-metrics/index'
+import { Route as ProtectedRecordIndexRouteImport } from './routes/_protected/record/index'
+import { Route as ProtectedRecordPlanRouteImport } from './routes/_protected/record/plan'
+import { Route as ProtectedRecordSessionRouteImport } from './routes/_protected/record/session'
+import { Route as ProtectedRoutesIndexRouteImport } from './routes/_protected/routes/index'
+import { Route as ProtectedRoutesUploadRouteImport } from './routes/_protected/routes/upload'
+import { Route as ProtectedScheduledActivitiesIndexRouteImport } from './routes/_protected/scheduled-activities/index'
+import { Route as ProtectedScheduledActivitiesEventIdRouteImport } from './routes/_protected/scheduled-activities/$eventId'
+import { Route as ProtectedTrainingPlansIndexRouteImport } from './routes/_protected/training-plans/index'
+import { Route as ProtectedTrainingPlansCreateRouteImport } from './routes/_protected/training-plans/create'
+import { Route as ProtectedTrainingPlansReorderRouteImport } from './routes/_protected/training-plans/reorder'
+import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiTrpcSplatRouteImport } from './routes/api/trpc/$'
+import { Route as ApiWebhooksWahooRouteImport } from './routes/api/webhooks/wahoo'
+import { Route as ShareActivitiesActivityIdRouteImport } from './routes/share/activities/$activityId'
+import { Route as ShareTrainingPlansTrainingPlanIdRouteImport } from './routes/share/training-plans/$trainingPlanId'
+import { Route as ShareWorkoutsWorkoutIdRouteImport } from './routes/share/workouts/$workoutId'
 import { Route as CoachingOrganizationsOrganizationIdIndexRouteImport } from './routes/_coaching/organizations/$organizationId/index'
-import { Route as ApiIntegrationsCallbackProviderRouteImport } from './routes/api/integrations/callback/$provider'
-import { Route as ProtectedUserUserIdFollowingRouteImport } from './routes/_protected/user/$userId/following'
-import { Route as ProtectedUserUserIdFollowersRouteImport } from './routes/_protected/user/$userId/followers'
-import { Route as ProtectedTrainingPlansPlanIdEditRouteImport } from './routes/_protected/training-plans/$planId/edit'
-import { Route as ProtectedRecordRoutePreviewRouteIdRouteImport } from './routes/_protected/record/route-preview/$routeId'
-import { Route as ProtectedGroupsGroupIdRequestsRouteImport } from './routes/_protected/groups/$groupId/requests'
-import { Route as ProtectedGroupsGroupIdMembersRouteImport } from './routes/_protected/groups/$groupId/members'
-import { Route as ProtectedGroupsGroupIdEditRouteImport } from './routes/_protected/groups/$groupId/edit'
-import { Route as ProtectedGoalsGoalIdEditRouteImport } from './routes/_protected/goals/$goalId/edit'
-import { Route as ProtectedCalendarEventsEventIdRouteImport } from './routes/_protected/calendar/events/$eventId'
-import { Route as ProtectedCalendarDayDateRouteImport } from './routes/_protected/calendar/day/$date'
 import { Route as CoachingOrganizationsOrganizationIdDashboardRouteImport } from './routes/_coaching/organizations/$organizationId/dashboard'
-import { Route as ProtectedGroupsEventsGroupEventIdIndexRouteImport } from './routes/_protected/groups/events/$groupEventId/index'
-import { Route as ApiInternalProviderSyncWahooStatusRouteImport } from './routes/api/internal/provider-sync/wahoo/status'
-import { Route as ApiInternalProviderSyncWahooRetryRouteImport } from './routes/api/internal/provider-sync/wahoo/retry'
-import { Route as ApiInternalProviderSyncWahooDrainRouteImport } from './routes/api/internal/provider-sync/wahoo/drain'
-import { Route as ProtectedGroupsEventsGroupEventIdEditRouteImport } from './routes/_protected/groups/events/$groupEventId/edit'
-import { Route as ProtectedGroupsGroupIdEventsNewRouteImport } from './routes/_protected/groups/$groupId/events/new'
+import { Route as ProtectedActivitiesActivityIdIndexRouteImport } from './routes/_protected/activities/$activityId/index'
+import { Route as ProtectedActivityEffortsEffortIdIndexRouteImport } from './routes/_protected/activity-efforts/$effortId/index'
+import { Route as ProtectedCalendarDayDateRouteImport } from './routes/_protected/calendar/day/$date'
+import { Route as ProtectedCalendarEventsEventIdRouteImport } from './routes/_protected/calendar/events/$eventId'
+import { Route as ProtectedGoalsGoalIdIndexRouteImport } from './routes/_protected/goals/$goalId/index'
+import { Route as ProtectedGoalsGoalIdEditRouteImport } from './routes/_protected/goals/$goalId/edit'
+import { Route as ProtectedGroupsGroupIdIndexRouteImport } from './routes/_protected/groups/$groupId/index'
+import { Route as ProtectedGroupsGroupIdEditRouteImport } from './routes/_protected/groups/$groupId/edit'
+import { Route as ProtectedGroupsGroupIdMembersRouteImport } from './routes/_protected/groups/$groupId/members'
+import { Route as ProtectedGroupsGroupIdRequestsRouteImport } from './routes/_protected/groups/$groupId/requests'
+import { Route as ProtectedRecordRoutePreviewRouteIdRouteImport } from './routes/_protected/record/route-preview/$routeId'
+import { Route as ProtectedRecordRouteIndexRouteImport } from './routes/_protected/record/route/index'
+import { Route as ProtectedRoutesRouteIdIndexRouteImport } from './routes/_protected/routes/$routeId/index'
+import { Route as ProtectedTrainingPlansPlanIdIndexRouteImport } from './routes/_protected/training-plans/$planId/index'
+import { Route as ProtectedTrainingPlansPlanIdEditRouteImport } from './routes/_protected/training-plans/$planId/edit'
+import { Route as ProtectedUserUserIdIndexRouteImport } from './routes/_protected/user/$userId/index'
+import { Route as ProtectedUserUserIdFollowersRouteImport } from './routes/_protected/user/$userId/followers'
+import { Route as ProtectedUserUserIdFollowingRouteImport } from './routes/_protected/user/$userId/following'
+import { Route as ApiIntegrationsCallbackProviderRouteImport } from './routes/api/integrations/callback/$provider'
 import { Route as ProtectedCalendarEventsEventIdEditRouteImport } from './routes/_protected/calendar/events/$eventId/edit'
+import { Route as ProtectedGroupsGroupIdEventsNewRouteImport } from './routes/_protected/groups/$groupId/events/new'
+import { Route as ProtectedGroupsEventsGroupEventIdIndexRouteImport } from './routes/_protected/groups/events/$groupEventId/index'
+import { Route as ProtectedGroupsEventsGroupEventIdEditRouteImport } from './routes/_protected/groups/events/$groupEventId/edit'
+import { Route as ApiInternalProviderSyncWahooDrainRouteImport } from './routes/api/internal/provider-sync/wahoo/drain'
+import { Route as ApiInternalProviderSyncWahooRetryRouteImport } from './routes/api/internal/provider-sync/wahoo/retry'
+import { Route as ApiInternalProviderSyncWahooStatusRouteImport } from './routes/api/internal/provider-sync/wahoo/status'
 
-const OnboardingRoute = OnboardingRouteImport.update({
-  id: '/onboarding',
-  path: '/onboarding',
+const CoachingRoute = CoachingRouteImport.update({
+  id: '/_coaching',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProtectedRoute = ProtectedRouteImport.update({
   id: '/_protected',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CoachingRoute = CoachingRouteImport.update({
-  id: '/_coaching',
+const OnboardingRoute = OnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProtectedIndexRoute = ProtectedIndexRouteImport.update({
@@ -113,80 +113,39 @@ const ProtectedIndexRoute = ProtectedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ProtectedRoute,
 } as any)
-const AuthVerifyRoute = AuthVerifyRouteImport.update({
-  id: '/auth/verify',
-  path: '/auth/verify',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthVerificationSuccessRoute = AuthVerificationSuccessRouteImport.update({
-  id: '/auth/verification-success',
-  path: '/auth/verification-success',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthUpdatePasswordRoute = AuthUpdatePasswordRouteImport.update({
-  id: '/auth/update-password',
-  path: '/auth/update-password',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthSignUpSuccessRoute = AuthSignUpSuccessRouteImport.update({
-  id: '/auth/sign-up-success',
-  path: '/auth/sign-up-success',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthSignUpRoute = AuthSignUpRouteImport.update({
-  id: '/auth/sign-up',
-  path: '/auth/sign-up',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthLoginRoute = AuthLoginRouteImport.update({
-  id: '/auth/login',
-  path: '/auth/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthForgotPasswordRoute = AuthForgotPasswordRouteImport.update({
-  id: '/auth/forgot-password',
-  path: '/auth/forgot-password',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthErrorRoute = AuthErrorRouteImport.update({
-  id: '/auth/error',
-  path: '/auth/error',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthConfirmRoute = AuthConfirmRouteImport.update({
-  id: '/auth/confirm',
-  path: '/auth/confirm',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiReadyRoute = ApiReadyRouteImport.update({
-  id: '/api/ready',
-  path: '/api/ready',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiHealthRoute = ApiHealthRouteImport.update({
-  id: '/api/health',
-  path: '/api/health',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProtectedTrendsRoute = ProtectedTrendsRouteImport.update({
-  id: '/trends',
-  path: '/trends',
+const ProtectedCalendarRoute = ProtectedCalendarRouteImport.update({
+  id: '/calendar',
+  path: '/calendar',
   getParentRoute: () => ProtectedRoute,
 } as any)
-const ProtectedTrainingPreferencesRoute =
-  ProtectedTrainingPreferencesRouteImport.update({
-    id: '/training-preferences',
-    path: '/training-preferences',
-    getParentRoute: () => ProtectedRoute,
-  } as any)
-const ProtectedSettingsRoute = ProtectedSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
+const ProtectedGoalsRoute = ProtectedGoalsRouteImport.update({
+  id: '/goals',
+  path: '/goals',
   getParentRoute: () => ProtectedRoute,
 } as any)
-const ProtectedSearchRoute = ProtectedSearchRouteImport.update({
-  id: '/search',
-  path: '/search',
+const ProtectedIntegrationsRoute = ProtectedIntegrationsRouteImport.update({
+  id: '/integrations',
+  path: '/integrations',
+  getParentRoute: () => ProtectedRoute,
+} as any)
+const ProtectedMessagesRoute = ProtectedMessagesRouteImport.update({
+  id: '/messages',
+  path: '/messages',
+  getParentRoute: () => ProtectedRoute,
+} as any)
+const ProtectedNotificationsRoute = ProtectedNotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => ProtectedRoute,
+} as any)
+const ProtectedPlanRoute = ProtectedPlanRouteImport.update({
+  id: '/plan',
+  path: '/plan',
+  getParentRoute: () => ProtectedRoute,
+} as any)
+const ProtectedRecordRoute = ProtectedRecordRouteImport.update({
+  id: '/record',
+  path: '/record',
   getParentRoute: () => ProtectedRoute,
 } as any)
 const ProtectedScheduledActivitiesRoute =
@@ -195,192 +154,92 @@ const ProtectedScheduledActivitiesRoute =
     path: '/scheduled-activities',
     getParentRoute: () => ProtectedRoute,
   } as any)
-const ProtectedRecordRoute = ProtectedRecordRouteImport.update({
-  id: '/record',
-  path: '/record',
+const ProtectedSearchRoute = ProtectedSearchRouteImport.update({
+  id: '/search',
+  path: '/search',
   getParentRoute: () => ProtectedRoute,
 } as any)
-const ProtectedPlanRoute = ProtectedPlanRouteImport.update({
-  id: '/plan',
-  path: '/plan',
+const ProtectedSettingsRoute = ProtectedSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => ProtectedRoute,
 } as any)
-const ProtectedNotificationsRoute = ProtectedNotificationsRouteImport.update({
-  id: '/notifications',
-  path: '/notifications',
-  getParentRoute: () => ProtectedRoute,
-} as any)
-const ProtectedMessagesRoute = ProtectedMessagesRouteImport.update({
-  id: '/messages',
-  path: '/messages',
-  getParentRoute: () => ProtectedRoute,
-} as any)
-const ProtectedIntegrationsRoute = ProtectedIntegrationsRouteImport.update({
-  id: '/integrations',
-  path: '/integrations',
-  getParentRoute: () => ProtectedRoute,
-} as any)
-const ProtectedGoalsRoute = ProtectedGoalsRouteImport.update({
-  id: '/goals',
-  path: '/goals',
-  getParentRoute: () => ProtectedRoute,
-} as any)
-const ProtectedCalendarRoute = ProtectedCalendarRouteImport.update({
-  id: '/calendar',
-  path: '/calendar',
-  getParentRoute: () => ProtectedRoute,
-} as any)
-const ProtectedTrainingPlansIndexRoute =
-  ProtectedTrainingPlansIndexRouteImport.update({
-    id: '/training-plans/',
-    path: '/training-plans/',
+const ProtectedTrainingPreferencesRoute =
+  ProtectedTrainingPreferencesRouteImport.update({
+    id: '/training-preferences',
+    path: '/training-preferences',
     getParentRoute: () => ProtectedRoute,
   } as any)
-const ProtectedScheduledActivitiesIndexRoute =
-  ProtectedScheduledActivitiesIndexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => ProtectedScheduledActivitiesRoute,
-  } as any)
-const ProtectedRoutesIndexRoute = ProtectedRoutesIndexRouteImport.update({
-  id: '/routes/',
-  path: '/routes/',
+const ProtectedTrendsRoute = ProtectedTrendsRouteImport.update({
+  id: '/trends',
+  path: '/trends',
   getParentRoute: () => ProtectedRoute,
 } as any)
-const ProtectedRecordIndexRoute = ProtectedRecordIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ProtectedRecordRoute,
+const ApiHealthRoute = ApiHealthRouteImport.update({
+  id: '/api/health',
+  path: '/api/health',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const ProtectedProfileMetricsIndexRoute =
-  ProtectedProfileMetricsIndexRouteImport.update({
-    id: '/profile-metrics/',
-    path: '/profile-metrics/',
-    getParentRoute: () => ProtectedRoute,
-  } as any)
-const ProtectedGroupsIndexRoute = ProtectedGroupsIndexRouteImport.update({
-  id: '/groups/',
-  path: '/groups/',
-  getParentRoute: () => ProtectedRoute,
+const ApiReadyRoute = ApiReadyRouteImport.update({
+  id: '/api/ready',
+  path: '/api/ready',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const ProtectedGoalsIndexRoute = ProtectedGoalsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ProtectedGoalsRoute,
+const AuthConfirmRoute = AuthConfirmRouteImport.update({
+  id: '/auth/confirm',
+  path: '/auth/confirm',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const ProtectedCalendarIndexRoute = ProtectedCalendarIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ProtectedCalendarRoute,
+const AuthErrorRoute = AuthErrorRouteImport.update({
+  id: '/auth/error',
+  path: '/auth/error',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const ProtectedActivityPlansIndexRoute =
-  ProtectedActivityPlansIndexRouteImport.update({
-    id: '/activity-plans/',
-    path: '/activity-plans/',
-    getParentRoute: () => ProtectedRoute,
-  } as any)
-const ProtectedActivityEffortsIndexRoute =
-  ProtectedActivityEffortsIndexRouteImport.update({
-    id: '/activity-efforts/',
-    path: '/activity-efforts/',
-    getParentRoute: () => ProtectedRoute,
+const AuthForgotPasswordRoute = AuthForgotPasswordRouteImport.update({
+  id: '/auth/forgot-password',
+  path: '/auth/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthLoginRoute = AuthLoginRouteImport.update({
+  id: '/auth/login',
+  path: '/auth/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthSignUpRoute = AuthSignUpRouteImport.update({
+  id: '/auth/sign-up',
+  path: '/auth/sign-up',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthSignUpSuccessRoute = AuthSignUpSuccessRouteImport.update({
+  id: '/auth/sign-up-success',
+  path: '/auth/sign-up-success',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthUpdatePasswordRoute = AuthUpdatePasswordRouteImport.update({
+  id: '/auth/update-password',
+  path: '/auth/update-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthVerificationSuccessRoute = AuthVerificationSuccessRouteImport.update({
+  id: '/auth/verification-success',
+  path: '/auth/verification-success',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthVerifyRoute = AuthVerifyRouteImport.update({
+  id: '/auth/verify',
+  path: '/auth/verify',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CoachingOrganizationsOrganizationIdRoute =
+  CoachingOrganizationsOrganizationIdRouteImport.update({
+    id: '/organizations/$organizationId',
+    path: '/organizations/$organizationId',
+    getParentRoute: () => CoachingRoute,
   } as any)
 const ProtectedActivitiesIndexRoute =
   ProtectedActivitiesIndexRouteImport.update({
     id: '/activities/',
     path: '/activities/',
-    getParentRoute: () => ProtectedRoute,
-  } as any)
-const ShareWorkoutsWorkoutIdRoute = ShareWorkoutsWorkoutIdRouteImport.update({
-  id: '/share/workouts/$workoutId',
-  path: '/share/workouts/$workoutId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ShareTrainingPlansTrainingPlanIdRoute =
-  ShareTrainingPlansTrainingPlanIdRouteImport.update({
-    id: '/share/training-plans/$trainingPlanId',
-    path: '/share/training-plans/$trainingPlanId',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ShareActivitiesActivityIdRoute =
-  ShareActivitiesActivityIdRouteImport.update({
-    id: '/share/activities/$activityId',
-    path: '/share/activities/$activityId',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiWebhooksWahooRoute = ApiWebhooksWahooRouteImport.update({
-  id: '/api/webhooks/wahoo',
-  path: '/api/webhooks/wahoo',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiTrpcSplatRoute = ApiTrpcSplatRouteImport.update({
-  id: '/api/trpc/$',
-  path: '/api/trpc/$',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
-  id: '/api/auth/$',
-  path: '/api/auth/$',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProtectedTrainingPlansReorderRoute =
-  ProtectedTrainingPlansReorderRouteImport.update({
-    id: '/training-plans/reorder',
-    path: '/training-plans/reorder',
-    getParentRoute: () => ProtectedRoute,
-  } as any)
-const ProtectedTrainingPlansCreateRoute =
-  ProtectedTrainingPlansCreateRouteImport.update({
-    id: '/training-plans/create',
-    path: '/training-plans/create',
-    getParentRoute: () => ProtectedRoute,
-  } as any)
-const ProtectedScheduledActivitiesEventIdRoute =
-  ProtectedScheduledActivitiesEventIdRouteImport.update({
-    id: '/$eventId',
-    path: '/$eventId',
-    getParentRoute: () => ProtectedScheduledActivitiesRoute,
-  } as any)
-const ProtectedRoutesUploadRoute = ProtectedRoutesUploadRouteImport.update({
-  id: '/routes/upload',
-  path: '/routes/upload',
-  getParentRoute: () => ProtectedRoute,
-} as any)
-const ProtectedRecordSessionRoute = ProtectedRecordSessionRouteImport.update({
-  id: '/session',
-  path: '/session',
-  getParentRoute: () => ProtectedRecordRoute,
-} as any)
-const ProtectedRecordPlanRoute = ProtectedRecordPlanRouteImport.update({
-  id: '/plan',
-  path: '/plan',
-  getParentRoute: () => ProtectedRecordRoute,
-} as any)
-const ProtectedGroupsNewRoute = ProtectedGroupsNewRouteImport.update({
-  id: '/groups/new',
-  path: '/groups/new',
-  getParentRoute: () => ProtectedRoute,
-} as any)
-const ProtectedGoalsNewRoute = ProtectedGoalsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => ProtectedGoalsRoute,
-} as any)
-const ProtectedCalendarNewRoute = ProtectedCalendarNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => ProtectedCalendarRoute,
-} as any)
-const ProtectedActivityPlansActivityPlanIdRoute =
-  ProtectedActivityPlansActivityPlanIdRouteImport.update({
-    id: '/activity-plans/$activityPlanId',
-    path: '/activity-plans/$activityPlanId',
-    getParentRoute: () => ProtectedRoute,
-  } as any)
-const ProtectedActivityEffortsNewRoute =
-  ProtectedActivityEffortsNewRouteImport.update({
-    id: '/activity-efforts/new',
-    path: '/activity-efforts/new',
     getParentRoute: () => ProtectedRoute,
   } as any)
 const ProtectedActivitiesImportRoute =
@@ -389,53 +248,164 @@ const ProtectedActivitiesImportRoute =
     path: '/activities/import',
     getParentRoute: () => ProtectedRoute,
   } as any)
-const CoachingOrganizationsOrganizationIdRoute =
-  CoachingOrganizationsOrganizationIdRouteImport.update({
-    id: '/organizations/$organizationId',
-    path: '/organizations/$organizationId',
-    getParentRoute: () => CoachingRoute,
-  } as any)
-const ProtectedUserUserIdIndexRoute =
-  ProtectedUserUserIdIndexRouteImport.update({
-    id: '/user/$userId/',
-    path: '/user/$userId/',
+const ProtectedActivityEffortsIndexRoute =
+  ProtectedActivityEffortsIndexRouteImport.update({
+    id: '/activity-efforts/',
+    path: '/activity-efforts/',
     getParentRoute: () => ProtectedRoute,
   } as any)
-const ProtectedTrainingPlansPlanIdIndexRoute =
-  ProtectedTrainingPlansPlanIdIndexRouteImport.update({
-    id: '/training-plans/$planId/',
-    path: '/training-plans/$planId/',
+const ProtectedActivityEffortsNewRoute =
+  ProtectedActivityEffortsNewRouteImport.update({
+    id: '/activity-efforts/new',
+    path: '/activity-efforts/new',
     getParentRoute: () => ProtectedRoute,
   } as any)
-const ProtectedRoutesRouteIdIndexRoute =
-  ProtectedRoutesRouteIdIndexRouteImport.update({
-    id: '/routes/$routeId/',
-    path: '/routes/$routeId/',
+const ProtectedActivityPlansIndexRoute =
+  ProtectedActivityPlansIndexRouteImport.update({
+    id: '/activity-plans/',
+    path: '/activity-plans/',
     getParentRoute: () => ProtectedRoute,
   } as any)
-const ProtectedRecordRouteIndexRoute =
-  ProtectedRecordRouteIndexRouteImport.update({
-    id: '/route/',
-    path: '/route/',
-    getParentRoute: () => ProtectedRecordRoute,
-  } as any)
-const ProtectedGroupsGroupIdIndexRoute =
-  ProtectedGroupsGroupIdIndexRouteImport.update({
-    id: '/groups/$groupId/',
-    path: '/groups/$groupId/',
+const ProtectedActivityPlansActivityPlanIdRoute =
+  ProtectedActivityPlansActivityPlanIdRouteImport.update({
+    id: '/activity-plans/$activityPlanId',
+    path: '/activity-plans/$activityPlanId',
     getParentRoute: () => ProtectedRoute,
   } as any)
-const ProtectedGoalsGoalIdIndexRoute =
-  ProtectedGoalsGoalIdIndexRouteImport.update({
-    id: '/$goalId/',
-    path: '/$goalId/',
-    getParentRoute: () => ProtectedGoalsRoute,
-  } as any)
-const ProtectedActivityEffortsEffortIdIndexRoute =
-  ProtectedActivityEffortsEffortIdIndexRouteImport.update({
-    id: '/activity-efforts/$effortId/',
-    path: '/activity-efforts/$effortId/',
+const ProtectedCalendarIndexRoute = ProtectedCalendarIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ProtectedCalendarRoute,
+} as any)
+const ProtectedCalendarNewRoute = ProtectedCalendarNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => ProtectedCalendarRoute,
+} as any)
+const ProtectedGoalsIndexRoute = ProtectedGoalsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ProtectedGoalsRoute,
+} as any)
+const ProtectedGoalsNewRoute = ProtectedGoalsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => ProtectedGoalsRoute,
+} as any)
+const ProtectedGroupsIndexRoute = ProtectedGroupsIndexRouteImport.update({
+  id: '/groups/',
+  path: '/groups/',
+  getParentRoute: () => ProtectedRoute,
+} as any)
+const ProtectedGroupsNewRoute = ProtectedGroupsNewRouteImport.update({
+  id: '/groups/new',
+  path: '/groups/new',
+  getParentRoute: () => ProtectedRoute,
+} as any)
+const ProtectedProfileMetricsIndexRoute =
+  ProtectedProfileMetricsIndexRouteImport.update({
+    id: '/profile-metrics/',
+    path: '/profile-metrics/',
     getParentRoute: () => ProtectedRoute,
+  } as any)
+const ProtectedRecordIndexRoute = ProtectedRecordIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ProtectedRecordRoute,
+} as any)
+const ProtectedRecordPlanRoute = ProtectedRecordPlanRouteImport.update({
+  id: '/plan',
+  path: '/plan',
+  getParentRoute: () => ProtectedRecordRoute,
+} as any)
+const ProtectedRecordSessionRoute = ProtectedRecordSessionRouteImport.update({
+  id: '/session',
+  path: '/session',
+  getParentRoute: () => ProtectedRecordRoute,
+} as any)
+const ProtectedRoutesIndexRoute = ProtectedRoutesIndexRouteImport.update({
+  id: '/routes/',
+  path: '/routes/',
+  getParentRoute: () => ProtectedRoute,
+} as any)
+const ProtectedRoutesUploadRoute = ProtectedRoutesUploadRouteImport.update({
+  id: '/routes/upload',
+  path: '/routes/upload',
+  getParentRoute: () => ProtectedRoute,
+} as any)
+const ProtectedScheduledActivitiesIndexRoute =
+  ProtectedScheduledActivitiesIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => ProtectedScheduledActivitiesRoute,
+  } as any)
+const ProtectedScheduledActivitiesEventIdRoute =
+  ProtectedScheduledActivitiesEventIdRouteImport.update({
+    id: '/$eventId',
+    path: '/$eventId',
+    getParentRoute: () => ProtectedScheduledActivitiesRoute,
+  } as any)
+const ProtectedTrainingPlansIndexRoute =
+  ProtectedTrainingPlansIndexRouteImport.update({
+    id: '/training-plans/',
+    path: '/training-plans/',
+    getParentRoute: () => ProtectedRoute,
+  } as any)
+const ProtectedTrainingPlansCreateRoute =
+  ProtectedTrainingPlansCreateRouteImport.update({
+    id: '/training-plans/create',
+    path: '/training-plans/create',
+    getParentRoute: () => ProtectedRoute,
+  } as any)
+const ProtectedTrainingPlansReorderRoute =
+  ProtectedTrainingPlansReorderRouteImport.update({
+    id: '/training-plans/reorder',
+    path: '/training-plans/reorder',
+    getParentRoute: () => ProtectedRoute,
+  } as any)
+const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
+  id: '/api/auth/$',
+  path: '/api/auth/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTrpcSplatRoute = ApiTrpcSplatRouteImport.update({
+  id: '/api/trpc/$',
+  path: '/api/trpc/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiWebhooksWahooRoute = ApiWebhooksWahooRouteImport.update({
+  id: '/api/webhooks/wahoo',
+  path: '/api/webhooks/wahoo',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShareActivitiesActivityIdRoute =
+  ShareActivitiesActivityIdRouteImport.update({
+    id: '/share/activities/$activityId',
+    path: '/share/activities/$activityId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ShareTrainingPlansTrainingPlanIdRoute =
+  ShareTrainingPlansTrainingPlanIdRouteImport.update({
+    id: '/share/training-plans/$trainingPlanId',
+    path: '/share/training-plans/$trainingPlanId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ShareWorkoutsWorkoutIdRoute = ShareWorkoutsWorkoutIdRouteImport.update({
+  id: '/share/workouts/$workoutId',
+  path: '/share/workouts/$workoutId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CoachingOrganizationsOrganizationIdIndexRoute =
+  CoachingOrganizationsOrganizationIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => CoachingOrganizationsOrganizationIdRoute,
+  } as any)
+const CoachingOrganizationsOrganizationIdDashboardRoute =
+  CoachingOrganizationsOrganizationIdDashboardRouteImport.update({
+    id: '/dashboard',
+    path: '/dashboard',
+    getParentRoute: () => CoachingOrganizationsOrganizationIdRoute,
   } as any)
 const ProtectedActivitiesActivityIdIndexRoute =
   ProtectedActivitiesActivityIdIndexRouteImport.update({
@@ -443,52 +413,40 @@ const ProtectedActivitiesActivityIdIndexRoute =
     path: '/activities/$activityId/',
     getParentRoute: () => ProtectedRoute,
   } as any)
-const CoachingOrganizationsOrganizationIdIndexRoute =
-  CoachingOrganizationsOrganizationIdIndexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => CoachingOrganizationsOrganizationIdRoute,
-  } as any)
-const ApiIntegrationsCallbackProviderRoute =
-  ApiIntegrationsCallbackProviderRouteImport.update({
-    id: '/api/integrations/callback/$provider',
-    path: '/api/integrations/callback/$provider',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ProtectedUserUserIdFollowingRoute =
-  ProtectedUserUserIdFollowingRouteImport.update({
-    id: '/user/$userId/following',
-    path: '/user/$userId/following',
+const ProtectedActivityEffortsEffortIdIndexRoute =
+  ProtectedActivityEffortsEffortIdIndexRouteImport.update({
+    id: '/activity-efforts/$effortId/',
+    path: '/activity-efforts/$effortId/',
     getParentRoute: () => ProtectedRoute,
   } as any)
-const ProtectedUserUserIdFollowersRoute =
-  ProtectedUserUserIdFollowersRouteImport.update({
-    id: '/user/$userId/followers',
-    path: '/user/$userId/followers',
-    getParentRoute: () => ProtectedRoute,
+const ProtectedCalendarDayDateRoute =
+  ProtectedCalendarDayDateRouteImport.update({
+    id: '/day/$date',
+    path: '/day/$date',
+    getParentRoute: () => ProtectedCalendarRoute,
   } as any)
-const ProtectedTrainingPlansPlanIdEditRoute =
-  ProtectedTrainingPlansPlanIdEditRouteImport.update({
-    id: '/training-plans/$planId/edit',
-    path: '/training-plans/$planId/edit',
-    getParentRoute: () => ProtectedRoute,
+const ProtectedCalendarEventsEventIdRoute =
+  ProtectedCalendarEventsEventIdRouteImport.update({
+    id: '/events/$eventId',
+    path: '/events/$eventId',
+    getParentRoute: () => ProtectedCalendarRoute,
   } as any)
-const ProtectedRecordRoutePreviewRouteIdRoute =
-  ProtectedRecordRoutePreviewRouteIdRouteImport.update({
-    id: '/route-preview/$routeId',
-    path: '/route-preview/$routeId',
-    getParentRoute: () => ProtectedRecordRoute,
+const ProtectedGoalsGoalIdIndexRoute =
+  ProtectedGoalsGoalIdIndexRouteImport.update({
+    id: '/$goalId/',
+    path: '/$goalId/',
+    getParentRoute: () => ProtectedGoalsRoute,
   } as any)
-const ProtectedGroupsGroupIdRequestsRoute =
-  ProtectedGroupsGroupIdRequestsRouteImport.update({
-    id: '/groups/$groupId/requests',
-    path: '/groups/$groupId/requests',
-    getParentRoute: () => ProtectedRoute,
+const ProtectedGoalsGoalIdEditRoute =
+  ProtectedGoalsGoalIdEditRouteImport.update({
+    id: '/$goalId/edit',
+    path: '/$goalId/edit',
+    getParentRoute: () => ProtectedGoalsRoute,
   } as any)
-const ProtectedGroupsGroupIdMembersRoute =
-  ProtectedGroupsGroupIdMembersRouteImport.update({
-    id: '/groups/$groupId/members',
-    path: '/groups/$groupId/members',
+const ProtectedGroupsGroupIdIndexRoute =
+  ProtectedGroupsGroupIdIndexRouteImport.update({
+    id: '/groups/$groupId/',
+    path: '/groups/$groupId/',
     getParentRoute: () => ProtectedRoute,
   } as any)
 const ProtectedGroupsGroupIdEditRoute =
@@ -497,29 +455,83 @@ const ProtectedGroupsGroupIdEditRoute =
     path: '/groups/$groupId/edit',
     getParentRoute: () => ProtectedRoute,
   } as any)
-const ProtectedGoalsGoalIdEditRoute =
-  ProtectedGoalsGoalIdEditRouteImport.update({
-    id: '/$goalId/edit',
-    path: '/$goalId/edit',
-    getParentRoute: () => ProtectedGoalsRoute,
+const ProtectedGroupsGroupIdMembersRoute =
+  ProtectedGroupsGroupIdMembersRouteImport.update({
+    id: '/groups/$groupId/members',
+    path: '/groups/$groupId/members',
+    getParentRoute: () => ProtectedRoute,
   } as any)
-const ProtectedCalendarEventsEventIdRoute =
-  ProtectedCalendarEventsEventIdRouteImport.update({
-    id: '/events/$eventId',
-    path: '/events/$eventId',
-    getParentRoute: () => ProtectedCalendarRoute,
+const ProtectedGroupsGroupIdRequestsRoute =
+  ProtectedGroupsGroupIdRequestsRouteImport.update({
+    id: '/groups/$groupId/requests',
+    path: '/groups/$groupId/requests',
+    getParentRoute: () => ProtectedRoute,
   } as any)
-const ProtectedCalendarDayDateRoute =
-  ProtectedCalendarDayDateRouteImport.update({
-    id: '/day/$date',
-    path: '/day/$date',
-    getParentRoute: () => ProtectedCalendarRoute,
+const ProtectedRecordRoutePreviewRouteIdRoute =
+  ProtectedRecordRoutePreviewRouteIdRouteImport.update({
+    id: '/route-preview/$routeId',
+    path: '/route-preview/$routeId',
+    getParentRoute: () => ProtectedRecordRoute,
   } as any)
-const CoachingOrganizationsOrganizationIdDashboardRoute =
-  CoachingOrganizationsOrganizationIdDashboardRouteImport.update({
-    id: '/dashboard',
-    path: '/dashboard',
-    getParentRoute: () => CoachingOrganizationsOrganizationIdRoute,
+const ProtectedRecordRouteIndexRoute =
+  ProtectedRecordRouteIndexRouteImport.update({
+    id: '/route/',
+    path: '/route/',
+    getParentRoute: () => ProtectedRecordRoute,
+  } as any)
+const ProtectedRoutesRouteIdIndexRoute =
+  ProtectedRoutesRouteIdIndexRouteImport.update({
+    id: '/routes/$routeId/',
+    path: '/routes/$routeId/',
+    getParentRoute: () => ProtectedRoute,
+  } as any)
+const ProtectedTrainingPlansPlanIdIndexRoute =
+  ProtectedTrainingPlansPlanIdIndexRouteImport.update({
+    id: '/training-plans/$planId/',
+    path: '/training-plans/$planId/',
+    getParentRoute: () => ProtectedRoute,
+  } as any)
+const ProtectedTrainingPlansPlanIdEditRoute =
+  ProtectedTrainingPlansPlanIdEditRouteImport.update({
+    id: '/training-plans/$planId/edit',
+    path: '/training-plans/$planId/edit',
+    getParentRoute: () => ProtectedRoute,
+  } as any)
+const ProtectedUserUserIdIndexRoute =
+  ProtectedUserUserIdIndexRouteImport.update({
+    id: '/user/$userId/',
+    path: '/user/$userId/',
+    getParentRoute: () => ProtectedRoute,
+  } as any)
+const ProtectedUserUserIdFollowersRoute =
+  ProtectedUserUserIdFollowersRouteImport.update({
+    id: '/user/$userId/followers',
+    path: '/user/$userId/followers',
+    getParentRoute: () => ProtectedRoute,
+  } as any)
+const ProtectedUserUserIdFollowingRoute =
+  ProtectedUserUserIdFollowingRouteImport.update({
+    id: '/user/$userId/following',
+    path: '/user/$userId/following',
+    getParentRoute: () => ProtectedRoute,
+  } as any)
+const ApiIntegrationsCallbackProviderRoute =
+  ApiIntegrationsCallbackProviderRouteImport.update({
+    id: '/api/integrations/callback/$provider',
+    path: '/api/integrations/callback/$provider',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ProtectedCalendarEventsEventIdEditRoute =
+  ProtectedCalendarEventsEventIdEditRouteImport.update({
+    id: '/edit',
+    path: '/edit',
+    getParentRoute: () => ProtectedCalendarEventsEventIdRoute,
+  } as any)
+const ProtectedGroupsGroupIdEventsNewRoute =
+  ProtectedGroupsGroupIdEventsNewRouteImport.update({
+    id: '/groups/$groupId/events/new',
+    path: '/groups/$groupId/events/new',
+    getParentRoute: () => ProtectedRoute,
   } as any)
 const ProtectedGroupsEventsGroupEventIdIndexRoute =
   ProtectedGroupsEventsGroupEventIdIndexRouteImport.update({
@@ -527,10 +539,16 @@ const ProtectedGroupsEventsGroupEventIdIndexRoute =
     path: '/groups/events/$groupEventId/',
     getParentRoute: () => ProtectedRoute,
   } as any)
-const ApiInternalProviderSyncWahooStatusRoute =
-  ApiInternalProviderSyncWahooStatusRouteImport.update({
-    id: '/api/internal/provider-sync/wahoo/status',
-    path: '/api/internal/provider-sync/wahoo/status',
+const ProtectedGroupsEventsGroupEventIdEditRoute =
+  ProtectedGroupsEventsGroupEventIdEditRouteImport.update({
+    id: '/groups/events/$groupEventId/edit',
+    path: '/groups/events/$groupEventId/edit',
+    getParentRoute: () => ProtectedRoute,
+  } as any)
+const ApiInternalProviderSyncWahooDrainRoute =
+  ApiInternalProviderSyncWahooDrainRouteImport.update({
+    id: '/api/internal/provider-sync/wahoo/drain',
+    path: '/api/internal/provider-sync/wahoo/drain',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ApiInternalProviderSyncWahooRetryRoute =
@@ -539,29 +557,11 @@ const ApiInternalProviderSyncWahooRetryRoute =
     path: '/api/internal/provider-sync/wahoo/retry',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiInternalProviderSyncWahooDrainRoute =
-  ApiInternalProviderSyncWahooDrainRouteImport.update({
-    id: '/api/internal/provider-sync/wahoo/drain',
-    path: '/api/internal/provider-sync/wahoo/drain',
+const ApiInternalProviderSyncWahooStatusRoute =
+  ApiInternalProviderSyncWahooStatusRouteImport.update({
+    id: '/api/internal/provider-sync/wahoo/status',
+    path: '/api/internal/provider-sync/wahoo/status',
     getParentRoute: () => rootRouteImport,
-  } as any)
-const ProtectedGroupsEventsGroupEventIdEditRoute =
-  ProtectedGroupsEventsGroupEventIdEditRouteImport.update({
-    id: '/groups/events/$groupEventId/edit',
-    path: '/groups/events/$groupEventId/edit',
-    getParentRoute: () => ProtectedRoute,
-  } as any)
-const ProtectedGroupsGroupIdEventsNewRoute =
-  ProtectedGroupsGroupIdEventsNewRouteImport.update({
-    id: '/groups/$groupId/events/new',
-    path: '/groups/$groupId/events/new',
-    getParentRoute: () => ProtectedRoute,
-  } as any)
-const ProtectedCalendarEventsEventIdEditRoute =
-  ProtectedCalendarEventsEventIdEditRouteImport.update({
-    id: '/edit',
-    path: '/edit',
-    getParentRoute: () => ProtectedCalendarEventsEventIdRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -1101,11 +1101,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/onboarding': {
-      id: '/onboarding'
-      path: '/onboarding'
-      fullPath: '/onboarding'
-      preLoaderRoute: typeof OnboardingRouteImport
+    '/_coaching': {
+      id: '/_coaching'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof CoachingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_protected': {
@@ -1115,11 +1115,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_coaching': {
-      id: '/_coaching'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof CoachingRouteImport
+    '/onboarding': {
+      id: '/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof OnboardingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_protected/': {
@@ -1129,151 +1129,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedIndexRouteImport
       parentRoute: typeof ProtectedRoute
     }
-    '/auth/verify': {
-      id: '/auth/verify'
-      path: '/auth/verify'
-      fullPath: '/auth/verify'
-      preLoaderRoute: typeof AuthVerifyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth/verification-success': {
-      id: '/auth/verification-success'
-      path: '/auth/verification-success'
-      fullPath: '/auth/verification-success'
-      preLoaderRoute: typeof AuthVerificationSuccessRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth/update-password': {
-      id: '/auth/update-password'
-      path: '/auth/update-password'
-      fullPath: '/auth/update-password'
-      preLoaderRoute: typeof AuthUpdatePasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth/sign-up-success': {
-      id: '/auth/sign-up-success'
-      path: '/auth/sign-up-success'
-      fullPath: '/auth/sign-up-success'
-      preLoaderRoute: typeof AuthSignUpSuccessRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth/sign-up': {
-      id: '/auth/sign-up'
-      path: '/auth/sign-up'
-      fullPath: '/auth/sign-up'
-      preLoaderRoute: typeof AuthSignUpRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth/login': {
-      id: '/auth/login'
-      path: '/auth/login'
-      fullPath: '/auth/login'
-      preLoaderRoute: typeof AuthLoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth/forgot-password': {
-      id: '/auth/forgot-password'
-      path: '/auth/forgot-password'
-      fullPath: '/auth/forgot-password'
-      preLoaderRoute: typeof AuthForgotPasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth/error': {
-      id: '/auth/error'
-      path: '/auth/error'
-      fullPath: '/auth/error'
-      preLoaderRoute: typeof AuthErrorRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth/confirm': {
-      id: '/auth/confirm'
-      path: '/auth/confirm'
-      fullPath: '/auth/confirm'
-      preLoaderRoute: typeof AuthConfirmRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/ready': {
-      id: '/api/ready'
-      path: '/api/ready'
-      fullPath: '/api/ready'
-      preLoaderRoute: typeof ApiReadyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/health': {
-      id: '/api/health'
-      path: '/api/health'
-      fullPath: '/api/health'
-      preLoaderRoute: typeof ApiHealthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_protected/trends': {
-      id: '/_protected/trends'
-      path: '/trends'
-      fullPath: '/trends'
-      preLoaderRoute: typeof ProtectedTrendsRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/training-preferences': {
-      id: '/_protected/training-preferences'
-      path: '/training-preferences'
-      fullPath: '/training-preferences'
-      preLoaderRoute: typeof ProtectedTrainingPreferencesRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/settings': {
-      id: '/_protected/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof ProtectedSettingsRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/search': {
-      id: '/_protected/search'
-      path: '/search'
-      fullPath: '/search'
-      preLoaderRoute: typeof ProtectedSearchRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/scheduled-activities': {
-      id: '/_protected/scheduled-activities'
-      path: '/scheduled-activities'
-      fullPath: '/scheduled-activities'
-      preLoaderRoute: typeof ProtectedScheduledActivitiesRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/record': {
-      id: '/_protected/record'
-      path: '/record'
-      fullPath: '/record'
-      preLoaderRoute: typeof ProtectedRecordRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/plan': {
-      id: '/_protected/plan'
-      path: '/plan'
-      fullPath: '/plan'
-      preLoaderRoute: typeof ProtectedPlanRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/notifications': {
-      id: '/_protected/notifications'
-      path: '/notifications'
-      fullPath: '/notifications'
-      preLoaderRoute: typeof ProtectedNotificationsRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/messages': {
-      id: '/_protected/messages'
-      path: '/messages'
-      fullPath: '/messages'
-      preLoaderRoute: typeof ProtectedMessagesRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/integrations': {
-      id: '/_protected/integrations'
-      path: '/integrations'
-      fullPath: '/integrations'
-      preLoaderRoute: typeof ProtectedIntegrationsRouteImport
+    '/_protected/calendar': {
+      id: '/_protected/calendar'
+      path: '/calendar'
+      fullPath: '/calendar'
+      preLoaderRoute: typeof ProtectedCalendarRouteImport
       parentRoute: typeof ProtectedRoute
     }
     '/_protected/goals': {
@@ -1283,207 +1143,165 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedGoalsRouteImport
       parentRoute: typeof ProtectedRoute
     }
-    '/_protected/calendar': {
-      id: '/_protected/calendar'
-      path: '/calendar'
-      fullPath: '/calendar'
-      preLoaderRoute: typeof ProtectedCalendarRouteImport
+    '/_protected/integrations': {
+      id: '/_protected/integrations'
+      path: '/integrations'
+      fullPath: '/integrations'
+      preLoaderRoute: typeof ProtectedIntegrationsRouteImport
       parentRoute: typeof ProtectedRoute
     }
-    '/_protected/training-plans/': {
-      id: '/_protected/training-plans/'
-      path: '/training-plans'
-      fullPath: '/training-plans/'
-      preLoaderRoute: typeof ProtectedTrainingPlansIndexRouteImport
+    '/_protected/messages': {
+      id: '/_protected/messages'
+      path: '/messages'
+      fullPath: '/messages'
+      preLoaderRoute: typeof ProtectedMessagesRouteImport
       parentRoute: typeof ProtectedRoute
     }
-    '/_protected/scheduled-activities/': {
-      id: '/_protected/scheduled-activities/'
-      path: '/'
-      fullPath: '/scheduled-activities/'
-      preLoaderRoute: typeof ProtectedScheduledActivitiesIndexRouteImport
-      parentRoute: typeof ProtectedScheduledActivitiesRoute
-    }
-    '/_protected/routes/': {
-      id: '/_protected/routes/'
-      path: '/routes'
-      fullPath: '/routes/'
-      preLoaderRoute: typeof ProtectedRoutesIndexRouteImport
+    '/_protected/notifications': {
+      id: '/_protected/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof ProtectedNotificationsRouteImport
       parentRoute: typeof ProtectedRoute
     }
-    '/_protected/record/': {
-      id: '/_protected/record/'
-      path: '/'
-      fullPath: '/record/'
-      preLoaderRoute: typeof ProtectedRecordIndexRouteImport
-      parentRoute: typeof ProtectedRecordRoute
-    }
-    '/_protected/profile-metrics/': {
-      id: '/_protected/profile-metrics/'
-      path: '/profile-metrics'
-      fullPath: '/profile-metrics/'
-      preLoaderRoute: typeof ProtectedProfileMetricsIndexRouteImport
+    '/_protected/plan': {
+      id: '/_protected/plan'
+      path: '/plan'
+      fullPath: '/plan'
+      preLoaderRoute: typeof ProtectedPlanRouteImport
       parentRoute: typeof ProtectedRoute
     }
-    '/_protected/groups/': {
-      id: '/_protected/groups/'
-      path: '/groups'
-      fullPath: '/groups/'
-      preLoaderRoute: typeof ProtectedGroupsIndexRouteImport
+    '/_protected/record': {
+      id: '/_protected/record'
+      path: '/record'
+      fullPath: '/record'
+      preLoaderRoute: typeof ProtectedRecordRouteImport
       parentRoute: typeof ProtectedRoute
     }
-    '/_protected/goals/': {
-      id: '/_protected/goals/'
-      path: '/'
-      fullPath: '/goals/'
-      preLoaderRoute: typeof ProtectedGoalsIndexRouteImport
-      parentRoute: typeof ProtectedGoalsRoute
-    }
-    '/_protected/calendar/': {
-      id: '/_protected/calendar/'
-      path: '/'
-      fullPath: '/calendar/'
-      preLoaderRoute: typeof ProtectedCalendarIndexRouteImport
-      parentRoute: typeof ProtectedCalendarRoute
-    }
-    '/_protected/activity-plans/': {
-      id: '/_protected/activity-plans/'
-      path: '/activity-plans'
-      fullPath: '/activity-plans/'
-      preLoaderRoute: typeof ProtectedActivityPlansIndexRouteImport
+    '/_protected/scheduled-activities': {
+      id: '/_protected/scheduled-activities'
+      path: '/scheduled-activities'
+      fullPath: '/scheduled-activities'
+      preLoaderRoute: typeof ProtectedScheduledActivitiesRouteImport
       parentRoute: typeof ProtectedRoute
     }
-    '/_protected/activity-efforts/': {
-      id: '/_protected/activity-efforts/'
-      path: '/activity-efforts'
-      fullPath: '/activity-efforts/'
-      preLoaderRoute: typeof ProtectedActivityEffortsIndexRouteImport
+    '/_protected/search': {
+      id: '/_protected/search'
+      path: '/search'
+      fullPath: '/search'
+      preLoaderRoute: typeof ProtectedSearchRouteImport
       parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/settings': {
+      id: '/_protected/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof ProtectedSettingsRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/training-preferences': {
+      id: '/_protected/training-preferences'
+      path: '/training-preferences'
+      fullPath: '/training-preferences'
+      preLoaderRoute: typeof ProtectedTrainingPreferencesRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/trends': {
+      id: '/_protected/trends'
+      path: '/trends'
+      fullPath: '/trends'
+      preLoaderRoute: typeof ProtectedTrendsRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/api/health': {
+      id: '/api/health'
+      path: '/api/health'
+      fullPath: '/api/health'
+      preLoaderRoute: typeof ApiHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ready': {
+      id: '/api/ready'
+      path: '/api/ready'
+      fullPath: '/api/ready'
+      preLoaderRoute: typeof ApiReadyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/confirm': {
+      id: '/auth/confirm'
+      path: '/auth/confirm'
+      fullPath: '/auth/confirm'
+      preLoaderRoute: typeof AuthConfirmRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/error': {
+      id: '/auth/error'
+      path: '/auth/error'
+      fullPath: '/auth/error'
+      preLoaderRoute: typeof AuthErrorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/forgot-password': {
+      id: '/auth/forgot-password'
+      path: '/auth/forgot-password'
+      fullPath: '/auth/forgot-password'
+      preLoaderRoute: typeof AuthForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/login': {
+      id: '/auth/login'
+      path: '/auth/login'
+      fullPath: '/auth/login'
+      preLoaderRoute: typeof AuthLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/sign-up': {
+      id: '/auth/sign-up'
+      path: '/auth/sign-up'
+      fullPath: '/auth/sign-up'
+      preLoaderRoute: typeof AuthSignUpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/sign-up-success': {
+      id: '/auth/sign-up-success'
+      path: '/auth/sign-up-success'
+      fullPath: '/auth/sign-up-success'
+      preLoaderRoute: typeof AuthSignUpSuccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/update-password': {
+      id: '/auth/update-password'
+      path: '/auth/update-password'
+      fullPath: '/auth/update-password'
+      preLoaderRoute: typeof AuthUpdatePasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/verification-success': {
+      id: '/auth/verification-success'
+      path: '/auth/verification-success'
+      fullPath: '/auth/verification-success'
+      preLoaderRoute: typeof AuthVerificationSuccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/verify': {
+      id: '/auth/verify'
+      path: '/auth/verify'
+      fullPath: '/auth/verify'
+      preLoaderRoute: typeof AuthVerifyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_coaching/organizations/$organizationId': {
+      id: '/_coaching/organizations/$organizationId'
+      path: '/organizations/$organizationId'
+      fullPath: '/organizations/$organizationId'
+      preLoaderRoute: typeof CoachingOrganizationsOrganizationIdRouteImport
+      parentRoute: typeof CoachingRoute
     }
     '/_protected/activities/': {
       id: '/_protected/activities/'
       path: '/activities'
       fullPath: '/activities/'
       preLoaderRoute: typeof ProtectedActivitiesIndexRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/share/workouts/$workoutId': {
-      id: '/share/workouts/$workoutId'
-      path: '/share/workouts/$workoutId'
-      fullPath: '/share/workouts/$workoutId'
-      preLoaderRoute: typeof ShareWorkoutsWorkoutIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/share/training-plans/$trainingPlanId': {
-      id: '/share/training-plans/$trainingPlanId'
-      path: '/share/training-plans/$trainingPlanId'
-      fullPath: '/share/training-plans/$trainingPlanId'
-      preLoaderRoute: typeof ShareTrainingPlansTrainingPlanIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/share/activities/$activityId': {
-      id: '/share/activities/$activityId'
-      path: '/share/activities/$activityId'
-      fullPath: '/share/activities/$activityId'
-      preLoaderRoute: typeof ShareActivitiesActivityIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/webhooks/wahoo': {
-      id: '/api/webhooks/wahoo'
-      path: '/api/webhooks/wahoo'
-      fullPath: '/api/webhooks/wahoo'
-      preLoaderRoute: typeof ApiWebhooksWahooRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/trpc/$': {
-      id: '/api/trpc/$'
-      path: '/api/trpc/$'
-      fullPath: '/api/trpc/$'
-      preLoaderRoute: typeof ApiTrpcSplatRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/auth/$': {
-      id: '/api/auth/$'
-      path: '/api/auth/$'
-      fullPath: '/api/auth/$'
-      preLoaderRoute: typeof ApiAuthSplatRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_protected/training-plans/reorder': {
-      id: '/_protected/training-plans/reorder'
-      path: '/training-plans/reorder'
-      fullPath: '/training-plans/reorder'
-      preLoaderRoute: typeof ProtectedTrainingPlansReorderRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/training-plans/create': {
-      id: '/_protected/training-plans/create'
-      path: '/training-plans/create'
-      fullPath: '/training-plans/create'
-      preLoaderRoute: typeof ProtectedTrainingPlansCreateRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/scheduled-activities/$eventId': {
-      id: '/_protected/scheduled-activities/$eventId'
-      path: '/$eventId'
-      fullPath: '/scheduled-activities/$eventId'
-      preLoaderRoute: typeof ProtectedScheduledActivitiesEventIdRouteImport
-      parentRoute: typeof ProtectedScheduledActivitiesRoute
-    }
-    '/_protected/routes/upload': {
-      id: '/_protected/routes/upload'
-      path: '/routes/upload'
-      fullPath: '/routes/upload'
-      preLoaderRoute: typeof ProtectedRoutesUploadRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/record/session': {
-      id: '/_protected/record/session'
-      path: '/session'
-      fullPath: '/record/session'
-      preLoaderRoute: typeof ProtectedRecordSessionRouteImport
-      parentRoute: typeof ProtectedRecordRoute
-    }
-    '/_protected/record/plan': {
-      id: '/_protected/record/plan'
-      path: '/plan'
-      fullPath: '/record/plan'
-      preLoaderRoute: typeof ProtectedRecordPlanRouteImport
-      parentRoute: typeof ProtectedRecordRoute
-    }
-    '/_protected/groups/new': {
-      id: '/_protected/groups/new'
-      path: '/groups/new'
-      fullPath: '/groups/new'
-      preLoaderRoute: typeof ProtectedGroupsNewRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/goals/new': {
-      id: '/_protected/goals/new'
-      path: '/new'
-      fullPath: '/goals/new'
-      preLoaderRoute: typeof ProtectedGoalsNewRouteImport
-      parentRoute: typeof ProtectedGoalsRoute
-    }
-    '/_protected/calendar/new': {
-      id: '/_protected/calendar/new'
-      path: '/new'
-      fullPath: '/calendar/new'
-      preLoaderRoute: typeof ProtectedCalendarNewRouteImport
-      parentRoute: typeof ProtectedCalendarRoute
-    }
-    '/_protected/activity-plans/$activityPlanId': {
-      id: '/_protected/activity-plans/$activityPlanId'
-      path: '/activity-plans/$activityPlanId'
-      fullPath: '/activity-plans/$activityPlanId'
-      preLoaderRoute: typeof ProtectedActivityPlansActivityPlanIdRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/activity-efforts/new': {
-      id: '/_protected/activity-efforts/new'
-      path: '/activity-efforts/new'
-      fullPath: '/activity-efforts/new'
-      preLoaderRoute: typeof ProtectedActivityEffortsNewRouteImport
       parentRoute: typeof ProtectedRoute
     }
     '/_protected/activities/import': {
@@ -1493,68 +1311,194 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedActivitiesImportRouteImport
       parentRoute: typeof ProtectedRoute
     }
-    '/_coaching/organizations/$organizationId': {
-      id: '/_coaching/organizations/$organizationId'
-      path: '/organizations/$organizationId'
-      fullPath: '/organizations/$organizationId'
-      preLoaderRoute: typeof CoachingOrganizationsOrganizationIdRouteImport
-      parentRoute: typeof CoachingRoute
-    }
-    '/_protected/user/$userId/': {
-      id: '/_protected/user/$userId/'
-      path: '/user/$userId'
-      fullPath: '/user/$userId/'
-      preLoaderRoute: typeof ProtectedUserUserIdIndexRouteImport
+    '/_protected/activity-efforts/': {
+      id: '/_protected/activity-efforts/'
+      path: '/activity-efforts'
+      fullPath: '/activity-efforts/'
+      preLoaderRoute: typeof ProtectedActivityEffortsIndexRouteImport
       parentRoute: typeof ProtectedRoute
     }
-    '/_protected/training-plans/$planId/': {
-      id: '/_protected/training-plans/$planId/'
-      path: '/training-plans/$planId'
-      fullPath: '/training-plans/$planId/'
-      preLoaderRoute: typeof ProtectedTrainingPlansPlanIdIndexRouteImport
+    '/_protected/activity-efforts/new': {
+      id: '/_protected/activity-efforts/new'
+      path: '/activity-efforts/new'
+      fullPath: '/activity-efforts/new'
+      preLoaderRoute: typeof ProtectedActivityEffortsNewRouteImport
       parentRoute: typeof ProtectedRoute
     }
-    '/_protected/routes/$routeId/': {
-      id: '/_protected/routes/$routeId/'
-      path: '/routes/$routeId'
-      fullPath: '/routes/$routeId/'
-      preLoaderRoute: typeof ProtectedRoutesRouteIdIndexRouteImport
+    '/_protected/activity-plans/': {
+      id: '/_protected/activity-plans/'
+      path: '/activity-plans'
+      fullPath: '/activity-plans/'
+      preLoaderRoute: typeof ProtectedActivityPlansIndexRouteImport
       parentRoute: typeof ProtectedRoute
     }
-    '/_protected/record/route/': {
-      id: '/_protected/record/route/'
-      path: '/route'
-      fullPath: '/record/route/'
-      preLoaderRoute: typeof ProtectedRecordRouteIndexRouteImport
-      parentRoute: typeof ProtectedRecordRoute
-    }
-    '/_protected/groups/$groupId/': {
-      id: '/_protected/groups/$groupId/'
-      path: '/groups/$groupId'
-      fullPath: '/groups/$groupId/'
-      preLoaderRoute: typeof ProtectedGroupsGroupIdIndexRouteImport
+    '/_protected/activity-plans/$activityPlanId': {
+      id: '/_protected/activity-plans/$activityPlanId'
+      path: '/activity-plans/$activityPlanId'
+      fullPath: '/activity-plans/$activityPlanId'
+      preLoaderRoute: typeof ProtectedActivityPlansActivityPlanIdRouteImport
       parentRoute: typeof ProtectedRoute
     }
-    '/_protected/goals/$goalId/': {
-      id: '/_protected/goals/$goalId/'
-      path: '/$goalId'
-      fullPath: '/goals/$goalId/'
-      preLoaderRoute: typeof ProtectedGoalsGoalIdIndexRouteImport
+    '/_protected/calendar/': {
+      id: '/_protected/calendar/'
+      path: '/'
+      fullPath: '/calendar/'
+      preLoaderRoute: typeof ProtectedCalendarIndexRouteImport
+      parentRoute: typeof ProtectedCalendarRoute
+    }
+    '/_protected/calendar/new': {
+      id: '/_protected/calendar/new'
+      path: '/new'
+      fullPath: '/calendar/new'
+      preLoaderRoute: typeof ProtectedCalendarNewRouteImport
+      parentRoute: typeof ProtectedCalendarRoute
+    }
+    '/_protected/goals/': {
+      id: '/_protected/goals/'
+      path: '/'
+      fullPath: '/goals/'
+      preLoaderRoute: typeof ProtectedGoalsIndexRouteImport
       parentRoute: typeof ProtectedGoalsRoute
     }
-    '/_protected/activity-efforts/$effortId/': {
-      id: '/_protected/activity-efforts/$effortId/'
-      path: '/activity-efforts/$effortId'
-      fullPath: '/activity-efforts/$effortId/'
-      preLoaderRoute: typeof ProtectedActivityEffortsEffortIdIndexRouteImport
+    '/_protected/goals/new': {
+      id: '/_protected/goals/new'
+      path: '/new'
+      fullPath: '/goals/new'
+      preLoaderRoute: typeof ProtectedGoalsNewRouteImport
+      parentRoute: typeof ProtectedGoalsRoute
+    }
+    '/_protected/groups/': {
+      id: '/_protected/groups/'
+      path: '/groups'
+      fullPath: '/groups/'
+      preLoaderRoute: typeof ProtectedGroupsIndexRouteImport
       parentRoute: typeof ProtectedRoute
     }
-    '/_protected/activities/$activityId/': {
-      id: '/_protected/activities/$activityId/'
-      path: '/activities/$activityId'
-      fullPath: '/activities/$activityId/'
-      preLoaderRoute: typeof ProtectedActivitiesActivityIdIndexRouteImport
+    '/_protected/groups/new': {
+      id: '/_protected/groups/new'
+      path: '/groups/new'
+      fullPath: '/groups/new'
+      preLoaderRoute: typeof ProtectedGroupsNewRouteImport
       parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/profile-metrics/': {
+      id: '/_protected/profile-metrics/'
+      path: '/profile-metrics'
+      fullPath: '/profile-metrics/'
+      preLoaderRoute: typeof ProtectedProfileMetricsIndexRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/record/': {
+      id: '/_protected/record/'
+      path: '/'
+      fullPath: '/record/'
+      preLoaderRoute: typeof ProtectedRecordIndexRouteImport
+      parentRoute: typeof ProtectedRecordRoute
+    }
+    '/_protected/record/plan': {
+      id: '/_protected/record/plan'
+      path: '/plan'
+      fullPath: '/record/plan'
+      preLoaderRoute: typeof ProtectedRecordPlanRouteImport
+      parentRoute: typeof ProtectedRecordRoute
+    }
+    '/_protected/record/session': {
+      id: '/_protected/record/session'
+      path: '/session'
+      fullPath: '/record/session'
+      preLoaderRoute: typeof ProtectedRecordSessionRouteImport
+      parentRoute: typeof ProtectedRecordRoute
+    }
+    '/_protected/routes/': {
+      id: '/_protected/routes/'
+      path: '/routes'
+      fullPath: '/routes/'
+      preLoaderRoute: typeof ProtectedRoutesIndexRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/routes/upload': {
+      id: '/_protected/routes/upload'
+      path: '/routes/upload'
+      fullPath: '/routes/upload'
+      preLoaderRoute: typeof ProtectedRoutesUploadRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/scheduled-activities/': {
+      id: '/_protected/scheduled-activities/'
+      path: '/'
+      fullPath: '/scheduled-activities/'
+      preLoaderRoute: typeof ProtectedScheduledActivitiesIndexRouteImport
+      parentRoute: typeof ProtectedScheduledActivitiesRoute
+    }
+    '/_protected/scheduled-activities/$eventId': {
+      id: '/_protected/scheduled-activities/$eventId'
+      path: '/$eventId'
+      fullPath: '/scheduled-activities/$eventId'
+      preLoaderRoute: typeof ProtectedScheduledActivitiesEventIdRouteImport
+      parentRoute: typeof ProtectedScheduledActivitiesRoute
+    }
+    '/_protected/training-plans/': {
+      id: '/_protected/training-plans/'
+      path: '/training-plans'
+      fullPath: '/training-plans/'
+      preLoaderRoute: typeof ProtectedTrainingPlansIndexRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/training-plans/create': {
+      id: '/_protected/training-plans/create'
+      path: '/training-plans/create'
+      fullPath: '/training-plans/create'
+      preLoaderRoute: typeof ProtectedTrainingPlansCreateRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/training-plans/reorder': {
+      id: '/_protected/training-plans/reorder'
+      path: '/training-plans/reorder'
+      fullPath: '/training-plans/reorder'
+      preLoaderRoute: typeof ProtectedTrainingPlansReorderRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/api/auth/$': {
+      id: '/api/auth/$'
+      path: '/api/auth/$'
+      fullPath: '/api/auth/$'
+      preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/trpc/$': {
+      id: '/api/trpc/$'
+      path: '/api/trpc/$'
+      fullPath: '/api/trpc/$'
+      preLoaderRoute: typeof ApiTrpcSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/webhooks/wahoo': {
+      id: '/api/webhooks/wahoo'
+      path: '/api/webhooks/wahoo'
+      fullPath: '/api/webhooks/wahoo'
+      preLoaderRoute: typeof ApiWebhooksWahooRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/share/activities/$activityId': {
+      id: '/share/activities/$activityId'
+      path: '/share/activities/$activityId'
+      fullPath: '/share/activities/$activityId'
+      preLoaderRoute: typeof ShareActivitiesActivityIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/share/training-plans/$trainingPlanId': {
+      id: '/share/training-plans/$trainingPlanId'
+      path: '/share/training-plans/$trainingPlanId'
+      fullPath: '/share/training-plans/$trainingPlanId'
+      preLoaderRoute: typeof ShareTrainingPlansTrainingPlanIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/share/workouts/$workoutId': {
+      id: '/share/workouts/$workoutId'
+      path: '/share/workouts/$workoutId'
+      fullPath: '/share/workouts/$workoutId'
+      preLoaderRoute: typeof ShareWorkoutsWorkoutIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_coaching/organizations/$organizationId/': {
       id: '/_coaching/organizations/$organizationId/'
@@ -1563,53 +1507,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CoachingOrganizationsOrganizationIdIndexRouteImport
       parentRoute: typeof CoachingOrganizationsOrganizationIdRoute
     }
-    '/api/integrations/callback/$provider': {
-      id: '/api/integrations/callback/$provider'
-      path: '/api/integrations/callback/$provider'
-      fullPath: '/api/integrations/callback/$provider'
-      preLoaderRoute: typeof ApiIntegrationsCallbackProviderRouteImport
-      parentRoute: typeof rootRouteImport
+    '/_coaching/organizations/$organizationId/dashboard': {
+      id: '/_coaching/organizations/$organizationId/dashboard'
+      path: '/dashboard'
+      fullPath: '/organizations/$organizationId/dashboard'
+      preLoaderRoute: typeof CoachingOrganizationsOrganizationIdDashboardRouteImport
+      parentRoute: typeof CoachingOrganizationsOrganizationIdRoute
     }
-    '/_protected/user/$userId/following': {
-      id: '/_protected/user/$userId/following'
-      path: '/user/$userId/following'
-      fullPath: '/user/$userId/following'
-      preLoaderRoute: typeof ProtectedUserUserIdFollowingRouteImport
+    '/_protected/activities/$activityId/': {
+      id: '/_protected/activities/$activityId/'
+      path: '/activities/$activityId'
+      fullPath: '/activities/$activityId/'
+      preLoaderRoute: typeof ProtectedActivitiesActivityIdIndexRouteImport
       parentRoute: typeof ProtectedRoute
     }
-    '/_protected/user/$userId/followers': {
-      id: '/_protected/user/$userId/followers'
-      path: '/user/$userId/followers'
-      fullPath: '/user/$userId/followers'
-      preLoaderRoute: typeof ProtectedUserUserIdFollowersRouteImport
+    '/_protected/activity-efforts/$effortId/': {
+      id: '/_protected/activity-efforts/$effortId/'
+      path: '/activity-efforts/$effortId'
+      fullPath: '/activity-efforts/$effortId/'
+      preLoaderRoute: typeof ProtectedActivityEffortsEffortIdIndexRouteImport
       parentRoute: typeof ProtectedRoute
     }
-    '/_protected/training-plans/$planId/edit': {
-      id: '/_protected/training-plans/$planId/edit'
-      path: '/training-plans/$planId/edit'
-      fullPath: '/training-plans/$planId/edit'
-      preLoaderRoute: typeof ProtectedTrainingPlansPlanIdEditRouteImport
-      parentRoute: typeof ProtectedRoute
+    '/_protected/calendar/day/$date': {
+      id: '/_protected/calendar/day/$date'
+      path: '/day/$date'
+      fullPath: '/calendar/day/$date'
+      preLoaderRoute: typeof ProtectedCalendarDayDateRouteImport
+      parentRoute: typeof ProtectedCalendarRoute
     }
-    '/_protected/record/route-preview/$routeId': {
-      id: '/_protected/record/route-preview/$routeId'
-      path: '/route-preview/$routeId'
-      fullPath: '/record/route-preview/$routeId'
-      preLoaderRoute: typeof ProtectedRecordRoutePreviewRouteIdRouteImport
-      parentRoute: typeof ProtectedRecordRoute
+    '/_protected/calendar/events/$eventId': {
+      id: '/_protected/calendar/events/$eventId'
+      path: '/events/$eventId'
+      fullPath: '/calendar/events/$eventId'
+      preLoaderRoute: typeof ProtectedCalendarEventsEventIdRouteImport
+      parentRoute: typeof ProtectedCalendarRoute
     }
-    '/_protected/groups/$groupId/requests': {
-      id: '/_protected/groups/$groupId/requests'
-      path: '/groups/$groupId/requests'
-      fullPath: '/groups/$groupId/requests'
-      preLoaderRoute: typeof ProtectedGroupsGroupIdRequestsRouteImport
-      parentRoute: typeof ProtectedRoute
+    '/_protected/goals/$goalId/': {
+      id: '/_protected/goals/$goalId/'
+      path: '/$goalId'
+      fullPath: '/goals/$goalId/'
+      preLoaderRoute: typeof ProtectedGoalsGoalIdIndexRouteImport
+      parentRoute: typeof ProtectedGoalsRoute
     }
-    '/_protected/groups/$groupId/members': {
-      id: '/_protected/groups/$groupId/members'
-      path: '/groups/$groupId/members'
-      fullPath: '/groups/$groupId/members'
-      preLoaderRoute: typeof ProtectedGroupsGroupIdMembersRouteImport
+    '/_protected/goals/$goalId/edit': {
+      id: '/_protected/goals/$goalId/edit'
+      path: '/$goalId/edit'
+      fullPath: '/goals/$goalId/edit'
+      preLoaderRoute: typeof ProtectedGoalsGoalIdEditRouteImport
+      parentRoute: typeof ProtectedGoalsRoute
+    }
+    '/_protected/groups/$groupId/': {
+      id: '/_protected/groups/$groupId/'
+      path: '/groups/$groupId'
+      fullPath: '/groups/$groupId/'
+      preLoaderRoute: typeof ProtectedGroupsGroupIdIndexRouteImport
       parentRoute: typeof ProtectedRoute
     }
     '/_protected/groups/$groupId/edit': {
@@ -1619,33 +1570,96 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedGroupsGroupIdEditRouteImport
       parentRoute: typeof ProtectedRoute
     }
-    '/_protected/goals/$goalId/edit': {
-      id: '/_protected/goals/$goalId/edit'
-      path: '/$goalId/edit'
-      fullPath: '/goals/$goalId/edit'
-      preLoaderRoute: typeof ProtectedGoalsGoalIdEditRouteImport
-      parentRoute: typeof ProtectedGoalsRoute
+    '/_protected/groups/$groupId/members': {
+      id: '/_protected/groups/$groupId/members'
+      path: '/groups/$groupId/members'
+      fullPath: '/groups/$groupId/members'
+      preLoaderRoute: typeof ProtectedGroupsGroupIdMembersRouteImport
+      parentRoute: typeof ProtectedRoute
     }
-    '/_protected/calendar/events/$eventId': {
-      id: '/_protected/calendar/events/$eventId'
-      path: '/events/$eventId'
-      fullPath: '/calendar/events/$eventId'
-      preLoaderRoute: typeof ProtectedCalendarEventsEventIdRouteImport
-      parentRoute: typeof ProtectedCalendarRoute
+    '/_protected/groups/$groupId/requests': {
+      id: '/_protected/groups/$groupId/requests'
+      path: '/groups/$groupId/requests'
+      fullPath: '/groups/$groupId/requests'
+      preLoaderRoute: typeof ProtectedGroupsGroupIdRequestsRouteImport
+      parentRoute: typeof ProtectedRoute
     }
-    '/_protected/calendar/day/$date': {
-      id: '/_protected/calendar/day/$date'
-      path: '/day/$date'
-      fullPath: '/calendar/day/$date'
-      preLoaderRoute: typeof ProtectedCalendarDayDateRouteImport
-      parentRoute: typeof ProtectedCalendarRoute
+    '/_protected/record/route-preview/$routeId': {
+      id: '/_protected/record/route-preview/$routeId'
+      path: '/route-preview/$routeId'
+      fullPath: '/record/route-preview/$routeId'
+      preLoaderRoute: typeof ProtectedRecordRoutePreviewRouteIdRouteImport
+      parentRoute: typeof ProtectedRecordRoute
     }
-    '/_coaching/organizations/$organizationId/dashboard': {
-      id: '/_coaching/organizations/$organizationId/dashboard'
-      path: '/dashboard'
-      fullPath: '/organizations/$organizationId/dashboard'
-      preLoaderRoute: typeof CoachingOrganizationsOrganizationIdDashboardRouteImport
-      parentRoute: typeof CoachingOrganizationsOrganizationIdRoute
+    '/_protected/record/route/': {
+      id: '/_protected/record/route/'
+      path: '/route'
+      fullPath: '/record/route/'
+      preLoaderRoute: typeof ProtectedRecordRouteIndexRouteImport
+      parentRoute: typeof ProtectedRecordRoute
+    }
+    '/_protected/routes/$routeId/': {
+      id: '/_protected/routes/$routeId/'
+      path: '/routes/$routeId'
+      fullPath: '/routes/$routeId/'
+      preLoaderRoute: typeof ProtectedRoutesRouteIdIndexRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/training-plans/$planId/': {
+      id: '/_protected/training-plans/$planId/'
+      path: '/training-plans/$planId'
+      fullPath: '/training-plans/$planId/'
+      preLoaderRoute: typeof ProtectedTrainingPlansPlanIdIndexRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/training-plans/$planId/edit': {
+      id: '/_protected/training-plans/$planId/edit'
+      path: '/training-plans/$planId/edit'
+      fullPath: '/training-plans/$planId/edit'
+      preLoaderRoute: typeof ProtectedTrainingPlansPlanIdEditRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/user/$userId/': {
+      id: '/_protected/user/$userId/'
+      path: '/user/$userId'
+      fullPath: '/user/$userId/'
+      preLoaderRoute: typeof ProtectedUserUserIdIndexRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/user/$userId/followers': {
+      id: '/_protected/user/$userId/followers'
+      path: '/user/$userId/followers'
+      fullPath: '/user/$userId/followers'
+      preLoaderRoute: typeof ProtectedUserUserIdFollowersRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/user/$userId/following': {
+      id: '/_protected/user/$userId/following'
+      path: '/user/$userId/following'
+      fullPath: '/user/$userId/following'
+      preLoaderRoute: typeof ProtectedUserUserIdFollowingRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/api/integrations/callback/$provider': {
+      id: '/api/integrations/callback/$provider'
+      path: '/api/integrations/callback/$provider'
+      fullPath: '/api/integrations/callback/$provider'
+      preLoaderRoute: typeof ApiIntegrationsCallbackProviderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_protected/calendar/events/$eventId/edit': {
+      id: '/_protected/calendar/events/$eventId/edit'
+      path: '/edit'
+      fullPath: '/calendar/events/$eventId/edit'
+      preLoaderRoute: typeof ProtectedCalendarEventsEventIdEditRouteImport
+      parentRoute: typeof ProtectedCalendarEventsEventIdRoute
+    }
+    '/_protected/groups/$groupId/events/new': {
+      id: '/_protected/groups/$groupId/events/new'
+      path: '/groups/$groupId/events/new'
+      fullPath: '/groups/$groupId/events/new'
+      preLoaderRoute: typeof ProtectedGroupsGroupIdEventsNewRouteImport
+      parentRoute: typeof ProtectedRoute
     }
     '/_protected/groups/events/$groupEventId/': {
       id: '/_protected/groups/events/$groupEventId/'
@@ -1654,11 +1668,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedGroupsEventsGroupEventIdIndexRouteImport
       parentRoute: typeof ProtectedRoute
     }
-    '/api/internal/provider-sync/wahoo/status': {
-      id: '/api/internal/provider-sync/wahoo/status'
-      path: '/api/internal/provider-sync/wahoo/status'
-      fullPath: '/api/internal/provider-sync/wahoo/status'
-      preLoaderRoute: typeof ApiInternalProviderSyncWahooStatusRouteImport
+    '/_protected/groups/events/$groupEventId/edit': {
+      id: '/_protected/groups/events/$groupEventId/edit'
+      path: '/groups/events/$groupEventId/edit'
+      fullPath: '/groups/events/$groupEventId/edit'
+      preLoaderRoute: typeof ProtectedGroupsEventsGroupEventIdEditRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/api/internal/provider-sync/wahoo/drain': {
+      id: '/api/internal/provider-sync/wahoo/drain'
+      path: '/api/internal/provider-sync/wahoo/drain'
+      fullPath: '/api/internal/provider-sync/wahoo/drain'
+      preLoaderRoute: typeof ApiInternalProviderSyncWahooDrainRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/internal/provider-sync/wahoo/retry': {
@@ -1668,33 +1689,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiInternalProviderSyncWahooRetryRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/internal/provider-sync/wahoo/drain': {
-      id: '/api/internal/provider-sync/wahoo/drain'
-      path: '/api/internal/provider-sync/wahoo/drain'
-      fullPath: '/api/internal/provider-sync/wahoo/drain'
-      preLoaderRoute: typeof ApiInternalProviderSyncWahooDrainRouteImport
+    '/api/internal/provider-sync/wahoo/status': {
+      id: '/api/internal/provider-sync/wahoo/status'
+      path: '/api/internal/provider-sync/wahoo/status'
+      fullPath: '/api/internal/provider-sync/wahoo/status'
+      preLoaderRoute: typeof ApiInternalProviderSyncWahooStatusRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/_protected/groups/events/$groupEventId/edit': {
-      id: '/_protected/groups/events/$groupEventId/edit'
-      path: '/groups/events/$groupEventId/edit'
-      fullPath: '/groups/events/$groupEventId/edit'
-      preLoaderRoute: typeof ProtectedGroupsEventsGroupEventIdEditRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/groups/$groupId/events/new': {
-      id: '/_protected/groups/$groupId/events/new'
-      path: '/groups/$groupId/events/new'
-      fullPath: '/groups/$groupId/events/new'
-      preLoaderRoute: typeof ProtectedGroupsGroupIdEventsNewRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/calendar/events/$eventId/edit': {
-      id: '/_protected/calendar/events/$eventId/edit'
-      path: '/edit'
-      fullPath: '/calendar/events/$eventId/edit'
-      preLoaderRoute: typeof ProtectedCalendarEventsEventIdEditRouteImport
-      parentRoute: typeof ProtectedCalendarEventsEventIdRoute
     }
   }
 }
