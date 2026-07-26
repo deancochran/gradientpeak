@@ -13,8 +13,19 @@ import { X } from "lucide-react-native";
 import type { Control } from "react-hook-form";
 import { Pressable, View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { RouteCard } from "@/components/shared/RouteCard";
 import type { ActivityPlanListItem, EventRecurrenceFrequency } from "../EventEditorCard";
 import type { CreateEventDraft, CreateEventMode } from "./createEventDraft";
+
+export type EventRouteSummary = {
+  id: string;
+  name: string;
+  activity_category?: string | null;
+  description?: string | null;
+  total_ascent?: number | null;
+  total_descent?: number | null;
+  total_distance?: number | null;
+};
 
 export type CreateEventMainFormValues = {
   allDay: boolean;
@@ -59,6 +70,67 @@ function SummaryRow({
   );
 }
 
+function RouteLinkSection({
+  onOpenRoute,
+  onRemoveRoute,
+  route,
+  testIDPrefix,
+}: {
+  onOpenRoute: () => void;
+  onRemoveRoute?: () => void;
+  route: EventRouteSummary | null;
+  testIDPrefix: string;
+}) {
+  return (
+    <View className="gap-2" testID={`${testIDPrefix}-route-row`}>
+      <View className="flex-row items-center justify-between gap-3">
+        <Text className="text-xs font-medium text-muted-foreground">Route</Text>
+        <View className="flex-row items-center gap-2">
+          <Pressable
+            className="rounded-full border border-border px-3 py-1.5"
+            onPress={onOpenRoute}
+            testID={`${testIDPrefix}-change-route-button`}
+          >
+            <Text className="text-xs font-semibold text-foreground">
+              {route ? "Change" : "Choose"}
+            </Text>
+          </Pressable>
+          {route && onRemoveRoute ? (
+            <Pressable
+              accessibilityLabel="Detach route"
+              className="h-8 w-8 items-center justify-center rounded-full border border-border bg-background"
+              onPress={onRemoveRoute}
+              testID={`${testIDPrefix}-remove-route-button`}
+            >
+              <Icon as={X} size={14} className="text-muted-foreground" />
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
+      {route ? (
+        <RouteCard
+          onPress={onOpenRoute}
+          route={route}
+          showAttribution={false}
+          showLike={false}
+          variant="compact"
+        />
+      ) : (
+        <Pressable
+          className="rounded-2xl border border-dashed border-border bg-muted/20 px-3 py-4"
+          onPress={onOpenRoute}
+          testID={`${testIDPrefix}-choose-route-card`}
+        >
+          <Text className="text-sm font-semibold text-foreground">Choose a route</Text>
+          <Text className="mt-1 text-xs text-muted-foreground">
+            Optionally attach a route to this event.
+          </Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
 export function CreateEventMainStep({
   control,
   draft,
@@ -68,10 +140,13 @@ export function CreateEventMainStep({
   onCancel,
   onChangeMode,
   onOpenActivityPlan,
+  onOpenRoute,
   onRemoveActivityPlan,
+  onRemoveRoute,
   onOpenRepeat,
   onSubmit,
   selectedActivityPlan,
+  selectedRoute,
   showFooterActions = true,
   testIDPrefix,
   titleErrorMessage,
@@ -84,10 +159,13 @@ export function CreateEventMainStep({
   onCancel: () => void;
   onChangeMode: (mode: CreateEventMode) => void;
   onOpenActivityPlan: () => void;
+  onOpenRoute: () => void;
   onRemoveActivityPlan?: () => void;
+  onRemoveRoute?: () => void;
   onOpenRepeat: () => void;
   onSubmit: () => void;
   selectedActivityPlan: ActivityPlanListItem | null;
+  selectedRoute: EventRouteSummary | null;
   showFooterActions?: boolean;
   testIDPrefix: string;
   titleErrorMessage?: string | null;
@@ -177,6 +255,12 @@ export function CreateEventMainStep({
                 </Pressable>
               )}
             </View>
+            <RouteLinkSection
+              onOpenRoute={onOpenRoute}
+              route={selectedRoute}
+              testIDPrefix={testIDPrefix}
+              {...(onRemoveRoute ? { onRemoveRoute } : {})}
+            />
             <FormDateInputField
               accessibilityHint="Choose the scheduled activity date"
               control={control}
@@ -201,6 +285,12 @@ export function CreateEventMainStep({
           </>
         ) : (
           <>
+            <RouteLinkSection
+              onOpenRoute={onOpenRoute}
+              route={selectedRoute}
+              testIDPrefix={testIDPrefix}
+              {...(onRemoveRoute ? { onRemoveRoute } : {})}
+            />
             <FormTextField
               control={control}
               label="Title"

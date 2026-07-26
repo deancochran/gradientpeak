@@ -1,5 +1,7 @@
 const mockPermissionCheck = jest.fn(async (_gpsRecordingEnabled: boolean) => true);
-const mockPersistArtifact = jest.fn(async (_artifact: unknown) => undefined);
+const mockCommitFinalizedArtifactAndHandoff = jest.fn(async (_artifact: unknown) => undefined);
+const mockDiscardFinalizedRecordingEvidence = jest.fn(async (_input: unknown) => undefined);
+const mockDeleteFinalizedArtifactFiles = jest.fn(async (_artifact: unknown) => undefined);
 const mockFitInstances: Array<Record<string, jest.Mock>> = [];
 const mockNotificationInstances: Array<Record<string, jest.Mock>> = [];
 
@@ -27,18 +29,21 @@ jest.mock("../permissions-check", () => ({
   })),
 }));
 
-jest.mock("./finalizedArtifactStorage", () => ({
-  persistPendingFinalizedArtifact: (artifact: unknown) => mockPersistArtifact(artifact),
-}));
-
 jest.mock("./recordingEvidenceJournal", () => ({
   allocateRecordingEvidenceSession: jest.fn(async () => undefined),
   createRecordingStreamJournalAdapter: jest.fn(() => ({})),
   fenceRecordingEvidenceSession: jest.fn(async () => undefined),
-  commitFinalizedArtifactAndHandoff: jest.fn(async () => undefined),
+  commitFinalizedArtifactAndHandoff: (artifact: unknown) =>
+    mockCommitFinalizedArtifactAndHandoff(artifact),
+  discardFinalizedRecordingEvidence: (input: unknown) =>
+    mockDiscardFinalizedRecordingEvidence(input),
   rollbackRecordingEvidenceSession: jest.fn(async () => undefined),
   quarantineRecordingEvidenceSession: jest.fn(async () => true),
   recoverHeadlessGpsLocations: jest.fn(async () => []),
+}));
+
+jest.mock("./finalizedArtifactStorage", () => ({
+  deleteFinalizedArtifactFiles: (artifact: unknown) => mockDeleteFinalizedArtifactFiles(artifact),
 }));
 
 jest.mock("../activitySubmissionQueue/localArtifact", () => ({
@@ -513,28 +518,6 @@ describe("ActivityRecorderService lifecycle", () => {
     );
   });
 
-  it("keeps finalization successful when the compatibility artifact mirror fails", async () => {
-    const { service, mutable } = createService();
-    await service.startRecording();
-    mockPersistArtifact.mockRejectedValueOnce(new Error("storage unavailable"));
-
-    await service.finishRecording();
-    expect(service.state).toBe("finished");
-    expect(mutable.sensorsManager.setAutoReconnectEnabled).toHaveBeenLastCalledWith(false);
-    expect(mutable.liveMetricsManager.finishRecording).toHaveBeenCalledTimes(1);
-    expect(mockFitInstances[0]?.finalize).toHaveBeenCalledTimes(1);
-    expect(mockPersistArtifact).toHaveBeenCalledTimes(1);
-  });
-
-  it("permits cleanup when the compatibility artifact mirror fails", async () => {
-    const { service } = createService();
-    await service.startRecording();
-    mockPersistArtifact.mockRejectedValueOnce(new Error("storage unavailable"));
-    await service.finishRecording();
-    await service.cleanup();
-    expect(service.state).toBe("pending");
-  });
-
   it("can clean up and reuse the same provider-owned service", async () => {
     const { service, mutable } = createService();
     await service.startRecording();
@@ -548,6 +531,30 @@ describe("ActivityRecorderService lifecycle", () => {
     await service.startRecording();
     expect(service.state).toBe("recording");
     expect(mutable.liveMetricsManager.startRecording).toHaveBeenCalledTimes(2);
+  });
+
+  it("commits finalized discard before deleting local artifacts", async () => {
+    const { service, mutable } = createService();
+    const artifact = {
+      sessionId: "session-1",
+      profileId: "profile-1",
+      activityFilePath: "file:///recording.fit",
+      streamArtifactPaths: ["file:///streams"],
+    };
+    mutable.finalizedArtifact = artifact;
+
+    await service.discardFinalizedArtifact();
+
+    expect(mockDiscardFinalizedRecordingEvidence).toHaveBeenCalledWith({
+      sessionId: artifact.sessionId,
+      profileId: artifact.profileId,
+      activityFilePath: artifact.activityFilePath,
+      streamArtifactPaths: artifact.streamArtifactPaths,
+    });
+    expect(mockDeleteFinalizedArtifactFiles).toHaveBeenCalledWith(artifact);
+    expect(mockDiscardFinalizedRecordingEvidence.mock.invocationCallOrder[0]).toBeLessThan(
+      mockDeleteFinalizedArtifactFiles.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
   });
 
   it("auto-advances a distance occurrence from the recorder's current distance", async () => {
@@ -1088,13 +1095,12 @@ describe("ActivityRecorderService lifecycle", () => {
     const sessions = mutable.fitEncoder.finalize.mock.calls[0]?.[0];
     expect(sessions).toHaveLength(1);
     expect(sessions[0]).toMatchObject({ role: "activity", sport: "running" });
-    const persistedArtifact = mockPersistArtifact.mock.calls.at(-1)?.[0] as {
-      executionManifest: { occurrences: Array<{ role: string }> };
+    const committedArtifact = mockCommitFinalizedArtifactAndHandoff.mock.calls.at(-1)?.[0] as {
+      artifact: { executionManifest: { occurrences: Array<{ role: string }> } };
     };
-    expect(persistedArtifact.executionManifest.occurrences.map((item) => item.role)).toEqual([
-      "activity",
-      "rest",
-    ]);
+    expect(
+      committedArtifact.artifact.executionManifest.occurrences.map((item) => item.role),
+    ).toEqual(["activity", "rest"]);
   });
 
   it("routes only activity occurrence records to the encoder around internal and trailing rest", async () => {
@@ -1215,15 +1221,12 @@ describe("ActivityRecorderService lifecycle", () => {
     jest.useRealTimers();
 
     expect(encoder.getStatus().recordCount).toBe(4);
-    const artifact = mockPersistArtifact.mock.calls.at(-1)?.[0] as {
-      executionManifest: { occurrences: Array<{ role: string }> };
+    const committedArtifact = mockCommitFinalizedArtifactAndHandoff.mock.calls.at(-1)?.[0] as {
+      artifact: { executionManifest: { occurrences: Array<{ role: string }> } };
     };
-    expect(artifact.executionManifest.occurrences.map((item) => item.role)).toEqual([
-      "activity",
-      "rest",
-      "activity",
-      "rest",
-    ]);
+    expect(
+      committedArtifact.artifact.executionManifest.occurrences.map((item) => item.role),
+    ).toEqual(["activity", "rest", "activity", "rest"]);
   });
 
   it.each([

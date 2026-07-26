@@ -636,7 +636,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     expect(hasTextContaining("8 weeks")).toBe(true);
     expect(hasTextContaining("4/week")).toBe(true);
     expect(hasTextContaining("Open Calendar")).toBe(false);
-    expect(hasTextContaining("Route-backed activities")).toBe(true);
+    expect(hasTextContaining("Route-backed activities")).toBe(false);
   });
 
   it("shows one clear schedule anchor mode instead of start plus target dates", () => {

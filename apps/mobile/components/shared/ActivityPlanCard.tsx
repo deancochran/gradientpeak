@@ -42,12 +42,6 @@ export interface ActivityPlan {
   } | null;
   common_load?: unknown;
   category_loads?: readonly SportLoadMeasurement[];
-  route?: {
-    distance?: number | null;
-    ascent?: number | null;
-    descent?: number | null;
-  } | null;
-  route_id?: string | null;
   notes?: string | null;
   profile_id?: string | null;
   template_visibility?: string | null;
@@ -71,22 +65,6 @@ export interface PlannedActivity {
   updated_at?: string;
 }
 
-type ActivityPlanCardRoute = {
-  id?: string | null;
-  name?: string | null;
-  polyline?: string | null;
-  total_distance?: number | null;
-  distance?: number | null;
-  total_ascent?: number | null;
-  ascent?: number | null;
-  total_descent?: number | null;
-  descent?: number | null;
-};
-
-type ActivityPlanCardFullRoute = {
-  coordinates?: Array<{ latitude: number; longitude: number; altitude?: number }>;
-};
-
 // Legacy data interface (for backwards compatibility)
 export interface ActivityPlanCardData {
   id: string;
@@ -101,8 +79,6 @@ export interface ActivityPlanCardData {
   commonLoad?: unknown;
   categoryLoads?: readonly SportLoadMeasurement[];
   estimatedDistance?: number; // meters
-  routeId?: string;
-  routeName?: string;
   notes?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -125,8 +101,6 @@ interface ActivityPlanCardProps {
   activity?: ActivityPlanCardData;
 
   onPress?: () => void;
-  route?: ActivityPlanCardRoute | null;
-  routeFull?: ActivityPlanCardFullRoute | null;
   testID?: string;
   variant?: "default" | "compact";
   showScheduleInfo?: boolean; // Show date/time badge
@@ -141,8 +115,6 @@ export function ActivityPlanCard({
   plannedActivity,
   activity: legacyActivity,
   onPress,
-  route: routeProp,
-  routeFull: routeFullProp,
   testID,
   variant = "default",
   showScheduleInfo = false,
@@ -163,9 +135,6 @@ export function ActivityPlanCard({
     iconClassName: category.color,
     label: category.name,
   }));
-
-  const route = routeProp ?? null;
-  const resolvedRouteFull = routeFullProp ?? null;
 
   const {
     isLiked,
@@ -221,8 +190,6 @@ export function ActivityPlanCard({
         commonLoad={activity.commonLoad}
         owner={activity.owner}
         presentation={presentation}
-        routeName={route?.name || activity.routeName}
-        routeProvided={!!activity.routeId}
         structure={activity.structure}
         title={activity.name}
         variant="standalone"
@@ -248,24 +215,9 @@ export function ActivityPlanCard({
             intensity_factor: activity.intensityFactor,
             estimated_distance: activity.estimatedDistance,
           },
-          route: {
-            distance: activity.estimatedDistance,
-          },
-          route_id: activity.routeId,
           structure: activity.structure,
         }}
         presentation={presentation}
-        route={
-          route
-            ? {
-                ...route,
-                total_distance: route.total_distance ?? route.distance ?? null,
-                total_ascent: route.total_ascent ?? route.ascent ?? null,
-                total_descent: route.total_descent ?? route.descent ?? null,
-              }
-            : null
-        }
-        routeFull={resolvedRouteFull ? { coordinates: resolvedRouteFull.coordinates ?? [] } : null}
         testIDPrefix={`activity-plan-card-preview-${activity.id}`}
       />
     </ResourceCardShell>
@@ -292,10 +244,7 @@ function transformToCardData(
     );
   }
 
-  // Extract route info from structure if available
-  const routeInfo = getStructureRouteInfo(plan.structure);
   const authoritativeMetrics = getAuthoritativeActivityPlanMetrics(plan);
-  const planRoute = plan.route;
 
   return {
     id: plannedActivity?.id || plan.id,
@@ -309,12 +258,7 @@ function transformToCardData(
     intensityFactor: authoritativeMetrics.intensity_factor ?? undefined,
     commonLoad: plan.common_load,
     categoryLoads: plan.category_loads,
-    estimatedDistance:
-      authoritativeMetrics.estimated_distance === null
-        ? undefined
-        : (authoritativeMetrics.estimated_distance ?? planRoute?.distance ?? routeInfo?.distance),
-    routeId: plan.route_id || undefined,
-    routeName: routeInfo?.name,
+    estimatedDistance: authoritativeMetrics.estimated_distance ?? undefined,
     notes: plannedActivity?.notes || plan.description || plan.notes || undefined,
     createdAt:
       plan.created_at instanceof Date
@@ -329,23 +273,6 @@ function transformToCardData(
     likes_count: plan.likes_count,
     has_liked: plan.has_liked,
     owner: plan.owner ?? null,
-  };
-}
-
-function getStructureRouteInfo(structure: unknown): { distance?: number; name?: string } | null {
-  if (!structure || typeof structure !== "object" || !("route" in structure)) {
-    return null;
-  }
-
-  const route = structure.route;
-  if (!route || typeof route !== "object") {
-    return null;
-  }
-
-  return {
-    distance:
-      "distance" in route && typeof route.distance === "number" ? route.distance : undefined,
-    name: "name" in route && typeof route.name === "string" ? route.name : undefined,
   };
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { trainingPlanCalibrationConfigSchema } from "../../schemas/training_plan_structure";
+import { trainingPlanCalibrationConfigSchema } from "../../schemas/training-plan-structure";
 import {
   buildCurvatureEnvelope,
   computeCurvaturePenalty,

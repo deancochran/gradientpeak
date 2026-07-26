@@ -6,6 +6,7 @@ import {
   getExactDurationSeconds,
   summarizeActivityPlanDuration,
 } from "../index";
+import { formatDurationCompact, formatDuration as formatElapsedDuration } from "../time-format";
 
 const ids = Array.from(
   { length: 8 },
@@ -29,6 +30,13 @@ describe("duration module", () => {
     expect(formatDuration({ type: "time", seconds: 90 })).toBe("1m 30s");
     expect(formatDuration({ type: "distance", meters: 1500 })).toBe("1.50km");
     expect(formatDuration({ type: "repetitions", count: 8 })).toBe("8 reps");
+  });
+
+  it("preserves seconds-based elapsed-duration formatting", () => {
+    expect(formatElapsedDuration(59)).toBe("0:59");
+    expect(formatElapsedDuration(3_661)).toBe("1:01:01");
+    expect(formatDurationCompact(59)).toBe("59s");
+    expect(formatDurationCompact(3_661)).toBe("1h 1m");
   });
 
   it("separates active, rest, transition, distance, and open semantics", () => {

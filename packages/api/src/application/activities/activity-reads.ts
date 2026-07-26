@@ -21,7 +21,6 @@ import {
   mapActivityToDerivedResponse,
   mapActivityToListDerivedResponse,
 } from "../../lib/activity-analysis";
-import { deriveNormalizedPowerCompatibilityProjectionFromSegments } from "../../lib/activity-analysis/activity-normalized-power";
 import { findOwnedEffectiveSessionRpeEvidence } from "../../repositories/activity-session-rpe-repository";
 import { getLikeStats, loadLikeStats } from "../../repositories/like-stats";
 import { buildIndexPageInfo, parseIndexCursor } from "../../utils/index-cursor";
@@ -64,9 +63,6 @@ function decorateActivity(
   const { segments: _segments, ...publicActivity } = activity;
   return {
     ...publicActivity,
-    // Repair historical divergent compatibility values at the DTO boundary; keep the raw
-    // database column internal so it cannot become an authority again.
-    normalized_power: deriveNormalizedPowerCompatibilityProjectionFromSegments(activity.segments),
     ...describeActivityComposition(activity.segments),
     matched_category_summary: matchedCategorySummary,
   };
@@ -369,7 +365,7 @@ export async function getActivityByIdForViewer({
   viewerId: string;
 }) {
   const access = await db.query.activities.findFirst({
-    columns: { profile_id: true, is_private: true, content_visibility: true },
+    columns: { profile_id: true, content_visibility: true },
     where: eq(activities.id, activityId),
   });
   if (!access) {
@@ -378,9 +374,7 @@ export async function getActivityByIdForViewer({
       message: "You don't have permission to view this activity",
     });
   }
-  const visibility = access
-    ? (access.content_visibility ?? (access.is_private ? "private" : "followers"))
-    : "private";
+  const visibility = access.content_visibility;
   const followResult =
     visibility === "followers" && access?.profile_id !== viewerId
       ? await db.execute(sql`

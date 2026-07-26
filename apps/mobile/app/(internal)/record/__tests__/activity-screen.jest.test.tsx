@@ -9,7 +9,6 @@ const service = {
 };
 
 let activityStatusMock = { activityCategory: "run", gpsRecordingEnabled: true };
-let recordingStateMock = "pending";
 let sessionContractMock: {
   editing: { canEditActivity: boolean; canEditGps: boolean };
   guidance: { hasPlan: boolean };
@@ -35,13 +34,23 @@ jest.mock("expo-router", () => ({
 
 jest.mock("@/lib/hooks/useActivityRecorder", () => ({
   __esModule: true,
-  useActivityStatus: () => activityStatusMock,
-  useRecordingState: () => recordingStateMock,
+  useRecordingCommands: () => ({ selectActivityFromPayload: service.selectActivityFromPayload }),
 }));
 
 jest.mock("@/lib/hooks/useRecordingConfig", () => ({
   __esModule: true,
-  useRecordingSessionContract: () => sessionContractMock,
+  useRecordingConfig: () => ({
+    sessionContract: sessionContractMock,
+    sessionView: {
+      plan: { hasPlan: false },
+      recordingConfiguration: {
+        input: {
+          activityCategory: activityStatusMock.activityCategory,
+          gpsRecordingEnabled: activityStatusMock.gpsRecordingEnabled,
+        },
+      },
+    },
+  }),
 }));
 
 jest.mock("@/lib/providers/ActivityRecorderProvider", () => ({
@@ -81,7 +90,6 @@ describe("record activity screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     activityStatusMock = { activityCategory: "run", gpsRecordingEnabled: true };
-    recordingStateMock = "pending";
     sessionContractMock = {
       editing: { canEditActivity: true, canEditGps: true },
       guidance: { hasPlan: false },

@@ -617,7 +617,6 @@ function toNumber(value: string | number | null | undefined): number | null {
 
 function normalizeSpeedMetersPerSecond(value: number, unit: string): number | null {
   if (!Number.isFinite(value) || value <= 0) return null;
-  if (unit === "meters_per_second" || unit === "m/s") return value;
-  if (unit === "km_per_hour") return value / 3.6;
+  if (unit === "meters_per_second") return value;
   return null;
 }

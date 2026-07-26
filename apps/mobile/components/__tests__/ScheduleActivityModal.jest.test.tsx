@@ -273,7 +273,10 @@ describe("ScheduleActivityModal", () => {
     expect(createMutateMock).toHaveBeenCalledWith(
       expect.objectContaining({
         activity_plan_id: "plan-1",
+        all_day: true,
+        event_type: "planned",
         scheduled_date: "2026-06-02",
+        title: "Tempo Builder",
         recurrence: {
           rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=4;BYDAY=TU",
           timezone: "UTC",

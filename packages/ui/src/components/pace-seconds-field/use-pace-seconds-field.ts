@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from "react";
-import { usePendingFormDraft } from "../../hooks/pending-form-drafts";
 import {
   formatSecondsToMmSs,
   normalizePaceInput,
   parseMmSsToSeconds,
-} from "../../lib/fitness-inputs";
+} from "@repo/core/utils/fitness-inputs";
+import { useEffect, useRef, useState } from "react";
+import { usePendingFormDraft } from "../../hooks/pending-form-drafts";
 import type { PaceSecondsFieldProps } from "./shared";
 
 type PaceSecondsDraftProps = Pick<

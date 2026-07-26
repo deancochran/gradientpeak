@@ -1,5 +1,5 @@
+import { formatNumberForInput, parseBoundedNumber } from "@repo/core/utils/fitness-inputs";
 import { useEffect, useState } from "react";
-import { formatNumberForInput, parseBoundedNumber } from "../../lib/fitness-inputs";
 import { Button } from "../button/index.web";
 import { Input } from "../input/index.web";
 import { Label } from "../label/index.web";

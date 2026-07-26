@@ -5,7 +5,7 @@ import {
   creationOptimizationProfileEnum,
   creationWeekDayEnum,
   trainingPlanCalibrationConfigSchema,
-} from "../training_plan_structure";
+} from "../training-plan-structure";
 
 const capabilityBoundedNumber = z.number().min(0).max(1);
 const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;

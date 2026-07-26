@@ -76,6 +76,7 @@ export function buildCreateFromRecordingSummaryInput(
     startedAt: artifact.startedAt,
     finishedAt: artifact.finishedAt,
     activityPlanId: artifact.snapshot.activity.activityPlanId,
+    artifactSource: "acceptedArtifact" as const,
     executionManifest: {
       version: 1 as const,
       compilerVersion: 1,

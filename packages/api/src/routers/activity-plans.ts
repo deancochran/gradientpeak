@@ -6,9 +6,7 @@ import { activityPlanCreateSchema, activityPlanUpdateSchema } from "@repo/core/s
 import {
   type ActivityPlanInsert,
   type ActivityPlanRow,
-  type ActivityRouteRow,
   activityPlans,
-  activityRoutes,
   events,
   profiles,
   publicActivityCategorySchema,
@@ -107,17 +105,6 @@ const activityPlanRowSchema = publicActivityPlansRowSchema
   })
   .strict();
 
-const attachedActivityPlanRouteSchema = z
-  .object({
-    id: uuidSchema,
-    name: z.string(),
-    description: z.string().nullable(),
-    distance: z.number().int().nonnegative(),
-    ascent: z.number().int().nonnegative().nullable(),
-    descent: z.number().int().nonnegative().nullable(),
-  })
-  .strict();
-
 const serializedActivityPlanSchema = activityPlanRowSchema.transform((row) => ({
   ...row,
   created_at: row.created_at.toISOString(),
@@ -174,68 +161,6 @@ function serializeActivityPlanRow(row: ActivityPlanRow | unknown) {
   return serializedActivityPlanSchema.parse(row);
 }
 
-function serializeAttachedActivityPlanRoute(route: ActivityRouteRow) {
-  return attachedActivityPlanRouteSchema.parse({
-    id: route.id,
-    name: route.name,
-    description: route.description,
-    distance: route.total_distance,
-    ascent: route.total_ascent,
-    descent: route.total_descent,
-  });
-}
-
-function buildAccessibleRouteCondition(userId: string) {
-  return or(
-    eq(activityRoutes.profile_id, userId),
-    eq(activityRoutes.is_public, true),
-    eq(activityRoutes.is_system_template, true),
-    sql`exists (
-      select 1
-      from content_access_grants cag
-      where cag.content_type = 'activity_route'
-        and cag.content_id = ${activityRoutes.id}
-        and cag.grantee_profile_id = ${userId}::uuid
-        and cag.access_level = 'read'
-        and cag.revoked_at is null
-        and (cag.expires_at is null or cag.expires_at > now())
-    )`,
-  );
-}
-
-async function loadAccessibleActivityPlanRoute(
-  db: ReturnType<typeof getRequiredDb>,
-  routeId: string | null | undefined,
-  userId: string,
-) {
-  if (!routeId) return null;
-  const [route] = await db
-    .select()
-    .from(activityRoutes)
-    .where(and(eq(activityRoutes.id, routeId), buildAccessibleRouteCondition(userId)))
-    .limit(1);
-  return route ?? null;
-}
-
-async function requireActivityPlanRouteUse(
-  db: ReturnType<typeof getRequiredDb>,
-  routeId: string,
-  userId: string,
-) {
-  const route = await loadAccessibleActivityPlanRoute(db, routeId, userId);
-  if (!route) {
-    throw new TRPCError({ code: "NOT_FOUND", message: "Route not found" });
-  }
-  return route;
-}
-
-function withAttachedRoute<T>(plan: T, route: ActivityRouteRow | null) {
-  return {
-    ...plan,
-    route: route ? serializeAttachedActivityPlanRoute(route) : null,
-  };
-}
-
 function toPublicActivityPlan<T extends { structure: unknown }>(plan: T) {
   return {
     ...plan,
@@ -260,7 +185,6 @@ type DiscoverListActivityPlan = SerializedActivityPlan &
       | "category_loads"
       | "authoritative_metrics"
       | "common_load"
-      | "route"
     >
   >;
 
@@ -411,7 +335,6 @@ function buildCreateValues(
     created_at: now,
     updated_at: now,
     profile_id: profileId,
-    route_id: input.route_id ?? null,
     name: input.name,
     description: input.description?.trim() ? input.description.trim() : null,
     notes: input.notes ?? null,
@@ -580,7 +503,6 @@ export const activityPlansRouter = createTRPCRouter({
               confidence_score: undefined,
               category_loads: undefined,
               authoritative_metrics: undefined,
-              route: undefined,
             })),
           );
     const likeStatsPromise = loadLikeStats(db, {
@@ -644,8 +566,6 @@ export const activityPlansRouter = createTRPCRouter({
     await requireActivityPlanReadForRow({ db, plan: planRow, userId });
 
     const plan = serializeActivityPlanRow(planRow);
-    const attachedRoute = await loadAccessibleActivityPlanRoute(db, plan.route_id, userId);
-
     try {
       if (plan.structure) {
         validateStructure(plan.structure);
@@ -676,10 +596,7 @@ export const activityPlansRouter = createTRPCRouter({
 
     return {
       ...toPublicActivityPlan(
-        withAttachedRoute(
-          withOwnerIdentity(withIdentityFields(planWithEstimation), profileIdentityMap),
-          attachedRoute,
-        ),
+        withOwnerIdentity(withIdentityFields(planWithEstimation), profileIdentityMap),
       ),
       ...getLikeStats(likeStats, input.id),
     };
@@ -738,10 +655,6 @@ export const activityPlansRouter = createTRPCRouter({
   create: protectedProcedure.input(createActivityPlanInput).mutation(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
     const estimationStore = createEventReadRepository(db);
-    const selectedRoute = input.route_id
-      ? await requireActivityPlanRouteUse(db, input.route_id, ctx.session.user.id)
-      : null;
-
     try {
       validateStructure(input.structure);
     } catch (validationError) {
@@ -782,9 +695,7 @@ export const activityPlansRouter = createTRPCRouter({
       ctx.session.user.id,
     );
 
-    return toPublicActivityPlan(
-      withAttachedRoute(withIdentityFields(planWithEstimation), selectedRoute),
-    );
+    return toPublicActivityPlan(withIdentityFields(planWithEstimation));
   }),
 
   update: protectedProcedure
@@ -832,13 +743,6 @@ export const activityPlansRouter = createTRPCRouter({
         }
       }
 
-      const selectedRoute =
-        typeof updates.route_id === "string"
-          ? await requireActivityPlanRouteUse(db, updates.route_id, ctx.session.user.id)
-          : updates.route_id === null
-            ? null
-            : await loadAccessibleActivityPlanRoute(db, existingRow.route_id, ctx.session.user.id);
-
       const metricsUpdates: Partial<ActivityPlanInsert> = {};
       if (updates.structure) {
         await computePlanMetrics(
@@ -863,7 +767,6 @@ export const activityPlansRouter = createTRPCRouter({
           ? activityPlanStructureHash(updates.structure)
           : undefined,
         gps_recording_enabled: updates.gps_recording_enabled,
-        route_id: updates.route_id,
         template_visibility: updates.template_visibility,
         content_visibility: updates.template_visibility,
         ...metricsUpdates,
@@ -896,8 +799,7 @@ export const activityPlansRouter = createTRPCRouter({
         (updates.name !== undefined && updates.name !== existingRow.name) ||
         descriptionChanged ||
         (updates.structure !== undefined &&
-          !isDeepStrictEqual(updates.structure, existingRow.structure)) ||
-        (updates.route_id !== undefined && updates.route_id !== existingRow.route_id);
+          !isDeepStrictEqual(updates.structure, existingRow.structure));
 
       if (materialPlanChanged) {
         const linkedEvents = await db
@@ -940,9 +842,7 @@ export const activityPlansRouter = createTRPCRouter({
       );
 
       return {
-        ...toPublicActivityPlan(
-          withAttachedRoute(withIdentityFields(planWithEstimation), selectedRoute),
-        ),
+        ...toPublicActivityPlan(withIdentityFields(planWithEstimation)),
         plannedWorkoutSync,
         wahooSync: plannedWorkoutSync,
       };

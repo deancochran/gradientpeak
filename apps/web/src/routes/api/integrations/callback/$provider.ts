@@ -18,7 +18,7 @@ export async function handleOAuthCallbackRequest({
     searchParams.get("test_return") === "web" &&
     canUseLocalWebFallback
       ? `${requestUrl.origin}/integrations?integration=failed`
-      : process.env.NEXT_PUBLIC_MOBILE_REDIRECT_FALLBACK || "gradientpeak://integrations";
+      : process.env.OAUTH_MOBILE_CALLBACK_URL || "gradientpeak://integrations";
   const result = await handleOAuthCallback({
     db,
     code: searchParams.get("code"),

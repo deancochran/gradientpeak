@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  contentVisibilitySchema,
-  contentVisibilityToLegacyPrivateFlag,
-  defaultContentVisibilitySchema,
-  legacyPrivateFlagToContentVisibility,
-} from "../content_visibility";
+import { contentVisibilitySchema, defaultContentVisibilitySchema } from "../content_visibility";
 
 describe("content visibility", () => {
   it("accepts the canonical private/followers/public values", () => {
@@ -15,11 +10,7 @@ describe("content visibility", () => {
     expect(defaultContentVisibilitySchema.parse(undefined)).toBe("private");
   });
 
-  it("maps legacy boolean activity visibility to the canonical contract", () => {
-    expect(legacyPrivateFlagToContentVisibility(true)).toBe("private");
-    expect(legacyPrivateFlagToContentVisibility(false)).toBe("followers");
-    expect(contentVisibilityToLegacyPrivateFlag("private")).toBe(true);
-    expect(contentVisibilityToLegacyPrivateFlag("followers")).toBe(false);
-    expect(contentVisibilityToLegacyPrivateFlag("public")).toBe(false);
+  it("rejects non-canonical visibility values", () => {
+    expect(contentVisibilitySchema.safeParse("team").success).toBe(false);
   });
 });

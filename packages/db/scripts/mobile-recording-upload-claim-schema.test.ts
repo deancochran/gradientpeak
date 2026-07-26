@@ -55,10 +55,7 @@ const indexNames = new Set(config.indexes.map((index) => index.config.name));
 assert.ok(indexNames.has("activity_file_ingestions_profile_operation_unique"));
 
 const migration = readFileSync(
-  resolve(
-    dbPackageRoot,
-    "supabase/migrations/20260724143824_add_mobile_recording_upload_claim.sql",
-  ),
+  resolve(dbPackageRoot, "supabase/migrations/20260726005149_generation_2_baseline.sql"),
   "utf8",
 );
 for (const mediaType of ["application/vnd.ant.fit", "application/vnd.garmin.tcx+xml"]) {
@@ -67,13 +64,5 @@ for (const mediaType of ["application/vnd.ant.fit", "application/vnd.garmin.tcx+
     `activity-files must accept promoted ${mediaType} artifacts`,
   );
 }
-assert.match(
-  migration,
-  /activity_file_ingestions_processing_claim_check check[\s\S]*?\) not valid/,
-  "strict processing-state enforcement must be additive and unvalidated for legacy rows",
-);
-assert.equal(/\bupdate\s+public\.activity_file_ingestions\b/i.test(migration), false);
-assert.equal(/drop\s+constraint\s+activity_file_ingestions_claim_check/i.test(migration), false);
-assert.equal(/create\s+index/i.test(migration), false);
 
 console.log("Mobile recording upload claim schema contract tests passed.");

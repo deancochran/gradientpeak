@@ -1,6 +1,6 @@
 import * as DocumentPicker from "expo-document-picker";
 import { useId } from "react";
-import { View } from "../../lib/react-native";
+import { View } from "react-native";
 import { Button } from "../button/index.native";
 import { Text } from "../text/index.native";
 import type { FileInputProps, SelectedFile } from "./shared";

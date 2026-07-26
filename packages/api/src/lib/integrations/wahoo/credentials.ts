@@ -20,12 +20,10 @@ export class WahooCredentialConflictError extends Error {
 
 type WahooCredentials = {
   accessToken: string;
+  credentialGeneration: number;
   expiresAt: string | null;
-  credentialGeneration?: number;
-  /** @deprecated compatibility for callers not yet split into credential/lifecycle versions. */
-  generation?: number;
   id: string;
-  integrationGeneration?: number;
+  integrationGeneration: number;
   reconnectRequiredAt?: string | null;
   refreshToken: string | null;
 };
@@ -109,12 +107,9 @@ export async function resolveWahooCredentials<T extends WahooCredentials>(input:
 
     const credentials: WahooCredentials = {
       accessToken: refreshed.accessToken,
+      credentialGeneration: input.integration.credentialGeneration,
       expiresAt: refreshed.expiresAt,
-      credentialGeneration:
-        input.integration.credentialGeneration ?? input.integration.generation ?? 1,
-      ...(input.integration.integrationGeneration === undefined
-        ? {}
-        : { integrationGeneration: input.integration.integrationGeneration }),
+      integrationGeneration: input.integration.integrationGeneration,
       id: input.integration.id,
       reconnectRequiredAt: null,
       refreshToken: refreshed.refreshToken,

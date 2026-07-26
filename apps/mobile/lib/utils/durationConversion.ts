@@ -5,7 +5,8 @@
  */
 
 import type { ActivityPlanDuration } from "@repo/core";
-import { formatDurationCompact as formatDurationCore, getExactDurationSeconds } from "@repo/core";
+import { getExactDurationSeconds } from "@repo/core/duration";
+import { formatDurationCompact as formatDurationCore } from "@repo/core/duration/time-format";
 
 // ==============================
 // UI -> activity-plan duration

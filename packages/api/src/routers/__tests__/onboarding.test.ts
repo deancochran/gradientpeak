@@ -11,7 +11,7 @@ import {
   profileTrainingSettings,
   providerSyncState,
 } from "@repo/db";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const wahooClientMock = {
   getUserProfile: vi.fn(async () => ({
@@ -27,6 +27,7 @@ vi.mock("../../lib/integrations/wahoo/client", () => ({
 }));
 
 import { OnboardingProviderEnrichmentService } from "../../application/onboarding-provider-enrichment";
+import { encryptProviderToken } from "../../lib/provider-token-crypto";
 import { getOnboardingGoalId } from "../../repositories/onboarding-lifecycle-repository";
 import { onboardingRouter } from "../onboarding";
 
@@ -158,7 +159,9 @@ function createCaller(params?: {
         if (table === integrationCredentials) {
           return {
             where: () => ({
-              limit: async () => [{ access_token: "wahoo-access-token", refresh_token: null }],
+              limit: async () => [
+                { access_token: encryptProviderToken("wahoo-access-token"), refresh_token: null },
+              ],
             }),
           };
         }
@@ -290,6 +293,7 @@ function createCaller(params?: {
 
 describe("onboardingRouter", () => {
   beforeEach(() => {
+    vi.stubEnv("PROVIDER_TOKEN_ENCRYPTION_KEY", Buffer.alloc(32, 7).toString("base64"));
     vi.clearAllMocks();
     wahooClientMock.getUserProfile.mockResolvedValue({
       birth: "1990-01-01",
@@ -298,6 +302,8 @@ describe("onboardingRouter", () => {
     });
     wahooClientMock.getPowerZones.mockResolvedValue({ ftp: 248 });
   });
+
+  afterEach(() => vi.unstubAllEnvs());
 
   it("returns imported onboarding values from canonical profile data and sync metadata", async () => {
     const userId = "11111111-1111-4111-8111-111111111111";
@@ -411,8 +417,8 @@ describe("onboardingRouter", () => {
           id: integrationId,
           provider: "wahoo",
           profile_id: userId,
-          access_token: "access-1",
-          refresh_token: "refresh-1",
+          access_token: encryptProviderToken("access-1"),
+          refresh_token: encryptProviderToken("refresh-1"),
         } as any,
       ],
       profileRow: { dob: new Date("1988-02-03T00:00:00.000Z"), gender: "female", onboarded: true },
@@ -458,8 +464,8 @@ describe("onboardingRouter", () => {
           id: integrationId,
           provider: "wahoo",
           profile_id: userId,
-          access_token: "access-1",
-          refresh_token: "refresh-1",
+          access_token: encryptProviderToken("access-1"),
+          refresh_token: encryptProviderToken("refresh-1"),
         } as any,
       ],
       activityEffortRows: [

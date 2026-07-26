@@ -1,0 +1,138 @@
+{
+  "capturedAt": "2026-07-14T00:00:00.000Z",
+  "source": "expected reconciled ledger derived from the active authoritative migration filenames",
+  "entries": [
+    {
+      "version": "20260713034500",
+      "name": "baseline"
+    },
+    {
+      "version": "20260713034515",
+      "name": "restore_public_table_security"
+    },
+    {
+      "version": "20260713034520",
+      "name": "add_activity_file_ingestion_fk_index"
+    },
+    {
+      "version": "20260713053540",
+      "name": "expand_provider_queue_sequence"
+    },
+    {
+      "version": "20260713061546",
+      "name": "synchronize_provider_queue_sequence"
+    },
+    {
+      "version": "20260713062706",
+      "name": "reconcile_provider_queue_sequence_coexistence"
+    },
+    {
+      "version": "20260713135515",
+      "name": "constrain_profile_preferred_units"
+    },
+    {
+      "version": "20260713153456",
+      "name": "guard_activity_effort_bounds"
+    },
+    {
+      "version": "20260713165000",
+      "name": "event_route_plan_hard_cut"
+    },
+    {
+      "version": "20260714200637",
+      "name": "harden_route_storage_contract"
+    },
+    {
+      "version": "20260715124838",
+      "name": "add_profile_planning_timezone"
+    },
+    {
+      "version": "20260715195947",
+      "name": "add_auth_rate_limits"
+    },
+    {
+      "version": "20260716120500",
+      "name": "add_content_visibility"
+    },
+    {
+      "version": "20260717173000",
+      "name": "multisport_modern_hard_cut"
+    },
+    {
+      "version": "20260717190000",
+      "name": "repair_activity_effort_tombstone_constraint"
+    },
+    {
+      "version": "20260717200000",
+      "name": "enforce_strict_activity_effort_tombstone_constraint"
+    },
+    {
+      "version": "20260717210000",
+      "name": "add_activity_plan_structure_category_index"
+    },
+    {
+      "version": "20260717211000",
+      "name": "add_organization_authorization_foundation"
+    },
+    {
+      "version": "20260720211254",
+      "name": "add_heart_rate_activity_efforts"
+    },
+    {
+      "version": "20260721025436",
+      "name": "add_participant_messaging_read_cursor"
+    },
+    {
+      "version": "20260721042443",
+      "name": "add_activity_plan_route"
+    },
+    {
+      "version": "20260723221702",
+      "name": "add_activity_session_rpe_evidence"
+    },
+    {
+      "version": "20260724143824",
+      "name": "add_mobile_recording_upload_claim"
+    },
+    {
+      "version": "20260724150000",
+      "name": "harden_coaching_access"
+    },
+    {
+      "version": "20260724160000",
+      "name": "harden_provider_credentials"
+    },
+    {
+      "version": "20260724170000",
+      "name": "harden_provider_disconnect"
+    },
+    {
+      "version": "20260724180000",
+      "name": "fix_webhook_receipt_generation_fk"
+    },
+    {
+      "version": "20260724190000",
+      "name": "enforce_provider_account_ownership"
+    },
+    {
+      "version": "20260725190312",
+      "name": "drop_activity_is_private"
+    },
+    {
+      "version": "20260725191351",
+      "name": "enforce_event_scheduled_date"
+    },
+    {
+      "version": "20260725195924",
+      "name": "drop_activity_normalized_power"
+    },
+    {
+      "version": "20260725201534",
+      "name": "canonicalize_activity_effort_units"
+    },
+    {
+      "version": "20260725225842",
+      "name": "drop_activity_plan_route"
+    }
+  ]
+}

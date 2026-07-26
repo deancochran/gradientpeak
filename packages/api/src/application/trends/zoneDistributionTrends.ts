@@ -1,4 +1,5 @@
-import { type ActivityListDerivedSummary, getTrainingIntensityZone } from "@repo/core";
+import type { ActivityListDerivedSummary } from "@repo/core";
+import { getTrainingIntensityZone } from "@repo/core/load";
 
 export type ZoneDistributionActivityRow = {
   id: string;

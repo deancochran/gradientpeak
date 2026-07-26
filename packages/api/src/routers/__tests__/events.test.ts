@@ -388,6 +388,74 @@ afterEach(() => {
 });
 
 describe("eventsRouter generalization", () => {
+  it("keeps a persisted route-only planned event on an unrelated update without publishing", async () => {
+    const event = createEventRow({ route_id: "route-1" });
+    const { caller, callLog } = createCaller({
+      events: [
+        { data: event, error: null },
+        { data: [event], error: null },
+      ],
+    });
+
+    await expect(
+      caller.update({ id: event.id, patch: { notes: "steady" } }),
+    ).resolves.toMatchObject({ event_type: "planned" });
+    expect(callLog.find((call) => call.operation === "update")?.payload).toMatchObject({
+      notes: "steady",
+    });
+    expect(enqueuePlannedWorkoutSyncAfterCalendarMutation).not.toHaveBeenCalled();
+  });
+
+  it("unsyncs when a combined planned event detaches its plan but retains its route", async () => {
+    const existing = createEventRow({ activity_plan_id: "plan-1", route_id: "route-1" });
+    const updated = createEventRow({ activity_plan_id: null, route_id: "route-1" });
+    const { caller, callLog } = createCaller({
+      events: [
+        { data: existing, error: null },
+        { data: [updated], error: null },
+      ],
+    });
+
+    await caller.update({ id: existing.id, patch: { activity_plan_id: null } });
+    expect(callLog.find((call) => call.operation === "update")?.payload).toMatchObject({
+      activity_plan_id: null,
+    });
+    expect(enqueuePlannedWorkoutSyncAfterCalendarMutation).toHaveBeenCalledWith(
+      expect.objectContaining({ eventIds: [existing.id], operation: "unsync" }),
+    );
+  });
+
+  it("publishes when a route-only planned event receives a plan", async () => {
+    const existing = createEventRow({ route_id: "route-1" });
+    const planId = "11111111-1111-4111-8111-111111111111";
+    const updated = createEventRow({ activity_plan_id: planId, route_id: "route-1" });
+    const { caller } = createCaller({
+      events: [
+        { data: existing, error: null },
+        { data: [updated], error: null },
+      ],
+      activity_plans: { data: { id: planId }, error: null },
+    });
+
+    await caller.update({ id: existing.id, patch: { activity_plan_id: planId } });
+    expect(enqueuePlannedWorkoutSyncAfterCalendarMutation).toHaveBeenCalledWith(
+      expect.objectContaining({ eventIds: [existing.id], operation: "publish" }),
+    );
+  });
+
+  it("rejects clearing the final planned route or plan link", async () => {
+    const routeOnly = createEventRow({ route_id: "route-1" });
+    const routeCaller = createCaller({ events: { data: routeOnly, error: null } });
+    await expect(
+      routeCaller.caller.update({ id: routeOnly.id, patch: { route_id: null } }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    const planOnly = createEventRow({ activity_plan_id: "plan-1" });
+    const planCaller = createCaller({ events: { data: planOnly, error: null } });
+    await expect(
+      planCaller.caller.update({ id: planOnly.id, patch: { activity_plan_id: null } }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
   it("revokes grants and queues only planned candidates with activity plans in the delete callback", async () => {
     const beforeDeleteCalls: Array<(input: { candidates: any[]; tx: any }) => Promise<void>> = [];
     const revokeEventGrants = vi.fn(async () => undefined);
@@ -423,7 +491,6 @@ describe("eventsRouter generalization", () => {
           enqueueProviderPlannedActivityJobs,
           getContentPermissions: (_ctx, tx) => (tx ? ({ revokeEventGrants } as any) : null),
           getEventCompletionRepository: () => completionRepository as any,
-          plannedEventType: "planned",
           toCoreEventType: (eventType) => eventType,
           toDateKey: (value) => value.slice(0, 10),
         },
@@ -684,7 +751,7 @@ describe("eventsRouter generalization", () => {
     });
   });
 
-  it("create keeps legacy planned-activity input behavior", async () => {
+  it("create rejects the legacy planned-activity payload", async () => {
     const { caller, callLog } = createCaller({
       activity_plans: {
         data: { id: "11111111-1111-4111-8111-111111111111" },
@@ -707,19 +774,15 @@ describe("eventsRouter generalization", () => {
       },
     });
 
-    const result = await caller.create({
-      activity_plan_id: "11111111-1111-4111-8111-111111111111",
-      scheduled_date: "2026-03-12",
-      notes: "steady endurance",
-    });
+    await expect(
+      caller.create({
+        activity_plan_id: "11111111-1111-4111-8111-111111111111",
+        scheduled_date: "2026-03-12",
+        notes: "steady endurance",
+      } as never),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
-    const insertCall = callLog.find((call) => call.operation === "insert");
-    expect(insertCall?.table).toBe("events");
-    expect(callLog.filter((call) => call.operation === "batch")).toHaveLength(1);
-    expect(callLog.filter((call) => call.operation === "insert")).toHaveLength(1);
-    expect((insertCall?.payload as any).event_type).toBe("planned");
-    expect(result.event_type).toBe("planned");
-    expect(result.legacy_event_type).toBe("planned");
+    expect(callLog.filter((call) => call.operation === "insert")).toHaveLength(0);
   });
 
   it("create normalizes planned event scheduled_date to all-day persistence", async () => {
@@ -938,8 +1001,12 @@ describe("eventsRouter generalization", () => {
 
     await expect(
       caller.create({
+        event_type: "planned",
+        title: "Recurring workout",
         activity_plan_id: "11111111-1111-4111-8111-111111111111",
         scheduled_date: "2026-03-12",
+        all_day: true,
+        timezone: "UTC",
         recurrence: {
           rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=3;BYDAY=TH",
           timezone: "UTC",
@@ -1049,7 +1116,7 @@ describe("eventsRouter generalization", () => {
         lifecycle: { status: "scheduled" },
         read_only: false,
       } as any),
-    ).rejects.toThrow(/Invalid input|Invalid event create payload|rest_day/);
+    ).rejects.toThrow(/Invalid discriminator value|rest_day/);
   });
 
   it("create rejects mixed legacy and domain payload shapes", async () => {
@@ -1061,7 +1128,7 @@ describe("eventsRouter generalization", () => {
         scheduled_date: "2026-03-12",
         title: "Unexpected domain field",
       } as any),
-    ).rejects.toThrow(/Unrecognized key|Invalid input|Invalid event create payload|title/);
+    ).rejects.toThrow(/Invalid discriminator value/);
 
     expect(callLog).toEqual([]);
   });
@@ -1930,8 +1997,12 @@ describe("eventsRouter generalization", () => {
 
     await expect(
       caller.create({
+        event_type: "planned",
+        title: "Recurring workout",
         activity_plan_id: "11111111-1111-4111-8111-111111111111",
         scheduled_date: "2026-06-01",
+        all_day: true,
+        timezone: "UTC",
         recurrence: {
           rule: "FREQ=WEEKLY;INTERVAL=1",
           timezone: "UTC",
@@ -2009,8 +2080,12 @@ describe("eventsRouter generalization", () => {
     });
 
     const result = await caller.create({
+      event_type: "planned",
+      title: "Recurring workout",
       activity_plan_id: activityPlanId,
       scheduled_date: "2026-06-02",
+      all_day: true,
+      timezone: "UTC",
       recurrence: {
         rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=4;BYDAY=TU",
         timezone: "UTC",
@@ -2053,8 +2128,12 @@ describe("eventsRouter generalization", () => {
 
     await expect(
       caller.create({
+        event_type: "planned",
+        title: "Recurring workout",
         activity_plan_id: "11111111-1111-4111-8111-111111111111",
         scheduled_date: "2026-06-02",
+        all_day: true,
+        timezone: "UTC",
         recurrence: {
           rule: "FREQ=WEEKLY;INTERVAL=1;BYDAY=TU",
           timezone: "UTC",

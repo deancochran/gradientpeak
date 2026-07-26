@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import {
-  type ContentVisibility,
   type SocialCommentEntityType,
   type SocialLikeEntityType,
   socialCommentEntityTypeSchema,
@@ -46,14 +45,13 @@ export async function canAccessSocialContent(
 ) {
   if (entityType === "activity") {
     const activity = await db.query.activities.findFirst({
-      columns: { profile_id: true, content_visibility: true, is_private: true },
+      columns: { profile_id: true, content_visibility: true },
       where: eq(activities.id, entityId),
     });
     if (!activity) return false;
     if (activity.profile_id === viewerId) return true;
 
-    const visibility = (activity.content_visibility ??
-      (activity.is_private ? "private" : "followers")) as ContentVisibility;
+    const visibility = activity.content_visibility;
     if (visibility === "public") return true;
     if (visibility !== "followers") return false;
 

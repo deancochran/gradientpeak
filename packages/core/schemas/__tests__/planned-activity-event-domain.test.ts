@@ -10,21 +10,11 @@ import {
   importedEventLifecycleMutationSchema,
   importedEventSourceMetadataSchema,
   persistableEventRecurrenceSchema,
-  plannedActivityCreateSchema,
   plannedActivityEventCreateSchema,
   plannedActivityRescheduleSchema,
 } from "../planned_activity";
 
 describe("planned activity event domain schemas", () => {
-  it("keeps planned activity create backward compatible", () => {
-    const parsed = plannedActivityCreateSchema.safeParse({
-      activity_plan_id: "2f3e7214-35ca-4ef5-a8ef-ef4f3efb1d15",
-      scheduled_date: "2026-03-01T09:00:00.000Z",
-    });
-
-    expect(parsed.success).toBe(true);
-  });
-
   it("rejects removed legacy event type labels", () => {
     expect(eventTypeInputSchema.safeParse("planned_activity").success).toBe(false);
     expect(eventTypeInputSchema.safeParse("race").success).toBe(false);
@@ -263,15 +253,89 @@ describe("planned activity event domain schemas", () => {
     expect(invalid.success).toBe(false);
   });
 
-  it("requires activity plan linkage for planned event creation", () => {
-    const parsed = eventCreateSchema.safeParse({
-      event_type: "planned",
+  it("requires full planned events to link an activity plan or route", () => {
+    const base = {
+      event_type: "planned" as const,
+      title: "Threshold session",
+      starts_at: "2026-03-12T08:00:00.000Z",
+      timezone: "UTC",
+    };
+    const activity_plan_id = "550e8400-e29b-41d4-a716-446655440000";
+    const route_id = "550e8400-e29b-41d4-a716-446655440001";
+
+    expect(eventDomainSchema.safeParse({ ...base, activity_plan_id }).success).toBe(true);
+    expect(eventDomainSchema.safeParse({ ...base, route_id }).success).toBe(true);
+    expect(eventDomainSchema.safeParse({ ...base, activity_plan_id, route_id }).success).toBe(true);
+
+    const neither = eventDomainSchema.safeParse(base);
+    expect(neither.success).toBe(false);
+    if (!neither.success) {
+      expect(neither.error.issues).toContainEqual(
+        expect.objectContaining({
+          message: "planned events require an activity_plan_id or route_id",
+        }),
+      );
+    }
+  });
+
+  it("accepts plan-only, route-only, or combined planned event creation", () => {
+    const base = {
+      event_type: "planned" as const,
       title: "Threshold session",
       scheduled_date: "2026-03-12",
-      timezone: "UTC",
-    });
+    };
+    const activity_plan_id = "550e8400-e29b-41d4-a716-446655440000";
+    const route_id = "550e8400-e29b-41d4-a716-446655440001";
 
-    expect(parsed.success).toBe(false);
+    expect(plannedActivityEventCreateSchema.safeParse({ ...base, activity_plan_id }).success).toBe(
+      true,
+    );
+    expect(plannedActivityEventCreateSchema.safeParse({ ...base, route_id }).success).toBe(true);
+    expect(
+      plannedActivityEventCreateSchema.safeParse({ ...base, activity_plan_id, route_id }).success,
+    ).toBe(true);
+    expect(plannedActivityEventCreateSchema.safeParse(base).success).toBe(false);
+    expect(eventCreateSchema.safeParse({ ...base, route_id }).success).toBe(true);
+  });
+
+  it("accepts independent links on custom and race event creation", () => {
+    const route_id = "550e8400-e29b-41d4-a716-446655440001";
+    const activity_plan_id = "550e8400-e29b-41d4-a716-446655440000";
+
+    expect(
+      customEventCreateSchema.safeParse({
+        event_type: "custom",
+        title: "Route briefing",
+        starts_at: "2026-03-12T16:30:00.000Z",
+        route_id,
+      }).success,
+    ).toBe(true);
+    expect(
+      customEventCreateSchema.safeParse({
+        event_type: "race_target",
+        title: "Route race",
+        starts_at: "2026-03-12T16:30:00.000Z",
+        activity_plan_id,
+        route_id: null,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("accepts context-free route patches and planned-event transitions", () => {
+    const id = "e4e9d401-49dc-4f14-b8ab-2da517f7db1b";
+    const route_id = "550e8400-e29b-41d4-a716-446655440001";
+
+    expect(eventUpdateSchema.safeParse({ id, patch: { route_id } }).success).toBe(true);
+    expect(eventUpdateSchema.safeParse({ id, patch: { route_id: null } }).success).toBe(true);
+    expect(eventUpdateSchema.safeParse({ id, patch: { activity_plan_id: null } }).success).toBe(
+      true,
+    );
+    expect(
+      eventUpdateSchema.safeParse({ id, patch: { event_type: "planned", route_id } }).success,
+    ).toBe(true);
+    expect(eventUpdateSchema.safeParse({ id, patch: { event_type: "planned" } }).success).toBe(
+      true,
+    );
   });
 
   it("enforces all-day date-only planned activity event creation", () => {
@@ -340,14 +404,6 @@ describe("planned activity event domain schemas", () => {
         title: "Rest day",
         starts_at: "2026-03-12T00:00:00.000Z",
         timezone: "UTC",
-      }).success,
-    ).toBe(false);
-
-    expect(
-      plannedActivityCreateSchema.safeParse({
-        activity_plan_id: "2f3e7214-35ca-4ef5-a8ef-ef4f3efb1d15",
-        scheduled_date: "2026-03-01T09:00:00.000Z",
-        event_type: "rest_day",
       }).success,
     ).toBe(false);
 

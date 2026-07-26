@@ -63,7 +63,6 @@ describe("UI ownership guardrails", () => {
       "activity-plan/activity-plan-composer.tsx",
       "activity-plan/activity-plan-structure.tsx",
       "activity/activity-comments-card.tsx",
-      "activity/activity-stream-details.tsx",
       "activity/session-rpe-card.tsx",
       "auth-card-shell.tsx",
       "charts/simple-trend-chart.tsx",

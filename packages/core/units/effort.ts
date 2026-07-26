@@ -1,5 +1,8 @@
+import { z } from "zod";
+
 export const canonicalEffortUnitValues = ["watts", "meters_per_second", "bpm"] as const;
-export type CanonicalEffortUnit = (typeof canonicalEffortUnitValues)[number];
+export const canonicalEffortUnitSchema = z.enum(canonicalEffortUnitValues);
+export type CanonicalEffortUnit = z.infer<typeof canonicalEffortUnitSchema>;
 export type CanonicalEffortKind = "power" | "speed" | "heart_rate";
 
 export const canonicalEffortUnitLabels: Record<CanonicalEffortUnit, string> = {
@@ -8,38 +11,26 @@ export const canonicalEffortUnitLabels: Record<CanonicalEffortUnit, string> = {
   bpm: "bpm",
 };
 
-export const canonicalEffortUnitAliases: Record<CanonicalEffortKind, Record<string, number>> = {
-  power: { w: 1, watt: 1, watts: 1, kw: 1_000, kilowatt: 1_000, kilowatts: 1_000 },
-  speed: {
-    "m/s": 1,
-    meters_per_second: 1,
-    mps: 1,
-    meterpersecond: 1,
-    meterspersecond: 1,
-    "km/h": 1 / 3.6,
-    kph: 1 / 3.6,
-    kmh: 1 / 3.6,
-    kilometersperhour: 1 / 3.6,
-    mph: 0.44704,
-    milesperhour: 0.44704,
-  },
-  heart_rate: { bpm: 1, beatsperminute: 1, beats_per_minute: 1 },
+const canonicalEffortUnitByKind: Record<CanonicalEffortKind, CanonicalEffortUnit> = {
+  power: "watts",
+  speed: "meters_per_second",
+  heart_rate: "bpm",
 };
 
-function normalizeUnitAlias(unit: string): string {
-  return unit.trim().toLowerCase().replaceAll(" ", "");
-}
-
-/** Converts recognized effort units to their canonical SI storage unit. */
+/**
+ * Validates a persisted/domain effort value. Unit conversion belongs exclusively
+ * to provider and file ingestion adapters before this boundary.
+ */
 export function canonicalEffortValue(input: {
   kind: CanonicalEffortKind;
   value: number;
   unit: string;
 }): { value: number; unit: CanonicalEffortUnit } | null {
-  const multiplier = canonicalEffortUnitAliases[input.kind][normalizeUnitAlias(input.unit)];
-  if (multiplier === undefined) return null;
+  if (!Number.isFinite(input.value)) return null;
+  const unit = canonicalEffortUnitSchema.safeParse(input.unit);
+  if (!unit.success || unit.data !== canonicalEffortUnitByKind[input.kind]) return null;
   return {
-    value: input.value * multiplier,
-    unit: input.kind === "power" ? "watts" : input.kind === "speed" ? "meters_per_second" : "bpm",
+    value: input.value,
+    unit: unit.data,
   };
 }

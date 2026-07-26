@@ -3,10 +3,10 @@ import { describe, expect, it } from "vitest";
 import { getAllowedMobileAuthSchemePrefixes } from "./mobile-callback";
 
 describe("getAllowedMobileAuthSchemePrefixes", () => {
-  it("uses the same redirect-derived schemes for confirm and open routes", () => {
+  it("derives an allowed scheme from the canonical auth callback URL", () => {
     expect(
       getAllowedMobileAuthSchemePrefixes({
-        NEXT_PUBLIC_MOBILE_AUTH_REDIRECT_URI: "custom-auth://callback",
+        AUTH_MOBILE_CALLBACK_URL: "custom-auth://callback",
       }),
     ).toContain("custom-auth://");
   });
@@ -14,16 +14,14 @@ describe("getAllowedMobileAuthSchemePrefixes", () => {
   it("prefers an explicit allowlist when configured", () => {
     expect(
       getAllowedMobileAuthSchemePrefixes({
-        APP_SCHEME: "ignored",
+        AUTH_MOBILE_SCHEME: "ignored",
         AUTH_ALLOWED_DEEP_LINK_PREFIXES: "custom-one://, custom-two://",
       }),
     ).toEqual(["custom-one://", "custom-two://"]);
   });
 
-  it("does not trust development or preview schemes by default in production", () => {
-    expect(getAllowedMobileAuthSchemePrefixes({ NODE_ENV: "production" })).toEqual([
-      "gradientpeak://",
-    ]);
+  it("fails closed when production has no explicit deep-link allowlist", () => {
+    expect(getAllowedMobileAuthSchemePrefixes({ NODE_ENV: "production" })).toEqual([]);
   });
 
   it("drops malformed and browser-executable configured schemes", () => {

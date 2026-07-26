@@ -10,7 +10,6 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
-import { Route as AboutRouteImport } from './routes/about'
 import { Route as ProtectedRouteImport } from './routes/_protected'
 import { Route as CoachingRouteImport } from './routes/_coaching'
 import { Route as ProtectedIndexRouteImport } from './routes/_protected/index'
@@ -19,7 +18,6 @@ import { Route as AuthVerificationSuccessRouteImport } from './routes/auth/verif
 import { Route as AuthUpdatePasswordRouteImport } from './routes/auth/update-password'
 import { Route as AuthSignUpSuccessRouteImport } from './routes/auth/sign-up-success'
 import { Route as AuthSignUpRouteImport } from './routes/auth/sign-up'
-import { Route as AuthOpenRouteImport } from './routes/auth/open'
 import { Route as AuthLoginRouteImport } from './routes/auth/login'
 import { Route as AuthForgotPasswordRouteImport } from './routes/auth/forgot-password'
 import { Route as AuthErrorRouteImport } from './routes/auth/error'
@@ -37,7 +35,6 @@ import { Route as ProtectedNotificationsRouteImport } from './routes/_protected/
 import { Route as ProtectedMessagesRouteImport } from './routes/_protected/messages'
 import { Route as ProtectedIntegrationsRouteImport } from './routes/_protected/integrations'
 import { Route as ProtectedGoalsRouteImport } from './routes/_protected/goals'
-import { Route as ProtectedCoachingRouteImport } from './routes/_protected/coaching'
 import { Route as ProtectedCalendarRouteImport } from './routes/_protected/calendar'
 import { Route as ProtectedTrainingPlansIndexRouteImport } from './routes/_protected/training-plans/index'
 import { Route as ProtectedScheduledActivitiesIndexRouteImport } from './routes/_protected/scheduled-activities/index'
@@ -60,7 +57,6 @@ import { Route as ProtectedTrainingPlansReorderRouteImport } from './routes/_pro
 import { Route as ProtectedTrainingPlansCreateRouteImport } from './routes/_protected/training-plans/create'
 import { Route as ProtectedScheduledActivitiesEventIdRouteImport } from './routes/_protected/scheduled-activities/$eventId'
 import { Route as ProtectedRoutesUploadRouteImport } from './routes/_protected/routes/upload'
-import { Route as ProtectedRecordSubmitRouteImport } from './routes/_protected/record/submit'
 import { Route as ProtectedRecordSessionRouteImport } from './routes/_protected/record/session'
 import { Route as ProtectedRecordPlanRouteImport } from './routes/_protected/record/plan'
 import { Route as ProtectedGroupsNewRouteImport } from './routes/_protected/groups/new'
@@ -104,11 +100,6 @@ const OnboardingRoute = OnboardingRouteImport.update({
   path: '/onboarding',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AboutRoute = AboutRouteImport.update({
-  id: '/about',
-  path: '/about',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ProtectedRoute = ProtectedRouteImport.update({
   id: '/_protected',
   getParentRoute: () => rootRouteImport,
@@ -145,11 +136,6 @@ const AuthSignUpSuccessRoute = AuthSignUpSuccessRouteImport.update({
 const AuthSignUpRoute = AuthSignUpRouteImport.update({
   id: '/auth/sign-up',
   path: '/auth/sign-up',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthOpenRoute = AuthOpenRouteImport.update({
-  id: '/auth/open',
-  path: '/auth/open',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthLoginRoute = AuthLoginRouteImport.update({
@@ -237,11 +223,6 @@ const ProtectedIntegrationsRoute = ProtectedIntegrationsRouteImport.update({
 const ProtectedGoalsRoute = ProtectedGoalsRouteImport.update({
   id: '/goals',
   path: '/goals',
-  getParentRoute: () => ProtectedRoute,
-} as any)
-const ProtectedCoachingRoute = ProtectedCoachingRouteImport.update({
-  id: '/coaching',
-  path: '/coaching',
   getParentRoute: () => ProtectedRoute,
 } as any)
 const ProtectedCalendarRoute = ProtectedCalendarRouteImport.update({
@@ -364,11 +345,6 @@ const ProtectedRoutesUploadRoute = ProtectedRoutesUploadRouteImport.update({
   id: '/routes/upload',
   path: '/routes/upload',
   getParentRoute: () => ProtectedRoute,
-} as any)
-const ProtectedRecordSubmitRoute = ProtectedRecordSubmitRouteImport.update({
-  id: '/submit',
-  path: '/submit',
-  getParentRoute: () => ProtectedRecordRoute,
 } as any)
 const ProtectedRecordSessionRoute = ProtectedRecordSessionRouteImport.update({
   id: '/session',
@@ -590,10 +566,8 @@ const ProtectedCalendarEventsEventIdEditRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof ProtectedIndexRoute
-  '/about': typeof AboutRoute
   '/onboarding': typeof OnboardingRoute
   '/calendar': typeof ProtectedCalendarRouteWithChildren
-  '/coaching': typeof ProtectedCoachingRoute
   '/goals': typeof ProtectedGoalsRouteWithChildren
   '/integrations': typeof ProtectedIntegrationsRoute
   '/messages': typeof ProtectedMessagesRoute
@@ -611,7 +585,6 @@ export interface FileRoutesByFullPath {
   '/auth/error': typeof AuthErrorRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/login': typeof AuthLoginRoute
-  '/auth/open': typeof AuthOpenRoute
   '/auth/sign-up': typeof AuthSignUpRoute
   '/auth/sign-up-success': typeof AuthSignUpSuccessRoute
   '/auth/update-password': typeof AuthUpdatePasswordRoute
@@ -626,7 +599,6 @@ export interface FileRoutesByFullPath {
   '/groups/new': typeof ProtectedGroupsNewRoute
   '/record/plan': typeof ProtectedRecordPlanRoute
   '/record/session': typeof ProtectedRecordSessionRoute
-  '/record/submit': typeof ProtectedRecordSubmitRoute
   '/routes/upload': typeof ProtectedRoutesUploadRoute
   '/scheduled-activities/$eventId': typeof ProtectedScheduledActivitiesEventIdRoute
   '/training-plans/create': typeof ProtectedTrainingPlansCreateRoute
@@ -679,9 +651,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof ProtectedIndexRoute
-  '/about': typeof AboutRoute
   '/onboarding': typeof OnboardingRoute
-  '/coaching': typeof ProtectedCoachingRoute
   '/integrations': typeof ProtectedIntegrationsRoute
   '/messages': typeof ProtectedMessagesRoute
   '/notifications': typeof ProtectedNotificationsRoute
@@ -696,7 +666,6 @@ export interface FileRoutesByTo {
   '/auth/error': typeof AuthErrorRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/login': typeof AuthLoginRoute
-  '/auth/open': typeof AuthOpenRoute
   '/auth/sign-up': typeof AuthSignUpRoute
   '/auth/sign-up-success': typeof AuthSignUpSuccessRoute
   '/auth/update-password': typeof AuthUpdatePasswordRoute
@@ -710,7 +679,6 @@ export interface FileRoutesByTo {
   '/groups/new': typeof ProtectedGroupsNewRoute
   '/record/plan': typeof ProtectedRecordPlanRoute
   '/record/session': typeof ProtectedRecordSessionRoute
-  '/record/submit': typeof ProtectedRecordSubmitRoute
   '/routes/upload': typeof ProtectedRoutesUploadRoute
   '/scheduled-activities/$eventId': typeof ProtectedScheduledActivitiesEventIdRoute
   '/training-plans/create': typeof ProtectedTrainingPlansCreateRoute
@@ -765,10 +733,8 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_coaching': typeof CoachingRouteWithChildren
   '/_protected': typeof ProtectedRouteWithChildren
-  '/about': typeof AboutRoute
   '/onboarding': typeof OnboardingRoute
   '/_protected/calendar': typeof ProtectedCalendarRouteWithChildren
-  '/_protected/coaching': typeof ProtectedCoachingRoute
   '/_protected/goals': typeof ProtectedGoalsRouteWithChildren
   '/_protected/integrations': typeof ProtectedIntegrationsRoute
   '/_protected/messages': typeof ProtectedMessagesRoute
@@ -786,7 +752,6 @@ export interface FileRoutesById {
   '/auth/error': typeof AuthErrorRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/login': typeof AuthLoginRoute
-  '/auth/open': typeof AuthOpenRoute
   '/auth/sign-up': typeof AuthSignUpRoute
   '/auth/sign-up-success': typeof AuthSignUpSuccessRoute
   '/auth/update-password': typeof AuthUpdatePasswordRoute
@@ -802,7 +767,6 @@ export interface FileRoutesById {
   '/_protected/groups/new': typeof ProtectedGroupsNewRoute
   '/_protected/record/plan': typeof ProtectedRecordPlanRoute
   '/_protected/record/session': typeof ProtectedRecordSessionRoute
-  '/_protected/record/submit': typeof ProtectedRecordSubmitRoute
   '/_protected/routes/upload': typeof ProtectedRoutesUploadRoute
   '/_protected/scheduled-activities/$eventId': typeof ProtectedScheduledActivitiesEventIdRoute
   '/_protected/training-plans/create': typeof ProtectedTrainingPlansCreateRoute
@@ -857,10 +821,8 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/about'
     | '/onboarding'
     | '/calendar'
-    | '/coaching'
     | '/goals'
     | '/integrations'
     | '/messages'
@@ -878,7 +840,6 @@ export interface FileRouteTypes {
     | '/auth/error'
     | '/auth/forgot-password'
     | '/auth/login'
-    | '/auth/open'
     | '/auth/sign-up'
     | '/auth/sign-up-success'
     | '/auth/update-password'
@@ -893,7 +854,6 @@ export interface FileRouteTypes {
     | '/groups/new'
     | '/record/plan'
     | '/record/session'
-    | '/record/submit'
     | '/routes/upload'
     | '/scheduled-activities/$eventId'
     | '/training-plans/create'
@@ -946,9 +906,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/about'
     | '/onboarding'
-    | '/coaching'
     | '/integrations'
     | '/messages'
     | '/notifications'
@@ -963,7 +921,6 @@ export interface FileRouteTypes {
     | '/auth/error'
     | '/auth/forgot-password'
     | '/auth/login'
-    | '/auth/open'
     | '/auth/sign-up'
     | '/auth/sign-up-success'
     | '/auth/update-password'
@@ -977,7 +934,6 @@ export interface FileRouteTypes {
     | '/groups/new'
     | '/record/plan'
     | '/record/session'
-    | '/record/submit'
     | '/routes/upload'
     | '/scheduled-activities/$eventId'
     | '/training-plans/create'
@@ -1031,10 +987,8 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_coaching'
     | '/_protected'
-    | '/about'
     | '/onboarding'
     | '/_protected/calendar'
-    | '/_protected/coaching'
     | '/_protected/goals'
     | '/_protected/integrations'
     | '/_protected/messages'
@@ -1052,7 +1006,6 @@ export interface FileRouteTypes {
     | '/auth/error'
     | '/auth/forgot-password'
     | '/auth/login'
-    | '/auth/open'
     | '/auth/sign-up'
     | '/auth/sign-up-success'
     | '/auth/update-password'
@@ -1068,7 +1021,6 @@ export interface FileRouteTypes {
     | '/_protected/groups/new'
     | '/_protected/record/plan'
     | '/_protected/record/session'
-    | '/_protected/record/submit'
     | '/_protected/routes/upload'
     | '/_protected/scheduled-activities/$eventId'
     | '/_protected/training-plans/create'
@@ -1123,7 +1075,6 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   CoachingRoute: typeof CoachingRouteWithChildren
   ProtectedRoute: typeof ProtectedRouteWithChildren
-  AboutRoute: typeof AboutRoute
   OnboardingRoute: typeof OnboardingRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiReadyRoute: typeof ApiReadyRoute
@@ -1131,7 +1082,6 @@ export interface RootRouteChildren {
   AuthErrorRoute: typeof AuthErrorRoute
   AuthForgotPasswordRoute: typeof AuthForgotPasswordRoute
   AuthLoginRoute: typeof AuthLoginRoute
-  AuthOpenRoute: typeof AuthOpenRoute
   AuthSignUpRoute: typeof AuthSignUpRoute
   AuthSignUpSuccessRoute: typeof AuthSignUpSuccessRoute
   AuthUpdatePasswordRoute: typeof AuthUpdatePasswordRoute
@@ -1156,13 +1106,6 @@ declare module '@tanstack/react-router' {
       path: '/onboarding'
       fullPath: '/onboarding'
       preLoaderRoute: typeof OnboardingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/about': {
-      id: '/about'
-      path: '/about'
-      fullPath: '/about'
-      preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_protected': {
@@ -1219,13 +1162,6 @@ declare module '@tanstack/react-router' {
       path: '/auth/sign-up'
       fullPath: '/auth/sign-up'
       preLoaderRoute: typeof AuthSignUpRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth/open': {
-      id: '/auth/open'
-      path: '/auth/open'
-      fullPath: '/auth/open'
-      preLoaderRoute: typeof AuthOpenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth/login': {
@@ -1345,13 +1281,6 @@ declare module '@tanstack/react-router' {
       path: '/goals'
       fullPath: '/goals'
       preLoaderRoute: typeof ProtectedGoalsRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/coaching': {
-      id: '/_protected/coaching'
-      path: '/coaching'
-      fullPath: '/coaching'
-      preLoaderRoute: typeof ProtectedCoachingRouteImport
       parentRoute: typeof ProtectedRoute
     }
     '/_protected/calendar': {
@@ -1507,13 +1436,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/routes/upload'
       preLoaderRoute: typeof ProtectedRoutesUploadRouteImport
       parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/record/submit': {
-      id: '/_protected/record/submit'
-      path: '/submit'
-      fullPath: '/record/submit'
-      preLoaderRoute: typeof ProtectedRecordSubmitRouteImport
-      parentRoute: typeof ProtectedRecordRoute
     }
     '/_protected/record/session': {
       id: '/_protected/record/session'
@@ -1862,7 +1784,6 @@ const ProtectedGoalsRouteWithChildren = ProtectedGoalsRoute._addFileChildren(
 interface ProtectedRecordRouteChildren {
   ProtectedRecordPlanRoute: typeof ProtectedRecordPlanRoute
   ProtectedRecordSessionRoute: typeof ProtectedRecordSessionRoute
-  ProtectedRecordSubmitRoute: typeof ProtectedRecordSubmitRoute
   ProtectedRecordIndexRoute: typeof ProtectedRecordIndexRoute
   ProtectedRecordRoutePreviewRouteIdRoute: typeof ProtectedRecordRoutePreviewRouteIdRoute
   ProtectedRecordRouteIndexRoute: typeof ProtectedRecordRouteIndexRoute
@@ -1871,7 +1792,6 @@ interface ProtectedRecordRouteChildren {
 const ProtectedRecordRouteChildren: ProtectedRecordRouteChildren = {
   ProtectedRecordPlanRoute: ProtectedRecordPlanRoute,
   ProtectedRecordSessionRoute: ProtectedRecordSessionRoute,
-  ProtectedRecordSubmitRoute: ProtectedRecordSubmitRoute,
   ProtectedRecordIndexRoute: ProtectedRecordIndexRoute,
   ProtectedRecordRoutePreviewRouteIdRoute:
     ProtectedRecordRoutePreviewRouteIdRoute,
@@ -1902,7 +1822,6 @@ const ProtectedScheduledActivitiesRouteWithChildren =
 
 interface ProtectedRouteChildren {
   ProtectedCalendarRoute: typeof ProtectedCalendarRouteWithChildren
-  ProtectedCoachingRoute: typeof ProtectedCoachingRoute
   ProtectedGoalsRoute: typeof ProtectedGoalsRouteWithChildren
   ProtectedIntegrationsRoute: typeof ProtectedIntegrationsRoute
   ProtectedMessagesRoute: typeof ProtectedMessagesRoute
@@ -1948,7 +1867,6 @@ interface ProtectedRouteChildren {
 
 const ProtectedRouteChildren: ProtectedRouteChildren = {
   ProtectedCalendarRoute: ProtectedCalendarRouteWithChildren,
-  ProtectedCoachingRoute: ProtectedCoachingRoute,
   ProtectedGoalsRoute: ProtectedGoalsRouteWithChildren,
   ProtectedIntegrationsRoute: ProtectedIntegrationsRoute,
   ProtectedMessagesRoute: ProtectedMessagesRoute,
@@ -2006,7 +1924,6 @@ const ProtectedRouteWithChildren = ProtectedRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   CoachingRoute: CoachingRouteWithChildren,
   ProtectedRoute: ProtectedRouteWithChildren,
-  AboutRoute: AboutRoute,
   OnboardingRoute: OnboardingRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiReadyRoute: ApiReadyRoute,
@@ -2014,7 +1931,6 @@ const rootRouteChildren: RootRouteChildren = {
   AuthErrorRoute: AuthErrorRoute,
   AuthForgotPasswordRoute: AuthForgotPasswordRoute,
   AuthLoginRoute: AuthLoginRoute,
-  AuthOpenRoute: AuthOpenRoute,
   AuthSignUpRoute: AuthSignUpRoute,
   AuthSignUpSuccessRoute: AuthSignUpSuccessRoute,
   AuthUpdatePasswordRoute: AuthUpdatePasswordRoute,

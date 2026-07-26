@@ -10,7 +10,6 @@
     "includes": [
       "**",
       "!**/.expo",
-      "!**/.next",
       "!**/.worktrees",
       "!**/.turbo",
       "!**/coverage",

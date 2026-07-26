@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   type ActivityPlanAuthoritativeMetrics,
   activityPlanAuthoritativeMetricsSchema,
+  activityPlanMetricsContainerSchema,
   getAuthoritativeActivityPlanMetrics,
 } from "../metrics";
 
@@ -61,21 +62,26 @@ describe("activity-plan authoritative metrics", () => {
     ).toBe(false);
   });
 
-  it("preserves explicit authoritative null instead of stale top-level values", () => {
+  it("preserves explicit authoritative null", () => {
     expect(
       getAuthoritativeActivityPlanMetrics({
-        estimated_distance: 12_000,
         authoritative_metrics: { estimated_distance: null },
       }).estimated_distance,
     ).toBeNull();
   });
 
-  it("falls back only when an authoritative field is absent", () => {
+  it("rejects legacy top-level metric fields at the metric container boundary", () => {
     expect(
-      getAuthoritativeActivityPlanMetrics({
+      activityPlanMetricsContainerSchema.safeParse({
         estimated_distance: 12_000,
-        authoritative_metrics: { estimated_duration: 3_600 },
-      }).estimated_distance,
-    ).toBe(12_000);
+        authoritative_metrics: {
+          estimated_duration: null,
+          estimated_tss: null,
+          intensity_factor: null,
+          estimated_distance: null,
+          provenance: emptyProvenance,
+        },
+      }).success,
+    ).toBe(false);
   });
 });

@@ -11,7 +11,6 @@ import type {
 import type { getRequiredDb } from "../../db";
 import {
   type ActivityArtifactStorage,
-  activityArtifactContentPath,
   verifyAcceptedActivityArtifact,
 } from "../activity-file-ingestion/artifact-storage";
 import {
@@ -153,57 +152,8 @@ async function loadAcceptedSubmission(
   return { activity, ingestion, acceptedArtifact };
 }
 
-async function loadPreRolloutLegacyAcceptedSubmission(
-  db: DbClient,
-  input: { profileId: string; artifact: RecordingAcceptedArtifact },
-) {
-  const ingestion = await db.query.activityFileIngestions.findFirst({
-    where: and(
-      eq(activityFileIngestions.profile_id, input.profileId),
-      eq(activityFileIngestions.source, "mobile_recording"),
-      eq(activityFileIngestions.operation_key, mobileRecordingOperationKey(input.artifact.sha256)),
-      eq(activityFileIngestions.status, "ready"),
-    ),
-  });
-  if (!ingestion) return null;
-  if (!ingestion.activity_id) {
-    throw new MobileRecordingSubmissionError(
-      "submission_failed",
-      "Legacy recording ingestion is missing its linked activity",
-    );
-  }
-  const activity = await db.query.activities.findFirst({
-    where: and(
-      eq(activities.id, ingestion.activity_id),
-      eq(activities.profile_id, input.profileId),
-    ),
-  });
-  if (!activity) {
-    throw new MobileRecordingSubmissionError(
-      "submission_failed",
-      "Legacy recording ingestion is missing its linked activity",
-    );
-  }
-  const acceptedArtifact = await loadAcceptedArtifactForClaim(db, ingestion);
-  if (
-    !acceptedArtifact ||
-    acceptedArtifact.sha256 !== input.artifact.sha256 ||
-    acceptedArtifact.byteSize !== input.artifact.byteSize ||
-    acceptedArtifact.path !== input.artifact.path ||
-    acceptedArtifact.path !== activityArtifactContentPath(input.profileId, acceptedArtifact.sha256)
-  ) {
-    throw new MobileRecordingSubmissionError(
-      "conflict",
-      "Legacy recording ingestion does not match the accepted artifact",
-    );
-  }
-  return { activity, ingestion, acceptedArtifact };
-}
-
 function submissionReplayIdentity(submission: MobileRecordingSubmissionInput) {
-  if (submission.artifactSource === "uploadedArtifact") return submission.recordingSessionId;
-  if (submission.recordingSessionId) return submission.recordingSessionId;
-  return `accepted-artifact:${submission.acceptedArtifact.sha256}:${submission.acceptedArtifact.byteSize}`;
+  return submission.recordingSessionId;
 }
 
 function assertReplayMatches(
@@ -287,21 +237,6 @@ export async function submitMobileRecording(
     });
     return replay;
   }
-  if (submission.artifactSource === "acceptedArtifact" && !submission.recordingSessionId) {
-    const legacyReplay = await loadPreRolloutLegacyAcceptedSubmission(db, {
-      profileId: submission.profileId,
-      artifact: submission.acceptedArtifact,
-    });
-    if (legacyReplay) {
-      await verifyCompatibilityArtifact(storage, submission.profileId, submission.acceptedArtifact);
-      await retryMobileRecordingStagingCleanup(db, storage, {
-        profileId: submission.profileId,
-        ingestion: legacyReplay.ingestion,
-      });
-      return legacyReplay;
-    }
-  }
-
   let segmentSet: CompletedActivitySegmentSetV1;
   try {
     segmentSet = segmentSetFromExecutionManifest(submission);
@@ -317,12 +252,7 @@ export async function submitMobileRecording(
   }
 
   const contentVisibility =
-    submission.content_visibility ??
-    (submission.is_private === undefined
-      ? await loadDefaultContentVisibility(db, submission.profileId)
-      : submission.is_private
-        ? "private"
-        : "followers");
+    submission.content_visibility ?? (await loadDefaultContentVisibility(db, submission.profileId));
   const timing = aggregateSegmentTiming(segmentSet);
 
   let prepared: Awaited<ReturnType<typeof prepareMobileRecordingArtifact>> | null = null;
@@ -366,7 +296,6 @@ export async function submitMobileRecording(
       activityPlanId: submission.activityPlanId ?? null,
       name: submission.name,
       notes: submission.notes ?? null,
-      isPrivate: contentVisibility === "private",
       contentVisibility,
       startedAt: new Date(submission.startedAt),
       finishedAt: new Date(submission.finishedAt),
@@ -382,7 +311,6 @@ export async function submitMobileRecording(
       maxHeartRate: null,
       avgPower: null,
       maxPower: null,
-      normalizedPower: submission.summary.normalizedPower ?? null,
       avgCadence: null,
       maxCadence: null,
       avgSpeedMps: null,

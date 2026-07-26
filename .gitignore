@@ -1,6 +1,6 @@
 # ------------------------------
 # Root Monorepo Gitignore
-# Covers apps/ (Next.js + Expo) and packages/ ( Supabase)
+# Covers apps/ and packages/
 # ------------------------------
 
 # Dependencies
@@ -32,15 +32,12 @@ coverage/**/*
 # Vercel
 .vercel/
 
-# ------------------------------
-# Next.js (apps/nextjs-app)
-# ------------------------------
-.next/
+# Static site outputs
 out/
 **/storybook-static/
 
 # ------------------------------
-# Expo / React Native (apps/expo-app)
+# Expo / React Native
 # ------------------------------
 .expo/
 .expo-shared/
@@ -50,8 +47,6 @@ out/
 *.jks
 web-build/
 
-.expo/
-.expo-shared/
 ios/
 android/
 
@@ -67,8 +62,6 @@ android/
 # Supabase generated stuff
 supabase/.temp/
 supabase/.branches/
-packages/supabase/.temp/
-packages/supabase/.branches/
 
 # Worktree artifacts
 .worktrees/

@@ -6,7 +6,7 @@ import { Tabs } from "expo-router";
 import { CalendarDays, Circle, Home, Route } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
 import { TrainingPreferencesEditor } from "@/components/settings/training-preferences/TrainingPreferencesEditor";
-import { useRecordingLifecycle } from "@/lib/hooks/useActivityRecorder";
+import { useSessionView } from "@/lib/hooks/useActivityRecorder";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGuard";
@@ -68,7 +68,7 @@ export default function InternalLayout() {
   const guardNavigation = useNavigationActionGuard();
   const navigateTo = useAppNavigate();
   const recorderService = useSharedActivityRecorder();
-  const recordingLifecycle = useRecordingLifecycle(recorderService);
+  const recordingLifecycle = useSessionView(recorderService)?.lifecycle ?? "idle";
   const trainingPreferencesVisible = useTrainingPreferencesSheetStore((state) => state.visible);
   const closeTrainingPreferences = useTrainingPreferencesSheetStore((state) => state.close);
 

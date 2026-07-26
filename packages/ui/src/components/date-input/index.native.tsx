@@ -2,10 +2,10 @@ import DateTimePicker, {
   DateTimePickerAndroid,
   type DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
+import { formatDateOnly, parseDateOnlyToDate } from "@repo/core/utils/fitness-inputs";
 import { format } from "date-fns";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { formatDateOnly, parseDateOnlyToDate } from "../../lib/fitness-inputs";
-import { Modal, Platform, Pressable, View } from "../../lib/react-native";
+import { Modal, Platform, Pressable, View } from "react-native";
 import { getNativeTestProps } from "../../lib/test-props";
 import { Button } from "../button/index.native";
 import { Label } from "../label/index.native";

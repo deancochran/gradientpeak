@@ -15,11 +15,3 @@ export function contentVisibilityIsPublic(visibility: ContentVisibility): boolea
 export function contentVisibilityIsPrivate(visibility: ContentVisibility): boolean {
   return visibility === "private";
 }
-
-export function legacyPrivateFlagToContentVisibility(isPrivate: boolean): ContentVisibility {
-  return isPrivate ? "private" : "followers";
-}
-
-export function contentVisibilityToLegacyPrivateFlag(visibility: ContentVisibility): boolean {
-  return visibility === "private";
-}

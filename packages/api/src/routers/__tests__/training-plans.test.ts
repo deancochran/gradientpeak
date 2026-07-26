@@ -131,65 +131,6 @@ const systemTemplateRows = SYSTEM_TEMPLATES.map((template) => ({
   structure_hash: activityPlanStructureHash(template.structure),
 }));
 
-function createSupabaseMock(
-  results: QueryMap,
-  filters: Array<{ table: string; operator: string; column: string; value: unknown }> = [],
-) {
-  const counters = new Map<string, number>();
-
-  return {
-    from: (table: string) => {
-      const entry = results[table];
-      const baseResult =
-        !entry || !Array.isArray(entry)
-          ? (entry ?? { data: [], error: null })
-          : (() => {
-              const index = counters.get(table) ?? 0;
-              counters.set(table, index + 1);
-              return entry[index] ?? entry[entry.length - 1] ?? { data: [], error: null };
-            })();
-      const result =
-        table === "activities" && Array.isArray(baseResult.data)
-          ? {
-              ...baseResult,
-              data: baseResult.data.map((row: Record<string, unknown>) => ({
-                ...row,
-                finished_at: row.finished_at ?? row.started_at,
-              })),
-            }
-          : baseResult;
-      const builder: any = {
-        select: vi.fn(() => builder),
-        update: vi.fn(() => builder),
-        insert: vi.fn(() => builder),
-        delete: vi.fn(() => builder),
-        eq: vi.fn(() => builder),
-        neq: vi.fn(() => builder),
-        not: vi.fn(() => builder),
-        or: vi.fn(() => builder),
-        gte: vi.fn((column: string, value: unknown) => {
-          filters.push({ table, operator: "gte", column, value });
-          return builder;
-        }),
-        lte: vi.fn((column: string, value: unknown) => {
-          filters.push({ table, operator: "lte", column, value });
-          return builder;
-        }),
-        lt: vi.fn(() => builder),
-        in: vi.fn(() => builder),
-        order: vi.fn(() => builder),
-        single: vi.fn(() => Promise.resolve(result)),
-        maybeSingle: vi.fn(() => Promise.resolve(result)),
-        limit: vi.fn(() => builder),
-        then: (onFulfilled: (value: QueryResult) => unknown) =>
-          Promise.resolve(result).then(onFulfilled),
-      };
-
-      return builder;
-    },
-  };
-}
-
 function createTrainingPlansCaller(results: QueryMap = {}) {
   const activityEntries = Array.isArray(results.activities)
     ? results.activities
@@ -224,7 +165,9 @@ function createTrainingPlansCaller(results: QueryMap = {}) {
           },
           distanceMeters: activity.distance_meters,
           averageHeartRateBpm: activity.avg_heart_rate ?? undefined,
-          averagePowerWatts: activity.normalized_power ?? undefined,
+          ...(typeof activity.avg_power === "number"
+            ? { normalizedPowerWatts: activity.avg_power }
+            : {}),
         },
       };
     });
@@ -240,7 +183,6 @@ function createTrainingPlansCaller(results: QueryMap = {}) {
 
   return trainingPlansRouter.createCaller({
     db: db as any,
-    supabase: createSupabaseMock(results) as any,
     session: {
       user: {
         id: "profile-123",
@@ -333,7 +275,6 @@ function buildLoadActivity(id: string, startedAt: Date, normalizedPower: number 
     max_power: normalizedPower,
     avg_speed_mps: null,
     max_speed_mps: null,
-    normalized_power: normalizedPower,
     normalized_speed_mps: null,
     normalized_graded_speed_mps: null,
   };
@@ -459,132 +400,7 @@ function assertSaneProjectionDiagnostics(diagnostics: any) {
 }
 
 describe("deriveProfileAwareCreationContext", () => {
-  it("falls back to empty arrays when one source query fails", async () => {
-    const supabase = createSupabaseMock({
-      activities: {
-        data: [
-          {
-            started_at: "2026-01-10T10:00:00.000Z",
-            activity_category: "run",
-            duration_seconds: 3600,
-            training_stress_score: 65,
-          },
-        ],
-        error: null,
-      },
-      activity_efforts: {
-        data: null,
-        error: { message: "efforts query failed" },
-      },
-      profile_metrics: {
-        data: [
-          {
-            metric_type: "weight_kg",
-            value: 72,
-            recorded_at: "2026-01-05T00:00:00.000Z",
-          },
-        ],
-        error: null,
-      },
-    });
-
-    await expect(
-      deriveProfileAwareCreationContext({
-        supabase: supabase as any,
-        store: {
-          getContextSnapshot: async () => ({
-            profile: { dob: null, gender: null },
-            profileMetrics: [],
-            recentEfforts: [],
-          }),
-        },
-        profileId: "profile-123",
-      }),
-    ).resolves.toMatchObject({
-      athleteContext: {
-        evidence: {
-          activityEffortsCoverage: "unknown",
-          profileMetricsCoverage: "complete",
-        },
-      },
-      contextSummary: {
-        history_availability_state: expect.any(String),
-        rationale_codes: expect.any(Array),
-      },
-      loadBootstrapState: {
-        starting_ctl: expect.any(Number),
-        starting_atl: expect.any(Number),
-        starting_tsb: expect.any(Number),
-      },
-    });
-  });
-
-  it("uses the effective athlete snapshot for personalized creation inputs", async () => {
-    const activityId = "00000000-0000-4000-8000-000000000101";
-    const result = await deriveProfileAwareCreationContext({
-      supabase: createSupabaseMock({
-        activities: { data: [], error: null },
-        activity_efforts: {
-          data: [
-            {
-              id: "effort-1",
-              activity_id: activityId,
-              recorded_at: "2026-05-30T00:00:00.000Z",
-              effort_type: "power",
-              duration_seconds: 1200,
-              value: 300,
-              activity_category: "bike",
-              unit: "watts",
-              source: "imported",
-              method: "activity_file_best_effort",
-              calculation_version: "activity-file-best-effort-v1",
-              quality_score: null,
-              provenance: { activity_id: activityId, derived_from: "activity_file_stream" },
-            },
-          ],
-          error: null,
-        },
-        profile_metrics: {
-          data: [
-            {
-              id: "weight-1",
-              metric_type: "weight_kg",
-              value: 72,
-              unit: "kg",
-              recorded_at: "2026-05-01T00:00:00.000Z",
-              source: "provider",
-            },
-          ],
-          error: null,
-        },
-        profiles: { data: [{ dob: null, gender: null }], error: null },
-        profile_training_settings: { data: null, error: null },
-      }) as any,
-      store: {
-        getContextSnapshot: async () => ({
-          profile: { dob: null, gender: null },
-          profileMetrics: [],
-          recentEfforts: [],
-        }),
-      },
-      profileId: "profile-123",
-      asOfIso: "2026-06-01T00:00:00.000Z",
-    });
-
-    expect(result.athleteContext.body.weightKg.value).toBe(72);
-    expect(result.athleteContext.physiology.ftpWatts).toMatchObject({
-      value: 285,
-      source: "activity_effort",
-    });
-    expect(result.contextSummary.missing_optional_calibration_fields).not.toContain("ftp");
-    expect(result.athleteContext.evidence).toMatchObject({
-      asOf: "2026-06-01T00:00:00.000Z",
-      profileMetricsCoverage: "complete",
-      activityEffortsCoverage: "complete",
-    });
-  });
-
-  it("caps recent activity reads at asOf for Drizzle and legacy Supabase", async () => {
+  it("caps recent activity reads at asOf through Drizzle", async () => {
     const asOfIso = "2026-01-10T12:00:00.000Z";
     const whereArgs: unknown[] = [];
     const drizzleDb = createQueryMapDbMock({
@@ -633,41 +449,6 @@ describe("deriveProfileAwareCreationContext", () => {
     expect(activityQuery.sql).toContain('"activities"."started_at" <=');
     expect(activityQuery.sql).toContain('"activities"."finished_at" <=');
     expect(activityQuery.params).toContain(asOfIso);
-
-    const legacyFilters: Array<{
-      table: string;
-      operator: string;
-      column: string;
-      value: unknown;
-    }> = [];
-    await deriveProfileAwareCreationContext({
-      supabase: createSupabaseMock(
-        {
-          activities: { data: [], error: null },
-          activity_efforts: { data: [], error: null },
-          profile_metrics: { data: [], error: null },
-          profiles: { data: [], error: null },
-          profile_training_settings: { data: null, error: null },
-        },
-        legacyFilters,
-      ) as any,
-      store: store as any,
-      profileId: "profile-123",
-      asOfIso,
-    });
-
-    expect(legacyFilters).toContainEqual({
-      table: "activities",
-      operator: "lte",
-      column: "started_at",
-      value: asOfIso,
-    });
-    expect(legacyFilters).toContainEqual({
-      table: "activities",
-      operator: "lte",
-      column: "finished_at",
-      value: asOfIso,
-    });
   });
 });
 
@@ -1671,7 +1452,10 @@ describe("trainingPlansRouter analytics endpoints", () => {
       maturity: "mature",
       coverageStatus: "complete",
     });
-    expect(result).toMatchObject({ ctl: 45, atl: 52, tsb: -7, form: expect.any(String) });
+    expect(result).not.toHaveProperty("ctl");
+    expect(result).not.toHaveProperty("atl");
+    expect(result).not.toHaveProperty("tsb");
+    expect(result).not.toHaveProperty("form");
     expect(result?.commonWeekProgress).toMatchObject({
       status: "available",
       completed: { load: 45 },
@@ -1683,7 +1467,8 @@ describe("trainingPlansRouter analytics endpoints", () => {
         request: { startDate: expect.any(String), endDate: expect.any(String) },
       }),
     );
-    expect(result?.weekProgress).toEqual(result?.legacyTssWeekProgress);
+    expect(result).not.toHaveProperty("weekProgress");
+    expect(result).not.toHaveProperty("legacyTssWeekProgress");
   });
 
   it("returns ideal curve projection payload shape", async () => {

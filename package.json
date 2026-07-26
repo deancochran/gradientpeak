@@ -1,17 +1,17 @@
 {
   "name": "gradientpeak",
   "devDependencies": {
-    "@biomejs/biome": "^2.2.5",
-    "concurrently": "^9.2.1",
-    "kill-port-cli": "^1.0.2",
-    "knip": "^6.4.1",
-    "lefthook": "^2.1.6",
-    "turbo": "^2.6.3",
+    "@biomejs/biome": "2.4.8",
+    "concurrently": "^9.2.4",
+    "kill-port": "^2.0.1",
+    "knip": "^6.29.0",
+    "lefthook": "^2.1.10",
+    "turbo": "^2.10.7",
     "typescript": "5.9.3",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=24.11.1 <25"
   },
   "packageManager": "pnpm@10.33.0",
   "private": true,
@@ -27,8 +27,7 @@
     "doctor": "node tooling/doctor.mjs",
     "multisport:legacy-denylist": "node --test tooling/multisport/legacy-denylist.self-test.mjs && node tooling/multisport/legacy-denylist.mjs",
     "dev": "turbo run dev",
-    "dev:all": "turbo run dev",
-    "dev:clean": "pnpm exec k 3000 3100 8081 8082 || true && pnpm run self-host:down >/dev/null 2>&1 || true && printf '[dev-clean] local web/mobile dev servers and Supabase stopped\n'",
+    "dev:clean": "pnpm exec kill-port 3000 3100 8081 8082 || true && pnpm run self-host:down >/dev/null 2>&1 || true && printf '[dev-clean] local web/mobile dev servers and Supabase stopped\n'",
     "dev:e2e": "turbo run dev:e2e --parallel --ui tui",
     "dev:web": "pnpm --filter web dev",
     "dev:web:local": "pnpm --filter web dev:local",
@@ -51,15 +50,8 @@
     "db:start": "pnpm --filter @repo/db db:start",
     "db:stop": "pnpm --filter @repo/db db:stop",
     "db:status": "pnpm --filter @repo/db db:status",
-    "db:update": "pnpm --filter @repo/db db:update",
-    "db:downgrade": "pnpm --filter @repo/db db:downgrade",
-    "db:reset": "pnpm --filter @repo/db db:reset",
-    "db:migration:new": "pnpm --filter @repo/db db:migration:new",
-    "db:migration:sync": "pnpm --filter @repo/db db:migration:sync",
     "db:migration:check": "pnpm --filter @repo/db db:migration:check",
     "db:migration:list": "pnpm --filter @repo/db db:migration:list",
-    "db:migration:up": "pnpm --filter @repo/db db:migration:up",
-    "db:migration:down": "pnpm --filter @repo/db db:migration:down",
     "db:diff": "pnpm --filter @repo/db db:diff",
     "db:lint:local": "pnpm --filter @repo/db db:lint:local",
     "db:schema:fingerprint": "pnpm --filter @repo/db db:schema:fingerprint",

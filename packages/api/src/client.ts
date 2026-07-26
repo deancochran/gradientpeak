@@ -2,8 +2,6 @@ export type { inferRouterOutputs } from "@trpc/server";
 export type {
   BeginMobileRecordingUploadInput,
   BeginMobileRecordingUploadOutput,
-  ClaimLegacyMobileRecordingUploadInput,
-  ClaimLegacyMobileRecordingUploadOutput,
   MobileRecordingSubmissionInput,
   MobileRecordingSubmissionRequest,
   RecordingAcceptedArtifact,
@@ -12,8 +10,6 @@ export type {
 export {
   beginMobileRecordingUploadInputSchema,
   beginMobileRecordingUploadOutputSchema,
-  claimLegacyMobileRecordingUploadInputSchema,
-  claimLegacyMobileRecordingUploadOutputSchema,
   mobileRecordingArtifactFormatSchema,
   recordingAcceptedArtifactSchema,
   recordingSummarySubmissionInputSchema,

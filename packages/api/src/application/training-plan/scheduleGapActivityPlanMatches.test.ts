@@ -20,7 +20,7 @@ describe("schedule-gap activity plan loading", () => {
     expect(sqlTree).not.toContain("activity_plan_derived_metrics_cache");
   });
 
-  it("does not resurrect stale top-level TSS after an authoritative null", () => {
+  it("does not match a plan with unavailable authoritative TSS", () => {
     const result = buildScheduleGapActivityPlanMatches({
       targetDate: "2026-07-20",
       targetTssDelta: 70,
@@ -31,7 +31,6 @@ describe("schedule-gap activity plan loading", () => {
           id: "plan-1",
           name: "Stale plan",
           activity_category: "bike",
-          estimated_tss: 70,
           authoritative_metrics: { estimated_tss: null },
         },
       ],

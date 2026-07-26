@@ -341,12 +341,7 @@ export const profilesRouter = createTRPCRouter({
               ];
             }
             if (effort.activity_category === "run" && effort.effort_type === "speed") {
-              const speed =
-                effort.unit === "km_per_hour"
-                  ? Number(effort.value) / 3.6
-                  : effort.unit === "meters_per_second" || effort.unit === "m/s"
-                    ? Number(effort.value)
-                    : null;
+              const speed = effort.unit === "meters_per_second" ? Number(effort.value) : null;
               if (speed === null) return [];
               return [
                 {

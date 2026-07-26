@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { activityPlanCreateFormSchema, activityPlanUpdateFormSchema } from "../form-schemas";
-import { activityPlanCreateSchema, activityPlanUpdateSchema } from "../index";
+import {
+  activityPlanCreateSchema,
+  activityPlanInputSchema,
+  activityPlanUpdateSchema,
+  recordingServiceActivityPlanSchema,
+} from "../index";
 
 const structure = {
   version: 3 as const,
@@ -47,6 +52,22 @@ describe("activity plan schema composition", () => {
       name: "Updated tempo builder",
     });
   });
+
+  it("rejects plan-owned route linkage for create, update, and recording contracts", () => {
+    const route_id = "550e8400-e29b-41d4-a716-446655440000";
+
+    expect(
+      activityPlanCreateSchema.safeParse({ name: "Route plan", route_id, structure }).success,
+    ).toBe(false);
+    expect(activityPlanUpdateSchema.safeParse({ route_id }).success).toBe(false);
+    expect(
+      activityPlanInputSchema.safeParse({ name: "Route plan", route_id, structure }).success,
+    ).toBe(false);
+    expect(
+      recordingServiceActivityPlanSchema.safeParse({ name: "Route plan", route_id, structure })
+        .success,
+    ).toBe(false);
+  });
 });
 
 describe("activity plan form schema composition", () => {
@@ -76,5 +97,14 @@ describe("activity plan form schema composition", () => {
         name: "Updated evening run",
       }),
     ).toMatchObject({ name: "Updated evening run" });
+  });
+
+  it("rejects plan-owned route linkage in strict form contracts", () => {
+    const route_id = "550e8400-e29b-41d4-a716-446655440000";
+
+    expect(
+      activityPlanCreateFormSchema.safeParse({ name: "Route plan", route_id, structure }).success,
+    ).toBe(false);
+    expect(activityPlanUpdateFormSchema.safeParse({ id: route_id, route_id }).success).toBe(false);
   });
 });

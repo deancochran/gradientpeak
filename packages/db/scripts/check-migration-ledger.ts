@@ -7,60 +7,36 @@ import { dbPackageRoot } from "./_helpers";
 import { requireExplicitLocalTarget } from "./_target-safety";
 
 export type LedgerEntry = { version: string; name: string };
-type LedgerEvidence = { entries: LedgerEntry[] };
-type Policy = {
-  ledgerEvidence: { preReconciliationFile: string; postReconciliationFile: string };
-};
-
-export function classifyLedger(actual: LedgerEntry[], pre: LedgerEntry[], post: LedgerEntry[]) {
-  const serialized = JSON.stringify(actual);
-  if (serialized === JSON.stringify(pre)) return "pre-reconciliation" as const;
-  if (serialized === JSON.stringify(post)) return "post-reconciliation" as const;
-  return "unsupported-intermediate" as const;
+export function classifyLedger(actual: LedgerEntry[], active: LedgerEntry[]) {
+  return JSON.stringify(actual) === JSON.stringify(active) ? "generation-2" : "unsupported";
 }
 
 async function main() {
-  const args = process.argv.slice(2);
-  const expectsPre = args.includes("--pre-reconciliation");
-  const expectsPost = args.includes("--post-reconciliation");
-  if (expectsPre === expectsPost) {
-    throw new Error(
-      "choose exactly one ledger expectation: --pre-reconciliation or --post-reconciliation",
-    );
-  }
-  const connectionString = requireExplicitLocalTarget(args);
+  const connectionString = requireExplicitLocalTarget(process.argv.slice(2));
   const policy = JSON.parse(
     readFileSync(resolve(dbPackageRoot, "migration-policy.json"), "utf8"),
-  ) as Policy;
-  const pre = JSON.parse(
-    readFileSync(resolve(dbPackageRoot, policy.ledgerEvidence.preReconciliationFile), "utf8"),
-  ) as LedgerEvidence;
-  const post = JSON.parse(
-    readFileSync(resolve(dbPackageRoot, policy.ledgerEvidence.postReconciliationFile), "utf8"),
-  ) as LedgerEvidence;
+  ) as { activeLedgerFile: string };
+  const active = JSON.parse(
+    readFileSync(resolve(dbPackageRoot, policy.activeLedgerFile), "utf8"),
+  ) as { entries: LedgerEntry[] };
   const pool = new Pool({ connectionString });
   try {
     const result = await pool.query<LedgerEntry>(
       "select version, name from supabase_migrations.schema_migrations order by version",
     );
-    const state = classifyLedger(result.rows, pre.entries, post.entries);
-    const expected = expectsPre ? "pre-reconciliation" : "post-reconciliation";
-    if (state !== expected) {
+    if (classifyLedger(result.rows, active.entries) !== "generation-2")
       throw new Error(
-        `ledger is ${state}, expected ${expected}; stop without repairing an unsupported intermediate ledger`,
+        "ledger is unsupported; generation 2 is hard-reset-only and migration repair is forbidden",
       );
-    }
-    console.log(`[db:migration:ledger] ${result.rows.length} versions match ${expected} evidence`);
+    console.log("[db:migration:ledger] exact generation 2 baseline ledger verified");
   } finally {
     await pool.end();
   }
 }
-
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === `file://${process.argv[1]}`)
   main().catch((error) => {
     console.error(
       `[db:migration:ledger] ${error instanceof Error ? error.message : String(error)}`,
     );
     process.exit(1);
   });
-}

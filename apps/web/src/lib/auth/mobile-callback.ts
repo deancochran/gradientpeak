@@ -36,14 +36,8 @@ export function getAllowedMobileAuthSchemePrefixes(
     .filter((value): value is string => value !== null);
   if (explicit?.length) return [...new Set(explicit)];
 
-  const configuredUris = [
-    env.NEXT_PUBLIC_MOBILE_AUTH_REDIRECT_URI,
-    env.NEXT_PUBLIC_MOBILE_AUTH_REDIRECT_FALLBACK,
-    env.NEXT_PUBLIC_MOBILE_REDIRECT_URI,
-    env.NEXT_PUBLIC_MOBILE_REDIRECT_FALLBACK,
-    env.EXPO_PUBLIC_REDIRECT_URL,
-  ];
-  const configuredSchemes = [env.EXPO_PUBLIC_APP_SCHEME, env.APP_SCHEME]
+  const configuredUris = [env.AUTH_MOBILE_CALLBACK_URL];
+  const configuredSchemes = [env.AUTH_MOBILE_SCHEME]
     .filter((value): value is string => Boolean(value))
     .map((value) => normalizeSchemePrefix(`${value}://`))
     .filter((value): value is string => value !== null);
@@ -56,7 +50,7 @@ export function getAllowedMobileAuthSchemePrefixes(
   if (configured.length > 0) return configured;
 
   return env.NODE_ENV === "production"
-    ? ["gradientpeak://"]
+    ? []
     : ["gradientpeak://", "gradientpeak-dev://", "gradientpeak-prev://"];
 }
 

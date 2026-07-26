@@ -22,7 +22,10 @@ export type WahooIntegrationRecord = {
 export type WahooEventResourceProviderMetadata = {
   wahoo?: {
     planId?: number;
+    projectionHash?: string;
     routeId?: number;
+    sourcePlanId?: string;
+    sourceRouteId?: string | null;
   };
 };
 
@@ -100,11 +103,11 @@ export interface WahooRepository {
       description: string | null;
       id: string;
       name: string;
-      routeId: string | null;
       structure: unknown;
       updatedAt: string;
     } | null;
     id: string;
+    routeId: string | null;
     startsAt: string;
   } | null>;
   getProfileSyncMetrics(profileId: string): Promise<{

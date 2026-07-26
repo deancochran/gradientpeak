@@ -1,6 +1,4 @@
 import { z } from "zod";
-import type { AggregatedStream } from "../calculations";
-import { calculateHRZones, calculatePowerZones } from "../calculations";
 import {
   COMMON_RELATIVE_LOAD_MODEL,
   COMMON_RELATIVE_LOAD_VERSION,
@@ -14,6 +12,8 @@ import {
 import { calculateHeartRateZoneStress } from "../load/heart-rate-zone-stress";
 import { calculateTrainingTSS, getTrainingIntensityZone } from "../load/tss";
 import { type CanonicalSport, canonicalSportValues } from "../schemas/sport";
+import { calculateHRZoneDistribution } from "../zones/hr";
+import { calculatePowerZoneDistribution } from "../zones/power";
 import { type ActivityTssMethod, completedActivityCalculationPolicy } from "./calculation-policy";
 import {
   type ActivityCalibrationQuality,
@@ -25,6 +25,7 @@ import type {
   ActivityZoneEntry,
   CurrentActivityTssIdentity,
 } from "./contracts";
+import type { AggregatedStream } from "./stream-contract";
 
 export type ActivityAnalysisContext = {
   profileMetrics: {
@@ -1034,11 +1035,11 @@ export function analyzeActivityDerivedMetrics(
   });
 
   const hrZones = toZoneEntries(
-    calculateHRZones(streams?.heart_rate ?? undefined, lthr),
+    calculateHRZoneDistribution(streams?.heart_rate ?? undefined, lthr),
     HR_ZONE_LABELS,
   );
   const powerZones = toZoneEntries(
-    calculatePowerZones(streams?.power ?? undefined, ftp),
+    calculatePowerZoneDistribution(streams?.power ?? undefined, ftp),
     POWER_ZONE_LABELS,
   );
 

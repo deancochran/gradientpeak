@@ -6,10 +6,13 @@ export interface SearchFieldProps {
   loading?: boolean;
   loadingLabel?: string;
   maxLength?: number;
-  name?: string;
   onSubmit?: () => void;
   onValueChange: (value: string) => void;
   placeholder: string;
   testId?: string;
   value: string;
+}
+
+export interface SearchFieldWebProps extends SearchFieldProps {
+  name?: string;
 }

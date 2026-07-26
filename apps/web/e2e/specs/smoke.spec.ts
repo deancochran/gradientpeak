@@ -54,15 +54,6 @@ test("athlete can reach the migrated profile routes from the shell", async ({ at
   await expect(athletePage.getByRole("heading", { name: /following$/i })).toBeVisible();
 });
 
-test("legacy profile coaching route no longer renders a coaching environment", async ({
-  coachPage,
-}) => {
-  await openAppPage(coachPage, "/coaching");
-
-  await expect(coachPage).toHaveURL(/\/$/);
-  await expect(coachPage.getByRole("heading", { name: /coaching dashboard/i })).toHaveCount(0);
-});
-
 test("organization coaching routes fail closed outside an authorized coach membership", async ({
   coachPage,
 }) => {

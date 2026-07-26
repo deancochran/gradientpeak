@@ -2,7 +2,6 @@ import {
   type ActivityPlanIntervalStep,
   activityPlanStructureSchemaV3,
   compileActivityPlanV3,
-  decodePolyline,
 } from "@repo/core";
 import { useMemo } from "react";
 import type { SportLoadMeasurement } from "@/components/shared/SportLoadBreakdown";
@@ -18,11 +17,6 @@ type ActivityPlanLike = {
     estimated_distance?: number | null;
   } | null;
   category_loads?: readonly SportLoadMeasurement[];
-  route?: {
-    distance?: number | null;
-    ascent?: number | null;
-    descent?: number | null;
-  } | null;
   profile_id?: string | null;
   structure?: unknown;
   [key: string]: unknown;
@@ -36,10 +30,6 @@ type ProfileLike = {
   id?: string | null;
 };
 
-type RouteLike = {
-  polyline?: string | null;
-};
-
 interface UseActivityPlanDetailViewModelParams {
   activityPlanParam?: string;
   fetchedPlan: ActivityPlanLike | null | undefined;
@@ -47,7 +37,6 @@ interface UseActivityPlanDetailViewModelParams {
   isScheduled: boolean;
   plannedActivity: PlannedActivityLike | null | undefined;
   profile: ProfileLike | null | undefined;
-  route: RouteLike | null | undefined;
   template?: string;
 }
 
@@ -58,7 +47,6 @@ export function useActivityPlanDetailViewModel({
   isScheduled,
   plannedActivity,
   profile,
-  route,
   template,
 }: UseActivityPlanDetailViewModelParams) {
   const activityPlan = useMemo(() => {
@@ -121,25 +109,11 @@ export function useActivityPlanDetailViewModel({
       ]
     : [];
 
-  const routeCoordinates = route?.polyline ? decodePolyline(route.polyline) : null;
-  const routePreview = routeCoordinates?.length
-    ? {
-        coordinates: routeCoordinates,
-        initialRegion: {
-          latitude: routeCoordinates[Math.floor(routeCoordinates.length / 2)].latitude,
-          longitude: routeCoordinates[Math.floor(routeCoordinates.length / 2)].longitude,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
-        },
-      }
-    : null;
-
   return {
     activityPlan,
     detailBadges,
     intensityFactor,
     isOwnedByUser,
-    routePreview,
     steps,
     tss,
     durationLabel: formatDuration(durationMinutes * 60),

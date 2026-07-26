@@ -1,4 +1,4 @@
-import type { AggregatedStream } from "../calculations";
+import type { AggregatedStream } from "../activity-analysis/stream-contract";
 import type { FiveZoneRanges } from "./definitions";
 
 export function estimateMaxHRFromAge(age: number): number {

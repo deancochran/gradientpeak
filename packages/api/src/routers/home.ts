@@ -2,7 +2,6 @@ import {
   activityPlanStructureSchemaV3,
   activityTssIdentityMethodValues,
   addDaysDateOnlyUtc,
-  calculateAge,
   calculateRollingTrainingQuality,
   canonicalSportSchema,
   getLoadBalanceStatus,
@@ -17,6 +16,7 @@ import {
   commonLoadHistoryResultSchema,
   commonLoadResultSchema,
 } from "@repo/core/load";
+import { calculateAge } from "@repo/core/profile/date-of-birth";
 import { getScheduledDateKey, isValidIanaTimeZone } from "@repo/core/utils/schedule-date";
 import { schema, type TrainingPlanRow } from "@repo/db";
 import { and, asc, eq, gte, isNotNull, lte, sql } from "drizzle-orm";
@@ -38,7 +38,6 @@ import {
   loadActivitySegmentsByActivityId,
   summarizeSegmentTss,
 } from "../lib/activity-analysis";
-import { deriveNormalizedPowerCompatibilityProjectionFromSegments } from "../lib/activity-analysis/activity-normalized-power";
 import { featureFlags } from "../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { buildWorkloadEnvelopes } from "../utils/workload";
@@ -267,8 +266,6 @@ const dashboardResponseSchema = z
           ctl: z.number(),
           atl: z.number(),
           tsb: z.number(),
-          /** @deprecated Common Load is the primary projected dose. */
-          plannedTss: z.number().nullable(),
           plannedLoad: z.number(),
           status: z.enum(["complete", "partial"]),
         })
@@ -342,7 +339,6 @@ export function projectCommonLoad(input: {
       ctl: Math.round(longTermLoad * 10) / 10,
       atl: Math.round(recentLoad * 10) / 10,
       tsb: Math.round((longTermLoad - recentLoad) * 10) / 10,
-      plannedTss: null,
       plannedLoad: Math.round(plannedLoad * 10) / 10,
       status: complete ? ("complete" as const) : ("partial" as const),
     };
@@ -368,12 +364,10 @@ const dashboardActivitySchema = z
     max_power: z.number().int().nullable(),
     avg_speed_mps: z.number().nullable(),
     max_speed_mps: z.number().nullable(),
-    normalized_power: z.number().nullable(),
     normalized_speed_mps: z.number().nullable(),
     normalized_graded_speed_mps: z.number().nullable(),
   })
   .strict();
-const dashboardActivitySourceSchema = dashboardActivitySchema.omit({ normalized_power: true });
 
 async function listDashboardActivitiesInRange(
   db: ReturnType<typeof getRequiredDb>,
@@ -409,21 +403,15 @@ async function listDashboardActivitiesInRange(
     )
     .orderBy(asc(schema.activities.started_at));
 
-  const activities = dashboardActivitySourceSchema.array().parse(rows);
+  const activities = dashboardActivitySchema.array().parse(rows);
   const segmentsByActivityId = await loadActivitySegmentsByActivityId(
     db,
     activities.map((activity) => activity.id),
   );
-  return activities.map((activity) => {
-    const segments = segmentsByActivityId.get(activity.id) ?? [];
-    return {
-      ...dashboardActivitySchema.parse({
-        ...activity,
-        normalized_power: deriveNormalizedPowerCompatibilityProjectionFromSegments(segments),
-      }),
-      segments,
-    };
-  });
+  return activities.map((activity) => ({
+    ...activity,
+    segments: segmentsByActivityId.get(activity.id) ?? [],
+  }));
 }
 
 export function getPlanCategoryComposition(structure: unknown) {
@@ -529,11 +517,11 @@ export const homeRouter = createTRPCRouter({
           and(
             eq(schema.events.profile_id, userId),
             eq(schema.events.event_type, "planned"),
-            gte(schema.events.starts_at, today),
+            gte(schema.events.scheduled_date, todayDate),
             isNotNull(schema.events.training_plan_id),
           ),
         )
-        .orderBy(asc(schema.events.starts_at))
+        .orderBy(asc(schema.events.scheduled_date), asc(schema.events.starts_at))
         .limit(1)
         .then((rows) => rows[0] ?? null);
 
@@ -626,8 +614,8 @@ export const homeRouter = createTRPCRouter({
         await loadPlannedActivitiesWithEstimations(db, {
           estimationStore,
           profileId: userId,
-          startsAtGte: startOfWeek,
-          startsAtLt: scheduleEnd,
+          scheduledDateGte: currentWeek.startDate,
+          scheduledDateLt: scheduleEndDate,
         });
 
       // --- 6. Primary fitness trends use the canonical daily common Load history. ---

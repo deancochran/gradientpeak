@@ -29,7 +29,7 @@ export function buildUpcomingActivityImpact(input: {
     .map((planned) => {
       const plan = planned.activity_plan ?? {};
       const planId = plan.id ?? planned.id ?? planned.starts_at;
-      const scheduledDate = planned.scheduled_date ?? String(planned.starts_at ?? "").slice(0, 10);
+      const scheduledDate = planned.scheduled_date;
       const estimatedLoadRaw = plan.id ? Number(input.estimatedTssByPlanId.get(plan.id) || 0) : 0;
       const estimatedLoad =
         Number.isFinite(estimatedLoadRaw) && estimatedLoadRaw > 0 ? estimatedLoadRaw : null;

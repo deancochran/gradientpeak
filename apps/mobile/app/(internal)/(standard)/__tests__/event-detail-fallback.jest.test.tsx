@@ -30,6 +30,14 @@ const eventDetailData: {
   all_day: boolean;
   notes: string;
   activity_plan: ActivityPlanFixture | null;
+  route?: {
+    id: string;
+    name: string;
+    total_ascent: number;
+    total_descent: number;
+    total_distance: number;
+  } | null;
+  route_id?: string | null;
   recurrence_rule: string | null;
   series_id: string | null;
   occurrence_key: string | null;
@@ -63,6 +71,7 @@ const eventQueryState = {
 };
 
 const routerNavigateMock = jest.fn();
+const navigateToMock = jest.fn();
 const deleteEventMutateMock = jest.fn();
 
 type StackScreenProps = Record<string, unknown> & {
@@ -106,7 +115,7 @@ jest.mock("expo-router", () => ({
 
 jest.mock("@/lib/navigation/useAppNavigate", () => ({
   __esModule: true,
-  useAppNavigate: () => jest.fn(),
+  useAppNavigate: () => navigateToMock,
 }));
 
 jest.mock("@/components/ScheduleActivityModal", () => ({
@@ -117,6 +126,10 @@ jest.mock("@/components/ScheduleActivityModal", () => ({
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
   ActivityPlanCard: createHost("ActivityPlanCard"),
+}));
+jest.mock("@/components/shared/RouteCard", () => ({
+  __esModule: true,
+  RouteCard: createHost("RouteCard"),
 }));
 
 jest.mock("@/components/shared/resource-picker", () => ({
@@ -282,6 +295,8 @@ describe("event detail fallback screen", () => {
     eventDetailData.occurrence_key = null;
     eventDetailData.original_starts_at = null;
     eventDetailData.event_type = "planned";
+    eventDetailData.route = null;
+    eventDetailData.route_id = null;
     eventDetailData.activity_plan = {
       id: "plan-1",
       name: "Tempo Builder",
@@ -320,6 +335,32 @@ describe("event detail fallback screen", () => {
     expect(screen.queryByText("Bring gels")).toBeNull();
     expect(screen.queryByTestId("event-detail-options-trigger")).toBeNull();
     expect(screen.queryByText("Comments (0)")).toBeNull();
+  });
+
+  it("renders and opens the event-owned route separately from the activity plan", () => {
+    eventDetailData.route_id = "route-1";
+    eventDetailData.route = {
+      id: "route-1",
+      name: "River Loop",
+      total_ascent: 240,
+      total_descent: 230,
+      total_distance: 12500,
+    };
+    const rendered = renderNative(<EventDetailScreen />);
+
+    const routeCard = getHostByType(rendered, "RouteCard");
+    expect(routeCard.props.route).toEqual(
+      expect.objectContaining({
+        id: "route-1",
+        total_ascent: 240,
+        total_descent: 230,
+        total_distance: 12500,
+      }),
+    );
+    expect(routeCard.props.onPress).toEqual(expect.any(Function));
+
+    fireEvent.press(routeCard);
+    expect(navigateToMock).toHaveBeenCalledWith(ROUTES.ROUTES.DETAIL("route-1"));
   });
 
   it("routes the overflow edit action to the dedicated update screen", () => {

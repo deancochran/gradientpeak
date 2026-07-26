@@ -6,7 +6,7 @@ import {
   type AthleteTrainingSettingsFormInput,
   athleteTrainingSettingsFormSchema,
 } from "@repo/core/schemas/settings/profile_settings";
-import type { GoalTargetV2 } from "@repo/core/schemas/training_plan_structure";
+import type { TrainingPlanGoalTarget } from "@repo/core/schemas/training-plan-structure";
 import type { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { computeLocalCreationPreview } from "@/lib/training-plan-form/localPreview";
 import {
@@ -23,7 +23,9 @@ function toDateKey(value: Date) {
   return value.toISOString().split("T")[0] ?? "";
 }
 
-function toGoalTargets(goal: TrainingPlanSnapshot["profileGoals"][number]): GoalTargetV2[] {
+function toGoalTargets(
+  goal: TrainingPlanSnapshot["profileGoals"][number],
+): TrainingPlanGoalTarget[] {
   const objective = goal.objective;
   switch (objective.type) {
     case "event_performance": {

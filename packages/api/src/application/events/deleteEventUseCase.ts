@@ -50,7 +50,6 @@ type DeleteEventUseCaseDependencies = {
   getEventCompletionRepository: (
     ctx: Context,
   ) => ReturnType<typeof createEventCompletionRepository>;
-  plannedEventType: DbEventType;
   toCoreEventType: (eventType: DbEventType) => CoreEventType;
   toDateKey: (value: string) => string;
 };
@@ -93,7 +92,7 @@ export async function deleteEventUseCase<
         const rows = candidates as TEventRecord[];
         const transactionPermissions = dependencies.getContentPermissions(ctx, tx);
         const plannedEventIds = rows
-          .filter((row) => row.event_type === dependencies.plannedEventType && row.activity_plan_id)
+          .filter((row) => row.event_type === "planned" && row.activity_plan_id)
           .map((row) => row.id);
         if (plannedEventIds.length > 0) {
           const result = await dependencies.enqueueProviderPlannedActivityJobs(ctx, {

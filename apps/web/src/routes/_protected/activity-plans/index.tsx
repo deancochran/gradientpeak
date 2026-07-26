@@ -59,7 +59,6 @@ function ActivityPlansPage() {
     { getNextPageParam: (lastPage) => lastPage.nextCursor },
   );
   const plans = plansQuery.data?.pages.flatMap((page) => page.items) ?? [];
-  const routesQuery = api.routes.list.useQuery({ limit: 100, ownerScope: "all" });
   const createMutation = api.activityPlans.create.useMutation({
     onSuccess: async (plan) => {
       await utils.activityPlans.invalidate();
@@ -80,7 +79,6 @@ function ActivityPlansPage() {
           onCancel={() => setCreating(false)}
           onSave={(values) => createMutation.mutateAsync(values).then(() => undefined)}
           pending={createMutation.isPending}
-          routeOptions={routesQuery.data?.items ?? []}
         />
       </div>
     );

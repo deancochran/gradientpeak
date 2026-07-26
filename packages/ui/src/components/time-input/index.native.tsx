@@ -4,7 +4,7 @@ import DateTimePicker, {
 } from "@react-native-community/datetimepicker";
 import { format } from "date-fns";
 import { useMemo, useState } from "react";
-import { Modal, Platform, Pressable, View } from "../../lib/react-native";
+import { Modal, Platform, Pressable, View } from "react-native";
 import { getNativeTestProps } from "../../lib/test-props";
 import { Button } from "../button/index.native";
 import { Label } from "../label/index.native";

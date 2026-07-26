@@ -12,10 +12,8 @@ import {
   getAllowedMobileAuthSchemePrefixes,
 } from "../../lib/auth/mobile-callback";
 
-const DEFAULT_MOBILE_DEEP_LINK = "gradientpeak://callback?intent=post-sign-in";
-
 function getPublicWebAppUrl(request: Request) {
-  return process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? getRequestBaseUrl(request);
+  return process.env.APP_URL ?? getRequestBaseUrl(request);
 }
 
 function getAllowedDeepLinkPrefixes() {
@@ -23,11 +21,25 @@ function getAllowedDeepLinkPrefixes() {
 }
 
 function getPreferredMobileScheme() {
-  return getAllowedDeepLinkPrefixes()[0]?.replace(/:\/\/$/, "") ?? "gradientpeak";
+  return getAllowedDeepLinkPrefixes()[0]?.replace(/:\/\/$/, "");
 }
 
 function getDefaultDeepLinkTarget() {
-  return process.env.NEXT_PUBLIC_MOBILE_AUTH_REDIRECT_URI ?? DEFAULT_MOBILE_DEEP_LINK;
+  const configuredTarget = process.env.AUTH_MOBILE_CALLBACK_URL;
+  const allowedPrefixes = getAllowedDeepLinkPrefixes();
+
+  if (
+    configuredTarget &&
+    isAllowedMobileCallbackUrl(configuredTarget, {
+      allowedSchemePrefixes: allowedPrefixes,
+      callbackPath: "callback",
+    })
+  ) {
+    return configuredTarget;
+  }
+
+  const scheme = getPreferredMobileScheme();
+  return scheme ? `${scheme}://callback?intent=post-sign-in` : undefined;
 }
 
 function getDefaultWebFallback(request: Request) {
@@ -79,6 +91,11 @@ export async function handleAuthConfirmRequest(request: Request) {
   }
 
   if (target === "mobile" && parsedIntent.success) {
+    const mobileScheme = getPreferredMobileScheme();
+    if (!mobileScheme) {
+      return Response.redirect(fallback, 302);
+    }
+
     const mobileTarget = buildMobileCallbackUrl(
       {
         intent: parsedIntent.data,
@@ -86,7 +103,7 @@ export async function handleAuthConfirmRequest(request: Request) {
         ...(code ? { code } : {}),
       },
       {
-        mobileScheme: getPreferredMobileScheme(),
+        mobileScheme,
         mobileCallbackPath: "callback",
       },
     );
@@ -101,16 +118,9 @@ export async function handleAuthConfirmRequest(request: Request) {
   }
 
   if (searchParams.get("token") || searchParams.get("intent")) {
-    return createMobileCallbackTrampolineResponse(next, fallback);
-  }
-
-  if (searchParams.get("token_hash") || searchParams.get("type")) {
-    const errorUrl = new URL("/auth/error", getPublicWebAppUrl(request));
-    errorUrl.searchParams.set(
-      "error",
-      "This verification link uses the retired Supabase OTP flow. Request a new email and try again.",
-    );
-    return Response.redirect(errorUrl, 302);
+    return next
+      ? createMobileCallbackTrampolineResponse(next, fallback)
+      : Response.redirect(fallback, 302);
   }
 
   const errorUrl = new URL("/auth/error", getPublicWebAppUrl(request));

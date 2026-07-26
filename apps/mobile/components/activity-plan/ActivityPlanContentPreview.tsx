@@ -5,15 +5,11 @@ import type {
   ActivityPlanStructureV3,
   ActivityPlanTarget,
 } from "@repo/core";
-import { decodePolyline, deriveActivityPlanPresentation, formatDurationSec } from "@repo/core";
+import { deriveActivityPlanPresentation, formatDurationSec } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { useMemo } from "react";
-import { Pressable, View } from "react-native";
-import { ElevationProfileChart } from "@/components/activity/charts/ElevationProfileChart";
+import { View } from "react-native";
 import { TimelineChart } from "@/components/activity-plan/workout/TimelineChart";
-import { StaticRouteMapPreview } from "@/components/shared/StaticRouteMapPreview";
-import { getActivityPlanRoute } from "@/lib/activityPlanMetrics";
-import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 
 type ActivityPlanPreviewLike = {
   estimated_duration_minutes?: number | null;
@@ -23,52 +19,16 @@ type ActivityPlanPreviewLike = {
     intensity_factor?: number | null;
     estimated_distance?: number | null;
   } | null;
-  route?: {
-    distance?: number | null;
-    ascent?: number | null;
-    descent?: number | null;
-  } | null;
-  /** @deprecated Activity plan routes are no longer owned by plans. */
-  route_id?: string | null;
   structure?: unknown;
-};
-
-type RouteLike = {
-  name?: string | null;
-  polyline?: string | null;
-  total_ascent?: number | null;
-  total_descent?: number | null;
-  total_distance?: number | null;
-};
-
-type FullRouteLike = {
-  coordinates?: Array<{ latitude: number; longitude: number; altitude?: number }>;
 };
 
 type ActivityPlanContentPreviewProps = {
   compact?: boolean;
-  onRoutePress?: (() => void) | null;
   plan: ActivityPlanPreviewLike | null | undefined;
   presentation?: ActivityPlanPresentationModel | null;
-  route?: RouteLike | null;
-  routeFull?: FullRouteLike | null;
-  showRoutePreview?: boolean;
   size?: "small" | "medium" | "large";
   testIDPrefix?: string;
 };
-
-function readMetric(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string" && value.trim().length > 0) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  return null;
-}
 
 function flattenSteps(structure: ActivityPlanStructureV3 | null): ActivityPlanIntervalStep[] {
   if (!structure) return [];
@@ -158,127 +118,26 @@ function formatSemanticLabel(value: string): string {
   return value.charAt(0).toLocaleUpperCase() + value.slice(1);
 }
 
-function RouteMetricCell({ label, value }: { label: string; value: string }) {
-  return (
-    <View className="flex-1 items-center gap-0.5">
-      <Text className="text-[10px] text-muted-foreground">{label}</Text>
-      <Text className="text-[11px] font-semibold text-foreground" numberOfLines={1}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
-function calculateCoordinateDistance(
-  left: { latitude: number; longitude: number },
-  right: { latitude: number; longitude: number },
-): number {
-  const earthRadiusMeters = 6371e3;
-  const lat1 = (left.latitude * Math.PI) / 180;
-  const lat2 = (right.latitude * Math.PI) / 180;
-  const deltaLat = ((right.latitude - left.latitude) * Math.PI) / 180;
-  const deltaLng = ((right.longitude - left.longitude) * Math.PI) / 180;
-
-  const a =
-    Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) * Math.sin(deltaLng / 2);
-
-  return earthRadiusMeters * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
-}
-
-function buildRouteStreams(
-  coordinates: Array<{ latitude: number; longitude: number; altitude?: number }> | undefined,
-): { distanceStream: DecompressedStream; elevationStream: DecompressedStream } | null {
-  if (!coordinates || coordinates.length < 2) {
-    return null;
-  }
-
-  const elevatedCoordinates = coordinates.filter((point) => typeof point.altitude === "number");
-  if (elevatedCoordinates.length < 2) {
-    return null;
-  }
-
-  const distanceValues: number[] = [];
-  const elevationValues: number[] = [];
-  const timestamps: number[] = [];
-  let cumulativeDistance = 0;
-
-  elevatedCoordinates.forEach((point, index) => {
-    if (index > 0) {
-      const previous = elevatedCoordinates[index - 1];
-      if (previous) cumulativeDistance += calculateCoordinateDistance(previous, point);
-    }
-
-    distanceValues.push(cumulativeDistance);
-    elevationValues.push(point.altitude as number);
-    timestamps.push(index);
-  });
-
-  return {
-    distanceStream: {
-      type: "distance",
-      dataType: "float",
-      values: distanceValues,
-      timestamps,
-      sampleCount: distanceValues.length,
-    },
-    elevationStream: {
-      type: "elevation",
-      dataType: "float",
-      values: elevationValues,
-      timestamps,
-      sampleCount: elevationValues.length,
-    },
-  };
-}
-
 export function ActivityPlanContentPreview({
   compact = false,
-  onRoutePress,
   plan,
   presentation,
-  route,
-  routeFull,
-  showRoutePreview = true,
   size,
   testIDPrefix,
 }: ActivityPlanContentPreviewProps) {
   const resolvedSize = size ?? (compact ? "small" : "large");
-  const planRoute = getActivityPlanRoute(plan);
-  const routeDistanceMeters = readMetric(route?.total_distance ?? planRoute.distance);
-  const routeAscentMeters = readMetric(route?.total_ascent ?? planRoute.ascent);
-  const routeDescentMeters = readMetric(route?.total_descent ?? planRoute.descent);
   const presentationModel = useMemo(
     () => presentation ?? deriveActivityPlanPresentation(plan?.structure),
     [plan?.structure, presentation],
   );
   const structure = presentationModel?.structure ?? null;
   const steps = useMemo(() => flattenSteps(structure), [structure]);
-  const routeCoordinates = useMemo(
-    () =>
-      showRoutePreview && resolvedSize !== "small" && route?.polyline
-        ? decodePolyline(route.polyline)
-        : null,
-    [resolvedSize, route?.polyline, showRoutePreview],
-  );
-  const routeStreams = useMemo(
-    () => buildRouteStreams(routeFull?.coordinates),
-    [routeFull?.coordinates],
-  );
   const hasTimeline = Boolean(presentationModel?.occurrences.length);
   const maxVisibleSteps = resolvedSize === "small" ? 2 : resolvedSize === "medium" ? 3 : 4;
   const visibleSteps = steps.slice(0, maxVisibleSteps);
-  const hasRouteMap = Boolean(
-    showRoutePreview &&
-      route &&
-      routeCoordinates &&
-      routeCoordinates.length > 0 &&
-      resolvedSize !== "small",
-  );
-  const hasElevationProfile = Boolean(routeStreams);
   const hasSessionFlow = visibleSteps.length > 0 && resolvedSize === "large";
 
-  if (!plan || (!hasTimeline && !hasRouteMap && !hasElevationProfile && !hasSessionFlow)) {
+  if (!plan || (!hasTimeline && !hasSessionFlow)) {
     return null;
   }
 
@@ -297,72 +156,6 @@ export function ActivityPlanContentPreview({
             />
           ) : null}
         </View>
-      ) : routeStreams && resolvedSize !== "large" ? (
-        <ElevationProfileChart
-          elevationStream={routeStreams.elevationStream}
-          distanceStream={routeStreams.distanceStream}
-          title={resolvedSize === "small" ? undefined : "Elevation Profile"}
-          height={resolvedSize === "small" ? 88 : 150}
-          showStats={resolvedSize !== "small"}
-        />
-      ) : null}
-
-      {showRoutePreview &&
-      route &&
-      routeCoordinates &&
-      routeCoordinates.length > 0 &&
-      resolvedSize !== "small" ? (
-        <Pressable
-          onPress={onRoutePress ?? undefined}
-          disabled={!onRoutePress}
-          className="overflow-hidden rounded-2xl border border-border bg-card"
-          testID={testIDPrefix ? `${testIDPrefix}-route-card` : undefined}
-        >
-          <View className="px-3 py-3 border-b border-border bg-card">
-            {route.name ? (
-              <Text className="text-sm font-semibold text-foreground mb-2">{route.name}</Text>
-            ) : null}
-            <View className="rounded-lg bg-muted/30 px-2.5 py-2">
-              <View className="flex-row justify-between gap-2">
-                {typeof routeDistanceMeters === "number" ? (
-                  <RouteMetricCell
-                    label="Distance"
-                    value={`${(routeDistanceMeters / 1000).toFixed(1)} km`}
-                  />
-                ) : null}
-                <RouteMetricCell
-                  label="Climb"
-                  value={
-                    typeof routeAscentMeters === "number" && routeAscentMeters > 0
-                      ? `${routeAscentMeters}m`
-                      : "--"
-                  }
-                />
-                <RouteMetricCell
-                  label="Descent"
-                  value={
-                    typeof routeDescentMeters === "number" && routeDescentMeters > 0
-                      ? `${routeDescentMeters}m`
-                      : "--"
-                  }
-                />
-              </View>
-            </View>
-          </View>
-          <View className="h-36">
-            <StaticRouteMapPreview coordinates={routeCoordinates} strokeColor="#3b82f6" />
-          </View>
-        </Pressable>
-      ) : null}
-
-      {routeStreams && resolvedSize === "large" ? (
-        <ElevationProfileChart
-          elevationStream={routeStreams.elevationStream}
-          distanceStream={routeStreams.distanceStream}
-          title="Elevation Profile"
-          height={150}
-          showStats={true}
-        />
       ) : null}
 
       {hasSessionFlow ? (

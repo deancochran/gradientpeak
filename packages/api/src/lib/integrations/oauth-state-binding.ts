@@ -5,11 +5,7 @@ import { deriveOAuthCodeVerifier } from "./oauth-pkce";
 
 export function getOAuthCallbackUrl(provider: PublicIntegrationProvider): string {
   const baseUrl =
-    process.env.OAUTH_CALLBACK_BASE_URL ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
-    process.env.APP_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    "http://localhost:3000";
+    process.env.OAUTH_CALLBACK_BASE_URL || process.env.APP_URL || "http://localhost:3000";
   return `${baseUrl}/api/integrations/callback/${provider}`;
 }
 

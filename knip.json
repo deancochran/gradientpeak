@@ -8,7 +8,6 @@
   "treatConfigHintsAsErrors": true,
   "ignoreBinaries": ["ngrok", "printf"],
   "ignoreFiles": ["apps/web/src/routeTree.gen.ts"],
-  "ignoreUnresolved": ["vite/client"],
   "workspaces": {
     "apps/mobile": {
       "ignoreDependencies": [
@@ -22,6 +21,7 @@
         "expo-font",
         "expo-image",
         "expo-symbols",
+        "expo-updates",
         "lucide-react",
         "react-native-calendars",
         "react-native-url-polyfill",
@@ -49,22 +49,6 @@
         "@tanstack/router-plugin",
         "tailwindcss",
         "@tailwindcss/typography"
-      ]
-    },
-    "packages/db": {
-      "ignoreDependencies": ["supabase"]
-    },
-    "packages/api": {
-      "entry": [
-        "src/client.ts",
-        "src/context.ts",
-        "src/query-client.ts",
-        "src/react.ts",
-        "src/server.ts",
-        "src/telemetry.ts",
-        "src/telemetry-sanitizer.mjs",
-        "src/webhooks.ts",
-        "scripts/backfill-activity-evidence.ts"
       ]
     },
     "packages/ui": {

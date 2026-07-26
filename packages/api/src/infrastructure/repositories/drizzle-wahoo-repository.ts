@@ -10,8 +10,6 @@ import {
   decryptNullableProviderToken,
   decryptProviderToken,
   encryptProviderToken,
-  hasProviderTokenEncryptionKey,
-  isEncryptedProviderToken,
 } from "../../lib/provider-token-crypto";
 import type {
   CreateWahooRepositoryOptions,
@@ -33,21 +31,21 @@ function toWahooEventResourceProviderMetadata(
 ): WahooEventResourceProviderMetadata | null {
   if (!value || typeof value !== "object" || !("wahoo" in value)) return null;
 
-  const wahoo = (value as Record<string, unknown>)["wahoo"];
+  const wahoo = (value as Record<string, unknown>).wahoo;
   if (!wahoo || typeof wahoo !== "object") return null;
 
   const wahooValue = wahoo as Record<string, unknown>;
-  const metadata: NonNullable<WahooEventResourceProviderMetadata["wahoo"]> & {
-    sourcePlanId?: string;
-    sourceRouteId?: string | null;
-  } = {};
-  if (typeof wahooValue["planId"] === "number") metadata.planId = wahooValue["planId"];
-  if (typeof wahooValue["routeId"] === "number") metadata.routeId = wahooValue["routeId"];
-  if (typeof wahooValue["sourcePlanId"] === "string") {
-    metadata.sourcePlanId = wahooValue["sourcePlanId"];
+  const metadata: NonNullable<WahooEventResourceProviderMetadata["wahoo"]> = {};
+  if (typeof wahooValue.planId === "number") metadata.planId = wahooValue.planId;
+  if (typeof wahooValue.routeId === "number") metadata.routeId = wahooValue.routeId;
+  if (typeof wahooValue.projectionHash === "string") {
+    metadata.projectionHash = wahooValue.projectionHash;
   }
-  if (typeof wahooValue["sourceRouteId"] === "string" || wahooValue["sourceRouteId"] === null) {
-    metadata.sourceRouteId = wahooValue["sourceRouteId"];
+  if (typeof wahooValue.sourcePlanId === "string") {
+    metadata.sourcePlanId = wahooValue.sourcePlanId;
+  }
+  if (typeof wahooValue.sourceRouteId === "string" || wahooValue.sourceRouteId === null) {
+    metadata.sourceRouteId = wahooValue.sourceRouteId;
   }
 
   return Object.keys(metadata).length > 0 ? { wahoo: metadata } : null;
@@ -116,46 +114,13 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
 
       const accessToken = decryptProviderToken(row.accessToken);
       const refreshToken = decryptNullableProviderToken(row.refreshToken);
-      const hasLegacyCredential =
-        !isEncryptedProviderToken(row.accessToken) ||
-        (row.refreshToken !== null && !isEncryptedProviderToken(row.refreshToken));
-
-      let rekeyed: { generation: number } | undefined;
-      if (hasLegacyCredential && hasProviderTokenEncryptionKey()) {
-        [rekeyed] = await db
-          .update(schema.integrationCredentials)
-          .set({
-            access_token: encryptProviderToken(accessToken),
-            generation: sql`${schema.integrationCredentials.generation} + 1`,
-            refresh_token: refreshToken === null ? null : encryptProviderToken(refreshToken),
-            updated_at: new Date(),
-          })
-          .where(
-            and(
-              eq(schema.integrationCredentials.integration_id, row.id),
-              eq(schema.integrationCredentials.generation, row.credentialGeneration),
-              sql`exists (
-                  select 1 from integrations
-                  where integrations.id = ${row.id}
-                    and integrations.lifecycle_status = 'active'
-                    and integrations.generation = ${row.integrationGeneration}
-                )`,
-              eq(schema.integrationCredentials.access_token, row.accessToken),
-              row.refreshToken === null
-                ? isNull(schema.integrationCredentials.refresh_token)
-                : eq(schema.integrationCredentials.refresh_token, row.refreshToken),
-            ),
-          )
-          .returning({ generation: schema.integrationCredentials.generation });
-      }
-
       return {
         ...row,
         accessToken,
         refreshToken,
         expiresAt: toIsoString(row.expiresAt),
         reconnectRequiredAt: toIsoString(row.reconnectRequiredAt),
-        credentialGeneration: rekeyed?.generation ?? row.credentialGeneration,
+        credentialGeneration: row.credentialGeneration,
         lifecycleStatus: row.lifecycleStatus as "active" | "disconnect_pending" | "disconnected",
       };
     },
@@ -426,7 +391,6 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
             description: row.activityPlan.description,
             id: row.activityPlan.id,
             name: row.activityPlan.name,
-            routeId: row.routeId,
             structure: row.activityPlan.structure,
             updatedAt: row.activityPlan.updatedAt.toISOString(),
           }
@@ -434,6 +398,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
 
       return {
         id: row.id,
+        routeId: row.routeId,
         startsAt: row.startsAt.toISOString(),
         activityPlan,
       };

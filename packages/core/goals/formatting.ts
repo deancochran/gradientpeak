@@ -1,6 +1,6 @@
-import { formatPace } from "../calculations";
 import { speedToPace } from "../calculations/speed-curve";
 import type { ProfileGoal } from "../schemas";
+import { formatPace } from "../units";
 import { formatSecondsToHms } from "../utils/fitness-inputs";
 import type { GoalDraftFromGoalInput, GoalEditorDraft } from "./types";
 

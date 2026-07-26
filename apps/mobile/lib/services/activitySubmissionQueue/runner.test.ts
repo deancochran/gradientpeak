@@ -113,15 +113,6 @@ function createDeps(overrides: Partial<ActivitySubmissionQueueRunnerDeps> = {}) 
       signedUrl: "https://storage.example/upload",
       token: "signed-upload-token",
     })),
-    claimLegacyMobileRecordingUpload: vi.fn(async () => ({
-      status: "claimed" as const,
-      ingestionId: "ingestion-1",
-      activityId: "activity-1",
-      byteSize: 1024,
-      sha256: "a".repeat(64),
-      format: "fit" as const,
-      mediaType: "application/vnd.ant.fit",
-    })),
     uploadToSignedUrl: vi.fn(async () => ({ success: true })),
     now: vi.fn(() => "2026-01-01T11:01:00.000Z"),
     ...overrides,
@@ -258,7 +249,6 @@ describe("activity submission queue runner", () => {
       recordingSessionId: "recording-session-1",
       name: "Morning ride",
       notes: undefined,
-      is_private: undefined,
       content_visibility: undefined,
       startedAt: "2026-01-01T10:00:00.000Z",
       finishedAt: "2026-01-01T11:00:00.000Z",
@@ -339,7 +329,6 @@ describe("activity submission queue runner", () => {
       ...baseJob,
       activityId: "activity-existing",
       ingestionId: "ingestion-existing",
-      remoteFilePath: "activities/profile-1/uploads/existing.fit",
       status: "failed",
       attempts: 1,
       lastError: "previous failure",
@@ -385,41 +374,6 @@ describe("activity submission queue runner", () => {
     });
     expect(deps.uploadToSignedUrl).not.toHaveBeenCalled();
     expect(deps.createFromRecordingSummary).not.toHaveBeenCalled();
-  });
-
-  it("adopts a legacy staged-path job through the actor-scoped compatibility claim", async () => {
-    const deps = createDeps({
-      getLocalArtifactMetadata: vi.fn(async () => {
-        throw new Error("local file is unavailable");
-      }),
-      uploadToSignedUrl: vi.fn(async () => {
-        throw new Error("local file is unavailable");
-      }),
-    });
-    const legacyJob: ActivitySubmissionQueueJob = {
-      ...baseJob,
-      remoteFilePath: "activities/profile-1/uploads/legacy.fit",
-      artifactSha256: "a".repeat(64),
-      localActivityFileSize: 1024,
-      status: "failed",
-      attempts: 1,
-    };
-    leases.set(legacyJob.id, legacyJob);
-
-    const result = await runActivitySubmissionQueueJob(legacyJob, deps);
-    expect(result.status).toBe("complete");
-    expect(deps.claimLegacyMobileRecordingUpload).toHaveBeenCalledWith(
-      expect.objectContaining({
-        stagingPath: "activities/profile-1/uploads/legacy.fit",
-        recordingSessionId: "recording-session-1",
-      }),
-    );
-    expect(deps.beginMobileRecordingUpload).not.toHaveBeenCalled();
-    expect(deps.getLocalArtifactMetadata).not.toHaveBeenCalled();
-    expect(deps.uploadToSignedUrl).not.toHaveBeenCalled();
-    expect(deps.createFromRecordingSummary).toHaveBeenCalledWith(
-      expect.objectContaining({ uploadedArtifact: { ingestionId: "ingestion-1" } }),
-    );
   });
 
   it("re-uploads retained local evidence after server acceptance fails", async () => {

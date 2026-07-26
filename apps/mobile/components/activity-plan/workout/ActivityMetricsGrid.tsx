@@ -2,8 +2,8 @@ import {
   type ActivityPlanStructureV3,
   calculateActivityPlanStats,
   compileActivityPlanV3,
-  formatDurationCompact,
 } from "@repo/core";
+import { formatDurationCompact } from "@repo/core/duration/time-format";
 import { MetricCard } from "@repo/ui/components/metric-card";
 import { Text } from "@repo/ui/components/text";
 import { Activity, Clock, ListOrdered, Repeat } from "lucide-react-native";

@@ -1,27 +1,17 @@
 import type { RecordingSessionArtifact } from "@repo/core";
 import { clearRecordingCheckpoint } from "../ActivityRecorder/checkpointStorage";
-import { clearPendingFinalizedArtifact } from "../ActivityRecorder/finalizedArtifactStorage";
-import {
-  loadActivitySubmissionQueueJobByArtifactId,
-  upsertActivitySubmissionQueueJob,
-} from "./storage";
+import { createFinalizedArtifactQueueHandoff } from "../ActivityRecorder/recordingEvidenceJournal";
 import { type ActivitySubmissionQueueJob, activitySubmissionQueueJobSchema } from "./types";
 
 /** Idempotent finalized-artifact -> durable-queue compare-and-set handoff. */
-const activeHandoffs = new Map<string, Promise<ActivitySubmissionQueueJob>>();
+const activeHandoffs = new Map<string, Promise<ActivitySubmissionQueueJob | null>>();
 
 async function handoffOnce(
   artifact: RecordingSessionArtifact,
   profileId: string,
-): Promise<ActivitySubmissionQueueJob> {
+): Promise<ActivitySubmissionQueueJob | null> {
   if (artifact.profileId !== profileId) {
     throw new Error("Finalized recording belongs to a different profile");
-  }
-  const existing = await loadActivitySubmissionQueueJobByArtifactId(artifact.sessionId, profileId);
-  if (existing) {
-    await clearPendingFinalizedArtifact();
-    await clearRecordingCheckpoint(artifact.sessionId);
-    return existing;
   }
   if (!artifact.activityFilePath || !artifact.executionManifest) {
     throw new Error("Finalized recording is missing its FIT path or execution manifest");
@@ -57,16 +47,24 @@ async function handoffOnce(
     createdAt: now,
     updatedAt: now,
   });
-  await upsertActivitySubmissionQueueJob(job);
-  await clearPendingFinalizedArtifact();
+  const handoff = await createFinalizedArtifactQueueHandoff(job);
+  if (handoff === "absent" || handoff === "rejected") return null;
   await clearRecordingCheckpoint(artifact.sessionId);
-  return job;
+  return handoff === "discarded"
+    ? activitySubmissionQueueJobSchema.parse({
+        ...job,
+        status: "failed",
+        retryClass: "permanent",
+        errorCategory: "discarded",
+        lastError: "discarded",
+      })
+    : job;
 }
 
 export function ensureFinalizedArtifactQueueHandoff(
   artifact: RecordingSessionArtifact,
   profileId = artifact.profileId,
-): Promise<ActivitySubmissionQueueJob> {
+): Promise<ActivitySubmissionQueueJob | null> {
   if (artifact.profileId !== profileId) {
     return Promise.reject(new Error("Finalized recording belongs to a different profile"));
   }

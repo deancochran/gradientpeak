@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
 import {
   convertWeightToKg,
   formatWeightForDisplay,
   getWeightBounds,
   roundToDecimals,
-} from "../../lib/fitness-inputs";
+} from "@repo/core/utils/fitness-inputs";
+import { useEffect, useMemo, useState } from "react";
 import { BoundedNumberInput } from "../bounded-number-input/index.web";
 import { Button } from "../button/index.web";
 import type { WeightInputFieldProps } from "./shared";

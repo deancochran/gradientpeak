@@ -106,7 +106,6 @@ function configureSuccess() {
       max_heart_rate: null,
       avg_power: null,
       max_power: null,
-      normalized_power: null,
       avg_cadence: null,
       max_cadence: null,
       avg_speed_mps: null,

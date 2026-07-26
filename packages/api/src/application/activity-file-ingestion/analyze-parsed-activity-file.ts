@@ -628,7 +628,6 @@ export async function analyzeParsedActivityFile(
       max_heart_rate: summary.maxHeartRate ? Math.round(summary.maxHeartRate) : null,
       avg_power: soleActivityAnalysis && summary.avgPower ? Math.round(summary.avgPower) : null,
       max_power: soleActivityAnalysis && summary.maxPower ? Math.round(summary.maxPower) : null,
-      normalized_power: normalizedPower ? Math.round(normalizedPower) : null,
       avg_cadence:
         soleActivityAnalysis && summary.avgCadence ? Math.round(summary.avgCadence) : null,
       max_cadence:

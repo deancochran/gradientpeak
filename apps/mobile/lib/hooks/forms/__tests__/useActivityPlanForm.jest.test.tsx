@@ -111,7 +111,6 @@ describe("useActivityPlanForm V3", () => {
       name: "Morning brick",
       description: "",
       activityCategory: "bike",
-      routeId: null,
       notes: "",
       structure: { version: 3, segments: [] },
     });
@@ -164,5 +163,7 @@ describe("useActivityPlanForm V3", () => {
       expect.objectContaining({ structure: expect.objectContaining({ version: 3 }) }),
     );
     expect(createMock.mock.calls[0]?.[0]).not.toHaveProperty("activity_category");
+    expect(createMock.mock.calls[0]?.[0]).not.toHaveProperty("route_id");
+    expect(createMock.mock.calls[0]?.[0]).not.toHaveProperty("routeId");
   });
 });

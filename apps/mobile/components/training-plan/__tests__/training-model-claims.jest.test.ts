@@ -2,7 +2,6 @@ import fs from "node:fs";
 import path from "node:path";
 
 const SURFACES = [
-  path.resolve(__dirname, "../../trends/FitnessTab.tsx"),
   path.resolve(__dirname, "../forms/RecoveryRulesForm.tsx"),
   path.resolve(__dirname, "../forms/PeriodizationForm.tsx"),
   path.resolve(__dirname, "../forms/ActivityDistributionForm.tsx"),

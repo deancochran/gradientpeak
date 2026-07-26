@@ -3,7 +3,7 @@ import { calculateRollingTrainingQuality } from "../calculations/training-qualit
 import {
   type CreationContextSummary,
   creationContextSummarySchema,
-} from "../schemas/training_plan_structure";
+} from "../schemas/training-plan-structure";
 import { getMaxSustainableCTL, resolveNoHistoryStartingPrior } from "./calibration-constants";
 import { learnIndividualRampRate } from "./ramp-learning";
 

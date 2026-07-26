@@ -65,7 +65,6 @@ export type EstimationWarningHandler = (warning: {
 export interface ActivityPlanEstimationInput {
   id: string;
   structure?: EstimationContext["structure"];
-  route?: EstimationContext["route"];
   activity_category: CanonicalSport;
 }
 
@@ -82,7 +81,6 @@ export interface EstimationProfileInput {
 export interface EstimationActivityPlanInput {
   activity_category: CanonicalSport;
   structure?: EstimationContext["structure"];
-  route_id?: string;
 }
 
 export interface EstimationRouteInput {

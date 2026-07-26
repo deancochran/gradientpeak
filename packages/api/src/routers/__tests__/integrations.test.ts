@@ -61,7 +61,7 @@ describe("integrationsRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.OAUTH_CALLBACK_BASE_URL = "https://app.example.com";
-    process.env.NEXT_PUBLIC_MOBILE_REDIRECT_URI = "gradientpeak://integrations";
+    process.env.OAUTH_MOBILE_CALLBACK_URL = "gradientpeak://integrations";
     process.env.WAHOO_CLIENT_ID = "wahoo-client-id";
     process.env.WAHOO_CLIENT_SECRET = "wahoo-client-secret";
     mocks.repositories.oauthStates.deleteExpired.mockResolvedValue(0);

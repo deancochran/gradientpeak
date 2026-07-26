@@ -11,7 +11,7 @@ import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
 import { authClient, getPasswordResetCallbackUrl } from "@/lib/auth/client";
 import { applyPendingAuthServerOverride } from "@/lib/auth/form-helpers";
-import { type ForgotPasswordFields, forgotPasswordSchema } from "@/lib/auth/form-schemas";
+import { type ForgotPasswordFormValues, forgotPasswordFormSchema } from "@/lib/auth/form-schemas";
 import { withAuthRequestTimeout } from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
@@ -33,13 +33,13 @@ export default function ForgotPasswordScreen() {
   }, [serverConfig.overrideUrl, serverConfig.apiUrl]);
 
   const form = useZodForm({
-    schema: forgotPasswordSchema,
+    schema: forgotPasswordFormSchema,
     defaultValues: {
       email: "",
     },
   });
 
-  const onSendResetEmail = async (data: ForgotPasswordFields) => {
+  const onSendResetEmail = async (data: ForgotPasswordFormValues) => {
     try {
       await applyPendingAuthServerOverride({
         expanded: isServerConfigExpanded,

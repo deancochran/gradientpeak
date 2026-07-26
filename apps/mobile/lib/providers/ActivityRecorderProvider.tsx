@@ -51,7 +51,7 @@ const ActivityRecorderContext = createContext<ActivityRecorderContextValue | und
  *
  * // In child components:
  * const service = useSharedActivityRecorder();
- * const { selectActivity } = useRecorderActions(service);
+ * const commands = useRecordingCommands(service);
  * ```
  */
 export function ActivityRecorderProvider({
@@ -263,7 +263,7 @@ export function ActivityRecorderProvider({
  * @example
  * ```tsx
  * const { service } = useActivityRecorderService();
- * const { plan } = usePlan(service);
+ * const { plan } = useSessionView(service) ?? {};
  * ```
  */
 export function useActivityRecorderService(): ActivityRecorderContextValue {
@@ -284,7 +284,7 @@ export function useActivityRecorderService(): ActivityRecorderContextValue {
  * @example
  * ```tsx
  * const service = useSharedActivityRecorder();
- * const { selectActivity } = useRecorderActions(service);
+ * const commands = useRecordingCommands(service);
  * ```
  */
 export function useSharedActivityRecorder(): ActivityRecorderService | null {

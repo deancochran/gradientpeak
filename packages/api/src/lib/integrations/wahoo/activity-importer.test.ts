@@ -443,7 +443,7 @@ describe("activity-importer", () => {
       {
         integrationGeneration: 1,
         integrationId: "integration-1",
-        isPrivate: true,
+        contentVisibility: "private",
         profileId: "profile-1",
         provider: "wahoo",
         externalId: "123",

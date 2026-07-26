@@ -1,7 +1,7 @@
 import type {
-  GoalTargetV2,
   TrainingPlanCalibrationConfig,
-} from "../../schemas/training_plan_structure";
+  TrainingPlanGoalTarget,
+} from "../../schemas/training-plan-structure";
 import {
   computeDynamicFormWeight,
   computeOptimalTsb,
@@ -479,7 +479,7 @@ export interface ProjectionPointReadinessInput {
 export interface ProjectionPointReadinessGoalInput {
   target_date: string;
   priority?: number;
-  targets?: GoalTargetV2[];
+  targets?: TrainingPlanGoalTarget[];
 }
 
 function diffDateOnlyUtcDays(a: string, b: string): number {

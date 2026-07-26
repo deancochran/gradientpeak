@@ -2,7 +2,8 @@
 // Progress Tracking Display
 // ================================
 
-import { type ActivityPlanStructureV3, formatDuration } from "@repo/core";
+import type { ActivityPlanStructureV3 } from "@repo/core";
+import { formatDuration } from "@repo/core/duration/time-format";
 import { Text } from "@repo/ui/components/text";
 import { memo } from "react";
 import { View } from "react-native";

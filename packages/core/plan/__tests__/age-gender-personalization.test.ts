@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateATL } from "../../calculations";
+import { calculateATL } from "../../load/progression";
 import {
   getAgeAdjustedRampRateMultiplier,
   getGenderAdjustedFatigueTimeMultiplier,

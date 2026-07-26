@@ -2,7 +2,7 @@ import {
   type AthletePreferenceProfile,
   defaultAthletePreferenceProfile,
 } from "../../../schemas/settings/profile_settings";
-import type { GoalTargetV2 } from "../../../schemas/training-plan-structure/domain-schemas";
+import type { TrainingPlanGoalTarget } from "../../../schemas/training-plan-structure/domain-schemas";
 import type { BuildProjectionEngineInputShape } from "../../buildProjectionEngineInput";
 import { normalizeCreationConfig } from "../../normalizeCreationConfig";
 import { deterministicUuidFromSeed } from "../../normalizeGoalInput";
@@ -35,7 +35,7 @@ function createGoal(
   name: string,
   targetDate: string,
   priority: number,
-  targets: GoalTargetV2[],
+  targets: TrainingPlanGoalTarget[],
 ) {
   return {
     id: deterministicUuidFromSeed(`verification-scenario:${scenarioId}:goal:${goalKey}`),

@@ -24,97 +24,6 @@ function cleanupJob(overrides: Record<string, unknown> = {}) {
 
 describe("WahooSyncJobService", () => {
   afterEach(() => vi.useRealTimers());
-  it("terminally drains legacy planned-workout jobs without provider or credential calls", async () => {
-    const repository = {
-      claimDueJobs: vi.fn().mockResolvedValue([
-        {
-          attempt: 1,
-          id: "job-1",
-          integrationGeneration: 1,
-          integrationId: "integration-1",
-          jobType: "wahoo.publish_event",
-          maxAttempts: 3,
-          payload: { eventId: "event-1", operation: "publish" },
-          profileId: "profile-1",
-          provider: "wahoo",
-          runAt: new Date().toISOString(),
-          status: "running",
-        },
-      ]),
-      getQueueTelemetry: vi
-        .fn()
-        .mockResolvedValue({ deadLetterDepth: 0, oldestDueAt: null, queueDepth: 0 }),
-      isIntegrationGenerationActive: vi.fn().mockResolvedValue(true),
-      markJobSucceeded: vi.fn().mockResolvedValue(true),
-      renewJobLease: vi.fn().mockResolvedValue(true),
-    };
-    const syncService = { syncEvent: vi.fn(), unsyncEvent: vi.fn() };
-    const wahooRepository = { findWahooIntegrationByProfileId: vi.fn() };
-    const service = new WahooSyncJobService({
-      providerSyncRepository: repository as never,
-      syncService: syncService as never,
-      wahooRepository: wahooRepository as never,
-    });
-
-    await expect(service.processDueJobs({ workerId: "test" })).resolves.toEqual({
-      completed: 1,
-      failed: 0,
-      processed: 1,
-    });
-    expect(repository.markJobSucceeded).toHaveBeenCalledWith(
-      "job-1",
-      expect.stringMatching(/^test:/),
-      1,
-    );
-    expect(syncService.syncEvent).not.toHaveBeenCalled();
-    expect(wahooRepository.findWahooIntegrationByProfileId).not.toHaveBeenCalled();
-  });
-
-  it("converges a stale ordinary job without provider work or a generation finalizer", async () => {
-    const repository = {
-      claimDueJobs: vi.fn().mockResolvedValue([
-        {
-          attempt: 1,
-          id: "job-1",
-          integrationGeneration: 1,
-          integrationId: "integration-1",
-          jobType: "wahoo.publish_event",
-          maxAttempts: 3,
-          payload: { eventId: "event-1", operation: "publish" },
-          profileId: "profile-1",
-          provider: "wahoo",
-          runAt: new Date().toISOString(),
-          status: "running",
-        },
-      ]),
-      getQueueTelemetry: vi
-        .fn()
-        .mockResolvedValue({ deadLetterDepth: 0, oldestDueAt: null, queueDepth: 0 }),
-      isIntegrationGenerationActive: vi.fn().mockResolvedValue(false),
-      markJobSucceeded: vi.fn().mockResolvedValue(false),
-      renewJobLease: vi.fn().mockResolvedValue(true),
-    };
-    const syncService = { syncEvent: vi.fn(), unsyncEvent: vi.fn() };
-    const wahooRepository = { findWahooIntegrationByProfileId: vi.fn() };
-    const service = new WahooSyncJobService({
-      providerSyncRepository: repository as never,
-      syncService: syncService as never,
-      wahooRepository: wahooRepository as never,
-    });
-
-    await expect(service.processDueJobs({ workerId: "test" })).resolves.toEqual({
-      completed: 1,
-      failed: 0,
-      processed: 1,
-    });
-    expect(repository.markJobSucceeded).toHaveBeenCalledWith(
-      "job-1",
-      expect.stringMatching(/^test:/),
-    );
-    expect(syncService.syncEvent).not.toHaveBeenCalled();
-    expect(wahooRepository.findWahooIntegrationByProfileId).not.toHaveBeenCalled();
-  });
-
   it("cleans an owned staging object after disconnect without active credentials", async () => {
     const repository = {
       claimDueJobs: vi.fn().mockResolvedValue([cleanupJob()]),
@@ -129,7 +38,6 @@ describe("WahooSyncJobService", () => {
     const service = new WahooSyncJobService({
       providerSyncRepository: repository as never,
       removeWahooStagingObject,
-      syncService: {} as never,
       wahooRepository: {} as never,
     });
 
@@ -168,7 +76,6 @@ describe("WahooSyncJobService", () => {
     const service = new WahooSyncJobService({
       providerSyncRepository: repository as never,
       removeWahooStagingObject: vi.fn().mockResolvedValue(undefined),
-      syncService: {} as never,
       wahooRepository: {} as never,
     });
 
@@ -200,7 +107,6 @@ describe("WahooSyncJobService", () => {
     const service = new WahooSyncJobService({
       providerSyncRepository: repository as never,
       removeWahooStagingObject: vi.fn().mockResolvedValue(undefined),
-      syncService: {} as never,
       wahooRepository: {} as never,
     });
 
@@ -240,7 +146,6 @@ describe("WahooSyncJobService", () => {
     const service = new WahooSyncJobService({
       providerSyncRepository: repository as never,
       removeWahooStagingObject: vi.fn().mockResolvedValue(undefined),
-      syncService: {} as never,
       wahooRepository: {} as never,
     });
 
@@ -273,7 +178,6 @@ describe("WahooSyncJobService", () => {
     const service = new WahooSyncJobService({
       providerSyncRepository: repository as never,
       removeWahooStagingObject,
-      syncService: {} as never,
       wahooRepository: {} as never,
     });
 
@@ -300,7 +204,6 @@ describe("WahooSyncJobService", () => {
     };
     const service = new WahooSyncJobService({
       providerSyncRepository: repository as never,
-      syncService: {} as never,
       wahooRepository: {} as never,
     });
 
@@ -329,7 +232,6 @@ describe("WahooSyncJobService", () => {
     const service = new WahooSyncJobService({
       providerSyncRepository: repository as never,
       removeWahooStagingObject,
-      syncService: {} as never,
       wahooRepository: {} as never,
     });
 
@@ -364,7 +266,6 @@ describe("WahooSyncJobService", () => {
     const service = new WahooSyncJobService({
       providerSyncRepository: repository as never,
       removeWahooStagingObject: vi.fn().mockRejectedValue(new Error("storage unavailable")),
-      syncService: {} as never,
       wahooRepository: {} as never,
     });
 

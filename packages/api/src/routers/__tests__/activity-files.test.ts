@@ -6,7 +6,6 @@ vi.mock("@repo/db", () => ({
     id: "activities.id",
     created_at: "activities.created_at",
     profile_id: "activities.profile_id",
-    is_private: "activities.is_private",
     name: "activities.name",
     type: "activities.type",
     started_at: "activities.started_at",
@@ -96,7 +95,6 @@ const mocks = vi.hoisted(() => ({
   functionsInvoke: vi.fn(),
   processManualActivityFile: vi.fn(),
   beginMobileRecordingUploadClaim: vi.fn(),
-  claimLegacyMobileRecordingUpload: vi.fn(),
   drainPendingMobileRecordingStagingCleanup: vi.fn(),
   db: {
     current: null as any,
@@ -181,7 +179,6 @@ vi.mock(
       typeof import("../../application/activity-file-ingestion/mobile-recording-upload")
     >()),
     beginMobileRecordingUploadClaim: mocks.beginMobileRecordingUploadClaim,
-    claimLegacyMobileRecordingUpload: mocks.claimLegacyMobileRecordingUpload,
     drainPendingMobileRecordingStagingCleanup: mocks.drainPendingMobileRecordingStagingCleanup,
   }),
 );
@@ -196,10 +193,6 @@ type MockDbPlan = {
   findFirstResults?: unknown[];
   executeResults?: unknown[];
 };
-
-function createBlob(contents = "fit bytes") {
-  return new Blob([contents], { type: "application/octet-stream" });
-}
 
 function createDbMock(plan: MockDbPlan = {}) {
   const selectResults = [...(plan.selectResults ?? [])];
@@ -358,15 +351,6 @@ beforeEach(() => {
     stagingPath:
       "mobile-recordings/11111111-1111-4111-8111-111111111111/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.fit",
   });
-  mocks.claimLegacyMobileRecordingUpload.mockResolvedValue({
-    status: "claimed",
-    ingestionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-    activityId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-    byteSize: 9,
-    sha256: "a".repeat(64),
-    format: "fit",
-    mediaType: "application/vnd.ant.fit",
-  });
   mocks.drainPendingMobileRecordingStagingCleanup.mockResolvedValue({
     attempted: 1,
     cleaned: 1,
@@ -500,29 +484,6 @@ describe("activityFilesRouter", () => {
       }),
     ).rejects.toMatchObject({ code: "CONFLICT", message: "Recording upload metadata conflicts" });
     expect(mocks.storage.createSignedUploadUrl).not.toHaveBeenCalled();
-  });
-
-  it("claims an actor-owned legacy staged upload without accepting a client artifact path", async () => {
-    const { db } = createDbMock();
-    const result = await createCaller({ db }).claimLegacyMobileRecordingUpload({
-      recordingSessionId: "recording-session-1",
-      stagingPath: "activities/11111111-1111-4111-8111-111111111111/uploads/123_activity.fit",
-      byteSize: 9,
-      sha256: "a".repeat(64),
-      format: "fit",
-    });
-    expect(mocks.claimLegacyMobileRecordingUpload).toHaveBeenCalledWith(
-      db,
-      expect.anything(),
-      expect.objectContaining({
-        profileId: "11111111-1111-4111-8111-111111111111",
-        recordingSessionId: "recording-session-1",
-      }),
-    );
-    expect(result).toMatchObject({
-      status: "claimed",
-      ingestionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-    });
   });
 
   it("drains bounded pending cleanup only for the authenticated profile", async () => {
@@ -972,7 +933,6 @@ describe("activityFilesRouter", () => {
             activityFilePath: `artifacts/sha256/11111111-1111-4111-8111-111111111111/${"a".repeat(64)}`,
             activityFileType: "fit",
             profile_id: "11111111-1111-4111-8111-111111111111",
-            is_private: true,
             activityType: "bike",
             parentStartedAt: new Date("2026-03-01T10:00:00.000Z"),
             startOffsetMs: 0,
@@ -1151,7 +1111,6 @@ describe("activityFilesRouter", () => {
               "activities/11111111-1111-4111-8111-111111111111/uploads/activity.fit",
             activityFileType: "fit",
             profile_id: "11111111-1111-4111-8111-111111111111",
-            is_private: true,
             activityType: "run",
             parentStartedAt: new Date("2026-03-01T10:00:00.000Z"),
             startOffsetMs: 0,
@@ -1187,7 +1146,6 @@ describe("activityFilesRouter", () => {
           {
             activityFilePath: null,
             profile_id: "11111111-1111-4111-8111-111111111111",
-            is_private: true,
             activityType: "bike",
           },
         ],
@@ -1212,7 +1170,6 @@ describe("activityFilesRouter", () => {
           {
             activityFilePath: "activities/22222222-2222-4222-8222-222222222222/uploads/public.fit",
             profile_id: "22222222-2222-4222-8222-222222222222",
-            is_private: false,
             activityType: "bike",
           },
         ],

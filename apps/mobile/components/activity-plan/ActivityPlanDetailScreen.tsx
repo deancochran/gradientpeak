@@ -6,14 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { MessageCircle } from "lucide-react-native";
 import React from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  InteractionManager,
-  Pressable,
-  ScrollView,
-  View,
-} from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
 import { ActivityPlanSummary } from "@/components/shared/ActivityPlanSummary";
 import {
   DetailDeleteConfirmModal,
@@ -24,16 +17,12 @@ import {
   ResourceLikeButton,
   ResourceOwnerActionRow,
 } from "@/components/shared/ResourceCardPrimitives";
-import { RouteCard } from "@/components/shared/RouteCard";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
-import {
-  getActivityPlanRoute,
-  getAuthoritativeActivityPlanMetrics,
-} from "@/lib/activityPlanMetrics";
+import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
 import { api } from "@/lib/api";
 import { getUniqueActivityCategoryConfigs } from "@/lib/constants/activities";
 import { ROUTES } from "@/lib/constants/routes";
-import { useRecordingLifecycle } from "@/lib/hooks/useActivityRecorder";
+import { useSessionView } from "@/lib/hooks/useActivityRecorder";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
 import { returnToRecordScreen } from "@/lib/navigation/recordingNavigation";
@@ -72,9 +61,9 @@ export function ActivityPlanDetailScreen({
   const router = require("expo-router").useRouter();
   const navigateTo = useAppNavigate();
   const recorderService = useOptionalSharedActivityRecorder();
-  const recordingLifecycle = useRecordingLifecycle(recorderService);
+  const sessionView = useSessionView(recorderService);
+  const recordingLifecycle = recorderService?.recordingLifecycle ?? (sessionView ? "idle" : "idle");
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
-  const [shouldLoadRouteGeometry, setShouldLoadRouteGeometry] = React.useState(false);
 
   const utils = api.useUtils();
   const { beginRedirect, isRedirecting, redirectOnNotFound } = useDeletedDetailRedirect({
@@ -98,41 +87,6 @@ export function ActivityPlanDetailScreen({
 
   const activePlannedActivity = eventId ? plannedActivity : null;
 
-  const activityPlanRouteCandidate = React.useMemo(() => {
-    if (activePlannedActivity?.activity_plan) return activePlannedActivity.activity_plan;
-    if (fetchedPlan) return fetchedPlan;
-    const serializedPlan = template ?? activityPlanParam;
-    if (!serializedPlan) return null;
-    try {
-      return JSON.parse(serializedPlan) as { route_id?: string | null };
-    } catch {
-      return null;
-    }
-  }, [activityPlanParam, activePlannedActivity, fetchedPlan, template]);
-
-  const routeId =
-    (activePlannedActivity as { route_id?: string | null } | null | undefined)?.route_id ??
-    (activityPlanRouteCandidate as { route_id?: string | null } | null | undefined)?.route_id ??
-    null;
-  const { data: route } = api.routes.get.useQuery({ id: routeId ?? "" }, { enabled: !!routeId });
-  const { data: routeFull, isFetching: isFetchingRouteFull } = api.routes.loadFull.useQuery(
-    { id: routeId ?? "" },
-    { enabled: !!routeId && shouldLoadRouteGeometry },
-  );
-
-  React.useEffect(() => {
-    setShouldLoadRouteGeometry(false);
-    if (!routeId) {
-      return;
-    }
-
-    const task = InteractionManager.runAfterInteractions(() => {
-      setShouldLoadRouteGeometry(true);
-    });
-
-    return () => task.cancel();
-  }, [routeId]);
-
   const formatDuration = (seconds: number) => {
     const minutes = Math.floor(seconds / 60);
     if (minutes < 60) return `${minutes}m`;
@@ -150,7 +104,6 @@ export function ActivityPlanDetailScreen({
     isScheduled,
     plannedActivity: activePlannedActivity,
     profile,
-    route,
     template,
   });
 
@@ -161,7 +114,6 @@ export function ActivityPlanDetailScreen({
   );
   const planCategory = activityPlan?.primary_category ?? activityPlan?.categories?.[0] ?? "other";
   const authoritativeMetrics = getAuthoritativeActivityPlanMetrics(activityPlan);
-  const planRoute = getActivityPlanRoute(activityPlan);
   const categoryItems = getUniqueActivityCategoryConfigs(
     presentation?.categories ?? activityPlan?.categories ?? [planCategory],
   ).map((category) => ({
@@ -399,8 +351,6 @@ export function ActivityPlanDetailScreen({
               estimatedTss={tss}
               intensityFactor={intensityFactor}
               presentation={presentation}
-              routeName={route?.name}
-              routeProvided={!!routeId}
               structure={activityPlan.structure}
               title={activityPlan.name}
               variant="standalone"
@@ -438,60 +388,10 @@ export function ActivityPlanDetailScreen({
               </View>
             ) : null}
           </View>
-          {route ? (
-            <RouteCard
-              route={route}
-              routeFull={routeFull}
-              onPress={
-                routeId
-                  ? () =>
-                      navigateTo({
-                        pathname: "/(internal)/(standard)/route-detail",
-                        params: { id: routeId },
-                      } as never)
-                  : undefined
-              }
-            />
-          ) : null}
-          {routeId && (!shouldLoadRouteGeometry || isFetchingRouteFull) ? (
-            <View className="items-center gap-3 rounded-2xl border border-border bg-muted/20 px-4 py-5">
-              <ActivityIndicator size="small" className="text-primary" />
-              <Text className="text-sm text-muted-foreground">Loading route preview...</Text>
-            </View>
-          ) : routeId && !route?.polyline && !routeFull?.coordinates?.length ? (
-            <View className="items-center gap-2 rounded-2xl border border-border bg-muted/20 px-4 py-5">
-              <Text className="text-sm font-medium text-foreground">No route preview</Text>
-              <Text className="text-center text-sm text-muted-foreground">
-                This attached route does not include map geometry to preview.
-              </Text>
-            </View>
-          ) : null}
           <ActivityPlanContentPreview
             size="large"
             plan={activityPlan}
             presentation={presentation}
-            route={
-              route
-                ? route
-                : planRoute
-                  ? {
-                      total_ascent: planRoute.ascent ?? null,
-                      total_descent: planRoute.descent ?? null,
-                      total_distance: planRoute.distance ?? null,
-                    }
-                  : null
-            }
-            routeFull={routeFull}
-            showRoutePreview={false}
-            onRoutePress={
-              routeId
-                ? () =>
-                    navigateTo({
-                      pathname: "/(internal)/(standard)/route-detail",
-                      params: { id: routeId },
-                    } as never)
-                : null
-            }
             testIDPrefix="activity-plan-content-preview"
           />
           <EntityCommentsSection

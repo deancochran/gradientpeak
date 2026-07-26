@@ -13,6 +13,7 @@ import {
   hasTrustedActivityStreamEvidence,
 } from "@repo/core/athlete-inputs";
 import type { PreferredUnitSystem } from "@repo/core/units";
+import { canonicalEffortValue } from "@repo/core/units";
 import { scheduledDateTimeToIsoInstant } from "@repo/core/utils/schedule-date";
 import {
   activities,
@@ -38,7 +39,6 @@ import {
 import { adaptActivityTrainingLoads } from "./adapters/activities/activity-training-load-adapter";
 import {
   addEvidence,
-  canonicalEffortValue,
   canonicalMetricValue,
   type EvidenceRegistry,
   lineageId,
@@ -1121,7 +1121,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     if (isManualFtpEffort(row)) return [];
     const sport = normalizeSport(row.sport);
     const effortLineage = row.activityId ?? `effort-${row.id}`;
-    const canonical = canonicalEffortValue(row.kind, row.value, row.unit);
+    const canonical = canonicalEffortValue({ kind: row.kind, value: row.value, unit: row.unit });
     const observationStatus =
       sport === "bike" || sport === "run" || sport === "swim"
         ? getActivityEffortObservationStatus({

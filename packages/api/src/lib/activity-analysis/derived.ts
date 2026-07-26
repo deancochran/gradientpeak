@@ -330,7 +330,7 @@ export async function buildActivitySegmentDerivedSummaries(input: {
   return output;
 }
 
-/** Parent summaries aggregate modern common Load for every represented segment. */
+/** Parent summaries retain only aggregate common Load; segment load evidence owns TSS/IF/method. */
 export async function buildActivityDerivedSummaryMap(input: {
   store: ActivityAnalysisStore;
   profileId: string;
@@ -377,53 +377,16 @@ function buildParentDerivedSummaryMap(
     );
     const first = parts[0];
     if (!first) continue;
-    if (parts.length === 1) {
-      result.set(activity.id, {
-        ...first,
-        common_load: commonLoad,
-      });
-      continue;
-    }
-
-    const completeCompatibleLegacyParts = parts.every((part) => {
-      const parsedCommonLoad = commonLoadResultSchema.safeParse(part.common_load);
-      return (
-        part.tss !== null &&
-        part.tss_identity !== null &&
-        part.intensity_factor !== null &&
-        part.method !== null &&
-        part.unavailable_reason === null &&
-        part.load_stream_key !== null &&
-        part.load_stream_key === first.load_stream_key &&
-        JSON.stringify(part.tss_identity) === JSON.stringify(first.tss_identity) &&
-        JSON.stringify(part.calibration_quality) === JSON.stringify(first.calibration_quality) &&
-        parsedCommonLoad.success &&
-        parsedCommonLoad.data.status === "available"
-      );
-    });
-    const legacyIntensityFactor =
-      completeCompatibleLegacyParts && commonLoad.status === "complete"
-        ? Math.round(commonLoad.intensity * 100) / 100
-        : null;
-
+    // Do not reconstruct legacy activity-level TSS, intensity, method, or identity from
+    // segment evidence. Consumers must use the segment summaries directly.
     result.set(activity.id, {
       ...first,
-      tss:
-        completeCompatibleLegacyParts && legacyIntensityFactor !== null
-          ? parts.reduce((total, part) => total + (part.tss ?? 0), 0)
-          : null,
-      tss_identity:
-        completeCompatibleLegacyParts && legacyIntensityFactor !== null ? first.tss_identity : null,
-      intensity_factor: legacyIntensityFactor,
-      method: completeCompatibleLegacyParts && legacyIntensityFactor !== null ? first.method : null,
-      unavailable_reason:
-        completeCompatibleLegacyParts && legacyIntensityFactor !== null
-          ? null
-          : "activity_data_missing",
-      calibration_quality:
-        completeCompatibleLegacyParts && legacyIntensityFactor !== null
-          ? first.calibration_quality
-          : null,
+      tss: null,
+      tss_identity: null,
+      intensity_factor: null,
+      method: null,
+      unavailable_reason: "activity_data_missing",
+      calibration_quality: null,
       common_load: commonLoad,
       computed_as_of: first.computed_as_of,
     });

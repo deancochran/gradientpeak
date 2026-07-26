@@ -1,20 +1,12 @@
 #!/usr/bin/env tsx
 
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { getTableColumns, getTableName } from "drizzle-orm";
 import { Pool } from "pg";
 import { schema } from "../src/schema";
 import * as enumSchema from "../src/schema/enums";
-import { dbPackageRoot, prepareDbEnv } from "./_helpers";
+import { prepareDbEnv } from "./_helpers";
 
 const databaseUrl = prepareDbEnv();
-const transitionalExtras = JSON.parse(
-  readFileSync(resolve(dbPackageRoot, "transitional-schema-extras.json"), "utf8"),
-) as { columns: Array<{ table: string; name: string }> };
-const allowedExtraColumns = new Set(
-  transitionalExtras.columns.map((entry) => `${entry.table}.${entry.name}`),
-);
 
 type ExpectedColumn = {
   name: string;
@@ -168,8 +160,7 @@ async function main() {
       );
       const extraColumns = actualColumns.filter(
         (column) =>
-          !expectedTable.columns.some((expectedColumn) => expectedColumn.name === column.name) &&
-          !allowedExtraColumns.has(`${expectedTable.tableName}.${column.name}`),
+          !expectedTable.columns.some((expectedColumn) => expectedColumn.name === column.name),
       );
 
       if (actualColumns.length === 0) {
@@ -209,15 +200,6 @@ async function main() {
             `table ${expectedTable.tableName}.${expectedColumn.name} is missing expected default`,
           );
         }
-      }
-    }
-
-    for (const declaredExtra of transitionalExtras.columns) {
-      const actualColumns = actualColumnsByTable.get(declaredExtra.table) ?? [];
-      if (!actualColumns.some((column) => column.name === declaredExtra.name)) {
-        driftMessages.push(
-          `declared transitional column ${declaredExtra.table}.${declaredExtra.name} is missing before contract`,
-        );
       }
     }
 

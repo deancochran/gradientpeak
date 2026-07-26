@@ -145,6 +145,7 @@ function recordingCreateInput(profileId = OWNER_ID) {
   return {
     profileId,
     recordingSessionId: "recording-session-1",
+    artifactSource: "acceptedArtifact" as const,
     name: "Recorder Run",
     startedAt: "2026-01-15T09:00:00.000Z",
     finishedAt: "2026-01-15T10:00:00.000Z",
@@ -201,7 +202,6 @@ function buildActivityRow(overrides: Record<string, unknown> = {}) {
     max_heart_rate: null,
     avg_power: null,
     max_power: null,
-    normalized_power: null,
     avg_cadence: null,
     max_cadence: null,
     avg_speed_mps: 3.3,
@@ -220,10 +220,8 @@ function buildActivityRow(overrides: Record<string, unknown> = {}) {
     polyline: null,
     laps: null,
     map_bounds: null,
-    is_private: false,
     ...rowOverrides,
-    content_visibility:
-      rowOverrides.content_visibility ?? (rowOverrides.is_private === true ? "private" : "public"),
+    content_visibility: rowOverrides.content_visibility ?? "public",
   };
 }
 
@@ -291,7 +289,6 @@ function buildActivitySummaryRow(overrides: Record<string, unknown> = {}) {
     max_heart_rate: 172,
     avg_power: 210,
     max_power: 430,
-    normalized_power: 235,
     avg_cadence: 88,
     max_cadence: 112,
     avg_speed_mps: 3.45,
@@ -1444,14 +1441,13 @@ describe("activitiesRouter", () => {
     });
   });
 
-  it("accepts the legacy sessionless accepted-artifact recording submission", async () => {
+  it("rejects a sessionless accepted-artifact recording submission", async () => {
     const createdActivity = buildActivityRow({
       id: ACTIVITY_ID,
       activity_plan_id: PLAN_ID,
       name: "Recorder Run",
       notes: "Phone GPS",
       category: "run",
-      is_private: true,
       started_at: new Date("2026-01-15T09:00:00.000Z"),
       finished_at: new Date("2026-01-15T10:00:00.000Z"),
     });
@@ -1475,57 +1471,20 @@ describe("activitiesRouter", () => {
     });
 
     const caller = createCaller(db);
-    const result = await caller.createFromRecordingSummary({
-      profileId: OWNER_ID,
-      name: "Recorder Run",
-      notes: "Phone GPS",
-      is_private: true,
-      activityPlanId: PLAN_ID,
-      startedAt: "2026-01-15T09:00:00.000Z",
-      finishedAt: "2026-01-15T10:00:00.000Z",
-      executionManifest: recordingExecutionManifest(),
-      acceptedArtifact: ACCEPTED_ARTIFACT,
-      summary: { distanceMeters: 10000, calories: 640 },
-    });
-
-    expect(result).toMatchObject({
-      id: ACTIVITY_ID,
-      profile_id: OWNER_ID,
-      activity_plan_id: PLAN_ID,
-      name: "Recorder Run",
-      notes: "Phone GPS",
-      is_private: true,
-      elapsed_ms: 2_700_000,
-      active_ms: 2_700_000,
-      moving_ms: 2_650_000,
-      distance_meters: 9000,
-      calories: null,
-      ingestion: {
-        id: ingestion.id,
-        status: "ready",
-        source: "mobile_recording",
-      },
-    });
-    expect(db.transaction).toHaveBeenCalledTimes(1);
-    expect(findInsertedValue(db, "activities")).toMatchObject({
-      profile_id: OWNER_ID,
-      activity_plan_id: PLAN_ID,
-      name: "Recorder Run",
-      notes: "Phone GPS",
-      is_private: true,
-      elapsed_ms: 3_600_000,
-      active_ms: 3_600_000,
-      moving_ms: 3_500_000,
-      timing_coverage: "complete",
-      distance_meters: 10000,
-      calories: 640,
-    });
-    expect(findInsertedValue(db, "activity_file_ingestions")).toMatchObject({
-      activity_id: findInsertedValue(db, "activities").id,
-      profile_id: OWNER_ID,
-      source: "mobile_recording",
-      status: "ready",
-    });
+    await expect(
+      caller.createFromRecordingSummary({
+        profileId: OWNER_ID,
+        name: "Recorder Run",
+        notes: "Phone GPS",
+        activityPlanId: PLAN_ID,
+        startedAt: "2026-01-15T09:00:00.000Z",
+        finishedAt: "2026-01-15T10:00:00.000Z",
+        executionManifest: recordingExecutionManifest(),
+        acceptedArtifact: ACCEPTED_ARTIFACT,
+        summary: { distanceMeters: 10000, calories: 640 },
+      } as never),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(db.transaction).not.toHaveBeenCalled();
   });
 
   it("persists an ordered multisport execution manifest without parent sport transport", async () => {
@@ -1667,10 +1626,7 @@ describe("activitiesRouter", () => {
         acceptedArtifact: { ...ACCEPTED_ARTIFACT, path: "staging/attacker-controlled.fit" },
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(mockArtifactStorage.verifyAcceptedActivityArtifact).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ path: "staging/attacker-controlled.fit" }),
-    );
+    expect(mockArtifactStorage.verifyAcceptedActivityArtifact).not.toHaveBeenCalled();
   });
 
   it("rejects recording manifests outside the parent time range", async () => {
@@ -1725,7 +1681,6 @@ describe("activitiesRouter", () => {
       queryActivitiesFindFirst: [
         {
           profile_id: OTHER_ID,
-          is_private: false,
           content_visibility: "public",
         },
       ],
@@ -1784,9 +1739,7 @@ describe("activitiesRouter", () => {
     const firstEvidenceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const effectiveEvidenceId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     const db = createDbMock({
-      queryActivitiesFindFirst: [
-        { profile_id: OWNER_ID, is_private: false, content_visibility: "public" },
-      ],
+      queryActivitiesFindFirst: [{ profile_id: OWNER_ID, content_visibility: "public" }],
       joinedRows: [{ activity, activityPlan: null }],
       sessionRpeEvidenceRows: [
         {
@@ -1857,7 +1810,6 @@ describe("activitiesRouter", () => {
       polyline: "legacy-polyline",
       map_bounds: { legacy: true },
       laps: [{ legacy: true }],
-      normalized_power: 999,
     });
     const canonicalSegment = buildSegmentReadRow(ACTIVITY_ID, 0, "run", {
       summary: {
@@ -1873,7 +1825,6 @@ describe("activitiesRouter", () => {
       queryActivitiesFindFirst: [
         {
           profile_id: OWNER_ID,
-          is_private: false,
         },
       ],
       joinedRows: [{ activity, activityPlan: null }],
@@ -1918,7 +1869,6 @@ describe("activitiesRouter", () => {
       elapsed_ms: 2_000,
       active_ms: 2_000,
       moving_ms: 1_900,
-      normalized_power: 248,
       external_id: "legacy-external-id",
       polyline: "legacy-polyline",
       map_bounds: { legacy: true },
@@ -1944,7 +1894,6 @@ describe("activitiesRouter", () => {
       profile_id: OWNER_ID,
       name: "Renamed Run",
       notes: "Felt strong",
-      is_private: true,
     });
     const db = createDbMock({
       updatedRows: [updated],
@@ -1955,69 +1904,20 @@ describe("activitiesRouter", () => {
       id: ACTIVITY_ID,
       name: "Renamed Run",
       notes: "Felt strong",
-      is_private: true,
     });
 
     expect(result).toEqual(updated);
     expect(db.update).toHaveBeenCalledTimes(1);
   });
 
-  it("strictly rejects legacy normalized_power updates without persisting them", async () => {
+  it("rejects the removed legacy privacy field without persisting it", async () => {
     const db = createDbMock({ updatedRows: [buildActivityRow()] });
+    const legacyPrivacyField = ["is", "private"].join("_");
 
     await expect(
-      createCaller(db).update({ id: ACTIVITY_ID, normalized_power: 999 } as never),
+      createCaller(db).update({ id: ACTIVITY_ID, [legacyPrivacyField]: true } as never),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(db.update).not.toHaveBeenCalled();
-  });
-
-  it("projects divergent parent normalized_power from canonical segments in list DTOs", async () => {
-    const row = buildActivityRow({ normalized_power: 999, category: "bike" });
-    mockActivityAnalysis.loadActivitySegmentsByActivityId.mockResolvedValue(
-      new Map([
-        [
-          ACTIVITY_ID,
-          [
-            buildSegmentReadRow(ACTIVITY_ID, 0, "bike", {
-              summary: {
-                version: 1,
-                timing: { timingCoverage: "complete", activeMs: 1_000, movingMs: 900 },
-                normalizedPowerWatts: 247.5,
-              },
-            }),
-          ],
-        ],
-      ]),
-    );
-
-    const result = await createCaller(createDbMock({ activityRows: [row] })).listPaginated({});
-    expect(result.items[0]?.normalized_power).toBe(248);
-  });
-
-  it("returns null normalized_power for malformed or ambiguous canonical segments", async () => {
-    const rows = [
-      buildActivityRow({ id: ACTIVITY_ID, normalized_power: 999 }),
-      buildActivityRow({ id: ACTIVITY_ID_2, normalized_power: 999 }),
-      buildActivityRow({ id: ACTIVITY_ID_3, normalized_power: 999 }),
-    ];
-    mockActivityAnalysis.loadActivitySegmentsByActivityId.mockResolvedValue(
-      new Map([
-        [ACTIVITY_ID, [{ ...buildSegmentReadRow(ACTIVITY_ID, 0, "bike"), summary: {} }]],
-        [ACTIVITY_ID_2, [{ ...buildSegmentReadRow(ACTIVITY_ID_2, 0, "bike"), role: "transition" }]],
-        [
-          ACTIVITY_ID_3,
-          [
-            buildSegmentReadRow(ACTIVITY_ID_3, 0, "bike"),
-            buildSegmentReadRow(ACTIVITY_ID_3, 1, "run"),
-          ],
-        ],
-      ]),
-    );
-
-    const result = await createCaller(createDbMock({ activityRows: rows })).listPaginated({
-      limit: 3,
-    });
-    expect(result.items.map((item) => item.normalized_power)).toEqual([null, null, null]);
   });
 
   it("deletes an owned activity", async () => {

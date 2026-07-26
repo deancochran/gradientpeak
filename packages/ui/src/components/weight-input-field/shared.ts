@@ -1,4 +1,4 @@
-import type { WeightUnit } from "../../lib/fitness-inputs";
+import type { WeightUnit } from "@repo/core/utils/fitness-inputs";
 import type { TestProps } from "../../lib/test-props";
 
 export interface WeightInputFieldProps extends TestProps {

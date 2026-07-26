@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canonicalEffortUnitSchema,
   canonicalEffortValue,
   displayUnitValueSchema,
   formatDisplayUnitValue,
@@ -28,16 +29,19 @@ describe("preferred unit systems", () => {
 
 describe("canonical effort units", () => {
   it.each([
-    ["power", 1.2, "kW", { value: 1200, unit: "watts" }],
-    ["speed", 36, "km/h", { value: 10, unit: "meters_per_second" }],
-    ["speed", 10, "mph", { value: 4.4704, unit: "meters_per_second" }],
+    ["power", 250, "watts", { value: 250, unit: "watts" }],
     ["speed", 4.2, "meters_per_second", { value: 4.2, unit: "meters_per_second" }],
-  ] as const)("normalizes %s aliases", (kind, value, unit, expected) => {
+    ["heart_rate", 160, "bpm", { value: 160, unit: "bpm" }],
+  ] as const)("accepts canonical %s values", (kind, value, unit, expected) => {
     expect(canonicalEffortValue({ kind, value, unit })).toEqual(expected);
   });
 
-  it("rejects aliases outside the effort kind boundary", () => {
+  it("rejects legacy aliases, incompatible units, and non-finite values", () => {
+    for (const unit of ["W", "watt", "kw", "m/s", "mph", "beats_per_minute"]) {
+      expect(canonicalEffortUnitSchema.safeParse(unit).success).toBe(false);
+    }
     expect(canonicalEffortValue({ kind: "power", value: 5, unit: "m/s" })).toBeNull();
+    expect(canonicalEffortValue({ kind: "power", value: Number.NaN, unit: "watts" })).toBeNull();
   });
 });
 
@@ -47,6 +51,8 @@ describe("SI display formatting", () => {
     expect(formatDistance(1_500, "imperial")).toBe("4921 ft");
     expect(formatSpeed(10)).toBe("36.0 km/h");
     expect(formatPace(4)).toBe("0:04/km");
+    expect(formatPace(4, "imperial")).toBe("0:06/mi");
+    expect(formatPace(0)).toBe("--:--");
     expect(formatWeight(70)).toBe("70.0 kg");
   });
 });

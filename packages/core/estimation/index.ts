@@ -8,7 +8,7 @@
  * making plans fully shareable while maintaining personalized accuracy.
  */
 
-import { addDays } from "../calculations";
+import { addDays } from "../utils/dates";
 import { estimateWeeklyLoad, predictFatigue } from "./fatigue";
 import { estimateMetrics as estimateMetricsInternal } from "./metrics";
 import { estimateFromRoute, estimateFromStructure, estimateFromTemplate } from "./strategies";
@@ -184,7 +184,6 @@ export function estimateActivityBatch(
       const planContext: EstimationContext = {
         ...context,
         structure: plan.structure,
-        route: plan.route,
         activityCategory: plan.activity_category,
       };
 

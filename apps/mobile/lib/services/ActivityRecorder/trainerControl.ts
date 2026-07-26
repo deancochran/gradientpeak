@@ -1,12 +1,12 @@
 import { FTMS_SERVICE_UUIDS } from "@deancochran/ftms";
 import {
   type CompiledActivityStepOccurrence,
-  metersPerSecondToKph,
   type RecordingTrainerControlIntent,
   type RecordingTrainerIntentSource,
   type RecordingTrainerMachineType,
   resolveActivityOccurrenceTrainerIntents,
 } from "@repo/core";
+import { metersPerSecondToKph } from "@repo/core/units";
 import { PredictiveResistanceCalculator } from "./PredictiveResistanceCalculator";
 import type { ConnectedSensor, SensorsManager } from "./sensors";
 import type {

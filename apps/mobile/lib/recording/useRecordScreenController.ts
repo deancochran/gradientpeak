@@ -10,20 +10,13 @@ import { Alert } from "react-native";
 import type { ResourcePickerItem, ResourcePickerScope } from "@/components/shared/resource-picker";
 import { api } from "@/lib/api";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
-import {
-  useActivityStatus,
-  usePlan,
-  useRecorderActions,
-  useRecordingLifecycle,
-  useRecordingState,
-  useSensors,
-} from "@/lib/hooks/useActivityRecorder";
+import { useRecordingCommands } from "@/lib/hooks/useActivityRecorder";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { useRecordingSessionContract } from "@/lib/hooks/useRecordingConfig";
+import { useRecordingConfig } from "@/lib/hooks/useRecordingConfig";
 import { useAllPermissionsGranted } from "@/lib/hooks/useStandalonePermissions";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
-import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
+import type { ActivityRecorderService, RecordingLifecycle } from "@/lib/services/ActivityRecorder";
 import {
   activitySelectionStore,
   defaultRecordLaunchPayload,
@@ -43,15 +36,19 @@ export function useRecordScreenController() {
   );
   const [pendingPlanId, setPendingPlanId] = React.useState<string | null>(null);
 
-  const state = useRecordingState(service);
-  const recordingLifecycle = useRecordingLifecycle(service);
-  const { count: sensorCount, sensors } = useSensors(service);
-  const plan = usePlan(service);
-  const { gpsRecordingEnabled, activityCategory } = useActivityStatus(service);
-  const { start, pause, resume, finish } = useRecorderActions(service);
+  const { sessionContract, sessionView } = useRecordingConfig(service);
+  const state = service?.state ?? "pending";
+  const recordingLifecycle = (service?.recordingLifecycle ??
+    sessionView?.lifecycle ??
+    "idle") as RecordingLifecycle;
+  const sensors = service?.sensorsManager?.getConnectedSensors() ?? [];
+  const sensorCount = sensors.length;
+  const plan = sessionView?.plan;
+  const activityCategory = sessionView?.recordingConfiguration.input.activityCategory ?? "bike";
+  const gpsRecordingEnabled = sessionView?.recordingConfiguration.input.gpsRecordingEnabled ?? true;
+  const { start, pause, resume, finish } = useRecordingCommands(service);
   const { allGranted: allPermissionsGranted, isLoading: permissionsLoading } =
     useAllPermissionsGranted();
-  const sessionContract = useRecordingSessionContract(service);
 
   const { data: zones } = api.profiles.getZones.useQuery(undefined, {
     enabled: !!user && !!service && hasSessionAuthCredentials(),
@@ -447,9 +444,9 @@ export function useRecordScreenController() {
   React.useEffect(() => {
     console.log("[RecordModal] Activity status changed:", {
       gpsRecordingEnabled,
-      hasPlan: plan.hasPlan,
+      hasPlan: plan?.hasPlan ?? false,
     });
-  }, [gpsRecordingEnabled, plan.hasPlan]);
+  }, [gpsRecordingEnabled, plan?.hasPlan]);
 
   return React.useMemo(
     () => ({
@@ -462,7 +459,7 @@ export function useRecordScreenController() {
       handleFinish,
       handleLap,
       handleStart,
-      hasPlan: plan.hasPlan,
+      hasPlan: plan?.hasPlan ?? false,
       isFinishing,
       isInitialized,
       onBack,
@@ -509,7 +506,7 @@ export function useRecordScreenController() {
       onRemoveRoute,
       onSelectResource,
       pause,
-      plan.hasPlan,
+      plan?.hasPlan,
       recordingState,
       resourcePickerScope,
       resume,

@@ -26,7 +26,6 @@ interface TrainingPlanDetailHeaderActionsSectionProps {
     microcycles: number;
     plannedTime: string;
     plannedTss: number;
-    routeBacked: number;
     sessions: number;
   };
   plan: {
@@ -136,7 +135,6 @@ export function TrainingPlanDetailHeaderActionsSection({
             <SummaryMetricCard label="Microcycles" value={`${overview.microcycles}`} />
             <SummaryMetricCard label="Sessions" value={`${overview.sessions}`} />
             <SummaryMetricCard label="Linked activities" value={`${overview.linkedWorkouts}`} />
-            <SummaryMetricCard label="Route-backed activities" value={`${overview.routeBacked}`} />
             <SummaryMetricCard
               label="Planned Load"
               value={markEstimated(`${overview.plannedTss}`) ?? "0"}

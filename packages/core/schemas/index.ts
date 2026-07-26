@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { activityPlanInputSchema } from "./activity_payload";
 import { contentVisibilitySchema } from "./content_visibility";
-import { profileGoalLegacySchema, profileGoalTargetSchema } from "./goals/profile_goals";
 import {
   minimalTrainingPlanCreateSchema,
   trainingPlanCreateSchema,
-} from "./training_plan_structure";
+  trainingPlanGoalSchema,
+  trainingPlanGoalTargetSchema,
+} from "./training-plan-structure";
 
 export * from "../activity-plan";
 export * from "../targets";
@@ -48,8 +49,8 @@ export {
   isInTargetRange,
   Target,
 } from "./target_helpers";
-// Export from training_plan_structure
-export * from "./training_plan_structure";
+// Export from training-plan-structure
+export * from "./training-plan-structure";
 
 // Export performance metrics schemas
 // export * from "./performance-metrics";
@@ -75,7 +76,7 @@ export * from "./template_library";
 export const activityPlanCreateSchema = activityPlanInputSchema;
 export const activityPlanUpdateSchema = activityPlanInputSchema.partial().strict();
 
-// Note: plannedActivityCreateSchema and plannedActivityUpdateSchema are now exported from ./planned_activity
+// Note: plannedActivityUpdateSchema is exported from ./planned_activity
 
 // tRPC-specific Training Plans Schemas
 export const trainingPlanCreateInputSchema = z.object({
@@ -88,9 +89,9 @@ export const trainingPlanCreateInputSchema = z.object({
 
 export const trainingPlanUpdateInputSchema = trainingPlanCreateInputSchema.partial();
 
-export const trainingPlanGoalTargetInputSchema = profileGoalTargetSchema;
+export const trainingPlanGoalTargetInputSchema = trainingPlanGoalTargetSchema;
 
-export const trainingPlanGoalInputSchema = profileGoalLegacySchema.omit({
+export const trainingPlanGoalInputSchema = trainingPlanGoalSchema.omit({
   id: true,
 });
 

@@ -1,5 +1,5 @@
+import { normalizePaceInput, parseMmSsToSeconds } from "@repo/core/utils/fitness-inputs";
 import { useEffect, useState } from "react";
-import { normalizePaceInput, parseMmSsToSeconds } from "../../lib/fitness-inputs";
 import { Input } from "../input/index.web";
 import { Label } from "../label/index.web";
 import type { PaceInputProps } from "./shared";

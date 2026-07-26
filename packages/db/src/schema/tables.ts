@@ -442,7 +442,6 @@ export const activityPlans = pgTable(
     structure: jsonb("structure").notNull(),
     structure_hash: text("structure_hash").notNull(),
     gps_recording_enabled: boolean("gps_recording_enabled").notNull().default(true),
-    route_id: uuid("route_id").references(() => activityRoutes.id, { onDelete: "set null" }),
     template_visibility: text("template_visibility", { enum: ["private", "followers", "public"] })
       .notNull()
       .default("private"),
@@ -494,9 +493,6 @@ export const activityPlans = pgTable(
       .where(sql`${table.is_system_template} = true`),
     index("idx_activity_plans_visibility").on(table.template_visibility),
     index("idx_activity_plans_content_visibility").on(table.content_visibility),
-    index("idx_activity_plans_route_id")
-      .on(table.route_id)
-      .where(sql`${table.route_id} is not null`),
     index("idx_activity_plans_structure_categories").using(
       "gin",
       table.structure.op("jsonb_path_ops"),
@@ -750,7 +746,7 @@ export const events = pgTable(
     timezone: text("timezone").notNull().default("UTC"),
     starts_at: timestamp("starts_at", { withTimezone: true, mode: "date" }).notNull(),
     ends_at: timestamp("ends_at", { withTimezone: true, mode: "date" }),
-    scheduled_date: text("scheduled_date"),
+    scheduled_date: text("scheduled_date").notNull(),
     read_only: boolean("read_only"),
     training_plan_id: uuid("training_plan_id").references(() => trainingPlans.id, {
       onDelete: "set null",
@@ -935,7 +931,6 @@ export const activities = pgTable(
     started_at: timestamp("started_at", { withTimezone: true, mode: "date" }).notNull(),
     finished_at: timestamp("finished_at", { withTimezone: true, mode: "date" }).notNull(),
     notes: text("notes"),
-    is_private: boolean("is_private").notNull().default(true),
     content_visibility: text("content_visibility", { enum: ["private", "followers", "public"] })
       .notNull()
       .default("private"),
@@ -975,7 +970,6 @@ export const activities = pgTable(
     max_heart_rate: integer("max_heart_rate"),
     avg_power: integer("avg_power"),
     max_power: integer("max_power"),
-    normalized_power: integer("normalized_power"),
     avg_cadence: integer("avg_cadence"),
     max_cadence: integer("max_cadence"),
     avg_speed_mps: numeric("avg_speed_mps", { precision: 6, scale: 2, mode: "number" }),
@@ -1498,7 +1492,7 @@ export const activityEfforts = pgTable(
     ),
     check(
       "activity_efforts_unit_compatibility_check",
-      sql`(${table.activity_category} = 'bike' and ${table.effort_type} = 'power' and ${table.unit} in ('watts', 'W')) or (${table.activity_category} in ('run', 'swim') and ${table.effort_type} = 'speed' and ${table.unit} in ('meters_per_second', 'm/s')) or (${table.effort_type}::text = 'heart_rate' and ${table.unit} in ('bpm', 'beats_per_minute'))`,
+      sql`(${table.activity_category} = 'bike' and ${table.effort_type} = 'power' and ${table.unit} = 'watts') or (${table.activity_category} in ('run', 'swim') and ${table.effort_type} = 'speed' and ${table.unit} = 'meters_per_second') or (${table.effort_type}::text = 'heart_rate' and ${table.unit} = 'bpm')`,
     ),
     check(
       "activity_efforts_bike_power_max_check",

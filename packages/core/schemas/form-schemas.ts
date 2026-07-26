@@ -52,7 +52,6 @@ import {
   thresholdHrSchema,
   weightKgSchema,
 } from "./forms/profile";
-import { profileGoalTargetSchema } from "./goals/profile_goals";
 import {
   eventLifecycleSchema,
   eventMutationScopeSchema,
@@ -65,7 +64,8 @@ import {
   creationProvenanceSchema,
   creationRecentInfluenceActionEnum,
   trainingPlanCreationConfigSchema,
-} from "./training_plan_structure";
+  trainingPlanGoalTargetSchema,
+} from "./training-plan-structure";
 
 export {
   completionTimeHmsSchema,
@@ -133,7 +133,6 @@ export {
 
 const activityInsertShapeSchema = z.object({
   content_visibility: contentVisibilitySchema.optional(),
-  is_private: z.boolean().optional(),
   name: z.string(),
   notes: z.string().nullable().optional(),
 });
@@ -143,7 +142,6 @@ const activityPlanInsertShapeSchema = z
     description: z.string().nullable().optional(),
     name: z.string(),
     notes: z.string().nullable().optional(),
-    route_id: z.string().uuid().nullable().optional(),
     structure: activityPlanStructureSchemaV3,
   })
   .strict();
@@ -207,7 +205,6 @@ export const activitySubmissionFormSchema = activityInsertShapeSchema
     name: activityNameSchema,
     // Override notes with length limit
     notes: optionalActivityNotesSchema,
-    // Keep is_private optional in the shared insert shape
   });
 
 export type ActivitySubmissionFormData = z.infer<typeof activitySubmissionFormSchema>;
@@ -339,19 +336,13 @@ export const activityCategorySchema = canonicalSportSchema;
  * - name: required string (enhanced: 1-100 chars)
  * - description: optional nullable string (enhanced: max 1000 chars)
  * - notes: optional nullable string (enhanced: max 2000 chars)
- * - route_id: optional nullable UUID
  * - structure: required V3 structure
- *
- * Note: Route-backed plans are still required to carry structure.
- * The route adds geography/context, but the structure remains the
- * canonical effort definition used for validation and derived metrics.
  */
 const activityPlanFormFieldsBaseSchema = activityPlanInsertShapeSchema
   .pick({
     name: true,
     description: true,
     notes: true,
-    route_id: true,
     structure: true,
   })
   .extend({
@@ -468,7 +459,7 @@ export const trainingPlanGoalPrioritySchema = z.preprocess(
     .max(10, "Priority must be at most 10"),
 );
 
-export const trainingPlanGoalTargetFormSchema = profileGoalTargetSchema;
+export const trainingPlanGoalTargetFormSchema = trainingPlanGoalTargetSchema;
 
 export const trainingPlanMinimalGoalFormSchema = z.object({
   goal_name: trainingPlanNameSchema,

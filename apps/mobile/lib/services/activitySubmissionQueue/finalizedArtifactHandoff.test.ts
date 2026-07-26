@@ -2,20 +2,13 @@ import type { RecordingSessionArtifact } from "@repo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  storedJob: null as unknown,
-  upsert: vi.fn(async (job: unknown) => {
-    mocks.storedJob = job;
-  }),
-  clearArtifact: vi.fn(async () => undefined),
+  result: "created" as "created" | "existing" | "discarded" | "absent" | "rejected",
+  handoff: vi.fn(async () => mocks.result),
   clearCheckpoint: vi.fn(async () => undefined),
 }));
 
-vi.mock("./storage", () => ({
-  loadActivitySubmissionQueueJobByArtifactId: vi.fn(async () => mocks.storedJob),
-  upsertActivitySubmissionQueueJob: mocks.upsert,
-}));
-vi.mock("../ActivityRecorder/finalizedArtifactStorage", () => ({
-  clearPendingFinalizedArtifact: mocks.clearArtifact,
+vi.mock("../ActivityRecorder/recordingEvidenceJournal", () => ({
+  createFinalizedArtifactQueueHandoff: mocks.handoff,
 }));
 vi.mock("../ActivityRecorder/checkpointStorage", () => ({
   clearRecordingCheckpoint: mocks.clearCheckpoint,
@@ -59,22 +52,21 @@ const artifact = {
 
 describe("finalized artifact queue handoff", () => {
   beforeEach(() => {
-    mocks.storedJob = null;
     vi.clearAllMocks();
+    mocks.result = "created";
   });
 
-  it("coalesces duplicate handoffs and clears artifact/checkpoint only after queue persistence", async () => {
+  it("coalesces duplicate handoffs and clears the checkpoint only after queue persistence", async () => {
     const [first, second] = await Promise.all([
       ensureFinalizedArtifactQueueHandoff(artifact),
       ensureFinalizedArtifactQueueHandoff(artifact),
     ]);
     expect(first).toEqual(second);
-    expect(mocks.upsert).toHaveBeenCalledTimes(1);
+    expect(mocks.handoff).toHaveBeenCalledTimes(1);
     expect(first).toMatchObject({ schemaVersion: 2, id: artifact.sessionId, status: "queued" });
-    expect(mocks.clearArtifact).toHaveBeenCalledTimes(1);
     expect(mocks.clearCheckpoint).toHaveBeenCalledWith(artifact.sessionId);
-    const upsertOrder = mocks.upsert.mock.invocationCallOrder[0];
-    const clearOrder = mocks.clearArtifact.mock.invocationCallOrder[0];
+    const upsertOrder = mocks.handoff.mock.invocationCallOrder[0];
+    const clearOrder = mocks.clearCheckpoint.mock.invocationCallOrder[0];
     expect(upsertOrder).toBeDefined();
     expect(clearOrder).toBeDefined();
     if (upsertOrder === undefined || clearOrder === undefined) {
@@ -85,19 +77,51 @@ describe("finalized artifact queue handoff", () => {
 
   it("reuses a persisted job after process death without creating a duplicate", async () => {
     const first = await ensureFinalizedArtifactQueueHandoff(artifact);
+    if (!first) throw new Error("handoff setup failed");
     vi.clearAllMocks();
-    mocks.storedJob = first;
     const resumed = await ensureFinalizedArtifactQueueHandoff(artifact);
+    if (!resumed) throw new Error("handoff resume failed");
     expect(resumed.id).toBe(first.id);
-    expect(mocks.upsert).not.toHaveBeenCalled();
-    expect(mocks.clearArtifact).toHaveBeenCalledTimes(1);
+    expect(mocks.handoff).toHaveBeenCalledTimes(1);
+    expect(mocks.clearCheckpoint).toHaveBeenCalledWith(artifact.sessionId);
+  });
+
+  it.each([
+    "created",
+    "existing",
+  ] as const)("returns a queue job and clears the checkpoint for %s", async (result) => {
+    mocks.result = result;
+    const handoff = await ensureFinalizedArtifactQueueHandoff(artifact);
+    expect(handoff).toMatchObject({ id: artifact.sessionId, status: "queued" });
+    expect(mocks.clearCheckpoint).toHaveBeenCalledWith(artifact.sessionId);
+  });
+
+  it("returns a terminal non-claimable shape and clears the checkpoint for explicit discard", async () => {
+    mocks.result = "discarded";
+    const handoff = await ensureFinalizedArtifactQueueHandoff(artifact);
+    expect(handoff).toMatchObject({
+      id: artifact.sessionId,
+      status: "failed",
+      retryClass: "permanent",
+      errorCategory: "discarded",
+    });
+    expect(mocks.clearCheckpoint).toHaveBeenCalledWith(artifact.sessionId);
+  });
+
+  it.each([
+    "absent",
+    "rejected",
+  ] as const)("returns null and retains the checkpoint for %s", async (result) => {
+    mocks.result = result;
+    await expect(ensureFinalizedArtifactQueueHandoff(artifact)).resolves.toBeNull();
+    expect(mocks.clearCheckpoint).not.toHaveBeenCalled();
   });
 
   it("refuses to hand off an artifact for a different authenticated profile", async () => {
     await expect(ensureFinalizedArtifactQueueHandoff(artifact, "profile-2")).rejects.toThrow(
       "different profile",
     );
-    expect(mocks.upsert).not.toHaveBeenCalled();
-    expect(mocks.clearArtifact).not.toHaveBeenCalled();
+    expect(mocks.handoff).not.toHaveBeenCalled();
+    expect(mocks.clearCheckpoint).not.toHaveBeenCalled();
   });
 });

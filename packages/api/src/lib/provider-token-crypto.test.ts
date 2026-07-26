@@ -21,8 +21,10 @@ describe("provider token encryption", () => {
     expect(decryptProviderToken(encrypted)).toBe("secret-access-token");
   });
 
-  it("retains a compatibility path for existing plaintext", () => {
-    expect(decryptProviderToken("legacy-plaintext-token")).toBe("legacy-plaintext-token");
+  it("fails closed for plaintext credentials", () => {
+    expect(() => decryptProviderToken("legacy-plaintext-token")).toThrow(
+      "Provider credential must use the encrypted envelope",
+    );
   });
 
   it("rejects malformed or tampered ciphertext", () => {
@@ -41,10 +43,9 @@ describe("provider token encryption", () => {
     expect(() => decryptProviderToken(tampered)).toThrow("Invalid provider credential ciphertext");
   });
 
-  it("fails closed in production when the key is absent", () => {
-    vi.stubEnv("NODE_ENV", "production");
+  it("requires the encryption key for encrypted credentials", () => {
     vi.stubEnv("PROVIDER_TOKEN_ENCRYPTION_KEY", "");
-    expect(() => decryptProviderToken("legacy-plaintext-token")).toThrow(
+    expect(() => decryptProviderToken(encryptProviderToken("legacy-plaintext-token"))).toThrow(
       "PROVIDER_TOKEN_ENCRYPTION_KEY is required",
     );
     expect(() => encryptProviderToken("new-token")).toThrow(

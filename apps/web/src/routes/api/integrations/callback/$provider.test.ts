@@ -19,7 +19,7 @@ describe("OAuth callback HTTP boundary", () => {
   it("does not use the request origin as the production fallback redirect", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("PROVIDER_OAUTH_TEST_ADAPTER", "1");
-    vi.stubEnv("NEXT_PUBLIC_MOBILE_REDIRECT_FALLBACK", "https://app.example.com/integrations");
+    vi.stubEnv("OAUTH_MOBILE_CALLBACK_URL", "https://app.example.com/integrations");
     handleOAuthCallback.mockResolvedValue({
       redirectUrl: "https://app.example.com/integrations?error=invalid_state",
       status: 302,
@@ -45,7 +45,7 @@ describe("OAuth callback HTTP boundary", () => {
   it("does not reflect a hostile non-production origin through the local test fallback", async () => {
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("PROVIDER_OAUTH_TEST_ADAPTER", "1");
-    vi.stubEnv("NEXT_PUBLIC_MOBILE_REDIRECT_FALLBACK", "https://app.example.com/integrations");
+    vi.stubEnv("OAUTH_MOBILE_CALLBACK_URL", "https://app.example.com/integrations");
     handleOAuthCallback.mockResolvedValue({
       redirectUrl: "https://app.example.com/integrations?error=invalid_state",
       status: 302,

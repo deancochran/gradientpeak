@@ -192,9 +192,6 @@ export function getDevelopmentTransportSecurity(
         localhost: {
           NSExceptionAllowsInsecureHTTPLoads: true,
         },
-        "100.119.109.24": {
-          NSExceptionAllowsInsecureHTTPLoads: true,
-        },
       },
     },
   };

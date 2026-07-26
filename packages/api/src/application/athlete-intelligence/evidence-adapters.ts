@@ -1,5 +1,4 @@
 import type { EvidenceItem, EvidenceSourceType } from "@repo/core";
-import { canonicalEffortValue as normalizeCanonicalEffortValue } from "@repo/core/units";
 
 export type EvidenceRegistry = Record<string, EvidenceItem>;
 
@@ -145,23 +144,4 @@ export function canonicalMetricValue(
     return value / 3_600;
   }
   return null;
-}
-
-export function temporalOverlayValue<T>(input: {
-  legacyValue: T;
-  summaryValue: T | null;
-  summaryUpdatedAt: Date | null;
-  asOf: Date;
-}): T {
-  return input.summaryUpdatedAt !== null && input.summaryUpdatedAt <= input.asOf
-    ? (input.summaryValue ?? input.legacyValue)
-    : input.legacyValue;
-}
-
-export function canonicalEffortValue(
-  kind: "power" | "speed" | "heart_rate",
-  value: number,
-  unit: string,
-): { value: number; unit: "watts" | "meters_per_second" | "bpm" } | null {
-  return normalizeCanonicalEffortValue({ kind, value, unit });
 }

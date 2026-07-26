@@ -313,7 +313,6 @@ describe("ActivityPlanCard", () => {
             intensity_factor: 0.82,
           },
           common_load: availableCommonLoad,
-          route_id: "route-1",
           structure: activityPlanStructure,
           created_at: "2026-03-21T08:00:00.000",
           owner: {
@@ -323,7 +322,6 @@ describe("ActivityPlanCard", () => {
           },
         }}
         onPress={onPress}
-        route={{ name: "River Loop" }}
         testID="activity-plan-compact-card"
         variant="compact"
       />,
@@ -344,47 +342,30 @@ describe("ActivityPlanCard", () => {
     expect(screen.queryByText("Coach Kim")).toBeNull();
     expect(screen.queryByText("Like")).toBeNull();
     expect(screen.getByText("Progressive tempo with a strong finish.")).toBeTruthy();
-    expect(screen.getByText("River Loop")).toBeTruthy();
 
     fireEvent.press(screen.getByTestId("activity-plan-compact-card"));
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
-  it("uses supplied route data in the default visual preview", () => {
+  it("passes only structured workout data to its preview", () => {
     renderNative(
       <ActivityPlanCard
         activityPlan={{
           id: "plan-route-preview",
-          name: "River Tempo",
+          name: "Structured Tempo",
           categories: ["run"],
-          route_id: "route-1",
+          structure: activityPlanStructure,
         }}
-        route={{
-          id: "route-1",
-          name: "River Loop",
-          distance: 5000,
-          ascent: 120,
-          descent: 100,
-        }}
-        routeFull={{ coordinates: [{ latitude: 35.1, longitude: -80.1 }] }}
       />,
     );
 
     const preview = screen.getByTestId("activity-plan-card-preview-plan-route-preview");
     expect(preview.props.size).toBe("medium");
-    expect(preview.props.route).toEqual({
-      id: "route-1",
-      name: "River Loop",
-      distance: 5000,
-      ascent: 120,
-      descent: 100,
-      total_distance: 5000,
-      total_ascent: 120,
-      total_descent: 100,
-    });
-    expect(preview.props.routeFull).toEqual({
-      coordinates: [{ latitude: 35.1, longitude: -80.1 }],
-    });
+    expect(preview.props.plan).toEqual(
+      expect.objectContaining({ structure: activityPlanStructure }),
+    );
+    expect(preview.props).not.toHaveProperty("route");
+    expect(preview.props).not.toHaveProperty("routeFull");
   });
 
   it("keeps navigation and the like action independent", () => {

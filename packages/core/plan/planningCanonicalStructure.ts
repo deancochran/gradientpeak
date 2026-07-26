@@ -3,7 +3,7 @@ import { trainingPlanCreateInputSchema, trainingPlanUpdateInputSchema } from "..
 import {
   type CanonicalTrainingPlanStructure,
   canonicalTrainingPlanStructureSchema,
-} from "../schemas/training_plan_structure";
+} from "../schemas/training-plan-structure";
 import type { PlanningContext } from "./planningContext";
 
 const uuidSchema = z.string().uuid();

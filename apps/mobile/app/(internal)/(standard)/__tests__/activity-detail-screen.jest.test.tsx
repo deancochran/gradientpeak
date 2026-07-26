@@ -27,7 +27,6 @@ const activityData = {
     avg_speed_mps: 3.33,
     avg_power: 278,
     likes_count: 0,
-    is_private: false,
     notes: "Steady through the middle block.",
     current_artifact: {
       id: "33333333-3333-4333-8333-333333333333",

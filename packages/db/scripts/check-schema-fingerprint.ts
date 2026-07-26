@@ -12,126 +12,10 @@ import { dbPackageRoot, prepareDbEnv } from "./_helpers";
 const fingerprintPath = resolve(dbPackageRoot, "schema-fingerprint.json");
 const policy = JSON.parse(
   readFileSync(resolve(dbPackageRoot, "migration-policy.json"), "utf8"),
-) as { ownedExtensions: string[]; ownedDefaultPrivilegeRoles: string[] };
-const transitionalExtras = JSON.parse(
-  readFileSync(resolve(dbPackageRoot, "transitional-schema-extras.json"), "utf8"),
 ) as {
-  columns: Array<{ table: string; name: string }>;
-  constraints: Array<{ table: string; name: string }>;
-  indexes: Array<{ table: string; name: string }>;
-  sequences: string[];
-  triggers: Array<{ table: string; name: string }>;
-  functions: string[];
+  ownedExtensions: Array<{ name: string; schema: string }>;
+  ownedDefaultPrivilegeRoles: string[];
 };
-
-function withoutDeclaredTransitionalExtras(fingerprint: Record<string, unknown>) {
-  const excludedColumns = new Set(
-    transitionalExtras.columns.map((entry) => `${entry.table}.${entry.name}`),
-  );
-  const excludedConstraints = new Set(
-    transitionalExtras.constraints.map((entry) => `${entry.table}.${entry.name}`),
-  );
-  const excludedIndexes = new Set(
-    transitionalExtras.indexes.map((entry) => `${entry.table}.${entry.name}`),
-  );
-  const excludedSequences = new Set(transitionalExtras.sequences);
-  const excludedTriggers = new Set(
-    transitionalExtras.triggers.map((entry) => `${entry.table}.${entry.name}`),
-  );
-  const excludedFunctions = new Set(transitionalExtras.functions);
-  const filterEntries = (
-    section: unknown,
-    excluded: Set<string>,
-    key: (entry: Record<string, unknown>) => string,
-  ) =>
-    Array.isArray(section)
-      ? section.filter(
-          (entry) =>
-            !entry ||
-            typeof entry !== "object" ||
-            !excluded.has(key(entry as Record<string, unknown>)),
-        )
-      : section;
-  const hasEntry = (
-    section: unknown,
-    expected: string,
-    key: (entry: Record<string, unknown>) => string,
-  ) =>
-    Array.isArray(section) &&
-    section.some(
-      (entry) =>
-        entry && typeof entry === "object" && key(entry as Record<string, unknown>) === expected,
-    );
-
-  for (const entry of transitionalExtras.columns) {
-    const expected = `${entry.table}.${entry.name}`;
-    if (!hasEntry(fingerprint.columns, expected, (value) => `${value.table}.${value.name}`)) {
-      throw new Error(`declared transitional fingerprint column is missing: ${expected}`);
-    }
-  }
-  for (const entry of transitionalExtras.constraints) {
-    const expected = `${entry.table}.${entry.name}`;
-    if (!hasEntry(fingerprint.constraints, expected, (value) => `${value.table}.${value.name}`)) {
-      throw new Error(`declared transitional fingerprint constraint is missing: ${expected}`);
-    }
-  }
-  for (const entry of transitionalExtras.indexes) {
-    const expected = `${entry.table}.${entry.name}`;
-    if (!hasEntry(fingerprint.indexes, expected, (value) => `${value.table}.${value.name}`)) {
-      throw new Error(`declared transitional fingerprint index is missing: ${expected}`);
-    }
-  }
-  for (const sequence of transitionalExtras.sequences) {
-    if (!hasEntry(fingerprint.publicSequences, sequence, (value) => String(value.name))) {
-      throw new Error(`declared transitional fingerprint sequence is missing: ${sequence}`);
-    }
-  }
-  for (const entry of transitionalExtras.triggers) {
-    const expected = `${entry.table}.${entry.name}`;
-    if (!hasEntry(fingerprint.triggers, expected, (value) => `${value.table}.${value.name}`)) {
-      throw new Error(`declared transitional fingerprint trigger is missing: ${expected}`);
-    }
-  }
-  for (const identity of transitionalExtras.functions) {
-    if (!hasEntry(fingerprint.functions, identity, (value) => String(value.identity))) {
-      throw new Error(`declared transitional fingerprint function is missing: ${identity}`);
-    }
-  }
-
-  return {
-    ...fingerprint,
-    columns: filterEntries(
-      fingerprint.columns,
-      excludedColumns,
-      (entry) => `${String(entry.table)}.${String(entry.name)}`,
-    ),
-    constraints: filterEntries(
-      fingerprint.constraints,
-      excludedConstraints,
-      (entry) => `${String(entry.table)}.${String(entry.name)}`,
-    ),
-    indexes: filterEntries(
-      fingerprint.indexes,
-      excludedIndexes,
-      (entry) => `${String(entry.table)}.${String(entry.name)}`,
-    ),
-    publicRelations: filterEntries(fingerprint.publicRelations, excludedSequences, (entry) =>
-      String(entry.name),
-    ),
-    publicSequences: filterEntries(fingerprint.publicSequences, excludedSequences, (entry) =>
-      String(entry.name),
-    ),
-    triggers: filterEntries(
-      fingerprint.triggers,
-      excludedTriggers,
-      (entry) => `${String(entry.table)}.${String(entry.name)}`,
-    ),
-    functions: filterEntries(fingerprint.functions, excludedFunctions, (entry) =>
-      String(entry.identity),
-    ),
-  };
-}
-
 function managedTableNames() {
   return Object.values(schema)
     .flatMap((value) => {
@@ -166,10 +50,7 @@ function fingerprintDiff(expected: Record<string, unknown>, actual: Record<strin
   });
 }
 
-export async function createSchemaFingerprint(
-  pool: Pool,
-  options: { allowTransitionalExtras?: boolean } = {},
-) {
+export async function createSchemaFingerprint(pool: Pool) {
   await pool.query("set search_path = public, pg_catalog");
   const tables = managedTableNames();
   const result = await pool.query(
@@ -383,20 +264,30 @@ export async function createSchemaFingerprint(
         ), '[]'::jsonb)
       ) as fingerprint
     `,
-    [tables, policy.ownedExtensions, policy.ownedDefaultPrivilegeRoles],
+    [
+      tables,
+      policy.ownedExtensions.map((extension) => extension.name),
+      policy.ownedDefaultPrivilegeRoles,
+    ],
   );
   const fingerprint = result.rows[0]?.fingerprint as Record<string, unknown>;
-  return options.allowTransitionalExtras
-    ? withoutDeclaredTransitionalExtras(fingerprint)
-    : fingerprint;
+  const ownedExtensions = fingerprint.ownedExtensions;
+  if (JSON.stringify(ownedExtensions) !== JSON.stringify(policy.ownedExtensions)) {
+    throw new Error(
+      `owned extension location drift: expected=${JSON.stringify(policy.ownedExtensions)} actual=${JSON.stringify(ownedExtensions)}`,
+    );
+  }
+  return fingerprint;
 }
 
 async function main() {
+  const writesFingerprint = process.argv.includes("--write");
+  if (writesFingerprint) assertFreshDisposableWriteGuard();
   const pool = new Pool({ connectionString: prepareDbEnv() });
   try {
-    const actual = await createSchemaFingerprint(pool, { allowTransitionalExtras: true });
+    const actual = await createSchemaFingerprint(pool);
     const serialized = `${JSON.stringify(actual, null, 2)}\n`;
-    if (process.argv.includes("--write")) {
+    if (writesFingerprint) {
       writeFileSync(fingerprintPath, serialized);
       execFileSync("pnpm", ["exec", "biome", "format", "--write", fingerprintPath], {
         cwd: dbPackageRoot,
@@ -410,12 +301,40 @@ async function main() {
     if (JSON.stringify(expected) !== JSON.stringify(actual)) {
       const diagnostics = fingerprintDiff(expected, actual);
       throw new Error(
-        `managed schema fingerprint drifted; inspect DB/schema changes before running db:schema:fingerprint:write\n${diagnostics.map((line) => `- ${line}`).join("\n")}`,
+        `managed schema fingerprint drifted; regenerate only through guarded db:migration:fresh -- --write-fingerprint\n${diagnostics.map((line) => `- ${line}`).join("\n")}`,
       );
     }
     console.log(`[db:schema:fingerprint] ${managedTableNames().length} managed tables match`);
   } finally {
     await pool.end();
+  }
+}
+
+function assertFreshDisposableWriteGuard() {
+  if (process.env.GRADIENTPEAK_FRESH_FINGERPRINT_WRITE !== "1") {
+    throw new Error(
+      "fingerprint writes are allowed only from guarded fresh disposable verification",
+    );
+  }
+  const databaseUrl = process.env.DATABASE_URL;
+  const postgresUrl = process.env.POSTGRES_URL;
+  if (!databaseUrl || !postgresUrl) {
+    throw new Error("guarded fingerprint writes require DATABASE_URL and POSTGRES_URL");
+  }
+  const expectedDatabase = /^gradientpeak_fresh_verify_\d+_\d+$/;
+  const parsed = [new URL(databaseUrl), new URL(postgresUrl)] as const;
+  const [parsedDatabaseUrl, parsedPostgresUrl] = parsed;
+  if (
+    parsed.some(
+      (url) =>
+        !["127.0.0.1", "localhost", "::1"].includes(url.hostname) ||
+        !expectedDatabase.test(url.pathname.slice(1)),
+    ) ||
+    parsedDatabaseUrl.toString() !== parsedPostgresUrl.toString()
+  ) {
+    throw new Error(
+      "fingerprint writes require one guarded localhost fresh disposable database URL",
+    );
   }
 }
 

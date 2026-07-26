@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { WahooSyncService } from "./sync-service";
+import { decideRouteOnlyWahooConvergence, WahooSyncService } from "./sync-service";
 
 describe("WahooSyncService planned-workout capability fence", () => {
   it("fails closed before any sync lookup or mutation", async () => {
@@ -28,5 +28,31 @@ describe("WahooSyncService planned-workout capability fence", () => {
     });
     expect(storage.downloadRouteGpx).not.toHaveBeenCalled();
     expect(Object.values(repository)).toHaveLength(0);
+  });
+});
+
+describe("route-only Wahoo convergence decision", () => {
+  it("only performs cleanup for a stale route-only resource link", () => {
+    expect(
+      decideRouteOnlyWahooConvergence({
+        hasActivityPlan: false,
+        hasEventRoute: true,
+        hasExistingResourceLink: true,
+      }),
+    ).toBe("cleanup_then_unsupported");
+    expect(
+      decideRouteOnlyWahooConvergence({
+        hasActivityPlan: false,
+        hasEventRoute: true,
+        hasExistingResourceLink: false,
+      }),
+    ).toBe("unsupported_target");
+    expect(
+      decideRouteOnlyWahooConvergence({
+        hasActivityPlan: false,
+        hasEventRoute: false,
+        hasExistingResourceLink: true,
+      }),
+    ).toBe("missing_plan");
   });
 });

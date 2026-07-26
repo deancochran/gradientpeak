@@ -12,112 +12,7 @@
  * - Keep server-only runtime dependencies behind explicit server subpaths
  */
 
-export type {
-  FtmsMachineTypeDetectionInput,
-  FtmsMachineTypeDetectionResult,
-} from "./ftms";
-export {
-  detectFtmsMachineType,
-  FTMS_MACHINE_DATA_CHARACTERISTIC_UUIDS,
-  FTMS_MACHINE_TYPE_BY_DATA_CHARACTERISTIC_UUID,
-  FTMS_MEASUREMENT_AND_STATUS_CHARACTERISTIC_UUIDS,
-} from "./ftms";
-// ============================================================================
-// FTMS (Fitness Machine Service) Types
-// ============================================================================
-export * from "./ftms-types";
-export * from "./profile/date-of-birth";
-export * from "./recording";
-
-// ============================================================================
-// Calculations Module
-// ============================================================================
-// Note: This module exports ALL functions from calculations.ts, including
-// formatDuration(seconds: number). There's also a formatDuration in schemas
-
 export * from "./activity-plan-calculations";
-export type {
-  AggregatedStream,
-  PublicActivityMetric,
-  PublicActivityMetricDataType,
-} from "./calculations";
-// Export all calculations functions and types
-export {
-  addDays,
-  calculateAge,
-  calculateATL,
-  calculateAverageGrade,
-  calculateAveragePace,
-  calculateAverageSpeed,
-  calculateCalories,
-  calculateCTL,
-  calculateCTLProjection,
-  calculateDecoupling,
-  calculateDistance,
-  calculateEfficiencyFactor,
-  calculateElapsedTime,
-  calculateElevationChanges,
-  calculateElevationGainPerKm,
-  calculateHRZones,
-  calculateIntensityFactor,
-  calculateMaxHRPercent,
-  calculateMovingAverage,
-  calculateMovingTime,
-  calculateNormalizedPower,
-  calculatePercentageChange,
-  calculatePowerHeartRateRatio,
-  calculatePowerWeightRatio,
-  calculatePowerZones,
-  calculateRampRate,
-  calculateTargetDailyTSS,
-  calculateTotalDistance,
-  calculateTotalWork,
-  calculateTrainingIntensityFactor,
-  calculateTrainingLoadSeries,
-  calculateTrainingTSS,
-  calculateTSB,
-  calculateTSS,
-  calculateVariabilityIndex,
-  celsiusToFahrenheit,
-  clamp,
-  endOfDay,
-  estimateCalories,
-  estimateTSS,
-  fahrenheitToCelsius,
-  feetToMeters,
-  formatAccuracy,
-  formatAltitude,
-  formatCadence,
-  formatDistance,
-  formatDuration, // ⚠️ Works with number (seconds) - see note above
-  formatDurationCompact,
-  formatDurationCompactMs,
-  formatHeartRate,
-  formatPace,
-  formatPower,
-  formatSpeed,
-  formatTSS,
-  formatWeight,
-  getFormStatus,
-  getFormStatusColor,
-  getTrainingIntensityZone,
-  isRampRateSafe,
-  kgToLbs,
-  kmToMiles,
-  kphToMps,
-  lbsToKg,
-  lerp,
-  metersPerSecondToKph,
-  metersPerSecondToMph,
-  metersToFeet,
-  metersToKm,
-  milesToKm,
-  mphToMps,
-  msToKmh,
-  parseDuration,
-  projectCTL,
-  startOfDay,
-} from "./calculations";
 // Onboarding & Performance Estimation Functions
 export {
   calculateAge as calculateAgeFromDOB,
@@ -163,11 +58,11 @@ export {
   pacePerHundredMetersToSpeed,
   speedToPacePerHundredMeters,
 } from "./calculations/swim-pace-curve";
-
 // ============================================================================
 // Constants Module
 // ============================================================================
 export * from "./constants";
+export * from "./recording";
 
 // ============================================================================
 // Barrel File Exports - Automatically export from subdirectories
@@ -205,7 +100,6 @@ export * from "./calculations/curves";
 export * from "./calculations/defaults";
 export * from "./calculations/duration";
 export * from "./calculations/training-quality";
-export * from "./calculations/tss";
 export * from "./calculations/workload";
 export * from "./coaching"; // Shared coaching roster adapters
 export * from "./contracts"; // Shared API contracts
@@ -219,11 +113,14 @@ export * from "./detection/pace-tests";
 // Power test detection
 export * from "./detection/power-tests";
 export * from "./duration"; // Canonical duration helpers
+// Root names retain their canonical date-only and activity-plan meanings.
+export { formatDuration } from "./duration/format";
 export * from "./estimation"; // TSS estimation system
 export * from "./goals"; // Goal draft/payload helpers
 export * from "./groups"; // Group contracts, permissions, and display state
 export * from "./integrations"; // Provider capability registry and sync action helpers
 export * from "./load"; // Canonical load-domain helpers
+export { getTrainingIntensityZone } from "./load/tss";
 export * from "./messaging"; // Shared messaging adapters
 export * from "./notifications"; // Shared notification normalization helpers
 export * from "./organizations"; // Organization authorization contracts
@@ -246,6 +143,7 @@ export * from "./recurrence"; // Supported recurrence semantics and deterministi
 export * from "./route-files"; // Route upload formats, limits, schemas, and filename helpers
 export * from "./samples"; // Sample data for testing and development
 export * from "./schemas"; // Shared Zod schemas and domain types
+export { addDays } from "./schemas/training-plan-structure/helpers";
 export * from "./social"; // Social engagement entity taxonomy
 export * from "./sports"; // Canonical sport registry and heuristics
 export * from "./training-timeline"; // Canonical training timeline read model
@@ -274,7 +172,6 @@ export * as Constants from "./constants";
 export * as Duration from "./duration";
 export * as Estimation from "./estimation";
 export * as Estimators from "./estimators/index";
-export * as Ftms from "./ftms";
 export * as Load from "./load";
 export * as Messaging from "./messaging";
 export * as Plan from "./plan";

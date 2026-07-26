@@ -1,5 +1,3 @@
-import { toDateKey } from "@/lib/calendar/dateMath";
-
 export interface CalendarEventActivityPlan {
   common_load?: unknown;
   id?: string | null;
@@ -17,12 +15,6 @@ export interface CalendarEventActivityPlan {
   estimated_tss?: number | null;
   intensity_factor?: number | null;
   estimated_distance?: number | null;
-  route?: {
-    distance?: number | null;
-    ascent?: number | null;
-    descent?: number | null;
-  } | null;
-  route_id?: string | null;
   structure?: unknown;
 }
 
@@ -53,6 +45,7 @@ export interface CalendarEvent {
   status?: string | null;
   owner?: CalendarEventOwner | null;
   activity_plan?: CalendarEventActivityPlan | null;
+  route_id?: string | null;
 }
 
 export type CalendarEventsByDate = Map<string, CalendarEvent[]>;
@@ -122,3 +115,5 @@ export function getMonthDensity(eventsByDate: CalendarEventsByDate, dateKey: str
   return (eventsByDate.get(dateKey) ?? []).filter((event) => event.event_type !== "rest_day")
     .length;
 }
+
+import { toDateKey } from "@/lib/calendar/dateMath";

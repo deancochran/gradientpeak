@@ -16,7 +16,7 @@ export interface FeedActivityItem {
   polyline: string | null;
   likes_count: number;
   comments_count: number;
-  is_private: boolean;
+  content_visibility: "private" | "followers" | "public";
   profile?: {
     id: string;
     username: string | null;

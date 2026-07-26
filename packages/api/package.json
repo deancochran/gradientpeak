@@ -47,7 +47,6 @@
     }
   },
   "scripts": {
-    "backfill:activity-evidence": "pnpm --filter @repo/db exec tsx ../api/scripts/backfill-activity-evidence.ts",
     "check-types": "tsc --noEmit",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
@@ -60,20 +59,20 @@
     "@repo/auth": "workspace:*",
     "@repo/core": "workspace:*",
     "@repo/db": "workspace:*",
-    "@sentry/node": "^10.64.0",
-    "@supabase/supabase-js": "^2.56.0",
-    "@tanstack/react-query": "^5.90.6",
-    "@trpc/client": "^11.16.0",
-    "@trpc/react-query": "^11.16.0",
-    "@trpc/server": "^11.16.0",
+    "@sentry/node": "^10.68.0",
+    "@supabase/supabase-js": "^2.110.8",
+    "@tanstack/react-query": "^5.101.4",
+    "@trpc/client": "^11.18.0",
+    "@trpc/react-query": "^11.18.0",
+    "@trpc/server": "^11.18.0",
     "@xmldom/xmldom": "^0.8.13",
     "drizzle-orm": "^0.45.2",
     "superjson": "^2.2.6",
-    "zod": "^4.2.1"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",
     "typescript": "5.9.3",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   }
 }

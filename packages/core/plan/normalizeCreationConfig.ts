@@ -21,7 +21,7 @@ import {
   type TrainingPlanCreationConfig,
   trainingPlanCalibrationConfigSchema,
   trainingPlanCreationConfigSchema,
-} from "../schemas/training_plan_structure";
+} from "../schemas/training-plan-structure";
 
 const WEEK_DAYS = [
   "monday",

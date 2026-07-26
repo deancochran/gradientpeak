@@ -44,11 +44,10 @@ const baseSubmission = {
 };
 
 describe("recording submission contract", () => {
-  it("preserves the accepted-artifact compatibility shape without a recording session", () => {
+  it("requires an explicit, session-bound accepted artifact", () => {
     const parsed = recordingSummarySubmissionInputSchema.parse({
-      ...Object.fromEntries(
-        Object.entries(baseSubmission).filter(([key]) => key !== "recordingSessionId"),
-      ),
+      ...baseSubmission,
+      artifactSource: "acceptedArtifact",
       acceptedArtifact,
     });
     expect(parsed).toMatchObject({
@@ -56,12 +55,13 @@ describe("recording submission contract", () => {
       source: "mobile_recording",
       acceptedArtifact,
     });
-    expect(parsed).not.toHaveProperty("recordingSessionId");
+    expect(parsed.recordingSessionId).toBe("session-1");
   });
 
   it("accepts only the server-owned ingestion identifier for a staged upload", () => {
     const parsed = recordingSummarySubmissionInputSchema.parse({
       ...baseSubmission,
+      artifactSource: "uploadedArtifact",
       uploadedArtifact: { ingestionId: "33333333-3333-4333-8333-333333333333" },
     });
     expect(parsed).toMatchObject({
@@ -73,6 +73,22 @@ describe("recording submission contract", () => {
 
   it("rejects missing, ambiguous, and client-path artifact sources", () => {
     expect(recordingSummarySubmissionInputSchema.safeParse(baseSubmission).success).toBe(false);
+    expect(
+      recordingSummarySubmissionInputSchema.safeParse({
+        ...Object.fromEntries(
+          Object.entries(baseSubmission).filter(([key]) => key !== "recordingSessionId"),
+        ),
+        artifactSource: "acceptedArtifact",
+        acceptedArtifact,
+      }).success,
+    ).toBe(false);
+    expect(
+      recordingSummarySubmissionInputSchema.safeParse({
+        ...baseSubmission,
+        artifactSource: "acceptedArtifact",
+        acceptedArtifact: { ...acceptedArtifact, path: "activities/profile/uploads/legacy.fit" },
+      }).success,
+    ).toBe(false);
     expect(
       recordingSummarySubmissionInputSchema.safeParse({
         ...baseSubmission,
@@ -111,6 +127,15 @@ describe("recording submission contract", () => {
         byteSize: 50 * 1024 * 1024 + 1,
         sha256: "A".repeat(64),
         format: "zip",
+      }).success,
+    ).toBe(false);
+    expect(
+      beginMobileRecordingUploadInputSchema.safeParse({
+        recordingSessionId: "session-1",
+        byteSize: 123,
+        sha256: "a".repeat(64),
+        format: "fit",
+        remoteFilePath: "activities/profile/uploads/legacy.fit",
       }).success,
     ).toBe(false);
   });

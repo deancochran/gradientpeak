@@ -1,6 +1,9 @@
 import type { AthletePreferenceProfile } from "../schemas/settings/profile_settings";
 import { defaultAthletePreferenceProfile } from "../schemas/settings/profile_settings";
-import type { GoalTargetV2, MinimalTrainingPlanCreate } from "../schemas/training_plan_structure";
+import type {
+  MinimalTrainingPlanCreate,
+  TrainingPlanGoalTarget,
+} from "../schemas/training-plan-structure";
 import { addDaysDateOnlyUtc, diffDateOnlyUtcDays, formatDateOnlyUtc } from "./dateOnlyUtc";
 import { derivePlanTimeline } from "./derivePlanTimeline";
 import { deterministicUuidFromSeed } from "./normalizeGoalInput";
@@ -208,7 +211,7 @@ function resolveGoalWindows(input: {
           name: goal.name,
           target_date: goal.target_date,
           priority: goal.priority,
-          targets: goal.targets as GoalTargetV2[],
+          targets: goal.targets as TrainingPlanGoalTarget[],
         })),
       );
       const demands = normalizedGoals.flatMap((goal) => {

@@ -3,7 +3,7 @@ import { Minimize2 } from "lucide-react-native";
 import React from "react";
 import { Pressable, ScrollView, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useActivityRecorderLiveData } from "@/lib/hooks/useActivityRecorder";
+import { useRecordingCommands, useSessionView } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import {
   ClimbInsightCard,
@@ -56,7 +56,25 @@ export function RecordingFloatingPanel({
   const [expanded, setExpanded] = React.useState(model.forcedExpanded);
   const wasForcedExpanded = React.useRef(model.forcedExpanded);
   const effectiveExpanded = model.forcedExpanded || expanded;
-  const { current: readings, stats, plan } = useActivityRecorderLiveData(service);
+  const sessionView = useSessionView(service);
+  const commands = useRecordingCommands(service);
+  const readings = sessionView?.currentReadings ?? {};
+  const stats = sessionView?.sessionStats ?? EMPTY_SESSION_STATS;
+  const plan: React.ComponentProps<typeof MetricsInsightCard>["plan"] = sessionView?.plan.hasPlan
+    ? {
+        ...sessionView.plan,
+        hasPlan: true,
+        advance: commands.advancePlanStep,
+        previous: commands.previousPlanStep,
+        skip: commands.skipPlanStep,
+      }
+    : {
+        ...EMPTY_PLAN_VIEW,
+        hasPlan: false,
+        advance: commands.advancePlanStep,
+        previous: commands.previousPlanStep,
+        skip: commands.skipPlanStep,
+      };
   const insightProps = {
     mode: effectiveExpanded ? ("expanded" as const) : ("compact" as const),
     readings,
@@ -281,6 +299,42 @@ export function RecordingFloatingPanel({
     </View>
   );
 }
+
+const EMPTY_PLAN_VIEW = {
+  hasPlan: false,
+  stepIndex: 0,
+  stepCount: 0,
+  currentSegment: null,
+  nextSegment: null,
+  progress: null,
+  isLast: false,
+  isFinished: false,
+  canAdvance: false,
+  canSkip: false,
+  canGoBack: false,
+  planTimeRemaining: 0,
+};
+
+const EMPTY_SESSION_STATS = {
+  duration: 0,
+  movingTime: 0,
+  pausedTime: 0,
+  distance: 0,
+  calories: 0,
+  work: 0,
+  ascent: 0,
+  descent: 0,
+  avgHeartRate: 0,
+  avgPower: 0,
+  avgSpeed: 0,
+  avgCadence: 0,
+  maxHeartRate: 0,
+  maxPower: 0,
+  maxSpeed: 0,
+  maxCadence: 0,
+  hrZones: [0, 0, 0, 0, 0] as [number, number, number, number, number],
+  powerZones: [0, 0, 0, 0, 0, 0, 0] as [number, number, number, number, number, number, number],
+};
 
 export function getCompactPanelMinHeight(height: number, indicatorHeight: number) {
   return Math.round(Math.max(128, Math.min(160, height * 0.17))) + indicatorHeight;

@@ -1,4 +1,4 @@
-import type { TrainingPlanCalibrationConfig } from "../../schemas/training_plan_structure";
+import type { TrainingPlanCalibrationConfig } from "../../schemas/training-plan-structure";
 import { getMpcProfileBounds } from "./mpc/lattice";
 import type { OptimizationProfile, ProjectionSafetyConfig } from "./safety-caps";
 import { ABSOLUTE_MAX_CTL_RAMP_PER_WEEK, ABSOLUTE_MAX_WEEKLY_TSS_RAMP_PCT } from "./safety-caps";

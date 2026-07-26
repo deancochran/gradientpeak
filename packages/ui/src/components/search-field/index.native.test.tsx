@@ -8,7 +8,7 @@ describe("SearchField native", () => {
     const { getByLabelText, getByTestId } = renderNative(
       <SearchField
         accessibilityLabel="Search plans"
-        clearTestId="legacy-plan-search-clear"
+        clearTestId="plan-search-clear"
         maxLength={80}
         onSubmit={onSubmit}
         onValueChange={onValueChange}
@@ -25,10 +25,10 @@ describe("SearchField native", () => {
     expect(input.props.maxLength).toBe(80);
     expect(getSearchFieldInputClassName({ hasValue: true, loading: false })).toContain("pr-16");
     expect(getSearchFieldInputClassName({ hasValue: true, loading: false })).not.toContain("pr-24");
-    expect(getByTestId("legacy-plan-search-clear").props.className).toContain("h-11 w-11");
+    expect(getByTestId("plan-search-clear").props.className).toContain("h-11 w-11");
     fireEvent(input, "changeText", "recovery");
     fireEvent(input, "submitEditing");
-    fireEvent.press(getByTestId("legacy-plan-search-clear"));
+    fireEvent.press(getByTestId("plan-search-clear"));
 
     expect(onValueChange).toHaveBeenNthCalledWith(1, "recovery");
     expect(onValueChange).toHaveBeenNthCalledWith(2, "");

@@ -14,7 +14,7 @@ describe("logServerEvent", () => {
       `https://app.example/api/auth/callback?code=oauth-code&state=oauth-state&next=${encodeURIComponent(callback)}&intent=password-reset`,
       {
         headers: {
-          referer: "https://app.example/auth/confirm?token_hash=email-token&type=signup",
+          referer: "https://app.example/auth/confirm?token=email-token",
         },
       },
     );

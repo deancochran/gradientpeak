@@ -95,7 +95,6 @@ type ProjectionActivity = Pick<
   | "elapsed_ms"
   | "active_ms"
   | "moving_ms"
-  | "normalized_power"
   | "normalized_speed_mps"
   | "normalized_graded_speed_mps"
 > & { started_at: string; finished_at: string };

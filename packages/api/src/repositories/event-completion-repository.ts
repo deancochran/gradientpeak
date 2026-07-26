@@ -11,6 +11,7 @@ type EventCompletionBase = Pick<
   | "all_day"
   | "timezone"
   | "activity_plan_id"
+  | "route_id"
   | "training_plan_id"
   | "recurrence_rule"
   | "recurrence_timezone"

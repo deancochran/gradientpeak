@@ -1,5 +1,6 @@
 import type { FitnessProgression, TrainingBlock } from "@repo/core";
-import { addDaysDateOnlyUtc, calculateCTLProjection, diffDateOnlyUtcDays } from "@repo/core";
+import { addDaysDateOnlyUtc, diffDateOnlyUtcDays } from "@repo/core";
+import { calculateCTLProjection } from "@repo/core/load";
 import { Text } from "@repo/ui/components/text";
 import { useMemo } from "react";
 import { View } from "react-native";

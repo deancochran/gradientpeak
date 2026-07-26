@@ -17,13 +17,11 @@ interface ActivityPlanCreationState {
   /** Presentation default only; segment categories are authoritative. */
   activityCategory: CanonicalSport;
   structure: EditableActivityPlanStructure;
-  routeId: string | null;
   notes: string;
   setName: (name: string) => void;
   setDescription: (description: string) => void;
   setActivityCategory: (category: CanonicalSport) => void;
   setStructure: (structure: EditableActivityPlanStructure) => void;
-  setRouteId: (routeId: string | null) => void;
   setNotes: (notes: string) => void;
   addSegment: (segment: ActivityPlanSegmentV3) => void;
   updateSegment: (segmentId: string, segment: ActivityPlanSegmentV3) => void;
@@ -106,7 +104,6 @@ const initialState = {
   description: "",
   activityCategory: "run" as CanonicalSport,
   structure: { version: 3 as const, segments: [] as ActivityPlanSegmentV3[] },
-  routeId: null,
   notes: "",
 };
 
@@ -116,7 +113,6 @@ export const useActivityPlanCreationStore = create<ActivityPlanCreationState>((s
   setDescription: (description) => set({ description }),
   setActivityCategory: (activityCategory) => set({ activityCategory }),
   setStructure: (structure) => set({ structure }),
-  setRouteId: (routeId) => set({ routeId }),
   setNotes: (notes) => set({ notes }),
   addSegment: (segment) =>
     set((state) => ({

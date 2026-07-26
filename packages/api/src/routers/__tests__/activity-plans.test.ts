@@ -1,11 +1,4 @@
-import {
-  activityPlans,
-  activityRoutes,
-  contentAccessGrants,
-  events,
-  likes,
-  profiles,
-} from "@repo/db";
+import { activityPlans, contentAccessGrants, events, likes, profiles } from "@repo/db";
 import type { TRPCError } from "@trpc/server";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,7 +13,6 @@ const { estimationState, plannedWorkoutSyncState } = vi.hoisted(() => ({
         estimated_distance: 12000,
         intensity_factor: 0.82,
       },
-      route: null,
       confidence: "moderate",
       confidence_score: 82,
       estimate_source: "cache",
@@ -36,7 +28,6 @@ const { estimationState, plannedWorkoutSyncState } = vi.hoisted(() => ({
           estimated_distance: 12000,
           intensity_factor: 0.82,
         },
-        route: null,
         confidence: "moderate",
         confidence_score: 82,
         estimate_source: "cache",
@@ -86,13 +77,7 @@ vi.mock("../../infrastructure/repositories", () => ({
 import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
 import { activityPlansRouter } from "../activity-plans";
 
-type MockTableName =
-  | "activity_plans"
-  | "activity_routes"
-  | "content_access_grants"
-  | "events"
-  | "likes"
-  | "profiles";
+type MockTableName = "activity_plans" | "content_access_grants" | "events" | "likes" | "profiles";
 type MockOperation = "select" | "insert" | "update" | "delete";
 
 type MockRows = unknown[];
@@ -164,7 +149,6 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
     created_at: new Date("2026-03-01T10:00:00.000Z"),
     updated_at: new Date("2026-03-01T10:00:00.000Z"),
     profile_id: USER_ID,
-    route_id: null,
     name: "Tempo Builder",
     description: "Structured activity",
     notes: "Bring bottles",
@@ -179,33 +163,9 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function createActivityRouteRow(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "99999999-9999-4999-8999-999999999999",
-    created_at: new Date("2026-03-01T10:00:00.000Z"),
-    updated_at: new Date("2026-03-01T10:00:00.000Z"),
-    profile_id: USER_ID,
-    name: "River Loop",
-    description: "Rolling roads",
-    file_path: "routes/river-loop.fit",
-    total_distance: 12_000,
-    total_ascent: 180,
-    total_descent: 170,
-    elevation_polyline: null,
-    polyline: "encoded-polyline",
-    is_system_template: false,
-    is_public: false,
-    ...overrides,
-  };
-}
-
 function resolveTableName(table: unknown): MockTableName {
   if (table === activityPlans) {
     return "activity_plans";
-  }
-
-  if (table === activityRoutes) {
-    return "activity_routes";
   }
 
   if (table === likes) {
@@ -633,24 +593,6 @@ describe("activityPlansRouter", () => {
     expect(detailResult).toMatchObject(composition);
   });
 
-  it("getById hydrates an attached route the caller can read", async () => {
-    const route = createActivityRouteRow();
-    const plan = createActivityPlanRow({ route_id: route.id });
-    const { caller } = createCaller({
-      state: {
-        "select:activity_plans": [[plan]],
-        "select:activity_routes": [[route]],
-        "select:likes": [[]],
-        "select:profiles": [[createProfileRow()]],
-      },
-    });
-
-    await expect(caller.getById({ id: plan.id })).resolves.toMatchObject({
-      route_id: route.id,
-      route: { id: route.id, name: route.name, distance: route.total_distance },
-    });
-  });
-
   it("uses role-aware category containment SQL", async () => {
     const plan = createActivityPlanRow();
     const { caller, callLog } = createCaller({
@@ -897,48 +839,20 @@ describe("activityPlansRouter", () => {
       visibility: "public",
       primary_category: "bike",
     });
+    expect(result).not.toHaveProperty("route");
+    expect(result).not.toHaveProperty("route_id");
   });
 
-  it("create authorizes, stores, and hydrates a selected route", async () => {
-    const route = createActivityRouteRow({ is_public: true, profile_id: OTHER_USER_ID });
-    const createdRow = createActivityPlanRow({ route_id: route.id });
-    const { caller, callLog } = createCaller({
-      state: {
-        "select:activity_routes": [[route]],
-        "insert:activity_plans": [[createdRow]],
-      },
-    });
-
-    const result = await caller.create({
-      name: "Route workout",
-      route_id: route.id,
-      structure: sampleStructure,
-    });
-
-    expect(callLog.find((call) => call.operation === "insert")?.payload).toMatchObject({
-      route_id: route.id,
-    });
-    expect(result).toMatchObject({
-      route_id: route.id,
-      route: {
-        id: route.id,
-        name: "River Loop",
-        distance: 12_000,
-        ascent: 180,
-        descent: 170,
-      },
-    });
-  });
-
-  it("create rejects a selected route the caller cannot use", async () => {
-    const routeId = "99999999-9999-4999-8999-999999999999";
-    const { caller, callLog } = createCaller({
-      state: { "select:activity_routes": [[]] },
-    });
+  it("create rejects route linkage and never persists it", async () => {
+    const { caller, callLog } = createCaller();
 
     await expect(
-      caller.create({ name: "Denied route", route_id: routeId, structure: sampleStructure }),
-    ).rejects.toMatchObject({ code: "NOT_FOUND" } as Partial<TRPCError>);
+      caller.create({
+        name: "Route workout",
+        route_id: "99999999-9999-4999-8999-999999999999",
+        structure: sampleStructure,
+      } as never),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
     expect(callLog.some((call) => call.operation === "insert")).toBe(false);
   });
 
@@ -1002,73 +916,20 @@ describe("activityPlansRouter", () => {
     expect(result).toMatchObject({ id: existingRow.id, visibility: "public" });
   });
 
-  it("update can set and hydrate an authorized route", async () => {
-    const route = createActivityRouteRow({ is_system_template: true, profile_id: null });
+  it("update rejects route linkage and never persists it", async () => {
     const existingRow = createActivityPlanRow();
-    const updatedRow = createActivityPlanRow({ route_id: route.id });
     const { caller, callLog } = createCaller({
-      state: {
-        "select:activity_plans": [[existingRow]],
-        "select:activity_routes": [[route]],
-        "update:activity_plans": [[updatedRow]],
-      },
-    });
-
-    const result = await caller.update({
-      id: existingRow.id,
-      expectedStructureHash: existingRow.structure_hash,
-      route_id: route.id,
-    });
-
-    expect(callLog.find((call) => call.operation === "update")?.payload).toMatchObject({
-      route_id: route.id,
-    });
-    expect(result.route).toMatchObject({ id: route.id, name: route.name });
-  });
-
-  it("update rejects a selected route the caller cannot use", async () => {
-    const existingRow = createActivityPlanRow();
-    const routeId = "99999999-9999-4999-8999-999999999999";
-    const { caller, callLog } = createCaller({
-      state: {
-        "select:activity_plans": [[existingRow]],
-        "select:activity_routes": [[]],
-      },
+      state: { "select:activity_plans": [[existingRow]] },
     });
 
     await expect(
       caller.update({
         id: existingRow.id,
         expectedStructureHash: existingRow.structure_hash,
-        route_id: routeId,
-      }),
-    ).rejects.toMatchObject({ code: "NOT_FOUND" } as Partial<TRPCError>);
+        route_id: "99999999-9999-4999-8999-999999999999",
+      } as never),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
     expect(callLog.some((call) => call.operation === "update")).toBe(false);
-  });
-
-  it("update can clear a linked route without a route lookup", async () => {
-    const existingRow = createActivityPlanRow({
-      route_id: "99999999-9999-4999-8999-999999999999",
-    });
-    const updatedRow = createActivityPlanRow({ route_id: null });
-    const { caller, callLog } = createCaller({
-      state: {
-        "select:activity_plans": [[existingRow]],
-        "update:activity_plans": [[updatedRow]],
-      },
-    });
-
-    const result = await caller.update({
-      id: existingRow.id,
-      expectedStructureHash: existingRow.structure_hash,
-      route_id: null,
-    });
-
-    expect(callLog.find((call) => call.operation === "update")?.payload).toMatchObject({
-      route_id: null,
-    });
-    expect(callLog.filter((call) => call.table === "activity_routes")).toHaveLength(0);
-    expect(result.route).toBeNull();
   });
 
   it("update republishes every owned future planned event after a material plan change", async () => {

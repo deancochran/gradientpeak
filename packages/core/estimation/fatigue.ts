@@ -1,7 +1,7 @@
-import { addDays } from "../calculations";
 import { getFormStatus } from "../load/form";
 import { calculateATL, calculateCTL, calculateTSB } from "../load/progression";
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "../load/replay";
+import { addDays } from "../utils/dates";
 import type {
   FatiguePrediction,
   FitnessState,

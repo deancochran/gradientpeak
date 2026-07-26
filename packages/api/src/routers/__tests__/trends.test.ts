@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const coreMocks = vi.hoisted(() => ({
-  calculateAge: vi.fn(),
   calculateRollingTrainingQuality: vi.fn(),
   getLoadBalanceStatus: vi.fn(),
   getTrainingIntensityZone: vi.fn(),
@@ -42,10 +41,8 @@ vi.mock("@repo/core", async () => {
 
   return {
     ...actual,
-    calculateAge: coreMocks.calculateAge,
     calculateRollingTrainingQuality: coreMocks.calculateRollingTrainingQuality,
     getLoadBalanceStatus: coreMocks.getLoadBalanceStatus,
-    getTrainingIntensityZone: coreMocks.getTrainingIntensityZone,
   };
 });
 
@@ -54,6 +51,7 @@ vi.mock("@repo/core/load", async () => {
   return {
     ...actual,
     buildDailyTssByDateSeries: loadMocks.buildDailyTssByDateSeries,
+    getTrainingIntensityZone: coreMocks.getTrainingIntensityZone,
     replayTrainingLoadByDate: loadMocks.replayTrainingLoadByDate,
   };
 });
@@ -193,7 +191,6 @@ function createActivityRow(overrides: ActivityOverrides = {}) {
     max_heart_rate: null,
     avg_power: "avg_power" in overrides ? overrides.avg_power! : 220,
     max_power: null,
-    normalized_power: null,
     training_stress_score: null,
     intensity_factor: null,
     avg_cadence: null,
@@ -285,7 +282,6 @@ beforeEach(() => {
   featureFlagMocks.featureFlags.personalizationTrainingQuality = false;
   featureFlagMocks.featureFlags.personalizationRampLearning = false;
 
-  coreMocks.calculateAge.mockReturnValue(36);
   coreMocks.calculateRollingTrainingQuality.mockReturnValue(0.82);
   coreMocks.getLoadBalanceStatus.mockReturnValue("negative_balance");
   coreMocks.getTrainingIntensityZone.mockImplementation((intensityFactor: number) =>

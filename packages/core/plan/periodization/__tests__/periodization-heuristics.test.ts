@@ -24,7 +24,7 @@ describe("periodization heuristics", () => {
     );
   });
 
-  it("normalizes legacy goals and resolves max-biased event demand", () => {
+  it("normalizes training-plan goals and resolves max-biased event demand", () => {
     const goals = fromProfileGoals([
       {
         id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",

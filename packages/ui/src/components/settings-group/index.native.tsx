@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { View } from "../../lib/react-native";
+import { View } from "react-native";
 import { Button } from "../button/index.native";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../card/index.native";
 import { Separator } from "../separator/index.native";

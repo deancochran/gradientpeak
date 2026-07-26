@@ -1,4 +1,5 @@
 import { canonicalSportSchema } from "@repo/core";
+import { canonicalEffortUnitSchema } from "@repo/core/units";
 import { createInsertSchema, createSelectSchema, createUpdateSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -95,7 +96,7 @@ export const publicActivitiesUpdateSchema = createUpdateSchema(activities);
 export const publicActivitiesCreateSchema = publicActivitiesInsertSchema.partial({
   created_at: true,
   id: true,
-  is_private: true,
+  content_visibility: true,
   updated_at: true,
 });
 
@@ -113,9 +114,14 @@ export const publicActivitySegmentsUpdateSchema = createUpdateSchema(activitySeg
 
 export const publicActivityEffortsRowSchema = createSelectSchema(activityEfforts).extend({
   distance_meters: z.number().int().nullable().optional(),
+  unit: canonicalEffortUnitSchema,
 });
-export const publicActivityEffortsInsertSchema = createInsertSchema(activityEfforts);
-export const publicActivityEffortsUpdateSchema = createUpdateSchema(activityEfforts);
+export const publicActivityEffortsInsertSchema = createInsertSchema(activityEfforts).extend({
+  unit: canonicalEffortUnitSchema,
+});
+export const publicActivityEffortsUpdateSchema = createUpdateSchema(activityEfforts).extend({
+  unit: canonicalEffortUnitSchema.optional(),
+});
 
 export const publicActivitySessionRpeEvidenceRowSchema = createSelectSchema(
   activitySessionRpeEvidence,

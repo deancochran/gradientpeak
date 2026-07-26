@@ -4,7 +4,7 @@ import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import type { getRequiredDb } from "../../../db";
-import { sourceId, temporalOverlayValue } from "../evidence-adapters";
+import { sourceId } from "../evidence-adapters";
 import {
   type AthleteIntelligenceDataSource,
   type AthleteIntelligenceRows,
@@ -1029,20 +1029,10 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     );
   });
 
-  it("normalizes supported effort units and retains incompatible raw effort evidence", async () => {
+  it("rejects unknown persisted effort units and retains their raw evidence", async () => {
     const value = rows();
     const effort = first(value.efforts);
     value.efforts = [
-      { ...effort, id: "kw", value: 0.4, unit: "kW" },
-      {
-        ...effort,
-        id: "mph",
-        activityId: null,
-        sport: "run",
-        kind: "speed",
-        value: 10,
-        unit: "mph",
-      },
       { ...effort, id: "unsupported", activityId: null, value: 10, unit: "horsepower" },
     ];
     const result = await materializeAthleteIntelligenceModelInput({
@@ -1050,12 +1040,6 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       profileId,
       asOf,
     });
-    expect(
-      result.efforts.find((effortItem) => effortItem.sourceId === "effort:kw:record"),
-    ).toMatchObject({ kind: "power", powerWatts: 400 });
-    expect(
-      result.efforts.find((effortItem) => effortItem.sourceId === "effort:mph:record"),
-    ).toMatchObject({ kind: "speed", speedMetersPerSecond: 4.4704 });
     expect(result.efforts.some((effortItem) => effortItem.sourceId.includes("unsupported"))).toBe(
       false,
     );
@@ -1202,25 +1186,6 @@ describe("materializeAthleteIntelligenceModelInput", () => {
         asOf,
       }),
     ).rejects.toThrow("Athlete profile not found");
-  });
-
-  it("uses temporal summary values only when their update is observable", () => {
-    expect(
-      temporalOverlayValue({
-        legacyValue: 100,
-        summaryValue: 200,
-        summaryUpdatedAt: new Date("2026-05-31T00:00:00.000Z"),
-        asOf,
-      }),
-    ).toBe(200);
-    expect(
-      temporalOverlayValue({
-        legacyValue: 100,
-        summaryValue: 200,
-        summaryUpdatedAt: new Date("2026-06-02T00:00:00.000Z"),
-        asOf,
-      }),
-    ).toBe(100);
   });
 
   it("timestamps activity measurements at completion and preserves linked effort lineage", async () => {

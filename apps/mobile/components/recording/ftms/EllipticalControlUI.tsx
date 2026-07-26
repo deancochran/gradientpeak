@@ -15,7 +15,7 @@
 import { Text } from "@repo/ui/components/text";
 import { useCallback, useState } from "react";
 import { Alert, Pressable, View } from "react-native";
-import { useCurrentReadings, usePlan } from "@/lib/hooks/useActivityRecorder";
+import { useSessionView } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 
 export interface EllipticalControlUIProps {
@@ -25,8 +25,9 @@ export interface EllipticalControlUIProps {
 }
 
 export function EllipticalControlUI({ service, controlMode }: EllipticalControlUIProps) {
-  const plan = usePlan(service);
-  const currentReadings = useCurrentReadings(service);
+  const sessionView = useSessionView(service);
+  const plan = sessionView?.plan;
+  const currentReadings = sessionView?.currentReadings ?? {};
 
   // Elliptical control state
   const [resistanceLevel, setResistanceLevel] = useState<number>(5); // 1-20
@@ -229,7 +230,7 @@ export function EllipticalControlUI({ service, controlMode }: EllipticalControlU
       </View>
 
       {/* Plan Target Display (when in Auto mode) */}
-      {controlMode === "auto" && plan.hasPlan && plan.currentStep && (
+      {controlMode === "auto" && plan?.hasPlan && plan.currentStep && (
         <View className="bg-primary/10 p-4 rounded-lg border border-primary/20">
           <Text className="text-sm font-medium mb-1">Following Plan</Text>
           <Text className="text-xs text-muted-foreground">

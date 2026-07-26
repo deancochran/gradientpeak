@@ -3,14 +3,14 @@ import {
   normalizedPlanningGoalSchema,
   type PlanningGoalPriorityClass,
 } from "../../../schemas/planning";
-import type { GoalTargetV2 } from "../../../schemas/training_plan_structure";
+import type { TrainingPlanGoalTarget } from "../../../schemas/training-plan-structure";
 
 export interface ProfileGoalLike {
   id: string;
   name: string;
   target_date: string;
   priority?: number;
-  targets: GoalTargetV2[];
+  targets: TrainingPlanGoalTarget[];
 }
 
 function resolvePriorityClass(priority: number): PlanningGoalPriorityClass {
@@ -25,7 +25,7 @@ function resolvePriorityClass(priority: number): PlanningGoalPriorityClass {
   return "C";
 }
 
-function resolvePrimaryActivityCategory(targets: GoalTargetV2[]) {
+function resolvePrimaryActivityCategory(targets: TrainingPlanGoalTarget[]) {
   for (const target of targets) {
     if ("activity_category" in target && target.activity_category) {
       return target.activity_category;
@@ -51,7 +51,7 @@ export function fromProfileGoals(goals: ProfileGoalLike[]): NormalizedPlanningGo
         targets: goal.targets,
         rationale_codes: [
           `goal_priority_class_${priorityClass}`,
-          "goal_normalized_from_legacy_profile_targets",
+          "goal_normalized_from_training_plan_targets",
         ],
       });
     })

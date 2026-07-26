@@ -3,8 +3,8 @@ import {
   type CommonLoadResult,
   commonLoadAggregateSchema,
   commonLoadResultSchema,
-  getTrainingIntensityZone,
 } from "@repo/core";
+import { getTrainingIntensityZone } from "@repo/core/load";
 import {
   type CommonLoadDiagnostic,
   type CommonLoadDiagnosticContext,

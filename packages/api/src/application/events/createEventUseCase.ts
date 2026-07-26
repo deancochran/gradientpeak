@@ -14,7 +14,6 @@ type ProtectedContext = Context & {
 };
 
 type CoreEventType = "planned" | "race_target" | "custom" | "imported";
-type DbEventType = "planned" | "race_target" | "custom" | "imported";
 
 type NormalizedCreateInput = {
   activityPlanId: string | null;
@@ -55,7 +54,6 @@ type CreatedEventRecord = {
 type MappedCreatedEvent = CreatedEventRecord & {
   event_type: CoreEventType;
   training_plan_id: string | null;
-  legacy_event_type: DbEventType;
   scheduled_date: string;
   updated_at: string;
 };
@@ -87,8 +85,7 @@ type CreateEventUseCaseDependencies<
   getEventWriteRepository: (ctx: Context) => ReturnType<typeof createEventWriteRepository>;
   mapEvent: (event: unknown) => TMappedEvent;
   normalizeEventCreateInput: (input: TInput) => TNormalized;
-  plannedEventType: DbEventType;
-  toDbEventType: (eventType: CoreEventType) => DbEventType;
+  toDbEventType: (eventType: CoreEventType) => CoreEventType;
 };
 
 export async function createEventUseCase<
@@ -118,10 +115,14 @@ export async function createEventUseCase<
   const recurrence = normalizedCreate.recurrence;
   dependencies.ensurePersistableRecurrence(recurrence as TNormalized["recurrence"]);
 
-  if (normalizedEventType === "planned" && !normalizedCreate.activityPlanId) {
+  if (
+    normalizedEventType === "planned" &&
+    !normalizedCreate.activityPlanId &&
+    !normalizedCreate.routeId
+  ) {
     throw new TRPCError({
       code: "BAD_REQUEST",
-      message: 'activity_plan_id is required when event_type is "planned"',
+      message: "A planned event requires activity_plan_id or route_id",
     });
   }
 
@@ -276,7 +277,8 @@ export async function createEventUseCase<
   }
 
   let plannedWorkoutSyncResult: PlannedWorkoutQueueResult | null = null;
-  if (event.legacy_event_type === dependencies.plannedEventType) {
+  // Route-only Wahoo targets are terminally unsupported; avoid a no-op publish job.
+  if (event.event_type === "planned" && normalizedCreate.activityPlanId) {
     try {
       plannedWorkoutSyncResult = await dependencies.enqueueProviderPlannedActivityJobs(ctx, {
         eventIds: createdEvents.map((createdEvent) => createdEvent.id),

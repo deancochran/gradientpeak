@@ -435,10 +435,7 @@ describe("resolveActivityContextAsOf", () => {
     });
   });
 
-  it.each([
-    ["W", 250],
-    ["kilowatts", 0.25],
-  ])("normalizes recognized bike power unit %s to watts", (unit, value) => {
+  it("uses canonical bike power values without a second normalization pass", () => {
     const result = resolveActivityContextFromEvidence({
       activityTimestamp: "2026-05-01T12:00:00.000Z",
       evidence: {
@@ -446,17 +443,17 @@ describe("resolveActivityContextAsOf", () => {
         profileMetrics: [],
         recentEfforts: [
           {
-            activity_id: `bike-${unit}`,
+            activity_id: "bike-watts",
             activity_category: "bike",
             duration_seconds: 1200,
             effort_type: "power",
             recorded_at: new Date("2026-04-30T00:00:00.000Z"),
-            unit,
-            value,
+            unit: "watts",
+            value: 250,
             source: "imported",
             method: "activity_file_best_effort",
             provenance: {
-              activity_id: `bike-${unit}`,
+              activity_id: "bike-watts",
               derived_from: "activity_file_stream",
             },
           },

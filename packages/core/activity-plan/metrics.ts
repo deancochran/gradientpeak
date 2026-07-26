@@ -33,6 +33,13 @@ export const activityPlanAuthoritativeMetricsSchema = activityPlanMetricValuesSc
   .extend({ provenance: activityPlanMetricProvenanceSchema })
   .strict();
 
+/** Strict boundary shape for consumers that receive an activity-plan metric payload. */
+export const activityPlanMetricsContainerSchema = z
+  .object({
+    authoritative_metrics: activityPlanAuthoritativeMetricsSchema,
+  })
+  .strict();
+
 export type ActivityPlanMetricValues = z.infer<typeof activityPlanMetricValuesSchema>;
 export type ActivityPlanMetricProvenanceValue = z.infer<
   typeof activityPlanMetricProvenanceValueSchema
@@ -41,8 +48,14 @@ export type ActivityPlanMetricProvenance = z.infer<typeof activityPlanMetricProv
 export type ActivityPlanAuthoritativeMetrics = z.infer<
   typeof activityPlanAuthoritativeMetricsSchema
 >;
+export type ActivityPlanMetricsContainer = z.infer<typeof activityPlanMetricsContainerSchema>;
 
-export type ActivityPlanMetricsLike = Partial<ActivityPlanMetricValues> & {
+/**
+ * The only metric container accepted by Core consumers. Metrics live beneath
+ * `authoritative_metrics`; top-level metric keys are intentionally not modeled
+ * so a stale persisted projection cannot be read by accident.
+ */
+export type ActivityPlanMetricsLike = {
   authoritative_metrics?:
     | (Partial<ActivityPlanMetricValues> & {
         provenance?: Partial<ActivityPlanMetricProvenance> | null;
@@ -55,9 +68,8 @@ export type ResolvedActivityPlanMetrics = {
 };
 
 /**
- * Resolves canonical nested metrics while supporting legacy top-level fields.
- * Explicit authoritative null means the metric is unavailable and must not
- * fall back to a potentially stale legacy value.
+ * Resolves canonical nested metrics. Explicit authoritative null means the
+ * metric is unavailable. Missing canonical metrics remain unavailable.
  */
 export function getAuthoritativeActivityPlanMetrics(
   plan: ActivityPlanMetricsLike | null | undefined,
@@ -65,21 +77,9 @@ export function getAuthoritativeActivityPlanMetrics(
   const authoritative = plan?.authoritative_metrics;
 
   return {
-    estimated_duration:
-      authoritative?.estimated_duration !== undefined
-        ? authoritative.estimated_duration
-        : plan?.estimated_duration,
-    estimated_tss:
-      authoritative?.estimated_tss !== undefined
-        ? authoritative.estimated_tss
-        : plan?.estimated_tss,
-    intensity_factor:
-      authoritative?.intensity_factor !== undefined
-        ? authoritative.intensity_factor
-        : plan?.intensity_factor,
-    estimated_distance:
-      authoritative?.estimated_distance !== undefined
-        ? authoritative.estimated_distance
-        : plan?.estimated_distance,
+    estimated_duration: authoritative?.estimated_duration,
+    estimated_tss: authoritative?.estimated_tss,
+    intensity_factor: authoritative?.intensity_factor,
+    estimated_distance: authoritative?.estimated_distance,
   };
 }

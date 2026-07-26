@@ -12,7 +12,7 @@
  */
 
 import type { CanonicalSport } from "../../schemas/sport";
-import type { GoalTargetV2 } from "../../schemas/training_plan_structure";
+import type { TrainingPlanGoalTarget } from "../../schemas/training-plan-structure";
 import { getGenderAdjustedRecoveryLoadMultiplier } from "../calibration-constants";
 import type { ProjectionPointReadinessInput } from "./readiness";
 
@@ -67,7 +67,7 @@ export interface EventRecoveryProfile {
  * Input for computing event recovery profile
  */
 export interface EventRecoveryInput {
-  target: GoalTargetV2;
+  target: TrainingPlanGoalTarget;
   projected_ctl_at_event: number;
   projected_atl_at_event: number;
   athlete_gender?: "male" | "female" | null;
@@ -81,7 +81,7 @@ export interface PostEventFatigueInput {
   currentPoint: ProjectionPointReadinessInput;
   eventGoal: {
     target_date: string;
-    targets: GoalTargetV2[];
+    targets: TrainingPlanGoalTarget[];
     projected_ctl: number;
     projected_atl: number;
     athlete_gender?: "male" | "female" | null;

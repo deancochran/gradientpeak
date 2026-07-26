@@ -3,6 +3,12 @@
   "globalDependencies": ["**/.env.*local"],
   "globalEnv": [
     "BETTER_AUTH_SECRET",
+    "APP_URL",
+    "OAUTH_CALLBACK_BASE_URL",
+    "OAUTH_MOBILE_CALLBACK_URL",
+    "AUTH_ALLOWED_DEEP_LINK_PREFIXES",
+    "AUTH_MOBILE_CALLBACK_URL",
+    "AUTH_MOBILE_SCHEME",
     "DATABASE_URL",
     "NEXT_PRIVATE_SUPABASE_SECRET_KEY",
     "NEXT_PRIVATE_SUPABASE_URL",
@@ -20,14 +26,7 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [
-        ".next/**",
-        "!.next/cache/**",
-        ".output/**",
-        ".nitro/**",
-        ".tanstack/**",
-        "dist/**"
-      ]
+      "outputs": [".output/**", ".nitro/**", ".tanstack/**", "dist/**"]
     },
     "check": {
       "outputs": []

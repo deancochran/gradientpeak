@@ -13,18 +13,11 @@ type AuthStoreState = {
   ready: boolean;
   profile: { id: string };
 };
-type LocalFileReference = {
-  activityFilePath?: string | null;
-  streamArtifactPaths?: string[];
-};
 type QueueFileReference = {
   localActivityFilePath?: string | null;
   streamArtifactPaths?: string[];
   status: string;
 };
-const loadPendingFinalizedArtifactMock = jest.fn(
-  async (): Promise<LocalFileReference | null> => null,
-);
 const loadActivitySubmissionQueueJobsMock = jest.fn(async (): Promise<QueueFileReference[]> => []);
 
 const authState = {
@@ -152,24 +145,12 @@ jest.mock("@/lib/services/ActivityRecorder/location", () => ({
   LocationManager: { cleanupOrphanedBackgroundTracking: cleanupLocationTrackingMock },
 }));
 
-jest.mock("@/lib/services/ActivityRecorder/finalizedArtifactStorage", () => ({
-  __esModule: true,
-  loadPendingFinalizedArtifact: loadPendingFinalizedArtifactMock,
-  finalizedArtifactReferencesLocalFiles: (artifact: LocalFileReference | null) =>
-    Boolean(artifact?.activityFilePath || artifact?.streamArtifactPaths?.length),
-}));
-
 jest.mock("@/lib/services/activitySubmissionQueue", () => ({
   __esModule: true,
   loadActivitySubmissionQueueJobs: loadActivitySubmissionQueueJobsMock,
   incompleteQueueJobReferencesLocalFiles: (job: QueueFileReference) =>
     job.status !== "complete" &&
     Boolean(job.localActivityFilePath || job.streamArtifactPaths?.length),
-}));
-
-jest.mock("@/lib/services/activitySubmissionQueue/migration-only-v3", () => ({
-  __esModule: true,
-  migrateSingleSportLocalStateToV3Once: jest.fn(async () => undefined),
 }));
 
 jest.mock("@/lib/services/ActivityRecorder/checkpointStorage", () => ({
@@ -185,23 +166,11 @@ jest.mock("@/lib/hooks/useStartupActivitySubmissionRecovery", () => ({
 jest.mock("@/lib/services/mobileRecordingStartup", () => ({
   __esModule: true,
   prepareMobileRecordingStartup: jest.fn(async () => {
-    const [pendingArtifact, queueJobs] = await Promise.all([
-      loadPendingFinalizedArtifactMock(),
-      loadActivitySubmissionQueueJobsMock(),
-    ]);
+    const queueJobs = await loadActivitySubmissionQueueJobsMock();
     return {
       checkpoint: { status: "none" },
       hasQuarantinedEvidence: false,
-      queueJobs: pendingArtifact
-        ? [
-            ...queueJobs,
-            {
-              status: "queued",
-              localActivityFilePath: pendingArtifact.activityFilePath,
-              streamArtifactPaths: pendingArtifact.streamArtifactPaths,
-            },
-          ]
-        : queueJobs,
+      queueJobs,
     };
   }),
 }));
@@ -238,7 +207,6 @@ const RootLayout = require("../_layout").default;
 describe("root layout auth guard", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    loadPendingFinalizedArtifactMock.mockResolvedValue(null);
     loadActivitySubmissionQueueJobsMock.mockResolvedValue([]);
     Object.assign(authState, {
       authState: "authenticated-verified",
@@ -316,20 +284,6 @@ describe("root layout auth guard", () => {
         size: "large",
       }),
     );
-  });
-
-  it("preserves finalized files when a pending artifact references them", async () => {
-    loadPendingFinalizedArtifactMock.mockResolvedValue({
-      activityFilePath: "file:///pending.fit",
-      streamArtifactPaths: ["file:///pending-streams"],
-    });
-
-    renderNative(<RootLayout />);
-
-    await waitFor(() => expect(loadPendingFinalizedArtifactMock).toHaveBeenCalledTimes(1));
-    expect(cleanupStreamRecordingsMock).not.toHaveBeenCalled();
-    expect(cleanupFitRecordingsMock).not.toHaveBeenCalled();
-    expect(cleanupLocationTrackingMock).not.toHaveBeenCalled();
   });
 
   it("preserves finalized files when an incomplete queue job references them", async () => {

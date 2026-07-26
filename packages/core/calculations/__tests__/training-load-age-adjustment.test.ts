@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateATL, calculateCTL, calculateTrainingLoadSeries } from "../../calculations";
+import { calculateATL, calculateCTL, calculateTrainingLoadSeries } from "../../load/progression";
 
 describe("training load age adjustments", () => {
   it("falls back to baseline constants when age is undefined", () => {
