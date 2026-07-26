@@ -23,6 +23,7 @@ export class OnboardingRecoveryPayloadTooLargeError extends Error {
 }
 
 const uuidSchema = z.string().uuid();
+const recoveryUserIdSchema = z.string().min(1);
 const sectionStatusSchema = z.enum(["pending", "saved", "skipped", "failed", "abandoned"]);
 const socialActionStatusSchema = z.enum(["pending", "failed"]);
 
@@ -127,7 +128,7 @@ const profileRetrySchema = z
 const pendingRecoverySchema = z
   .object({
     version: z.literal(ONBOARDING_RECOVERY_VERSION),
-    userId: z.string().min(1),
+    userId: recoveryUserIdSchema,
     status: z.literal("pending"),
     expiresAt: z.number().int().positive(),
     profileRetry: profileRetrySchema,
@@ -165,7 +166,7 @@ const pendingRecoverySchema = z
 const completedRecoverySchema = z
   .object({
     version: z.literal(ONBOARDING_RECOVERY_VERSION),
-    userId: z.string().min(1),
+    userId: recoveryUserIdSchema,
     status: z.literal("completed"),
     expiresAt: z.number().int().positive(),
   })
@@ -188,8 +189,20 @@ type RecoveryListener = (record: OnboardingRecoveryRecord | null) => void;
 const listeners = new Map<string, Set<RecoveryListener>>();
 let storageMutation: Promise<void> = Promise.resolve();
 
+function encodeSecureStoreKeySegment(value: string): string {
+  if (/^[A-Za-z0-9._-]+$/.test(value)) return `raw.${value}`;
+
+  const encoded = Array.from(value, (character) => {
+    const codePoint = character.codePointAt(0);
+    if (codePoint === undefined) throw new Error("Could not encode onboarding recovery identity");
+    return codePoint.toString(16).padStart(6, "0");
+  }).join("");
+  return `hex.${encoded}`;
+}
+
 function storageKey(userId: string): string {
-  return `onboarding-recovery:v${ONBOARDING_RECOVERY_VERSION}:${encodeURIComponent(userId)}`;
+  const validatedUserId = recoveryUserIdSchema.parse(userId);
+  return `onboarding-recovery.v${ONBOARDING_RECOVERY_VERSION}.${encodeSecureStoreKeySegment(validatedUserId)}`;
 }
 
 function serializeStorageMutation<T>(mutation: () => Promise<T>): Promise<T> {

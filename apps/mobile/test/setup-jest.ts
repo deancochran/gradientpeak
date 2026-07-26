@@ -387,13 +387,25 @@ jest.mock("react-native-svg", () => {
 
 jest.mock("expo-secure-store", () => {
   const store = new Map<string, string>();
+  const assertValidKey = (key: string) => {
+    if (!/^[A-Za-z0-9._-]+$/.test(key)) {
+      throw new Error(
+        'Invalid key provided to SecureStore. Keys must not be empty and contain only alphanumeric characters, ".", "-", and "_".',
+      );
+    }
+  };
 
   return {
-    getItemAsync: jest.fn(async (key: string) => store.get(key) ?? null),
+    getItemAsync: jest.fn(async (key: string) => {
+      assertValidKey(key);
+      return store.get(key) ?? null;
+    }),
     setItemAsync: jest.fn(async (key: string, value: string) => {
+      assertValidKey(key);
       store.set(key, value);
     }),
     deleteItemAsync: jest.fn(async (key: string) => {
+      assertValidKey(key);
       store.delete(key);
     }),
     __store: store,

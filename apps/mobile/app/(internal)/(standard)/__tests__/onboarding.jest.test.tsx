@@ -1279,7 +1279,7 @@ describe("onboarding screen", () => {
     expect(screen.getByText("Discard recovery")).toBeTruthy();
     fireEvent.press(screen.getByTestId("onboarding-status-dismiss"));
     await waitFor(() => expect(screen.queryByTestId("onboarding-status-modal")).toBeNull());
-    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("onboarding-recovery:v2:user-1");
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("onboarding-recovery.v2.raw.user-1");
     expect(screen.getByTestId("onboarding-full-name-input")).toBeTruthy();
   });
 

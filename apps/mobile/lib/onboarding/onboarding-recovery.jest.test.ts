@@ -14,7 +14,7 @@ import {
 
 const USER_ID = "user-1";
 const FOLLOW_ID = "22222222-2222-4222-8222-222222222222";
-const STORAGE_KEY = `onboarding-recovery:v${ONBOARDING_RECOVERY_VERSION}:${USER_ID}`;
+const STORAGE_KEY = `onboarding-recovery.v${ONBOARDING_RECOVERY_VERSION}.raw.${USER_ID}`;
 const secureStoreMock = SecureStore as typeof SecureStore & { __store: Map<string, string> };
 
 function recoveryRecord(
@@ -144,6 +144,29 @@ describe("onboarding recovery secure storage", () => {
     await expect(saveOnboardingRecovery(malformed)).rejects.toThrow();
   });
 
+  it("keeps safe, punctuation, and Unicode identities isolated behind valid keys", async () => {
+    const records = ["user-1", "user:1", "rider🚴"].map((userId) => recoveryRecord({ userId }));
+
+    for (const record of records) await saveOnboardingRecovery(record);
+
+    const keys = jest.mocked(SecureStore.setItemAsync).mock.calls.map(([key]) => key);
+    expect(keys).toHaveLength(records.length);
+    expect(new Set(keys).size).toBe(records.length);
+    expect(keys[0]).toContain(".raw.");
+    expect(keys[1]).toContain(".hex.");
+    expect(keys[2]).toContain(".hex.");
+    for (const key of keys) expect(key).toMatch(/^[A-Za-z0-9._-]+$/);
+
+    for (const record of records) {
+      await expect(loadOnboardingRecovery(record.userId)).resolves.toEqual(record);
+    }
+    for (const [index, record] of records.entries()) {
+      await clearOnboardingRecovery(record.userId);
+      expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith(keys[index]);
+    }
+    expect(secureStoreMock.__store.size).toBe(0);
+  });
+
   it("replaces pending data with a minimal completion marker before cleanup", async () => {
     await saveOnboardingRecovery(recoveryRecord());
     const marker = createCompletedOnboardingRecovery(USER_ID);
@@ -199,6 +222,7 @@ describe("onboarding recovery secure storage", () => {
   it("keeps a completed marker non-pending when deletion fails so cleanup can retry", async () => {
     const completed = createCompletedOnboardingRecovery(USER_ID);
     await saveOnboardingRecovery(completed);
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
     jest
       .mocked(SecureStore.deleteItemAsync)
       .mockRejectedValueOnce(new Error("storage unavailable"));
@@ -206,5 +230,8 @@ describe("onboarding recovery secure storage", () => {
     await expect(clearOnboardingRecovery(USER_ID)).rejects.toThrow("storage unavailable");
     await expect(loadOnboardingRecovery(USER_ID)).resolves.toEqual(completed);
     expect(hasPendingOnboardingRecovery(completed)).toBe(false);
+    expect(warn).toHaveBeenCalledWith("[SecureStore] deleteItemAsync failed", expect.any(Error));
+    expect(warn.mock.calls.flat().join(" ")).not.toContain(USER_ID);
+    warn.mockRestore();
   });
 });
