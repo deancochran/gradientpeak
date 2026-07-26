@@ -20,6 +20,7 @@ import {
   deriveOAuthCodeVerifier,
   issueLocalOAuthAuthorizationCode,
 } from "../lib/integrations/oauth-pkce";
+import { getDefaultMobileOAuthRedirect } from "../lib/integrations/oauth-redirect";
 import {
   createOAuthStateBinding,
   getOAuthCallbackUrl,
@@ -241,12 +242,9 @@ function getApplicationBaseUrl(): string {
   return process.env.OAUTH_CALLBACK_BASE_URL || process.env.APP_URL || "http://localhost:3000";
 }
 
-function getDefaultMobileRedirect(): string {
-  return process.env.OAUTH_MOBILE_CALLBACK_URL || "gradientpeak://integrations";
-}
-
 function requireAllowedOAuthReturn(redirectUri?: string): string {
-  const target = redirectUri ?? getDefaultMobileRedirect();
+  const defaultMobileRedirect = getDefaultMobileOAuthRedirect();
+  const target = redirectUri ?? defaultMobileRedirect;
   const parsedTarget = new URL(target);
   const isConfiguredWebReturn =
     parsedTarget.origin === new URL(getApplicationBaseUrl()).origin &&
@@ -259,7 +257,7 @@ function requireAllowedOAuthReturn(redirectUri?: string): string {
     parsedTarget.pathname === "/integrations" &&
     parsedTarget.search === "" &&
     parsedTarget.hash === "";
-  if (target !== getDefaultMobileRedirect() && !isConfiguredWebReturn && !isLocalAdapterWebReturn) {
+  if (target !== defaultMobileRedirect && !isConfiguredWebReturn && !isLocalAdapterWebReturn) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "OAuth redirect URI is not allowed" });
   }
   return target;

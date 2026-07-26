@@ -1,4 +1,4 @@
-import { handleOAuthCallback } from "@repo/api/server";
+import { getDefaultMobileOAuthRedirect, handleOAuthCallback } from "@repo/api/server";
 import { db } from "@repo/db/client";
 import { createFileRoute } from "@tanstack/react-router";
 
@@ -18,7 +18,7 @@ export async function handleOAuthCallbackRequest({
     searchParams.get("test_return") === "web" &&
     canUseLocalWebFallback
       ? `${requestUrl.origin}/integrations?integration=failed`
-      : process.env.OAUTH_MOBILE_CALLBACK_URL || "gradientpeak://integrations";
+      : getDefaultMobileOAuthRedirect();
   const result = await handleOAuthCallback({
     db,
     code: searchParams.get("code"),

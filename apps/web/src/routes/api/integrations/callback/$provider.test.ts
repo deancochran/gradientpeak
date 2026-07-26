@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const handleOAuthCallback = vi.hoisted(() => vi.fn());
+const { getDefaultMobileOAuthRedirect, handleOAuthCallback } = vi.hoisted(() => ({
+  getDefaultMobileOAuthRedirect: vi.fn(),
+  handleOAuthCallback: vi.fn(),
+}));
 
-vi.mock("@repo/api/server", () => ({ handleOAuthCallback }));
+vi.mock("@repo/api/server", () => ({ getDefaultMobileOAuthRedirect, handleOAuthCallback }));
 vi.mock("@repo/db/client", () => ({ db: { kind: "test-db" } }));
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: vi.fn(() => (options: unknown) => options),
@@ -20,6 +23,7 @@ describe("OAuth callback HTTP boundary", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("PROVIDER_OAUTH_TEST_ADAPTER", "1");
     vi.stubEnv("OAUTH_MOBILE_CALLBACK_URL", "https://app.example.com/integrations");
+    getDefaultMobileOAuthRedirect.mockReturnValue("https://app.example.com/integrations");
     handleOAuthCallback.mockResolvedValue({
       redirectUrl: "https://app.example.com/integrations?error=invalid_state",
       status: 302,
@@ -46,6 +50,7 @@ describe("OAuth callback HTTP boundary", () => {
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("PROVIDER_OAUTH_TEST_ADAPTER", "1");
     vi.stubEnv("OAUTH_MOBILE_CALLBACK_URL", "https://app.example.com/integrations");
+    getDefaultMobileOAuthRedirect.mockReturnValue("https://app.example.com/integrations");
     handleOAuthCallback.mockResolvedValue({
       redirectUrl: "https://app.example.com/integrations?error=invalid_state",
       status: 302,
@@ -61,6 +66,26 @@ describe("OAuth callback HTTP boundary", () => {
     expect(handleOAuthCallback).toHaveBeenCalledWith(
       expect.objectContaining({ fallbackRedirect: "https://app.example.com/integrations" }),
     );
+  });
+
+  it("uses the installed development scheme when no callback is configured", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("OAUTH_MOBILE_CALLBACK_URL", "");
+    getDefaultMobileOAuthRedirect.mockReturnValue("gradientpeak-dev://integrations");
+    handleOAuthCallback.mockResolvedValue({
+      redirectUrl: "gradientpeak-dev://integrations?error=invalid_state",
+      status: 302,
+    });
+
+    await handleOAuthCallbackRequest({
+      params: { provider: "wahoo" },
+      request: new Request("http://localhost:3000/api/integrations/callback/wahoo?state=bad"),
+    });
+
+    expect(handleOAuthCallback).toHaveBeenCalledWith(
+      expect.objectContaining({ fallbackRedirect: "gradientpeak-dev://integrations" }),
+    );
+    expect(getDefaultMobileOAuthRedirect).toHaveBeenCalledOnce();
   });
 
   it("allows the explicit loopback origin for the local OAuth test adapter", async () => {

@@ -101,15 +101,34 @@ describe("integrationsRouter", () => {
   });
 
   it("preserves getAuthUrl and disconnect contracts", async () => {
+    delete process.env.OAUTH_MOBILE_CALLBACK_URL;
     vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(STATE_ID);
     mocks.repositories.oauthStates.create.mockResolvedValue(undefined);
     mocks.repositories.integrations.deleteByProfileIdAndProvider.mockResolvedValue(undefined);
     const caller = createCaller();
 
-    await expect(caller.getAuthUrl({ provider: "wahoo" })).resolves.toMatchObject({
-      state: STATE_ID,
-    });
+    await expect(
+      caller.getAuthUrl({
+        provider: "wahoo",
+        redirectUri: "gradientpeak-dev://integrations",
+      }),
+    ).resolves.toMatchObject({ state: STATE_ID });
+    expect(mocks.repositories.oauthStates.create).toHaveBeenCalledWith(
+      expect.objectContaining({ mobileRedirectUri: "gradientpeak-dev://integrations" }),
+    );
     await expect(caller.disconnect({ provider: "wahoo" })).resolves.toEqual({ success: true });
+  });
+
+  it("defaults an omitted OAuth return to the installed development scheme", async () => {
+    delete process.env.OAUTH_MOBILE_CALLBACK_URL;
+    mocks.repositories.oauthStates.create.mockResolvedValue(undefined);
+
+    await expect(createCaller().getAuthUrl({ provider: "wahoo" })).resolves.toMatchObject({
+      state: expect.any(String),
+    });
+    expect(mocks.repositories.oauthStates.create).toHaveBeenCalledWith(
+      expect.objectContaining({ mobileRedirectUri: "gradientpeak-dev://integrations" }),
+    );
   });
 
   it("rejects an attacker-controlled OAuth return URI before storing state", async () => {

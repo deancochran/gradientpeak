@@ -25,6 +25,7 @@ export function handleOAuthCallback({ db, ...input }: HandleOAuthCallbackRequest
   });
 }
 export { createApiContext } from "./context";
+export { getDefaultMobileOAuthRedirect } from "./lib/integrations/oauth-redirect";
 export type { AppRouter } from "./routers";
 export { appRouter } from "./routers";
 export { getApiStorageService } from "./storage-service";
