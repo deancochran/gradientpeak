@@ -259,14 +259,14 @@ export function createEventReadRepository(
         activities: activityRows.slice(0, boundedLimit - 1),
         events: eventRows.slice(0, boundedLimit - 1).map((row) => serializeEventRow(row)),
         planningTimezone,
-        resolvedRange: range,
+        resolvedRange: { startDate, endDate },
         sourceCounts: {
           activities: Math.min(activityRows.length, boundedLimit - 1),
           events: Math.min(eventRows.length, boundedLimit - 1),
         },
         sourceCoverage: {
-          activities: { ...range, status: activitiesStatus },
-          scheduledItems: { ...range, status: scheduledItemsStatus },
+          activities: { startDate, endDate, status: activitiesStatus },
+          scheduledItems: { startDate, endDate, status: scheduledItemsStatus },
         },
       };
     },

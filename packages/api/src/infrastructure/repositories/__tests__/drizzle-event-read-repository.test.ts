@@ -208,14 +208,12 @@ describe("drizzle-event-read-repository", () => {
       profileId: "profile-1",
     });
 
-    expect(result).toMatchObject({
-      planningTimezone: "America/Los_Angeles",
-      resolvedRange: { startDate: "2026-07-19", endDate: "2026-07-25" },
-      sourceCounts: { activities: 0, events: 0 },
-      sourceCoverage: {
-        activities: { startDate: "2026-07-19", endDate: "2026-07-25", status: "complete" },
-        scheduledItems: { startDate: "2026-07-19", endDate: "2026-07-25", status: "complete" },
-      },
+    expect(result.planningTimezone).toBe("America/Los_Angeles");
+    expect(result.resolvedRange).toEqual({ startDate: "2026-07-19", endDate: "2026-07-25" });
+    expect(result.sourceCounts).toEqual({ activities: 0, events: 0 });
+    expect(result.sourceCoverage).toEqual({
+      activities: { startDate: "2026-07-19", endDate: "2026-07-25", status: "complete" },
+      scheduledItems: { startDate: "2026-07-19", endDate: "2026-07-25", status: "complete" },
     });
   });
 
