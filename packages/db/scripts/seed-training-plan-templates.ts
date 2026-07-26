@@ -32,6 +32,10 @@ function hasChanges(
   if ((local.description ?? null) !== (remote.description ?? null)) return true;
   if (local.sessions_per_week_target !== remote.sessions_per_week_target) return true;
   if (`${local.duration_hours}` !== `${remote.duration_hours ?? ""}`) return true;
+  if (remote.profile_id !== null) return true;
+  if (remote.is_system_template !== true) return true;
+  if (remote.template_visibility !== "public") return true;
+  if (remote.content_visibility !== "public") return true;
 
   const localStructure = persistedStructure(local);
 
@@ -107,7 +111,10 @@ async function seedTrainingPlanTemplates() {
                 structure_hash: structureHash(persistedStructure(template)),
                 sessions_per_week_target: template.sessions_per_week_target,
                 duration_hours: template.duration_hours ?? null,
+                profile_id: null,
+                is_system_template: true,
                 template_visibility: "public",
+                content_visibility: "public",
                 updated_at: new Date(),
               })
               .where(eq(trainingPlans.id, existing.id));
@@ -128,6 +135,7 @@ async function seedTrainingPlanTemplates() {
             profile_id: null,
             is_system_template: true,
             template_visibility: "public",
+            content_visibility: "public",
             name: template.name,
             description: template.description ?? null,
             structure: persistedStructure(template),

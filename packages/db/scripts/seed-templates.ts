@@ -29,6 +29,10 @@ function hasChanges(local: SystemTemplate, remote: ExistingActivityTemplate): bo
   if ((local.gps_recording_enabled ?? true) !== remote.gps_recording_enabled) return true;
   if (structureHash(local.structure) !== remote.structure_hash) return true;
   if ((local.notes ?? null) !== (remote.notes ?? null)) return true;
+  if (remote.profile_id !== null) return true;
+  if (remote.is_system_template !== true) return true;
+  if (remote.template_visibility !== "public") return true;
+  if (remote.content_visibility !== "public") return true;
 
   const localStructure = JSON.parse(JSON.stringify(local.structure));
   const remoteStructure = remote.structure;
@@ -102,7 +106,10 @@ async function seedTemplates() {
                 structure_hash: structureHash(template.structure),
                 gps_recording_enabled: template.gps_recording_enabled ?? true,
                 notes: template.notes ?? null,
+                profile_id: null,
+                is_system_template: true,
                 template_visibility: "public",
+                content_visibility: "public",
                 updated_at: new Date(),
               })
               .where(eq(activityPlans.id, existing.id));
@@ -123,6 +130,7 @@ async function seedTemplates() {
             profile_id: null,
             is_system_template: true,
             template_visibility: "public",
+            content_visibility: "public",
             name: template.name,
             description: template.description,
             structure: template.structure,
