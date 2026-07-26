@@ -5,7 +5,6 @@ import {
   getGoalDraftQualityFeedback,
   profileTrainingSettingsRecordSchema,
 } from "@repo/core";
-import { router } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
@@ -810,7 +809,6 @@ export function useOnboardingFlow() {
       const completedRecord = createCompletedOnboardingRecovery(recoveryUserId);
       await saveOnboardingRecovery(completedRecord);
       recoveryRef.current = completedRecord;
-      router.replace("/");
       try {
         await clearOnboardingRecovery(recoveryUserId);
         recoveryRef.current = null;

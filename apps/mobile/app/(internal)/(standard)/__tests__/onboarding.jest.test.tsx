@@ -630,6 +630,14 @@ const flushUsernameDebounce = async () => {
   await new Promise((resolve) => setTimeout(resolve, 450));
 };
 
+const waitForGateOwnedCompletion = async () => {
+  await waitFor(() => expect(completeOnboardingMock).toHaveBeenCalledTimes(1));
+  await waitFor(() =>
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("onboarding-recovery.v2.raw.user-1"),
+  );
+  expect(replaceMock).not.toHaveBeenCalled();
+};
+
 describe("onboarding screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -1149,9 +1157,8 @@ describe("onboarding screen", () => {
     expect(completeLifecycleSetupMutationMock).toHaveBeenCalledTimes(1);
     fireEvent.press(screen.getByTestId("onboarding-status-dismiss"));
     fireEvent.press(screen.getByText("Finish"));
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/"));
+    await waitForGateOwnedCompletion();
     expect(completeLifecycleSetupMutationMock).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/"));
     await waitFor(() =>
       expect(screen.getByTestId("onboarding-finish-button").props.disabled).toBe(false),
     );
@@ -1188,7 +1195,7 @@ describe("onboarding screen", () => {
 
     fireEvent.press(screen.getByTestId("onboarding-status-dismiss"));
     fireEvent.press(screen.getByText("Finish"));
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/"));
+    await waitForGateOwnedCompletion();
 
     expect(followProfileMutationMock).toHaveBeenCalledTimes(1);
     expect(followProfileMutationMock).toHaveBeenCalledWith({
@@ -1213,7 +1220,7 @@ describe("onboarding screen", () => {
     renderNative(<OnboardingScreen />);
     await waitFor(() => expect(screen.getByText("All Set!")).toBeTruthy());
     fireEvent.press(screen.getByText("Finish"));
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/"));
+    await waitForGateOwnedCompletion();
 
     expect(completeLifecycleSetupMutationMock).not.toHaveBeenCalled();
     expect(followProfileMutationMock).toHaveBeenCalledWith({
@@ -1311,7 +1318,7 @@ describe("onboarding screen", () => {
     fireEvent.press(screen.getByText("Finish"));
     await waitFor(() => expect(screen.getByTestId("onboarding-status-confirm")).toBeTruthy());
     fireEvent.press(screen.getByTestId("onboarding-status-confirm"));
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/"));
+    await waitForGateOwnedCompletion();
     expect(completeLifecycleSetupMutationMock).toHaveBeenCalledTimes(1);
     expect(followProfileMutationMock).toHaveBeenCalledTimes(2);
   });
@@ -1611,7 +1618,7 @@ describe("onboarding screen", () => {
     expect(screen.getByText("Create Spring 5K")).toBeTruthy();
     fireEvent.press(screen.getByText("Finish"));
 
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/"));
+    await waitForGateOwnedCompletion();
     expect(mutationOrder).toEqual(["complete", "local-complete"]);
     const lifecycleInput = completeLifecycleSetupMutationMock.mock.calls[0]?.[0];
     expect(lifecycleInput.goal).toEqual(
@@ -1656,7 +1663,7 @@ describe("onboarding screen", () => {
         "profileSettings.getForProfile",
       ],
     });
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/"));
+    await waitForGateOwnedCompletion();
   });
 
   it("gates local completion and offers retry when lifecycle completion fails", async () => {
@@ -1695,7 +1702,7 @@ describe("onboarding screen", () => {
 
     fireEvent.press(screen.getByTestId("onboarding-status-dismiss"));
     fireEvent.press(screen.getByText("Finish"));
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/"));
+    await waitForGateOwnedCompletion();
 
     expect(completeLifecycleSetupMutationMock).toHaveBeenCalledTimes(2);
     expect(completeLifecycleSetupMutationMock.mock.calls[1]?.[0]).toEqual(
@@ -1713,7 +1720,7 @@ describe("onboarding screen", () => {
     advanceFromGoalsToSummary();
     fireEvent.press(screen.getByText("Finish"));
 
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/"));
+    await waitForGateOwnedCompletion();
     const recovery = await loadOnboardingRecovery("user-1");
     expect(recovery?.status).toBe("completed");
     expect(Object.keys(recovery ?? {}).sort()).toEqual([
@@ -1819,7 +1826,7 @@ describe("onboarding screen", () => {
     await waitFor(() => expect(screen.getByTestId("onboarding-status-modal")).toBeTruthy());
     expect(completeLifecycleSetupMutationMock).toHaveBeenCalledTimes(2);
     fireEvent.press(screen.getByTestId("onboarding-status-confirm"));
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/"));
+    await waitForGateOwnedCompletion();
     expect(mutationOrder).toEqual(["complete", "retry", "local-complete"]);
   });
 
@@ -1847,7 +1854,7 @@ describe("onboarding screen", () => {
     expect(screen.queryByText(/Finish to retry/)).toBeNull();
     expect(completeOnboardingMock).not.toHaveBeenCalled();
     fireEvent.press(screen.getByTestId("onboarding-status-confirm"));
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/"));
+    await waitForGateOwnedCompletion();
     expect(completeLifecycleSetupMutationMock).toHaveBeenCalledTimes(1);
   });
 
@@ -1901,8 +1908,8 @@ describe("onboarding screen", () => {
         }),
       );
       expect(completeOnboardingMock).toHaveBeenCalled();
-      expect(replaceMock).toHaveBeenCalledWith("/");
     });
+    await waitForGateOwnedCompletion();
   });
 
   it("omits settings_patch when preferences are skipped while profile intents remain authoritative", async () => {
@@ -2110,8 +2117,8 @@ describe("onboarding screen", () => {
         },
       });
       expect(completeOnboardingMock).toHaveBeenCalled();
-      expect(replaceMock).toHaveBeenCalledWith("/");
     });
+    await waitForGateOwnedCompletion();
   });
 
   it("prefills provider-imported onboarding fields before submission", async () => {

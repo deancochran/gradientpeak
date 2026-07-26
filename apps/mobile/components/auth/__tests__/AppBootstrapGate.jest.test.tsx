@@ -87,7 +87,9 @@ describe("AppBootstrapGate onboarding recovery", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByTestId("redirect-target").props.children).toContain("(tabs)"),
+      expect(screen.getByTestId("redirect-target").props.children).toBe(
+        JSON.stringify("/(internal)/(tabs)"),
+      ),
     );
     expect(screen.queryByText("Onboarding content")).toBeNull();
   });
