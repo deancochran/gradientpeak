@@ -7,7 +7,9 @@ type ProviderOAuthConfigDefinition = {
   authUrl: string;
   clientIdEnv: string;
   clientSecretEnv: string;
+  pkce: boolean;
   scopes: readonly string[];
+  tokenClientAuthentication: "client_secret_basic" | "client_secret_post";
   tokenUrl: string;
 };
 
@@ -16,7 +18,9 @@ export type ResolvedProviderOAuthConfig = {
   authUrl: string;
   clientId: string;
   clientSecret: string;
+  pkce: boolean;
   scopes: readonly string[];
+  tokenClientAuthentication: "client_secret_basic" | "client_secret_post";
   tokenUrl: string;
 };
 
@@ -29,13 +33,18 @@ const providerOAuthRegistry = {
     authUrl: "https://www.strava.com/oauth/authorize",
     clientIdEnv: "STRAVA_CLIENT_ID",
     clientSecretEnv: "STRAVA_CLIENT_SECRET",
+    pkce: true,
     scopes: ["activity:read_all"],
+    tokenClientAuthentication: "client_secret_basic",
     tokenUrl: "https://www.strava.com/api/v3/oauth/token",
   },
   wahoo: {
     authUrl: "https://api.wahooligan.com/oauth/authorize",
     clientIdEnv: "WAHOO_CLIENT_ID",
     clientSecretEnv: "WAHOO_CLIENT_SECRET",
+    // The registered GradientPeak Wahoo app is confidential. Wahoo documents PKCE for
+    // non-confidential apps and client-secret POST authentication for confidential apps.
+    pkce: false,
     scopes: [
       "email",
       "user_write",
@@ -50,27 +59,34 @@ const providerOAuthRegistry = {
       "user_read",
       "offline_data",
     ],
+    tokenClientAuthentication: "client_secret_post",
     tokenUrl: "https://api.wahooligan.com/oauth/token",
   },
   trainingpeaks: {
     authUrl: "https://oauth.trainingpeaks.com/oauth/authorize",
     clientIdEnv: "TRAININGPEAKS_CLIENT_ID",
     clientSecretEnv: "TRAININGPEAKS_CLIENT_SECRET",
+    pkce: true,
     scopes: ["activities:read", "metrics:read"],
+    tokenClientAuthentication: "client_secret_basic",
     tokenUrl: "https://oauth.trainingpeaks.com/oauth/token",
   },
   garmin: {
     authUrl: "https://connect.garmin.com/oauthConfirm",
     clientIdEnv: "GARMIN_CLIENT_ID",
     clientSecretEnv: "GARMIN_CLIENT_SECRET",
+    pkce: true,
     scopes: ["activity_read"],
+    tokenClientAuthentication: "client_secret_basic",
     tokenUrl: "https://connectapi.garmin.com/oauth-service/oauth/access_token",
   },
   zwift: {
     authUrl: "https://secure.zwift.com/oauth/authorize",
     clientIdEnv: "ZWIFT_CLIENT_ID",
     clientSecretEnv: "ZWIFT_CLIENT_SECRET",
+    pkce: true,
     scopes: ["activity:read"],
+    tokenClientAuthentication: "client_secret_basic",
     tokenUrl: "https://secure.zwift.com/oauth/token",
   },
 } as const satisfies Record<IntegrationProviderId, ProviderOAuthConfigDefinition>;
@@ -98,7 +114,9 @@ export function getProviderOAuthConfig(
       authUrl: "local-test://authorize",
       clientId: "gradientpeak-local-test",
       clientSecret: env.PROVIDER_OAUTH_TEST_SECRET || "gradientpeak-local-test-only",
+      pkce: true,
       scopes: definition.scopes,
+      tokenClientAuthentication: "client_secret_basic",
       tokenUrl: "local-test://token",
     };
   }
@@ -112,7 +130,9 @@ export function getProviderOAuthConfig(
     authUrl: definition.authUrl,
     clientId,
     clientSecret,
+    pkce: definition.pkce,
     scopes: definition.scopes,
+    tokenClientAuthentication: definition.tokenClientAuthentication,
     tokenUrl: definition.tokenUrl,
   };
 }

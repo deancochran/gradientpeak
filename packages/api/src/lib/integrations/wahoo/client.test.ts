@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { refreshWahooAccessToken, WahooClient } from "./client";
-import { WAHOO_RECONNECT_REQUIRED_MESSAGE } from "./credentials";
+import {
+  WAHOO_AUTHORIZATION_RESET_REQUIRED_MESSAGE,
+  WAHOO_RECONNECT_REQUIRED_MESSAGE,
+} from "./credentials";
 
 describe("WahooClient", () => {
   const fetchMock = vi.fn();
@@ -367,6 +370,24 @@ describe("WahooClient", () => {
       code: "WAHOO_RECONNECT_REQUIRED",
       message: WAHOO_RECONNECT_REQUIRED_MESSAGE,
       status: 401,
+    });
+  });
+
+  it("requires authorization reset when Wahoo reports the unrevoked-token limit", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: "invalid_grant",
+          error_description: "Maximum unrevoked access token limit exceeded",
+        }),
+        { status: 400, statusText: "Bad Request" },
+      ),
+    );
+
+    await expect(refreshWahooAccessToken("refresh-token")).rejects.toMatchObject({
+      code: "WAHOO_AUTHORIZATION_RESET_REQUIRED",
+      message: WAHOO_AUTHORIZATION_RESET_REQUIRED_MESSAGE,
+      status: 400,
     });
   });
 

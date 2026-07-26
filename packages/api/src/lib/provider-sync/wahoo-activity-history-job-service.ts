@@ -1,12 +1,17 @@
 import type { ProviderSyncRepository, WahooIntegrationRecord } from "../../repositories";
 import type { WahooActivityImporter } from "../integrations/wahoo/activity-importer";
 import {
+  activateWahooAccessToken,
   refreshWahooAccessToken,
   WahooClient,
   type WahooTokenRefreshResult,
   type WahooWorkoutSummary,
 } from "../integrations/wahoo/client";
-import { resolveWahooCredentials } from "../integrations/wahoo/credentials";
+import {
+  resolveWahooCredentials,
+  WAHOO_AUTHORIZATION_RESET_REQUIRED_MESSAGE,
+  WahooAuthorizationResetRequiredError,
+} from "../integrations/wahoo/credentials";
 import { logger } from "../logger";
 import {
   createProviderSyncWorkerId,
@@ -93,6 +98,7 @@ function createDefaultWahooClient(integration: WahooIntegrationRecord): WahooWor
 export class WahooActivityHistoryJobService {
   constructor(
     private readonly deps: {
+      activateAccessToken?: (accessToken: string) => Promise<void>;
       importer: WahooActivityImporter;
       executionLimiter?: ProviderSyncConcurrencyLimiter;
       providerSyncRepository: ProviderSyncRepository;
@@ -210,6 +216,7 @@ export class WahooActivityHistoryJobService {
               throw new Error("Wahoo integration external ID is not numeric");
             }
             const resolvedIntegration = await resolveWahooCredentials({
+              activateAccessToken: this.deps.activateAccessToken ?? activateWahooAccessToken,
               integration,
               persistTokens: (tokens) =>
                 this.deps.wahooRepository.updateWahooIntegrationTokens({
@@ -320,11 +327,14 @@ export class WahooActivityHistoryJobService {
               await this.deps.providerSyncRepository.markJobSucceeded(job.id, workerId);
               return "completed";
             }
-            const lastError =
-              error instanceof Error && error.message === "activity_history_budget_exceeded"
+            const authorizationResetRequired =
+              error instanceof WahooAuthorizationResetRequiredError;
+            const lastError = authorizationResetRequired
+              ? WAHOO_AUTHORIZATION_RESET_REQUIRED_MESSAGE
+              : error instanceof Error && error.message === "activity_history_budget_exceeded"
                 ? "activity_history_budget_exceeded"
                 : "activity_history_failed";
-            const shouldDeadLetter = job.attempt >= job.maxAttempts;
+            const shouldDeadLetter = authorizationResetRequired || job.attempt >= job.maxAttempts;
             const nextRunAt = shouldDeadLetter
               ? undefined
               : addMinutes(now, Math.min(job.attempt * 5, 60));

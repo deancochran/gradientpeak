@@ -13,7 +13,9 @@ const config: ResolvedProviderOAuthConfig = {
   authUrl: "local-test://authorize",
   clientId: "local-client",
   clientSecret: "local-secret",
+  pkce: true,
   scopes: ["workouts_read", "offline_data"],
+  tokenClientAuthentication: "client_secret_basic",
   tokenUrl: "local-test://token",
 };
 

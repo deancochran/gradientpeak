@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   error: null as Error | null,
   integrations: [] as Array<Record<string, unknown>>,
   refetch: vi.fn(),
+  toastError: vi.fn(),
+  toastSuccess: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -15,7 +17,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("sonner", () => ({
-  toast: { error: vi.fn(), success: vi.fn() },
+  toast: { error: mocks.toastError, success: mocks.toastSuccess },
 }));
 
 vi.mock("../../lib/api/client", () => {
@@ -157,5 +159,20 @@ describe("web integrations journey", () => {
 
     expect(screen.getByRole("button", { name: "Reconnect" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Sync now" })).toBeNull();
+  });
+
+  it("shows actionable token-limit recovery and removes callback details from the URL", () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/integrations?integration=failed&provider=wahoo&error=wahoo_token_limit_exceeded",
+    );
+
+    render(<IntegrationsPage />);
+
+    expect(mocks.toastError).toHaveBeenCalledWith(
+      "Wahoo has too many active GradientPeak authorizations. Revoke GradientPeak in Wahoo, then try again.",
+    );
+    expect(window.location.search).toBe("");
   });
 });

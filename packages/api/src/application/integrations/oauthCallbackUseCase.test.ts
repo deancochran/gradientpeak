@@ -253,6 +253,34 @@ describe("OAuth callback use case", () => {
     expect(deps.oauthStates.deleteByState).toHaveBeenCalledWith(STATE_ID);
   });
 
+  it("returns an actionable error for Wahoo's unrevoked access-token limit", async () => {
+    useRemoteWahooConfig();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: "invalid_grant",
+          error_description: "Maximum unrevoked access token limit exceeded",
+        }),
+        { status: 400 },
+      ),
+    );
+    const deps = createDependencies();
+
+    const result = await handleOAuthCallback({
+      ...deps,
+      code: "provider-code",
+      error: null,
+      fallbackRedirect: "http://localhost:3000/integrations",
+      provider: "wahoo",
+      state: STATE_ID,
+    });
+
+    const redirect = new URL(result.redirectUrl);
+    expect(redirect.searchParams.get("error")).toBe("wahoo_token_limit_exceeded");
+    expect(redirect.searchParams.has("error_detail")).toBe(false);
+    expect(deps.integrations.upsertFromOAuthStateInTransaction).not.toHaveBeenCalled();
+  });
+
   it("returns a generic failure when provider-account ownership conflicts", async () => {
     const deps = createDependencies();
     deps.integrations.upsertFromOAuthStateInTransaction.mockRejectedValueOnce(
@@ -389,19 +417,22 @@ describe("OAuth callback use case", () => {
 
   it("normalizes compatible remote expiry strings and tolerates extra provider fields", async () => {
     useRemoteWahooConfig();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          access_token: "remote-access-token",
-          athlete: { id: 42 },
-          expires_in: "3600",
-          provider_specific_metadata: { ignored: true },
-          refresh_token: null,
-          scope: null,
-        }),
-        { status: 200 },
-      ),
-    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            access_token: "remote-access-token",
+            athlete: { id: 42 },
+            expires_in: "3600",
+            provider_specific_metadata: { ignored: true },
+            refresh_token: null,
+            scope: null,
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 42 }), { status: 200 }));
     const deps = createDependencies();
 
     await expect(
@@ -424,6 +455,15 @@ describe("OAuth callback use case", () => {
         scope: null,
       }),
     );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [, request] = fetchMock.mock.calls[0] ?? [];
+    const headers = new Headers(request?.headers);
+    const body = new URLSearchParams(String(request?.body));
+    expect(headers.has("Authorization")).toBe(false);
+    expect(body.get("client_id")).toBe("wahoo-client-id");
+    expect(body.get("client_secret")).toBe("wahoo-client-secret");
+    expect(body.get("redirect_uri")).toBe("http://localhost:3000/api/integrations/callback/wahoo");
+    expect(body.has("code_verifier")).toBe(false);
   });
 
   it("fails closed when a supplied token identity is malformed", async () => {
@@ -537,9 +577,11 @@ describe("OAuth callback use case", () => {
 
   it("fails closed when a non-Wahoo token omits the provider identity", async () => {
     useRemoteStravaConfig();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ access_token: "remote-access-token" }), { status: 200 }),
-    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ access_token: "remote-access-token" }), { status: 200 }),
+      );
     const deps = createDependencies("strava");
 
     const result = await handleOAuthCallback({
@@ -555,24 +597,35 @@ describe("OAuth callback use case", () => {
     expect(deps.getTransactionCallCount()).toBe(0);
     expect(deps.integrations.upsertFromOAuthStateInTransaction).not.toHaveBeenCalled();
     expect(deps.oauthStates.deleteByState).toHaveBeenCalledWith(STATE_ID);
+    const [, request] = fetchMock.mock.calls[0] ?? [];
+    const headers = new Headers(request?.headers);
+    const body = new URLSearchParams(String(request?.body));
+    expect(headers.get("Authorization")).toMatch(/^Basic /);
+    expect(body.has("client_secret")).toBe(false);
+    expect(body.has("code_verifier")).toBe(true);
   });
 
-  it("finishes remote token exchange before opening the persistence transaction", async () => {
+  it("persists an identity-bearing Wahoo token before activation", async () => {
     useRemoteWahooConfig();
     const order: string[] = [];
-    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
-      order.push("token_exchange");
-      return new Response(
-        JSON.stringify({
-          access_token: "remote-access-token",
-          athlete: { id: 42 },
-          expires_in: 3600,
-          refresh_token: "remote-refresh-token",
-          scope: "workouts_read offline_data",
-        }),
-        { status: 200 },
-      );
-    });
+    vi.spyOn(globalThis, "fetch")
+      .mockImplementationOnce(async () => {
+        order.push("token_exchange");
+        return new Response(
+          JSON.stringify({
+            access_token: "remote-access-token",
+            athlete: { id: 42 },
+            expires_in: 3600,
+            refresh_token: "remote-refresh-token",
+            scope: "workouts_read offline_data",
+          }),
+          { status: 200 },
+        );
+      })
+      .mockImplementationOnce(async () => {
+        order.push("token_activation");
+        return new Response(JSON.stringify({ id: 42 }), { status: 200 });
+      });
     const deps = createDependencies();
     const baseRunInTransaction = deps.runInTransaction;
     const runInTransaction = async <T>(
@@ -592,7 +645,34 @@ describe("OAuth callback use case", () => {
       state: STATE_ID,
     });
 
-    expect(order).toEqual(["token_exchange", "transaction"]);
+    expect(order).toEqual(["token_exchange", "transaction", "token_activation"]);
+  });
+
+  it("keeps a Wahoo connection recoverable when post-persistence activation is unavailable", async () => {
+    useRemoteWahooConfig();
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: "remote-access-token", athlete: { id: 42 } }), {
+          status: 200,
+        }),
+      )
+      .mockRejectedValueOnce(new TypeError("provider temporarily unavailable"));
+    const deps = createDependencies();
+
+    const result = await handleOAuthCallback({
+      ...deps,
+      code: "provider-code",
+      error: null,
+      fallbackRedirect: "http://localhost:3000/integrations",
+      provider: "wahoo",
+      state: STATE_ID,
+    });
+
+    expect(new URL(result.redirectUrl).searchParams.get("integration")).toBe("connected");
+    expect(deps.integrations.upsertFromOAuthStateInTransaction).toHaveBeenCalledWith(
+      deps.transaction,
+      expect.objectContaining({ accessToken: "remote-access-token", externalId: "42" }),
+    );
   });
 
   it("sanitizes provider denial details before redirecting", async () => {

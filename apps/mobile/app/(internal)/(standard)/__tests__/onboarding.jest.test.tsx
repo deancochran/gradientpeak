@@ -95,6 +95,7 @@ let groupsErrorMock = false;
 let peopleErrorMock = false;
 const groupSearchQueryMock = jest.fn();
 const peopleSearchQueryMock = jest.fn();
+const mockOpenAuthSessionAsync = jest.fn();
 
 const createIntegrationOverview = (provider: "strava" | "wahoo", configured: boolean) => ({
   actions: [],
@@ -206,7 +207,7 @@ jest.mock("expo-constants", () => ({
 
 jest.mock("expo-web-browser", () => ({
   __esModule: true,
-  openAuthSessionAsync: jest.fn(),
+  openAuthSessionAsync: mockOpenAuthSessionAsync,
 }));
 
 jest.mock("@/lib/hooks/useAuth", () => ({
@@ -2052,6 +2053,31 @@ describe("onboarding screen", () => {
 
     expect(screen.getByTestId("integration-provider-strava")).toBeTruthy();
     expect(screen.queryByTestId("integration-provider-wahoo")).toBeNull();
+  });
+
+  it("does not report onboarding success when Wahoo returns a token-limit failure", async () => {
+    integrationOverviewMock = [createIntegrationOverview("wahoo", true)];
+    mockOpenAuthSessionAsync.mockResolvedValue({
+      type: "success",
+      url: "gradientpeak-dev://integrations?integration=failed&provider=wahoo&error=wahoo_token_limit_exceeded",
+    });
+    renderNative(<OnboardingScreen />);
+
+    fireEvent.changeText(screen.getByTestId("onboarding-full-name-input"), "Riley Chen");
+    fireEvent.changeText(screen.getByTestId("onboarding-username-input"), "riley_runs");
+    await flushUsernameDebounce();
+    fireEvent.press(screen.getByText("Next"));
+    fireEvent.press(screen.getByTestId("integration-connect-wahoo"));
+
+    await waitFor(() =>
+      expect(
+        screen.getAllByText(
+          "Wahoo has too many active GradientPeak authorizations. Revoke GradientPeak in your Wahoo account, then try again.",
+        ).length,
+      ).toBeTruthy(),
+    );
+    expect(screen.queryByText("Integration connected.")).toBeNull();
+    expect(refetchIntegrationOverviewMock).not.toHaveBeenCalled();
   });
 
   it("shows retryable integration query errors without enabling unknown providers", async () => {

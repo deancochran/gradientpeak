@@ -62,7 +62,12 @@ function IntegrationsPage() {
     if (!outcome) return;
 
     if (outcome === "connected") toast.success("Integration connected");
-    else toast.error("Integration connection failed");
+    else if (url.searchParams.get("error") === "wahoo_token_limit_exceeded") {
+      toast.error(
+        "Wahoo has too many active GradientPeak authorizations. Revoke GradientPeak in Wahoo, then try again.",
+      );
+    } else toast.error("Integration connection failed");
+    url.searchParams.delete("error");
     url.searchParams.delete("integration");
     url.searchParams.delete("provider");
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);

@@ -289,8 +289,10 @@ function buildOAuthUrl(
     response_type: "code",
     scope: config.scopes.join(" "),
     state,
-    code_challenge: challenge,
-    code_challenge_method: "S256",
   });
+  if (config.pkce) {
+    params.set("code_challenge", challenge);
+    params.set("code_challenge_method", "S256");
+  }
   return `${config.authUrl}?${params.toString()}`;
 }

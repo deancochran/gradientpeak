@@ -25,8 +25,12 @@ import {
   toWahooWorkoutTypeId,
   type WahooActivityType,
 } from "./activity-type-utils";
-import { createWahooClient, refreshWahooAccessToken } from "./client";
-import { resolveWahooCredentials, WahooReconnectRequiredError } from "./credentials";
+import { activateWahooAccessToken, createWahooClient, refreshWahooAccessToken } from "./client";
+import {
+  resolveWahooCredentials,
+  WahooAuthorizationResetRequiredError,
+  WahooReconnectRequiredError,
+} from "./credentials";
 import {
   calculateWorkoutDuration,
   convertToWahooPlan,
@@ -244,6 +248,7 @@ export function resolveWahooSyncMetrics(
 export type SyncFailureCategory = "eligibility" | "integration" | "provider";
 
 export type SyncFailureCode =
+  | "authorization_reset_required"
   | "missing_metric"
   | "unsupported_target"
   | "unsupported_segment"
@@ -356,6 +361,7 @@ export function createWahooRouteStorage(
 export class WahooSyncService {
   constructor(
     private readonly deps: {
+      activateAccessToken?: (accessToken: string) => Promise<void>;
       repository: WahooRepository;
       storage: WahooSyncStorage;
     },
@@ -610,6 +616,7 @@ export class WahooSyncService {
       });
 
       const freshIntegration = await resolveWahooCredentials({
+        activateAccessToken: this.deps.activateAccessToken ?? activateWahooAccessToken,
         integration: {
           ...integration,
           expiresAt: integration.expiresAt ?? null,
@@ -674,6 +681,14 @@ export class WahooSyncService {
         outcome: "failure",
         provider: "wahoo",
       });
+      if (error instanceof WahooAuthorizationResetRequiredError) {
+        return createSyncFailure({
+          category: "integration",
+          code: "authorization_reset_required",
+          error: error.message,
+          retryable: false,
+        });
+      }
       if (error instanceof WahooReconnectRequiredError) {
         return createSyncFailure({
           category: "integration",
@@ -1150,6 +1165,7 @@ export class WahooSyncService {
 
       // 3. Delete workout from Wahoo
       const freshIntegration = await resolveWahooCredentials({
+        activateAccessToken: this.deps.activateAccessToken ?? activateWahooAccessToken,
         integration: {
           ...integration,
           expiresAt: integration.expiresAt ?? null,
@@ -1189,6 +1205,14 @@ export class WahooSyncService {
         outcome: "failure",
         provider: "wahoo",
       });
+      if (error instanceof WahooAuthorizationResetRequiredError) {
+        return createSyncFailure({
+          category: "integration",
+          code: "authorization_reset_required",
+          error: error.message,
+          retryable: false,
+        });
+      }
       if (error instanceof WahooReconnectRequiredError) {
         return createSyncFailure({
           category: "integration",

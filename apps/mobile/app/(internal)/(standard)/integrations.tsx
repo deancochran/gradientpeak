@@ -15,6 +15,7 @@ import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
 import type { IntegrationProvider } from "@/lib/constants/integrations";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
+import { parseIntegrationOAuthCallback } from "@/lib/integration-oauth-callback";
 
 function getMobileRedirectUri(): string {
   if (Constants.expoConfig?.extra?.redirectUri) {
@@ -73,52 +74,13 @@ export default function IntegrationsScreen() {
   const handleDeepLink = useCallback(
     (event: { url: string }) => {
       try {
-        const url = new URL(event.url);
-        const success = url.searchParams.get("success");
-        const error = url.searchParams.get("error");
-        const provider = url.searchParams.get("provider");
-        const errorDetail = url.searchParams.get("error_detail");
+        const outcome = parseIntegrationOAuthCallback(event.url);
+        if (!outcome) return;
 
-        if (success === "true") {
-          setStatusModal({ title: "Connected", description: provider ?? "Integration connected" });
-          void utils.integrations.getSyncOverview.invalidate();
-          void utils.integrations.list.invalidate();
-          refetchSyncOverview();
-        } else if (error) {
-          void utils.integrations.getSyncOverview.invalidate();
-          void utils.integrations.list.invalidate();
-          refetchSyncOverview();
-          let errorMessage = "Connection failed";
-          switch (error) {
-            case "invalid_state":
-              errorMessage = "Session expired. Try again.";
-              break;
-            case "missing_code":
-              errorMessage = "Authorization incomplete.";
-              break;
-            case "database_error":
-            case "store_integration_failed":
-              errorMessage = "Could not save connection.";
-              break;
-            case "server_error":
-              errorMessage = "Server error. Try again.";
-              break;
-            case "token_exchange_failed":
-              errorMessage = errorDetail
-                ? `Provider error: ${errorDetail}`
-                : "Token exchange failed.";
-              break;
-            case "provider_identity_failed":
-              errorMessage = "Could not verify the provider account.";
-              break;
-            case "invalid_provider":
-              errorMessage = "Provider unavailable.";
-              break;
-            default:
-              errorMessage = `Connection failed: ${error}`;
-          }
-          setStatusModal({ title: "Issue", description: errorMessage });
-        }
+        void utils.integrations.getSyncOverview.invalidate();
+        void utils.integrations.list.invalidate();
+        refetchSyncOverview();
+        setStatusModal({ title: outcome.title, description: outcome.description });
       } catch (err) {
         console.error("Failed to parse deep link:", err);
       }
