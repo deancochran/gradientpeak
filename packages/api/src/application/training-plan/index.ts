@@ -6,6 +6,7 @@ export * from "./currentStatusUseCase";
 export * from "./effective-plan-composition";
 export * from "./get-effective-plan-load";
 export * from "./mutationUseCases";
+export * from "./plan-alignment";
 export * from "./planTabProjectionService";
 export * from "./previewCreationConfigUseCase";
 export * from "./readinessForecastBaseline";

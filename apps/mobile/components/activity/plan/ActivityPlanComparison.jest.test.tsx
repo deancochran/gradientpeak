@@ -66,7 +66,7 @@ function commonLoad(load: number, intensity: number, estimated: boolean) {
 
 describe("ActivityPlanComparison", () => {
   it("uses canonical Load and Intensity instead of legacy TSS and IF", () => {
-    renderNative(
+    const rendered = renderNative(
       <ActivityPlanComparison
         activityPlan={{
           id: "plan-1",
@@ -86,5 +86,7 @@ describe("ActivityPlanComparison", () => {
     expect(screen.getByText("Plan: ~Threshold · 0.85")).toBeTruthy();
     expect(screen.queryByText("TSS")).toBeNull();
     expect(screen.queryByText("IF")).toBeNull();
+    expect(JSON.stringify(rendered.toJSON())).toContain("Plan comparison");
+    expect(screen.queryByText(/adherence/)).toBeNull();
   });
 });

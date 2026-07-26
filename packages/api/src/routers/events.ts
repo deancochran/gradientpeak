@@ -79,8 +79,6 @@ function getContentPermissions(ctx: Context, transaction?: DrizzleTransactionCli
 }
 
 type EventStatusContext = {
-  completedByDate: Set<string>;
-  completedByDateAndPlan: Set<string>;
   todayDateKey: string;
 };
 
@@ -655,11 +653,6 @@ function resolveEventStatus(
   const scheduledDateKey = toDateKey(event.scheduled_date);
   const explicitStatus = getRecordString(event, "status")?.toLowerCase();
 
-  const explicitlyCompleted =
-    explicitStatus === "completed" ||
-    hasTruthyRecordValue(event, ["completed_activity_id", "completed_at", "linked_activity_id"]);
-  if (explicitlyCompleted) return "completed";
-
   const explicitlySkipped =
     explicitStatus === "skipped" || hasTruthyRecordValue(event, ["skipped_at", "is_skipped"]);
   if (explicitlySkipped) return "skipped";
@@ -675,14 +668,13 @@ function resolveEventStatus(
     ]);
   if (explicitlyRescheduled) return "rescheduled";
 
-  const completedByMatch =
-    statusContext.completedByDate.has(scheduledDateKey) &&
-    (event.activity_plan_id
-      ? statusContext.completedByDateAndPlan.has(
-          buildCompletedSignature(scheduledDateKey, event.activity_plan_id),
-        )
-      : true);
-  if (completedByMatch) return "completed";
+  // A lifecycle label alone is not completion evidence. Require an activity identity, while
+  // preserving explicit non-completion lifecycle states when a stale link remains attached.
+  const explicitlyCompleted = hasTruthyRecordValue(event, [
+    "completed_activity_id",
+    "linked_activity_id",
+  ]);
+  if (explicitlyCompleted) return "completed";
 
   if (scheduledDateKey < statusContext.todayDateKey) return "expired";
   return "scheduled";
@@ -699,42 +691,7 @@ async function addEventLifecycleStatus<
 ): Promise<Array<T & { status: EventLifecycleStatus }>> {
   if (events.length === 0) return [];
 
-  const dateKeys = events.map((event) => toDateKey(event.scheduled_date));
-  const sortedDateKeys = [...dateKeys].sort();
-  const minDateKey = sortedDateKeys[0];
-  const maxDateKey = sortedDateKeys[sortedDateKeys.length - 1];
-  if (!minDateKey || !maxDateKey) {
-    return events.map((event) => ({
-      ...event,
-      status: "scheduled",
-    }));
-  }
-
-  const maxDate = new Date(maxDateKey);
-  maxDate.setDate(maxDate.getDate() + 1);
-  const maxDateExclusive = maxDate.toISOString().split("T")[0] || maxDateKey;
-
-  const completedActivities = await ctx.repository.listCompletedActivitiesInRange({
-    profileId: ctx.profileId,
-    startedAtGte: minDateKey,
-    startedAtLt: maxDateExclusive,
-  });
-
-  const completedByDate = new Set<string>();
-  const completedByDateAndPlan = new Set<string>();
-
-  completedActivities.forEach((activity: any) => {
-    const dateKey = toDateKey(activity.started_at);
-    completedByDate.add(dateKey);
-
-    if (activity.activity_plan_id) {
-      completedByDateAndPlan.add(buildCompletedSignature(dateKey, activity.activity_plan_id));
-    }
-  });
-
   const statusContext: EventStatusContext = {
-    completedByDate,
-    completedByDateAndPlan,
     todayDateKey: toDateKey(new Date().toISOString()),
   };
 

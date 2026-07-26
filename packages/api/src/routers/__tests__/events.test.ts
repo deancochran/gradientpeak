@@ -535,6 +535,113 @@ describe("eventsRouter generalization", () => {
     ]);
   });
 
+  it("does not infer completion for a plan-less event from an unrelated same-day activity", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-12T12:00:00.000Z"));
+    const { caller } = createCaller({
+      events: {
+        data: [
+          createEventRow({ scheduled_date: "2026-03-02", starts_at: "2026-03-02T09:00:00.000Z" }),
+        ],
+        error: null,
+      },
+      activities: {
+        data: [
+          { id: "activity-1", started_at: "2026-03-02T10:00:00.000Z", activity_plan_id: null },
+        ],
+        error: null,
+      },
+    });
+
+    await expect(caller.list({ limit: 20, include_adhoc: true })).resolves.toMatchObject({
+      items: [expect.objectContaining({ status: "expired" })],
+    });
+  });
+
+  it("does not infer completion for a same-plan same-day activity without a persisted link", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-12T12:00:00.000Z"));
+    const { caller } = createCaller({
+      events: {
+        data: [
+          createEventRow({
+            scheduled_date: "2026-03-02",
+            starts_at: "2026-03-02T09:00:00.000Z",
+            activity_plan_id: "plan-1",
+          }),
+        ],
+        error: null,
+      },
+      activities: {
+        data: [
+          { id: "activity-1", started_at: "2026-03-02T10:00:00.000Z", activity_plan_id: "plan-1" },
+        ],
+        error: null,
+      },
+    });
+
+    await expect(caller.list({ limit: 20, include_adhoc: true })).resolves.toMatchObject({
+      items: [expect.objectContaining({ status: "expired" })],
+    });
+  });
+
+  it("does not trust a completed lifecycle label without an activity identity", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-12T12:00:00.000Z"));
+    const { caller } = createCaller({
+      events: {
+        data: [
+          createEventRow({
+            scheduled_date: "2026-03-02",
+            starts_at: "2026-03-02T09:00:00.000Z",
+            status: "completed",
+            linked_activity_id: null,
+          }),
+        ],
+        error: null,
+      },
+      activities: { data: [], error: null },
+    });
+
+    await expect(caller.list({ limit: 20, include_adhoc: true })).resolves.toMatchObject({
+      items: [expect.objectContaining({ status: "expired" })],
+    });
+  });
+
+  it("gives non-completion lifecycle states precedence over a retained activity link", async () => {
+    const { caller } = createCaller({
+      events: {
+        data: [
+          createEventRow({
+            id: "00000000-0000-4000-8000-000000000021",
+            status: "cancelled",
+            linked_activity_id: "00000000-0000-4000-8000-000000000121",
+          }),
+          createEventRow({
+            id: "00000000-0000-4000-8000-000000000022",
+            status: "skipped",
+            linked_activity_id: "00000000-0000-4000-8000-000000000122",
+          }),
+          createEventRow({
+            id: "00000000-0000-4000-8000-000000000023",
+            status: "rescheduled",
+            linked_activity_id: "00000000-0000-4000-8000-000000000123",
+          }),
+        ],
+        error: null,
+      },
+      activities: { data: [], error: null },
+    });
+
+    const result = await caller.list({ limit: 20, include_adhoc: true });
+
+    expect(result.items.map((item) => item.status)).toEqual([
+      "cancelled",
+      "skipped",
+      "rescheduled",
+    ]);
+  });
+
   it("list accepts tRPC infinite-query direction metadata", async () => {
     const { caller } = createCaller({
       events: { data: [], error: null },
@@ -1908,7 +2015,7 @@ describe("eventsRouter generalization", () => {
     });
 
     expect(result).toHaveLength(1);
-    expect(result[0]?.status).toBe("completed");
+    expect(result[0]?.status).toBe("expired");
     expect(callLog).toContainEqual({
       table: "events",
       operation: "filter",

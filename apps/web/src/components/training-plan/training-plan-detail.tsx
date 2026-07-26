@@ -49,6 +49,7 @@ export function TrainingPlanDetail({
     training_plan_id: planId,
     weeks_back: 8,
   });
+  const recentAlignment = weekly.data?.at(-1)?.planAlignment;
   const [scheduleDate, setScheduleDate] = useState(dateKey(new Date()));
   const [replaceExisting, setReplaceExisting] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -170,8 +171,20 @@ export function TrainingPlanDetail({
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <strong>{weekly.data?.at(-1)?.activityPercentage ?? 0}%</strong>
-            <p className="text-sm text-muted-foreground">Recent completion</p>
+            <strong>
+              {recentAlignment?.score ?? "—"}
+              {recentAlignment?.score !== null && recentAlignment?.score !== undefined ? "%" : ""}
+            </strong>
+            <p className="text-sm text-muted-foreground">Plan alignment</p>
+            {recentAlignment ? (
+              <p className="text-xs text-muted-foreground">
+                {recentAlignment.assessableSessions} of {recentAlignment.totalSessions} sessions
+                assessed
+                {recentAlignment.unverifiedSessions > 0
+                  ? ` · ${recentAlignment.unverifiedSessions} unverified`
+                  : ""}
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       </div>
@@ -217,7 +230,13 @@ export function TrainingPlanDetail({
                 <div className="flex justify-between rounded-lg border p-3" key={week.weekStart}>
                   <span>{week.weekStart}</span>
                   <span>
-                    {week.completedActivities}/{week.plannedActivities} completed
+                    {week.planAlignment.score ?? "—"}
+                    {week.planAlignment.score !== null ? "%" : ""} ·{" "}
+                    {week.planAlignment.assessableSessions} of {week.planAlignment.totalSessions}{" "}
+                    sessions assessed
+                    {week.planAlignment.unverifiedSessions > 0
+                      ? ` · ${week.planAlignment.unverifiedSessions} unverified`
+                      : ""}
                   </span>
                 </div>
               ))}

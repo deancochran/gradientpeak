@@ -29,6 +29,8 @@ const eventDetailData: {
   starts_at: string;
   all_day: boolean;
   notes: string;
+  status?: string | null;
+  linked_activity_id?: string | null;
   activity_plan: ActivityPlanFixture | null;
   route?: {
     id: string;
@@ -50,6 +52,8 @@ const eventDetailData: {
   starts_at: "2026-03-23T09:00:00.000Z",
   all_day: false,
   notes: "Bring gels",
+  status: "scheduled",
+  linked_activity_id: null,
   activity_plan: {
     id: "plan-1",
     name: "Tempo Builder",
@@ -295,6 +299,8 @@ describe("event detail fallback screen", () => {
     eventDetailData.occurrence_key = null;
     eventDetailData.original_starts_at = null;
     eventDetailData.event_type = "planned";
+    eventDetailData.status = "scheduled";
+    eventDetailData.linked_activity_id = null;
     eventDetailData.route = null;
     eventDetailData.route_id = null;
     eventDetailData.activity_plan = {
@@ -322,6 +328,16 @@ describe("event detail fallback screen", () => {
     expect(screen.queryByTestId("event-detail-options-open-activity-plan")).toBeNull();
     expect(screen.getByTestId("event-detail-options-trigger")).toBeTruthy();
     expect(screen.getByText("Comments (0)")).toBeTruthy();
+  });
+
+  it("does not present a cancelled linked event as completed", () => {
+    eventDetailData.status = "cancelled";
+    eventDetailData.linked_activity_id = "activity-cancelled";
+
+    renderNative(<EventDetailScreen />);
+
+    expect(screen.getByText("Cancelled")).toBeTruthy();
+    expect(screen.queryByText("Activity Completed")).toBeNull();
   });
 
   it("hides cached event details when profile access is denied", () => {

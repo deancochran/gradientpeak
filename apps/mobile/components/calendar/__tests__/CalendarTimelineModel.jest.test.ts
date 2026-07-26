@@ -1,5 +1,7 @@
 import type { ProfileGoal } from "@repo/core";
+import { getPlannedRecordingState } from "@/lib/calendar/eventPresentation";
 import type { CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
+import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import { buildCalendarTimelineRows } from "../CalendarTimelineModel";
 
 const dateKey = "2026-05-01";
@@ -50,5 +52,33 @@ describe("buildCalendarTimelineRows", () => {
 
     expect(objectRowKeys("forward")).toEqual(expectedKeys);
     expect(objectRowKeys("reverse")).toEqual(expectedKeys);
+  });
+});
+
+describe("getPlannedRecordingState", () => {
+  it("keeps expired planned sessions unverified unless an authoritative completion exists", () => {
+    expect(
+      getPlannedRecordingState({ event_type: "planned", status: "expired" } as CalendarEvent),
+    ).toBe("unverified");
+    expect(
+      getPlannedRecordingState({ event_type: "planned", status: "scheduled" } as CalendarEvent),
+    ).toBe("planned");
+    expect(
+      getPlannedRecordingState({
+        event_type: "planned",
+        status: "completed",
+        linked_activity_id: "activity-1",
+      } as CalendarEvent),
+    ).toBe("completed");
+    expect(
+      getPlannedRecordingState({ event_type: "planned", status: "completed" } as CalendarEvent),
+    ).toBe("unverified");
+    expect(
+      getPlannedRecordingState({
+        event_type: "planned",
+        status: "cancelled",
+        linked_activity_id: "activity-cancelled",
+      } as CalendarEvent),
+    ).toBe("cancelled");
   });
 });

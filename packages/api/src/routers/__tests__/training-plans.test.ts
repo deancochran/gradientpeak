@@ -1570,6 +1570,8 @@ describe("trainingPlansRouter analytics endpoints", () => {
   });
 
   it("returns weekly summary rows", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-12T12:00:00.000Z"));
     const caller = createTrainingPlansCaller({
       training_plans: {
         data: {
@@ -1586,10 +1588,12 @@ describe("trainingPlansRouter analytics endpoints", () => {
       activities: { data: [], error: null },
     });
 
-    const result = await caller.getWeeklySummary({
-      training_plan_id: planId,
-      weeks_back: 2,
-    });
+    const result = await caller
+      .getWeeklySummary({
+        training_plan_id: planId,
+        weeks_back: 2,
+      })
+      .finally(() => vi.useRealTimers());
 
     expect(Array.isArray(result)).toBe(true);
     expect(result).toHaveLength(2);
@@ -1597,8 +1601,290 @@ describe("trainingPlansRouter analytics endpoints", () => {
       weekStart: expect.any(String),
       weekEnd: expect.any(String),
       plannedTSS: expect.any(Number),
-      completedTSS: expect.any(Number),
+      completedTSS: null,
       status: expect.any(String),
+      planAlignment: {
+        status: "unavailable",
+        score: null,
+        completedSessions: 0,
+        assessableSessions: 0,
+        totalSessions: 0,
+        unverifiedSessions: 0,
+      },
+    });
+  });
+
+  it("uses the profile planning timezone for complete prior Sunday-Saturday weeks", async () => {
+    vi.useFakeTimers();
+    // UTC is already Sunday, while the athlete's New York planning date is still Saturday.
+    vi.setSystemTime(new Date("2026-03-08T02:30:00.000Z"));
+    const caller = createTrainingPlansCaller({
+      profiles: { data: { planningTimezone: "America/New_York" }, error: null },
+      training_plans: {
+        data: {
+          id: planId,
+          structure: {
+            id: planId,
+            version: 1,
+            sessions: [{ offset_days: 0, activity_plan_id: systemActivityPlanId }],
+          },
+        },
+        error: null,
+      },
+      events: {
+        data: [
+          {
+            id: "timezone-boundary-event",
+            starts_at: "2026-02-22T09:00:00.000Z",
+            scheduled_date: "2026-02-22",
+            status: "scheduled",
+            linked_activity_id: null,
+            activity_plan: systemTemplateRows[0],
+          },
+        ],
+        error: null,
+      },
+      activities: { data: [], error: null },
+    });
+
+    const result = await caller
+      .getWeeklySummary({ training_plan_id: planId, weeks_back: 2 })
+      .finally(() => vi.useRealTimers());
+
+    expect(result.map((week) => week.weekStart)).toEqual(["2026-02-15", "2026-02-22"]);
+    expect(result[0]).toMatchObject({ plannedActivities: 0 });
+    expect(result[1]).toMatchObject({
+      plannedActivities: 1,
+      planAlignment: { totalSessions: 1, unverifiedSessions: 1 },
+    });
+  });
+
+  it("attributes weekly completion only to a unique, linked profile-owned activity", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-12T12:00:00.000Z"));
+    const linkedActivityId = "00000000-0000-4000-8000-000000000111";
+    const caller = createTrainingPlansCaller({
+      training_plans: {
+        data: {
+          id: planId,
+          structure: {
+            id: planId,
+            version: 1,
+            sessions: [{ offset_days: 0, activity_plan_id: systemActivityPlanId }],
+          },
+        },
+        error: null,
+      },
+      events: {
+        data: [
+          {
+            id: "event-1",
+            starts_at: "2026-03-02T09:00:00.000Z",
+            scheduled_date: "2026-03-02",
+            status: "completed",
+            linked_activity_id: linkedActivityId,
+            activity_plan: systemTemplateRows[0],
+          },
+          {
+            id: "event-2",
+            starts_at: "2026-03-03T09:00:00.000Z",
+            scheduled_date: "2026-03-03",
+            status: "scheduled",
+            linked_activity_id: null,
+            activity_plan: systemTemplateRows[0],
+          },
+        ],
+        error: null,
+      },
+      activities: {
+        data: [
+          {
+            id: linkedActivityId,
+            profile_id: "profile-123",
+            started_at: "2026-03-02T10:00:00.000Z",
+            elapsed_ms: 3_600_000,
+            active_ms: 3_600_000,
+            moving_ms: 3_600_000,
+            timing_coverage: "complete",
+          },
+          {
+            id: "unrelated",
+            profile_id: "profile-123",
+            started_at: "2026-03-02T11:00:00.000Z",
+            elapsed_ms: 3_600_000,
+            active_ms: 3_600_000,
+            moving_ms: 3_600_000,
+            timing_coverage: "complete",
+          },
+        ],
+        error: null,
+      },
+    });
+
+    const result = await caller
+      .getWeeklySummary({ training_plan_id: planId, weeks_back: 2 })
+      .finally(() => vi.useRealTimers());
+    const scheduledWeek = result.find((week) => week.planAlignment.totalSessions === 2);
+
+    expect(scheduledWeek).toMatchObject({
+      completedActivities: 1,
+      completedTSS: null,
+      tssPercentage: null,
+      activityPercentage: null,
+      status: "warning",
+      planAlignment: {
+        status: "unavailable",
+        completedSessions: 1,
+        assessableSessions: 0,
+        totalSessions: 2,
+        unverifiedSessions: 2,
+      },
+    });
+  });
+
+  it("fails closed for a linked activity duplicated across prior-week buckets", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-12T12:00:00.000Z"));
+    const linkedActivityId = "00000000-0000-4000-8000-000000000222";
+    const caller = createTrainingPlansCaller({
+      training_plans: {
+        data: {
+          id: planId,
+          structure: {
+            id: planId,
+            version: 1,
+            sessions: [{ offset_days: 0, activity_plan_id: systemActivityPlanId }],
+          },
+        },
+        error: null,
+      },
+      events: {
+        data: [
+          {
+            id: "event-prior-saturday",
+            starts_at: "2026-02-28T09:00:00.000Z",
+            scheduled_date: "2026-02-28",
+            status: "completed",
+            linked_activity_id: linkedActivityId,
+            activity_plan: systemTemplateRows[0],
+          },
+          {
+            id: "event-sunday-boundary",
+            starts_at: "2026-03-01T09:00:00.000Z",
+            scheduled_date: "2026-03-01",
+            status: "completed",
+            linked_activity_id: linkedActivityId,
+            activity_plan: systemTemplateRows[0],
+          },
+        ],
+        error: null,
+      },
+      activities: {
+        data: [
+          {
+            id: linkedActivityId,
+            profile_id: "profile-123",
+            started_at: "2026-02-28T10:00:00.000Z",
+            elapsed_ms: 3_600_000,
+            active_ms: 3_600_000,
+            moving_ms: 3_600_000,
+            timing_coverage: "complete",
+          },
+        ],
+        error: null,
+      },
+    });
+
+    const result = await caller
+      .getWeeklySummary({ training_plan_id: planId, weeks_back: 2 })
+      .finally(() => vi.useRealTimers());
+
+    expect(result.map((week) => week.weekStart)).toEqual(["2026-02-22", "2026-03-01"]);
+    expect(result).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          weekStart: "2026-02-22",
+          completedActivities: 0,
+          planAlignment: expect.objectContaining({ unverifiedSessions: 1 }),
+        }),
+        expect.objectContaining({
+          weekStart: "2026-03-01",
+          completedActivities: 0,
+          planAlignment: expect.objectContaining({ unverifiedSessions: 1 }),
+        }),
+      ]),
+    );
+  });
+
+  it("fails closed when another event type also references the linked activity", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-12T12:00:00.000Z"));
+    const linkedActivityId = "00000000-0000-4000-8000-000000000333";
+    const plannedEvent = {
+      id: "planned-event",
+      starts_at: "2026-03-02T09:00:00.000Z",
+      scheduled_date: "2026-03-02",
+      status: "completed",
+      linked_activity_id: linkedActivityId,
+      activity_plan: systemTemplateRows[0],
+    };
+    const caller = createTrainingPlansCaller({
+      training_plans: {
+        data: {
+          id: planId,
+          structure: {
+            id: planId,
+            version: 1,
+            sessions: [{ offset_days: 0, activity_plan_id: systemActivityPlanId }],
+          },
+        },
+        error: null,
+      },
+      events: [
+        { data: [plannedEvent], error: null },
+        {
+          data: [
+            { event_type: "planned", linked_activity_id: linkedActivityId },
+            {
+              event_type: "custom",
+              status: "cancelled",
+              linked_activity_id: linkedActivityId,
+            },
+          ],
+          error: null,
+        },
+      ],
+      activities: {
+        data: [
+          {
+            id: linkedActivityId,
+            profile_id: "profile-123",
+            started_at: "2026-03-02T10:00:00.000Z",
+            elapsed_ms: 3_600_000,
+            active_ms: 3_600_000,
+            moving_ms: 3_600_000,
+            timing_coverage: "complete",
+          },
+        ],
+        error: null,
+      },
+    });
+
+    const result = await caller
+      .getWeeklySummary({ training_plan_id: planId, weeks_back: 2 })
+      .finally(() => vi.useRealTimers());
+    const scheduledWeek = result.find((week) => week.planAlignment.totalSessions === 1);
+
+    expect(scheduledWeek).toMatchObject({
+      completedActivities: 0,
+      completedTSS: null,
+      planAlignment: {
+        status: "unavailable",
+        completedSessions: 0,
+        assessableSessions: 0,
+        totalSessions: 1,
+        unverifiedSessions: 1,
+      },
     });
   });
 

@@ -9,6 +9,10 @@ import { memo } from "react";
 import { TouchableOpacity, View } from "react-native";
 import { getCommonLoadPresentation } from "@/lib/activity-load-presentation";
 import { parseDateKey } from "@/lib/calendar/dateMath";
+import {
+  getPlannedRecordingState,
+  isAuthoritativeCompletedCalendarEvent,
+} from "@/lib/calendar/eventPresentation";
 import type { CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import { getActivityCategoryConfig } from "@/lib/constants/activities";
@@ -200,16 +204,16 @@ function formatEventDuration(event: CalendarEvent) {
 }
 
 function getEventBadgeLabel(event: CalendarEvent) {
-  if (
-    event.completed ||
-    event.status === "completed" ||
-    event.linked_activity_id ||
-    event.event_type === "imported"
-  ) {
+  if (isAuthoritativeCompletedCalendarEvent(event)) {
     return "Completed";
   }
 
   if (event.event_type === "planned") {
+    const recordingState = getPlannedRecordingState(event);
+    if (recordingState === "unverified") return "Unverified";
+    if (recordingState === "cancelled") return "Cancelled";
+    if (recordingState === "skipped") return "Skipped";
+    if (recordingState === "rescheduled") return "Rescheduled";
     return "Planned";
   }
 
@@ -263,12 +267,23 @@ function getActivityPlanConfig(activityCategory: string | null | undefined) {
 }
 
 function getEventPresentation(event: CalendarEvent) {
+  const recordingState = event.event_type === "planned" ? getPlannedRecordingState(event) : null;
+  const recordingStateLabel =
+    recordingState === "unverified"
+      ? "Unverified"
+      : recordingState === "cancelled"
+        ? "Cancelled"
+        : recordingState === "skipped"
+          ? "Skipped"
+          : recordingState === "rescheduled"
+            ? "Rescheduled"
+            : null;
   if (event.activity_plan) {
     return {
       badgeBgClass: "bg-muted/60",
       badgeTextClass: "text-muted-foreground",
-      label: "Activity plan",
-      meta: getActivityPlanMeta(event),
+      label: recordingStateLabel ?? "Activity plan",
+      meta: recordingState === "unverified" ? "No completion recorded" : getActivityPlanMeta(event),
       title: event.activity_plan.name?.trim() || event.title?.trim() || "Activity plan",
     };
   }
@@ -283,7 +298,7 @@ function getEventPresentation(event: CalendarEvent) {
     };
   }
 
-  if (event.completed || event.status === "completed" || event.linked_activity_id) {
+  if (isAuthoritativeCompletedCalendarEvent(event)) {
     return {
       badgeBgClass: "bg-muted/60",
       badgeTextClass: "text-muted-foreground",
@@ -307,7 +322,7 @@ function getEventPresentation(event: CalendarEvent) {
     badgeBgClass: "bg-muted",
     badgeTextClass: "text-muted-foreground",
     label: getEventBadgeLabel(event),
-    meta: formatEventTime(event),
+    meta: recordingState === "unverified" ? "No completion recorded" : formatEventTime(event),
     title: event.title?.trim() || "Untitled activity",
   };
 }
@@ -515,6 +530,10 @@ export const CalendarScheduleObjectCard = memo(function CalendarScheduleObjectCa
   }
 
   const presentation = getEventPresentation(object.event);
+  const isUnverified = presentation.label === "Unverified";
+  const hasVisibleRecordingState =
+    object.event.event_type === "planned" &&
+    ["Unverified", "Cancelled", "Skipped", "Rescheduled"].includes(presentation.label);
   const isPlannedActivity = object.event.event_type === "planned" && !!object.event.activity_plan;
   const activityConfig = isPlannedActivity
     ? getActivityPlanConfig(object.event.activity_plan?.activity_category)
@@ -561,6 +580,14 @@ export const CalendarScheduleObjectCard = memo(function CalendarScheduleObjectCa
               {presentation.title}
             </Text>
           </View>
+          {hasVisibleRecordingState ? (
+            <Text className="mt-1 text-sm font-medium text-muted-foreground">
+              {presentation.label}
+            </Text>
+          ) : null}
+          {isUnverified ? (
+            <Text className="mt-1 text-sm text-muted-foreground">No completion recorded</Text>
+          ) : null}
           {subtitle ? (
             <Text className="mt-1 text-sm text-muted-foreground" numberOfLines={1}>
               {subtitle}

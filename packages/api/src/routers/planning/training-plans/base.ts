@@ -90,6 +90,7 @@ import {
   buildUpcomingActivityImpact,
   buildWeeklyLoadComparison,
   CanonicalTrainingPlanResolutionError,
+  calculatePlanAlignment,
   createTrainingPlanUseCase,
   deleteTrainingPlanUseCase,
   duplicateTrainingPlanUseCase,
@@ -4075,19 +4076,24 @@ export const trainingPlansProcedures = {
       }
       const structure = parsedStructure.data;
 
-      // Calculate date range
       const today = new Date();
-      const startDate = new Date(today);
-      startDate.setDate(today.getDate() - input.weeks_back * 7);
-
-      // Get all planned activities in range with full activity plans
-      const startDateOnly = startDate.toISOString().split("T")[0] || "";
-      const todayDateOnly = today.toISOString().split("T")[0] || "";
-
+      const [planningProfile] = await db
+        .select({ planningTimezone: schema.profiles.planning_timezone })
+        .from(schema.profiles)
+        .where(eq(schema.profiles.id, ctx.session.user.id))
+        .limit(1);
+      const parsedPlanningTimezone = ianaTimezoneSchema.safeParse(
+        planningProfile?.planningTimezone,
+      );
+      const planningTimezone = parsedPlanningTimezone.success ? parsedPlanningTimezone.data : "UTC";
+      const currentWeek = getCurrentPlanningWeek(today, planningTimezone);
+      const firstPriorWeekStart = addDaysDateOnlyUtc(currentWeek.startDate, -input.weeks_back * 7);
       const plannedActivitiesEventsRaw = await db
         .select({
           starts_at: schema.events.starts_at,
           scheduled_date: schema.events.scheduled_date,
+          status: schema.events.status,
+          linked_activity_id: schema.events.linked_activity_id,
           activity_plan: schema.activityPlans,
         })
         .from(schema.events)
@@ -4098,12 +4104,12 @@ export const trainingPlansProcedures = {
             eq(schema.events.profile_id, ctx.session.user.id),
             eq(schema.events.training_plan_id, input.training_plan_id),
             eq(schema.events.event_type, plannedEventType),
-            gte(schema.events.starts_at, new Date(toDayStartIso(startDateOnly))),
-            lt(schema.events.starts_at, new Date(toNextDayStartIso(todayDateOnly))),
+            gte(schema.events.scheduled_date, firstPriorWeekStart),
+            lt(schema.events.scheduled_date, currentWeek.startDate),
           ),
         );
 
-      const plannedActivitiesRaw = plannedActivitiesEventsRaw.map((item: any) => ({
+      const plannedActivitiesRaw = plannedActivitiesEventsRaw.map((item) => ({
         ...item,
         starts_at: item.starts_at.toISOString(),
         scheduled_date: item.scheduled_date,
@@ -4142,18 +4148,49 @@ export const trainingPlansProcedures = {
             : null,
         })) || [];
 
-      // Get all completed activities in range
-      const completedActivities = await db
-        .select(activitySummaryColumns)
-        .from(schema.activities)
-
-        .where(
-          and(
-            eq(schema.activities.profile_id, ctx.session.user.id),
-            gte(schema.activities.started_at, startDate),
-            lte(schema.activities.started_at, today),
-          ),
-        );
+      const linkedActivityIds = [
+        ...new Set(
+          plannedActivitiesRaw
+            .map((event) => event.linked_activity_id)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ];
+      const linkedActivityOccurrenceRows =
+        linkedActivityIds.length > 0
+          ? await db
+              .select({
+                linked_activity_id: schema.events.linked_activity_id,
+              })
+              .from(schema.events)
+              .where(
+                and(
+                  eq(schema.events.profile_id, ctx.session.user.id),
+                  inArray(schema.events.linked_activity_id, linkedActivityIds),
+                ),
+              )
+          : [];
+      const linkedActivityOccurrenceCounts = new Map<string, number>();
+      for (const event of linkedActivityOccurrenceRows) {
+        if (event.linked_activity_id) {
+          linkedActivityOccurrenceCounts.set(
+            event.linked_activity_id,
+            (linkedActivityOccurrenceCounts.get(event.linked_activity_id) ?? 0) + 1,
+          );
+        }
+      }
+      // Load only candidate linked activities and retain an ownership check in memory for defensive test doubles.
+      const completedActivities =
+        linkedActivityIds.length > 0
+          ? await db
+              .select(activitySummaryColumns)
+              .from(schema.activities)
+              .where(
+                and(
+                  eq(schema.activities.profile_id, ctx.session.user.id),
+                  inArray(schema.activities.id, linkedActivityIds),
+                ),
+              )
+          : [];
 
       const completedActivitiesWithSegments = await attachActivitySegments(db, completedActivities);
       const completedSegments = await buildActivitySegmentDerivedSummaries({
@@ -4162,22 +4199,38 @@ export const trainingPlansProcedures = {
         activities: completedActivitiesWithSegments,
       });
 
-      // Group by week
+      const requestedLinkedActivityIds = new Set(linkedActivityIds);
+      const ownedActivities = (
+        completedActivities as Array<{ id: string; profile_id: string }>
+      ).filter(
+        (activity) =>
+          activity.profile_id === ctx.session.user.id &&
+          requestedLinkedActivityIds.has(activity.id),
+      );
+      const activitiesById = new Map(ownedActivities.map((activity) => [activity.id, activity]));
+      const completedTssById = new Map(
+        ownedActivities.map((activity) => {
+          const load = summarizeSegmentTss(completedSegments, new Set([activity.id]));
+          return [activity.id, load.complete ? load.tss : null] as const;
+        }),
+      );
+
+      const weekRanges = Array.from({ length: input.weeks_back }, (_, index) => {
+        const startDate = addDaysDateOnlyUtc(firstPriorWeekStart, index * 7);
+        return { startDate, endDate: addDaysDateOnlyUtc(startDate, 7) };
+      });
+
       const weekSummaries = [];
-      for (let i = input.weeks_back - 1; i >= 0; i--) {
-        const weekStart = new Date(today);
-        weekStart.setDate(today.getDate() - (i + 1) * 7);
-        weekStart.setDate(weekStart.getDate() - weekStart.getDay()); // Sunday
-        weekStart.setHours(0, 0, 0, 0);
-
-        const weekEnd = new Date(weekStart);
-        weekEnd.setDate(weekStart.getDate() + 7);
-
-        // Count planned activities and TSS for this week
+      for (const weekRange of weekRanges) {
+        // Scheduled events, not activity start dates, own weekly plan attribution.
         const weekPlanned =
-          plannedActivities?.filter((pa: any) => {
-            const date = new Date(pa.scheduled_date);
-            return date >= weekStart && date < weekEnd;
+          plannedActivities?.filter((pa) => {
+            return (
+              pa.scheduled_date >= weekRange.startDate &&
+              pa.scheduled_date < weekRange.endDate &&
+              pa.status !== "cancelled" &&
+              pa.status !== "skipped"
+            );
           }) || [];
 
         const plannedTSS = weekPlanned.reduce(
@@ -4186,49 +4239,76 @@ export const trainingPlansProcedures = {
           0,
         );
 
-        // Count completed activities and TSS for this week
-        const weekCompleted =
-          completedActivities?.filter((act: { started_at: string | Date }) => {
-            const date = new Date(act.started_at);
-            return date >= weekStart && date < weekEnd;
-          }) || [];
-
-        const completedLoad = summarizeSegmentTss(
-          completedSegments,
-          new Set(weekCompleted.map((activity: { id: string }) => activity.id)),
+        const alignmentCalculation = calculatePlanAlignment(
+          weekPlanned.map((event) => {
+            const linkedActivity = event.linked_activity_id
+              ? activitiesById.get(event.linked_activity_id)
+              : null;
+            const linkedActivityOccurrenceCount = event.linked_activity_id
+              ? linkedActivityOccurrenceCounts.get(event.linked_activity_id)
+              : undefined;
+            return {
+              status: event.status,
+              linkedActivityId: event.linked_activity_id,
+              ...(linkedActivityOccurrenceCount === undefined
+                ? {}
+                : { linkedActivityOccurrenceCount }),
+              linkedActivityExists: Boolean(linkedActivity),
+              linkedActivityProfileOwned: linkedActivity?.profile_id === ctx.session.user.id,
+              plannedTss:
+                getAuthoritativeActivityPlanMetrics(event.activity_plan).estimated_tss ?? null,
+              completedTss: event.linked_activity_id
+                ? (completedTssById.get(event.linked_activity_id) ?? null)
+                : null,
+            };
+          }),
         );
-        const completedTSS = completedLoad.tss;
+        const {
+          completedActivityIds: _completedActivityIds,
+          assessableActivityIds: _assessableActivityIds,
+          assessedPlannedTss,
+          assessedCompletedTss,
+          ...planAlignment
+        } = alignmentCalculation;
+        const completedLoadAvailable = planAlignment.status === "available";
+        const completedTSS = completedLoadAvailable ? assessedCompletedTss : null;
 
         const targetWeeklyTSS = plannedTSS;
         const targetActivities =
           structure.builder_planning_snapshot?.plan_preferences.weekly_session_count ??
           weekPlanned.length;
 
-        // Calculate completion percentage
-        const tssPercentage = plannedTSS > 0 ? (completedTSS / plannedTSS) * 100 : 0;
+        // Deprecated compatibility percentages are only meaningful with complete assessment coverage.
+        const tssPercentage =
+          planAlignment.status === "available" && assessedPlannedTss > 0
+            ? (assessedCompletedTss / assessedPlannedTss) * 100
+            : null;
         const activityPercentage =
-          weekPlanned.length > 0 ? (weekCompleted.length / weekPlanned.length) * 100 : 0;
+          planAlignment.status === "available" && planAlignment.totalSessions > 0
+            ? (planAlignment.completedSessions / planAlignment.totalSessions) * 100
+            : null;
 
         // Determine status
         let status: "good" | "warning" | "poor" = "good";
-        if (!completedLoad.complete) {
+        if (planAlignment.status !== "available") {
           status = "warning";
-        } else if (tssPercentage < 70 || activityPercentage < 70) {
+        } else if (planAlignment.score !== null && planAlignment.score < 70) {
           status = "poor";
-        } else if (tssPercentage < 90 || activityPercentage < 90) {
+        } else if (planAlignment.score !== null && planAlignment.score < 90) {
           status = "warning";
         }
 
         weekSummaries.push({
-          weekStart: weekStart.toISOString().split("T")[0],
-          weekEnd: weekEnd.toISOString().split("T")[0],
+          weekStart: weekRange.startDate,
+          weekEnd: addDaysDateOnlyUtc(weekRange.endDate, -1),
           plannedTSS: Math.round(plannedTSS),
-          completedTSS: Math.round(completedTSS),
-          tssComplete: completedLoad.complete,
-          tssPercentage: Math.round(tssPercentage),
+          completedTSS: completedTSS === null ? null : Math.round(completedTSS),
+          tssComplete: completedLoadAvailable,
+          tssPercentage: tssPercentage === null ? null : Math.round(tssPercentage),
           plannedActivities: weekPlanned.length,
-          completedActivities: weekCompleted.length,
-          activityPercentage: Math.round(activityPercentage),
+          completedActivities: planAlignment.completedSessions,
+          activityPercentage,
+          planAlignment,
           targetTSS: Math.round(targetWeeklyTSS),
           targetActivities,
           status,

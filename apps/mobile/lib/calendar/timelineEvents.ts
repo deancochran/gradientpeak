@@ -1,7 +1,7 @@
 import type { ProfileGoal } from "@repo/core";
 import { toDateKey } from "@/lib/calendar/dateMath";
+import { isAuthoritativeCompletedCalendarEvent } from "@/lib/calendar/eventPresentation";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
-import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
 
 export type TimelineEventType =
   | "planned_activity"
@@ -15,7 +15,8 @@ export type TimelineEventType =
 export type TimelineEventStatus =
   | "planned"
   | "completed"
-  | "missed"
+  | "unverified"
+  | "cancelled"
   | "skipped"
   | "rescheduled"
   | "scheduled"
@@ -71,7 +72,7 @@ function isPastDate(dateKey: string, todayKey: string): boolean {
 
 function classifyCalendarEventType(event: CalendarEvent): TimelineEventType {
   if (event.event_type === "planned") {
-    return isActivityCompleted(event) ? "completed_activity" : "planned_activity";
+    return isAuthoritativeCompletedCalendarEvent(event) ? "completed_activity" : "planned_activity";
   }
 
   if (event.event_type === "race_target") {
@@ -120,6 +121,10 @@ function getCalendarEventStatus({
     return "completed";
   }
 
+  if (event.status === "cancelled") {
+    return "cancelled";
+  }
+
   if (event.status === "skipped") {
     return "skipped";
   }
@@ -129,7 +134,7 @@ function getCalendarEventStatus({
   }
 
   if (type === "planned_activity" && isPastDate(dateKey, todayKey)) {
-    return "missed";
+    return "unverified";
   }
 
   if (type === "imported") {

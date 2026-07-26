@@ -11,6 +11,7 @@ import {
   isSameMonth,
   parseDateKey,
 } from "@/lib/calendar/dateMath";
+import { isAuthoritativeCompletedCalendarEvent } from "@/lib/calendar/eventPresentation";
 import {
   type CalendarEvent,
   type CalendarEventsByDate,
@@ -73,10 +74,7 @@ function getPlannedDaySignal(
 function getCompletedDaySignal(
   events: CalendarEvent[],
 ): { count: number; level: 1 | 2 | 3 | 4 } | null {
-  const completedEvents = events.filter(
-    (event) =>
-      event.status === "completed" || event.completed === true || !!event.linked_activity_id,
-  );
+  const completedEvents = events.filter(isAuthoritativeCompletedCalendarEvent);
   if (completedEvents.length === 0) {
     return null;
   }

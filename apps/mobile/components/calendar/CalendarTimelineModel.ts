@@ -1,5 +1,6 @@
 import type { ProfileGoal } from "@repo/core";
 import { addDaysToDateKey } from "@/lib/calendar/dateMath";
+import { isAuthoritativeCompletedCalendarEvent } from "@/lib/calendar/eventPresentation";
 import type { CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
 
@@ -92,15 +93,6 @@ function buildDayKeys(rangeStart: string, rangeEnd: string) {
   return dayKeys;
 }
 
-export function isAuthoritativeCompletedActivity(event: CalendarEvent) {
-  return Boolean(
-    event.completed ||
-      event.status === "completed" ||
-      event.linked_activity_id ||
-      event.event_type === "imported",
-  );
-}
-
 function getDaySignals(events: CalendarEvent[], goals: ProfileGoal[]): CalendarDaySignals {
   return events.reduce<CalendarDaySignals>(
     (signals, event) => {
@@ -110,7 +102,7 @@ function getDaySignals(events: CalendarEvent[], goals: ProfileGoal[]): CalendarD
       if (event.activity_plan) {
         signals.activityPlanCount += 1;
       }
-      if (isAuthoritativeCompletedActivity(event)) {
+      if (isAuthoritativeCompletedCalendarEvent(event)) {
         signals.completedCount += 1;
       }
       if (event.event_type === "rest_day") {

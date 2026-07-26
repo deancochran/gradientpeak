@@ -32,7 +32,11 @@ import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
-import { getEventStatusLabel, getEventTitle } from "@/lib/calendar/eventPresentation";
+import {
+  getEventStatusLabel,
+  getEventTitle,
+  isAuthoritativeCompletedCalendarEvent,
+} from "@/lib/calendar/eventPresentation";
 import { formatEventTime, getEventScheduledDate } from "@/lib/calendar/eventSchedule";
 import { ROUTES } from "@/lib/constants/routes";
 import { markEstimated } from "@/lib/estimatedMetrics";
@@ -41,7 +45,6 @@ import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsContro
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
 import { getActivityColor } from "@/lib/utils/plan/colors";
-import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
 
 function isRecurringEvent(
   event:
@@ -321,7 +324,7 @@ export default function EventDetailScreen() {
       enabled: !startsInCreateMode && typeof event?.training_plan_id === "string",
     },
   );
-  const completed = isPlannedEvent ? isActivityCompleted(event) : false;
+  const completed = isPlannedEvent && event ? isAuthoritativeCompletedCalendarEvent(event) : false;
   const activityType =
     activityPlan &&
     "primary_category" in activityPlan &&

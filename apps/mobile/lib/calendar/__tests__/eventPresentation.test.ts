@@ -1,14 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
-
-vi.mock("@/lib/utils/plan/dateGrouping", () => ({
-  isActivityCompleted: (event: { completed?: boolean | null }) => event.completed === true,
-}));
+import { describe, expect, it } from "vitest";
 
 import {
   getEventPrimaryMeta,
   getEventStatusLabel,
   getEventSupportingLine,
   getEventTimeLabel,
+  isAuthoritativeCompletedCalendarEvent,
 } from "../eventPresentation";
 
 const commonLoadProvenance = {
@@ -80,11 +77,11 @@ describe("calendar event presentation", () => {
     expect(getEventStatusLabel(event)).toBeNull();
   });
 
-  it("prefers a single calm status label when planned activity is completed", () => {
+  it("prefers a single calm status label when a planned activity has a persisted link", () => {
     const event = {
       id: "planned-2",
       event_type: "planned",
-      completed: true,
+      linked_activity_id: "activity-2",
       recurrence_rule: "RRULE:FREQ=WEEKLY",
       activity_plan: {
         id: "plan-2",
@@ -102,6 +99,31 @@ describe("calendar event presentation", () => {
       "Intensity Tempo · 0.75",
     ]);
     expect(getEventStatusLabel(event)).toBe("Completed");
+  });
+
+  it("shows completion labels without a persisted activity link as unverified", () => {
+    const event = {
+      id: "planned-unverified",
+      event_type: "planned",
+      status: "completed",
+      completed: true,
+      activity_plan: { id: "plan-unverified", activity_category: "run" },
+    };
+
+    expect(getEventStatusLabel(event)).toBe("Unverified");
+  });
+
+  it("gives cancellation precedence over a retained activity link", () => {
+    const event = {
+      id: "planned-cancelled",
+      event_type: "planned",
+      status: "cancelled",
+      linked_activity_id: "activity-cancelled",
+      activity_plan: { id: "plan-cancelled", activity_category: "run" },
+    };
+
+    expect(isAuthoritativeCompletedCalendarEvent(event)).toBe(false);
+    expect(getEventStatusLabel(event)).toBe("Cancelled");
   });
 
   it("keeps non-planned events focused on time state and one supporting line", () => {

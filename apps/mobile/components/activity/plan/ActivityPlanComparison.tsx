@@ -1,8 +1,6 @@
 import { calculateActivityPlanStats, deriveActivityPlanPresentation } from "@repo/core";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
-import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { CheckCircle, XCircle } from "lucide-react-native";
 import { useMemo } from "react";
 import { Pressable, View } from "react-native";
 import { TimelineChart } from "@/components/activity-plan/workout/TimelineChart";
@@ -19,7 +17,6 @@ interface ActivityPlanData {
 interface ActivityMetrics {
   duration: number; // seconds
   common_load?: unknown;
-  adherence_score?: number;
 }
 
 interface ActivityPlanComparisonProps {
@@ -64,33 +61,15 @@ export function ActivityPlanComparison({
   const actualDuration = actualMetrics.duration;
   const actualLoad = getCommonLoadPresentation(actualMetrics.common_load);
   const plannedLoad = getCommonLoadPresentation(activityPlan.common_load);
-  const adherence = (actualMetrics.adherence_score || 0) * 100;
 
   // Calculate variances
   const durationVariance =
     estimatedDuration > 0 ? ((actualDuration - estimatedDuration) / estimatedDuration) * 100 : 0;
 
-  // Determine if adherence is good (>= 85%)
-  const goodAdherence = adherence >= 85;
-
   const content = (
     <Card>
       <CardHeader>
-        <View className="flex-row items-center justify-between">
-          <CardTitle>Activity Plan</CardTitle>
-          <View className="flex-row items-center gap-1">
-            <Icon
-              as={goodAdherence ? CheckCircle : XCircle}
-              size={16}
-              className={goodAdherence ? "text-green-600" : "text-yellow-600"}
-            />
-            <Text
-              className={`text-sm font-semibold ${goodAdherence ? "text-green-600" : "text-yellow-600"}`}
-            >
-              {adherence.toFixed(0)}% adherence
-            </Text>
-          </View>
-        </View>
+        <CardTitle>Plan comparison</CardTitle>
         <Text className="text-sm text-muted-foreground mt-1">{activityPlan.name}</Text>
       </CardHeader>
       <CardContent className="gap-4">

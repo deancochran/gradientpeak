@@ -2,7 +2,6 @@ import { format } from "date-fns";
 import { getCommonLoadPresentation } from "@/lib/activity-load-presentation";
 import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
 import { formatEstimatedDurationSeconds } from "@/lib/estimatedMetrics";
-import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
 import { formatEventTime } from "./eventSchedule";
 import type { CalendarEvent } from "./normalizeEvents";
 
@@ -33,6 +32,38 @@ function trimText(value: string | null | undefined): string | null {
 
 function hasActivityPlan(event: CalendarEvent): boolean {
   return Boolean(event.activity_plan?.id);
+}
+
+type PlannedRecordingState =
+  | "completed"
+  | "unverified"
+  | "planned"
+  | "cancelled"
+  | "skipped"
+  | "rescheduled";
+
+function getNonCompletionState(
+  event: CalendarEvent,
+): Exclude<PlannedRecordingState, "completed" | "unverified" | "planned"> | null {
+  if (event.status === "cancelled") return "cancelled";
+  if (event.status === "skipped") return "skipped";
+  if (event.status === "rescheduled") return "rescheduled";
+  return null;
+}
+
+/** Completion truth for calendar events requires a persisted activity identity. */
+export function isAuthoritativeCompletedCalendarEvent(event: CalendarEvent): boolean {
+  if (getNonCompletionState(event)) return false;
+  return Boolean(event.linked_activity_id || event.event_type === "imported");
+}
+
+export function getPlannedRecordingState(event: CalendarEvent): PlannedRecordingState {
+  const nonCompletionState = getNonCompletionState(event);
+  if (nonCompletionState) return nonCompletionState;
+  if (isAuthoritativeCompletedCalendarEvent(event)) return "completed";
+  return event.status === "expired" || event.status === "completed" || event.completed
+    ? "unverified"
+    : "planned";
 }
 
 function getEventCommonLoad(event: CalendarEvent): unknown {
@@ -73,7 +104,9 @@ export function getEventTimeLabel(event: CalendarEvent): string {
   if (event.starts_at) {
     const preservesActivityInstant =
       event.event_type === "imported" ||
-      (event.event_type === "planned" && hasActivityPlan(event) && isActivityCompleted(event));
+      (event.event_type === "planned" &&
+        hasActivityPlan(event) &&
+        isAuthoritativeCompletedCalendarEvent(event));
     return preservesActivityInstant
       ? format(new Date(event.starts_at), "h:mm a")
       : formatEventTime(event.starts_at, event.timezone);
@@ -109,11 +142,18 @@ export function getEventSupportingLine(event: CalendarEvent): string | null {
 }
 
 export function getEventStatusLabel(event: CalendarEvent): string | null {
-  const completed =
-    event.event_type === "planned" && hasActivityPlan(event) ? isActivityCompleted(event) : false;
+  const recordingState =
+    event.event_type === "planned" && hasActivityPlan(event)
+      ? getPlannedRecordingState(event)
+      : null;
 
-  if (completed) {
-    return "Completed";
+  if (recordingState === "cancelled") return "Cancelled";
+  if (recordingState === "skipped") return "Skipped";
+  if (recordingState === "rescheduled") return "Rescheduled";
+  if (recordingState === "completed") return "Completed";
+
+  if (recordingState === "unverified") {
+    return "Unverified";
   }
 
   if (event.event_type === "imported") {
