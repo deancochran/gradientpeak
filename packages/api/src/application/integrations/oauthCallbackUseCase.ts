@@ -10,6 +10,8 @@ import {
   redeemLocalOAuthAuthorizationCode,
 } from "../../lib/integrations/oauth-pkce";
 import { createOAuthStateBinding } from "../../lib/integrations/oauth-state-binding";
+import { activateWahooAccessToken } from "../../lib/integrations/wahoo/client";
+import { isWahooTokenLimitRejection } from "../../lib/integrations/wahoo/oauth-errors";
 import { logger } from "../../lib/logger";
 import {
   IntegrationDisconnectPendingError,
@@ -56,6 +58,49 @@ const oauthTokenResponseSchema = z
   })
   .passthrough();
 type OAuthTokenResponse = z.infer<typeof oauthTokenResponseSchema>;
+
+const oauthRejectionSchema = z
+  .object({
+    error: z.string().trim().min(1).max(96).optional(),
+    error_description: z.string().trim().min(1).max(512).optional(),
+  })
+  .passthrough();
+
+async function classifyOAuthRejection(
+  response: Response,
+  provider: PublicIntegrationProvider,
+): Promise<string> {
+  const fallback = `http_${response.status}`;
+  try {
+    const rawBody = (await response.text()).slice(0, 2048);
+    if (!rawBody) return fallback;
+
+    let value: unknown;
+    try {
+      value = JSON.parse(rawBody);
+    } catch {
+      const form = new URLSearchParams(rawBody);
+      value = {
+        error: form.get("error") ?? undefined,
+        error_description: form.get("error_description") ?? undefined,
+      };
+    }
+
+    const rejection = oauthRejectionSchema.safeParse(value);
+    if (!rejection.success) return fallback;
+    if (
+      provider === "wahoo" &&
+      isWahooTokenLimitRejection(rejection.data.error, rejection.data.error_description)
+    ) {
+      return "wahoo_token_limit_exceeded";
+    }
+
+    const safeCode = rejection.data.error?.toLowerCase();
+    return safeCode && /^[a-z0-9_.-]+$/.test(safeCode) ? safeCode : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 export class OAuthTokenExchangeError extends Error {
   constructor(
@@ -118,24 +163,34 @@ async function exchangeCodeForTokens(
   }
   const baseUrl =
     process.env.OAUTH_CALLBACK_BASE_URL || process.env.APP_URL || "http://localhost:3000";
+  const body = new URLSearchParams({
+    client_id: config.clientId,
+    code,
+    grant_type: "authorization_code",
+    redirect_uri: `${baseUrl}/api/integrations/callback/${provider}`,
+  });
+  if (config.pkce) body.set("code_verifier", codeVerifier);
+  if (config.tokenClientAuthentication === "client_secret_post") {
+    body.set("client_secret", config.clientSecret);
+  }
+
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Content-Type": "application/x-www-form-urlencoded",
+  };
+  if (config.tokenClientAuthentication === "client_secret_basic") {
+    headers.Authorization = `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString("base64")}`;
+  }
+
   const response = await fetch(config.tokenUrl, {
     method: "POST",
-    headers: {
-      Accept: "application/json",
-      Authorization: `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString("base64")}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      client_id: config.clientId,
-      code,
-      code_verifier: codeVerifier,
-      grant_type: "authorization_code",
-      redirect_uri: `${baseUrl}/api/integrations/callback/${provider}`,
-    }).toString(),
+    headers,
+    body: body.toString(),
   });
   if (!response.ok) {
-    logger.warn("OAuth token exchange failed", { provider, status: response.status });
-    throw new OAuthTokenExchangeError("Token exchange failed", `http_${response.status}`);
+    const reason = await classifyOAuthRejection(response, provider);
+    logger.warn("OAuth token exchange failed", { provider, reason, status: response.status });
+    throw new OAuthTokenExchangeError("Token exchange failed", reason);
   }
   return parseOAuthTokenResponse(await response.json());
 }
@@ -152,10 +207,21 @@ function resolveTokenExternalId(tokens: OAuthTokenResponse): string | null {
 
 const wahooUserProfileSchema = z.object({ id: providerIdentifierSchema }).passthrough();
 
-async function resolveExternalId(provider: PublicIntegrationProvider, tokens: OAuthTokenResponse) {
+async function resolveProviderIdentity(
+  provider: PublicIntegrationProvider,
+  tokens: OAuthTokenResponse,
+): Promise<{ externalId: string; requiresActivation: boolean }> {
   const tokenExternalId = resolveTokenExternalId(tokens);
-  if (tokenExternalId) return tokenExternalId;
-  if (provider !== "wahoo") throw new OAuthProviderIdentityError();
+  const config = getProviderOAuthConfig(provider);
+  if (provider !== "wahoo" || config?.adapter === "local-test") {
+    if (tokenExternalId) return { externalId: tokenExternalId, requiresActivation: false };
+    throw new OAuthProviderIdentityError();
+  }
+
+  // Store identity-bearing Wahoo tokens before their first API call. If activation is temporarily
+  // unavailable, the queued history job can retry with this same durable token instead of forcing
+  // another authorization-code exchange and consuming another provider token.
+  if (tokenExternalId) return { externalId: tokenExternalId, requiresActivation: true };
 
   try {
     const userResponse = await fetch("https://api.wahooligan.com/v1/user", {
@@ -169,7 +235,7 @@ async function resolveExternalId(provider: PublicIntegrationProvider, tokens: OA
 
     const profile = wahooUserProfileSchema.safeParse(await userResponse.json());
     if (!profile.success || profile.data.id == null) throw new OAuthProviderIdentityError();
-    return profile.data.id.toString();
+    return { externalId: profile.data.id.toString(), requiresActivation: false };
   } catch (error) {
     if (error instanceof OAuthProviderIdentityError) throw error;
     throw new OAuthProviderIdentityError();
@@ -299,9 +365,10 @@ export async function handleOAuthCallback({
 
   let tokens: OAuthTokenResponse;
   let externalId: string;
+  let requiresActivation: boolean;
   try {
     tokens = await exchangeCodeForTokens(provider, code, state);
-    externalId = await resolveExternalId(provider, tokens);
+    ({ externalId, requiresActivation } = await resolveProviderIdentity(provider, tokens));
   } catch (caughtError) {
     if (caughtError instanceof OAuthProviderIdentityError) {
       logger.warn("OAuth callback provider identity validation failed", { provider });
@@ -318,11 +385,16 @@ export async function handleOAuthCallback({
     logger.warn("OAuth callback token exchange failed", {
       provider,
       errorName: caughtError instanceof Error ? caughtError.name : "unknown",
+      reason: caughtError instanceof OAuthTokenExchangeError ? caughtError.detail : undefined,
     });
     await cleanupState();
     return {
       redirectUrl: buildRedirectUrl(mobileRedirectUri, {
-        error: "token_exchange_failed",
+        error:
+          caughtError instanceof OAuthTokenExchangeError &&
+          caughtError.detail === "wahoo_token_limit_exceeded"
+            ? "wahoo_token_limit_exceeded"
+            : "token_exchange_failed",
         integration: "failed",
         provider,
       }),
@@ -389,6 +461,18 @@ export async function handleOAuthCallback({
       redirectUrl: buildRedirectUrl(mobileRedirectUri, { error: "invalid_state" }),
       status: 302,
     };
+  }
+  if (provider === "wahoo" && requiresActivation) {
+    try {
+      await activateWahooAccessToken(tokens.access_token);
+    } catch (caughtError) {
+      // Credentials and the history-reconcile job are already durable. Let that job retry the same
+      // token rather than turning a temporary provider failure into another OAuth token issuance.
+      logger.warn("Wahoo OAuth token activation deferred", {
+        provider,
+        errorName: caughtError instanceof Error ? caughtError.name : "unknown",
+      });
+    }
   }
   return {
     redirectUrl: buildRedirectUrl(mobileRedirectUri, {

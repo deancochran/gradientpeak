@@ -107,12 +107,17 @@ describe("integrationsRouter", () => {
     mocks.repositories.integrations.deleteByProfileIdAndProvider.mockResolvedValue(undefined);
     const caller = createCaller();
 
-    await expect(
-      caller.getAuthUrl({
-        provider: "wahoo",
-        redirectUri: "gradientpeak-dev://integrations",
-      }),
-    ).resolves.toMatchObject({ state: STATE_ID });
+    const authorization = await caller.getAuthUrl({
+      provider: "wahoo",
+      redirectUri: "gradientpeak-dev://integrations",
+    });
+    expect(authorization).toMatchObject({ state: STATE_ID });
+    const authorizationUrl = new URL(authorization.url);
+    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
+      "https://app.example.com/api/integrations/callback/wahoo",
+    );
+    expect(authorizationUrl.searchParams.has("code_challenge")).toBe(false);
+    expect(authorizationUrl.searchParams.has("code_challenge_method")).toBe(false);
     expect(mocks.repositories.oauthStates.create).toHaveBeenCalledWith(
       expect.objectContaining({ mobileRedirectUri: "gradientpeak-dev://integrations" }),
     );

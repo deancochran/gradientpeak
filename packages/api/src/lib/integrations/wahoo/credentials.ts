@@ -11,6 +11,19 @@ export class WahooReconnectRequiredError extends Error {
   }
 }
 
+export const WAHOO_AUTHORIZATION_RESET_REQUIRED_MESSAGE =
+  "Wahoo authorization reset required. Revoke GradientPeak in Wahoo, then reconnect.";
+
+export class WahooAuthorizationResetRequiredError extends Error {
+  readonly code = "WAHOO_AUTHORIZATION_RESET_REQUIRED";
+  readonly status = 400;
+
+  constructor() {
+    super(WAHOO_AUTHORIZATION_RESET_REQUIRED_MESSAGE);
+    this.name = "WahooAuthorizationResetRequiredError";
+  }
+}
+
 export class WahooCredentialConflictError extends Error {
   constructor() {
     super("Wahoo credentials changed while refreshing; retry the operation");
@@ -35,7 +48,11 @@ type RefreshedWahooCredentials = Pick<
 const refreshesByIntegrationId = new Map<string, Promise<WahooCredentials>>();
 
 function isDefinitiveCredentialFailure(error: unknown): boolean {
-  if (error instanceof WahooReconnectRequiredError) return true;
+  if (
+    error instanceof WahooReconnectRequiredError ||
+    error instanceof WahooAuthorizationResetRequiredError
+  )
+    return true;
   if (!error || typeof error !== "object") return false;
 
   const status = "status" in error ? error.status : undefined;
@@ -43,7 +60,14 @@ function isDefinitiveCredentialFailure(error: unknown): boolean {
   return status === 401 || (typeof code === "string" && code.toLowerCase() === "invalid_grant");
 }
 
+function normalizeDefinitiveCredentialFailure(error: unknown): Error {
+  return error instanceof WahooAuthorizationResetRequiredError
+    ? error
+    : new WahooReconnectRequiredError();
+}
+
 export async function resolveWahooCredentials<T extends WahooCredentials>(input: {
+  activateAccessToken(accessToken: string): Promise<void>;
   integration: T;
   now?: number;
   markReconnectRequired?(
@@ -91,10 +115,10 @@ export async function resolveWahooCredentials<T extends WahooCredentials>(input:
       refreshed = await input.refreshAccessToken(refreshToken);
     } catch (error) {
       if (isDefinitiveCredentialFailure(error)) {
-        if (await input.markReconnectRequired?.(input.integration))
-          throw new WahooReconnectRequiredError();
+        const credentialError = normalizeDefinitiveCredentialFailure(error);
+        if (await input.markReconnectRequired?.(input.integration)) throw credentialError;
         const current = await input.readCurrentCredentials?.();
-        if (!current || current.reconnectRequiredAt) throw new WahooReconnectRequiredError();
+        if (!current || current.reconnectRequiredAt) throw credentialError;
         if ((input.casRetries ?? 0) >= 1) throw new WahooCredentialConflictError();
         return resolveWahooCredentials({
           ...input,
@@ -115,7 +139,21 @@ export async function resolveWahooCredentials<T extends WahooCredentials>(input:
       refreshToken: refreshed.refreshToken,
     };
     const generation = await input.persistTokens(credentials);
-    if (generation !== null) return { ...credentials, credentialGeneration: generation };
+    if (generation !== null) {
+      // Persist first so a failed activation retries this token instead of minting another.
+      // Wahoo retires the previous token after this authenticated API request succeeds.
+      const persistedCredentials = { ...credentials, credentialGeneration: generation };
+      try {
+        await input.activateAccessToken(credentials.accessToken);
+      } catch (error) {
+        if (isDefinitiveCredentialFailure(error)) {
+          await input.markReconnectRequired?.(persistedCredentials);
+          throw normalizeDefinitiveCredentialFailure(error);
+        }
+        throw error;
+      }
+      return persistedCredentials;
+    }
     const current = await input.readCurrentCredentials?.();
     if (!current || current.reconnectRequiredAt) throw new WahooReconnectRequiredError();
     if ((input.casRetries ?? 0) >= 1) throw new WahooCredentialConflictError();

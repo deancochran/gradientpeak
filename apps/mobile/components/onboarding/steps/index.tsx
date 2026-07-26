@@ -29,6 +29,7 @@ import { applyCompactTrainingPreferencesChange } from "@/components/settings/tra
 import { TrainingPreferencesSurface } from "@/components/settings/training-preferences/TrainingPreferencesSurface";
 import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
+import { parseIntegrationOAuthCallback } from "@/lib/integration-oauth-callback";
 import { isValidOnboardingUsername } from "@/lib/onboarding/validation";
 import {
   getCompactTrainingPreferencesValue,
@@ -347,9 +348,17 @@ export const IntegrationsStep = ({ onRefreshIntegrations }: StepProps) => {
       const result = await WebBrowser.openAuthSessionAsync(url, redirectUri);
 
       if (result.type === "success") {
-        await refetchSyncOverview();
-        onRefreshIntegrations?.();
-        setStatusModal({ title: "Success", description: "Integration connected." });
+        const outcome = parseIntegrationOAuthCallback(result.url);
+        if (outcome?.status === "connected") {
+          await refetchSyncOverview();
+          onRefreshIntegrations?.();
+        }
+        setStatusModal(
+          outcome ?? {
+            title: "Issue",
+            description: "Authorization response was incomplete. Try again.",
+          },
+        );
       }
     } catch (error) {
       console.error(error);

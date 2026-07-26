@@ -62,6 +62,25 @@ OAuth and webhook providers:
 - `ZWIFT_CLIENT_ID`
 - `ZWIFT_CLIENT_SECRET`
 
+### Wahoo OAuth configuration and recovery
+
+The current server-side Wahoo exchange is a confidential OAuth client. Configure the Wahoo
+developer application with **Confidential = true**, and register the exact
+`<OAUTH_CALLBACK_BASE_URL>/api/integrations/callback/wahoo` URL. Do not add a trailing slash to
+`OAUTH_CALLBACK_BASE_URL`. The public-PKCE flow requires a separate provider-app configuration
+and is not interchangeable with this confidential flow.
+
+Wahoo limits each application to 10 unrevoked access tokens per user. Refresh only immediately
+before provider API work; after persisting a refreshed token, GradientPeak calls Wahoo's user API
+so Wahoo can retire the previous token. CDN file downloads do not retire it. If the cap is reached,
+the user must revoke GradientPeak in their Wahoo account (or complete the app's confirmed remote
+disconnect) before reconnecting. Wahoo automatically deletes unrevoked tokens after 60 days, but
+waiting is not the operational recovery path. See the
+[Wahoo authentication documentation](https://cloud-api.wahooligan.com/#authentication).
+
+Never log or paste the client secret, webhook token, authorization code, access token, refresh
+token, or raw provider response. Rotate the client secret and webhook token after any disclosure.
+
 Mobile callback and deep-link bridging:
 
 - `AUTH_MOBILE_CALLBACK_URL`

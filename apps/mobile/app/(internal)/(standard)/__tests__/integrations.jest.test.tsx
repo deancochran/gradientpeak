@@ -356,4 +356,20 @@ describe("integrations screen", () => {
     expect(screen.getAllByText("Could not verify the provider account.").length).toBeTruthy();
     expect(screen.queryByText("provider-account-42")).toBeNull();
   });
+
+  it("explains how to recover from Wahoo's active-authorization limit", () => {
+    renderNative(<IntegrationsScreen />);
+
+    act(() => {
+      deepLinkHandlerMock?.({
+        url: "gradientpeak-dev://integrations?integration=failed&provider=wahoo&error=wahoo_token_limit_exceeded",
+      });
+    });
+
+    expect(
+      screen.getAllByText(
+        "Wahoo has too many active GradientPeak authorizations. Revoke GradientPeak in your Wahoo account, then try again.",
+      ).length,
+    ).toBeTruthy();
+  });
 });

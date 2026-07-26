@@ -5,7 +5,8 @@
 
 import { logger } from "../../logger";
 import type { WahooActivityType } from "./activity-type-utils";
-import { WahooReconnectRequiredError } from "./credentials";
+import { WahooAuthorizationResetRequiredError, WahooReconnectRequiredError } from "./credentials";
+import { isWahooTokenLimitRejection } from "./oauth-errors";
 
 const WAHOO_API_BASE = "https://api.wahooligan.com";
 
@@ -609,11 +610,22 @@ export async function refreshWahooAccessToken(
 
   if (!response.ok) {
     let errorCode = `HTTP_${response.status}`;
+    let errorDescription: string | undefined;
     try {
-      const errorData = (await response.json()) as { error?: unknown };
+      const errorData = (await response.json()) as {
+        error?: unknown;
+        error_description?: unknown;
+      };
       if (typeof errorData.error === "string") errorCode = errorData.error;
+      if (typeof errorData.error_description === "string") {
+        errorDescription = errorData.error_description;
+      }
     } catch {
       // Retain status-based details without exposing the response body.
+    }
+
+    if (isWahooTokenLimitRejection(errorCode, errorDescription)) {
+      throw new WahooAuthorizationResetRequiredError();
     }
 
     if (response.status === 401 || errorCode.toLowerCase() === "invalid_grant") {
@@ -650,6 +662,14 @@ export async function refreshWahooAccessToken(
     expiresAt: expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : null,
     refreshToken: typeof data.refresh_token === "string" ? data.refresh_token : refreshToken,
   };
+}
+
+/**
+ * Wahoo revokes the previous access token only after the refreshed token completes an
+ * authenticated API request; refreshing alone or downloading a CDN file does not count.
+ */
+export async function activateWahooAccessToken(accessToken: string): Promise<void> {
+  await new WahooClient({ accessToken }).getUserProfile();
 }
 
 /**

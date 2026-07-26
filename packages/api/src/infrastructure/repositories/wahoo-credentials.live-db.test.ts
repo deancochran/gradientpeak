@@ -73,6 +73,7 @@ describe("Wahoo credential PostgreSQL CAS", () => {
       refreshToken: string,
     ) =>
       resolveWahooCredentials({
+        activateAccessToken: vi.fn(async () => undefined),
         integration: { ...integration, expiresAt: "2026-07-24T15:00:00.000Z" },
         now: Date.parse("2026-07-24T15:01:00.000Z"),
         persistTokens: (tokens) =>
