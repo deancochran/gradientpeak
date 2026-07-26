@@ -23,6 +23,7 @@ type StackScreenProps = Record<string, unknown> & {
 };
 type ResourcePickerProps = {
   onSelect: (item: ActivityPlanFixture) => void;
+  scope: "activityPlans" | "routes";
   visible: boolean;
 };
 
@@ -36,6 +37,8 @@ const eventDetailData: {
   notes: string;
   activity_plan_id: string | null;
   activity_plan: ActivityPlanFixture | null;
+  route_id?: string | null;
+  route?: { id: string; name: string } | null;
   recurrence_rule: string | null;
   series_id: string | null;
   occurrence_key: string | null;
@@ -127,6 +130,10 @@ jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
   ActivityPlanCard: mockCreateHost("ActivityPlanCard"),
 }));
+jest.mock("@/components/shared/RouteCard", () => ({
+  __esModule: true,
+  RouteCard: mockCreateHost("RouteCard"),
+}));
 
 jest.mock("@react-native-community/datetimepicker", () => ({
   __esModule: true,
@@ -155,10 +162,13 @@ jest.mock("@/components/event/EventEditorCard", () => ({
 
 jest.mock("@/components/shared/resource-picker", () => ({
   __esModule: true,
-  ResourcePickerModal: ({ onSelect, visible }: ResourcePickerProps) => {
+  ResourcePickerModal: ({ onSelect, scope, visible }: ResourcePickerProps) => {
     if (!visible) return null;
     const React = require("react");
-    const items = mockActivityPlansListUseQuery().data?.items ?? [];
+    const items =
+      scope === "routes"
+        ? [{ id: "route-1", name: "River Loop" }]
+        : (mockActivityPlansListUseQuery().data?.items ?? []);
     return React.createElement(
       "ResourcePickerModal",
       { visible },
@@ -168,7 +178,7 @@ jest.mock("@/components/shared/resource-picker", () => ({
           {
             key: item.id,
             onPress: () => onSelect(item),
-            testID: `event-detail-update-activity-plan-option-${item.id}`,
+            testID: `event-detail-update-${scope === "routes" ? "route" : "activity-plan"}-option-${item.id}`,
           },
           item.name,
         ),
@@ -235,6 +245,8 @@ describe("event detail update screen", () => {
     eventDetailData.event_type = "custom";
     eventDetailData.activity_plan_id = null;
     eventDetailData.activity_plan = null;
+    eventDetailData.route_id = null;
+    eventDetailData.route = null;
     eventDetailData.series_id = null;
     eventDetailData.occurrence_key = null;
     eventDetailData.original_starts_at = null;

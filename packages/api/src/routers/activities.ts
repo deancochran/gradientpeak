@@ -64,7 +64,7 @@ const activityRowSchema = publicActivitiesRowSchema
     updated_at: activityTimestampSchema,
     started_at: activityTimestampSchema,
     finished_at: activityTimestampSchema,
-    content_visibility: contentVisibilitySchema.optional(),
+    content_visibility: contentVisibilitySchema,
   })
   .strict();
 
@@ -274,7 +274,6 @@ const activityParentSummarySchema = z
     distanceMeters: z.number().int().nonnegative().default(0),
     calories: z.number().int().nonnegative().nullable().optional(),
     elevationGainMeters: z.number().nonnegative().nullable().optional(),
-    normalizedPower: z.number().finite().nullable().optional(),
     avgTemperature: z.number().finite().nullable().optional(),
     poolLength: z.number().positive().nullable().optional(),
   })
@@ -319,7 +318,6 @@ const updateInputSchema = z
     id: z.string().uuid(),
     name: z.string().optional(),
     notes: z.string().nullable().optional(),
-    is_private: z.boolean().optional(),
     content_visibility: contentVisibilitySchema.optional(),
   })
   .strict();
@@ -549,7 +547,6 @@ export const activitiesRouter = createTRPCRouter({
       activityPlanId: linkedActivityPlanId,
       name: input.name,
       notes: input.notes ?? null,
-      isPrivate: contentVisibility === "private",
       contentVisibility,
       startedAt: new Date(input.startedAt),
       finishedAt: new Date(input.finishedAt),
@@ -565,7 +562,6 @@ export const activitiesRouter = createTRPCRouter({
       maxHeartRate: null,
       avgPower: null,
       maxPower: null,
-      normalizedPower: input.summary.normalizedPower ?? null,
       avgCadence: null,
       maxCadence: null,
       avgSpeedMps: null,

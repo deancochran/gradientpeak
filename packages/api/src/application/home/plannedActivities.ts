@@ -1,4 +1,3 @@
-import { getScheduledDateKey } from "@repo/core";
 import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
 import { type EventRow, type PublicActivityPlansRow, schema } from "@repo/db";
 import { and, asc, eq, gte, lt } from "drizzle-orm";
@@ -44,8 +43,8 @@ export async function listPlannedActivitiesInRange(
   db: HomeDb,
   input: {
     profileId: string;
-    startsAtGte: Date;
-    startsAtLt: Date;
+    scheduledDateGte: string;
+    scheduledDateLt: string;
   },
 ): Promise<PlannedActivityRow[]> {
   const rows = await db
@@ -63,19 +62,18 @@ export async function listPlannedActivitiesInRange(
       and(
         eq(schema.events.profile_id, input.profileId),
         eq(schema.events.event_type, "planned"),
-        gte(schema.events.starts_at, input.startsAtGte),
-        lt(schema.events.starts_at, input.startsAtLt),
+        gte(schema.events.scheduled_date, input.scheduledDateGte),
+        lt(schema.events.scheduled_date, input.scheduledDateLt),
       ),
     )
-    .orderBy(asc(schema.events.starts_at));
+    .orderBy(asc(schema.events.scheduled_date), asc(schema.events.starts_at));
 
   return rows.map(
     (row) =>
       plannedActivityRowSchema.parse({
         ...row,
         activity_plan: (row.activity_plan as PublicActivityPlansRow | null) ?? null,
-        scheduled_date:
-          row.scheduled_date ?? getScheduledDateKey(row.starts_at.toISOString(), "UTC"),
+        scheduled_date: row.scheduled_date,
       }) as PlannedActivityRow,
   );
 }
@@ -85,8 +83,8 @@ export async function loadPlannedActivitiesWithEstimations(
   input: {
     estimationStore: EstimationStore;
     profileId: string;
-    startsAtGte: Date;
-    startsAtLt: Date;
+    scheduledDateGte: string;
+    scheduledDateLt: string;
   },
 ): Promise<{
   plannedActivities: PlannedActivityRow[];

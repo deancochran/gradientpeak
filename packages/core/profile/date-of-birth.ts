@@ -32,3 +32,9 @@ export function calculateDateOfBirthAge(dob: string, asOf = new Date()): number 
   }
   return age;
 }
+
+/** Compatibility adapter for nullable persisted DOB values. */
+export function calculateAge(dob: string | null): number | undefined {
+  if (!dob) return undefined;
+  return calculateDateOfBirthAge(dob) ?? undefined;
+}

@@ -135,7 +135,7 @@ describe("useReliableMutation", () => {
     expect(events).toEqual(["onError:start", "onError:complete", "onSettled", "rejection:handled"]);
   });
 
-  it("routes an async error-callback rejection through mutateAsync without an unhandled promise", async () => {
+  it("preserves the mutation failure when an async error callback rejects", async () => {
     const mutationError = new Error("mutation failed");
     const callbackError = new Error("error callback failed");
     const mutationFn = jest.fn<Promise<TestOutput>, [TestInput]>().mockRejectedValue(mutationError);
@@ -156,7 +156,7 @@ describe("useReliableMutation", () => {
       );
 
       await act(async () => {
-        await expect(result.current.mutateAsync({ id: "plan-3" })).rejects.toBe(callbackError);
+        await expect(result.current.mutateAsync({ id: "plan-3" })).rejects.toBe(mutationError);
       });
       await Promise.resolve();
 

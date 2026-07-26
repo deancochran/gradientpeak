@@ -7,7 +7,7 @@ import {
 } from "./ActivityRecorder/checkpointStorage";
 import {
   garbageCollectDueAcceptedQueueEvidence,
-  loadPendingFinalizedArtifact,
+  garbageCollectDueDiscardedRecordingEvidence,
 } from "./ActivityRecorder/finalizedArtifactStorage";
 import {
   blockFinalizedArtifactRebuild,
@@ -23,7 +23,6 @@ import {
   loadActivitySubmissionQueueJobs,
   loadDueActivitySubmissionQueueJobs,
 } from "./activitySubmissionQueue";
-import { migrateSingleSportLocalStateToV3Once } from "./activitySubmissionQueue/migration-only-v3";
 
 export type MobileRecordingStartupState = {
   checkpoint: RecordingCheckpointRecovery;
@@ -87,19 +86,13 @@ export function prepareMobileRecordingStartup(
     // Accepted file deletion is a separate retryable effect. Run it before raw
     // retention so a failed OS operation cannot lose its recovery reference.
     await garbageCollectDueAcceptedQueueEvidence().catch(() => undefined);
+    await garbageCollectDueDiscardedRecordingEvidence().catch(() => undefined);
     void garbageCollectExpiredRecordingEvidence().catch(() => undefined);
-    await migrateSingleSportLocalStateToV3Once();
     let checkpoint = await inspectRecordingCheckpoint(profileId);
     const finalizedArtifactRecovery = await inspectFinalizedArtifactReferences(profileId);
     const sqliteArtifacts = await loadFinalizedArtifactHandoffs(profileId);
-    const compatibilityArtifact = await loadPendingFinalizedArtifact();
-    const pendingArtifacts =
-      sqliteArtifacts.length > 0
-        ? sqliteArtifacts
-        : compatibilityArtifact?.profileId === profileId
-          ? [compatibilityArtifact]
-          : [];
-    for (const pendingArtifact of pendingArtifacts) {
+    for (const pendingArtifact of sqliteArtifacts) {
+      if (pendingArtifact.profileId !== profileId) continue;
       const pendingRebuild = finalizedArtifactRecovery.some(
         (candidate) =>
           candidate.status !== "healthy" && candidate.sessionId === pendingArtifact.sessionId,

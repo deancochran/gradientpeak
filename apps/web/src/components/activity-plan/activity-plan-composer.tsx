@@ -39,7 +39,6 @@ export type ActivityPlanAuthoringValues = {
   gps_recording_enabled: boolean;
   name: string;
   notes: string | null;
-  route_id: string | null;
   structure: ReturnType<typeof activityPlanStructureSchemaV3.parse>;
   template_visibility: (typeof visibilityOptions)[number];
 };
@@ -50,7 +49,6 @@ type ActivityPlanComposerProps = {
     gps_recording_enabled?: boolean;
     name: string;
     notes?: string | null;
-    route_id?: string | null;
     structure: unknown;
     template_visibility?: string | null;
   };
@@ -58,7 +56,6 @@ type ActivityPlanComposerProps = {
   onCancel: () => void;
   onSave: (values: ActivityPlanAuthoringValues) => Promise<void> | void;
   pending?: boolean;
-  routeOptions?: ReadonlyArray<{ id: string; name: string }>;
 };
 
 function editableStructure(value: unknown): EditableActivityPlanStructure {
@@ -108,7 +105,6 @@ export function ActivityPlanComposer({
   onCancel,
   onSave,
   pending = false,
-  routeOptions = [],
 }: ActivityPlanComposerProps) {
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
@@ -119,7 +115,6 @@ export function ActivityPlanComposer({
       : "private",
   );
   const [gpsEnabled, setGpsEnabled] = useState(initial?.gps_recording_enabled ?? true);
-  const [routeId, setRouteId] = useState(initial?.route_id ?? "");
   const [structure, setStructure] = useState<EditableActivityPlanStructure>(() =>
     initial ? editableStructure(initial.structure) : createActivityPlanStructure(),
   );
@@ -164,7 +159,6 @@ export function ActivityPlanComposer({
       gps_recording_enabled: gpsEnabled,
       name: name.trim(),
       notes: notes.trim() || null,
-      route_id: routeId || null,
       structure: validStructure.data,
       template_visibility: visibility,
     });
@@ -224,25 +218,6 @@ export function ActivityPlanComposer({
             />
             GPS recording enabled
           </label>
-          <div className="space-y-2 md:col-span-2">
-            <FieldLabel htmlFor="activity-plan-route">Route</FieldLabel>
-            <select
-              className={`${selectClassName} w-full`}
-              id="activity-plan-route"
-              onChange={(event) => setRouteId(event.currentTarget.value)}
-              value={routeId}
-            >
-              <option value="">No route</option>
-              {routeOptions.map((route) => (
-                <option key={route.id} value={route.id}>
-                  {route.name}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-muted-foreground">
-              Optionally attach a route you can access for terrain and distance context.
-            </p>
-          </div>
           <div className="space-y-2 md:col-span-2">
             <FieldLabel htmlFor="activity-plan-notes">Coach or athlete notes</FieldLabel>
             <Textarea

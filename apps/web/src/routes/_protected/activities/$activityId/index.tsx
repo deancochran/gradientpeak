@@ -64,10 +64,7 @@ const VISIBILITY_OPTIONS: Array<{ value: ContentVisibility; label: string; descr
     { value: "public", label: "Public", description: "Anyone with the public link can view it." },
   ];
 
-function resolveContentVisibility(activity: {
-  content_visibility?: string | null;
-  is_private?: boolean;
-}) {
+function resolveContentVisibility(activity: { content_visibility: string }) {
   if (
     activity.content_visibility === "private" ||
     activity.content_visibility === "followers" ||
@@ -75,7 +72,7 @@ function resolveContentVisibility(activity: {
   ) {
     return activity.content_visibility;
   }
-  return activity.is_private ? "private" : "followers";
+  return "private";
 }
 
 function getVisibilityLabel(visibility: ContentVisibility) {
@@ -99,6 +96,17 @@ function ActivityDetailPage() {
   const derived = activityQuery.data?.derived;
   const categoryDisplay = deriveActivityCategoryDisplay(activity?.segments ?? []);
   const timingDisplay = activity ? deriveActivityTimingDisplay(activity) : null;
+  const normalizedPowerWatts = useMemo(() => {
+    const activitySegments = (activity?.segments ?? []).filter(
+      (segment) => segment.role === "activity",
+    );
+    if (activitySegments.length !== 1) return null;
+    const summary = activitySegments[0]?.summary;
+    if (!summary || typeof summary !== "object" || Array.isArray(summary)) return null;
+    if (!("normalizedPowerWatts" in summary)) return null;
+    const value = summary.normalizedPowerWatts;
+    return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+  }, [activity?.segments]);
   const currentArtifactLabel = deriveCurrentArtifactLabel(activity?.current_artifact ?? null);
   const primaryStreamSegment = activity?.segments
     .filter((segment) => segment.role === "activity")
@@ -356,7 +364,7 @@ function ActivityDetailPage() {
           },
           {
             label: "Normalized power",
-            value: formatPower(activity.normalized_power),
+            value: formatPower(normalizedPowerWatts),
           },
           { label: "Started", value: formatDateTime(activity.started_at) },
         ]}

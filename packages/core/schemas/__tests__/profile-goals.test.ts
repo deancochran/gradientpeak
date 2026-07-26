@@ -7,6 +7,7 @@ import {
   profileGoalRecordSchema,
   profileGoalSchema,
 } from "../goals/profile_goals";
+import { trainingPlanGoalSchema } from "../training-plan-structure";
 
 describe("canonical profile goal schemas", () => {
   it("parses supported canonical goal fixtures deterministically", () => {
@@ -111,6 +112,41 @@ describe("canonical profile goal schemas", () => {
         }),
       ]),
     );
+  });
+
+  it("rejects the retired multi-target shape for profile goals", () => {
+    expect(
+      profileGoalSchema.safeParse({
+        id: "00000000-0000-4000-8000-000000000001",
+        name: "Retired profile target shape",
+        target_date: "2026-12-01",
+        priority: 5,
+        targets: [{ target_type: "hr_threshold", target_lthr_bpm: 170 }],
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("canonical training-plan goal schema", () => {
+  it("preserves weighted multi-target training-plan goals without profile objectives", () => {
+    expect(
+      trainingPlanGoalSchema.parse({
+        id: "00000000-0000-4000-8000-000000000001",
+        name: "Bike performance",
+        target_date: "2026-12-01",
+        priority: 8,
+        targets: [
+          {
+            target_type: "power_threshold",
+            target_watts: 300,
+            test_duration_s: 1200,
+            activity_category: "bike",
+            weight: 3,
+          },
+          { target_type: "hr_threshold", target_lthr_bpm: 170, weight: 1 },
+        ],
+      }).targets,
+    ).toHaveLength(2);
   });
 });
 

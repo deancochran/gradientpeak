@@ -1,4 +1,4 @@
-import { calculateATL, calculateCTL } from "../calculations";
+import { calculateATL, calculateCTL } from "../load/progression";
 import type {
   FeasibilityAssessment,
   ReferenceTrajectory,
@@ -11,12 +11,12 @@ import {
 import { type CanonicalSport, canonicalSportValues } from "../schemas/sport";
 import type {
   CreationContextSummary,
-  GoalTargetV2,
   InferredCurrentState,
   InferredStateSnapshotMetadata,
   TrainingPlanCalibrationConfig,
-} from "../schemas/training_plan_structure";
-import { trainingPlanCalibrationConfigSchema } from "../schemas/training_plan_structure";
+  TrainingPlanGoalTarget,
+} from "../schemas/training-plan-structure";
+import { trainingPlanCalibrationConfigSchema } from "../schemas/training-plan-structure";
 import { countAvailableTrainingDays } from "./availabilityUtils";
 import {
   DISTANCE_TO_CTL,
@@ -1473,7 +1473,7 @@ export interface DeterministicProjectionPayload {
     };
     interference_notes?: string[];
     target_scores: Array<{
-      kind: GoalTargetV2["target_type"];
+      kind: TrainingPlanGoalTarget["target_type"];
       score_0_100: number;
       target_weight?: number;
       unmet_gap?: number;
@@ -1511,7 +1511,7 @@ export interface BuildDeterministicProjectionInput {
     name: string;
     target_date: string;
     priority?: number;
-    targets?: GoalTargetV2[];
+    targets?: TrainingPlanGoalTarget[];
   }>;
   starting_ctl?: number;
   starting_atl?: number;
@@ -3138,7 +3138,7 @@ function resolveSparsityPenalty(
   return round3(basePenalty + stateBias);
 }
 
-function resolveTargetSport(targets: GoalTargetV2[] | undefined): ProjectionSport {
+function resolveTargetSport(targets: TrainingPlanGoalTarget[] | undefined): ProjectionSport {
   const sportCounts: Record<ProjectionSport, number> = {
     run: 0,
     bike: 0,
@@ -3161,7 +3161,7 @@ function resolveTargetSport(targets: GoalTargetV2[] | undefined): ProjectionSpor
 
 function resolveSportLoadMethod(input: {
   sport: ProjectionSport;
-  targets: GoalTargetV2[];
+  targets: TrainingPlanGoalTarget[];
   evidenceScore: number;
 }): {
   load_method: ProjectionLoadMethod;

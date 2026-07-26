@@ -28,7 +28,12 @@ async function main() {
       await applySqlFile(target, resolve(migrationDirectory, migration));
     }
 
-    const env = { ...process.env, DATABASE_URL: targetUrl, POSTGRES_URL: targetUrl };
+    const env = {
+      ...process.env,
+      DATABASE_URL: targetUrl,
+      POSTGRES_URL: targetUrl,
+      GRADIENTPEAK_FRESH_FINGERPRINT_WRITE: "1",
+    };
     const fingerprintArgs = ["exec", "tsx", "scripts/check-schema-fingerprint.ts"];
     if (args.includes("--write-fingerprint")) fingerprintArgs.push("--write");
     execFileSync("pnpm", fingerprintArgs, { cwd: dbPackageRoot, env, stdio: "inherit" });

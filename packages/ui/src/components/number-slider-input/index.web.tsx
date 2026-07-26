@@ -1,5 +1,9 @@
+import {
+  clampNumber,
+  formatNumberForInput,
+  parseBoundedNumber,
+} from "@repo/core/utils/fitness-inputs";
 import { useEffect, useState } from "react";
-import { clampNumber, formatNumberForInput, parseBoundedNumber } from "../../lib/fitness-inputs";
 import { Input } from "../input/index.web";
 import { Label } from "../label/index.web";
 import { Slider } from "../slider/index.web";

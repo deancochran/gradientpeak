@@ -19,7 +19,7 @@ function serializeCreatedEvent(row: {
   recurrence_rule: string | null;
   recurrence_timezone: string | null;
   route_id: string | null;
-  scheduled_date: string | null;
+  scheduled_date: string;
   series_id: string | null;
   source_provider: string | null;
   starts_at: Date;
@@ -61,7 +61,7 @@ function serializeSplitEventRow(row: {
   recurrence_rule: string | null;
   recurrence_timezone: string | null;
   route_id: string | null;
-  scheduled_date: string | null;
+  scheduled_date: string;
   series_id: string | null;
   source_provider: string | null;
   starts_at: Date;

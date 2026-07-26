@@ -51,4 +51,12 @@ describe("web recording adapter capability truth", () => {
       ftmsControl: true,
     });
   });
+
+  it("hands file imports directly to the canonical importer", () => {
+    const fileImport = createWebRecordingAdapterRegistry().find(
+      (adapter) => adapter.id === "file-import",
+    );
+
+    expect(fileImport).toMatchObject({ handoffPath: "/activities/import" });
+  });
 });

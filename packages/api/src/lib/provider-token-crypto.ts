@@ -35,8 +35,7 @@ export function encryptProviderToken(plaintext: string): string {
 
 export function decryptProviderToken(value: string): string {
   if (!value.startsWith("enc:")) {
-    if (process.env.NODE_ENV === "production") resolveKey();
-    return value;
+    throw new Error("Provider credential must use the encrypted envelope");
   }
   if (!value.startsWith(PREFIX)) {
     throw new Error("Unsupported provider credential ciphertext version");

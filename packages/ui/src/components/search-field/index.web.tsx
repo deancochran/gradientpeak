@@ -3,7 +3,7 @@ import { cn } from "../../lib/cn";
 import { Icon } from "../icon/index.web";
 import { Input } from "../input/index.web";
 import { Spinner } from "../loading/index.web";
-import type { SearchFieldProps } from "./shared";
+import type { SearchFieldWebProps } from "./shared";
 
 function SearchField({
   accessibilityLabel,
@@ -19,7 +19,7 @@ function SearchField({
   placeholder,
   testId,
   value,
-}: SearchFieldProps) {
+}: SearchFieldWebProps) {
   return (
     <div className="relative">
       <Icon
@@ -69,5 +69,5 @@ function SearchField({
   );
 }
 
-export type { SearchFieldProps } from "./shared";
+export type { SearchFieldProps, SearchFieldWebProps } from "./shared";
 export { SearchField };

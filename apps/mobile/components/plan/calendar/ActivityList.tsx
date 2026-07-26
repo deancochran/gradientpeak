@@ -8,10 +8,7 @@ import { Text } from "@repo/ui/components/text";
 import { useMemo } from "react";
 import { View } from "react-native";
 import { ActivityPlanCard, type ActivityPlanCardData } from "@/components/shared/ActivityPlanCard";
-import {
-  getActivityPlanRoute,
-  getAuthoritativeActivityPlanMetrics,
-} from "@/lib/activityPlanMetrics";
+import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
 import { type GroupedActivities, groupActivitiesByDate } from "@/lib/utils/plan/dateGrouping";
 
 export interface ActivityListProps {
@@ -41,8 +38,6 @@ type PlannedActivity = {
       intensity_factor?: number | null;
     } | null;
     name?: string | null;
-    route_id?: string | null;
-    route?: { ascent?: number | null; descent?: number | null; distance?: number | null } | null;
     structure?: unknown;
   } | null;
   completed_activity_id?: string | null;
@@ -54,7 +49,6 @@ type PlannedActivity = {
 function transformToCardData(plannedActivity: PlannedActivity): ActivityPlanCardData {
   const plan = plannedActivity.activity_plan;
   const planMetrics = getAuthoritativeActivityPlanMetrics(plan);
-  const planRoute = getActivityPlanRoute(plan);
   return {
     id: plannedActivity.id,
     name: plan?.name || "Unnamed Activity",
@@ -63,23 +57,7 @@ function transformToCardData(plannedActivity: PlannedActivity): ActivityPlanCard
     estimatedDuration: planMetrics.estimated_duration ?? undefined,
     estimatedTss: planMetrics.estimated_tss ?? undefined,
     commonLoad: plan?.common_load,
-    estimatedDistance:
-      planMetrics.estimated_distance === null
-        ? undefined
-        : (planMetrics.estimated_distance ?? planRoute.distance ?? undefined),
-    routeId: plan?.route_id ?? undefined,
-    routeName:
-      plan?.structure && typeof plan.structure === "object" && "route" in plan.structure
-        ? (() => {
-            const route = plan.structure.route;
-            return route &&
-              typeof route === "object" &&
-              "name" in route &&
-              typeof route.name === "string"
-              ? route.name
-              : undefined;
-          })()
-        : undefined,
+    estimatedDistance: planMetrics.estimated_distance ?? undefined,
     notes: plannedActivity.notes ?? undefined,
     scheduledDate: plannedActivity.scheduled_date,
     isCompleted: Boolean(plannedActivity.completed_activity_id),

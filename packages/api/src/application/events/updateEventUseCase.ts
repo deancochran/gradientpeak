@@ -57,7 +57,7 @@ type EventRecord = {
   route_id?: string | null;
   series_id: string | null;
   source_provider: string | null;
-  scheduled_date: string | null;
+  scheduled_date: string;
   starts_at: string;
   status: PublicEventStatus;
   title: string;
@@ -68,8 +68,8 @@ type EventRecord = {
 
 type MappedEvent = {
   activity_plan_id: string | null;
+  event_type: CoreEventType;
   id: string;
-  legacy_event_type: DbEventType;
   scheduled_date: string;
   training_plan_id: string | null;
   updated_at: string;
@@ -109,7 +109,6 @@ type UpdateEventUseCaseDependencies<
     patch: NormalizedEventUpdatePatch;
     scheduledDate: string | undefined;
   };
-  plannedEventType: DbEventType;
   toCoreEventType: (eventType: DbEventType) => CoreEventType;
   toDateKey: (value: string) => string;
   toDayStartIso: (dateValue: string) => string;
@@ -164,9 +163,7 @@ export async function updateEventUseCase<
   dependencies.assertRestDayWritesBlocked(targetEventType, "update");
 
   const hasScheduledDateMove =
-    scheduledDate !== undefined &&
-    scheduledDate !==
-      (existingEvent.scheduled_date ?? dependencies.toDateKey(existingEvent.starts_at));
+    scheduledDate !== undefined && scheduledDate !== existingEvent.scheduled_date;
   const hasStartsAtMove = dependencies.hasInstantChanged(patch.starts_at, existingEvent.starts_at);
   const hasEndsAtMove = dependencies.hasInstantChanged(patch.ends_at, existingEvent.ends_at);
   const isMoveRescheduleUpdate = hasScheduledDateMove || hasStartsAtMove || hasEndsAtMove;
@@ -205,11 +202,13 @@ export async function updateEventUseCase<
 
   const nextActivityPlanId =
     patch.activity_plan_id !== undefined ? patch.activity_plan_id : existingEvent.activity_plan_id;
+  const nextRouteId =
+    patch.route_id !== undefined ? patch.route_id : (existingEvent.route_id ?? null);
 
-  if (targetEventType === "planned" && !nextActivityPlanId) {
+  if (targetEventType === "planned" && !nextActivityPlanId && !nextRouteId) {
     throw new TRPCError({
       code: "BAD_REQUEST",
-      message: 'activity_plan_id is required when event_type is "planned"',
+      message: "A planned event requires activity_plan_id or route_id",
     });
   }
 
@@ -305,10 +304,9 @@ export async function updateEventUseCase<
     ...(patch.ends_at !== undefined ? { ends_at: patch.ends_at } : {}),
     scheduled_date:
       scheduledDate ??
-      getScheduledDateKey(
-        patch.starts_at ?? existingEvent.starts_at,
-        patch.timezone ?? existingEvent.timezone,
-      ),
+      (patch.starts_at !== undefined
+        ? getScheduledDateKey(patch.starts_at, patch.timezone ?? existingEvent.timezone)
+        : existingEvent.scheduled_date),
     ...(patch.recurrence !== undefined
       ? {
           recurrence_rule: patch.recurrence?.rule ?? null,
@@ -329,7 +327,7 @@ export async function updateEventUseCase<
     patch.ends_at === undefined &&
     scheduledDate === undefined
   ) {
-    eventUpdates.ends_at = dependencies.toNextDayStartIso(dependencies.toDateKey(patch.starts_at));
+    eventUpdates.ends_at = dependencies.toNextDayStartIso(String(eventUpdates.scheduled_date));
   }
 
   if (isMoveRescheduleUpdate && isPlannedLikeEvent && hasCompletionLinkage) {
@@ -440,12 +438,12 @@ export async function updateEventUseCase<
 
   let plannedWorkoutSyncResult: PlannedWorkoutQueueResult | null = null;
   const updatedPlannedEventIds = updatedRows
-    .filter((row) => row.event_type === dependencies.plannedEventType && row.activity_plan_id)
+    .filter((row) => row.event_type === "planned" && row.activity_plan_id)
     .map((row) => row.id);
   const removedPlannedEventIds =
-    existingEvent.event_type === dependencies.plannedEventType &&
+    existingEvent.event_type === "planned" &&
     existingEvent.activity_plan_id &&
-    (event.legacy_event_type !== dependencies.plannedEventType || event.activity_plan_id === null)
+    (event.event_type !== "planned" || event.activity_plan_id === null)
       ? updatedRows.map((row) => row.id)
       : [];
 

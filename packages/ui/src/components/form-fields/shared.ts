@@ -6,7 +6,7 @@ import type {
   FieldValues,
   RegisterOptions,
 } from "react-hook-form";
-import type { TextInputProps } from "../../lib/react-native";
+import type { TextInputProps } from "react-native";
 import type { BoundedNumberInputProps } from "../bounded-number-input/shared";
 import type { DateInputProps } from "../date-input/shared";
 import type { DurationInputProps } from "../duration-input/shared";

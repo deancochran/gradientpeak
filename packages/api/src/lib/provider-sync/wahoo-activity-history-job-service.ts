@@ -214,17 +214,13 @@ export class WahooActivityHistoryJobService {
               persistTokens: (tokens) =>
                 this.deps.wahooRepository.updateWahooIntegrationTokens({
                   ...tokens,
-                  expectedCredentialGeneration:
-                    tokens.credentialGeneration ?? integration.credentialGeneration,
-                  expectedIntegrationGeneration:
-                    tokens.integrationGeneration ?? integration.integrationGeneration,
+                  expectedCredentialGeneration: tokens.credentialGeneration,
+                  expectedIntegrationGeneration: tokens.integrationGeneration,
                 }),
               markReconnectRequired: ({ credentialGeneration, id, integrationGeneration }) =>
                 this.deps.wahooRepository.markWahooReconnectRequired?.({
-                  expectedCredentialGeneration:
-                    credentialGeneration ?? integration.credentialGeneration,
-                  expectedIntegrationGeneration:
-                    integrationGeneration ?? integration.integrationGeneration,
+                  expectedCredentialGeneration: credentialGeneration,
+                  expectedIntegrationGeneration: integrationGeneration,
                   id,
                 }) ?? Promise.resolve(false),
               readCurrentCredentials: () =>

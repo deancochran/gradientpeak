@@ -106,7 +106,7 @@ jest.mock("@/lib/api", () => ({
             duration_seconds: 60,
             start_offset: 120,
             value: 400,
-            unit: "W",
+            unit: "watts",
             source: "manual",
           },
           isLoading: false,
@@ -176,7 +176,7 @@ describe("activity effort detail screen", () => {
     const rendered = renderNative(<ActivityEffortDetailScreen />);
 
     expect(screen.getByText("run power")).toBeTruthy();
-    expect(screen.getByText("Value: 400 W")).toBeTruthy();
+    expect(screen.getByText("Value: 400 watts")).toBeTruthy();
     expect(screen.getByText("Source: manual")).toBeTruthy();
     expect(screen.getByText("Hill Repeats")).toBeTruthy();
     expect(screen.queryByText("Segment duration")).toBeNull();

@@ -48,7 +48,6 @@ function ActivityPlanDetailPage() {
   const utils = api.useUtils();
   const { activityPlanId } = Route.useParams();
   const planQuery = api.activityPlans.getById.useQuery({ id: activityPlanId }, { retry: false });
-  const routesQuery = api.routes.list.useQuery({ limit: 100, ownerScope: "all" });
   const scheduleQuery = api.events.list.useQuery({
     activity_plan_id: activityPlanId,
     include_adhoc: false,
@@ -199,7 +198,6 @@ function ActivityPlanDetailPage() {
               .then(() => undefined)
           }
           pending={updatePlan.isPending}
-          routeOptions={routesQuery.data?.items ?? []}
         />
       </div>
     );
@@ -351,42 +349,6 @@ function ActivityPlanDetailPage() {
 
         <div className="space-y-6">
           <OwnerSummary owner={plan.owner} />
-          <Card data-testid="activity-plan-route">
-            <CardHeader>
-              <CardTitle>Route</CardTitle>
-              <CardDescription>
-                Route context used for distance and terrain estimates.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {plan.route ? (
-                <dl className="space-y-2 text-sm">
-                  <div>
-                    <dt className="text-muted-foreground">Name</dt>
-                    <dd className="font-medium">{plan.route.name}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">Distance</dt>
-                    <dd className="font-medium">
-                      {plan.route.distance == null
-                        ? "Not estimated"
-                        : `${(plan.route.distance / 1_000).toFixed(1)} km`}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">Ascent</dt>
-                    <dd className="font-medium">
-                      {plan.route.ascent == null
-                        ? "Not estimated"
-                        : `${Math.round(plan.route.ascent)} m`}
-                    </dd>
-                  </div>
-                </dl>
-              ) : (
-                <p className="text-sm text-muted-foreground">No route is linked to this plan.</p>
-              )}
-            </CardContent>
-          </Card>
         </div>
       </div>
 
@@ -421,6 +383,7 @@ function ActivityPlanDetailPage() {
                   activity_plan_id: plan.id,
                   event_type: "planned",
                   scheduled_date: scheduledDate,
+                  title: plan.name,
                 });
               }
             }}

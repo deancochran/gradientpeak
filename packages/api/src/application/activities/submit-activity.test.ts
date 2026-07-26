@@ -149,7 +149,6 @@ function createDb(
     activity_plan_id: "plan-1",
     name: "Recorded",
     notes: null,
-    is_private: true,
     started_at: new Date(),
     finished_at: new Date(),
     elapsed_ms: 60_000,
@@ -230,7 +229,7 @@ function createInput(): ActivitySubmission {
     profileId: "profile-1",
     name: "Ride",
     notes: null,
-    isPrivate: false,
+    contentVisibility: "followers",
     startedAt: new Date("2026-01-01T10:00:00Z"),
     finishedAt: new Date("2026-01-01T11:00:00Z"),
     elapsedMs: 3_600_000,
@@ -241,7 +240,6 @@ function createInput(): ActivitySubmission {
     maxHeartRate: 170,
     avgPower: 200,
     maxPower: 500,
-    normalizedPower: 220,
     avgCadence: 88,
     maxCadence: 110,
     avgSpeedMps: 6,
@@ -395,7 +393,7 @@ describe("submitActivity", () => {
     );
   });
 
-  it("overrides caller and provider normalized power with the segment projection", async () => {
+  it("persists canonical segment summaries without a parent normalized-power projection", async () => {
     const canonicalSegmentSet: NonNullable<ActivitySubmission["segmentSet"]> = {
       version: 1,
       elapsedMs: 3_600_000,
@@ -418,12 +416,11 @@ describe("submitActivity", () => {
     const created = createDb(undefined, null);
     await submitActivity(created.db, {
       ...createInput(),
-      normalizedPower: 999,
       segmentSet: canonicalSegmentSet,
     });
-    expect(created.insertedValues.find(({ table }) => table === activities)?.values).toMatchObject({
-      normalized_power: 248,
-    });
+    expect(
+      created.insertedValues.find(({ table }) => table === activities)?.values,
+    ).not.toHaveProperty("normalized_power");
 
     const enriched = createDb();
     await submitActivity(enriched.db, {
@@ -432,15 +429,15 @@ describe("submitActivity", () => {
       profileId: "profile-1",
       deviceManufacturer: null,
       deviceProduct: null,
-      summaryValues: { normalized_power: 999 },
+      summaryValues: {},
       segmentSet: canonicalSegmentSet,
       efforts: [],
       detectedLTHR: null,
       activityCompletedAt: new Date(),
     });
-    expect(enriched.updatedValues.find(({ table }) => table === activities)?.values).toMatchObject({
-      normalized_power: 248,
-    });
+    expect(
+      enriched.updatedValues.find(({ table }) => table === activities)?.values,
+    ).not.toHaveProperty("normalized_power");
   });
 
   it("upserts an existing activity enrichment in one transaction", async () => {

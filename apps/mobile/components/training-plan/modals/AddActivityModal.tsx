@@ -111,7 +111,13 @@ export function AddActivityModal({
     if (!selectedActivity) return;
     await scheduleMutation.mutateAsync({
       activity_plan_id: selectedActivity.id,
+      all_day: true,
+      event_type: "planned",
+      lifecycle: { status: "scheduled" },
+      read_only: false,
       scheduled_date: selectedDate,
+      timezone: "UTC",
+      title: selectedActivity.name,
     });
   };
 

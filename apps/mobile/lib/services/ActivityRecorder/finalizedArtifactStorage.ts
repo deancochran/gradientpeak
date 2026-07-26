@@ -1,16 +1,15 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { recordingSessionArtifactSchema } from "@repo/core";
 import { Directory, File } from "expo-file-system";
 import type { ActivitySubmissionQueueJob } from "../activitySubmissionQueue/types";
 import {
   completeAcceptedRecordingEvidenceCleanup,
+  completeDiscardedRecordingEvidenceCleanup,
   loadDueAcceptedRecordingEvidenceCleanups,
+  loadDueDiscardedRecordingEvidenceCleanups,
   retryAcceptedRecordingEvidenceCleanup,
+  retryDiscardedRecordingEvidenceCleanup,
   tombstoneAcceptedRecordingEvidence,
 } from "./recordingEvidenceJournal";
 import type { RecordingSessionArtifact } from "./types";
-
-export const PENDING_FINALIZED_ARTIFACT_KEY = "activity-recorder:v3:pending-finalized-artifact";
 
 export function finalizedArtifactReferencesLocalFiles(
   artifact: RecordingSessionArtifact | null,
@@ -18,35 +17,6 @@ export function finalizedArtifactReferencesLocalFiles(
   return Boolean(
     artifact && (artifact.activityFilePath || (artifact.streamArtifactPaths?.length ?? 0) > 0),
   );
-}
-
-export async function persistPendingFinalizedArtifact(
-  artifact: RecordingSessionArtifact,
-): Promise<void> {
-  const parsed = recordingSessionArtifactSchema.parse(artifact);
-  await AsyncStorage.setItem(PENDING_FINALIZED_ARTIFACT_KEY, JSON.stringify(parsed));
-}
-
-export async function loadPendingFinalizedArtifact(): Promise<RecordingSessionArtifact | null> {
-  const raw = await AsyncStorage.getItem(PENDING_FINALIZED_ARTIFACT_KEY);
-
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    const stored = JSON.parse(raw) as Record<string, unknown>;
-    if (!stored.profileId && typeof stored.sessionId === "string") {
-      stored.profileId = stored.sessionId.split(":")[0] || stored.sessionId;
-    }
-    return recordingSessionArtifactSchema.parse(stored);
-  } catch (error) {
-    throw new Error("Stored finalized activity artifact is unreadable", { cause: error });
-  }
-}
-
-export async function clearPendingFinalizedArtifact(): Promise<void> {
-  await AsyncStorage.removeItem(PENDING_FINALIZED_ARTIFACT_KEY);
 }
 
 export async function deleteFinalizedArtifactFiles(
@@ -126,6 +96,27 @@ export async function garbageCollectDueAcceptedQueueEvidence(now = Date.now()): 
           ? "stream-directory-delete-failed"
           : "activity-file-delete-failed";
       await retryAcceptedRecordingEvidenceCleanup(item.sessionId, category, now);
+    }
+  }
+  return cleaned;
+}
+
+/** User-discarded evidence is terminal before this retryable OS effect runs. */
+export async function garbageCollectDueDiscardedRecordingEvidence(
+  now = Date.now(),
+): Promise<number> {
+  const due = await loadDueDiscardedRecordingEvidenceCleanups(now);
+  let cleaned = 0;
+  for (const item of due) {
+    try {
+      await deleteFinalizedArtifactFiles({
+        activityFilePath: item.activityFilePath,
+        streamArtifactPaths: item.streamArtifactPaths,
+      } as RecordingSessionArtifact);
+      await completeDiscardedRecordingEvidenceCleanup(item.sessionId);
+      cleaned += 1;
+    } catch {
+      await retryDiscardedRecordingEvidenceCleanup(item.sessionId);
     }
   }
   return cleaned;

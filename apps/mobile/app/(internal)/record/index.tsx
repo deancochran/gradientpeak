@@ -3,11 +3,11 @@ import { Text } from "@repo/ui/components/text";
 import { AlertTriangle, ChevronLeft, Upload } from "lucide-react-native";
 import { Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useActivityPlanRouteUpload } from "@/components/activity-plan/useActivityPlanRouteUpload";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { RecordingLiveCockpit } from "@/components/recording/cockpit";
 import { RecordingActivityQuickEdit } from "@/components/recording/RecordingActivityQuickEdit";
 import { ResourcePickerModal } from "@/components/shared/resource-picker";
+import { useRouteUpload } from "@/lib/hooks/useRouteUpload";
 import { usePerformanceScreenReady } from "@/lib/performance";
 import { useRecordScreenController } from "@/lib/recording/useRecordScreenController";
 
@@ -15,8 +15,8 @@ function RecordScreen() {
   const insets = useSafeAreaInsets();
   const controller = useRecordScreenController();
   usePerformanceScreenReady("route-record", controller.isInitialized);
-  const routeUpload = useActivityPlanRouteUpload({
-    planName: "recording session",
+  const routeUpload = useRouteUpload({
+    contextLabel: "recording session",
     onRouteUploaded: (routeId) => {
       controller.service?.attachRoute(routeId).catch(() => null);
       controller.onCloseResourcePicker();

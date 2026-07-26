@@ -14,7 +14,7 @@ export const recordingAcceptedArtifactSchema = z
     sha256: sha256Schema,
     byteSize: z.number().int().positive().max(MAX_ACTIVITY_FILE_SIZE_BYTES),
     bucket: z.string().trim().min(1),
-    path: z.string().trim().min(1),
+    path: z.string().regex(/^artifacts\/sha256\/[0-9a-f-]+\/[0-9a-f]{64}$/),
     mediaType: z.string().trim().min(1),
     format: mobileRecordingArtifactFormatSchema,
     originalName: z.string().trim().min(1).nullable().optional(),
@@ -30,7 +30,6 @@ const recordingSummarySchema = z
     distanceMeters: z.number().int().nonnegative().default(0),
     calories: z.number().int().nonnegative().nullable().optional(),
     elevationGainMeters: z.number().nonnegative().nullable().optional(),
-    normalizedPower: z.number().finite().nullable().optional(),
     avgTemperature: z.number().finite().nullable().optional(),
     poolLength: z.number().positive().nullable().optional(),
   })
@@ -41,7 +40,6 @@ const recordingSummarySubmissionBaseShape = {
   profileId: z.string().uuid(),
   name: z.string().trim().min(1),
   notes: z.string().nullable().optional(),
-  is_private: z.boolean().optional(),
   content_visibility: contentVisibilitySchema.optional(),
   startedAt: z.string().datetime({ offset: true }),
   finishedAt: z.string().datetime({ offset: true }),
@@ -54,8 +52,8 @@ const recordingSummarySubmissionBaseShape = {
 const acceptedRecordingSummarySubmissionSchema = z
   .object({
     ...recordingSummarySubmissionBaseShape,
-    recordingSessionId: z.string().trim().min(1).max(200).optional(),
-    artifactSource: z.literal("acceptedArtifact").default("acceptedArtifact"),
+    recordingSessionId: z.string().trim().min(1).max(200),
+    artifactSource: z.literal("acceptedArtifact"),
     acceptedArtifact: recordingAcceptedArtifactSchema,
   })
   .strict();
@@ -64,16 +62,12 @@ const uploadedRecordingSummarySubmissionSchema = z
   .object({
     ...recordingSummarySubmissionBaseShape,
     recordingSessionId: z.string().trim().min(1).max(200),
-    artifactSource: z.literal("uploadedArtifact").default("uploadedArtifact"),
+    artifactSource: z.literal("uploadedArtifact"),
     uploadedArtifact: recordingUploadedArtifactSchema,
   })
   .strict();
 
-/**
- * API-owned recording submission input. The defaulted discriminant keeps the
- * existing flat `acceptedArtifact` wire shape valid while making new parsed
- * inputs an explicit, exhaustive artifact-source union.
- */
+/** API-owned session-bound recording submission input. */
 export const recordingSummarySubmissionInputSchema = z
   .union([acceptedRecordingSummarySubmissionSchema, uploadedRecordingSummarySubmissionSchema])
   .refine((value) => new Date(value.finishedAt) > new Date(value.startedAt), {
@@ -88,10 +82,6 @@ export const beginMobileRecordingUploadInputSchema = z
     sha256: sha256Schema,
     format: mobileRecordingArtifactFormatSchema,
   })
-  .strict();
-
-export const claimLegacyMobileRecordingUploadInputSchema = beginMobileRecordingUploadInputSchema
-  .extend({ stagingPath: z.string().trim().min(1).max(1_024) })
   .strict();
 
 const mobileRecordingUploadClaimSchema = z
@@ -121,25 +111,9 @@ export const beginMobileRecordingUploadOutputSchema = z.discriminatedUnion("stat
     .strict(),
 ]);
 
-export const claimLegacyMobileRecordingUploadOutputSchema = z.discriminatedUnion("status", [
-  mobileRecordingUploadClaimSchema.extend({ status: z.literal("claimed") }).strict(),
-  mobileRecordingUploadClaimSchema
-    .extend({
-      status: z.literal("ready"),
-      acceptedArtifact: recordingAcceptedArtifactSchema,
-    })
-    .strict(),
-]);
-
 export type BeginMobileRecordingUploadInput = z.input<typeof beginMobileRecordingUploadInputSchema>;
 export type BeginMobileRecordingUploadOutput = z.output<
   typeof beginMobileRecordingUploadOutputSchema
->;
-export type ClaimLegacyMobileRecordingUploadInput = z.input<
-  typeof claimLegacyMobileRecordingUploadInputSchema
->;
-export type ClaimLegacyMobileRecordingUploadOutput = z.output<
-  typeof claimLegacyMobileRecordingUploadOutputSchema
 >;
 export type MobileRecordingSubmissionRequest = z.input<
   typeof recordingSummarySubmissionInputSchema

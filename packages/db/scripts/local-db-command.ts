@@ -72,7 +72,12 @@ const args = process.argv.slice(2);
 const command = args[0];
 
 if (command === "migration") {
+  if (args[1] === "up" || args[1] === "down") {
+    throw new Error("generation 2 is hard-reset-only; direct migration up/down is disabled");
+  }
   runSupabaseCli(args, dbPackageRoot);
+} else if (command === "db" && args[1] === "reset") {
+  throw new Error("generation 2 reset is available only through guarded disposable verification");
 } else if (command === "start") {
   runSupabaseCli(args);
 } else if (command === "stop") {

@@ -11,7 +11,7 @@ import { RouteCard } from "@/components/shared/RouteCard";
 import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
 import { api } from "@/lib/api";
-import { useRecordingLifecycle } from "@/lib/hooks/useActivityRecorder";
+import { useSessionView } from "@/lib/hooks/useActivityRecorder";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
@@ -96,7 +96,8 @@ export default function RouteDetailScreen() {
   const utils = api.useUtils();
   const { user } = useAuth();
   const recorderService = useOptionalSharedActivityRecorder();
-  const recordingLifecycle = useRecordingLifecycle(recorderService);
+  const sessionView = useSessionView(recorderService);
+  const recordingLifecycle = recorderService?.recordingLifecycle ?? (sessionView ? "idle" : "idle");
   const [shouldLoadGeometry, setShouldLoadGeometry] = useState(false);
 
   const { data: route, isLoading } = api.routes.get.useQuery(

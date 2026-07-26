@@ -44,6 +44,7 @@ const baseJob: ActivitySubmissionQueueJob = {
   streamArtifactPaths: ["file:///streams"],
   executionManifest,
   draft: {
+    recordingSessionId: "session-1",
     profileId: "profile-1",
     startedAt: "2026-01-01T10:00:00.000Z",
     finishedAt: "2026-01-01T11:00:00.000Z",

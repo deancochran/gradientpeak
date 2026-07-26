@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  migrate: vi.fn(async () => undefined),
-  loadArtifact: vi.fn(async (): Promise<unknown> => null),
   handoff: vi.fn(async () => undefined),
   inspect: vi.fn(async (): Promise<unknown> => ({ status: "none" })),
   loadJobs: vi.fn(async (): Promise<unknown[]> => []),
@@ -14,14 +12,12 @@ const mocks = vi.hoisted(() => ({
   loadSqliteArtifacts: vi.fn(async (): Promise<unknown[]> => []),
   garbageCollect: vi.fn(async () => 0),
   garbageCollectAccepted: vi.fn(async () => 0),
+  garbageCollectDiscarded: vi.fn(async () => 0),
 }));
 
-vi.mock("./activitySubmissionQueue/migration-only-v3", () => ({
-  migrateSingleSportLocalStateToV3Once: mocks.migrate,
-}));
 vi.mock("./ActivityRecorder/finalizedArtifactStorage", () => ({
-  loadPendingFinalizedArtifact: mocks.loadArtifact,
   garbageCollectDueAcceptedQueueEvidence: mocks.garbageCollectAccepted,
+  garbageCollectDueDiscardedRecordingEvidence: mocks.garbageCollectDiscarded,
 }));
 vi.mock("./activitySubmissionQueue", () => ({
   ensureFinalizedArtifactQueueHandoff: mocks.handoff,
@@ -51,7 +47,7 @@ describe("mobile recording startup fence", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetMobileRecordingStartupForTests();
-    mocks.loadArtifact.mockResolvedValue(null);
+    mocks.loadSqliteArtifacts.mockResolvedValue([]);
     mocks.loadJobs.mockResolvedValue([]);
     mocks.loadDueJobs.mockResolvedValue([]);
     mocks.inspect.mockResolvedValue({ status: "none" });
@@ -60,7 +56,7 @@ describe("mobile recording startup fence", () => {
 
   it("coalesces queue drain and recorder discovery behind one finalized handoff", async () => {
     const artifact = { sessionId: "session-1", profileId: "profile-1" };
-    mocks.loadArtifact.mockResolvedValue(artifact);
+    mocks.loadSqliteArtifacts.mockResolvedValue([artifact]);
     let release!: () => void;
     mocks.handoff.mockImplementationOnce(
       () =>
@@ -74,13 +70,14 @@ describe("mobile recording startup fence", () => {
     expect(mocks.loadJobs).not.toHaveBeenCalled();
     release();
     expect(await first).toEqual(await second);
-    expect(mocks.migrate).toHaveBeenCalledTimes(1);
     expect(mocks.loadJobs).toHaveBeenCalledTimes(1);
     expect(mocks.loadJobs).toHaveBeenCalledWith("profile-1");
   });
 
   it("does not hand off or return another profile's pending artifact after account switch", async () => {
-    mocks.loadArtifact.mockResolvedValue({ sessionId: "other-session", profileId: "profile-2" });
+    mocks.loadSqliteArtifacts.mockResolvedValue([
+      { sessionId: "other-session", profileId: "profile-2" },
+    ]);
     mocks.loadJobs.mockResolvedValue([]);
 
     const result = await prepareMobileRecordingStartup("profile-1");
@@ -88,6 +85,20 @@ describe("mobile recording startup fence", () => {
     expect(mocks.handoff).not.toHaveBeenCalled();
     expect(mocks.loadJobs).toHaveBeenCalledWith("profile-1");
     expect(result.queueJobs).toEqual([]);
+  });
+
+  it("does not enqueue, upload, or recover a finalized artifact removed by the durable discard transition", async () => {
+    // The journal excludes discarded sessions from loadFinalizedArtifactHandoffs;
+    // this simulates the next process startup after that durable transition.
+    mocks.loadSqliteArtifacts.mockResolvedValue([]);
+
+    const result = await prepareMobileRecordingStartup("profile-1");
+
+    expect(mocks.loadSqliteArtifacts).toHaveBeenCalledWith("profile-1");
+    expect(mocks.handoff).not.toHaveBeenCalled();
+    expect(result.queueJobs).toEqual([]);
+    expect(mocks.blockRebuild).not.toHaveBeenCalled();
+    expect(mocks.garbageCollectDiscarded).toHaveBeenCalledTimes(1);
   });
 
   it("suppresses resume when a queue handoff for the same session already committed", async () => {

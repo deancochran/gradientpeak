@@ -51,16 +51,10 @@ type ActivityPlanListItem = {
   id: string;
   name: string;
   activity_category?: string | null;
-  route_id?: string | null;
   authoritative_metrics?: {
     estimated_tss?: number | null;
     intensity_factor?: number | null;
     estimated_duration?: number | null;
-  } | null;
-  route?: {
-    distance?: number | null;
-    ascent?: number | null;
-    descent?: number | null;
   } | null;
   description?: string | null;
   structure?: unknown;
@@ -153,24 +147,6 @@ function countSteps(structure: unknown): number {
 
     return total + Math.max(1, repetitions) * steps;
   }, 0);
-}
-
-function hasRouteAttached(activityPlan: ActivityPlanListItem): boolean {
-  if (activityPlan.route_id) {
-    return true;
-  }
-
-  if (activityPlan.route) {
-    return true;
-  }
-
-  if (!activityPlan.structure || typeof activityPlan.structure !== "object") {
-    return false;
-  }
-
-  const routeId = (activityPlan.structure as Record<string, unknown>).route_id;
-  const route = (activityPlan.structure as Record<string, unknown>).route;
-  return typeof routeId === "string" || (!!route && typeof route === "object");
 }
 
 function formatMinutesLabel(value: number): string {
@@ -643,7 +619,6 @@ export default function TrainingPlanOverview() {
         ),
         usageCount: activityUsageCountById.get(linkedPlan.id) ?? 0,
         stepCount: countSteps(linkedPlan.structure),
-        hasRoute: hasRouteAttached(linkedPlan),
         includesIntervals: hasIntervals(linkedPlan.structure),
       })),
     [activityUsageCountById, uniqueLinkedActivityPlans],
@@ -668,10 +643,6 @@ export default function TrainingPlanOverview() {
         );
       }, 0),
     [linkedActivityPlanById, structureSessionRows],
-  );
-  const routeBackedWorkoutCards = useMemo(
-    () => linkedWorkoutCards.filter((planItem) => planItem.hasRoute),
-    [linkedWorkoutCards],
   );
   const planStructureRecord =
     plan?.structure && typeof plan.structure === "object"
@@ -738,10 +709,6 @@ export default function TrainingPlanOverview() {
         (sum, planItem) => sum + Math.max(0, planItem.estimatedDurationMinutes || 0),
         0,
       ),
-    [selectedMicrocycleWorkoutCards],
-  );
-  const selectedMicrocycleRouteCount = useMemo(
-    () => selectedMicrocycleWorkoutCards.filter((planItem) => planItem.hasRoute).length,
     [selectedMicrocycleWorkoutCards],
   );
   const selectedMicrocycleLoad = useMemo(
@@ -1007,7 +974,6 @@ export default function TrainingPlanOverview() {
               microcycles: groupedStructureSessions.length || 0,
               plannedTime: markEstimated(formatMinutesLabel(totalPlannedMinutes)) ?? "0 min",
               plannedTss: Math.round(totalPlannedTss),
-              routeBacked: routeBackedWorkoutCards.length,
               sessions: structureSessionRows.length,
             }}
             plan={plan}
@@ -1060,10 +1026,6 @@ export default function TrainingPlanOverview() {
                   <SummaryMetricCard
                     label="Linked activities"
                     value={`${selectedMicrocycleWorkoutCards.length}`}
-                  />
-                  <SummaryMetricCard
-                    label="Route-backed"
-                    value={`${selectedMicrocycleRouteCount}`}
                   />
                   <SummaryMetricCard
                     label="Planned TSS"

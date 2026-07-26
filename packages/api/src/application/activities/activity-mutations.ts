@@ -1,4 +1,4 @@
-import { type ContentVisibility, legacyPrivateFlagToContentVisibility } from "@repo/core";
+import type { ContentVisibility } from "@repo/core";
 import { activities } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
@@ -13,7 +13,6 @@ export type UpdateActivityForProfileInput = {
   id: string;
   name?: string;
   notes?: string | null;
-  is_private?: boolean;
   content_visibility?: ContentVisibility;
 };
 
@@ -26,27 +25,8 @@ export async function updateActivityForProfile({
   input: UpdateActivityForProfileInput;
   profileId: string;
 }) {
-  // Defend the application boundary as well as the strict transport schema: legacy callers
-  // cannot restore parent normalized power as a writable authority by bypassing TypeScript.
-  const {
-    id,
-    normalized_power: _normalizedPower,
-    ...updates
-  } = input as UpdateActivityForProfileInput & {
-    normalized_power?: unknown;
-  };
-  const fields =
-    updates.content_visibility !== undefined
-      ? { ...updates, is_private: updates.content_visibility === "private" }
-      : updates.is_private !== undefined
-        ? {
-            ...updates,
-            content_visibility: legacyPrivateFlagToContentVisibility(updates.is_private),
-          }
-        : updates;
-
   const data = await db.transaction((tx) =>
-    updateCanonicalActivityFields(tx, { activityId: id, profileId, fields }),
+    updateCanonicalActivityFields(tx, { activityId: input.id, profileId, fields: input }),
   );
 
   if (!data) {

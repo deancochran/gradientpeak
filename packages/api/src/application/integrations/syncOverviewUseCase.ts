@@ -23,7 +23,6 @@ const activityHistoryResource = "historical_activities";
 const profileEnrichmentResource = "profile_enrichment";
 const plannedWorkoutsResource = "planned_workouts";
 const wahooActivityHistoryJobType = "wahoo.activity_history_reconcile";
-const wahooPlannedWorkoutJobTypes = new Set(["wahoo.publish_event", "wahoo.unsync_event"]);
 
 function parseBoundaryValue<T>(schema: z.ZodType<T>, value: unknown, message: string): T {
   const parsed = schema.safeParse(value);
@@ -302,13 +301,6 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
                 job.integrationId === integration.id && job.jobType === wahooActivityHistoryJobType,
             )
           : null;
-        const activePlannedJob = integration
-          ? activeJobs.find(
-              (job) =>
-                job.integrationId === integration.id &&
-                wahooPlannedWorkoutJobTypes.has(job.jobType),
-            )
-          : null;
         const activityHistorySupported = supportsActivityHistorySync(definition.id);
         const setupSupported = providerHasCapability(definition.id, "profile_enrichment_read");
         const plannedSupported = providerHasCapability(definition.id, "planned_activity_push");
@@ -349,13 +341,9 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
                 : "idle";
         const plannedStatus = !plannedSupported
           ? "unsupported"
-          : activePlannedJob?.status === "running"
-            ? "syncing"
-            : activePlannedJob?.status === "queued"
-              ? "queued"
-              : plannedLastError
-                ? "failed"
-                : "automatic";
+          : plannedLastError
+            ? "failed"
+            : "automatic";
         const providerHealthLastError = activityLastError ?? setupLastError ?? plannedLastError;
         const connected = integration?.lifecycle_status === "active";
         const providerHealthStatus = !connected
@@ -393,7 +381,7 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
             lastError: plannedLastError,
             lastFailedAt: plannedState?.lastSyncFailedAt ?? null,
             lastSucceededAt: plannedState?.lastSyncSucceededAt ?? null,
-            queuedJobId: activePlannedJob?.id ?? null,
+            queuedJobId: null,
             status: plannedStatus,
           },
           providerHealth: {

@@ -68,45 +68,23 @@ export function mobileRecordingStagingPath(input: {
   return `mobile-recordings/${input.profileId}/${input.activityId}.${input.format}`;
 }
 
-export function isOwnedLegacyMobileRecordingStagingPath(input: {
-  profileId: string;
-  stagingPath: string;
-  format: "fit" | "gpx" | "tcx";
-}) {
-  const prefix = `activities/${input.profileId}/uploads/`;
-  const path = input.stagingPath;
-  return (
-    path.length <= 1_024 &&
-    path.startsWith(prefix) &&
-    path.length > prefix.length &&
-    !path.startsWith("/") &&
-    !path.includes("\\") &&
-    !path.includes("\0") &&
-    !path.split("/").includes("..") &&
-    path.toLowerCase().endsWith(`.${input.format}`)
-  );
-}
-
 function expectedClaimMetadata(input: {
   profileId: string;
   recordingSessionId: string;
   byteSize: number;
   sha256: string;
   format: "fit" | "gpx" | "tcx";
-  stagingPath?: string;
 }) {
   const activityId = recordingSessionActivityId(input.profileId, input.recordingSessionId);
   return {
     activityId,
     operationKey: mobileRecordingOperationKey(input.recordingSessionId),
     stagingBucket: "activity-files",
-    stagingPath:
-      input.stagingPath ??
-      mobileRecordingStagingPath({
-        profileId: input.profileId,
-        activityId,
-        format: input.format,
-      }),
+    stagingPath: mobileRecordingStagingPath({
+      profileId: input.profileId,
+      activityId,
+      format: input.format,
+    }),
     expectedSha256: input.sha256,
     expectedByteSize: input.byteSize,
     expectedFormat: input.format,
@@ -272,121 +250,6 @@ export async function beginMobileRecordingUploadClaim(
   };
 }
 
-export async function claimLegacyMobileRecordingUpload(
-  db: DbClient,
-  storage: ActivityArtifactStorage,
-  input: {
-    profileId: string;
-    recordingSessionId: string;
-    stagingPath: string;
-    byteSize: number;
-    sha256: string;
-    format: "fit" | "gpx" | "tcx";
-  },
-): Promise<
-  | (Omit<
-      Extract<MobileRecordingUploadClaimResult, { status: "upload" }>,
-      "status" | "stagingPath"
-    > & {
-      status: "claimed";
-    })
-  | Extract<MobileRecordingUploadClaimResult, { status: "ready" }>
-> {
-  if (!isOwnedLegacyMobileRecordingStagingPath(input)) {
-    throw new MobileRecordingUploadError(
-      "claim_invalid",
-      "Legacy recording staging path is not owned by the authenticated profile",
-    );
-  }
-
-  let stored: Awaited<ReturnType<ActivityArtifactStorage["readObjectBounded"]>>;
-  try {
-    stored = await storage.readObjectBounded({
-      bucket: "activity-files",
-      path: input.stagingPath,
-      maxBytes: input.byteSize,
-    });
-  } catch (error) {
-    throw new MobileRecordingUploadError(
-      "storage_failure",
-      "Legacy recording staging artifact could not be verified",
-      { cause: error },
-    );
-  }
-  if (
-    stored.data.byteLength !== input.byteSize ||
-    activityArtifactSha256(stored.data) !== input.sha256
-  ) {
-    throw new MobileRecordingUploadError(
-      "expected_artifact_mismatch",
-      "Legacy recording staging bytes do not match the submitted metadata",
-    );
-  }
-
-  const expected = expectedClaimMetadata(input);
-  const claim = await createOrLoadMobileRecordingUploadClaim(db, {
-    profileId: input.profileId,
-    operationKey: expected.operationKey,
-    stagingBucket: expected.stagingBucket,
-    stagingPath: expected.stagingPath,
-    expectedSha256: expected.expectedSha256,
-    expectedByteSize: expected.expectedByteSize,
-    expectedFormat: expected.expectedFormat,
-    expectedMediaType: expected.expectedMediaType,
-  });
-  if (claim.status === "ready") {
-    if (claim.activity_id !== expected.activityId) {
-      throw new MobileRecordingUploadError(
-        "claim_conflict",
-        "Recording session is already bound to a different activity",
-      );
-    }
-    const acceptedArtifact = await loadAcceptedArtifactForClaim(db, claim);
-    if (
-      !acceptedArtifact ||
-      acceptedArtifact.sha256 !== input.sha256 ||
-      acceptedArtifact.byteSize !== input.byteSize ||
-      acceptedArtifact.format !== input.format
-    ) {
-      throw new MobileRecordingUploadError(
-        "claim_conflict",
-        "Recording session was already accepted with different artifact metadata",
-      );
-    }
-    return {
-      status: "ready",
-      ingestionId: claim.id,
-      activityId: expected.activityId,
-      byteSize: acceptedArtifact.byteSize,
-      sha256: acceptedArtifact.sha256,
-      format: acceptedArtifact.format,
-      mediaType: acceptedArtifact.mediaType,
-      acceptedArtifact,
-    };
-  }
-  if (!claimMatchesExpected(claim, expected)) {
-    throw new MobileRecordingUploadError(
-      "claim_conflict",
-      "Legacy recording upload metadata conflicts with the existing session claim",
-    );
-  }
-  if (claim.status === "processing") {
-    throw new MobileRecordingUploadError(
-      "claim_conflict",
-      "Recording upload is already being accepted",
-    );
-  }
-  return {
-    status: "claimed",
-    ingestionId: claim.id,
-    activityId: expected.activityId,
-    byteSize: expected.expectedByteSize,
-    sha256: expected.expectedSha256,
-    format: expected.expectedFormat,
-    mediaType: expected.expectedMediaType,
-  };
-}
-
 export type PreparedMobileRecordingArtifact =
   | { status: "ready"; ingestion: ActivityFileIngestionRow; artifact: RecordingAcceptedArtifact }
   | {
@@ -479,15 +342,7 @@ export async function prepareMobileRecordingArtifact(
       activityId: expectedActivityId,
       format: format.data,
     });
-    const ownedLegacyPath = isOwnedLegacyMobileRecordingStagingPath({
-      profileId: input.profileId,
-      stagingPath: claim.staging_path,
-      format: format.data,
-    });
-    if (
-      claim.staging_bucket !== "activity-files" ||
-      (claim.staging_path !== expectedPath && !ownedLegacyPath)
-    ) {
+    if (claim.staging_bucket !== "activity-files" || claim.staging_path !== expectedPath) {
       throw new MobileRecordingUploadError(
         "claim_invalid",
         "Recording upload claim storage identity is invalid",

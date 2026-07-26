@@ -17,7 +17,7 @@ import {
   mapSignInError,
   setAuthFormError,
 } from "@/lib/auth/form-helpers";
-import { type SignInFields, signInSchema } from "@/lib/auth/form-schemas";
+import { type SignInFormValues, signInSchema } from "@/lib/auth/form-schemas";
 import { withAuthRequestTimeout } from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
@@ -48,7 +48,7 @@ export default function SignInScreen() {
     },
   });
 
-  const onSignIn = async (data: SignInFields) => {
+  const onSignIn = async (data: SignInFormValues) => {
     try {
       await applyPendingAuthServerOverride({
         expanded: isServerConfigExpanded,

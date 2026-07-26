@@ -2,7 +2,7 @@ import type { AthletePreferenceProfile } from "../schemas/settings/profile_setti
 import {
   creationWeekDayEnum,
   type TrainingPlanCreationConfig,
-} from "../schemas/training_plan_structure";
+} from "../schemas/training-plan-structure";
 import { normalizeCreationConfig } from "./normalizeCreationConfig";
 
 type ProjectionRelevantCreationDefaults = Pick<

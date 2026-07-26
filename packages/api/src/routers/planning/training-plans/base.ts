@@ -12,7 +12,6 @@ import {
   buildReadinessForecastTimeline,
   type CanonicalSport,
   type CreationContextSummary,
-  calculateTrainingLoadSeries,
   canonicalizeMinimalTrainingPlanCreate,
   classifyCreationFeasibility,
   classifyProjectionFeasibility,
@@ -32,7 +31,6 @@ import {
   type ForecastConfidenceReasonCode,
   formatDateOnlyUtc,
   type GoalAnchoredProjectionPlan,
-  getFormStatus,
   type InferredStateSnapshot,
   ianaTimezoneSchema,
   inferredStateSnapshotSchema,
@@ -72,7 +70,7 @@ import {
   trainingPlanUpdateInputSchema,
 } from "@repo/core";
 import { getAuthoritativeActivityPlanMetrics } from "@repo/core/activity-plan";
-import { getScheduledDateKey } from "@repo/core/utils/schedule-date";
+import { calculateTrainingLoadSeries, getFormStatus } from "@repo/core/load";
 import { type ProfileGoalRow, schema, type TrainingPlanRow } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
@@ -123,11 +121,10 @@ import {
   createEventReadRepository,
 } from "../../../infrastructure/repositories";
 import {
-  buildActivityDerivedSummaryMap,
+  type buildActivityDerivedSummaryMap,
   buildActivitySegmentDerivedSummaries,
   buildDynamicStressSeries,
   deriveActivityDurations,
-  deriveNormalizedPowerCompatibilityProjectionFromSegments,
   loadActivitySegmentsByActivityId,
   orderedActivitySegments,
   summarizeSegmentTss,
@@ -136,7 +133,6 @@ import { featureFlags } from "../../../lib/features";
 import { createContentAccessPermissions } from "../../../permissions/content-access";
 import { createTRPCRouter, protectedProcedure } from "../../../trpc";
 import { getActivityPlansDerivedMetrics } from "../../../utils/activity-plan-derived-metrics";
-import { addEstimationToPlans } from "../../../utils/estimation-helpers";
 import { indexCursorSchema } from "../../../utils/index-cursor";
 import {
   filterObservationsAfterLatestTombstone,
@@ -208,7 +204,6 @@ const conservativeStarterDailyTss = conservativeStarterWeeklyTss / 7;
 type FeasibilityState = z.infer<typeof feasibilityStateSchema>;
 type SafetyState = z.infer<typeof safetyStateSchema>;
 type DbClient = ReturnType<typeof getRequiredDb>;
-type LegacyPlanningReader = { from: (...args: any[]) => any };
 
 type ProfileGoalSqlRow = Pick<
   ProfileGoalRow,
@@ -240,7 +235,7 @@ const activitySummaryColumns = {
 async function attachActivitySegments<
   T extends Omit<
     Parameters<typeof buildActivityDerivedSummaryMap>[0]["activities"][number],
-    "normalized_power" | "segments"
+    "segments"
   >,
 >(db: DbClient, rows: T[]) {
   const segments = await loadActivitySegmentsByActivityId(
@@ -251,7 +246,6 @@ async function attachActivitySegments<
     const activitySegments = segments.get(row.id) ?? [];
     return {
       ...row,
-      normalized_power: deriveNormalizedPowerCompatibilityProjectionFromSegments(activitySegments),
       segments: activitySegments,
     };
   });
@@ -1023,9 +1017,8 @@ function estimateWeeklyTssFromDailyMap(dailyTss: Map<string, number>): number | 
 }
 
 async function estimateWeeklyTssFromStructuredActivities(input: {
-  db?: DbClient;
+  db: DbClient;
   planningTimezone: string;
-  supabase?: LegacyPlanningReader;
   profileId: string;
   structure: Record<string, unknown> | null | undefined;
   startDate: string;
@@ -1060,81 +1053,28 @@ async function estimateWeeklyTssFromStructuredActivities(input: {
     };
   }
 
-  if (input.db) {
-    const estimationStore = createEventReadRepository(input.db);
-    const activityPlans = await input.db
-      .select()
-      .from(schema.activityPlans)
-      .where(inArray(schema.activityPlans.id, activityPlanIds));
+  const estimationStore = createEventReadRepository(input.db);
+  const activityPlans = await input.db
+    .select()
+    .from(schema.activityPlans)
+    .where(inArray(schema.activityPlans.id, activityPlanIds));
 
-    if (activityPlans.length === 0) {
-      return {
-        weeklyTss: null,
-        latestScheduledDate,
-      };
-    }
-
-    const plansWithEstimations = await getActivityPlansDerivedMetrics(
-      activityPlans as any,
-      input.db,
-      estimationStore,
-      input.profileId,
-    );
-
-    const estimatedTssByPlanId = new Map(
-      plansWithEstimations.map((plan: any) => [
-        plan.id,
-        getAuthoritativeActivityPlanMetrics(plan).estimated_tss ?? 0,
-      ]),
-    );
-
-    const dailyTss = new Map<string, number>();
-    for (const event of materializedEvents) {
-      if (!event.activity_plan_id) {
-        continue;
-      }
-
-      const estimatedTss = estimatedTssByPlanId.get(event.activity_plan_id) || 0;
-      if (estimatedTss <= 0) {
-        continue;
-      }
-
-      dailyTss.set(event.scheduled_date, (dailyTss.get(event.scheduled_date) || 0) + estimatedTss);
-    }
-
-    return {
-      weeklyTss: estimateWeeklyTssFromDailyMap(dailyTss),
-      latestScheduledDate,
-    };
-  }
-
-  if (!input.supabase) {
+  if (activityPlans.length === 0) {
     return {
       weeklyTss: null,
       latestScheduledDate,
     };
   }
 
-  const { data: activityPlans, error } = await input.supabase
-    .from("activity_plans")
-    .select("*")
-    .in("id", activityPlanIds);
-
-  if (error || !activityPlans || activityPlans.length === 0) {
-    return {
-      weeklyTss: null,
-      latestScheduledDate,
-    };
-  }
-
-  const plansWithEstimations = await addEstimationToPlans(
-    activityPlans as any,
-    input.supabase,
+  const plansWithEstimations = await getActivityPlansDerivedMetrics(
+    activityPlans,
+    input.db,
+    estimationStore,
     input.profileId,
   );
 
   const estimatedTssByPlanId = new Map(
-    plansWithEstimations.map((plan: any) => [
+    plansWithEstimations.map((plan) => [
       plan.id,
       getAuthoritativeActivityPlanMetrics(plan).estimated_tss ?? 0,
     ]),
@@ -1146,7 +1086,7 @@ async function estimateWeeklyTssFromStructuredActivities(input: {
       continue;
     }
 
-    const estimatedTss = Number(estimatedTssByPlanId.get(event.activity_plan_id) || 0);
+    const estimatedTss = estimatedTssByPlanId.get(event.activity_plan_id) || 0;
     if (estimatedTss <= 0) {
       continue;
     }
@@ -1753,14 +1693,13 @@ function mapCanonicalGoalToMinimalPlanGoal(
 }
 
 async function loadProfileGoalsWithTargetDates(input: {
-  db?: DbClient;
-  supabase?: LegacyPlanningReader;
+  db: DbClient;
   profileId: string;
   startDate: string;
 }): Promise<GoalProjectionSource[]> {
   let goalRows: unknown[] = [];
 
-  if (input.db) {
+  {
     const result = await input.db.execute(sql<ProfileGoalSqlRow>`
       select
         id,
@@ -1777,25 +1716,6 @@ async function loadProfileGoalsWithTargetDates(input: {
     `);
 
     goalRows = getSqlRows<ProfileGoalSqlRow>(result);
-  } else if (input.supabase) {
-    const { data, error } = await input.supabase
-      .from("profile_goals")
-      .select("id, profile_id, title, target_date, priority, activity_category, target_payload")
-      .eq("profile_id", input.profileId)
-      .order("created_at", { ascending: true })
-      .limit(40);
-
-    if (error) {
-      console.warn(
-        "Failed to load profile goals for insight timeline projection fallback.",
-        error.message,
-      );
-      return [];
-    }
-
-    goalRows = (data ?? []) as unknown[];
-  } else {
-    return [];
   }
 
   const parsedGoals = goalRows.flatMap((item: unknown) => {
@@ -1846,20 +1766,10 @@ async function loadProfileGoalsWithTargetDates(input: {
 }
 
 async function loadProfileTrainingSettingsCreationDefaults(input: {
-  db?: DbClient;
-  supabase?: LegacyPlanningReader;
+  db: DbClient;
   profileId: string;
 }): Promise<z.infer<typeof creationNormalizationInputSchema>> {
-  const settingsRow = input.db
-    ? await readParsedProfileTrainingSettings(input.db, input.profileId)
-    : input.supabase
-      ? await input.supabase
-          .from("profile_training_settings")
-          .select("settings")
-          .eq("profile_id", input.profileId)
-          .maybeSingle()
-          .then(({ data, error }: { data: any; error: any }) => (error ? null : data))
-      : null;
+  const settingsRow = await readParsedProfileTrainingSettings(input.db, input.profileId);
 
   if (!settingsRow?.settings) {
     return {};
@@ -1979,8 +1889,7 @@ function buildProjectionDashboardSummary(input: {
 }
 
 async function deriveInsightTimelineProjectionIdealTssByDate(input: {
-  db?: DbClient;
-  supabase?: LegacyPlanningReader;
+  db: DbClient;
   store: ReturnType<typeof createActivityAnalysisStore>;
   profileId: string;
   startDate: string;
@@ -1994,7 +1903,6 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
   try {
     const rawGoals = await loadProfileGoalsWithTargetDates({
       db: input.db,
-      supabase: input.supabase,
       profileId: input.profileId,
       startDate: input.startDate,
     });
@@ -2076,20 +1984,17 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
 
     const creationInput = await loadProfileTrainingSettingsCreationDefaults({
       db: input.db,
-      supabase: input.supabase,
       profileId: input.profileId,
     });
 
     const profileContext = await deriveProfileAwareCreationContext({
       db: input.db,
-      supabase: input.supabase,
       store: input.store,
       profileId: input.profileId,
     });
 
     const creationConfig = await evaluateCreationConfig({
       db: input.db,
-      supabase: input.supabase,
       store: input.store,
       profileId: input.profileId,
       creationInput,
@@ -2165,8 +2070,7 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
 }
 
 async function estimateCurrentCtl(input: {
-  db?: DbClient;
-  supabase?: LegacyPlanningReader;
+  db: DbClient;
   store: ReturnType<typeof createActivityAnalysisStore>;
   profileId: string;
 }): Promise<number> {
@@ -2175,26 +2079,16 @@ async function estimateCurrentCtl(input: {
   const since = new Date(asOf);
   since.setDate(since.getDate() - 90);
 
-  const data = input.db
-    ? await input.db
-        .select(activitySummaryColumns)
-        .from(schema.activities)
-
-        .where(
-          and(
-            eq(schema.activities.profile_id, profileId),
-            gte(schema.activities.started_at, since),
-          ),
-        )
-        .orderBy(asc(schema.activities.started_at))
-    : null;
-
-  if (!input.db || !data) {
-    return 0;
-  }
+  const data = await input.db
+    .select(activitySummaryColumns)
+    .from(schema.activities)
+    .where(
+      and(eq(schema.activities.profile_id, profileId), gte(schema.activities.started_at, since)),
+    )
+    .orderBy(asc(schema.activities.started_at));
 
   const activitiesWithSegments = await attachActivitySegments(input.db, data);
-  const derivedMap = await buildActivityDerivedSummaryMap({
+  const segmentDerived = await buildActivitySegmentDerivedSummaries({
     store,
     profileId,
     activities: activitiesWithSegments,
@@ -2203,7 +2097,10 @@ async function estimateCurrentCtl(input: {
   const bootstrap = computeLoadBootstrapState({
     activities: data.map((activity: any) => ({
       occurred_at: activity.started_at,
-      tss: derivedMap.get(activity.id)?.tss ?? null,
+      tss: (() => {
+        const summary = summarizeSegmentTss(segmentDerived, new Set([activity.id]));
+        return summary.complete ? summary.tss : null;
+      })(),
       duration_seconds:
         deriveActivityDurations(activity).active_seconds ??
         deriveActivityDurations(activity).elapsed_seconds,
@@ -2482,8 +2379,7 @@ function enforceCreationConfigFeatureEnabled(): void {
 }
 
 export async function deriveProfileAwareCreationContext(input: {
-  db?: DbClient;
-  supabase?: LegacyPlanningReader;
+  db: DbClient;
   store: ReturnType<typeof createActivityAnalysisStore>;
   profileId: string;
   asOfIso?: string;
@@ -2496,154 +2392,83 @@ export async function deriveProfileAwareCreationContext(input: {
   recentEffortsCutoff.setDate(recentEffortsCutoff.getDate() - 90);
 
   const [activitiesResult, effortsResult, profileMetricsResult, profileResult, settingsResult] =
-    input.db
-      ? await Promise.all([
-          input.db
-            .select(activitySummaryColumns)
-            .from(schema.activities)
-            .where(
-              and(
-                eq(schema.activities.profile_id, input.profileId),
-                gte(schema.activities.started_at, recentActivitiesCutoff),
-                lte(schema.activities.started_at, asOf),
-                lte(schema.activities.finished_at, asOf),
-              ),
-            )
-            .orderBy(sql`${schema.activities.started_at} desc`)
-            .limit(300)
-            .then((data) => ({ data, error: null })),
-          input.db
-            .select({
-              id: schema.activityEfforts.id,
-              activity_id: schema.activityEfforts.activity_id,
-              recorded_at: schema.activityEfforts.recorded_at,
-              effort_type: schema.activityEfforts.effort_type,
-              duration_seconds: schema.activityEfforts.duration_seconds,
-              value: schema.activityEfforts.value,
-              activity_category: schema.activityEfforts.activity_category,
-              unit: schema.activityEfforts.unit,
-              source: schema.activityEfforts.source,
-              method: schema.activityEfforts.method,
-              calculation_version: schema.activityEfforts.calculation_version,
-              quality_score: schema.activityEfforts.quality_score,
-              provenance: schema.activityEfforts.provenance,
-            })
-            .from(schema.activityEfforts)
-            .where(
-              and(
-                eq(schema.activityEfforts.profile_id, input.profileId),
-                gte(schema.activityEfforts.recorded_at, recentEffortsCutoff),
-                lte(schema.activityEfforts.recorded_at, asOf),
-              ),
-            )
-            .orderBy(desc(schema.activityEfforts.recorded_at), desc(schema.activityEfforts.id))
-            .limit(200)
-            .then((data) => ({ data, error: null })),
-          input.db
-            .select({
-              id: schema.profileMetrics.id,
-              metric_type: schema.profileMetrics.metric_type,
-              value: schema.profileMetrics.value,
-              recorded_at: schema.profileMetrics.recorded_at,
-              unit: schema.profileMetrics.unit,
-              source: schema.profileMetrics.source,
-              method: schema.profileMetrics.method,
-              calculation_version: schema.profileMetrics.calculation_version,
-              quality_score: schema.profileMetrics.quality_score,
-              provenance: schema.profileMetrics.provenance,
-            })
-            .from(schema.profileMetrics)
-            .where(
-              and(
-                eq(schema.profileMetrics.profile_id, input.profileId),
-                lte(schema.profileMetrics.recorded_at, asOf),
-              ),
-            )
-            .orderBy(desc(schema.profileMetrics.recorded_at), desc(schema.profileMetrics.id))
-            .then((data) => ({ data, error: null })),
-          input.db
-            .select({ dob: schema.profiles.dob, gender: schema.profiles.gender })
-            .from(schema.profiles)
-            .where(eq(schema.profiles.id, input.profileId))
-            .limit(1)
-            .then((data) => ({ data, error: null })),
-          readParsedProfileTrainingSettings(input.db, input.profileId).then((data) => ({
-            data,
-            error: null,
-          })),
-        ])
-      : await Promise.all([
-          input.supabase
-            ?.from("activities")
-            .select(
-              "id, profile_id, started_at, finished_at, elapsed_ms, active_ms, moving_ms, timing_coverage, distance_meters, avg_heart_rate, max_heart_rate, avg_power, max_power, avg_speed_mps, max_speed_mps, normalized_speed_mps, normalized_graded_speed_mps",
-            )
-            .eq("profile_id", input.profileId)
-            .gte("started_at", recentActivitiesCutoff.toISOString())
-            .lte("started_at", asOf.toISOString())
-            .lte("finished_at", asOf.toISOString())
-            .order("started_at", { ascending: false })
-            .limit(300),
-          input.supabase
-            ?.from("activity_efforts")
-            .select(
-              "id, activity_id, recorded_at, effort_type, duration_seconds, value, activity_category, unit, source, method, calculation_version, quality_score, provenance",
-            )
-            .eq("profile_id", input.profileId)
-            .gte("recorded_at", recentEffortsCutoff.toISOString())
-            .lte("recorded_at", asOf.toISOString())
-            .order("recorded_at", { ascending: false })
-            .order("id", { ascending: false })
-            .limit(200),
-          input.supabase
-            ?.from("profile_metrics")
-            .select(
-              "id, metric_type, value, recorded_at, unit, source, method, calculation_version, quality_score, provenance",
-            )
-            .eq("profile_id", input.profileId)
-            .lte("recorded_at", asOf.toISOString())
-            .order("recorded_at", { ascending: false })
-            .order("id", { ascending: false }),
-          input.supabase?.from("profiles").select("dob, gender").eq("id", input.profileId).limit(1),
-          input.supabase
-            ?.from("profile_training_settings")
-            .select("settings")
-            .eq("profile_id", input.profileId)
-            .maybeSingle(),
-        ]);
-
-  if (activitiesResult.error) {
-    console.warn(
-      "Failed to load activities for creation context. Falling back to empty activities.",
-      activitiesResult.error.message,
-    );
-  }
-
-  if (effortsResult.error) {
-    console.warn(
-      "Failed to load activity efforts for creation context. Falling back to empty efforts.",
-      effortsResult.error.message,
-    );
-  }
-
-  if (profileMetricsResult.error) {
-    console.warn(
-      "Failed to load profile metrics for creation context. Falling back to empty metrics.",
-      profileMetricsResult.error.message,
-    );
-  }
-
-  if (profileResult.error) {
-    console.warn(
-      "Failed to load profile for creation context. Falling back to null profile signals.",
-      profileResult.error.message,
-    );
-  }
-
-  const activityRows = activitiesResult.error ? [] : (activitiesResult.data ?? []);
-  const activitiesWithSegments = input.db
-    ? await attachActivitySegments(input.db, activityRows)
-    : [];
+    await Promise.all([
+      input.db
+        .select(activitySummaryColumns)
+        .from(schema.activities)
+        .where(
+          and(
+            eq(schema.activities.profile_id, input.profileId),
+            gte(schema.activities.started_at, recentActivitiesCutoff),
+            lte(schema.activities.started_at, asOf),
+            lte(schema.activities.finished_at, asOf),
+          ),
+        )
+        .orderBy(sql`${schema.activities.started_at} desc`)
+        .limit(300)
+        .then((data) => ({ data, error: null })),
+      input.db
+        .select({
+          id: schema.activityEfforts.id,
+          activity_id: schema.activityEfforts.activity_id,
+          recorded_at: schema.activityEfforts.recorded_at,
+          effort_type: schema.activityEfforts.effort_type,
+          duration_seconds: schema.activityEfforts.duration_seconds,
+          value: schema.activityEfforts.value,
+          activity_category: schema.activityEfforts.activity_category,
+          unit: schema.activityEfforts.unit,
+          source: schema.activityEfforts.source,
+          method: schema.activityEfforts.method,
+          calculation_version: schema.activityEfforts.calculation_version,
+          quality_score: schema.activityEfforts.quality_score,
+          provenance: schema.activityEfforts.provenance,
+        })
+        .from(schema.activityEfforts)
+        .where(
+          and(
+            eq(schema.activityEfforts.profile_id, input.profileId),
+            gte(schema.activityEfforts.recorded_at, recentEffortsCutoff),
+            lte(schema.activityEfforts.recorded_at, asOf),
+          ),
+        )
+        .orderBy(desc(schema.activityEfforts.recorded_at), desc(schema.activityEfforts.id))
+        .limit(200)
+        .then((data) => ({ data, error: null })),
+      input.db
+        .select({
+          id: schema.profileMetrics.id,
+          metric_type: schema.profileMetrics.metric_type,
+          value: schema.profileMetrics.value,
+          recorded_at: schema.profileMetrics.recorded_at,
+          unit: schema.profileMetrics.unit,
+          source: schema.profileMetrics.source,
+          method: schema.profileMetrics.method,
+          calculation_version: schema.profileMetrics.calculation_version,
+          quality_score: schema.profileMetrics.quality_score,
+          provenance: schema.profileMetrics.provenance,
+        })
+        .from(schema.profileMetrics)
+        .where(
+          and(
+            eq(schema.profileMetrics.profile_id, input.profileId),
+            lte(schema.profileMetrics.recorded_at, asOf),
+          ),
+        )
+        .orderBy(desc(schema.profileMetrics.recorded_at), desc(schema.profileMetrics.id))
+        .then((data) => ({ data, error: null })),
+      input.db
+        .select({ dob: schema.profiles.dob, gender: schema.profiles.gender })
+        .from(schema.profiles)
+        .where(eq(schema.profiles.id, input.profileId))
+        .limit(1)
+        .then((data) => ({ data, error: null })),
+      readParsedProfileTrainingSettings(input.db, input.profileId).then((data) => ({
+        data,
+        error: null,
+      })),
+    ]);
+  const activityRows = activitiesResult.data ?? [];
+  const activitiesWithSegments = await attachActivitySegments(input.db, activityRows);
   const segmentDerived = await buildActivitySegmentDerivedSummaries({
     store: input.store,
     profileId: input.profileId,
@@ -2694,7 +2519,7 @@ export async function deriveProfileAwareCreationContext(input: {
     Object.entries(activityCounts).sort((a: any, b: any) => b[1] - a[1])[0]?.[0] ?? undefined;
 
   const efforts = filterSupersededProfileOverrides(
-    effortsResult.error ? [] : (effortsResult.data ?? []),
+    effortsResult.data ?? [],
     (effort: any) =>
       `${effort.activity_category}:${effort.effort_type}:${effort.duration_seconds}:${effort.unit}`,
   ).map((effort: any) => ({
@@ -2707,18 +2532,16 @@ export async function deriveProfileAwareCreationContext(input: {
   }));
 
   const profileMetricsRows = filterObservationsAfterLatestTombstone(
-    profileMetricsResult.error ? [] : (profileMetricsResult.data ?? []),
+    profileMetricsResult.data ?? [],
     (metric: any) => metric.metric_type,
   );
   // Planning context uses the same cross-sport common Load history as Trends,
   // rather than a nullable legacy TSS fitness snapshot.
-  const commonLoadHistory = input.db
-    ? await readCurrentProfileCommonLoadHistory({
-        db: input.db,
-        profileId: input.profileId,
-        now: asOf,
-      })
-    : null;
+  const commonLoadHistory = await readCurrentProfileCommonLoadHistory({
+    db: input.db,
+    profileId: input.profileId,
+    now: asOf,
+  });
   const currentCommonLoad =
     commonLoadHistory?.result.status === "available"
       ? (commonLoadHistory.result.points.at(-1) ?? null)
@@ -2748,7 +2571,7 @@ export async function deriveProfileAwareCreationContext(input: {
       quality_score: metric.quality_score === null ? undefined : metric.quality_score,
       provenance:
         typeof metric.provenance === "object" && metric.provenance !== null
-          ? metric.provenance
+          ? (metric.provenance as Record<string, unknown>)
           : undefined,
     })),
     currentFitness:
@@ -2787,18 +2610,14 @@ export async function deriveProfileAwareCreationContext(input: {
           quality_score: effort.quality_score === null ? undefined : effort.quality_score,
           provenance:
             typeof effort.provenance === "object" && effort.provenance !== null
-              ? effort.provenance
+              ? (effort.provenance as Record<string, unknown>)
               : undefined,
         },
       ];
     }),
     coverage: {
-      profileMetrics: profileMetricsResult.error ? "unknown" : "complete",
-      activityEfforts: effortsResult.error
-        ? "unknown"
-        : (effortsResult.data?.length ?? 0) >= 200
-          ? "possibly_truncated"
-          : "complete",
+      profileMetrics: "complete",
+      activityEfforts: (effortsResult.data?.length ?? 0) >= 200 ? "possibly_truncated" : "complete",
     },
   });
   const athleteContext = createAthletePlanningContextFromSnapshot(effectiveAthleteSnapshot);
@@ -2826,7 +2645,7 @@ export async function deriveProfileAwareCreationContext(input: {
     },
     profile_metrics: profileMetrics,
     profile: {
-      dob: profileResult.data?.[0]?.dob ?? null,
+      dob: profileResult.data?.[0]?.dob?.toISOString() ?? null,
       gender:
         profileResult.data?.[0]?.gender === "male" || profileResult.data?.[0]?.gender === "female"
           ? profileResult.data[0].gender
@@ -2991,8 +2810,7 @@ function mergeConfirmedSuggestions(input: {
 }
 
 async function evaluateCreationConfig(input: {
-  db?: DbClient;
-  supabase?: LegacyPlanningReader;
+  db: DbClient;
   store: ReturnType<typeof createActivityAnalysisStore>;
   profileId: string;
   creationInput: z.infer<typeof creationNormalizationInputSchema>;
@@ -3007,7 +2825,6 @@ async function evaluateCreationConfig(input: {
     baselineFitnessOverride,
   } = await deriveProfileAwareCreationContext({
     db: input.db,
-    supabase: input.supabase,
     store: input.store,
     profileId: input.profileId,
     asOfIso: input.asOfIso,
@@ -3167,21 +2984,11 @@ function mergeCreationDefaults(input: {
 }
 
 async function withProfileTrainingSettingsDefaults(input: {
-  db?: DbClient;
-  supabase?: LegacyPlanningReader;
+  db: DbClient;
   profileId: string;
   creationInput: z.infer<typeof creationNormalizationInputSchema>;
 }): Promise<z.infer<typeof creationNormalizationInputSchema>> {
-  const settingsRow = input.db
-    ? await readParsedProfileTrainingSettings(input.db, input.profileId)
-    : input.supabase
-      ? await input.supabase
-          .from("profile_training_settings")
-          .select("settings")
-          .eq("profile_id", input.profileId)
-          .maybeSingle()
-          .then(({ data, error }: { data: any; error: any }) => (error ? null : data))
-      : null;
+  const settingsRow = await readParsedProfileTrainingSettings(input.db, input.profileId);
 
   if (!settingsRow?.settings) {
     return input.creationInput;
@@ -3203,13 +3010,11 @@ async function withProfileTrainingSettingsDefaults(input: {
 
 export async function getPlanTabProjectionService({
   db,
-  supabase,
   store,
   profileId,
   input,
 }: {
-  db?: DbClient;
-  supabase?: LegacyPlanningReader;
+  db: DbClient;
   store: ReturnType<typeof createActivityAnalysisStore>;
   profileId: string;
   input: {
@@ -3239,27 +3044,14 @@ export async function getPlanTabProjectionService({
     });
   }
 
-  if (!db && !supabase) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Database client unavailable",
-    });
-  }
-
-  const fallbackSupabase = supabase;
-
   let plan: Record<string, unknown> | null = null;
 
   if (input.training_plan_id) {
-    const fetchedPlan = db
-      ? await getAccessibleTrainingPlan({ db, planId: input.training_plan_id, profileId })
-      : await fallbackSupabase
-          ?.from("training_plans")
-          .select("*")
-          .eq("id", input.training_plan_id)
-          .or(`profile_id.eq.${profileId},is_system_template.eq.true,content_visibility.eq.public`)
-          .single()
-          .then(({ data, error }: { data: any; error: any }) => (error ? null : data));
+    const fetchedPlan = await getAccessibleTrainingPlan({
+      db,
+      planId: input.training_plan_id,
+      profileId,
+    });
 
     if (!fetchedPlan) {
       throw new TRPCError({
@@ -3300,7 +3092,7 @@ export async function getPlanTabProjectionService({
 
   const planWarnings: string[] = [];
 
-  const estimatedCurrentCtl = await estimateCurrentCtl({ db, supabase, store, profileId });
+  const estimatedCurrentCtl = await estimateCurrentCtl({ db, store, profileId });
 
   const targetCtlAtPeak = undefined;
 
@@ -3315,76 +3107,30 @@ export async function getPlanTabProjectionService({
   });
 
   const endExclusiveIso = toNextDayStartIso(input.end_date);
-  const projectionInputs = db
-    ? await createEventReadRepository(db).getAccessibleTrainingPlanProjection({
-        profileId,
-        trainingPlanId: input.training_plan_id,
-        startDateIso: toDayStartIso(input.start_date),
-        endDateExclusiveIso: endExclusiveIso,
-      })
-    : null;
+  const projectionInputs = await createEventReadRepository(db).getAccessibleTrainingPlanProjection({
+    profileId,
+    trainingPlanId: input.training_plan_id,
+    startDateIso: toDayStartIso(input.start_date),
+    endDateExclusiveIso: endExclusiveIso,
+  });
 
-  const plannedActivitiesRaw = projectionInputs
-    ? projectionInputs.plannedActivities
-    : await (async () => {
-        let plannedActivitiesQuery: any = fallbackSupabase
-          ?.from("events")
-          .select(
-            "id, starts_at, scheduled_date, training_plan_id, activity_plan:activity_plans (*)",
-          )
-          .eq("profile_id", profileId)
-          .eq("event_type", plannedEventType)
-          .gte("starts_at", toDayStartIso(input.start_date))
-          .lt("starts_at", endExclusiveIso);
-
-        if (input.training_plan_id) {
-          plannedActivitiesQuery = plannedActivitiesQuery.eq(
-            "training_plan_id",
-            input.training_plan_id,
-          );
-        }
-
-        const { data } = await plannedActivitiesQuery;
-
-        return (
-          (data || []) as Array<{
-            starts_at?: string | null;
-            scheduled_date?: string | null;
-            training_plan_id?: string | null;
-            activity_plan?: unknown;
-          }>
-        ).map((item: any) => ({
-          ...item,
-          scheduled_date:
-            item.scheduled_date ??
-            (item.starts_at ? getScheduledDateKey(item.starts_at, "UTC") : ""),
-          activity_plan: item.activity_plan as any,
-        }));
-      })();
+  const plannedActivitiesRaw = projectionInputs.plannedActivities;
 
   const activityPlans = (plannedActivitiesRaw || [])
     .map((item: any) => item.activity_plan)
     .filter((item): item is NonNullable<typeof item> => item !== null);
   const ownedActivityPlansRaw = await loadOwnedActivityPlansForScheduleGap({
     db,
-    supabase: fallbackSupabase,
     profileId,
   });
   const estimationPlans = [...activityPlans, ...ownedActivityPlansRaw].filter(
     (plan, index, plans) => plans.findIndex((candidate) => candidate.id === plan.id) === index,
   );
 
-  const estimationReader = db ? createEventReadRepository(db) : fallbackSupabase!;
+  const estimationReader = createEventReadRepository(db);
   const plansWithEstimations =
     estimationPlans.length > 0
-      ? db
-        ? await getActivityPlansDerivedMetrics(
-            estimationPlans as any,
-            db,
-            estimationReader as any,
-            profileId,
-          )
-        : await addEstimationToPlans(estimationPlans, estimationReader as any, profileId)
+      ? await getActivityPlansDerivedMetrics(estimationPlans, db, estimationReader, profileId)
       : [];
   const failedEstimations = plansWithEstimations.filter(
     (item: any) => item.counts_toward_aggregation === false,
@@ -3406,19 +3152,17 @@ export async function getPlanTabProjectionService({
     scheduledByDate.set(scheduledDate, (scheduledByDate.get(scheduledDate) || 0) + estimatedTss);
   }
 
-  const actualActivityParents = db
-    ? await db
-        .select(activitySummaryColumns)
-        .from(schema.activities)
-        .where(
-          and(
-            eq(schema.activities.profile_id, profileId),
-            gte(schema.activities.started_at, new Date(`${input.start_date}T00:00:00.000Z`)),
-            lt(schema.activities.started_at, new Date(endExclusiveIso)),
-          ),
-        )
-    : [];
-  const actualActivities = db ? await attachActivitySegments(db, actualActivityParents) : [];
+  const actualActivityParents = await db
+    .select(activitySummaryColumns)
+    .from(schema.activities)
+    .where(
+      and(
+        eq(schema.activities.profile_id, profileId),
+        gte(schema.activities.started_at, new Date(`${input.start_date}T00:00:00.000Z`)),
+        lt(schema.activities.started_at, new Date(endExclusiveIso)),
+      ),
+    );
+  const actualActivities = await attachActivitySegments(db, actualActivityParents);
   const actualSegments = await buildActivitySegmentDerivedSummaries({
     store,
     profileId,
@@ -3436,7 +3180,6 @@ export async function getPlanTabProjectionService({
 
   const projectionGoalContext = await deriveInsightTimelineProjectionIdealTssByDate({
     db,
-    supabase,
     store,
     profileId,
     startDate: input.start_date,
@@ -3918,82 +3661,7 @@ export const trainingPlansProcedures = {
       request: { startDate: weekStartDate, endDate: weekEndDate },
     });
 
-    // Get completed activities this week
-    const weekActivities = await db
-      .select(activitySummaryColumns)
-      .from(schema.activities)
-      .where(
-        and(
-          eq(schema.activities.profile_id, ctx.session.user.id),
-          gte(schema.activities.started_at, weekBounds.startInstant),
-          lt(schema.activities.started_at, weekBounds.endExclusiveInstant),
-        ),
-      );
-
-    const weekActivitiesWithSegments = await attachActivitySegments(db, weekActivities);
-    const weekActivitySegments = await buildActivitySegmentDerivedSummaries({
-      store: createActivityAnalysisStore(db),
-      profileId: ctx.session.user.id,
-      activities: weekActivitiesWithSegments,
-    });
-
-    const completedWeeklyLoad = summarizeSegmentTss(
-      weekActivitySegments,
-      new Set(weekActivities.map((activity) => activity.id)),
-    );
-    const completedWeeklyTSS = completedWeeklyLoad.tss;
-
-    // Get planned activities this week with their activity plans
-    const plannedActivitiesEvents = await db
-      .select({
-        starts_at: schema.events.starts_at,
-        scheduled_date: schema.events.scheduled_date,
-        activity_plan: schema.activityPlans,
-      })
-      .from(schema.events)
-
-      .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
-      .where(
-        and(
-          eq(schema.events.profile_id, ctx.session.user.id),
-          eq(schema.events.event_type, plannedEventType),
-          gte(schema.events.starts_at, weekBounds.startInstant),
-          lt(schema.events.starts_at, weekBounds.endExclusiveInstant),
-        ),
-      );
-
-    const plannedActivities = plannedActivitiesEvents.map((item: any) => ({
-      ...item,
-      starts_at: item.starts_at.toISOString(),
-      scheduled_date:
-        item.scheduled_date ?? getScheduledDateKey(item.starts_at.toISOString(), "UTC"),
-    }));
-
-    // Extract activity plans and add estimations
-    const activityPlans = (plannedActivities || [])
-      .map((pa: any) => pa.activity_plan)
-      .filter((plan: unknown): plan is NonNullable<typeof plan> => plan !== null);
-
     const estimationStore = createEventReadRepository(db);
-    const plansWithEstimations =
-      activityPlans.length > 0
-        ? await getActivityPlansDerivedMetrics(
-            activityPlans as any,
-            db,
-            estimationStore,
-            ctx.session.user.id,
-          )
-        : [];
-
-    const plannedWeeklyTSS = plansWithEstimations.reduce(
-      (sum, plan) => sum + (plan.authoritative_metrics.estimated_tss ?? 0),
-      0,
-    );
-
-    const totalPlannedActivities = plannedActivities?.length || 0;
-
-    // Count completed activities this week
-    const completedActivitiesCount = weekActivities.length;
 
     // Get upcoming activities (next 5 days)
     const fiveDaysFromNow = new Date(today);
@@ -4026,8 +3694,7 @@ export const trainingPlansProcedures = {
     const upcomingActivitiesRaw = upcomingActivitiesEventsRaw.map((item: any) => ({
       ...item,
       starts_at: item.starts_at.toISOString(),
-      scheduled_date:
-        item.scheduled_date ?? getScheduledDateKey(item.starts_at.toISOString(), "UTC"),
+      scheduled_date: item.scheduled_date,
     }));
 
     // Add estimations to upcoming activity plans
@@ -4075,8 +3742,6 @@ export const trainingPlansProcedures = {
         message: "Training plan structure is not canonical version 1",
       });
     }
-    const targetTSS = plannedWeeklyTSS;
-
     return {
       asOf: commonLoadHistory.computedAt,
       weekBounds,
@@ -4093,14 +3758,6 @@ export const trainingPlansProcedures = {
               maturity: availableLoadHistory.maturity.status,
               coverageStatus: availableLoadHistory.coverageStatus,
             },
-      /** @deprecated Use currentLoadStatus.longTermLoad. */
-      ctl: latestLoadState === null ? null : Math.round(latestLoadState.longTermLoad * 10) / 10,
-      /** @deprecated Use currentLoadStatus.recentLoad. */
-      atl: latestLoadState === null ? null : Math.round(latestLoadState.recentLoad * 10) / 10,
-      /** @deprecated Use currentLoadStatus.loadBalance. */
-      tsb: latestLoadState === null ? null : Math.round(latestLoadState.loadBalance * 10) / 10,
-      /** @deprecated Use currentLoadStatus.loadBalanceStatus. */
-      form: latestLoadState === null ? null : getFormStatus(latestLoadState.loadBalance),
       commonWeekProgress:
         effectiveWeekLoad.status === "available"
           ? {
@@ -4116,23 +3773,6 @@ export const trainingPlansProcedures = {
               reason: effectiveWeekLoad.reason,
               sourceCounts: effectiveWeekLoad.sourceCounts,
             },
-      legacyTssWeekProgress: {
-        completedTSS: Math.round(completedWeeklyTSS * 10) / 10,
-        tssComplete: completedWeeklyLoad.complete,
-        plannedTSS: Math.round(plannedWeeklyTSS * 10) / 10,
-        targetTSS: Math.round(targetTSS * 10) / 10,
-        completedActivities: completedActivitiesCount || 0,
-        totalPlannedActivities,
-      },
-      /** @deprecated Use legacyTssWeekProgress until common planned-load migration lands. */
-      weekProgress: {
-        completedTSS: Math.round(completedWeeklyTSS * 10) / 10,
-        tssComplete: completedWeeklyLoad.complete,
-        plannedTSS: Math.round(plannedWeeklyTSS * 10) / 10,
-        targetTSS: Math.round(targetTSS * 10) / 10,
-        completedActivities: completedActivitiesCount || 0,
-        totalPlannedActivities,
-      },
       upcomingActivities: upcomingActivities || [],
     };
   }),
@@ -4214,12 +3854,15 @@ export const trainingPlansProcedures = {
 
       if (actualCurve && actualCurve.length > 0) {
         const actualCurveWithSegments = await attachActivitySegments(db, actualCurve);
-        const actualCurveDerivedMap = await buildActivityDerivedSummaryMap({
+        const actualCurveSegmentDerived = await buildActivitySegmentDerivedSummaries({
           store: createActivityAnalysisStore(db),
           profileId: ctx.session.user.id,
           activities: actualCurveWithSegments,
         });
-        const tssData = actualCurve.map((a: any) => actualCurveDerivedMap.get(a.id)?.tss || 0);
+        const tssData = actualCurve.map((activity) => {
+          const summary = summarizeSegmentTss(actualCurveSegmentDerived, new Set([activity.id]));
+          return summary.complete ? summary.tss : 0;
+        });
         const series = calculateTrainingLoadSeries(tssData, 0, 0);
         currentCTL = series[series.length - 1]?.ctl || currentCTL;
       }
@@ -4463,8 +4106,7 @@ export const trainingPlansProcedures = {
       const plannedActivitiesRaw = plannedActivitiesEventsRaw.map((item: any) => ({
         ...item,
         starts_at: item.starts_at.toISOString(),
-        scheduled_date:
-          item.scheduled_date ?? getScheduledDateKey(item.starts_at.toISOString(), "UTC"),
+        scheduled_date: item.scheduled_date,
       }));
 
       // Extract activity plans and add estimations

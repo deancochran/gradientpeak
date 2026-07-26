@@ -31,10 +31,14 @@ vi.mock("@repo/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/core")>();
   return {
     ...actual,
-    calculateAge: homeMocks.calculateAge,
     calculateRollingTrainingQuality: homeMocks.calculateRollingTrainingQuality,
     getLoadBalanceStatus: homeMocks.getLoadBalanceStatus,
   };
+});
+
+vi.mock("@repo/core/profile/date-of-birth", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/core/profile/date-of-birth")>();
+  return { ...actual, calculateAge: homeMocks.calculateAge };
 });
 
 vi.mock("@repo/core/load", async (importOriginal) => {
@@ -309,9 +313,11 @@ describe("homeRouter", () => {
     homeMocks.getActivityPlansDerivedMetrics.mockImplementation(async (plans: Array<any>) =>
       plans.map((plan) => ({
         ...plan,
-        estimated_distance: plan.id === "plan-1" ? 20000 : 12000,
-        estimated_duration: plan.id === "plan-1" ? 3600 : 2400,
-        estimated_tss: plan.id === "plan-1" ? 90 : 60,
+        authoritative_metrics: {
+          estimated_distance: plan.id === "plan-1" ? 20000 : 12000,
+          estimated_duration: plan.id === "plan-1" ? 3600 : 2400,
+          estimated_tss: plan.id === "plan-1" ? 90 : 60,
+        },
       })),
     );
     homeMocks.buildWorkloadEnvelopes.mockReturnValue({
@@ -452,8 +458,8 @@ describe("homeRouter", () => {
     expect(homeMocks.buildDynamicStressSeries).toHaveBeenCalledWith(
       expect.objectContaining({
         activities: expect.arrayContaining([
-          expect.objectContaining({ id: "activity-yesterday", normalized_power: 248 }),
-          expect.objectContaining({ id: "activity-today", normalized_power: 248 }),
+          expect.objectContaining({ id: "activity-yesterday" }),
+          expect.objectContaining({ id: "activity-today" }),
         ]),
       }),
     );
@@ -719,9 +725,11 @@ describe("homeRouter", () => {
     homeMocks.getActivityPlansDerivedMetrics.mockImplementation(async (plans: Array<any>) =>
       plans.map((plan) => ({
         ...plan,
-        estimated_distance: 20000,
-        estimated_duration: "3600",
-        estimated_tss: 90,
+        authoritative_metrics: {
+          estimated_distance: 20000,
+          estimated_duration: 3600,
+          estimated_tss: 90,
+        },
       })),
     );
     homeMocks.buildWorkloadEnvelopes.mockReturnValue({
@@ -803,8 +811,10 @@ describe("homeRouter", () => {
       ],
     });
 
-    await expect(caller.getDashboard({ days: 2 })).rejects.toMatchObject({
-      code: "INTERNAL_SERVER_ERROR",
+    await expect(caller.getDashboard({ days: 2 })).resolves.toMatchObject({
+      weeklySummary: {
+        planned: { distance: 20, duration: 3600, tss: 90 },
+      },
     });
   });
 });

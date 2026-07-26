@@ -23,7 +23,7 @@ export type WebRecordingAdapter = {
   capabilities: WebRecordingAdapterCapability[];
   status: WebRecordingAdapterStatus;
   statusLabel: string;
-  handoffPath?: "/record/submit";
+  handoffPath?: "/activities/import";
   liveRecording: boolean;
   durableLocalQueue: boolean;
   bleScanning: boolean;
@@ -60,7 +60,7 @@ export function createWebRecordingAdapterRegistry(
       capabilities: ["file-import"],
       status: "available",
       statusLabel: "Available now",
-      handoffPath: "/record/submit",
+      handoffPath: "/activities/import",
       liveRecording: false,
       durableLocalQueue: true,
       bleScanning: false,

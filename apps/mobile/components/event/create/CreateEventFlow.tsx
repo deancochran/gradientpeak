@@ -19,25 +19,26 @@ import { z } from "zod";
 import { AppFormModal } from "@/components/shared/AppFormModal";
 import { type ResourcePickerItem, ResourcePickerModal } from "@/components/shared/resource-picker";
 import { api } from "@/lib/api";
-import {
-  buildScheduledInstant,
-  getDeviceTimeZone,
-  getEventScheduledDate,
-} from "@/lib/calendar/eventSchedule";
+import { getDeviceTimeZone, getEventScheduledDate } from "@/lib/calendar/eventSchedule";
 import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
 import {
   type ActivityPlanListItem,
-  buildRecurrenceFromFrequency,
   parseEventDateForEditor,
   parseRecurrenceEndDate,
   parseRecurrenceFrequency,
 } from "../EventEditorCard";
-import { type CreateEventMainFormValues, CreateEventMainStep } from "./CreateEventMainStep";
+import {
+  type CreateEventMainFormValues,
+  CreateEventMainStep,
+  type EventRouteSummary,
+} from "./CreateEventMainStep";
 import {
   buildCreateEventInput,
+  buildUpdatePatch,
   type CreateEventDraft,
   type CreateEventMode,
   createDefaultEventDraft,
+  removeActivityPlanFromDraft,
 } from "./createEventDraft";
 import { RepeatStep } from "./RepeatStep";
 
@@ -76,6 +77,8 @@ function mergeNotes(values: Array<string | null | undefined>) {
 type EditableEvent = {
   activity_plan?: ActivityPlanListItem | null;
   activity_plan_id?: string | null;
+  route?: EventRouteSummary | null;
+  route_id?: string | null;
   all_day?: boolean | null;
   event_type?: string | null;
   id: string;
@@ -109,6 +112,8 @@ function buildDraftFromEvent(event: EditableEvent): CreateEventDraft {
       mode: "planned",
       activityPlanId: event.activity_plan_id ?? event.activity_plan?.id ?? null,
       activityPlanName: event.activity_plan?.name ?? null,
+      routeId: event.route_id ?? event.route?.id ?? null,
+      routeName: event.route?.name ?? null,
       scheduledDate,
       timezone,
       recurrenceFrequency,
@@ -129,6 +134,8 @@ function buildDraftFromEvent(event: EditableEvent): CreateEventDraft {
     recurrenceFrequency,
     recurrenceEndDate,
     notes: event.notes ?? "",
+    routeId: event.route_id ?? event.route?.id ?? null,
+    routeName: event.route?.name ?? null,
   };
 }
 
@@ -217,46 +224,6 @@ function areMainFormValuesEqual(left: CreateEventFormValues, right: CreateEventF
   );
 }
 
-export function buildUpdatePatch(draft: CreateEventDraft) {
-  const notes = draft.notes.trim() ? draft.notes.trim() : null;
-
-  if (draft.mode === "planned") {
-    return {
-      activity_plan_id: draft.activityPlanId,
-      all_day: true,
-      event_type: "planned" as const,
-      notes,
-      recurrence: buildRecurrenceFromFrequency(
-        draft.recurrenceFrequency,
-        draft.recurrenceEndDate,
-        draft.timezone,
-      ),
-      starts_at: `${draft.scheduledDate}T00:00:00.000Z`,
-      scheduled_date: draft.scheduledDate,
-      timezone: draft.timezone,
-      title: draft.title.trim() || draft.activityPlanName?.trim() || "Planned Activity",
-    };
-  }
-
-  return {
-    activity_plan_id: null,
-    all_day: draft.allDay,
-    event_type: draft.eventType,
-    notes,
-    recurrence: buildRecurrenceFromFrequency(
-      draft.recurrenceFrequency,
-      draft.recurrenceEndDate,
-      draft.timezone,
-    ),
-    scheduled_date: draft.scheduledDate,
-    starts_at: draft.allDay
-      ? `${draft.scheduledDate}T00:00:00.000Z`
-      : buildScheduledInstant(draft.scheduledDate, draft.startsAt, draft.timezone),
-    timezone: draft.timezone,
-    title: draft.title.trim(),
-  };
-}
-
 export const CreateEventFlow = forwardRef<
   CreateEventFlowHandle,
   {
@@ -310,7 +277,9 @@ export const CreateEventFlow = forwardRef<
   const [titleErrorMessage, setTitleErrorMessage] = useState<string | null>(null);
   const [recurrenceErrorMessage, setRecurrenceErrorMessage] = useState<string | null>(null);
   const [knownActivityPlans, setKnownActivityPlans] = useState<ActivityPlanListItem[]>([]);
+  const [knownRoutes, setKnownRoutes] = useState<EventRouteSummary[]>([]);
   const [activityPlanPickerOpen, setActivityPlanPickerOpen] = useState(false);
+  const [routePickerOpen, setRoutePickerOpen] = useState(false);
   const [saveScopeModalVisible, setSaveScopeModalVisible] = useState(false);
   const [pendingUpdateDraft, setPendingUpdateDraft] = useState<CreateEventDraft | null>(null);
   const form = useZodForm<CreateEventFormValues>({
@@ -352,6 +321,10 @@ export const CreateEventFlow = forwardRef<
     if (draft.mode !== "planned") return null;
     return knownActivityPlans.find((plan) => plan.id === draft.activityPlanId) ?? null;
   }, [draft, knownActivityPlans]);
+  const selectedRoute = useMemo(
+    () => knownRoutes.find((route) => route.id === draft.routeId) ?? null,
+    [draft.routeId, knownRoutes],
+  );
 
   useEffect(() => {
     const plans = (activityPlansData?.items ?? []) as ActivityPlanListItem[];
@@ -413,6 +386,14 @@ export const CreateEventFlow = forwardRef<
       );
     }
   }, [updateEvent?.activity_plan]);
+
+  useEffect(() => {
+    const route = updateEvent?.route;
+    if (!route) return;
+    setKnownRoutes((current) =>
+      current.some((item) => item.id === route.id) ? current : [...current, route],
+    );
+  }, [updateEvent?.route]);
 
   useEffect(() => {
     if (!updateEvent) return;
@@ -484,6 +465,8 @@ export const CreateEventFlow = forwardRef<
           mode: "planned",
           activityPlanId: null,
           activityPlanName: null,
+          routeId: current.routeId,
+          routeName: current.routeName,
           scheduledDate,
           timezone: current.timezone,
           recurrenceFrequency: current.recurrenceFrequency,
@@ -508,28 +491,32 @@ export const CreateEventFlow = forwardRef<
         recurrenceFrequency: current.recurrenceFrequency,
         recurrenceEndDate: current.recurrenceEndDate,
         notes: current.notes,
+        routeId: current.routeId,
+        routeName: current.routeName,
       };
     });
   };
 
   const handleRemoveActivityPlan = () => {
     setFormErrorMessage(null);
-    setDraft((current) => {
-      if (current.mode !== "planned") return current;
-      const startsAt = buildStartsAtFromDateOnly(current.scheduledDate);
-      return {
-        mode: "custom",
-        eventType: "custom",
-        title: current.title,
-        startsAt,
-        scheduledDate: current.scheduledDate,
-        timezone: current.timezone,
-        allDay: true,
-        recurrenceFrequency: current.recurrenceFrequency,
-        recurrenceEndDate: current.recurrenceEndDate,
-        notes: current.notes,
-      };
-    });
+    setDraft(removeActivityPlanFromDraft);
+  };
+
+  const handleSelectRouteResource = (item: ResourcePickerItem) => {
+    const route: EventRouteSummary =
+      "routeCardData" in item ? item.routeCardData : { id: item.id, name: item.name };
+    setKnownRoutes((current) =>
+      current.some((candidate) => candidate.id === route.id) ? current : [...current, route],
+    );
+    setDraft((current) => ({ ...current, routeId: route.id, routeName: route.name }));
+    setFormErrorMessage(null);
+    AccessibilityInfo?.announceForAccessibility?.(`Selected route ${route.name}`);
+    setRoutePickerOpen(false);
+  };
+
+  const handleRemoveRoute = () => {
+    setFormErrorMessage(null);
+    setDraft((current) => ({ ...current, routeId: null, routeName: null }));
   };
 
   const handleSelectPlanResource = (item: ResourcePickerItem) => {
@@ -548,8 +535,8 @@ export const CreateEventFlow = forwardRef<
   };
 
   const validateDraft = (nextDraft: CreateEventDraft) => {
-    if (nextDraft.mode === "planned" && !nextDraft.activityPlanId) {
-      setFormErrorMessage("Choose an activity plan before saving.");
+    if (nextDraft.mode === "planned" && !nextDraft.activityPlanId && !nextDraft.routeId) {
+      setFormErrorMessage("Choose an activity plan, a route, or both before saving.");
       return false;
     }
 
@@ -664,10 +651,13 @@ export const CreateEventFlow = forwardRef<
           onCancel={onCancel}
           onChangeMode={handleChangeMode}
           onOpenActivityPlan={() => setActivityPlanPickerOpen(true)}
+          onOpenRoute={() => setRoutePickerOpen(true)}
           onRemoveActivityPlan={handleRemoveActivityPlan}
+          onRemoveRoute={handleRemoveRoute}
           onOpenRepeat={() => setStep("repeat")}
           onSubmit={submitCreate}
           selectedActivityPlan={selectedCreateActivityPlan}
+          selectedRoute={selectedRoute}
           showFooterActions={showFooterActions}
           testIDPrefix={testIDPrefix}
           titleErrorMessage={titleErrorMessage}
@@ -681,6 +671,15 @@ export const CreateEventFlow = forwardRef<
         description="Search activity plans visible to your profile."
         onClose={() => setActivityPlanPickerOpen(false)}
         onSelect={handleSelectPlanResource}
+      />
+      <ResourcePickerModal
+        visible={routePickerOpen}
+        scope="routes"
+        selectedId={draft.routeId}
+        title="Choose Route"
+        description="Search routes visible to your profile."
+        onClose={() => setRoutePickerOpen(false)}
+        onSelect={handleSelectRouteResource}
       />
       {saveScopeModalVisible ? (
         <AppFormModal

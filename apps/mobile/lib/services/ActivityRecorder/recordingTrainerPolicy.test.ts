@@ -1,4 +1,5 @@
-import { BLE_SERVICE_UUIDS, type FtmsControlMode, type FtmsMachineType } from "@repo/core";
+import type { FtmsControlMode, FtmsMachineType } from "@deancochran/ftms";
+import { BLE_SERVICE_UUIDS } from "@repo/core";
 import { describe, expect, it } from "vitest";
 import {
   getTrainerSensorIdsToDisconnect,

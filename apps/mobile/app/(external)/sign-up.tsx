@@ -21,7 +21,11 @@ import {
   mapSignUpError,
   setAuthFormError,
 } from "@/lib/auth/form-helpers";
-import { getDisplayNameFromEmail, type SignUpFields, signUpSchema } from "@/lib/auth/form-schemas";
+import {
+  getDisplayNameFromEmail,
+  type SignUpFormValues,
+  signUpFormSchema,
+} from "@/lib/auth/form-schemas";
 import { withAuthRequestTimeout } from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
@@ -43,7 +47,7 @@ export default function SignUpScreen() {
   }, [serverConfig.overrideUrl, serverConfig.apiUrl]);
 
   const form = useZodForm({
-    schema: signUpSchema,
+    schema: signUpFormSchema,
     defaultValues: {
       email: "",
       password: "",
@@ -51,7 +55,7 @@ export default function SignUpScreen() {
     },
   });
 
-  const onSignUp = async (data: SignUpFields) => {
+  const onSignUp = async (data: SignUpFormValues) => {
     try {
       await applyPendingAuthServerOverride({
         expanded: serverOverrideEnabled && isServerConfigExpanded,

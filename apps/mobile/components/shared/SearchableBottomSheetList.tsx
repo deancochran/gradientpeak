@@ -1,7 +1,7 @@
 import { BottomSheetFlatList } from "@gorhom/bottom-sheet";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import type { ReactElement, ReactNode } from "react";
+import type { ReactElement } from "react";
 import { View } from "react-native";
 import {
   APP_BOTTOM_SHEET_ACTION_FOOTER_BOTTOM_INSET,
@@ -81,7 +81,7 @@ export function SearchableBottomSheetList<TItem>({
           </View>
         ) : null
       }
-      renderItem={({ item }: { item: unknown }) => renderItem(item as TItem) as ReactNode}
+      renderItem={({ item }: { item: unknown }) => renderItem(item as TItem)}
       showsVerticalScrollIndicator
     />
   );

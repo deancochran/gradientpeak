@@ -76,8 +76,9 @@ function activeIntegration() {
     accessToken: "access-1",
     expiresAt: null,
     externalId: "77",
-    generation: 1,
+    credentialGeneration: 1,
     id: "integration-1",
+    integrationGeneration: 1,
     profileId: "profile-1",
     refreshToken: null,
   };
@@ -112,9 +113,11 @@ describe("WahooActivityHistoryJobService", () => {
     ]);
     deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue({
       accessToken: "access-1",
+      credentialGeneration: 1,
       expiresAt: "2026-04-03T12:00:30.000Z",
       externalId: "77",
       id: "integration-1",
+      integrationGeneration: 1,
       profileId: "profile-1",
       refreshToken: "refresh-1",
     });
@@ -164,9 +167,9 @@ describe("WahooActivityHistoryJobService", () => {
       accessToken: "access-2",
       credentialGeneration: 1,
       expectedCredentialGeneration: 1,
-      expectedIntegrationGeneration: undefined,
+      expectedIntegrationGeneration: 1,
       expiresAt: "2026-04-03T14:00:00.000Z",
-      integrationGeneration: undefined,
+      integrationGeneration: 1,
       id: "integration-1",
       reconnectRequiredAt: null,
       refreshToken: "refresh-2",
@@ -633,8 +636,9 @@ describe("WahooActivityHistoryJobService", () => {
       accessToken: "access-1",
       expiresAt: "2026-04-03T12:00:30.000Z",
       externalId: "77",
-      generation: 1,
+      credentialGeneration: 1,
       id: "integration-1",
+      integrationGeneration: 1,
       profileId: "profile-1",
       refreshToken: "refresh-1",
     });
@@ -724,8 +728,9 @@ describe("WahooActivityHistoryJobService", () => {
       accessToken: "access-1",
       expiresAt: null,
       externalId: "77",
-      generation: 1,
+      credentialGeneration: 1,
       id: "integration-1",
+      integrationGeneration: 1,
       profileId: "profile-1",
       refreshToken: null,
     });

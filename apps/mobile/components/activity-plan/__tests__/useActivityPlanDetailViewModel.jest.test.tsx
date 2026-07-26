@@ -3,10 +3,6 @@ import { renderHook } from "@testing-library/react-native";
 jest.mock("@repo/core", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/core"),
-  decodePolyline: jest.fn(() => [
-    { latitude: 10, longitude: 20 },
-    { latitude: 11, longitude: 21 },
-  ]),
   estimateActivity: jest.fn(() => ({ duration: 3600, tss: 42.4, intensityFactor: 0.83 })),
 }));
 
@@ -76,7 +72,6 @@ describe("useActivityPlanDetailViewModel", () => {
           },
         },
         profile: { id: "profile-1" },
-        route: { polyline: "abc" },
         template: JSON.stringify({
           id: "template-plan",
           categories: ["other"],
@@ -92,7 +87,6 @@ describe("useActivityPlanDetailViewModel", () => {
     expect(result.current.intensityFactor).toBe(0.83);
     expect(result.current.steps).toHaveLength(2);
     expect(result.current.detailBadges).toEqual(["run", "Scheduled"]);
-    expect(result.current.routePreview?.coordinates).toHaveLength(2);
   });
 
   it("falls back through malformed params without crashing", () => {
@@ -104,13 +98,11 @@ describe("useActivityPlanDetailViewModel", () => {
         isScheduled: false,
         plannedActivity: null,
         profile: { id: "profile-1" },
-        route: null,
         template: "{still bad",
       }),
     );
 
     expect(result.current.activityPlan).toBeNull();
     expect(result.current.detailBadges).toEqual([]);
-    expect(result.current.routePreview).toBeNull();
   });
 });

@@ -14,7 +14,7 @@ import {
   mapResetPasswordError,
   setAuthFormError,
 } from "@/lib/auth/form-helpers";
-import { type ResetPasswordFields, resetPasswordSchema } from "@/lib/auth/form-schemas";
+import { type UpdatePasswordFormValues, updatePasswordFormSchema } from "@/lib/auth/form-schemas";
 import { withAuthRequestTimeout } from "@/lib/auth/request-timeout";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
 import { useAuthStore } from "@/lib/stores/auth-store";
@@ -24,7 +24,7 @@ export default function ResetPasswordScreen() {
   const { token } = useLocalSearchParams<{ token?: string }>();
 
   const form = useZodForm({
-    schema: resetPasswordSchema,
+    schema: updatePasswordFormSchema,
     defaultValues: {
       confirmPassword: "",
       password: "",
@@ -39,7 +39,7 @@ export default function ResetPasswordScreen() {
     ]);
   }, [router, token]);
 
-  const onUpdatePassword = async (data: ResetPasswordFields) => {
+  const onUpdatePassword = async (data: UpdatePasswordFormValues) => {
     if (!token) {
       form.setError("root", {
         message: "Reset token not found. Please request a new reset email.",

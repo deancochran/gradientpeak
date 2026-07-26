@@ -111,7 +111,7 @@ jest.mock("@repo/core", () => ({
   commonLoadAggregateSchema: jest.requireActual("@repo/core").commonLoadAggregateSchema,
   commonLoadResultSchema: jest.requireActual("@repo/core").commonLoadResultSchema,
   formatGoalTypeLabel: () => "Race Day",
-  getTrainingIntensityZone: jest.requireActual("@repo/core").getTrainingIntensityZone,
+  getTrainingIntensityZone: jest.requireActual("@repo/core/load").getTrainingIntensityZone,
   getGoalObjectiveSummary: () => "Run your A race",
 }));
 
@@ -400,9 +400,11 @@ jest.mock("@/lib/api", () => ({
                         name: "Tempo Builder",
                         description: "Progressive tempo with a strong finish.",
                         activity_category: "outdoor_run",
-                        estimated_duration: 3600,
-                        estimated_tss: 72,
-                        intensity_factor: 0.82,
+                        authoritative_metrics: {
+                          estimated_duration: 3600,
+                          estimated_tss: 72,
+                          intensity_factor: 0.82,
+                        },
                         common_load: availableCommonLoad(67.24, 0.82),
                         structure: {
                           version: 3,
@@ -537,7 +539,6 @@ jest.mock("@/lib/api", () => ({
                       activity_file_path: null,
                       likes_count: 0,
                       comments_count: 0,
-                      is_private: false,
                       has_liked: false,
                       derived: {
                         tss: 64,
@@ -958,9 +959,11 @@ describe("calendar day timeline screen", () => {
             id: "group-plan-load",
             name: "Group tempo plan",
             activity_category: "run",
-            estimated_duration: 3600,
-            estimated_tss: 99,
-            intensity_factor: 0.99,
+            authoritative_metrics: {
+              estimated_duration: 3600,
+              estimated_tss: 99,
+              intensity_factor: 0.99,
+            },
             common_load: availableCommonLoad(56.25, 0.75),
           },
         ],

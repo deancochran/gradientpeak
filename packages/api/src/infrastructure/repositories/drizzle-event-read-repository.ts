@@ -1,4 +1,3 @@
-import { getScheduledDateKey } from "@repo/core";
 import { compileActivityPlanV3 } from "@repo/core/activity-plan";
 import { type DrizzleDbClient, schema } from "@repo/db";
 import {
@@ -21,10 +20,7 @@ import {
   getCurrentPlanningWeek,
   getPlanningDateRange,
 } from "../../application/training-plan/current-planning-week";
-import {
-  deriveNormalizedPowerCompatibilityProjectionFromSegments,
-  loadActivitySegmentsByActivityId,
-} from "../../lib/activity-analysis";
+import {} from "../../lib/activity-analysis";
 import type { EventReadRepository } from "../../repositories";
 import {
   filterSupersededProfileOverrides,
@@ -62,9 +58,26 @@ function serializeActivityPlanRow(activityPlan: typeof schema.activityPlans.$inf
   };
 }
 
+function serializeActivityRouteRow(
+  activityRoute: typeof schema.activityRoutes.$inferSelect | null,
+) {
+  if (!activityRoute) return null;
+
+  return {
+    id: activityRoute.id,
+    name: activityRoute.name,
+    description: activityRoute.description,
+    total_distance: activityRoute.total_distance,
+    total_ascent: activityRoute.total_ascent,
+    total_descent: activityRoute.total_descent,
+  };
+}
+
 function serializeEventRow(row: {
   activity_plan_id: string | null;
+  route_id: string | null;
   activity_plan: typeof schema.activityPlans.$inferSelect | null;
+  activity_route: typeof schema.activityRoutes.$inferSelect | null;
   all_day: boolean | null;
   created_at: Date;
   description: string | null;
@@ -78,7 +91,7 @@ function serializeEventRow(row: {
   profile_id: string;
   recurrence_rule: string | null;
   recurrence_timezone: string | null;
-  scheduled_date: string | null;
+  scheduled_date: string;
   series_id: string | null;
   source_provider: string | null;
   starts_at: Date;
@@ -88,8 +101,9 @@ function serializeEventRow(row: {
   training_plan_id: string | null;
   updated_at: Date;
 }) {
+  const { activity_route: _activityRoute, ...event } = row;
   return {
-    ...row,
+    ...event,
     all_day: row.all_day ?? false,
     linked_activity_id: row.linked_activity_id,
     occurrence_key: row.occurrence_key ?? "",
@@ -103,12 +117,12 @@ function serializeEventRow(row: {
     training_plan_id: row.training_plan_id,
     created_at: row.created_at.toISOString(),
     starts_at: row.starts_at.toISOString(),
-    scheduled_date:
-      row.scheduled_date ?? getScheduledDateKey(row.starts_at.toISOString(), row.timezone),
+    scheduled_date: row.scheduled_date,
     ends_at: row.ends_at?.toISOString() ?? null,
     original_starts_at: row.original_starts_at?.toISOString() ?? null,
     updated_at: row.updated_at.toISOString(),
     activity_plan: serializeActivityPlanRow(row.activity_plan),
+    route: serializeActivityRouteRow(row.activity_route),
   };
 }
 
@@ -121,6 +135,7 @@ const eventColumns = {
   all_day: schema.events.all_day,
   timezone: schema.events.timezone,
   activity_plan_id: schema.events.activity_plan_id,
+  route_id: schema.events.route_id,
   training_plan_id: schema.events.training_plan_id,
   recurrence_rule: schema.events.recurrence_rule,
   recurrence_timezone: schema.events.recurrence_timezone,
@@ -200,12 +215,17 @@ export function createEventReadRepository(
       const boundedLimit = 10_001;
       const [eventRows, activityRows] = await Promise.all([
         db
-          .select({ ...eventColumns, activity_plan: schema.activityPlans })
+          .select({
+            ...eventColumns,
+            activity_plan: schema.activityPlans,
+            activity_route: schema.activityRoutes,
+          })
           .from(schema.events)
           .leftJoin(
             schema.activityPlans,
             eq(schema.events.activity_plan_id, schema.activityPlans.id),
           )
+          .leftJoin(schema.activityRoutes, eq(schema.events.route_id, schema.activityRoutes.id))
           .where(
             and(
               eq(schema.events.profile_id, profileId),
@@ -237,15 +257,7 @@ export function createEventReadRepository(
       const scheduledItemsStatus = eventRows.length === boundedLimit ? "partial" : "complete";
       return {
         activities: activityRows.slice(0, boundedLimit - 1),
-        events: eventRows.slice(0, boundedLimit - 1).map((row) => {
-          if (row.scheduled_date === null) {
-            throw new Error("Effective-plan scheduled event is missing scheduled_date.");
-          }
-          return {
-            ...serializeEventRow(row),
-            scheduled_date: row.scheduled_date,
-          };
-        }),
+        events: eventRows.slice(0, boundedLimit - 1).map((row) => serializeEventRow(row)),
         planningTimezone,
         resolvedRange: range,
         sourceCounts: {
@@ -264,9 +276,11 @@ export function createEventReadRepository(
         .select({
           ...eventColumns,
           activity_plan: schema.activityPlans,
+          activity_route: schema.activityRoutes,
         })
         .from(schema.events)
         .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
+        .leftJoin(schema.activityRoutes, eq(schema.events.route_id, schema.activityRoutes.id))
         .where(and(eq(schema.events.id, eventId), eq(schema.events.profile_id, profileId)))
         .limit(1);
 
@@ -635,25 +649,16 @@ export function createEventReadRepository(
             lt(schema.activities.started_at, new Date(endDateExclusiveIso)),
           ),
         );
-      const actualSegmentsByActivityId = await loadActivitySegmentsByActivityId(
-        db,
-        actualActivities.map((activity) => activity.id),
-      );
-
       return {
         trainingPlan,
         plannedActivities: plannedEvents.map((item) => ({
           starts_at: item.starts_at.toISOString(),
-          scheduled_date:
-            item.scheduled_date ?? getScheduledDateKey(item.starts_at.toISOString(), "UTC"),
+          scheduled_date: item.scheduled_date,
           training_plan_id: item.training_plan_id,
           activity_plan: item.activity_plan as any,
         })),
         actualActivities: actualActivities.map((activity) => ({
           ...activity,
-          normalized_power: deriveNormalizedPowerCompatibilityProjectionFromSegments(
-            actualSegmentsByActivityId.get(activity.id) ?? [],
-          ),
           started_at: activity.started_at.toISOString(),
           finished_at: activity.finished_at.toISOString(),
         })),
@@ -664,8 +669,6 @@ export function createEventReadRepository(
       const conditions = [eq(schema.events.profile_id, input.profileId)];
       const trainingPlanId = schema.events.training_plan_id;
       const activityPlanId = schema.events.activity_plan_id;
-      const isPersistedDateAnchoredEvent = and(isNotNull(schema.events.scheduled_date));
-      const isTimedOrLegacyEvent = isNull(schema.events.scheduled_date);
 
       if (input.eventTypes && input.eventTypes.length > 0) {
         conditions.push(inArray(schema.events.event_type, input.eventTypes));
@@ -683,22 +686,12 @@ export function createEventReadRepository(
 
       if (input.dateFrom) {
         const scheduleDateFrom = input.dateFrom.slice(0, 10);
-        const dateFromCondition = or(
-          and(isPersistedDateAnchoredEvent, gte(schema.events.scheduled_date, scheduleDateFrom)),
-          and(isTimedOrLegacyEvent, gte(schema.events.starts_at, new Date(input.dateFrom))),
-        );
-        if (!dateFromCondition) throw new Error("Event date-from filter could not be constructed.");
-        conditions.push(dateFromCondition);
+        conditions.push(gte(schema.events.scheduled_date, scheduleDateFrom));
       }
 
       if (input.dateTo) {
         const scheduleDateTo = input.dateTo.slice(0, 10);
-        const dateToCondition = or(
-          and(isPersistedDateAnchoredEvent, lt(schema.events.scheduled_date, scheduleDateTo)),
-          and(isTimedOrLegacyEvent, lt(schema.events.starts_at, new Date(input.dateTo))),
-        );
-        if (!dateToCondition) throw new Error("Event date-to filter could not be constructed.");
-        conditions.push(dateToCondition);
+        conditions.push(lt(schema.events.scheduled_date, scheduleDateTo));
       }
 
       if (input.cursor) {
@@ -723,10 +716,12 @@ export function createEventReadRepository(
         .select({
           ...eventColumns,
           activity_plan: schema.activityPlans,
+          activity_route: schema.activityRoutes,
         })
         .from(schema.events)
 
         .leftJoin(schema.activityPlans, eq(activityPlanId, schema.activityPlans.id))
+        .leftJoin(schema.activityRoutes, eq(schema.events.route_id, schema.activityRoutes.id))
 
         .where(and(...conditions))
         .orderBy(asc(schema.events.starts_at), asc(schema.events.id))

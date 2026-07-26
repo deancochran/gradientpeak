@@ -98,7 +98,6 @@ function createActivityRow(overrides: Record<string, unknown> = {}) {
     max_power: 402,
     avg_speed_mps: 7.9,
     max_speed_mps: 14.1,
-    normalized_power: 228,
     normalized_speed_mps: 8.2,
     normalized_graded_speed_mps: 8.4,
     ...overrides,
@@ -483,6 +482,7 @@ describe("drizzle-event-read-repository", () => {
         data: [
           {
             starts_at: new Date("2026-04-15T07:00:00.000Z"),
+            scheduled_date: "2026-04-15",
             training_plan_id: "training-plan-1",
             activity_plan: createActivityPlanRow(),
           },
@@ -490,7 +490,7 @@ describe("drizzle-event-read-repository", () => {
         error: null,
       },
       activities: {
-        data: [createActivityRow({ normalized_power: 999 })],
+        data: [createActivityRow()],
         error: null,
       },
       activity_segments: {
@@ -537,19 +537,13 @@ describe("drizzle-event-read-repository", () => {
       ],
       actualActivities: [
         {
-          ...createActivityRow({ normalized_power: 999 }),
-          normalized_power: 248,
+          ...createActivityRow(),
           started_at: "2026-04-15T07:03:00.000Z",
           finished_at: "2026-04-15T08:11:00.000Z",
         },
       ],
     });
-    expect(callLog.map((entry) => entry.table)).toEqual([
-      "training_plans",
-      "events",
-      "activities",
-      "activity_segments",
-    ]);
+    expect(callLog.map((entry) => entry.table)).toEqual(["training_plans", "events", "activities"]);
   });
 
   it("skips training-plan lookup when projection is requested without a plan id", async () => {
@@ -618,6 +612,7 @@ describe("drizzle-event-read-repository", () => {
         original_starts_at: null,
         updated_at: "2026-04-02T11:00:00.000Z",
         activity_plan: null,
+        route: null,
         all_day: false,
         occurrence_key: "",
         status: "scheduled",
@@ -629,12 +624,21 @@ describe("drizzle-event-read-repository", () => {
 
   it("hydrates joined activity plans for owned events and detail reads", async () => {
     const activityPlan = createActivityPlanRow();
+    const route = {
+      id: "route-1",
+      name: "River Loop",
+      description: "Rolling roads",
+      total_distance: 12_000,
+      total_ascent: 180,
+      total_descent: 170,
+    };
     const { db } = createQueryMapDbMock({
       events: {
         data: [
           {
             ...createEventRow(),
             activity_plan: activityPlan,
+            activity_route: route,
           },
         ],
         error: null,
@@ -664,6 +668,7 @@ describe("drizzle-event-read-repository", () => {
           created_at: "2026-04-01T00:00:00.000Z",
           updated_at: "2026-04-01T00:00:00.000Z",
         },
+        route,
       },
     ]);
 
@@ -687,10 +692,11 @@ describe("drizzle-event-read-repository", () => {
         created_at: "2026-04-01T00:00:00.000Z",
         updated_at: "2026-04-01T00:00:00.000Z",
       },
+      route,
     });
   });
 
-  it("preserves persisted schedule dates and derives legacy null dates in the event timezone", async () => {
+  it("preserves persisted schedule dates", async () => {
     const repository = createEventReadRepository(
       createQueryMapDbMock({
         events: {
@@ -700,12 +706,6 @@ describe("drizzle-event-read-repository", () => {
               starts_at: new Date("2026-04-15T01:00:00.000Z"),
               scheduled_date: "2026-04-20",
             }),
-            createEventRow({
-              id: "event-legacy",
-              timezone: "America/Los_Angeles",
-              starts_at: new Date("2026-04-15T01:00:00.000Z"),
-              scheduled_date: null,
-            }),
           ],
           error: null,
         },
@@ -714,10 +714,7 @@ describe("drizzle-event-read-repository", () => {
 
     await expect(
       repository.listOwnedEvents({ profileId: "profile-1", limit: 10, includeAdhoc: true }),
-    ).resolves.toMatchObject([
-      { id: "event-1", scheduled_date: "2026-04-20" },
-      { id: "event-legacy", scheduled_date: "2026-04-14" },
-    ]);
+    ).resolves.toMatchObject([{ id: "event-1", scheduled_date: "2026-04-20" }]);
   });
 
   it("reads consolidated schedule-link values from the event", async () => {
@@ -773,7 +770,7 @@ describe("drizzle-event-read-repository", () => {
 
     expect(selects).toHaveLength(1);
     expect(selects[0]?.table).toBe("events");
-    expect(selects[0]?.leftJoinArgs).toHaveLength(1);
+    expect(selects[0]?.leftJoinArgs).toHaveLength(2);
     expect(selects[0]?.limitArg).toBe(25);
     expect(selects[0]?.orderByArgs.map(toSql)).toEqual([
       '"events"."starts_at" asc',
@@ -787,9 +784,9 @@ describe("drizzle-event-read-repository", () => {
     expect(whereSql).toContain('"events"."activity_plan_id" = $4');
     expect(whereSql).toContain('"events"."scheduled_date" >=');
     expect(whereSql).toContain('"events"."scheduled_date" <');
-    expect(whereSql).toContain('"events"."scheduled_date" is not null');
-    expect(whereSql).toContain('"events"."starts_at" >=');
-    expect(whereSql).toContain('"events"."starts_at" <');
+    expect(whereSql).not.toContain('"events"."scheduled_date" is not null');
+    expect(whereSql).not.toContain('"events"."starts_at" >=');
+    expect(whereSql).not.toContain('"events"."starts_at" <');
     expect(whereSql).toContain('"events"."starts_at" >');
     expect(whereSql).toContain('"events"."id" >');
     expect(whereSql).toContain('"activity_plans"."structure" @>');

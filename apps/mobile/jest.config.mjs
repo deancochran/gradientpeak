@@ -7,7 +7,6 @@ export default {
     "^@repo/core/(.*)$": "<rootDir>/../../packages/core/$1",
     "^@repo/api$": "<rootDir>/../../packages/api/index.ts",
     "^@repo/api/(.*)$": "<rootDir>/../../packages/api/src/$1",
-    "^@repo/ui$": "<rootDir>/../../packages/ui/src/index.ts",
     "^@repo/ui/(.*)$": "<rootDir>/../../packages/ui/src/$1",
   },
   rootDir: ".",

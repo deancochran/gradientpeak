@@ -22,7 +22,15 @@ describe("home plan card projection", () => {
           },
         ],
       }),
-    ).toEqual([expect.objectContaining({ date: "2026-04-04", plannedLoad: 70, plannedTss: null })]);
+    ).toEqual([expect.objectContaining({ date: "2026-04-04", plannedLoad: 70 })]);
+    expect(
+      projectCommonLoad({
+        current: { longTermLoad: 40, recentLoad: 50 },
+        currentDate: "2026-04-03",
+        days: 1,
+        items: [{ date: "2026-04-04", commonLoad: { status: "complete", load: 70 } }],
+      })?.[0],
+    ).not.toHaveProperty("plannedTss");
     expect(
       projectCommonLoad({
         current: { longTermLoad: 40, recentLoad: 50 },

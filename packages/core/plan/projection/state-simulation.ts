@@ -4,7 +4,7 @@ import type {
   InferredCurrentStateMean,
   InferredCurrentStateUncertainty,
   InferredStateSnapshotMetadata,
-} from "../../schemas/training_plan_structure";
+} from "../../schemas/training-plan-structure";
 import { diffDateOnlyUtcDays } from "../dateOnlyUtc";
 
 export interface PriorInferredStateSnapshotInput {

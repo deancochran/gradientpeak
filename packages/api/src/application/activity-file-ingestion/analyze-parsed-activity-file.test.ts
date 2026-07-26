@@ -134,7 +134,6 @@ describe("analyzeParsedActivityFile", () => {
       }),
     ).toBe(true);
     expect(result.summaryValues).toMatchObject({
-      normalized_power: null,
       normalized_speed_mps: null,
       normalized_graded_speed_mps: null,
     });

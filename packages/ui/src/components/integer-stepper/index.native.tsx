@@ -1,6 +1,6 @@
+import { clampInteger, parseBoundedInteger } from "@repo/core/utils/fitness-inputs";
 import { useEffect, useState } from "react";
-import { clampInteger, parseBoundedInteger } from "../../lib/fitness-inputs";
-import { View } from "../../lib/react-native";
+import { View } from "react-native";
 import { Button } from "../button/index.native";
 import { Input } from "../input/index.native";
 import { Label } from "../label/index.native";

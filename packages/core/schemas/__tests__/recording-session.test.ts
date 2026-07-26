@@ -30,7 +30,7 @@ const validCapabilities = {
 };
 
 describe("recording session schemas", () => {
-  it("accepts a launch intent with source preferences", () => {
+  it("accepts event/session-owned route linkage in a launch intent", () => {
     const result = recordingLaunchIntentSchema.safeParse({
       activityCategory: "bike",
       mode: "planned",

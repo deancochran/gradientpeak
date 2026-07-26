@@ -4,12 +4,8 @@ export interface CreateGradientPeakWebAuthClientOptions {
   baseURL: string;
 }
 
-export function createGradientPeakWebAuthClient(
-  options: string | CreateGradientPeakWebAuthClientOptions,
-) {
-  const baseURL = typeof options === "string" ? options : options.baseURL;
-
+export function createGradientPeakWebAuthClient(options: CreateGradientPeakWebAuthClientOptions) {
   return createAuthClient({
-    baseURL,
+    baseURL: options.baseURL,
   });
 }

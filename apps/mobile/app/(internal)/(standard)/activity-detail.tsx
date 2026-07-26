@@ -72,10 +72,7 @@ const VISIBILITY_LABELS: Record<ContentVisibility, string> = {
   public: "Public",
 };
 
-function resolveContentVisibility(activity: {
-  content_visibility?: string | null;
-  is_private?: boolean;
-}) {
+function resolveContentVisibility(activity: { content_visibility: string }) {
   if (
     activity.content_visibility === "private" ||
     activity.content_visibility === "followers" ||
@@ -83,7 +80,7 @@ function resolveContentVisibility(activity: {
   ) {
     return activity.content_visibility;
   }
-  return activity.is_private ? "private" : "followers";
+  return "private";
 }
 
 function getPublicShareUrl(path: string) {

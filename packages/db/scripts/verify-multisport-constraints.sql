@@ -62,7 +62,7 @@ begin
     effort_type,duration_seconds,distance_meters,unit,value)
   values
     (gen_random_uuid(),now(),profile,now(),'bike','heart_rate',60,null,'bpm',30),
-    (gen_random_uuid(),now(),profile,now(),'run','heart_rate',300,null,'beats_per_minute',240),
+    (gen_random_uuid(),now(),profile,now(),'run','heart_rate',300,null,'bpm',240),
     (gen_random_uuid(),now(),profile,now(),'swim','heart_rate',600,400,'bpm',150),
     (gen_random_uuid(),now(),profile,now(),'swim','speed',300,1000000,'meters_per_second',1.5);
   begin
@@ -72,6 +72,14 @@ begin
     raise exception 'unsupported heart-rate category was accepted';
   exception when others then
     if sqlerrm='unsupported heart-rate category was accepted' then raise; end if;
+  end;
+  begin
+    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
+      effort_type,duration_seconds,unit,value)
+    values(gen_random_uuid(),now(),profile,now(),'bike','power',60,'W',150);
+    raise exception 'legacy power unit was accepted';
+  exception when others then
+    if sqlerrm='legacy power unit was accepted' then raise; end if;
   end;
   begin
     insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,

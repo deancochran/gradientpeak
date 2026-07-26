@@ -12,7 +12,7 @@ import {
   minimalTrainingPlanCreateSchema,
   trainingPlanCalibrationConfigSchema,
   trainingPlanCalibrationInputSchema,
-} from "../../schemas/training_plan_structure";
+} from "../../schemas/training-plan-structure";
 
 const creationConfigCoreFields = {
   availability_config: creationAvailabilityConfigSchema,

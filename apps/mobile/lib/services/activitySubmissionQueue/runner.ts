@@ -213,11 +213,7 @@ async function runActivitySubmissionQueueJobOnce(
   if (job.status === "failed" && job.retryClass && job.retryClass !== "transient") return job;
 
   try {
-    const recordingSessionId = job.draft.recordingSessionId ?? job.sessionId ?? job.artifactId;
-    job = activitySubmissionQueueJobSchema.parse({
-      ...job,
-      draft: { ...job.draft, recordingSessionId },
-    });
+    const recordingSessionId = job.draft.recordingSessionId;
 
     if (!job.artifactSha256 || !job.localActivityFileSize) {
       job = await persistJobProgress(job, "uploading", now, deps);
@@ -233,52 +229,6 @@ async function runActivitySubmissionQueueJobOnce(
         localActivityFileSize: artifactMetadata.byteSize,
         artifactSha256: artifactMetadata.sha256,
       });
-    }
-
-    if (
-      job.remoteFilePath &&
-      job.artifactSha256 &&
-      job.localActivityFileSize &&
-      !job.uploadCompletedAt &&
-      !job.activityId
-    ) {
-      try {
-        const { remoteFilePath, localActivityFileSize, artifactSha256 } = job;
-        const legacyClaim = await withLeaseHeartbeat(
-          job,
-          now,
-          (renewed) => {
-            job = renewed;
-          },
-          () =>
-            deps.claimLegacyMobileRecordingUpload({
-              recordingSessionId,
-              stagingPath: remoteFilePath,
-              byteSize: localActivityFileSize,
-              sha256: artifactSha256,
-              format: getFileType(job.localActivityFilePath),
-            }),
-        );
-        if (job.ingestionId && job.ingestionId !== legacyClaim.ingestionId) {
-          throw new Error("Legacy recording upload claim changed during retry");
-        }
-        if (legacyClaim.status === "ready") {
-          job = await persistJobProgress(job, "creating_activity", now, deps, {
-            activityId: legacyClaim.activityId,
-            ingestionId: legacyClaim.ingestionId,
-            uploadCompletedAt: now(),
-          });
-          return completeJob(job, now, deps);
-        }
-        job = await persistJobProgress(job, "uploading", now, deps, {
-          ingestionId: legacyClaim.ingestionId,
-          uploadCompletedAt: now(),
-        });
-      } catch (error) {
-        if (error instanceof LeaseLostError) throw error;
-        // The legacy object may have expired or predate strict ownership metadata.
-        // Fall back to re-uploading the retained local artifact through a new URL.
-      }
     }
 
     if (!job.uploadCompletedAt && !job.activityId) {
@@ -350,7 +300,6 @@ async function runActivitySubmissionQueueJobOnce(
             recordingSessionId,
             name: job.draft.name,
             notes: job.draft.notes,
-            is_private: job.draft.is_private,
             content_visibility: job.draft.content_visibility,
             startedAt: job.draft.startedAt,
             finishedAt: job.draft.finishedAt,

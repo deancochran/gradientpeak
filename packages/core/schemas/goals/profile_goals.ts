@@ -124,49 +124,6 @@ const profileGoalDomainInputBaseSchema = profileGoalHeaderSchema.extend({
   objective: z.unknown(),
 });
 
-export const profileGoalTargetSchema = z.discriminatedUnion("target_type", [
-  z.object({
-    target_type: z.literal("race_performance"),
-    distance_m: z.number().positive(),
-    target_time_s: z.number().int().positive(),
-    activity_category: canonicalGoalActivityCategorySchema,
-    weight: z.number().positive().finite().optional(),
-  }),
-  z.object({
-    target_type: z.literal("pace_threshold"),
-    target_speed_mps: z.number().positive(),
-    test_duration_s: z.number().int().positive(),
-    activity_category: canonicalGoalActivityCategorySchema,
-    weight: z.number().positive().finite().optional(),
-  }),
-  z.object({
-    target_type: z.literal("power_threshold"),
-    target_watts: z.number().positive(),
-    test_duration_s: z.number().int().positive(),
-    activity_category: canonicalGoalActivityCategorySchema,
-    weight: z.number().positive().finite().optional(),
-  }),
-  z.object({
-    target_type: z.literal("hr_threshold"),
-    target_lthr_bpm: z.number().int().positive(),
-    weight: z.number().positive().finite().optional(),
-  }),
-]);
-
-/**
- * Legacy goal payload shape retained for compatibility conversion paths.
- */
-export const profileGoalLegacySchema = z.object({
-  id: uuidSchema,
-  name: z.string().min(1).max(100),
-  target_date: dateOnlySchema,
-  priority: z.number().int().min(0).max(10).default(5),
-  targets: z.array(profileGoalTargetSchema).min(1),
-  target_performance: z.string().max(200).optional(),
-  notes: z.string().max(1000).optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
-
 function prependIssuePath(path: PropertyKey[], issues: z.ZodIssue[], ctx: z.RefinementCtx): void {
   for (const issue of issues) {
     ctx.addIssue({
@@ -417,5 +374,3 @@ export type ProfileGoalCreate = z.output<typeof profileGoalCreateSchema>;
 export type ProfileGoalCreateInput = z.input<typeof profileGoalCreateSchema>;
 export type ProfileGoal = z.output<typeof profileGoalSchema>;
 export type CanonicalGoal = ProfileGoal;
-export type ProfileGoalTarget = z.infer<typeof profileGoalTargetSchema>;
-export type ProfileGoalLegacy = z.infer<typeof profileGoalLegacySchema>;

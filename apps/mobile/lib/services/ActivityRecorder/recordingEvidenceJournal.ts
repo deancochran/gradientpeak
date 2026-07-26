@@ -1017,7 +1017,7 @@ export async function inspectFinalizedArtifactReferences(
           r.status AS recovery_status, r.reason AS recovery_reason
         FROM recording_evidence_sessions s
         LEFT JOIN recording_finalization_recovery r ON r.session_id = s.session_id
-        WHERE s.profile_id = ? AND (s.finalized_path IS NOT NULL OR r.status IS NOT NULL)`,
+        WHERE s.profile_id = ? AND (s.state = 'finalized' OR r.status IS NOT NULL)`,
       profileId,
     );
     for (const session of sessions) {
@@ -1353,6 +1353,265 @@ export async function loadFinalizedArtifactHandoffs(
   return artifacts;
 }
 
+/** Atomic evidence-state fence plus queue creation. A stale handoff can never
+ * overwrite the terminal discard marker committed by the same SQLite authority. */
+export async function createFinalizedArtifactQueueHandoff(
+  input: ActivitySubmissionQueueJob,
+): Promise<"created" | "existing" | "discarded" | "absent" | "rejected"> {
+  const job = activitySubmissionQueueJobSchema.parse(input);
+  let result: "created" | "existing" | "discarded" | "absent" | "rejected" = "absent";
+  await withRecordingEvidenceTransaction(async (tx) => {
+    const session = (
+      await tx.getAllAsync<{ state: string; profile_id: string }>(
+        "SELECT state, profile_id FROM recording_evidence_sessions WHERE session_id = ?",
+        job.sessionId,
+      )
+    )[0];
+    if (!session) return;
+    if (session.profile_id !== job.draft.profileId)
+      throw new Error("Finalized recording belongs to a different profile");
+    if (session.state !== "finalized") {
+      if (session.state === "quarantined") {
+        const marker = await tx.getAllAsync<{ id: number }>(
+          "SELECT id FROM recording_evidence_quarantine WHERE session_id = ? AND reason = 'user-discarded-finalized-recording' LIMIT 1",
+          job.sessionId,
+        );
+        result = marker.length ? "discarded" : "rejected";
+      } else result = "rejected";
+      return;
+    }
+    const existing = (
+      await tx.getAllAsync<{ error_category: string | null }>(
+        "SELECT error_category FROM activity_submission_queue_jobs WHERE id = ?",
+        job.id,
+      )
+    )[0];
+    if (existing?.error_category === "discarded") return;
+    if (existing) {
+      result = "existing";
+      return;
+    }
+    const operationId = job.draft.recordingSessionId ?? job.sessionId ?? job.artifactId;
+    await tx.runAsync(
+      "INSERT INTO activity_submission_queue_jobs (id, operation_id, profile_id, session_id, artifact_id, status, attempts, retry_class, next_attempt_at, error_category, lease_owner, lease_token, lease_expires_at, created_at, updated_at, job_json, schema_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      job.id,
+      operationId,
+      job.draft.profileId,
+      job.sessionId,
+      job.artifactId,
+      job.status,
+      job.attempts,
+      job.retryClass ?? "none",
+      null,
+      job.errorCategory ?? null,
+      null,
+      null,
+      null,
+      Date.parse(job.createdAt),
+      Date.parse(job.updatedAt),
+      JSON.stringify(job),
+      job.schemaVersion,
+    );
+    result = "created";
+  });
+  return result;
+}
+
+/**
+ * Records the user's terminal discard decision before any local artifact is
+ * removed. Quarantine retains the raw evidence only under the existing bounded
+ * terminal-retention policy, while excluding the session from finalized handoff
+ * and rebuild discovery. Repeating the same discard is safe; an unrelated
+ * quarantined session is never treated as a successful discard.
+ */
+export async function discardFinalizedRecordingEvidence(input: {
+  sessionId: string;
+  profileId: string;
+  activityFilePath: string | null;
+  streamArtifactPaths: string[];
+}): Promise<void> {
+  if (!input.sessionId || !input.profileId) throw new Error("Recording evidence owner is required");
+  const db = await getRecordingEvidenceDatabase();
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    const session = (
+      await tx.getAllAsync<{ profile_id: string; state: string; finalized_path: string | null }>(
+        "SELECT profile_id, state, finalized_path FROM recording_evidence_sessions WHERE session_id = ?",
+        input.sessionId,
+      )
+    )[0];
+    if (!session || session.profile_id !== input.profileId) {
+      throw new Error("Recording evidence discard owner does not match");
+    }
+    if (session.state === "finalized") {
+      if (
+        !session.finalized_path ||
+        (input.activityFilePath && session.finalized_path !== input.activityFilePath)
+      )
+        throw new Error("Recording evidence discard artifact does not match");
+      const result = await tx.runAsync(
+        "UPDATE recording_evidence_sessions SET state = 'quarantined', checkpoint_json = NULL, checkpoint_digest = NULL WHERE session_id = ? AND profile_id = ? AND state = 'finalized'",
+        input.sessionId,
+        input.profileId,
+      );
+      if ((result.changes ?? 0) !== 1)
+        throw new Error("Recording evidence discard cannot be committed");
+      await quarantineEvidence(tx, input.sessionId, "user-discarded-finalized-recording");
+      const cleanupPayload = JSON.stringify({
+        version: 1,
+        sessionId: input.sessionId,
+        profileId: input.profileId,
+        activityFilePath: session.finalized_path,
+        streamArtifactPaths: input.streamArtifactPaths,
+        cleanupPending: true,
+        cleanupAttempts: 0,
+        nextCleanupAt: Date.now(),
+      });
+      await tx.runAsync(
+        "UPDATE recording_evidence_quarantine SET payload = ? WHERE id = (SELECT MAX(id) FROM recording_evidence_quarantine WHERE session_id = ? AND reason = 'user-discarded-finalized-recording')",
+        cleanupPayload,
+        input.sessionId,
+      );
+      const queueRows = await tx.getAllAsync<{ id: string; job_json: string }>(
+        "SELECT id, job_json FROM activity_submission_queue_jobs WHERE profile_id = ? AND (session_id = ? OR artifact_id = ? OR operation_id = ?)",
+        input.profileId,
+        input.sessionId,
+        input.sessionId,
+        input.sessionId,
+      );
+      for (const row of queueRows) {
+        const job = activitySubmissionQueueJobSchema.parse(JSON.parse(row.job_json));
+        const discarded = activitySubmissionQueueJobSchema.parse({
+          ...job,
+          status: "failed",
+          retryClass: "permanent",
+          nextAttemptAt: null,
+          errorCategory: "discarded",
+          lastError: "discarded",
+          leaseOwner: null,
+          leaseToken: null,
+          leaseExpiresAt: null,
+          updatedAt: new Date().toISOString(),
+        });
+        await tx.runAsync(
+          "UPDATE activity_submission_queue_jobs SET status = 'failed', retry_class = 'permanent', next_attempt_at = NULL, error_category = 'discarded', lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL, updated_at = ?, job_json = ? WHERE id = ?",
+          Date.now(),
+          JSON.stringify(discarded),
+          row.id,
+        );
+      }
+      await tx.runAsync(
+        "DELETE FROM recording_finalization_recovery WHERE session_id = ?",
+        input.sessionId,
+      );
+      return;
+    }
+    if (session.state === "quarantined") {
+      const priorDiscard = await tx.getAllAsync<{ id: number }>(
+        "SELECT id FROM recording_evidence_quarantine WHERE session_id = ? AND reason = 'user-discarded-finalized-recording' LIMIT 1",
+        input.sessionId,
+      );
+      if (priorDiscard.length === 1) return;
+    }
+    throw new Error("Recording evidence is not a finalized discard candidate");
+  });
+}
+
+export type DiscardedRecordingEvidenceCleanup = {
+  sessionId: string;
+  activityFilePath: string;
+  streamArtifactPaths: string[];
+};
+
+type DiscardCleanupPayload = DiscardedRecordingEvidenceCleanup & {
+  version: 1;
+  profileId: string;
+  cleanupPending: boolean;
+  cleanupAttempts: number;
+  nextCleanupAt: number;
+};
+
+function parseDiscardCleanupPayload(payload: string | null): DiscardCleanupPayload | null {
+  try {
+    const value = JSON.parse(payload ?? "") as Partial<DiscardCleanupPayload>;
+    if (
+      value.version !== 1 ||
+      !value.sessionId ||
+      !value.profileId ||
+      !value.activityFilePath ||
+      !Array.isArray(value.streamArtifactPaths) ||
+      typeof value.cleanupPending !== "boolean" ||
+      !Number.isInteger(value.cleanupAttempts) ||
+      !Number.isFinite(value.nextCleanupAt)
+    )
+      return null;
+    return value as DiscardCleanupPayload;
+  } catch {
+    return null;
+  }
+}
+
+export async function loadDueDiscardedRecordingEvidenceCleanups(
+  now = Date.now(),
+): Promise<DiscardedRecordingEvidenceCleanup[]> {
+  const rows = await withRecordingEvidenceTransaction((tx) =>
+    tx.getAllAsync<{ id: number; session_id: string; payload: string | null }>(
+      "SELECT id, session_id, payload FROM recording_evidence_quarantine WHERE reason = 'user-discarded-finalized-recording' ORDER BY id",
+    ),
+  );
+  return rows.flatMap((row) => {
+    const cleanup = parseDiscardCleanupPayload(row.payload);
+    return cleanup?.sessionId === row.session_id &&
+      cleanup.cleanupPending &&
+      cleanup.nextCleanupAt <= now
+      ? [
+          {
+            sessionId: cleanup.sessionId,
+            activityFilePath: cleanup.activityFilePath,
+            streamArtifactPaths: cleanup.streamArtifactPaths,
+          },
+        ]
+      : [];
+  });
+}
+
+export async function completeDiscardedRecordingEvidenceCleanup(sessionId: string): Promise<void> {
+  await withRecordingEvidenceTransaction(async (tx) => {
+    const rows = await tx.getAllAsync<{ id: number; payload: string | null }>(
+      "SELECT id, payload FROM recording_evidence_quarantine WHERE session_id = ? AND reason = 'user-discarded-finalized-recording' ORDER BY id DESC LIMIT 1",
+      sessionId,
+    );
+    const row = rows[0];
+    const cleanup = row && parseDiscardCleanupPayload(row.payload);
+    if (!row || !cleanup || !cleanup.cleanupPending) return;
+    cleanup.cleanupPending = false;
+    await tx.runAsync(
+      "UPDATE recording_evidence_quarantine SET payload = ? WHERE id = ?",
+      JSON.stringify(cleanup),
+      row.id,
+    );
+  });
+}
+
+export async function retryDiscardedRecordingEvidenceCleanup(sessionId: string): Promise<void> {
+  await withRecordingEvidenceTransaction(async (tx) => {
+    const rows = await tx.getAllAsync<{ id: number; payload: string | null }>(
+      "SELECT id, payload FROM recording_evidence_quarantine WHERE session_id = ? AND reason = 'user-discarded-finalized-recording' ORDER BY id DESC LIMIT 1",
+      sessionId,
+    );
+    const row = rows[0];
+    const cleanup = row && parseDiscardCleanupPayload(row.payload);
+    if (!row || !cleanup || !cleanup.cleanupPending) return;
+    cleanup.cleanupAttempts += 1;
+    cleanup.nextCleanupAt =
+      Date.now() + Math.min(5 * 60_000, 1_000 * 2 ** Math.min(cleanup.cleanupAttempts, 8));
+    await tx.runAsync(
+      "UPDATE recording_evidence_quarantine SET payload = ? WHERE id = ?",
+      JSON.stringify(cleanup),
+      row.id,
+    );
+  });
+}
+
 /**
  * Records the remotely accepted operation before deleting only its SQLite
  * derivations.  The tiny tombstone preserves idempotency/replay identity while
@@ -1383,7 +1642,7 @@ export async function tombstoneAcceptedRecordingEvidence(
     }
     if (persisted.activityId !== job.activityId) return;
     const peers = await tx.getAllAsync<{ id: string }>(
-      "SELECT id FROM activity_submission_queue_jobs WHERE id != ? AND status != 'complete' AND (session_id = ? OR artifact_id = ?)",
+      "SELECT id FROM activity_submission_queue_jobs WHERE id != ? AND status != 'complete' AND COALESCE(error_category, '') != 'discarded' AND (session_id = ? OR artifact_id = ?)",
       job.id,
       sessionId,
       job.artifactId,
@@ -1501,9 +1760,10 @@ export async function garbageCollectExpiredRecordingEvidence(
     const terminal = await tx.getAllAsync<{ session_id: string }>(
       `SELECT s.session_id FROM recording_evidence_sessions s
        WHERE s.state = 'quarantined' AND s.created_at <= ?
-       AND NOT EXISTS (SELECT 1 FROM activity_submission_queue_jobs q WHERE q.status != 'complete' AND (q.session_id = s.session_id OR q.artifact_id = s.session_id))
-       AND NOT EXISTS (SELECT 1 FROM recording_finalization_recovery r WHERE r.session_id = s.session_id)
-       ORDER BY s.created_at LIMIT ?`,
+         AND NOT EXISTS (SELECT 1 FROM activity_submission_queue_jobs q WHERE q.status != 'complete' AND COALESCE(q.error_category, '') != 'discarded' AND (q.session_id = s.session_id OR q.artifact_id = s.session_id))
+        AND NOT EXISTS (SELECT 1 FROM recording_finalization_recovery r WHERE r.session_id = s.session_id)
+        AND NOT EXISTS (SELECT 1 FROM recording_evidence_quarantine dq WHERE dq.session_id = s.session_id AND dq.reason = 'user-discarded-finalized-recording' AND dq.payload LIKE '%"cleanupPending":true%')
+        ORDER BY s.created_at LIMIT ?`,
       now - RAW_TERMINAL_EVIDENCE_RETENTION_MS,
       limit,
     );
@@ -1532,13 +1792,13 @@ export async function garbageCollectExpiredRecordingEvidence(
     // predicates preserve the newest evidence for each session/profile.
     await tx.runAsync(
       `DELETE FROM recording_evidence_quarantine WHERE id IN (
-      SELECT id FROM recording_evidence_quarantine WHERE quarantined_at <= ? ORDER BY quarantined_at LIMIT ?
+      SELECT id FROM recording_evidence_quarantine WHERE quarantined_at <= ? AND NOT (reason = 'user-discarded-finalized-recording' AND payload LIKE '%"cleanupPending":true%') ORDER BY quarantined_at LIMIT ?
     )`,
       now - QUARANTINED_EVIDENCE_RETENTION_MS,
       limit,
     );
     await tx.runAsync(
-      `DELETE FROM recording_evidence_quarantine AS old WHERE old.session_id IS NOT NULL AND (
+      `DELETE FROM recording_evidence_quarantine AS old WHERE old.session_id IS NOT NULL AND NOT (old.reason = 'user-discarded-finalized-recording' AND old.payload LIKE '%"cleanupPending":true%') AND (
       SELECT COUNT(*) FROM recording_evidence_quarantine AS newer WHERE newer.session_id = old.session_id AND newer.id > old.id
     ) >= ?`,
       MAX_QUARANTINE_ROWS_PER_SESSION,
@@ -1548,7 +1808,7 @@ export async function garbageCollectExpiredRecordingEvidence(
       SELECT s.session_id FROM recording_evidence_sessions s WHERE s.profile_id = (
         SELECT profile_id FROM recording_evidence_sessions WHERE session_id = old.session_id
       )
-    ) AND (
+    ) AND NOT (old.reason = 'user-discarded-finalized-recording' AND old.payload LIKE '%"cleanupPending":true%') AND (
       SELECT COUNT(*) FROM recording_evidence_quarantine AS newer JOIN recording_evidence_sessions s ON s.session_id = newer.session_id
       WHERE s.profile_id = (SELECT profile_id FROM recording_evidence_sessions WHERE session_id = old.session_id) AND newer.id > old.id
     ) >= ?`,

@@ -39,8 +39,6 @@
     "./zones": "./zones/index.ts",
     "./zones/*": "./zones/*.ts",
     "./estimation": "./estimation/index.ts",
-    "./forms": "./forms/index.ts",
-    "./forms/*": "./forms/*.ts",
     "./goals": "./goals/index.ts",
     "./goals/*": "./goals/*.ts",
     "./groups": "./groups/index.ts",
@@ -67,6 +65,7 @@
     "./route-files": "./route-files/index.ts",
     "./route-files/*": "./route-files/*.ts",
     "./schemas": "./schemas/index.ts",
+    "./schemas/training-plan-structure": "./schemas/training-plan-structure/index.ts",
     "./schemas/*": "./schemas/*.ts",
     "./server": "./server/index.ts",
     "./server/activity-files": "./activity-files/activity-file-parser.ts",
@@ -85,11 +84,7 @@
     "./utils/recording-trainer-policy": "./utils/recording-trainer-policy.ts",
     "./utils/schedule-date": "./utils/schedule-date.ts",
     "./utils/stream-sampling": "./utils/stream-sampling.ts",
-    "./utils/temporal-metrics": "./utils/temporal-metrics.ts",
-    "./units": "./units/index.ts",
-    "./ftms": "./ftms/index.ts",
-    "./ftms/*": "./ftms/*.ts",
-    "./ftms-types": "./ftms-types.ts"
+    "./units": "./units/index.ts"
   },
   "scripts": {
     "lint": "biome lint .",
@@ -101,18 +96,18 @@
   },
   "dependencies": {
     "@deancochran/ftms": "0.1.11",
-    "@garmin/fitsdk": "^21.188.0",
+    "@garmin/fitsdk": "^21.208.0",
     "@mapbox/polyline": "^1.2.1",
     "@xmldom/xmldom": "^0.8.13",
-    "zod": "^4.2.1"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",
-    "@types/jest": "^29.5.0",
+    "@types/jest": "^29.5.14",
     "@types/mapbox__polyline": "^1.0.5",
     "chokidar-cli": "^3.0.0",
-    "concurrently": "^9.2.1",
+    "concurrently": "^9.2.4",
     "typescript": "5.9.3",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   }
 }

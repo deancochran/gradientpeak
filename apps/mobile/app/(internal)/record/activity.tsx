@@ -25,8 +25,8 @@ import {
 } from "lucide-react-native";
 import { useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
-import { useActivityStatus, useRecordingState } from "@/lib/hooks/useActivityRecorder";
-import { useRecordingSessionContract } from "@/lib/hooks/useRecordingConfig";
+import { useRecordingCommands } from "@/lib/hooks/useActivityRecorder";
+import { useRecordingConfig } from "@/lib/hooks/useRecordingConfig";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 
 const ACTIVITY_CATEGORIES: {
@@ -43,12 +43,14 @@ const ACTIVITY_CATEGORIES: {
 
 export default function ActivitySelectionScreen() {
   const service = useSharedActivityRecorder();
-  const { activityCategory, gpsRecordingEnabled } = useActivityStatus(service);
-  const recordingState = useRecordingState(service);
-  const sessionContract = useRecordingSessionContract(service);
+  const { sessionContract, sessionView } = useRecordingConfig(service);
+  const activityCategory = sessionView?.recordingConfiguration.input.activityCategory ?? "bike";
+  const gpsRecordingEnabled = sessionView?.recordingConfiguration.input.gpsRecordingEnabled ?? true;
+  const recordingState = service?.state ?? "pending";
+  const { selectActivityFromPayload } = useRecordingCommands(service);
 
   // Check if a plan is attached (category should be locked)
-  const hasPlan = sessionContract?.guidance.hasPlan ?? service?.hasPlan ?? false;
+  const hasPlan = sessionContract?.guidance.hasPlan ?? sessionView?.plan.hasPlan ?? false;
   const isSetupLocked = recordingState !== "pending" && recordingState !== "ready";
   const canEditActivity = sessionContract?.editing.canEditActivity ?? (!hasPlan && !isSetupLocked);
   const canEditGps = sessionContract?.editing.canEditGps ?? !isSetupLocked;
@@ -61,7 +63,7 @@ export default function ActivitySelectionScreen() {
     if (!service || (!canEditActivity && !canEditGps)) return;
 
     // The service will preserve any existing plan automatically.
-    service.selectActivityFromPayload({
+    selectActivityFromPayload({
       category: canEditActivity ? selectedCategory : activityCategory,
       gpsRecordingEnabled: canEditGps ? selectedGpsRecordingEnabled : gpsRecordingEnabled,
     });

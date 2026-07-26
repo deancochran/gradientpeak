@@ -4,11 +4,11 @@
 
 import {
   type ActivityPlanIntervalStep,
-  formatDurationCompact,
   formatTargetValue,
   getStepIntensityColor,
   getTargetDisplayName,
 } from "@repo/core";
+import { formatDurationCompact } from "@repo/core/duration/time-format";
 import { Text } from "@repo/ui/components/text";
 import { memo } from "react";
 import { View } from "react-native";

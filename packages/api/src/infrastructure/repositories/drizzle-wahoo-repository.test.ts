@@ -152,7 +152,7 @@ describe("Wahoo repository activity persistence boundary", () => {
         {
           id: "event-1",
           startsAt: new Date("2026-07-18T08:00:00.000Z"),
-          routeId: null,
+          routeId: "route-1",
           activityPlan: {
             id: "plan-1",
             name: "Repeats",
@@ -171,5 +171,40 @@ describe("Wahoo repository activity persistence boundary", () => {
     });
 
     expect(result?.activityPlan?.activityCategory).toBe("bike");
+    expect(result?.routeId).toBe("route-1");
+    expect(result?.activityPlan).not.toHaveProperty("routeId");
+  });
+
+  it("preserves validated Wahoo projection metadata for reconciliation", async () => {
+    const row = {
+      externalId: "42",
+      id: "link-1",
+      updatedAt: new Date("2026-07-18T08:00:00.000Z"),
+      providerMetadata: {
+        wahoo: {
+          planId: 7,
+          routeId: 9,
+          projectionHash: "v1:sha256:abc",
+          sourcePlanId: "plan-1",
+          sourceRouteId: "route-1",
+        },
+      },
+    };
+    const builder = {
+      from: () => builder,
+      where: () => builder,
+      limit: async () => [row],
+    };
+    const db = { select: vi.fn(() => builder) };
+
+    await expect(
+      createWahooRepository({ db: db as never }).getEventResourceLink({
+        eventId: "event-1",
+        profileId: "profile-1",
+        provider: "wahoo",
+      }),
+    ).resolves.toMatchObject({
+      providerMetadata: { wahoo: row.providerMetadata.wahoo },
+    });
   });
 });

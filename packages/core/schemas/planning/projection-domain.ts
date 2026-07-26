@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { profileGoalTargetSchema } from "../goals/profile_goals";
 import { canonicalSportSchema, planningSportSchema } from "../sport";
+import { trainingPlanGoalTargetSchema } from "../training-plan-structure";
 
 const nonNegativeFiniteNumberSchema = z.number().finite().min(0);
 
@@ -112,7 +112,7 @@ export const normalizedPlanningGoalSchema = z
     priority: z.number().int().min(0).max(10),
     priority_class: planningGoalPriorityClassSchema,
     activity_category: canonicalSportSchema,
-    targets: z.array(profileGoalTargetSchema).min(1),
+    targets: z.array(trainingPlanGoalTargetSchema).min(1),
     rationale_codes: z.array(z.string().min(1)).default([]),
   })
   .strict();

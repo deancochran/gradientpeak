@@ -32,24 +32,19 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Alert } from "react-native";
 import { api } from "@/lib/api";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import {
-  clearPendingFinalizedArtifact,
-  deleteFinalizedArtifactFiles,
-  loadPendingFinalizedArtifact,
-} from "@/lib/services/ActivityRecorder/finalizedArtifactStorage";
 import type { RecordingSessionArtifact } from "@/lib/services/ActivityRecorder/types";
 // import * as FileSystem from "expo-file-system"; // Removed as we use File class now
 
 import { useCallback, useEffect, useReducer } from "react";
 import type { PreparedRecordedActivityDraft } from "@/lib/contracts/activity-submission";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { createFinalizedArtifactQueueHandoff } from "@/lib/services/ActivityRecorder/recordingEvidenceJournal";
 import {
   type ActivitySubmissionQueueDraft,
   type ActivitySubmissionQueueJob,
   type ActivitySubmissionQueueJobStatus,
   loadActivitySubmissionQueueJobByArtifactId,
   runActivitySubmissionQueueJob,
-  upsertActivitySubmissionQueueJob,
 } from "@/lib/services/activitySubmissionQueue";
 import { getLocalActivityArtifactMetadata } from "@/lib/services/activitySubmissionQueue/localArtifact";
 import { ActivityFileUploader } from "@/lib/services/fit/ActivityFileUploader";
@@ -255,7 +250,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     try {
       console.log("[useActivitySubmission] Processing finalized artifact");
 
-      const artifact = service?.getFinalizedArtifact() ?? (await loadPendingFinalizedArtifact());
+      const artifact = service?.getFinalizedArtifact();
 
       if (!artifact) {
         if (service?.state === "finishing") {
@@ -331,8 +326,6 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
 
   const createActivityMutation = api.activities.createFromRecordingSummary.useMutation();
   const beginRecordingUploadMutation = api.activityFiles.beginMobileRecordingUpload.useMutation();
-  const claimLegacyRecordingUploadMutation =
-    api.activityFiles.claimLegacyMobileRecordingUpload.useMutation();
 
   // ================================
   // Durable Queue Submission
@@ -356,25 +349,13 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
             throw new Error("Completed activity submission is missing its activity id");
           }
 
-          await clearPendingFinalizedArtifact();
-          await deleteFinalizedArtifactFiles(artifact);
           await invalidatePostActivityIngestionQueries(queryClient);
           dispatch({ type: "SUCCESS", activityId: existingJob.activityId });
           return existingJob.activityId;
         }
 
         let fileSize = existingJob?.localActivityFileSize ?? null;
-        const hasLegacyRemoteEvidence = Boolean(
-          existingJob?.remoteFilePath &&
-            existingJob.artifactSha256 &&
-            existingJob.localActivityFileSize,
-        );
-
-        if (
-          !existingJob?.uploadCompletedAt &&
-          !existingJob?.activityId &&
-          !hasLegacyRemoteEvidence
-        ) {
+        if (!existingJob?.uploadCompletedAt && !existingJob?.activityId) {
           // A local file is only required until upload progress has been persisted.
           const { File } = await import("expo-file-system");
           const localActivityFilePath =
@@ -396,17 +377,23 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
           }
         }
 
+        const candidate = buildQueueJob({
+          artifact,
+          activity,
+          fileSize,
+          now: new Date().toISOString(),
+        });
+        const outcome = await createFinalizedArtifactQueueHandoff(candidate);
+        if (outcome === "discarded" || outcome === "absent" || outcome === "rejected") {
+          throw new Error("Recording submission is no longer available");
+        }
         const queuedJob =
           existingJob ??
-          buildQueueJob({
-            artifact,
-            activity,
-            fileSize,
-            now: new Date().toISOString(),
-          });
-        if (!existingJob) {
-          await upsertActivitySubmissionQueueJob(queuedJob);
-        }
+          (await loadActivitySubmissionQueueJobByArtifactId(
+            artifact.sessionId,
+            artifact.profileId,
+          ));
+        if (!queuedJob) throw new Error("Recording submission is no longer available");
         dispatch({ type: "QUEUE_STATUS", status: "queued" });
 
         let resolveActivityCreated!: (activityId: string) => void;
@@ -420,7 +407,6 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
           createFromRecordingSummary: createActivityMutation.mutateAsync,
           getLocalArtifactMetadata: getLocalActivityArtifactMetadata,
           beginMobileRecordingUpload: beginRecordingUploadMutation.mutateAsync,
-          claimLegacyMobileRecordingUpload: claimLegacyRecordingUploadMutation.mutateAsync,
           uploadToSignedUrl: (localPath, signedUrl) =>
             uploader.uploadToSignedUrl(localPath, signedUrl),
           onJobUpdated: async (job) => {
@@ -444,8 +430,6 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
               return;
             }
 
-            await clearPendingFinalizedArtifact();
-            await deleteFinalizedArtifactFiles(artifact);
             await invalidatePostActivityIngestionQueries(queryClient);
             dispatch({ type: "SUCCESS", activityId: job.activityId });
           })
@@ -504,13 +488,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         throw err;
       }
     },
-    [
-      beginRecordingUploadMutation,
-      claimLegacyRecordingUploadMutation,
-      createActivityMutation,
-      profile?.id,
-      queryClient,
-    ],
+    [beginRecordingUploadMutation, createActivityMutation, profile?.id, queryClient],
   );
 
   const submit = useCallback(

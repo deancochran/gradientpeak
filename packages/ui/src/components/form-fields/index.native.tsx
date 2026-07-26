@@ -7,10 +7,10 @@ import {
   type FieldValues,
   useFormState,
 } from "react-hook-form";
+import { View } from "react-native";
 import { usePendingFormDraft } from "../../hooks/pending-form-drafts";
 
 import { cn } from "../../lib/cn";
-import { View } from "../../lib/react-native";
 import { BoundedNumberInput } from "../bounded-number-input/index.native";
 import { Button } from "../button/index.native";
 import { DateInput } from "../date-input/index.native";

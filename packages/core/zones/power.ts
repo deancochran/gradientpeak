@@ -1,4 +1,4 @@
-import type { AggregatedStream } from "../calculations";
+import type { AggregatedStream } from "../activity-analysis/stream-contract";
 
 export function getPowerZoneIndexFromFtpPercent(ftpPercent: number): number {
   if (ftpPercent < 55) return 0;

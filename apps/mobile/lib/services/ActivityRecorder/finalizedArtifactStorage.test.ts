@@ -34,10 +34,16 @@ const journalMocks = vi.hoisted(() => ({
   completeAcceptedRecordingEvidenceCleanup: vi.fn(async () => undefined),
   retryAcceptedRecordingEvidenceCleanup: vi.fn(async () => undefined),
   loadDueAcceptedRecordingEvidenceCleanups: vi.fn(async () => []),
+  completeDiscardedRecordingEvidenceCleanup: vi.fn(async () => undefined),
+  retryDiscardedRecordingEvidenceCleanup: vi.fn(async () => undefined),
+  loadDueDiscardedRecordingEvidenceCleanups: vi.fn(async () => []),
 }));
 vi.mock("./recordingEvidenceJournal", () => journalMocks);
 
-import { garbageCollectAcceptedQueueEvidence } from "./finalizedArtifactStorage";
+import {
+  garbageCollectAcceptedQueueEvidence,
+  garbageCollectDueDiscardedRecordingEvidence,
+} from "./finalizedArtifactStorage";
 
 const job: ActivitySubmissionQueueJob = {
   schemaVersion: 2,
@@ -152,5 +158,33 @@ describe("accepted queue evidence GC", () => {
     await expect(garbageCollectDueAcceptedQueueEvidence(now + 2_000)).resolves.toBe(0);
     expect(deleted).toEqual(["file:///documents/activity.fit", "file:///documents/streams"]);
     vi.useRealTimers();
+  });
+
+  it("retries a process-interrupted discarded-artifact cleanup without reviving submission", async () => {
+    journalMocks.loadDueDiscardedRecordingEvidenceCleanups.mockResolvedValueOnce([
+      {
+        sessionId: "discarded-session",
+        activityFilePath: job.localActivityFilePath,
+        streamArtifactPaths: job.streamArtifactPaths,
+      },
+    ] as never);
+    failDelete = true;
+    await expect(garbageCollectDueDiscardedRecordingEvidence()).resolves.toBe(0);
+    expect(journalMocks.retryDiscardedRecordingEvidenceCleanup).toHaveBeenCalledWith(
+      "discarded-session",
+    );
+
+    failDelete = false;
+    journalMocks.loadDueDiscardedRecordingEvidenceCleanups.mockResolvedValueOnce([
+      {
+        sessionId: "discarded-session",
+        activityFilePath: job.localActivityFilePath,
+        streamArtifactPaths: job.streamArtifactPaths,
+      },
+    ] as never);
+    await expect(garbageCollectDueDiscardedRecordingEvidence()).resolves.toBe(1);
+    expect(journalMocks.completeDiscardedRecordingEvidenceCleanup).toHaveBeenCalledWith(
+      "discarded-session",
+    );
   });
 });

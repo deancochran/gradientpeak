@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
 import {
   convertWeightToKg,
   formatWeightForDisplay,
   getWeightBounds,
   roundToDecimals,
-} from "../../lib/fitness-inputs";
-import { View } from "../../lib/react-native";
+} from "@repo/core/utils/fitness-inputs";
+import { useEffect, useMemo, useState } from "react";
+import { View } from "react-native";
 import { BoundedNumberInput } from "../bounded-number-input/index.native";
 import { Button } from "../button/index.native";
 import { Text } from "../text/index.native";

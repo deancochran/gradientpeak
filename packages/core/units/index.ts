@@ -3,10 +3,6 @@ import {
   celsiusToFahrenheit,
   fahrenheitToCelsius,
   feetToMeters,
-  formatDistance,
-  formatPace,
-  formatSpeed,
-  formatWeight,
   kgToLbs,
   kmToMiles,
   kphToMps,
@@ -16,9 +12,12 @@ import {
   metersToFeet,
   milesToKm,
   mphToMps,
-} from "../calculations";
+} from "./conversions";
+import { formatDistance, formatPace, formatSpeed, formatWeight } from "./format";
 
+export * from "./conversions";
 export * from "./effort";
+export * from "./format";
 
 /** The persisted display-system choices supported throughout the product. */
 export const preferredUnitSystemValues = ["metric", "imperial"] as const;

@@ -1,9 +1,9 @@
-import type { TrainingGoal } from "../schemas/training_plan_structure";
+import type { TrainingPlanGoal } from "../schemas/training-plan-structure";
 
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface DerivePlanTimelineInput {
-  goals: Array<Pick<TrainingGoal, "target_date">>;
+  goals: Array<Pick<TrainingPlanGoal, "target_date">>;
   plan_start_date?: string;
   today_date?: string;
 }
@@ -33,7 +33,7 @@ export function derivePlanTimeline(input: DerivePlanTimelineInput): DerivedPlanT
   };
 }
 
-export function getLatestGoalDate(goals: Array<Pick<TrainingGoal, "target_date">>): string {
+export function getLatestGoalDate(goals: Array<Pick<TrainingPlanGoal, "target_date">>): string {
   const sorted = [...goals].sort((a, b) => a.target_date.localeCompare(b.target_date));
   const latest = sorted[sorted.length - 1];
   if (!latest) {

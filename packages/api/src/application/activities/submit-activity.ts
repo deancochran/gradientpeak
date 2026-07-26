@@ -17,7 +17,6 @@ import {
 } from "@repo/db";
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
-import { deriveNormalizedPowerCompatibilityProjection } from "../../lib/activity-analysis/activity-normalized-power";
 import { ActivityFileIngestionClaimLostError } from "../activity-file-ingestion/ingestion-state";
 import { reconcileGeneratedActivityEvidence } from "./reconcile-activity-evidence";
 
@@ -173,8 +172,7 @@ export interface ActivitySubmission {
   name: string;
   notes: string | null;
   activityPlanId?: string | null;
-  isPrivate: boolean;
-  contentVisibility?: ContentVisibility;
+  contentVisibility: ContentVisibility;
   startedAt: Date;
   finishedAt: Date;
   elapsedMs: number;
@@ -188,7 +186,6 @@ export interface ActivitySubmission {
   maxHeartRate: number | null;
   avgPower: number | null;
   maxPower: number | null;
-  normalizedPower: number | null;
   avgCadence: number | null;
   maxCadence: number | null;
   avgSpeedMps: number | null;
@@ -241,7 +238,6 @@ export interface ExistingActivityEnrichmentSubmission {
   activityPlanId?: string | null;
   name?: string;
   notes?: string | null;
-  isPrivate?: boolean;
   contentVisibility?: ContentVisibility;
   startedAt?: Date;
   finishedAt?: Date;
@@ -547,9 +543,7 @@ export async function updateCanonicalActivityFields(
   input: {
     activityId: string;
     profileId: string;
-    fields: Partial<
-      Pick<typeof activities.$inferInsert, "name" | "notes" | "is_private" | "content_visibility">
-    >;
+    fields: Partial<Pick<typeof activities.$inferInsert, "name" | "notes" | "content_visibility">>;
     now?: Date;
   },
 ) {
@@ -725,20 +719,11 @@ export async function submitActivity(
     if (!input.segmentSet)
       throw new Error("Activity submission requires an ordered segment manifest");
     const segmentSet = completedActivitySegmentSetSchemaV1.parse(input.segmentSet);
-    // `activities.normalized_power` is retained solely for legacy consumers. Never accept
-    // caller/provider parent values over the validated provenance-bearing segment summary.
-    const normalizedPowerProjection = deriveNormalizedPowerCompatibilityProjection(segmentSet);
     const revision = (existing?.segments_revision ?? 0) + 1;
     const parserVersion = SUBMISSION_PARSER_VERSION;
     const laps =
       input.laps === undefined ? undefined : activityLapRecordListSchema.parse(input.laps ?? []);
-    const visibility =
-      input.contentVisibility ??
-      (input.isPrivate === undefined
-        ? (existing?.content_visibility ?? "private")
-        : input.isPrivate
-          ? "private"
-          : "followers");
+    const visibility = input.contentVisibility ?? existing?.content_visibility ?? "private";
     const baseValues = {
       activity_plan_id:
         input.activityPlanId === undefined
@@ -746,7 +731,6 @@ export async function submitActivity(
           : input.activityPlanId,
       name: input.name ?? existing?.name ?? "Activity",
       notes: input.notes === undefined ? (existing?.notes ?? null) : input.notes,
-      is_private: input.isPrivate ?? existing?.is_private ?? true,
       content_visibility: visibility,
       started_at: input.startedAt ?? existing?.started_at ?? now,
       finished_at: input.finishedAt ?? existing?.finished_at ?? now,
@@ -776,7 +760,6 @@ export async function submitActivity(
         activity_id: _activityId,
         profile_id: _profileId,
         created_at: _createdAt,
-        normalized_power: _normalizedPower,
         ...safeSummaryValues
       } = summaryValues as typeof summaryValues & { activity_id?: string };
       const [updated] = await tx
@@ -784,7 +767,6 @@ export async function submitActivity(
         .set({
           ...safeSummaryValues,
           ...baseValues,
-          normalized_power: normalizedPowerProjection,
           device_manufacturer: stringOrNull(input.deviceManufacturer),
           device_product: stringOrNull(input.deviceProduct),
           ...(input.mapBounds === undefined ? {} : { map_bounds: input.mapBounds }),
@@ -815,7 +797,6 @@ export async function submitActivity(
         max_heart_rate: input.maxHeartRate,
         avg_power: input.avgPower,
         max_power: input.maxPower,
-        normalized_power: normalizedPowerProjection,
         avg_cadence: input.avgCadence,
         max_cadence: input.maxCadence,
         avg_speed_mps: input.avgSpeedMps,

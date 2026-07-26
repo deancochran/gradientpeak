@@ -446,7 +446,7 @@ jest.mock("@/lib/api", () => ({
               effort_type: "power",
               duration_seconds: 1200,
               value: 285,
-              unit: "W",
+              unit: "watts",
               recorded_at: RECENT_POWER_EFFORT_RECORDED_AT,
               activity_id: null,
             },

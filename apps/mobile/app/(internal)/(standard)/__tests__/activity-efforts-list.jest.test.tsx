@@ -38,7 +38,7 @@ let mockActivityEfforts: ActivityEffort[] = [
     recorded_at: "2026-03-01T00:00:00.000Z",
     duration_seconds: 15,
     value: 800,
-    unit: "W",
+    unit: "watts",
   },
   {
     id: "effort-2",
@@ -48,7 +48,7 @@ let mockActivityEfforts: ActivityEffort[] = [
     recorded_at: "2026-03-02T00:00:00.000Z",
     duration_seconds: 60,
     value: 500,
-    unit: "W",
+    unit: "watts",
   },
   {
     id: "effort-3",
@@ -58,7 +58,7 @@ let mockActivityEfforts: ActivityEffort[] = [
     recorded_at: "2026-03-03T00:00:00.000Z",
     duration_seconds: 300,
     value: 350,
-    unit: "W",
+    unit: "watts",
   },
   {
     id: "effort-4",
@@ -68,7 +68,7 @@ let mockActivityEfforts: ActivityEffort[] = [
     recorded_at: "2026-03-04T00:00:00.000Z",
     duration_seconds: 1200,
     value: 280,
-    unit: "W",
+    unit: "watts",
   },
   {
     id: "effort-5",
@@ -78,7 +78,7 @@ let mockActivityEfforts: ActivityEffort[] = [
     recorded_at: "2026-03-05T00:00:00.000Z",
     duration_seconds: 3600,
     value: 220,
-    unit: "W",
+    unit: "watts",
   },
 ];
 
@@ -205,7 +205,7 @@ describe("activity efforts list", () => {
         recorded_at: "2026-03-01T00:00:00.000Z",
         duration_seconds: 15,
         value: 800,
-        unit: "W",
+        unit: "watts",
       },
       {
         id: "effort-2",
@@ -215,7 +215,7 @@ describe("activity efforts list", () => {
         recorded_at: "2026-03-02T00:00:00.000Z",
         duration_seconds: 60,
         value: 500,
-        unit: "W",
+        unit: "watts",
       },
       {
         id: "effort-3",
@@ -225,7 +225,7 @@ describe("activity efforts list", () => {
         recorded_at: "2026-03-03T00:00:00.000Z",
         duration_seconds: 300,
         value: 350,
-        unit: "W",
+        unit: "watts",
       },
       {
         id: "effort-4",
@@ -235,7 +235,7 @@ describe("activity efforts list", () => {
         recorded_at: "2026-03-04T00:00:00.000Z",
         duration_seconds: 1200,
         value: 280,
-        unit: "W",
+        unit: "watts",
       },
       {
         id: "effort-5",
@@ -245,7 +245,7 @@ describe("activity efforts list", () => {
         recorded_at: "2026-03-05T00:00:00.000Z",
         duration_seconds: 3600,
         value: 220,
-        unit: "W",
+        unit: "watts",
       },
     ];
   });
@@ -301,7 +301,7 @@ describe("activity efforts list", () => {
         recorded_at: "2025-01-01T00:00:00.000Z",
         duration_seconds: 3600,
         value: 4240,
-        unit: "W",
+        unit: "watts",
         source: "derived",
         method: "onboarding_modeled_curve",
         provenance: { observation_type: "modeled", seed_source: "onboarding" },
@@ -330,7 +330,7 @@ describe("activity efforts list", () => {
         recorded_at: "2026-03-06T00:00:00.000Z",
         duration_seconds: 3600,
         value: 700,
-        unit: "W",
+        unit: "watts",
       },
       {
         id: "invalid-effort",
@@ -340,7 +340,7 @@ describe("activity efforts list", () => {
         recorded_at: "2026-03-07T00:00:00.000Z",
         duration_seconds: 60,
         value: 0,
-        unit: "W",
+        unit: "watts",
       },
     ];
 
@@ -365,7 +365,7 @@ describe("activity efforts list", () => {
         recorded_at: "2026-03-01T00:00:00.000Z",
         duration_seconds: 60,
         value: 5,
-        unit: "m/s",
+        unit: "meters_per_second",
       },
       {
         id: "run-effort-2",
@@ -375,7 +375,7 @@ describe("activity efforts list", () => {
         recorded_at: "2026-03-02T00:00:00.000Z",
         duration_seconds: 300,
         value: 4,
-        unit: "m/s",
+        unit: "meters_per_second",
       },
       {
         id: "run-effort-3",
@@ -385,7 +385,7 @@ describe("activity efforts list", () => {
         recorded_at: "2026-03-03T00:00:00.000Z",
         duration_seconds: 600,
         value: 3,
-        unit: "m/s",
+        unit: "meters_per_second",
       },
     ];
 
@@ -511,7 +511,7 @@ describe("activity efforts list", () => {
         recorded_at: "2026-03-01T00:00:00.000Z",
         duration_seconds: 60,
         value: 180,
-        unit: "W",
+        unit: "watts",
       },
       {
         id: "effort-short-2",
@@ -521,7 +521,7 @@ describe("activity efforts list", () => {
         recorded_at: "2026-03-02T00:00:00.000Z",
         duration_seconds: 300,
         value: 140,
-        unit: "W",
+        unit: "watts",
       },
     ];
 

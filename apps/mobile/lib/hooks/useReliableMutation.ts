@@ -120,7 +120,14 @@ export function useReliableMutation<TInput, TError, TOutput, TContext = unknown>
     },
     onError: async (error, variables, onMutateResult, context) => {
       // Custom error callback first
-      await onError?.(error, variables, onMutateResult, context);
+      try {
+        await onError?.(error, variables, onMutateResult, context);
+      } catch (callbackError) {
+        if (!silent) {
+          showErrorAlert(callbackError);
+        }
+        return;
+      }
 
       // Show error alert unless silent
       if (!silent) {

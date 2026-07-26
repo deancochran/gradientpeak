@@ -283,7 +283,7 @@ describe("segment-derived activity analysis", () => {
     expect(parent.has(input.segments[0]?.id ?? "missing-segment")).toBe(true);
   });
 
-  it("preserves one segment's legacy TSS evidence while aggregating its common load", async () => {
+  it("keeps one segment's TSS evidence on the segment while aggregating common load", async () => {
     const input = activity([
       segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 3_600_000),
     ]);
@@ -300,12 +300,12 @@ describe("segment-derived activity analysis", () => {
     });
 
     expect(parent.get(input.id)).toMatchObject({
-      tss: part?.tss,
-      tss_identity: part?.tss_identity,
-      intensity_factor: part?.intensity_factor,
-      method: part?.method,
-      unavailable_reason: part?.unavailable_reason,
-      calibration_quality: part?.calibration_quality,
+      tss: null,
+      tss_identity: null,
+      intensity_factor: null,
+      method: null,
+      unavailable_reason: "activity_data_missing",
+      calibration_quality: null,
       common_load: {
         totalActivityCount: 1,
         contributingActivityCount: 1,
@@ -313,7 +313,7 @@ describe("segment-derived activity analysis", () => {
     });
   });
 
-  it("publishes summed TSS and duration-weighted RMS IF for compatible segments", async () => {
+  it("keeps compatible-segment TSS and intensity out of the parent aggregate", async () => {
     const input = activity([
       segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 1_200_000),
       segment("22222222-2222-4222-8222-222222222222", 1, "bike", 1_200_000, 3_600_000),
@@ -331,25 +331,18 @@ describe("segment-derived activity analysis", () => {
     });
 
     expect(parent.get(input.id)).toMatchObject({
-      tss: parts.reduce((total, part) => total + (part.tss ?? 0), 0),
-      tss_identity: parts[0]?.tss_identity,
-      intensity_factor: expect.any(Number),
-      method: "power_threshold",
-      unavailable_reason: null,
+      tss: null,
+      tss_identity: null,
+      intensity_factor: null,
+      method: null,
+      unavailable_reason: "activity_data_missing",
       common_load: {
         status: "complete",
         totalActivityCount: 2,
         contributingActivityCount: 2,
       },
     });
-    expect(parent.get(input.id)?.intensity_factor).toBeCloseTo(
-      Math.sqrt(
-        (1_200 * (parts[0]?.intensity_factor ?? 0) ** 2 +
-          2_400 * (parts[1]?.intensity_factor ?? 0) ** 2) /
-          3_600,
-      ),
-      2,
-    );
+    expect(parts.map((part) => part.tss)).toEqual([expect.any(Number), expect.any(Number)]);
   });
 
   it("groups segment summaries by parent without mixing multiple activities", async () => {

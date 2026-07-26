@@ -11,9 +11,7 @@ import { createWahooRepository } from "./drizzle-wahoo-repository";
 const userIds: string[] = [];
 const testKey = Buffer.alloc(32, 7).toString("base64");
 
-async function seedWahooCredentials(
-  input: { accessToken?: string; legacy?: boolean; refreshToken?: string } = {},
-) {
+async function seedWahooCredentials(input: { accessToken?: string; refreshToken?: string } = {}) {
   const userId = randomUUID();
   const integrationId = randomUUID();
   const now = new Date();
@@ -40,14 +38,10 @@ async function seedWahooCredentials(
     updated_at: now,
   });
   await db.insert(integrationCredentials).values({
-    access_token: input.legacy
-      ? (input.accessToken ?? "access-1")
-      : encryptProviderToken(input.accessToken ?? "access-1"),
+    access_token: encryptProviderToken(input.accessToken ?? "access-1"),
     expires_at: new Date(Date.now() - 60_000),
     integration_id: integrationId,
-    refresh_token: input.legacy
-      ? (input.refreshToken ?? "refresh-1")
-      : encryptProviderToken(input.refreshToken ?? "refresh-1"),
+    refresh_token: encryptProviderToken(input.refreshToken ?? "refresh-1"),
   });
   return { integrationId, profileId: userId };
 }
@@ -84,8 +78,8 @@ describe("Wahoo credential PostgreSQL CAS", () => {
         persistTokens: (tokens) =>
           repository.updateWahooIntegrationTokens({
             ...tokens,
-            expectedCredentialGeneration: tokens.credentialGeneration!,
-            expectedIntegrationGeneration: tokens.integrationGeneration!,
+            expectedCredentialGeneration: tokens.credentialGeneration,
+            expectedIntegrationGeneration: tokens.integrationGeneration,
           }),
         readCurrentCredentials: () => repository.findWahooIntegrationByProfileId(owner.profileId),
         refreshAccessToken: vi.fn().mockResolvedValue({
@@ -113,7 +107,6 @@ describe("Wahoo credential PostgreSQL CAS", () => {
       refreshToken: "refresh-3",
     });
   });
-
   it("fences refresh persistence both when disconnect wins and after a refresh commits", async () => {
     const disconnectFirst = await seedWahooCredentials();
     const refreshFirst = await seedWahooCredentials();
@@ -199,78 +192,6 @@ describe("Wahoo credential PostgreSQL CAS", () => {
     expect(winner?.refreshToken).toBe(
       winner?.accessToken === "access-a" ? "refresh-a" : "refresh-b",
     );
-  });
-
-  it("fences a rekey racing a refresh and preserves the reread winner", async () => {
-    const owner = await seedWahooCredentials({ legacy: true });
-    const repository = createWahooRepository({ db });
-
-    const [observed, refreshGeneration] = await Promise.all([
-      repository.findWahooIntegrationByProfileId(owner.profileId),
-      repository.updateWahooIntegrationTokens({
-        accessToken: "refreshed-access",
-        expectedCredentialGeneration: 1,
-        expectedIntegrationGeneration: 1,
-        expiresAt: "2026-07-24T16:00:00.000Z",
-        id: owner.integrationId,
-        refreshToken: "refreshed-refresh",
-      }),
-    ]);
-
-    expect(observed?.credentialGeneration).toBeGreaterThanOrEqual(1);
-    expect(refreshGeneration === 2 || refreshGeneration === null).toBe(true);
-    const winner = await repository.findWahooIntegrationByProfileId(owner.profileId);
-    expect(winner?.credentialGeneration).toBe(2);
-    expect(["access-1", "refreshed-access"]).toContain(winner?.accessToken);
-    expect(winner?.refreshToken).toBe(
-      winner?.accessToken === "refreshed-access" ? "refreshed-refresh" : "refresh-1",
-    );
-  });
-
-  it("does not let a stale legacy rekey restore either of two rotated refresh tokens", async () => {
-    const owner = await seedWahooCredentials({ legacy: true });
-    const repository = createWahooRepository({ db });
-    const observed = await repository.findWahooIntegrationByProfileId(owner.profileId);
-    if (!observed) throw new Error("Expected Wahoo integration");
-    // Reading legacy credentials rekeys them to generation 2. A stale rekey snapshot
-    // from generation 1 must lose after each successive rotation.
-    await expect(
-      repository.updateWahooIntegrationTokens({
-        accessToken: "access-2",
-        expectedCredentialGeneration: observed.credentialGeneration,
-        expectedIntegrationGeneration: observed.integrationGeneration,
-        expiresAt: null,
-        id: observed.id,
-        refreshToken: "refresh-2",
-      }),
-    ).resolves.toBe(3);
-    await expect(
-      repository.updateWahooIntegrationTokens({
-        accessToken: "access-3",
-        expectedCredentialGeneration: 3,
-        expectedIntegrationGeneration: observed.integrationGeneration,
-        expiresAt: null,
-        id: observed.id,
-        refreshToken: "refresh-3",
-      }),
-    ).resolves.toBe(4);
-    await expect(
-      repository.updateWahooIntegrationTokens({
-        accessToken: "legacy-access",
-        expectedCredentialGeneration: 1,
-        expectedIntegrationGeneration: observed.integrationGeneration,
-        expiresAt: null,
-        id: observed.id,
-        refreshToken: "refresh-1",
-      }),
-    ).resolves.toBeNull();
-    await expect(
-      repository.findWahooIntegrationByProfileId(owner.profileId),
-    ).resolves.toMatchObject({
-      accessToken: "access-3",
-      credentialGeneration: 4,
-      refreshToken: "refresh-3",
-    });
   });
 
   it("does not let a stale refresh revive a reconnect-required credential", async () => {

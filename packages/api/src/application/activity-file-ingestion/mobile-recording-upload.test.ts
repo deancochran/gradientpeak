@@ -18,7 +18,6 @@ import { recordingSessionActivityId } from "../activities/submit-activity";
 import { type ActivityArtifactStorage, activityArtifactSha256 } from "./artifact-storage";
 import {
   beginMobileRecordingUploadClaim,
-  claimLegacyMobileRecordingUpload,
   drainPendingMobileRecordingStagingCleanup,
   mobileRecordingOperationKey,
   mobileRecordingStagingPath,
@@ -158,42 +157,6 @@ describe("mobile recording upload application", () => {
         format: "fit",
       }),
     ).rejects.toMatchObject({ code: "claim_conflict" });
-  });
-
-  it("adopts only a bounded actor-owned legacy staging path", async () => {
-    const legacyPath = `activities/${PROFILE_ID}/uploads/123_activity.fit`;
-    repository.createOrLoadMobileRecordingUploadClaim.mockResolvedValue(
-      ingestion({ staging_path: legacyPath }),
-    );
-    const fake = storage();
-
-    await expect(
-      claimLegacyMobileRecordingUpload({} as never, fake.service, {
-        profileId: PROFILE_ID,
-        recordingSessionId: SESSION_ID,
-        stagingPath: legacyPath,
-        byteSize: BYTES.byteLength,
-        sha256: SHA256,
-        format: "fit",
-      }),
-    ).resolves.toMatchObject({ status: "claimed", ingestionId: INGESTION_ID });
-    expect(fake.readObjectBounded).toHaveBeenCalledWith({
-      bucket: "activity-files",
-      path: legacyPath,
-      maxBytes: BYTES.byteLength,
-    });
-
-    await expect(
-      claimLegacyMobileRecordingUpload({} as never, fake.service, {
-        profileId: PROFILE_ID,
-        recordingSessionId: SESSION_ID,
-        stagingPath: `activities/another-profile/uploads/stolen.fit`,
-        byteSize: BYTES.byteLength,
-        sha256: SHA256,
-        format: "fit",
-      }),
-    ).rejects.toMatchObject({ code: "claim_invalid" });
-    expect(repository.createOrLoadMobileRecordingUploadClaim).toHaveBeenCalledTimes(1);
   });
 
   it("claims, verifies, and promotes bytes without trusting client metadata", async () => {

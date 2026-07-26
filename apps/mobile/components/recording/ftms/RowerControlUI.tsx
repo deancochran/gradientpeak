@@ -16,7 +16,7 @@
 import { Text } from "@repo/ui/components/text";
 import { useCallback, useState } from "react";
 import { Alert, Pressable, View } from "react-native";
-import { usePlan } from "@/lib/hooks/useActivityRecorder";
+import { useSessionView } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 
 export interface RowerControlUIProps {
@@ -26,7 +26,7 @@ export interface RowerControlUIProps {
 }
 
 export function RowerControlUI({ service, controlMode }: RowerControlUIProps) {
-  const plan = usePlan(service);
+  const plan = useSessionView(service)?.plan;
 
   // Rower control state
   const [damper, setDamper] = useState<number>(5); // 1-10
@@ -224,7 +224,7 @@ export function RowerControlUI({ service, controlMode }: RowerControlUIProps) {
       </View>
 
       {/* Plan Target Display (when in Auto mode) */}
-      {controlMode === "auto" && plan.hasPlan && plan.currentStep && (
+      {controlMode === "auto" && plan?.hasPlan && plan.currentStep && (
         <View className="bg-primary/10 p-4 rounded-lg border border-primary/20">
           <Text className="text-sm font-medium mb-1">Following Plan</Text>
           <Text className="text-xs text-muted-foreground">

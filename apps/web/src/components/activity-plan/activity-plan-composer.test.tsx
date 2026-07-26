@@ -39,15 +39,15 @@ describe("ActivityPlanComposer", () => {
         ],
       },
     });
+    expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty("route_id");
   });
 
-  it("sets and clears an optional route association", async () => {
+  it("does not present route selection when editing a structured plan", () => {
     const onSave = vi.fn();
     render(
       <ActivityPlanComposer
         initial={{
           name: "Route workout",
-          route_id: "99999999-9999-4999-8999-999999999999",
           structure: {
             version: 3,
             segments: [
@@ -78,18 +78,10 @@ describe("ActivityPlanComposer", () => {
         mode="edit"
         onCancel={vi.fn()}
         onSave={onSave}
-        routeOptions={[{ id: "99999999-9999-4999-8999-999999999999", name: "River Loop" }]}
       />,
     );
 
-    expect((screen.getByLabelText("Route") as HTMLSelectElement).value).toBe(
-      "99999999-9999-4999-8999-999999999999",
-    );
-    fireEvent.change(screen.getByLabelText("Route"), { target: { value: "" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-
-    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
-    expect(onSave.mock.calls[0]?.[0]).toMatchObject({ route_id: null });
+    expect(screen.queryByLabelText("Route")).toBeNull();
   });
 
   it("prevents submission after removing the required structure", () => {

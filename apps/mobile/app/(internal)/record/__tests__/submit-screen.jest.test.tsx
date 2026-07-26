@@ -1,11 +1,11 @@
 import type React from "react";
 import { Alert } from "react-native";
 import { createHost } from "../../../../test/mock-components";
-import { fireEvent, renderNative, screen } from "../../../../test/render-native";
+import { act, fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const replace = jest.fn();
 const cleanup = jest.fn(async () => undefined);
-const clearArtifact = jest.fn(async () => undefined);
+const discardFinalizedArtifact = jest.fn(async () => undefined);
 let hookCalls = 0;
 
 jest.mock("react-native", () => ({
@@ -38,7 +38,7 @@ jest.mock("@/components/ErrorBoundary", () => ({
   ScreenErrorFallback: createHost("Fallback"),
 }));
 jest.mock("@/lib/providers/ActivityRecorderProvider", () => ({
-  useSharedActivityRecorder: () => ({ cleanup }),
+  useSharedActivityRecorder: () => ({ cleanup, discardFinalizedArtifact }),
 }));
 jest.mock("@/lib/hooks/useActivitySubmission", () => ({
   useActivitySubmission: () => {
@@ -54,10 +54,6 @@ jest.mock("@/lib/hooks/useActivitySubmission", () => ({
     };
   },
 }));
-jest.mock("@/lib/services/ActivityRecorder/finalizedArtifactStorage", () => ({
-  clearPendingFinalizedArtifact: clearArtifact,
-  deleteFinalizedArtifactFiles: jest.fn(async () => undefined),
-}));
 jest.mock("lucide-react-native", () => ({
   Save: createHost("Save"),
   Trash2: createHost("Trash2"),
@@ -65,18 +61,39 @@ jest.mock("lucide-react-native", () => ({
 
 const Submit = require("../submit").default;
 
+beforeEach(() => {
+  replace.mockClear();
+  cleanup.mockClear();
+  discardFinalizedArtifact.mockClear();
+  (Alert.alert as jest.Mock).mockClear();
+  hookCalls = 0;
+});
+
 it("retries loading by remounting submission recovery", () => {
   renderNative(<Submit />);
   fireEvent.press(screen.getByTestId("activity-submit-retry-load"));
   expect(hookCalls).toBe(2);
 });
 
-it("safely clears the missing artifact and exits after confirmation", async () => {
+it("exits after confirmation when no finalized artifact is available", async () => {
   renderNative(<Submit />);
   fireEvent.press(screen.getByTestId("activity-submit-discard-exit"));
   const destructive = (Alert.alert as jest.Mock).mock.calls[0][2][1];
   await destructive.onPress();
-  expect(clearArtifact).toHaveBeenCalled();
+  expect(discardFinalizedArtifact).toHaveBeenCalled();
   expect(cleanup).toHaveBeenCalled();
   expect(replace).toHaveBeenCalledWith("/(internal)/(tabs)");
+});
+
+it("keeps the discard screen recoverable when the durable discard transition fails", async () => {
+  discardFinalizedArtifact.mockRejectedValueOnce(new Error("sqlite unavailable"));
+  renderNative(<Submit />);
+  fireEvent.press(screen.getByTestId("activity-submit-discard-exit"));
+  const destructive = (Alert.alert as jest.Mock).mock.calls.at(-1)[2][1];
+  await act(async () => {
+    await destructive.onPress();
+  });
+  expect(cleanup).not.toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
+  expect(screen.getByText("Unable to discard this activity. Please try again.")).toBeTruthy();
 });

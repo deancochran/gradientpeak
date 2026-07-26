@@ -1,5 +1,5 @@
+import { normalizeDurationInput, parseHmsToSeconds } from "@repo/core/utils/fitness-inputs";
 import { useEffect, useState } from "react";
-import { normalizeDurationInput, parseHmsToSeconds } from "../../lib/fitness-inputs";
 import { Input } from "../input/index.web";
 import { Label } from "../label/index.web";
 import type { DurationInputProps } from "./shared";

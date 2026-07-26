@@ -120,20 +120,6 @@ allowed_mime_types = ["application/gpx+xml", "application/vnd.garmin.tcx+xml", "
 
 [auth]
 enabled = true
-# The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
-# in emails.
-site_url = "env(SUPABASE_AUTH_SITE_URL)"
-# A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = [
-  "env(SUPABASE_AUTH_WEB_REDIRECT_URL)",
-  "env(SUPABASE_AUTH_WEB_REDIRECT_URL_SECURE)",
-  "gradientpeak-dev://auth/callback",
-  "gradientpeak-dev://(modal)/reset-password",
-  "gradientpeak-prev://auth/callback",
-  "gradientpeak-prev://(modal)/reset-password",
-  "gradientpeak://auth/callback",
-  "gradientpeak://(modal)/reset-password",
-]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # Path to JWT signing key. DO NOT commit your signing keys file to git.
@@ -204,34 +190,6 @@ otp_expiry = 3600
 # pass = "env(SENDGRID_API_KEY)"
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
-
-# Uncomment to customize email template
-[auth.email.template.confirmation]
-subject = "Please confirm your email for {{ .SiteName }}"
-content_path = "./templates/confirmation.html"
-
-# Uncomment to customize email template
-[auth.email.template.invite]
-subject = "You've been invited to join {{ .SiteName }}!"
-content_path = "./templates/invite.html"
-
-# Uncomment to customize email template
-[auth.email.template.recovery]
-subject = "Reset your password for {{ .SiteName }}"
-content_path = "./templates/recovery.html"
-
-[auth.email.template.email_change]
-subject = "Confirm your email change for {{ .SiteName }}"
-content_path = "./templates/email_change.html"
-
-# Security Notifications
-[auth.email.notification.password_changed]
-enabled = true
-content_path = "./templates/password_changed_notification.html"
-
-[auth.email.notification.email_changed]
-enabled = true
-content_path = "./templates/email_changed_notification.html"
 
 [auth.sms]
 # Allow/disallow new user signups via SMS to your project.

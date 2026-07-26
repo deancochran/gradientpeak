@@ -193,15 +193,7 @@ function RecordPage() {
                 search={effectiveLauncher}
                 locked={Boolean(lockedSnapshot)}
               />
-              <LauncherActionCard
-                title="Submit or import"
-                description="Upload a completed activity file through the existing ingestion pipeline."
-                icon={FileUp}
-                actionLabel="Open activity import"
-                to="/record/submit"
-                search={launcher}
-                locked={false}
-              />
+              <ImportActionCard search={launcher} />
             </div>
           </CardContent>
         </Card>
@@ -374,7 +366,7 @@ function LauncherActionCard({
   search: ReturnType<typeof Route.useSearch>;
   locked: boolean;
   title: string;
-  to: "/record/plan" | "/record/route" | "/record/submit";
+  to: "/record/plan" | "/record/route";
 }) {
   return (
     <Card className="border-dashed">
@@ -397,6 +389,29 @@ function LauncherActionCard({
             </Link>
           </Button>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ImportActionCard({ search }: { search: ReturnType<typeof Route.useSearch> }) {
+  return (
+    <Card className="border-dashed">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <FileUp className="h-4 w-4 text-muted-foreground" />
+          Submit or import
+        </CardTitle>
+        <CardDescription>
+          Upload a completed activity file through the existing ingestion pipeline.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button asChild className="w-full">
+          <Link search={{ ...search, from: "record" }} to="/activities/import">
+            Open activity import
+          </Link>
+        </Button>
       </CardContent>
     </Card>
   );

@@ -1,7 +1,8 @@
 import { z } from "zod";
-import type { ProfileGoal, ProfileGoalTarget } from "../schemas/goals/profile_goals";
+import type { ProfileGoal } from "../schemas/goals/profile_goals";
 import type { AthletePreferenceProfile } from "../schemas/settings/profile_settings";
 import { type CanonicalSport, canonicalSportSchema, canonicalSportValues } from "../schemas/sport";
+import type { TrainingPlanGoalTarget } from "../schemas/training-plan-structure";
 import type { TrainingPlanCreationConfig } from "../schemas/training-plan-structure/creation-config-schemas";
 
 const bounded01Schema = z.number().min(0).max(1);
@@ -263,7 +264,7 @@ export interface TrainingPrescriptionGoalInput {
   title?: string;
   target_date: string;
   priority?: number;
-  targets?: ProfileGoalTarget[];
+  targets?: TrainingPlanGoalTarget[];
 }
 
 type PrescriptionGoal = TrainingPrescriptionGoalInput | ProfileGoal;
@@ -439,7 +440,7 @@ function signalFromProfileGoal(goal: ProfileGoal): GoalSignal {
 
 function signalFromLegacyTarget(
   goal: TrainingPrescriptionGoalInput,
-  target: ProfileGoalTarget,
+  target: TrainingPlanGoalTarget,
 ): GoalSignal {
   const priority = normalizePriority(goal.priority);
   if (target.target_type === "race_performance") {

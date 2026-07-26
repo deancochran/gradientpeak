@@ -2,7 +2,7 @@ import {
   type CreationConfigLocks,
   type CreationConstraints,
   creationConstraintsSchema,
-} from "../schemas/training_plan_structure";
+} from "../schemas/training-plan-structure";
 
 export type ConstraintFieldPath =
   | "constraints.hard_rest_days"

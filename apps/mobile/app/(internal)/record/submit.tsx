@@ -21,13 +21,10 @@ import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from "react-n
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { useActivitySubmission } from "@/lib/hooks/useActivitySubmission";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
-import {
-  clearPendingFinalizedArtifact,
-  deleteFinalizedArtifactFiles,
-} from "@/lib/services/ActivityRecorder/finalizedArtifactStorage";
 
 function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
   const router = useRouter();
+  const [discardError, setDiscardError] = useState<string | null>(null);
 
   const service = useSharedActivityRecorder();
   const submission = useActivitySubmission(service);
@@ -85,18 +82,20 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
-          // Clean up stream files
-          await clearPendingFinalizedArtifact();
-          await deleteFinalizedArtifactFiles(submission.artifact);
-
-          if (service) {
-            await service.cleanup();
+          try {
+            setDiscardError(null);
+            if (service) {
+              await service.discardFinalizedArtifact();
+              await service.cleanup();
+            }
+            router.replace("/(internal)/(tabs)");
+          } catch {
+            setDiscardError("Unable to discard this activity. Please try again.");
           }
-          router.replace("/(internal)/(tabs)");
         },
       },
     ]);
-  }, [service, router, submission.artifact]);
+  }, [service, router]);
 
   // Memoize canSubmit to prevent unnecessary re-renders
   const activityName = String(form.watch("name") ?? "");
@@ -140,16 +139,16 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
         {submission.activity ? (
           <Form {...form}>
             <View className="px-6 pt-6 space-y-6">
-              {submission.statusMessage ? (
+              {discardError || submission.statusMessage ? (
                 <Text
                   className={
-                    submission.isError
+                    discardError || submission.isError
                       ? "text-sm text-destructive"
                       : "text-sm text-muted-foreground"
                   }
                   testID="activity-submit-status"
                 >
-                  {submission.statusMessage}
+                  {discardError || submission.statusMessage}
                 </Text>
               ) : null}
 
@@ -217,7 +216,7 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
             <Text className="text-base text-muted-foreground">
               {submission.isLoading
                 ? "Loading finalized activity..."
-                : submission.error || "No finalized activity found."}
+                : discardError || submission.error || "No finalized activity found."}
             </Text>
             {!submission.isLoading ? (
               <>

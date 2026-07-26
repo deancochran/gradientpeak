@@ -75,7 +75,7 @@ describe("planningContext", () => {
           effort_type: "speed",
           duration_seconds: 1200,
           value: 4,
-          unit: "m/s",
+          unit: "meters_per_second",
           recorded_at: "2026-05-30T00:00:00.000Z",
           activity_id: "00000000-0000-4000-8000-000000000101",
           source: "imported",

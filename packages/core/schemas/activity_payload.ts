@@ -28,7 +28,6 @@ export const activityPlanInputSchema = z
     name: z.string().min(1, "Plan name is required"),
     description: z.string().max(1000).nullable().optional(),
     notes: z.string().max(2000).nullable().optional(),
-    route_id: z.string().uuid().nullable().optional(),
     structure: activityPlanStructureSchemaV3,
   })
   .strict();
@@ -60,7 +59,6 @@ export const ActivityMetricsSchema = z.object({
   // Power metrics
   avg_power: z.number().optional(),
   max_power: z.number().optional(),
-  normalized_power: z.number().optional(),
 
   // Heart rate metrics
   avg_hr: z.number().optional(),

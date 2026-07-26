@@ -142,6 +142,13 @@ export function formatDurationSec(seconds: number): string {
   return formatDuration(Math.round(seconds / 60));
 }
 
+/** Adds calendar days in local-Date semantics without mutating the input. */
+export function addDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
 /**
  * Get ISO date string (YYYY-MM-DD) from Date object
  */

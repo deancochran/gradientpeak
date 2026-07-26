@@ -11,8 +11,6 @@ const resumeMock = jest.fn();
 const finishMock = jest.fn(async () => undefined);
 const requestPermissionMock = jest.fn(async () => true);
 let mockRecordingLifecycle: "idle" | "setup" | "active" = "idle";
-let mockServiceState: "pending" | "ready" | "recording" | "paused" | "finishing" | "finished" =
-  "pending";
 
 type PlanValidation = {
   isValid: boolean;
@@ -86,9 +84,9 @@ jest.mock("@/components/shared/resource-picker", () => ({
   ResourcePickerModal: createHost("ResourcePickerModal"),
 }));
 
-jest.mock("@/components/activity-plan/useActivityPlanRouteUpload", () => ({
+jest.mock("@/lib/hooks/useRouteUpload", () => ({
   __esModule: true,
-  useActivityPlanRouteUpload: () => ({
+  useRouteUpload: () => ({
     isUploadingRoute: false,
     pickGpxFile: jest.fn(),
   }),
@@ -132,17 +130,12 @@ jest.mock("@/components/recording/cockpit", () => ({
 
 jest.mock("@/lib/hooks/useActivityRecorder", () => ({
   __esModule: true,
-  useActivityStatus: () => ({ gpsRecordingEnabled: false, activityCategory: "bike" }),
-  usePlan: () => ({ hasPlan: true }),
-  useRecorderActions: () => ({
+  useRecordingCommands: () => ({
     start: startMock,
     pause: pauseMock,
     resume: resumeMock,
     finish: finishMock,
   }),
-  useRecordingLifecycle: () => mockRecordingLifecycle,
-  useRecordingState: () => mockServiceState,
-  useSensors: () => ({ count: 1, sensors: [] }),
 }));
 
 jest.mock("@/lib/hooks/useAuth", () => ({
@@ -164,26 +157,33 @@ jest.mock("@/lib/performance", () => ({
 
 jest.mock("@/lib/hooks/useRecordingConfig", () => ({
   __esModule: true,
-  useRecordingSessionContract: () => ({
-    guidance: { hasPlan: true, hasRoute: false, routeMode: "none" },
-    devices: { hasTrainer: false, trainerControllable: false },
-    editing: { canEditActivity: false, canEditGps: true, canEditPlan: true, canEditRoute: true },
-    ui: {
-      backdropMode: "ambient",
-      floatingPanel: {
-        defaultCard: "workout_interval",
-        availableCards: ["workout_interval", "metrics"],
-        forcedExpanded: true,
-        canMinimize: false,
+  useRecordingConfig: () => ({
+    sessionView: {
+      lifecycle: mockRecordingLifecycle,
+      plan: { hasPlan: true },
+      recordingConfiguration: { input: { activityCategory: "bike", gpsRecordingEnabled: false } },
+    },
+    sessionContract: {
+      guidance: { hasPlan: true, hasRoute: false, routeMode: "none" },
+      devices: { hasTrainer: false, trainerControllable: false },
+      editing: { canEditActivity: false, canEditGps: true, canEditPlan: true, canEditRoute: true },
+      ui: {
+        backdropMode: "ambient",
+        floatingPanel: {
+          defaultCard: "workout_interval",
+          availableCards: ["workout_interval", "metrics"],
+          forcedExpanded: true,
+          canMinimize: false,
+        },
+        controls: { quickActions: ["plan", "sensors"] },
       },
-      controls: { quickActions: ["plan", "sensors"] },
+      surfaces: {
+        defaultPrimarySurface: "activity",
+        availablePrimarySurfaces: ["activity", "metrics"],
+        quickActions: ["plan", "sensors"],
+      },
+      validation: { consequences: [] },
     },
-    surfaces: {
-      defaultPrimarySurface: "activity",
-      availablePrimarySurfaces: ["activity", "metrics"],
-      quickActions: ["plan", "sensors"],
-    },
-    validation: { consequences: [] },
   }),
 }));
 
@@ -267,7 +267,6 @@ describe("record screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockRecordingLifecycle = "idle";
-    mockServiceState = "pending";
     service.attachRoute.mockResolvedValue(undefined);
     service.refreshAndCheckAllPermissions.mockResolvedValue(true);
     service.refreshAndCheckRecordingPermissions.mockResolvedValue(true);
@@ -344,7 +343,6 @@ describe("record screen", () => {
 
   it("keeps the close button available during active recording", async () => {
     mockRecordingLifecycle = "active";
-    mockServiceState = "recording";
 
     renderNative(<RecordScreen />);
 

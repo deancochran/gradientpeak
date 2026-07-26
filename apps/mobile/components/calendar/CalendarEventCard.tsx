@@ -51,7 +51,7 @@ export function CalendarEventCard({
   const timeLabel = getEventTimeLabel(event);
   const planned = event.event_type === "planned" && hasActivityPlan;
   const plannedStepCount = getPlannedStepCount(event);
-  const hasRoute = hasActivityPlan && !!event.activity_plan?.route_id;
+  const hasRoute = !!event.route_id;
 
   const leadingIcon =
     event.event_type === "planned"

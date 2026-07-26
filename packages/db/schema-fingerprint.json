@@ -555,7 +555,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 3,
+      "position": 2,
       "generated": ""
     },
     {
@@ -565,7 +565,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 4,
+      "position": 3,
       "generated": ""
     },
     {
@@ -575,7 +575,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 5,
+      "position": 4,
       "generated": ""
     },
     {
@@ -585,7 +585,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 6,
+      "position": 5,
       "generated": ""
     },
     {
@@ -595,7 +595,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 7,
+      "position": 6,
       "generated": ""
     },
     {
@@ -605,7 +605,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 9,
+      "position": 7,
       "generated": ""
     },
     {
@@ -615,7 +615,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 10,
+      "position": 8,
       "generated": ""
     },
     {
@@ -625,17 +625,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 11,
-      "generated": ""
-    },
-    {
-      "name": "is_private",
-      "type": "boolean",
-      "table": "activities",
-      "default": "true",
-      "notNull": true,
-      "identity": "",
-      "position": 12,
+      "position": 9,
       "generated": ""
     },
     {
@@ -645,7 +635,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 13,
+      "position": 10,
       "generated": ""
     },
     {
@@ -655,7 +645,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 14,
+      "position": 11,
       "generated": ""
     },
     {
@@ -665,7 +655,7 @@
       "default": "0",
       "notNull": true,
       "identity": "",
-      "position": 17,
+      "position": 12,
       "generated": ""
     },
     {
@@ -675,7 +665,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 18,
+      "position": 13,
       "generated": ""
     },
     {
@@ -685,7 +675,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 19,
+      "position": 14,
       "generated": ""
     },
     {
@@ -695,7 +685,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 20,
+      "position": 15,
       "generated": ""
     },
     {
@@ -705,7 +695,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 21,
+      "position": 16,
       "generated": ""
     },
     {
@@ -715,7 +705,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 22,
+      "position": 17,
       "generated": ""
     },
     {
@@ -725,7 +715,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 23,
+      "position": 18,
       "generated": ""
     },
     {
@@ -735,17 +725,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 24,
-      "generated": ""
-    },
-    {
-      "name": "normalized_power",
-      "type": "integer",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 25,
+      "position": 19,
       "generated": ""
     },
     {
@@ -755,7 +735,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 26,
+      "position": 20,
       "generated": ""
     },
     {
@@ -765,7 +745,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 27,
+      "position": 21,
       "generated": ""
     },
     {
@@ -775,7 +755,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 28,
+      "position": 22,
       "generated": ""
     },
     {
@@ -785,7 +765,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 29,
+      "position": 23,
       "generated": ""
     },
     {
@@ -795,7 +775,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 30,
+      "position": 24,
       "generated": ""
     },
     {
@@ -805,7 +785,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 31,
+      "position": 25,
       "generated": ""
     },
     {
@@ -815,7 +795,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 32,
+      "position": 26,
       "generated": ""
     },
     {
@@ -825,7 +805,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 33,
+      "position": 27,
       "generated": ""
     },
     {
@@ -835,7 +815,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 34,
+      "position": 28,
       "generated": ""
     },
     {
@@ -845,7 +825,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 35,
+      "position": 29,
       "generated": ""
     },
     {
@@ -855,7 +835,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 36,
+      "position": 30,
       "generated": ""
     },
     {
@@ -865,7 +845,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 37,
+      "position": 31,
       "generated": ""
     },
     {
@@ -875,7 +855,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 38,
+      "position": 32,
       "generated": ""
     },
     {
@@ -885,7 +865,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 39,
+      "position": 33,
       "generated": ""
     },
     {
@@ -895,7 +875,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 45,
+      "position": 34,
       "generated": ""
     },
     {
@@ -905,7 +885,7 @@
       "default": "'[]'::jsonb",
       "notNull": true,
       "identity": "",
-      "position": 46,
+      "position": 35,
       "generated": ""
     },
     {
@@ -915,7 +895,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 47,
+      "position": 36,
       "generated": ""
     },
     {
@@ -925,7 +905,7 @@
       "default": "'private'::text",
       "notNull": true,
       "identity": "",
-      "position": 48,
+      "position": 37,
       "generated": ""
     },
     {
@@ -935,7 +915,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 49,
+      "position": 38,
       "generated": ""
     },
     {
@@ -945,7 +925,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 50,
+      "position": 39,
       "generated": ""
     },
     {
@@ -955,7 +935,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 51,
+      "position": 40,
       "generated": ""
     },
     {
@@ -965,7 +945,7 @@
       "default": "'unavailable'::text",
       "notNull": true,
       "identity": "",
-      "position": 52,
+      "position": 41,
       "generated": ""
     },
     {
@@ -975,7 +955,7 @@
       "default": "1",
       "notNull": true,
       "identity": "",
-      "position": 53,
+      "position": 42,
       "generated": ""
     },
     {
@@ -985,7 +965,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 54,
+      "position": 43,
       "generated": ""
     },
     {
@@ -995,7 +975,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 55,
+      "position": 44,
       "generated": ""
     },
     {
@@ -1005,7 +985,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 56,
+      "position": 45,
       "generated": ""
     },
     {
@@ -1015,7 +995,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 57,
+      "position": 46,
       "generated": ""
     },
     {
@@ -1325,7 +1305,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 8,
+      "position": 7,
       "generated": ""
     },
     {
@@ -1335,7 +1315,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 9,
+      "position": 8,
       "generated": ""
     },
     {
@@ -1345,7 +1325,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 10,
+      "position": 9,
       "generated": ""
     },
     {
@@ -1355,7 +1335,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 11,
+      "position": 10,
       "generated": ""
     },
     {
@@ -1365,7 +1345,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 12,
+      "position": 11,
       "generated": ""
     },
     {
@@ -1375,7 +1355,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 13,
+      "position": 12,
       "generated": ""
     },
     {
@@ -1385,7 +1365,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 14,
+      "position": 13,
       "generated": ""
     },
     {
@@ -1395,7 +1375,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 15,
+      "position": 14,
       "generated": ""
     },
     {
@@ -1405,7 +1385,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 16,
+      "position": 15,
       "generated": ""
     },
     {
@@ -1415,7 +1395,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 17,
+      "position": 16,
       "generated": ""
     },
     {
@@ -1425,7 +1405,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 18,
+      "position": 17,
       "generated": ""
     },
     {
@@ -1435,7 +1415,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 19,
+      "position": 18,
       "generated": ""
     },
     {
@@ -1445,7 +1425,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 20,
+      "position": 19,
       "generated": ""
     },
     {
@@ -1515,7 +1495,7 @@
       "default": "'pending_upload'::activity_file_ingestion_status",
       "notNull": true,
       "identity": "",
-      "position": 10,
+      "position": 7,
       "generated": ""
     },
     {
@@ -1525,7 +1505,7 @@
       "default": "0",
       "notNull": true,
       "identity": "",
-      "position": 11,
+      "position": 8,
       "generated": ""
     },
     {
@@ -1535,7 +1515,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 12,
+      "position": 9,
       "generated": ""
     },
     {
@@ -1545,7 +1525,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 13,
+      "position": 10,
       "generated": ""
     },
     {
@@ -1555,7 +1535,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 14,
+      "position": 11,
       "generated": ""
     },
     {
@@ -1565,7 +1545,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 15,
+      "position": 12,
       "generated": ""
     },
     {
@@ -1575,7 +1555,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 16,
+      "position": 13,
       "generated": ""
     },
     {
@@ -1585,7 +1565,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 17,
+      "position": 14,
       "generated": ""
     },
     {
@@ -1595,7 +1575,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 18,
+      "position": 15,
       "generated": ""
     },
     {
@@ -1605,7 +1585,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 19,
+      "position": 16,
       "generated": ""
     },
     {
@@ -1615,7 +1595,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 20,
+      "position": 17,
       "generated": ""
     },
     {
@@ -1625,7 +1605,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 21,
+      "position": 18,
       "generated": ""
     },
     {
@@ -1635,7 +1615,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 22,
+      "position": 19,
       "generated": ""
     },
     {
@@ -1645,7 +1625,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 23,
+      "position": 20,
       "generated": ""
     },
     {
@@ -1655,7 +1635,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 24,
+      "position": 21,
       "generated": ""
     },
     {
@@ -1665,7 +1645,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 25,
+      "position": 22,
       "generated": ""
     },
     {
@@ -1675,7 +1655,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 26,
+      "position": 23,
       "generated": ""
     },
     {
@@ -1685,7 +1665,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 27,
+      "position": 24,
       "generated": ""
     },
     {
@@ -1695,7 +1675,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 28,
+      "position": 25,
       "generated": ""
     },
     {
@@ -1705,7 +1685,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 29,
+      "position": 26,
       "generated": ""
     },
     {
@@ -1715,7 +1695,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 30,
+      "position": 27,
       "generated": ""
     },
     {
@@ -1725,7 +1705,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 31,
+      "position": 28,
       "generated": ""
     },
     {
@@ -1735,7 +1715,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 32,
+      "position": 29,
       "generated": ""
     },
     {
@@ -1745,7 +1725,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 33,
+      "position": 30,
       "generated": ""
     },
     {
@@ -1755,7 +1735,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 34,
+      "position": 31,
       "generated": ""
     },
     {
@@ -1765,7 +1745,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 35,
+      "position": 32,
       "generated": ""
     },
     {
@@ -1775,7 +1755,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 36,
+      "position": 33,
       "generated": ""
     },
     {
@@ -1785,7 +1765,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 37,
+      "position": 34,
       "generated": ""
     },
     {
@@ -1795,7 +1775,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 38,
+      "position": 35,
       "generated": ""
     },
     {
@@ -1805,7 +1785,7 @@
       "default": "false",
       "notNull": true,
       "identity": "",
-      "position": 39,
+      "position": 36,
       "generated": ""
     },
     {
@@ -1815,7 +1795,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 40,
+      "position": 37,
       "generated": ""
     },
     {
@@ -1825,7 +1805,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 41,
+      "position": 38,
       "generated": ""
     },
     {
@@ -1845,7 +1825,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 3,
+      "position": 2,
       "generated": ""
     },
     {
@@ -1855,7 +1835,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 4,
+      "position": 3,
       "generated": ""
     },
     {
@@ -1865,7 +1845,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 5,
+      "position": 4,
       "generated": ""
     },
     {
@@ -1875,7 +1855,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 7,
+      "position": 5,
       "generated": ""
     },
     {
@@ -1885,7 +1865,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 8,
+      "position": 6,
       "generated": ""
     },
     {
@@ -1895,7 +1875,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 9,
+      "position": 7,
       "generated": ""
     },
     {
@@ -1905,7 +1885,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 11,
+      "position": 8,
       "generated": ""
     },
     {
@@ -1915,7 +1895,7 @@
       "default": "'private'::text",
       "notNull": true,
       "identity": "",
-      "position": 13,
+      "position": 9,
       "generated": ""
     },
     {
@@ -1925,7 +1905,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 14,
+      "position": 10,
       "generated": ""
     },
     {
@@ -1935,7 +1915,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 15,
+      "position": 11,
       "generated": ""
     },
     {
@@ -1945,7 +1925,7 @@
       "default": "false",
       "notNull": true,
       "identity": "",
-      "position": 16,
+      "position": 12,
       "generated": ""
     },
     {
@@ -1955,7 +1935,7 @@
       "default": "'private'::text",
       "notNull": true,
       "identity": "",
-      "position": 17,
+      "position": 13,
       "generated": ""
     },
     {
@@ -1965,7 +1945,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 18,
+      "position": 14,
       "generated": ""
     },
     {
@@ -1975,17 +1955,7 @@
       "default": "true",
       "notNull": true,
       "identity": "",
-      "position": 19,
-      "generated": ""
-    },
-    {
-      "name": "route_id",
-      "type": "uuid",
-      "table": "activity_plans",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 20,
+      "position": 15,
       "generated": ""
     },
     {
@@ -2005,7 +1975,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 3,
+      "position": 2,
       "generated": ""
     },
     {
@@ -2015,7 +1985,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 4,
+      "position": 3,
       "generated": ""
     },
     {
@@ -2025,7 +1995,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 5,
+      "position": 4,
       "generated": ""
     },
     {
@@ -2035,7 +2005,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 6,
+      "position": 5,
       "generated": ""
     },
     {
@@ -2045,7 +2015,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 7,
+      "position": 6,
       "generated": ""
     },
     {
@@ -2055,7 +2025,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 8,
+      "position": 7,
       "generated": ""
     },
     {
@@ -2065,7 +2035,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 9,
+      "position": 8,
       "generated": ""
     },
     {
@@ -2075,7 +2045,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 10,
+      "position": 9,
       "generated": ""
     },
     {
@@ -2085,7 +2055,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 11,
+      "position": 10,
       "generated": ""
     },
     {
@@ -2095,7 +2065,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 12,
+      "position": 11,
       "generated": ""
     },
     {
@@ -2105,7 +2075,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 13,
+      "position": 12,
       "generated": ""
     },
     {
@@ -2115,7 +2085,7 @@
       "default": "false",
       "notNull": true,
       "identity": "",
-      "position": 14,
+      "position": 13,
       "generated": ""
     },
     {
@@ -2125,7 +2095,7 @@
       "default": "false",
       "notNull": true,
       "identity": "",
-      "position": 15,
+      "position": 14,
       "generated": ""
     },
     {
@@ -2975,7 +2945,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 3,
+      "position": 2,
       "generated": ""
     },
     {
@@ -2985,7 +2955,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 4,
+      "position": 3,
       "generated": ""
     },
     {
@@ -2995,7 +2965,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 5,
+      "position": 4,
       "generated": ""
     },
     {
@@ -3005,7 +2975,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 6,
+      "position": 5,
       "generated": ""
     },
     {
@@ -3015,7 +2985,7 @@
       "default": "'scheduled'::event_status",
       "notNull": true,
       "identity": "",
-      "position": 7,
+      "position": 6,
       "generated": ""
     },
     {
@@ -3025,7 +2995,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 8,
+      "position": 7,
       "generated": ""
     },
     {
@@ -3035,7 +3005,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 9,
+      "position": 8,
       "generated": ""
     },
     {
@@ -3045,7 +3015,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 10,
+      "position": 9,
       "generated": ""
     },
     {
@@ -3055,7 +3025,7 @@
       "default": "false",
       "notNull": true,
       "identity": "",
-      "position": 11,
+      "position": 10,
       "generated": ""
     },
     {
@@ -3065,7 +3035,7 @@
       "default": "'UTC'::text",
       "notNull": true,
       "identity": "",
-      "position": 12,
+      "position": 11,
       "generated": ""
     },
     {
@@ -3075,7 +3045,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 13,
+      "position": 12,
       "generated": ""
     },
     {
@@ -3085,7 +3055,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 14,
+      "position": 13,
       "generated": ""
     },
     {
@@ -3093,9 +3063,9 @@
       "type": "text",
       "table": "events",
       "default": "",
-      "notNull": false,
+      "notNull": true,
       "identity": "",
-      "position": 15,
+      "position": 14,
       "generated": ""
     },
     {
@@ -3105,7 +3075,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 16,
+      "position": 15,
       "generated": ""
     },
     {
@@ -3115,7 +3085,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 17,
+      "position": 16,
       "generated": ""
     },
     {
@@ -3125,7 +3095,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 18,
+      "position": 17,
       "generated": ""
     },
     {
@@ -3135,7 +3105,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 19,
+      "position": 18,
       "generated": ""
     },
     {
@@ -3145,7 +3115,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 20,
+      "position": 19,
       "generated": ""
     },
     {
@@ -3155,7 +3125,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 21,
+      "position": 20,
       "generated": ""
     },
     {
@@ -3165,7 +3135,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 22,
+      "position": 21,
       "generated": ""
     },
     {
@@ -3175,7 +3145,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 23,
+      "position": 22,
       "generated": ""
     },
     {
@@ -3185,7 +3155,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 24,
+      "position": 23,
       "generated": ""
     },
     {
@@ -3195,7 +3165,7 @@
       "default": "''::text",
       "notNull": true,
       "identity": "",
-      "position": 25,
+      "position": 24,
       "generated": ""
     },
     {
@@ -3205,7 +3175,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 26,
+      "position": 25,
       "generated": ""
     },
     {
@@ -3215,7 +3185,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 27,
+      "position": 26,
       "generated": ""
     },
     {
@@ -3225,7 +3195,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 28,
+      "position": 27,
       "generated": ""
     },
     {
@@ -3235,7 +3205,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 29,
+      "position": 28,
       "generated": ""
     },
     {
@@ -3245,7 +3215,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 30,
+      "position": 29,
       "generated": ""
     },
     {
@@ -3255,7 +3225,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 31,
+      "position": 30,
       "generated": ""
     },
     {
@@ -3265,7 +3235,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 32,
+      "position": 31,
       "generated": ""
     },
     {
@@ -3275,7 +3245,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 33,
+      "position": 32,
       "generated": ""
     },
     {
@@ -3365,7 +3335,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 5,
+      "position": 4,
       "generated": ""
     },
     {
@@ -3375,7 +3345,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 6,
+      "position": 5,
       "generated": ""
     },
     {
@@ -4025,7 +3995,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 3,
+      "position": 2,
       "generated": ""
     },
     {
@@ -4035,7 +4005,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 4,
+      "position": 3,
       "generated": ""
     },
     {
@@ -4045,7 +4015,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 5,
+      "position": 4,
       "generated": ""
     },
     {
@@ -4055,7 +4025,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 6,
+      "position": 5,
       "generated": ""
     },
     {
@@ -4065,7 +4035,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 7,
+      "position": 6,
       "generated": ""
     },
     {
@@ -4075,7 +4045,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 8,
+      "position": 7,
       "generated": ""
     },
     {
@@ -4085,7 +4055,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 9,
+      "position": 8,
       "generated": ""
     },
     {
@@ -4095,7 +4065,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 10,
+      "position": 9,
       "generated": ""
     },
     {
@@ -4105,7 +4075,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 11,
+      "position": 10,
       "generated": ""
     },
     {
@@ -4115,7 +4085,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 12,
+      "position": 11,
       "generated": ""
     },
     {
@@ -4125,7 +4095,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 13,
+      "position": 12,
       "generated": ""
     },
     {
@@ -4135,7 +4105,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 14,
+      "position": 13,
       "generated": ""
     },
     {
@@ -4155,7 +4125,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 3,
+      "position": 2,
       "generated": ""
     },
     {
@@ -4165,7 +4135,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 4,
+      "position": 3,
       "generated": ""
     },
     {
@@ -4175,7 +4145,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 5,
+      "position": 4,
       "generated": ""
     },
     {
@@ -4185,7 +4155,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 6,
+      "position": 5,
       "generated": ""
     },
     {
@@ -4195,7 +4165,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 7,
+      "position": 6,
       "generated": ""
     },
     {
@@ -4205,7 +4175,7 @@
       "default": "'active'::text",
       "notNull": true,
       "identity": "",
-      "position": 8,
+      "position": 7,
       "generated": ""
     },
     {
@@ -4215,7 +4185,7 @@
       "default": "1",
       "notNull": true,
       "identity": "",
-      "position": 9,
+      "position": 8,
       "generated": ""
     },
     {
@@ -4225,7 +4195,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 10,
+      "position": 9,
       "generated": ""
     },
     {
@@ -4235,7 +4205,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 11,
+      "position": 10,
       "generated": ""
     },
     {
@@ -4245,7 +4215,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 12,
+      "position": 11,
       "generated": ""
     },
     {
@@ -4625,7 +4595,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 3,
+      "position": 2,
       "generated": ""
     },
     {
@@ -4635,7 +4605,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 4,
+      "position": 3,
       "generated": ""
     },
     {
@@ -4645,7 +4615,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 5,
+      "position": 4,
       "generated": ""
     },
     {
@@ -4655,7 +4625,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 6,
+      "position": 5,
       "generated": ""
     },
     {
@@ -4665,7 +4635,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 7,
+      "position": 6,
       "generated": ""
     },
     {
@@ -4675,7 +4645,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 8,
+      "position": 7,
       "generated": ""
     },
     {
@@ -4685,7 +4655,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 9,
+      "position": 8,
       "generated": ""
     },
     {
@@ -4695,7 +4665,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 10,
+      "position": 9,
       "generated": ""
     },
     {
@@ -4705,7 +4675,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 11,
+      "position": 10,
       "generated": ""
     },
     {
@@ -5305,7 +5275,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 3,
+      "position": 2,
       "generated": ""
     },
     {
@@ -5315,7 +5285,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 4,
+      "position": 3,
       "generated": ""
     },
     {
@@ -5325,7 +5295,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 5,
+      "position": 4,
       "generated": ""
     },
     {
@@ -5335,7 +5305,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 6,
+      "position": 5,
       "generated": ""
     },
     {
@@ -5345,7 +5315,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 7,
+      "position": 6,
       "generated": ""
     },
     {
@@ -5355,7 +5325,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 8,
+      "position": 7,
       "generated": ""
     },
     {
@@ -5365,7 +5335,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 9,
+      "position": 8,
       "generated": ""
     },
     {
@@ -5375,7 +5345,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 10,
+      "position": 9,
       "generated": ""
     },
     {
@@ -5385,7 +5355,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 11,
+      "position": 10,
       "generated": ""
     },
     {
@@ -5395,7 +5365,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 12,
+      "position": 11,
       "generated": ""
     },
     {
@@ -5405,7 +5375,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 13,
+      "position": 12,
       "generated": ""
     },
     {
@@ -5415,7 +5385,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 14,
+      "position": 13,
       "generated": ""
     },
     {
@@ -5425,7 +5395,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 15,
+      "position": 14,
       "generated": ""
     },
     {
@@ -5435,7 +5405,7 @@
       "default": "false",
       "notNull": true,
       "identity": "",
-      "position": 16,
+      "position": 15,
       "generated": ""
     },
     {
@@ -5445,7 +5415,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 17,
+      "position": 16,
       "generated": ""
     },
     {
@@ -5455,7 +5425,7 @@
       "default": "'private'::text",
       "notNull": true,
       "identity": "",
-      "position": 18,
+      "position": 17,
       "generated": ""
     },
     {
@@ -5475,7 +5445,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 3,
+      "position": 2,
       "generated": ""
     },
     {
@@ -5485,7 +5455,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 4,
+      "position": 3,
       "generated": ""
     },
     {
@@ -5495,7 +5465,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 5,
+      "position": 4,
       "generated": ""
     },
     {
@@ -5505,7 +5475,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 6,
+      "position": 5,
       "generated": ""
     },
     {
@@ -5515,7 +5485,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 7,
+      "position": 6,
       "generated": ""
     },
     {
@@ -5525,7 +5495,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 8,
+      "position": 7,
       "generated": ""
     },
     {
@@ -5535,7 +5505,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 9,
+      "position": 8,
       "generated": ""
     },
     {
@@ -5545,7 +5515,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 10,
+      "position": 9,
       "generated": ""
     },
     {
@@ -5555,7 +5525,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 11,
+      "position": 10,
       "generated": ""
     },
     {
@@ -5565,7 +5535,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 12,
+      "position": 11,
       "generated": ""
     },
     {
@@ -5575,7 +5545,7 @@
       "default": "'queued'::text",
       "notNull": true,
       "identity": "",
-      "position": 13,
+      "position": 12,
       "generated": ""
     },
     {
@@ -5585,7 +5555,7 @@
       "default": "100",
       "notNull": true,
       "identity": "",
-      "position": 14,
+      "position": 13,
       "generated": ""
     },
     {
@@ -5595,7 +5565,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 15,
+      "position": 14,
       "generated": ""
     },
     {
@@ -5605,7 +5575,7 @@
       "default": "0",
       "notNull": true,
       "identity": "",
-      "position": 16,
+      "position": 15,
       "generated": ""
     },
     {
@@ -5615,7 +5585,7 @@
       "default": "8",
       "notNull": true,
       "identity": "",
-      "position": 17,
+      "position": 16,
       "generated": ""
     },
     {
@@ -5625,7 +5595,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 18,
+      "position": 17,
       "generated": ""
     },
     {
@@ -5635,7 +5605,7 @@
       "default": "'{}'::jsonb",
       "notNull": true,
       "identity": "",
-      "position": 19,
+      "position": 18,
       "generated": ""
     },
     {
@@ -5645,7 +5615,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 20,
+      "position": 19,
       "generated": ""
     },
     {
@@ -5655,7 +5625,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 21,
+      "position": 20,
       "generated": ""
     },
     {
@@ -5665,7 +5635,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 22,
+      "position": 21,
       "generated": ""
     },
     {
@@ -5675,7 +5645,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 23,
+      "position": 22,
       "generated": ""
     },
     {
@@ -5685,7 +5655,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 24,
+      "position": 23,
       "generated": ""
     },
     {
@@ -5695,7 +5665,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 25,
+      "position": 24,
       "generated": ""
     },
     {
@@ -5705,7 +5675,7 @@
       "default": "",
       "notNull": true,
       "identity": "d",
-      "position": 26,
+      "position": 25,
       "generated": ""
     },
     {
@@ -5715,7 +5685,7 @@
       "default": "1",
       "notNull": true,
       "identity": "",
-      "position": 27,
+      "position": 26,
       "generated": ""
     },
     {
@@ -5735,7 +5705,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 3,
+      "position": 2,
       "generated": ""
     },
     {
@@ -5745,7 +5715,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 4,
+      "position": 3,
       "generated": ""
     },
     {
@@ -5755,7 +5725,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 5,
+      "position": 4,
       "generated": ""
     },
     {
@@ -5765,7 +5735,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 6,
+      "position": 5,
       "generated": ""
     },
     {
@@ -5775,7 +5745,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 7,
+      "position": 6,
       "generated": ""
     },
     {
@@ -5785,7 +5755,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 8,
+      "position": 7,
       "generated": ""
     },
     {
@@ -5795,7 +5765,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 9,
+      "position": 8,
       "generated": ""
     },
     {
@@ -5805,7 +5775,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 10,
+      "position": 9,
       "generated": ""
     },
     {
@@ -5815,7 +5785,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 11,
+      "position": 10,
       "generated": ""
     },
     {
@@ -5825,7 +5795,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 12,
+      "position": 11,
       "generated": ""
     },
     {
@@ -5835,7 +5805,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 13,
+      "position": 12,
       "generated": ""
     },
     {
@@ -5845,7 +5815,7 @@
       "default": "0",
       "notNull": true,
       "identity": "",
-      "position": 14,
+      "position": 13,
       "generated": ""
     },
     {
@@ -5855,7 +5825,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 15,
+      "position": 14,
       "generated": ""
     },
     {
@@ -5865,7 +5835,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 16,
+      "position": 15,
       "generated": ""
     },
     {
@@ -5875,7 +5845,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 17,
+      "position": 16,
       "generated": ""
     },
     {
@@ -5885,7 +5855,7 @@
       "default": "'{}'::jsonb",
       "notNull": true,
       "identity": "",
-      "position": 18,
+      "position": 17,
       "generated": ""
     },
     {
@@ -5905,7 +5875,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 3,
+      "position": 2,
       "generated": ""
     },
     {
@@ -5915,7 +5885,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 4,
+      "position": 3,
       "generated": ""
     },
     {
@@ -5925,7 +5895,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 5,
+      "position": 4,
       "generated": ""
     },
     {
@@ -5935,7 +5905,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 6,
+      "position": 5,
       "generated": ""
     },
     {
@@ -5945,7 +5915,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 7,
+      "position": 6,
       "generated": ""
     },
     {
@@ -5955,7 +5925,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 8,
+      "position": 7,
       "generated": ""
     },
     {
@@ -5965,7 +5935,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 9,
+      "position": 8,
       "generated": ""
     },
     {
@@ -5975,7 +5945,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 10,
+      "position": 9,
       "generated": ""
     },
     {
@@ -5985,7 +5955,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 11,
+      "position": 10,
       "generated": ""
     },
     {
@@ -5995,7 +5965,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 12,
+      "position": 11,
       "generated": ""
     },
     {
@@ -6005,7 +5975,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 13,
+      "position": 12,
       "generated": ""
     },
     {
@@ -6015,7 +5985,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 14,
+      "position": 13,
       "generated": ""
     },
     {
@@ -6025,7 +5995,7 @@
       "default": "'pending'::text",
       "notNull": true,
       "identity": "",
-      "position": 15,
+      "position": 14,
       "generated": ""
     },
     {
@@ -6035,7 +6005,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 16,
+      "position": 15,
       "generated": ""
     },
     {
@@ -6045,7 +6015,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 17,
+      "position": 16,
       "generated": ""
     },
     {
@@ -6055,7 +6025,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 18,
+      "position": 17,
       "generated": ""
     },
     {
@@ -6195,7 +6165,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 3,
+      "position": 2,
       "generated": ""
     },
     {
@@ -6205,7 +6175,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 4,
+      "position": 3,
       "generated": ""
     },
     {
@@ -6215,7 +6185,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 5,
+      "position": 4,
       "generated": ""
     },
     {
@@ -6225,7 +6195,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 6,
+      "position": 5,
       "generated": ""
     },
     {
@@ -6235,7 +6205,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 7,
+      "position": 6,
       "generated": ""
     },
     {
@@ -6245,7 +6215,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 8,
+      "position": 7,
       "generated": ""
     },
     {
@@ -6255,7 +6225,7 @@
       "default": "'private'::text",
       "notNull": true,
       "identity": "",
-      "position": 9,
+      "position": 8,
       "generated": ""
     },
     {
@@ -6265,7 +6235,7 @@
       "default": "false",
       "notNull": true,
       "identity": "",
-      "position": 10,
+      "position": 9,
       "generated": ""
     },
     {
@@ -6275,7 +6245,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 11,
+      "position": 10,
       "generated": ""
     },
     {
@@ -6285,7 +6255,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 12,
+      "position": 11,
       "generated": ""
     },
     {
@@ -6295,7 +6265,7 @@
       "default": "'private'::text",
       "notNull": true,
       "identity": "",
-      "position": 13,
+      "position": 12,
       "generated": ""
     },
     {
@@ -6305,7 +6275,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 14,
+      "position": 13,
       "generated": ""
     },
     {
@@ -6624,11 +6594,6 @@
       "name": "idx_activity_plans_profile_id",
       "table": "activity_plans",
       "definition": "CREATE INDEX idx_activity_plans_profile_id ON public.activity_plans USING btree (profile_id) WHERE (profile_id IS NOT NULL)"
-    },
-    {
-      "name": "idx_activity_plans_route_id",
-      "table": "activity_plans",
-      "definition": "CREATE INDEX idx_activity_plans_route_id ON public.activity_plans USING btree (route_id) WHERE (route_id IS NOT NULL)"
     },
     {
       "name": "idx_activity_plans_structure_categories",
@@ -7562,7 +7527,7 @@
       "securityDefiner": false
     },
     {
-      "acl": "",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
       "config": ["search_path=\"\""],
       "identity": "activity_parent_segment_set_constraint_trigger()",
       "language": "plpgsql",
@@ -7571,7 +7536,7 @@
       "securityDefiner": true
     },
     {
-      "acl": "",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
       "config": ["search_path=\"\""],
       "identity": "activity_segment_set_constraint_trigger()",
       "language": "plpgsql",
@@ -7607,7 +7572,7 @@
       "securityDefiner": true
     },
     {
-      "acl": "{postgres=X/postgres}",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
       "config": ["search_path=\"\""],
       "identity": "handle_new_user()",
       "language": "plpgsql",
@@ -7661,7 +7626,7 @@
       "securityDefiner": false
     },
     {
-      "acl": "",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
       "config": ["search_path=\"\""],
       "identity": "validate_activity_segment_set(uuid)",
       "language": "plpgsql",
@@ -7670,7 +7635,12 @@
       "securityDefiner": true
     }
   ],
-  "extensions": [],
+  "extensions": [
+    {
+      "name": "btree_gist",
+      "schema": "extensions"
+    }
+  ],
   "constraints": [
     {
       "kind": "p",
@@ -7984,8 +7954,8 @@
       "kind": "c",
       "name": "activity_efforts_duration_seconds_bounds_check",
       "table": "activity_efforts",
-      "validated": false,
-      "definition": "CHECK (duration_seconds >= 1 AND duration_seconds <= 14400) NOT VALID"
+      "validated": true,
+      "definition": "CHECK (duration_seconds >= 1 AND duration_seconds <= 14400)"
     },
     {
       "kind": "c",
@@ -8062,7 +8032,7 @@
       "name": "activity_efforts_unit_compatibility_check",
       "table": "activity_efforts",
       "validated": true,
-      "definition": "CHECK (activity_category = 'bike'::text AND effort_type = 'power'::effort_type AND (unit = ANY (ARRAY['watts'::text, 'W'::text])) OR (activity_category = ANY (ARRAY['run'::text, 'swim'::text])) AND effort_type = 'speed'::effort_type AND (unit = ANY (ARRAY['meters_per_second'::text, 'm/s'::text])) OR effort_type::text = 'heart_rate'::text AND (unit = ANY (ARRAY['bpm'::text, 'beats_per_minute'::text])))"
+      "definition": "CHECK (activity_category = 'bike'::text AND effort_type = 'power'::effort_type AND unit = 'watts'::text OR (activity_category = ANY (ARRAY['run'::text, 'swim'::text])) AND effort_type = 'speed'::effort_type AND unit = 'meters_per_second'::text OR effort_type::text = 'heart_rate'::text AND unit = 'bpm'::text)"
     },
     {
       "kind": "c",
@@ -8075,22 +8045,22 @@
       "kind": "c",
       "name": "activity_file_ingestions_accepted_hash_check",
       "table": "activity_file_ingestions",
-      "validated": false,
-      "definition": "CHECK (accepted_sha256 IS NULL OR accepted_sha256 ~ '^[0-9a-f]{64}$'::text) NOT VALID"
+      "validated": true,
+      "definition": "CHECK (accepted_sha256 IS NULL OR accepted_sha256 ~ '^[0-9a-f]{64}$'::text)"
     },
     {
       "kind": "c",
       "name": "activity_file_ingestions_accepted_metadata_check",
       "table": "activity_file_ingestions",
-      "validated": false,
-      "definition": "CHECK ((num_nonnulls(accepted_sha256, accepted_byte_size, accepted_bucket, accepted_path, accepted_media_type, accepted_format, uploaded_at) = ANY (ARRAY[0, 7])) AND (accepted_sha256 IS NULL OR status = 'ready'::activity_file_ingestion_status AND btrim(accepted_bucket) <> ''::text AND btrim(accepted_path) <> ''::text AND (accepted_format = ANY (ARRAY['fit'::text, 'gpx'::text, 'tcx'::text])) AND accepted_path = ((('artifacts/sha256/'::text || profile_id::text) || '/'::text) || accepted_sha256))) NOT VALID"
+      "validated": true,
+      "definition": "CHECK ((num_nonnulls(accepted_sha256, accepted_byte_size, accepted_bucket, accepted_path, accepted_media_type, accepted_format, uploaded_at) = ANY (ARRAY[0, 7])) AND (accepted_sha256 IS NULL OR status = 'ready'::activity_file_ingestion_status AND btrim(accepted_bucket) <> ''::text AND btrim(accepted_path) <> ''::text AND (accepted_format = ANY (ARRAY['fit'::text, 'gpx'::text, 'tcx'::text])) AND accepted_path = ((('artifacts/sha256/'::text || profile_id::text) || '/'::text) || accepted_sha256)))"
     },
     {
       "kind": "c",
       "name": "activity_file_ingestions_accepted_size_check",
       "table": "activity_file_ingestions",
-      "validated": false,
-      "definition": "CHECK (accepted_byte_size IS NULL OR accepted_byte_size > 0) NOT VALID"
+      "validated": true,
+      "definition": "CHECK (accepted_byte_size IS NULL OR accepted_byte_size > 0)"
     },
     {
       "kind": "f",
@@ -8117,8 +8087,8 @@
       "kind": "c",
       "name": "activity_file_ingestions_claim_artifact_match_check",
       "table": "activity_file_ingestions",
-      "validated": false,
-      "definition": "CHECK (expected_sha256 IS NULL OR accepted_sha256 IS NULL OR accepted_sha256 = expected_sha256 AND accepted_byte_size = expected_byte_size AND accepted_bucket = staging_bucket AND accepted_format = expected_format AND accepted_media_type = expected_media_type) NOT VALID"
+      "validated": true,
+      "definition": "CHECK (expected_sha256 IS NULL OR accepted_sha256 IS NULL OR accepted_sha256 = expected_sha256 AND accepted_byte_size = expected_byte_size AND accepted_bucket = staging_bucket AND accepted_format = expected_format AND accepted_media_type = expected_media_type)"
     },
     {
       "kind": "c",
@@ -8131,22 +8101,22 @@
       "kind": "c",
       "name": "activity_file_ingestions_cleanup_state_check",
       "table": "activity_file_ingestions",
-      "validated": false,
-      "definition": "CHECK ((NOT staging_cleanup_pending OR status = 'ready'::activity_file_ingestion_status AND staging_path IS NOT NULL AND accepted_path IS NOT NULL) AND (staging_cleaned_at IS NULL OR NOT staging_cleanup_pending AND staging_path IS NOT NULL) AND (staging_cleanup_error IS NULL OR staging_cleanup_pending) AND NOT (staging_cleaned_at IS NOT NULL AND staging_cleanup_error IS NOT NULL)) NOT VALID"
+      "validated": true,
+      "definition": "CHECK ((NOT staging_cleanup_pending OR status = 'ready'::activity_file_ingestion_status AND staging_path IS NOT NULL AND accepted_path IS NOT NULL) AND (staging_cleaned_at IS NULL OR NOT staging_cleanup_pending AND staging_path IS NOT NULL) AND (staging_cleanup_error IS NULL OR staging_cleanup_pending) AND NOT (staging_cleaned_at IS NOT NULL AND staging_cleanup_error IS NOT NULL))"
     },
     {
       "kind": "c",
       "name": "activity_file_ingestions_expected_hash_check",
       "table": "activity_file_ingestions",
-      "validated": false,
-      "definition": "CHECK (expected_sha256 IS NULL OR expected_sha256 ~ '^[0-9a-f]{64}$'::text) NOT VALID"
+      "validated": true,
+      "definition": "CHECK (expected_sha256 IS NULL OR expected_sha256 ~ '^[0-9a-f]{64}$'::text)"
     },
     {
       "kind": "c",
       "name": "activity_file_ingestions_expected_size_check",
       "table": "activity_file_ingestions",
-      "validated": false,
-      "definition": "CHECK (expected_byte_size IS NULL OR expected_byte_size > 0) NOT VALID"
+      "validated": true,
+      "definition": "CHECK (expected_byte_size IS NULL OR expected_byte_size > 0)"
     },
     {
       "kind": "f",
@@ -8173,8 +8143,8 @@
       "kind": "c",
       "name": "activity_file_ingestions_processing_claim_check",
       "table": "activity_file_ingestions",
-      "validated": false,
-      "definition": "CHECK (status = 'processing'::activity_file_ingestion_status AND claim_token IS NOT NULL AND lease_expires_at IS NOT NULL OR status <> 'processing'::activity_file_ingestion_status AND claim_token IS NULL AND lease_expires_at IS NULL) NOT VALID"
+      "validated": true,
+      "definition": "CHECK (status = 'processing'::activity_file_ingestion_status AND claim_token IS NOT NULL AND lease_expires_at IS NOT NULL OR status <> 'processing'::activity_file_ingestion_status AND claim_token IS NULL AND lease_expires_at IS NULL)"
     },
     {
       "kind": "f",
@@ -8194,8 +8164,8 @@
       "kind": "c",
       "name": "activity_file_ingestions_staging_metadata_check",
       "table": "activity_file_ingestions",
-      "validated": false,
-      "definition": "CHECK ((num_nonnulls(staging_bucket, staging_path, expected_sha256, expected_byte_size, expected_format, expected_media_type) = ANY (ARRAY[0, 6])) AND (staging_bucket IS NULL OR btrim(staging_bucket) <> ''::text AND btrim(staging_path) <> ''::text AND (expected_format = 'fit'::text AND expected_media_type = 'application/vnd.ant.fit'::text OR expected_format = 'gpx'::text AND expected_media_type = 'application/gpx+xml'::text OR expected_format = 'tcx'::text AND expected_media_type = 'application/vnd.garmin.tcx+xml'::text))) NOT VALID"
+      "validated": true,
+      "definition": "CHECK ((num_nonnulls(staging_bucket, staging_path, expected_sha256, expected_byte_size, expected_format, expected_media_type) = ANY (ARRAY[0, 6])) AND (staging_bucket IS NULL OR btrim(staging_bucket) <> ''::text AND btrim(staging_path) <> ''::text AND (expected_format = 'fit'::text AND expected_media_type = 'application/vnd.ant.fit'::text OR expected_format = 'gpx'::text AND expected_media_type = 'application/gpx+xml'::text OR expected_format = 'tcx'::text AND expected_media_type = 'application/vnd.garmin.tcx+xml'::text)))"
     },
     {
       "kind": "c",
@@ -8231,13 +8201,6 @@
       "table": "activity_plans",
       "validated": true,
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
-    },
-    {
-      "kind": "f",
-      "name": "activity_plans_route_id_activity_routes_id_fk",
-      "table": "activity_plans",
-      "validated": true,
-      "definition": "FOREIGN KEY (route_id) REFERENCES activity_routes(id) ON DELETE SET NULL"
     },
     {
       "kind": "c",
@@ -9160,8 +9123,8 @@
       "kind": "c",
       "name": "integration_credentials_generation_positive",
       "table": "integration_credentials",
-      "validated": false,
-      "definition": "CHECK (generation > 0) NOT VALID"
+      "validated": true,
+      "definition": "CHECK (generation > 0)"
     },
     {
       "kind": "f",
@@ -9216,22 +9179,22 @@
       "kind": "c",
       "name": "integrations_disconnect_timestamps_check",
       "table": "integrations",
-      "validated": false,
-      "definition": "CHECK (lifecycle_status = 'active'::text AND disconnect_requested_at IS NULL AND disconnected_at IS NULL OR lifecycle_status = 'disconnect_pending'::text AND disconnect_requested_at IS NOT NULL AND disconnected_at IS NULL OR lifecycle_status = 'disconnected'::text AND disconnect_requested_at IS NOT NULL AND disconnected_at IS NOT NULL) NOT VALID"
+      "validated": true,
+      "definition": "CHECK (lifecycle_status = 'active'::text AND disconnect_requested_at IS NULL AND disconnected_at IS NULL OR lifecycle_status = 'disconnect_pending'::text AND disconnect_requested_at IS NOT NULL AND disconnected_at IS NULL OR lifecycle_status = 'disconnected'::text AND disconnect_requested_at IS NOT NULL AND disconnected_at IS NOT NULL)"
     },
     {
       "kind": "c",
       "name": "integrations_generation_positive_check",
       "table": "integrations",
-      "validated": false,
-      "definition": "CHECK (generation > 0) NOT VALID"
+      "validated": true,
+      "definition": "CHECK (generation > 0)"
     },
     {
       "kind": "c",
       "name": "integrations_lifecycle_status_check",
       "table": "integrations",
-      "validated": false,
-      "definition": "CHECK (lifecycle_status = ANY (ARRAY['active'::text, 'disconnect_pending'::text, 'disconnected'::text])) NOT VALID"
+      "validated": true,
+      "definition": "CHECK (lifecycle_status = ANY (ARRAY['active'::text, 'disconnect_pending'::text, 'disconnected'::text]))"
     },
     {
       "kind": "p",
@@ -9657,8 +9620,8 @@
       "kind": "c",
       "name": "provider_sync_jobs_integration_generation_positive_check",
       "table": "provider_sync_jobs",
-      "validated": false,
-      "definition": "CHECK (integration_generation > 0) NOT VALID"
+      "validated": true,
+      "definition": "CHECK (integration_generation > 0)"
     },
     {
       "kind": "f",
@@ -9713,15 +9676,15 @@
       "kind": "c",
       "name": "provider_webhook_receipts_integration_generation_pair_check",
       "table": "provider_webhook_receipts",
-      "validated": false,
-      "definition": "CHECK ((integration_id IS NULL) = (integration_generation IS NULL)) NOT VALID"
+      "validated": true,
+      "definition": "CHECK ((integration_id IS NULL) = (integration_generation IS NULL))"
     },
     {
       "kind": "c",
       "name": "provider_webhook_receipts_integration_generation_positive_check",
       "table": "provider_webhook_receipts",
-      "validated": false,
-      "definition": "CHECK (integration_generation IS NULL OR integration_generation > 0) NOT VALID"
+      "validated": true,
+      "definition": "CHECK (integration_generation IS NULL OR integration_generation > 0)"
     },
     {
       "kind": "f",
@@ -9893,7 +9856,12 @@
       "allowedMimeTypes": ["image/jpeg", "image/jpg", "image/png"]
     }
   ],
-  "ownedExtensions": [],
+  "ownedExtensions": [
+    {
+      "name": "btree_gist",
+      "schema": "extensions"
+    }
+  ],
   "publicRelations": [
     {
       "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",

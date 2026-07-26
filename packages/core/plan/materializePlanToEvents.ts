@@ -2,7 +2,7 @@ import {
   type CanonicalTrainingPlanStructure,
   canonicalTrainingPlanStructureSchema,
   persistedTrainingPlanStructureSchema,
-} from "../schemas/training_plan_structure";
+} from "../schemas/training-plan-structure";
 import { scheduledDateTimeToIsoInstant } from "../utils/schedule-date";
 import { addDaysDateOnlyUtc } from "./dateOnlyUtc";
 

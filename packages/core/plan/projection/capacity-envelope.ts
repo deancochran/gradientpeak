@@ -1,4 +1,4 @@
-import type { TrainingPlanCalibrationConfig } from "../../schemas/training_plan_structure";
+import type { TrainingPlanCalibrationConfig } from "../../schemas/training-plan-structure";
 
 export type EnvelopeState = "inside" | "edge" | "outside";
 export type EvidenceState = "none" | "sparse" | "stale" | "rich";

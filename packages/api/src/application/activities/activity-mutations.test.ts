@@ -41,7 +41,7 @@ describe("deleteActivityForProfile", () => {
 });
 
 describe("updateActivityForProfile", () => {
-  it("does not persist a legacy normalized_power field injected past the public type", async () => {
+  it("persists only canonical editable parent fields", async () => {
     const set = vi.fn(() => ({
       where: vi.fn(() => ({ returning: vi.fn().mockResolvedValue([{ id: "activity-1" }]) })),
     }));
@@ -50,13 +50,10 @@ describe("updateActivityForProfile", () => {
 
     await updateActivityForProfile({
       db: db as never,
-      input: { id: "activity-1", name: "Renamed", normalized_power: 999 } as never,
+      input: { id: "activity-1", name: "Renamed" },
       profileId: "profile-1",
     });
 
-    expect(set).toHaveBeenCalledWith(
-      expect.not.objectContaining({ normalized_power: expect.anything() }),
-    );
     expect(set).toHaveBeenCalledWith(expect.objectContaining({ name: "Renamed" }));
   });
 });

@@ -65,7 +65,7 @@ describe("SearchField web", () => {
     const { rerender } = render(
       <SearchField
         accessibilityLabel="Search plans"
-        clearTestId="legacy-search-clear"
+        clearTestId="search-clear"
         onValueChange={vi.fn()}
         placeholder="Search plans"
         testId="plan-search"
@@ -73,7 +73,7 @@ describe("SearchField web", () => {
       />,
     );
 
-    expect(screen.getByTestId("legacy-search-clear")).toBeInTheDocument();
+    expect(screen.getByTestId("search-clear")).toBeInTheDocument();
     rerender(
       <SearchField
         accessibilityLabel="Search plans"

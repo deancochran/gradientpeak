@@ -11,7 +11,6 @@ import {
   ianaTimezoneSchema,
   materializeRecurrenceOccurrences,
   parseDateOnlyUtc,
-  plannedActivityCreateSchema,
   plannedActivityUpdateSchema,
   scheduledDateTimeToIsoInstant,
 } from "@repo/core";
@@ -94,10 +93,8 @@ type InsightRefreshHint = {
 type DbEventType = PublicEventType;
 type CoreEventType = z.infer<typeof eventTypeInputSchema>;
 type EventMutationScope = z.infer<typeof eventMutationScopeSchema>;
-type LegacyPlannedCreateInput = z.infer<typeof plannedActivityCreateSchema>;
 type EventCreateInput = z.infer<typeof eventCreateSchema>;
 type EventUpdateInput = z.infer<typeof eventUpdateSchema>;
-type EventCreateMutationInput = LegacyPlannedCreateInput | EventCreateInput;
 type NormalizedEventCreateInput = {
   activityPlanId: string | null;
   allDay: boolean;
@@ -105,7 +102,7 @@ type NormalizedEventCreateInput = {
   endsAt: string | null;
   eventType: CoreEventType;
   notes: string | null;
-  recurrence: LegacyPlannedCreateInput["recurrence"] | null;
+  recurrence: NonNullable<EventCreateInput["recurrence"]> | null;
   routeId: string | null;
   sourceProvider: string | null;
   scheduledDate: string;
@@ -122,7 +119,6 @@ type MaterializedRecurrenceOccurrence = {
   occurrenceKey: string;
 };
 
-const plannedEventType = "planned" as const;
 const weekdayToRRuleDay = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as const;
 
 function toDbEventType(eventType: CoreEventType): DbEventType {
@@ -171,6 +167,7 @@ type PlannedEventRecord = Omit<
     | "all_day"
     | "timezone"
     | "activity_plan_id"
+    | "route_id"
     | "training_plan_id"
     | "recurrence_rule"
     | "recurrence_timezone"
@@ -195,6 +192,14 @@ type PlannedEventRecord = Omit<
   ends_at: string | null;
   original_starts_at: string | null;
   activity_plan: PublicActivityPlansRow[] | null;
+  route: {
+    id: string;
+    name: string;
+    description: string | null;
+    total_distance: number;
+    total_ascent: number | null;
+    total_descent: number | null;
+  } | null;
 };
 
 type MappedEvent<T extends PlannedEventRecord = PlannedEventRecord> = Omit<
@@ -203,7 +208,6 @@ type MappedEvent<T extends PlannedEventRecord = PlannedEventRecord> = Omit<
 > & {
   scheduled_date: string;
   event_type: CoreEventType;
-  legacy_event_type: DbEventType;
   activity_plan:
     | (PublicActivityPlansRow & {
         owner?: ProfileIdentity | null;
@@ -229,30 +233,7 @@ const validateConstraintsSchema = z
   })
   .strict();
 
-const plannedActivityCreateInputSchema = plannedActivityCreateSchema.strict();
-const eventCreateInputSchema = z.unknown().transform((value, ctx): EventCreateMutationInput => {
-  const parsedEventCreate = eventCreateSchema.safeParse(value);
-  if (parsedEventCreate.success) return parsedEventCreate.data;
-
-  const parsedLegacyPlannedCreate = plannedActivityCreateInputSchema.safeParse(value);
-  if (parsedLegacyPlannedCreate.success) return parsedLegacyPlannedCreate.data;
-
-  const eventCreateMessage = parsedEventCreate.error.issues[0]?.message;
-  const legacyPlannedCreateMessage = parsedLegacyPlannedCreate.error.issues[0]?.message;
-  const validationDetails = [eventCreateMessage, legacyPlannedCreateMessage]
-    .filter((message): message is string => Boolean(message))
-    .filter((message, index, messages) => messages.indexOf(message) === index)
-    .join("; ");
-
-  ctx.addIssue({
-    code: "custom",
-    message: validationDetails
-      ? `Invalid event create payload: ${validationDetails}`
-      : "Invalid event create payload",
-  });
-
-  return z.NEVER;
-});
+const eventCreateInputSchema = eventCreateSchema;
 
 const plannedActivityUpdateWithIdInputSchema = plannedActivityUpdateSchema
   .extend({
@@ -281,12 +262,6 @@ const eventUpdateInputSchema = z.unknown().transform((value, ctx): EventUpdateMu
   return z.NEVER;
 });
 
-function isLegacyPlannedCreateInput(
-  input: EventCreateMutationInput,
-): input is LegacyPlannedCreateInput {
-  return !("title" in input) && "scheduled_date" in input;
-}
-
 function isLegacyPlannedUpdateInput(
   input: EventUpdateMutationInput,
 ): input is LegacyPlannedUpdateInput {
@@ -295,6 +270,7 @@ function isLegacyPlannedUpdateInput(
 
 type NormalizedEventUpdatePatch = {
   activity_plan_id?: string | null;
+  route_id?: string | null;
   training_plan_id?: string | null;
   notes?: string | null;
   event_type?: CoreEventType;
@@ -317,6 +293,7 @@ function normalizeEventUpdatePatch(input: EventUpdateMutationInput): {
     return {
       patch: {
         activity_plan_id: input.activity_plan_id,
+        route_id: input.route_id,
         notes: input.notes,
         event_type: input.event_type,
         recurrence: input.recurrence,
@@ -565,7 +542,6 @@ function hasInstantChanged(
 }
 
 function mapEvent<T extends PlannedEventRecord>(event: T): MappedEvent<T> {
-  const legacyEventType = (event.event_type ?? plannedEventType) as DbEventType;
   const activityPlan = flattenActivityPlanRelation(
     event.activity_plan,
   ) as MappedEvent<T>["activity_plan"];
@@ -573,9 +549,8 @@ function mapEvent<T extends PlannedEventRecord>(event: T): MappedEvent<T> {
   return {
     ...event,
     activity_plan: activityPlan,
-    event_type: toCoreEventType(legacyEventType),
-    legacy_event_type: legacyEventType,
-    scheduled_date: event.scheduled_date ?? getScheduledDateKey(event.starts_at, event.timezone),
+    event_type: toCoreEventType(event.event_type),
+    scheduled_date: event.scheduled_date,
   };
 }
 
@@ -785,19 +760,6 @@ function buildInsightRefreshHint(params: {
   };
 }
 
-function defaultTitleForEventType(eventType: CoreEventType): string {
-  switch (eventType) {
-    case "planned":
-      return "Planned Activity";
-    case "race_target":
-      return "Race Target";
-    case "custom":
-      return "Custom Event";
-    case "imported":
-      return "Imported Event";
-  }
-}
-
 function ensurePersistableRecurrence(
   recurrence:
     | {
@@ -842,33 +804,12 @@ function toPersistableEventStatus(
   return status;
 }
 
-function normalizeEventCreateInput(input: EventCreateMutationInput): NormalizedEventCreateInput {
-  const eventType: CoreEventType = input.event_type ?? "planned";
+function normalizeEventCreateInput(input: EventCreateInput): NormalizedEventCreateInput {
   const status = toPersistableEventStatus(input.lifecycle);
-
-  if (isLegacyPlannedCreateInput(input)) {
-    return {
-      activityPlanId: input.activity_plan_id,
-      allDay: true,
-      description: null,
-      endsAt: toNextDayStartIso(input.scheduled_date),
-      eventType,
-      notes: input.notes ?? null,
-      recurrence: input.recurrence ?? null,
-      routeId: input.route_id ?? null,
-      sourceProvider: "source" in input ? (input.source?.provider ?? null) : null,
-      scheduledDate: input.scheduled_date,
-      startsAt: toDayStartIso(input.scheduled_date),
-      status,
-      timezone: "UTC",
-      title: defaultTitleForEventType(eventType),
-      trainingPlanId: input.training_plan_id ?? null,
-    };
-  }
 
   if (input.event_type === "planned") {
     return {
-      activityPlanId: input.activity_plan_id,
+      activityPlanId: input.activity_plan_id ?? null,
       allDay: true,
       description: null,
       endsAt: toNextDayStartIso(input.scheduled_date),
@@ -887,15 +828,17 @@ function normalizeEventCreateInput(input: EventCreateMutationInput): NormalizedE
   }
 
   return {
-    activityPlanId: null,
+    activityPlanId: "activity_plan_id" in input ? (input.activity_plan_id ?? null) : null,
     allDay: input.all_day,
     description: input.description ?? null,
     endsAt: typeof input.ends_at === "string" ? toCanonicalInstantIso(input.ends_at) : null,
     eventType: input.event_type,
     notes: input.notes ?? null,
     recurrence: input.recurrence ?? null,
-    routeId: null,
+    routeId: "route_id" in input ? (input.route_id ?? null) : null,
     sourceProvider: null,
+    // Custom and race payloads may omit the date, so derive their canonical
+    // schedule anchor once at this write boundary.
     scheduledDate: input.scheduled_date ?? getScheduledDateKey(input.starts_at, input.timezone),
     startsAt: toCanonicalInstantIso(input.starts_at),
     status,
@@ -1103,7 +1046,6 @@ export const eventsRouter = createTRPCRouter({
         getEventWriteRepository,
         mapEvent: (event) => mapEvent(event as PlannedEventRecord),
         normalizeEventCreateInput,
-        plannedEventType,
         toDbEventType,
       },
     });
@@ -1125,7 +1067,6 @@ export const eventsRouter = createTRPCRouter({
         hasInstantChanged,
         mapEvent: (event) => mapEvent(event as PlannedEventRecord),
         normalizeEventUpdatePatch,
-        plannedEventType,
         toCoreEventType,
         toDateKey,
         toDayStartIso,
@@ -1145,7 +1086,6 @@ export const eventsRouter = createTRPCRouter({
         enqueueProviderPlannedActivityJobs,
         getContentPermissions,
         getEventCompletionRepository,
-        plannedEventType,
         toCoreEventType,
         toDateKey,
       },
@@ -1630,7 +1570,7 @@ export const eventsRouter = createTRPCRouter({
 
       const plannedThisWeek = await eventReadRepository.listOwnedEvents({
         profileId: ctx.session.user.id,
-        eventTypes: [plannedEventType],
+        eventTypes: ["planned"],
         includeAdhoc: true,
         dateFrom: startOfWeek.toISOString().split("T")[0] || "",
         dateTo: endOfWeek.toISOString().split("T")[0] || "",

@@ -9,7 +9,7 @@ import {
   creationConstraintsSchema,
   creationProvenanceSchema,
   creationRecentInfluenceActionEnum,
-} from "../schemas/training_plan_structure";
+} from "../schemas/training-plan-structure";
 import { countAvailableTrainingDays } from "./availabilityUtils";
 
 const WEEKDAY_ORDER = [

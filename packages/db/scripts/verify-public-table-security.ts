@@ -1,7 +1,5 @@
 #!/usr/bin/env tsx
 
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import type { PoolClient } from "pg";
 import { Pool } from "pg";
 import { prepareDbEnv } from "./_helpers";
@@ -20,19 +18,6 @@ type SequenceSecurityRow = {
   authenticated_has_any: boolean;
   service_role_has_required: boolean;
 };
-
-const securityMigrationPath = fileURLToPath(
-  new URL(
-    "../supabase/migrations/20260713034515_restore_public_table_security.sql",
-    import.meta.url,
-  ),
-);
-const indexMigrationPath = fileURLToPath(
-  new URL(
-    "../supabase/migrations/20260713034520_add_activity_file_ingestion_fk_index.sql",
-    import.meta.url,
-  ),
-);
 
 async function expectRoleDenied(client: PoolClient, role: "anon" | "authenticated", sql: string) {
   const savepoint = `before_${role}`;
@@ -56,21 +41,20 @@ async function main() {
   const client = await pool.connect();
 
   try {
-    const [securityMigration, indexMigration] = await Promise.all([
-      readFile(securityMigrationPath, "utf8"),
-      readFile(indexMigrationPath, "utf8"),
-    ]);
     await client.query("begin");
 
-    // Created before the repair so RLS and current-object ACL behavior are both exercised.
+    // Current security is verified directly; it is not inferred from historical SQL paths.
     await client.query(`
       create table public.__security_verifier_current (
         id serial primary key,
         marker text not null
       )
     `);
-    await client.query(securityMigration);
-    await client.query(indexMigration);
+    await client.query("alter table public.__security_verifier_current enable row level security");
+    await client.query(
+      "revoke all on table public.__security_verifier_current from public, anon, authenticated",
+    );
+    await client.query("grant all on table public.__security_verifier_current to service_role");
 
     const tables = await client.query<TableSecurityRow>(`
       select
@@ -102,6 +86,39 @@ async function main() {
         `public table security assertions failed: ${tableFailures.map((row) => row.table_name).join(", ")}`,
       );
     }
+
+    const definers = await client.query<{
+      identity: string;
+      anon_execute: boolean;
+      authenticated_execute: boolean;
+    }>(`
+      select p.oid::regprocedure::text as identity,
+        has_function_privilege('anon', p.oid, 'EXECUTE') as anon_execute,
+        has_function_privilege('authenticated', p.oid, 'EXECUTE') as authenticated_execute
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.prosecdef
+      order by identity
+    `);
+    for (const definer of definers.rows) {
+      if (definer.anon_execute || definer.authenticated_execute) {
+        throw new Error(`SECURITY DEFINER function is directly callable: ${definer.identity}`);
+      }
+    }
+    await expectRoleDenied(
+      client,
+      "anon",
+      "select public.validate_activity_segment_set('00000000-0000-0000-0000-000000000000'::uuid)",
+    );
+    await expectRoleDenied(
+      client,
+      "authenticated",
+      "select public.validate_activity_segment_set('00000000-0000-0000-0000-000000000000'::uuid)",
+    );
+    const segmentTrigger = await client.query(
+      "select 1 from pg_trigger where tgrelid = 'public.activity_segments'::regclass and tgname = 'activity_segments_validate_set' and tgenabled = 'O'",
+    );
+    if (segmentTrigger.rowCount !== 1)
+      throw new Error("activity segment validation trigger is not enabled");
 
     const sequences = await client.query<SequenceSecurityRow>(`
       select

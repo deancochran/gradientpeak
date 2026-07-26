@@ -40,6 +40,7 @@ const acceptedArtifact = {
 const submission = recordingSummarySubmissionInputSchema.parse({
   profileId: PROFILE_ID,
   recordingSessionId: "session-1",
+  artifactSource: "uploadedArtifact",
   name: "Recorder run",
   startedAt: "2026-07-24T08:00:00.000Z",
   finishedAt: "2026-07-24T09:00:00.000Z",
@@ -172,163 +173,11 @@ describe("submitMobileRecording", () => {
     expect(uploadFlow.retryMobileRecordingStagingCleanup).toHaveBeenCalledTimes(1);
   });
 
-  it("uses the accepted artifact identity for legacy submissions without a recording session", async () => {
-    const legacySubmission = recordingSummarySubmissionInputSchema.parse({
-      profileId: PROFILE_ID,
-      name: "Recorder run",
-      startedAt: "2026-07-24T08:00:00.000Z",
-      finishedAt: "2026-07-24T09:00:00.000Z",
-      executionManifest: submission.executionManifest,
-      acceptedArtifact,
-      summary: { distanceMeters: 10_000 },
-    });
-    const readyIngestion = {
-      id: INGESTION_ID,
-      profile_id: PROFILE_ID,
-      source: "mobile_recording",
-      status: "ready",
-      staging_cleanup_pending: false,
-    };
-    const db = createDb({
-      activities: [undefined, { id: "activity-1", profile_id: PROFILE_ID }],
-      ingestions: [undefined, readyIngestion],
-    });
-    const storage = {
-      storage: { from: vi.fn() },
-      readObjectBounded: vi.fn(async () => ({
-        data: new Uint8Array([97, 98, 99]),
-        contentType: "application/fit",
-      })),
-    };
-    const result = await submitMobileRecording(db as never, storage as never, {
-      actorProfileId: PROFILE_ID,
-      submission: legacySubmission,
-    });
-
-    expect(activityWriter.submitActivity).toHaveBeenCalledWith(
-      db,
-      expect.objectContaining({
-        requestedActivityId: recordingSessionActivityId(
-          PROFILE_ID,
-          `accepted-artifact:${acceptedArtifact.sha256}:${acceptedArtifact.byteSize}`,
-        ),
-        analysis: expect.objectContaining({
-          ingestion: expect.objectContaining({
-            operationKey: `mobile-recording:accepted-artifact:${acceptedArtifact.sha256}:${acceptedArtifact.byteSize}`,
-          }),
-        }),
-      }),
-    );
-    expect(result).toMatchObject({ activity: { id: "activity-1" } });
-  });
-
-  it("returns a persisted pre-rollout sessionless recording under its legacy digest operation", async () => {
-    const legacySubmission = recordingSummarySubmissionInputSchema.parse({
-      profileId: PROFILE_ID,
-      name: "Recorder run",
-      startedAt: "2026-07-24T08:00:00.000Z",
-      finishedAt: "2026-07-24T09:00:00.000Z",
-      executionManifest: submission.executionManifest,
-      acceptedArtifact,
-      summary: { distanceMeters: 10_000 },
-    });
-    const legacyIngestion = {
-      id: INGESTION_ID,
-      profile_id: PROFILE_ID,
-      source: "mobile_recording",
-      operation_key: `mobile-recording:${acceptedArtifact.sha256}`,
-      activity_id: "legacy-activity-1",
-      status: "ready",
-      staging_cleanup_pending: false,
-    };
-    const db = createDb({
-      activities: [undefined, { id: "legacy-activity-1", profile_id: PROFILE_ID }],
-      ingestions: [legacyIngestion],
-    });
-    const storage = {
-      storage: { from: vi.fn() },
-      readObjectBounded: vi.fn(async () => ({
-        data: new Uint8Array([97, 98, 99]),
-        contentType: "application/fit",
-      })),
-    };
-
-    await expect(
-      submitMobileRecording(db as never, storage as never, {
-        actorProfileId: PROFILE_ID,
-        submission: legacySubmission,
-      }),
-    ).resolves.toMatchObject({
-      activity: { id: "legacy-activity-1" },
-      ingestion: { id: INGESTION_ID },
-      acceptedArtifact,
-    });
-    expect(activityWriter.submitActivity).not.toHaveBeenCalled();
-  });
-
-  it("fails closed when a persisted pre-rollout recording is incomplete or mismatched", async () => {
-    const legacySubmission = recordingSummarySubmissionInputSchema.parse({
-      profileId: PROFILE_ID,
-      name: "Recorder run",
-      startedAt: "2026-07-24T08:00:00.000Z",
-      finishedAt: "2026-07-24T09:00:00.000Z",
-      executionManifest: submission.executionManifest,
-      acceptedArtifact,
-      summary: { distanceMeters: 10_000 },
-    });
-    const incomplete = createDb({
-      activities: [undefined],
-      ingestions: [
-        {
-          id: INGESTION_ID,
-          profile_id: PROFILE_ID,
-          source: "mobile_recording",
-          operation_key: `mobile-recording:${acceptedArtifact.sha256}`,
-          activity_id: null,
-          status: "ready",
-        },
-      ],
-    });
-
-    await expect(
-      submitMobileRecording(incomplete as never, {} as never, {
-        actorProfileId: PROFILE_ID,
-        submission: legacySubmission,
-      }),
-    ).rejects.toMatchObject({ code: "submission_failed" });
-
-    const mismatched = createDb({
-      activities: [undefined, { id: "legacy-activity-1", profile_id: PROFILE_ID }],
-      ingestions: [
-        {
-          id: INGESTION_ID,
-          profile_id: PROFILE_ID,
-          source: "mobile_recording",
-          operation_key: `mobile-recording:${acceptedArtifact.sha256}`,
-          activity_id: "legacy-activity-1",
-          status: "ready",
-        },
-      ],
-    });
-    uploadFlow.loadAcceptedArtifactForClaim.mockResolvedValueOnce({
-      ...acceptedArtifact,
-      sha256: "c".repeat(64),
-      path: `artifacts/sha256/${PROFILE_ID}/${"c".repeat(64)}`,
-    });
-
-    await expect(
-      submitMobileRecording(mismatched as never, {} as never, {
-        actorProfileId: PROFILE_ID,
-        submission: legacySubmission,
-      }),
-    ).rejects.toMatchObject({ code: "conflict" });
-    expect(activityWriter.submitActivity).not.toHaveBeenCalled();
-  });
-
   it("keeps an accepted artifact submission scoped to its explicit recording session", async () => {
     const acceptedSubmission = recordingSummarySubmissionInputSchema.parse({
       profileId: PROFILE_ID,
       recordingSessionId: "accepted-artifact-session-1",
+      artifactSource: "acceptedArtifact",
       name: "Recorder run",
       startedAt: "2026-07-24T08:00:00.000Z",
       finishedAt: "2026-07-24T09:00:00.000Z",
@@ -373,30 +222,11 @@ describe("submitMobileRecording", () => {
     );
   });
 
-  it("rejects a legacy accepted artifact that is not at its canonical content-addressed path", async () => {
-    const legacySubmission = recordingSummarySubmissionInputSchema.parse({
+  it("rejects a conflicting replay for the same session-bound accepted artifact", async () => {
+    const acceptedSubmission = recordingSummarySubmissionInputSchema.parse({
       profileId: PROFILE_ID,
-      name: "Recorder run",
-      startedAt: "2026-07-24T08:00:00.000Z",
-      finishedAt: "2026-07-24T09:00:00.000Z",
-      executionManifest: submission.executionManifest,
-      acceptedArtifact: { ...acceptedArtifact, path: "staging/attacker-controlled.fit" },
-      summary: { distanceMeters: 10_000 },
-    });
-    const db = createDb({ activities: [undefined] });
-
-    await expect(
-      submitMobileRecording(db as never, {} as never, {
-        actorProfileId: PROFILE_ID,
-        submission: legacySubmission,
-      }),
-    ).rejects.toMatchObject({ code: "artifact_invalid" });
-    expect(activityWriter.submitActivity).not.toHaveBeenCalled();
-  });
-
-  it("rejects a conflicting replay for the same legacy accepted artifact identity", async () => {
-    const legacySubmission = recordingSummarySubmissionInputSchema.parse({
-      profileId: PROFILE_ID,
+      recordingSessionId: "accepted-artifact-session-1",
+      artifactSource: "acceptedArtifact",
       name: "Recorder run",
       startedAt: "2026-07-24T08:00:00.000Z",
       finishedAt: "2026-07-24T09:00:00.000Z",
@@ -419,7 +249,7 @@ describe("submitMobileRecording", () => {
     await expect(
       submitMobileRecording(db as never, {} as never, {
         actorProfileId: PROFILE_ID,
-        submission: legacySubmission,
+        submission: acceptedSubmission,
       }),
     ).rejects.toMatchObject({ code: "conflict" });
   });

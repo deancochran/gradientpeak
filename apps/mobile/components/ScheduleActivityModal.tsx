@@ -72,6 +72,7 @@
  * ```
  */
 
+import type { eventCreateSchema } from "@repo/core";
 import {
   DEFAULT_WEEKLY_COUNT_RECURRENCE,
   serializeWeeklyCountRecurrence,
@@ -250,14 +251,21 @@ function parseEventDateForEditor(event: { starts_at: string; all_day?: boolean |
 
 function toScheduleCreatePayload(input: {
   data: ScheduleActivityModalFormOutput;
+  activityPlanName: string;
   recurrence: WeeklyCountRecurrencePayload | undefined;
-}) {
+}): Extract<z.input<typeof eventCreateSchema>, { event_type: "planned" }> {
   return {
     activity_plan_id: input.data.activityPlanId,
+    all_day: true,
+    event_type: "planned",
+    lifecycle: { status: "scheduled" },
     scheduled_date: input.data.scheduledDate,
     notes: input.data.notes || undefined,
     training_plan_id: input.data.trainingPlanId || undefined,
     recurrence: input.recurrence,
+    title: input.activityPlanName,
+    timezone: "UTC",
+    read_only: false,
   };
 }
 
@@ -341,16 +349,8 @@ export function ScheduleActivityModal({
     { enabled: !!currentActivityPlanId && visible && !isTemplate },
   );
 
-  // Use template if provided, otherwise use fetched plan
+  // Use template if provided, otherwise use fetched plan.
   const displayPlan = isTemplate ? activityPlan : planDetails;
-  const displayRouteId =
-    displayPlan && "route_id" in displayPlan && typeof displayPlan.route_id === "string"
-      ? displayPlan.route_id
-      : undefined;
-  const { data: displayRoute } = api.routes.get.useQuery(
-    { id: displayRouteId ?? "" },
-    { enabled: visible && !!displayRouteId },
-  );
 
   // Validate constraints in real-time (when training plan provided)
   const {
@@ -453,6 +453,15 @@ export function ScheduleActivityModal({
       return;
     }
 
+    if (!displayPlan) {
+      setRootFormError(
+        form,
+        new Error("Activity plan is unavailable"),
+        "Failed to schedule activity.",
+      );
+      return;
+    }
+
     clearRootFormError(form);
 
     try {
@@ -460,6 +469,7 @@ export function ScheduleActivityModal({
         createMutation,
         toScheduleCreatePayload({
           data,
+          activityPlanName: displayPlan.name,
           recurrence: serializeWeeklyCountRecurrence({
             recurrence,
             startInstant: data.scheduledDate,
@@ -611,7 +621,6 @@ export function ScheduleActivityModal({
               </Text>
               <ActivityPlanCard
                 activityPlan={displayPlan}
-                {...(displayRoute === undefined ? {} : { route: displayRoute })}
                 testID="schedule-selected-activity-card"
                 variant="compact"
               />

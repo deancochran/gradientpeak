@@ -18,8 +18,7 @@ import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import {
   useBleState,
   useKnownSensors,
-  useRecorderActions,
-  useSensors,
+  useRecordingCommands,
   useSessionView,
 } from "@/lib/hooks/useActivityRecorder";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
@@ -38,9 +37,9 @@ import { useTheme } from "@/lib/stores/theme-store";
 function SensorsScreen() {
   const { resolvedTheme } = useTheme();
   const service = useSharedActivityRecorder();
-  const { sensors: connectedSensors } = useSensors(service);
-  const knownSensors = useKnownSensors(service);
   const sessionView = useSessionView(service);
+  const connectedSensors = service?.sensorsManager?.getConnectedSensors() ?? [];
+  const knownSensors = useKnownSensors(service);
   const bleState = useBleState(service);
   const {
     startScan,
@@ -53,7 +52,7 @@ function SensorsScreen() {
     setPreferredMetricSource,
     disableMetricSource,
     enableMetricSource,
-  } = useRecorderActions(service);
+  } = useRecordingCommands(service);
 
   const [permissions, setPermissions] = useState<AllPermissionsStatus | null>(null);
   const [isScanning, setIsScanning] = useState(false);

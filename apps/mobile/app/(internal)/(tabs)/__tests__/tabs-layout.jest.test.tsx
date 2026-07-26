@@ -101,7 +101,7 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
 
 jest.mock("@/lib/hooks/useActivityRecorder", () => ({
   __esModule: true,
-  useRecordingLifecycle: () => mockRecordingLifecycle,
+  useSessionView: () => ({ lifecycle: mockRecordingLifecycle }),
 }));
 
 jest.mock("@/lib/providers/ActivityRecorderProvider", () => ({

@@ -9,7 +9,6 @@ import { prepareMobileRecordingStartup } from "@/lib/services/mobileRecordingSta
 export function useStartupActivitySubmissionRecovery(profileId: string | null): void {
   const create = api.activities.createFromRecordingSummary.useMutation();
   const beginUpload = api.activityFiles.beginMobileRecordingUpload.useMutation();
-  const claimLegacyUpload = api.activityFiles.claimLegacyMobileRecordingUpload.useMutation();
   const retryRecordingCleanup = api.activityFiles.retryPendingMobileRecordingCleanup.useMutation();
 
   useEffect(() => {
@@ -25,7 +24,6 @@ export function useStartupActivitySubmissionRecovery(profileId: string | null): 
             createFromRecordingSummary: create.mutateAsync,
             getLocalArtifactMetadata: getLocalActivityArtifactMetadata,
             beginMobileRecordingUpload: beginUpload.mutateAsync,
-            claimLegacyMobileRecordingUpload: claimLegacyUpload.mutateAsync,
             uploadToSignedUrl: (path, url) => uploader.uploadToSignedUrl(path, url),
           });
         }
@@ -34,11 +32,5 @@ export function useStartupActivitySubmissionRecovery(profileId: string | null): 
     return () => {
       cancelled = true;
     };
-  }, [
-    profileId,
-    create.mutateAsync,
-    beginUpload.mutateAsync,
-    claimLegacyUpload.mutateAsync,
-    retryRecordingCleanup.mutateAsync,
-  ]);
+  }, [profileId, create.mutateAsync, beginUpload.mutateAsync, retryRecordingCleanup.mutateAsync]);
 }

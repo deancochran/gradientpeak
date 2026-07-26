@@ -6,8 +6,8 @@ describe("app config transport security", () => {
     expect(getDevelopmentTransportSecurity("production")).toEqual({});
   });
 
-  it("keeps local HTTP exceptions available outside production", () => {
-    expect(getDevelopmentTransportSecurity("development")).toMatchObject({
+  it("keeps only the localhost HTTP exception available outside production", () => {
+    expect(getDevelopmentTransportSecurity("development")).toEqual({
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: true,
         NSExceptionDomains: {

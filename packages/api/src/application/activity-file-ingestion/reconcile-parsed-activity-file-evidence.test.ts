@@ -52,7 +52,6 @@ const analysisResult = {
     max_speed_mps: null,
     moving_ms: null,
     normalized_graded_speed_mps: null,
-    normalized_power: 220,
     normalized_speed_mps: 8,
     timing_coverage: "unavailable" as const,
   },
@@ -251,7 +250,7 @@ describe("replayParsedActivityFileEvidenceProfile", () => {
     };
     mocks.analyze.mockResolvedValue({
       ...analysisResult,
-      summaryValues: { ...analysisResult.summaryValues, normalized_power: 999 },
+      summaryValues: analysisResult.summaryValues,
       segmentSet: {
         segments: [
           {
@@ -274,7 +273,7 @@ describe("replayParsedActivityFileEvidenceProfile", () => {
       write: true,
     });
 
-    expect(parentUpdates[0]).toMatchObject({ normalized_power: 248 });
+    expect(parentUpdates[0]).not.toHaveProperty("normalized_power");
     expect(parentUpdates[1]).toMatchObject({
       summary: expect.objectContaining({ normalizedPowerWatts: 247.5 }),
     });

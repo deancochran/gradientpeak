@@ -5,7 +5,7 @@
  * and test scenarios for readiness calculation tests.
  */
 
-import type { GoalTargetV2 } from "../../../schemas/training_plan_structure";
+import type { TrainingPlanGoalTarget } from "../../../schemas/training-plan-structure";
 import type {
   ProjectionPointReadinessGoalInput,
   ProjectionPointReadinessInput,
@@ -33,9 +33,9 @@ export function createMockProjectionPoint(
  */
 export function createMockGoal(
   targetDate: string,
-  targets?: GoalTargetV2[],
+  targets?: TrainingPlanGoalTarget[],
   priority?: number,
-): ProjectionPointReadinessGoalInput & { targets?: GoalTargetV2[] } {
+): ProjectionPointReadinessGoalInput & { targets?: TrainingPlanGoalTarget[] } {
   return {
     target_date: targetDate,
     priority,
@@ -50,7 +50,7 @@ export function createRaceTarget(
   activityCategory: "run" | "bike" | "swim" | "other",
   distanceMeters: number,
   targetTimeSeconds: number,
-): GoalTargetV2 {
+): TrainingPlanGoalTarget {
   return {
     target_type: "race_performance",
     activity_category: activityCategory,
@@ -66,7 +66,7 @@ export function createPaceThresholdTarget(
   activityCategory: "run" | "bike" | "swim" | "other",
   targetSpeedMps: number,
   testDurationSeconds: number,
-): GoalTargetV2 {
+): TrainingPlanGoalTarget {
   return {
     target_type: "pace_threshold",
     target_speed_mps: targetSpeedMps,
@@ -78,7 +78,7 @@ export function createPaceThresholdTarget(
 /**
  * Creates an HR threshold test target
  */
-export function createHrThresholdTarget(targetLthrBpm: number): GoalTargetV2 {
+export function createHrThresholdTarget(targetLthrBpm: number): TrainingPlanGoalTarget {
   return {
     target_type: "hr_threshold",
     target_lthr_bpm: targetLthrBpm,

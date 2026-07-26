@@ -97,14 +97,6 @@ export default function ExternalLayout() {
         }}
       />
       <Stack.Screen
-        name="sign-up-success"
-        options={{
-          title: "Sign Up Success",
-          gestureEnabled: false,
-          headerBackVisible: false,
-        }}
-      />
-      <Stack.Screen
         name="verification-success"
         options={{
           title: "Verification Success",

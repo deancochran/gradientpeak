@@ -3,12 +3,5 @@
   "compilerOptions": {
     "target": "ESNext"
   },
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.tsx",
-    "scripts/**/*.ts",
-    ".storybook/**/*.ts",
-    ".storybook/**/*.tsx",
-    "*.d.ts"
-  ]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "scripts/**/*.ts", "*.d.ts"]
 }

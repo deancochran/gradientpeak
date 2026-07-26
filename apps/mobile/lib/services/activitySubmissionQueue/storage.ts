@@ -92,10 +92,13 @@ export async function loadActivitySubmissionQueueJobs(
   profileId?: string,
 ): Promise<ActivitySubmissionQueueJob[]> {
   if (testJobs)
-    return [...testJobs.values()].filter((job) => !profileId || job.draft.profileId === profileId);
+    return [...testJobs.values()].filter(
+      (job) =>
+        job.errorCategory !== "discarded" && (!profileId || job.draft.profileId === profileId),
+    );
   const rows = await withRecordingEvidenceTransaction((tx) =>
     tx.getAllAsync<QueueRow>(
-      `SELECT id, profile_id, status, job_json, retry_class, next_attempt_at, lease_owner, lease_token, lease_expires_at FROM activity_submission_queue_jobs ${profileId ? "WHERE profile_id = ?" : ""} ORDER BY created_at`,
+      `SELECT id, profile_id, status, job_json, retry_class, next_attempt_at, lease_owner, lease_token, lease_expires_at FROM activity_submission_queue_jobs WHERE COALESCE(error_category, '') != 'discarded'${profileId ? " AND profile_id = ?" : ""} ORDER BY created_at`,
       ...(profileId ? [profileId] : []),
     ),
   );

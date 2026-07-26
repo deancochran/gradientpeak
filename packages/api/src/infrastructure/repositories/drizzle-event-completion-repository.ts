@@ -45,6 +45,7 @@ const splitCompletionEventColumns = {
   scheduled_date: schema.events.scheduled_date,
   ends_at: schema.events.ends_at,
   activity_plan_id: schema.events.activity_plan_id,
+  route_id: schema.events.route_id,
   training_plan_id: schema.events.training_plan_id,
   linked_activity_id: schema.events.linked_activity_id,
   recurrence_rule: schema.events.recurrence_rule,

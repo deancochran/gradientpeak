@@ -103,7 +103,7 @@ function importedSubmission(profileId: string): ActivitySubmission {
     elapsedMs: 3_600_000,
     elevationGainMeters: null,
     finishedAt: new Date("2026-01-01T11:00:00.000Z"),
-    isPrivate: true,
+    contentVisibility: "private",
     maxCadence: null,
     maxHeartRate: null,
     maxPower: null,
@@ -114,7 +114,6 @@ function importedSubmission(profileId: string): ActivitySubmission {
     profileId,
     startedAt: new Date("2026-01-01T10:00:00.000Z"),
     timingCoverage: "complete",
-    normalizedPower: null,
     normalizedSpeedMps: null,
     normalizedGradedSpeedMps: null,
     efficiencyFactor: null,
@@ -643,7 +642,7 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
     const repository = createProviderSyncRepository({ db });
     await db.insert(providerSyncJobs).values({
       integration_id: owner.integrationId,
-      job_type: "wahoo.publish_event",
+      job_type: "wahoo.activity_history_reconcile",
       payload: {},
       profile_id: owner.profileId,
       provider: "wahoo",
@@ -684,7 +683,9 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
       .from(providerSyncJobs)
       .where(eq(providerSyncJobs.integration_id, owner.integrationId));
     expect(jobs.filter((job) => job.job_type === "wahoo.disconnect")).toHaveLength(1);
-    expect(jobs.find((job) => job.job_type === "wahoo.publish_event")?.status).toBe("completed");
+    expect(jobs.find((job) => job.job_type === "wahoo.activity_history_reconcile")?.status).toBe(
+      "completed",
+    );
     expect(jobs.find((job) => job.job_type === "wahoo.staging_cleanup")?.status).toBe("queued");
   });
 

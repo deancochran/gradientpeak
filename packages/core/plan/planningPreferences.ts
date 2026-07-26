@@ -2,7 +2,7 @@ import { z } from "zod";
 import {
   type CreationConstraints,
   creationConstraintsSchema,
-} from "../schemas/training_plan_structure";
+} from "../schemas/training-plan-structure";
 
 export const planningPreferencesSchema = z
   .object({

@@ -1,6 +1,6 @@
+import { normalizeDurationInput, parseHmsToSeconds } from "@repo/core/utils/fitness-inputs";
 import { useEffect, useState } from "react";
-import { normalizeDurationInput, parseHmsToSeconds } from "../../lib/fitness-inputs";
-import { View } from "../../lib/react-native";
+import { View } from "react-native";
 import { Input } from "../input/index.native";
 import { Label } from "../label/index.native";
 import { Text } from "../text/index.native";

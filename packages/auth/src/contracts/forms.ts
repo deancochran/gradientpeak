@@ -61,16 +61,11 @@ export const updatePasswordFormSchema = z
     path: ["confirmPassword"],
   });
 
-export const resetPasswordSchema = updatePasswordFormSchema;
-
 export type LoginFormValues = z.output<typeof loginFormSchema>;
-export type SignInFields = z.output<typeof signInSchema>;
+export type SignInFormValues = z.output<typeof signInSchema>;
 export type SignUpFormValues = z.output<typeof signUpFormSchema>;
-export type SignUpFields = SignUpFormValues;
 export type ForgotPasswordFormValues = z.output<typeof forgotPasswordFormSchema>;
-export type ForgotPasswordFields = ForgotPasswordFormValues;
 export type UpdatePasswordFormValues = z.output<typeof updatePasswordFormSchema>;
-export type ResetPasswordFields = z.output<typeof resetPasswordSchema>;
 
 export type AuthFormErrorTarget = "root" | "email" | "password";
 

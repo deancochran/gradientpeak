@@ -1,8 +1,6 @@
 import type {
   BeginMobileRecordingUploadInput,
   BeginMobileRecordingUploadOutput,
-  ClaimLegacyMobileRecordingUploadInput,
-  ClaimLegacyMobileRecordingUploadOutput,
   MobileRecordingSubmissionRequest,
   RecordingAcceptedArtifact,
 } from "@repo/api/recording-submission";
@@ -33,7 +31,7 @@ const activitySubmissionQueueJobStatusSchema = z.enum([
 
 export const activitySubmissionQueueDraftSchema = z
   .object({
-    recordingSessionId: z.string().min(1).optional(),
+    recordingSessionId: z.string().min(1),
     profileId: z.string().min(1),
     startedAt: z.string().min(1),
     finishedAt: z.string().min(1),
@@ -45,7 +43,6 @@ export const activitySubmissionQueueDraftSchema = z
     calories: z.number().nonnegative().nullable().optional(),
     notes: z.string().nullable().optional(),
     content_visibility: contentVisibilitySchema.optional(),
-    is_private: z.boolean().optional(),
     activityPlanId: z.string().uuid().nullable().optional(),
   })
   .strict();
@@ -56,7 +53,7 @@ export const activitySubmissionQueueJobSchema = z
     schemaVersion: z.literal(2),
     id: z.string().min(1),
     artifactId: z.string().min(1),
-    sessionId: z.string().min(1).nullable().optional(),
+    sessionId: z.string().min(1),
     localActivityFilePath: z.string().min(1),
     localActivityFileSize: z.number().nonnegative().nullable().optional(),
     streamArtifactPaths: z.array(z.string().min(1)),
@@ -64,7 +61,6 @@ export const activitySubmissionQueueJobSchema = z
     draft: activitySubmissionQueueDraftSchema,
     activityId: z.string().min(1).optional(),
     ingestionId: z.string().min(1).optional(),
-    remoteFilePath: z.string().min(1).optional(),
     uploadCompletedAt: z.string().datetime({ offset: true }).optional(),
     artifactSha256: z
       .string()
@@ -122,9 +118,6 @@ export type ActivitySubmissionQueueRunnerDeps = {
   beginMobileRecordingUpload: (
     input: BeginMobileRecordingUploadInput,
   ) => Promise<BeginMobileRecordingUploadOutput>;
-  claimLegacyMobileRecordingUpload: (
-    input: ClaimLegacyMobileRecordingUploadInput,
-  ) => Promise<ClaimLegacyMobileRecordingUploadOutput>;
   uploadToSignedUrl: (
     localPath: string,
     signedUrl: string,

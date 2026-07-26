@@ -1,10 +1,5 @@
 import { z } from "zod";
-import {
-  type ProfileGoalLegacy,
-  type ProfileGoalTarget,
-  profileGoalLegacySchema,
-  profileGoalTargetSchema,
-} from "../goals/profile_goals";
+import { canonicalGoalActivityCategorySchema } from "../goals/profile_goals";
 
 export const trainingPhaseEnum = z.enum([
   "base",
@@ -30,18 +25,58 @@ export const intensityDistributionSchema = z
 
 export type IntensityDistribution = z.infer<typeof intensityDistributionSchema>;
 
-export const trainingGoalSchema = profileGoalLegacySchema;
+/**
+ * Training-plan goals deliberately retain multiple weighted targets. They are
+ * distinct from profile goals, which own one canonical `objective`.
+ */
+export const trainingPlanGoalTargetSchema = z.discriminatedUnion("target_type", [
+  z.object({
+    target_type: z.literal("race_performance"),
+    distance_m: z.number().positive(),
+    target_time_s: z.number().int().positive(),
+    activity_category: canonicalGoalActivityCategorySchema,
+    weight: z.number().positive().finite().optional(),
+  }),
+  z.object({
+    target_type: z.literal("pace_threshold"),
+    target_speed_mps: z.number().positive(),
+    test_duration_s: z.number().int().positive(),
+    activity_category: canonicalGoalActivityCategorySchema,
+    weight: z.number().positive().finite().optional(),
+  }),
+  z.object({
+    target_type: z.literal("power_threshold"),
+    target_watts: z.number().positive(),
+    test_duration_s: z.number().int().positive(),
+    activity_category: canonicalGoalActivityCategorySchema,
+    weight: z.number().positive().finite().optional(),
+  }),
+  z.object({
+    target_type: z.literal("hr_threshold"),
+    target_lthr_bpm: z.number().int().positive(),
+    weight: z.number().positive().finite().optional(),
+  }),
+]);
 
-export type GoalV2 = ProfileGoalLegacy;
-export type GoalTargetV2 = ProfileGoalTarget;
+export const trainingPlanGoalSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1).max(100),
+  target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  priority: z.number().int().min(0).max(10).default(5),
+  targets: z.array(trainingPlanGoalTargetSchema).min(1),
+  target_performance: z.string().max(200).optional(),
+  notes: z.string().max(1000).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
 
-export type TrainingGoal = z.infer<typeof trainingGoalSchema>;
+export type TrainingPlanGoal = z.infer<typeof trainingPlanGoalSchema>;
+export type TrainingPlanGoalTarget = z.infer<typeof trainingPlanGoalTargetSchema>;
 
 export const minimalTrainingGoalCreateSchema = z.object({
   name: z.string().max(100).default(""),
   target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   priority: z.number().int().min(0).max(10).default(5),
-  targets: z.array(profileGoalTargetSchema).min(1),
+  targets: z.array(trainingPlanGoalTargetSchema).min(1),
 });
 
 export type MinimalTrainingGoalCreate = z.infer<typeof minimalTrainingGoalCreateSchema>;
@@ -468,7 +503,7 @@ export type PersistedTrainingPlanStructure = z.infer<typeof persistedTrainingPla
 export const wizardGoalInputSchema = z.object({
   name: z.string().max(100).default(""),
   target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  targets: z.array(profileGoalTargetSchema).min(1),
+  targets: z.array(trainingPlanGoalTargetSchema).min(1),
 });
 
 export type WizardGoalInput = z.infer<typeof wizardGoalInputSchema>;

@@ -10,7 +10,7 @@ import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
 import { api } from "@/lib/api";
 import { formatDistanceMeters } from "@/lib/display/formatters";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
-import { useRecordingConfiguration } from "@/lib/hooks/useRecordingConfiguration";
+import { useRecordingConfig } from "@/lib/hooks/useRecordingConfig";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 
 export default function RoutePreviewScreen() {
@@ -18,7 +18,7 @@ export default function RoutePreviewScreen() {
   const router = useRouter();
   const preferredUnitSystem = usePreferredUnitSystem();
   const service = useSharedActivityRecorder();
-  const { attachRoute, attachedRouteId, sessionContract } = useRecordingConfiguration(service);
+  const { attachRoute, attachedRouteId, sessionContract } = useRecordingConfig(service);
   const canEditRoute = sessionContract?.editing.canEditRoute ?? true;
 
   const { data: route, isLoading } = api.routes.get.useQuery(

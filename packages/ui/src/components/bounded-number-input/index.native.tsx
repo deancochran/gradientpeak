@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
 import {
   formatNumberForInput,
   parseBoundedNumber,
   parseNumberOrUndefined,
-} from "../../lib/fitness-inputs";
-import { View } from "../../lib/react-native";
+} from "@repo/core/utils/fitness-inputs";
+import { useEffect, useState } from "react";
+import { View } from "react-native";
 import { Button } from "../button/index.native";
 import { Input } from "../input/index.native";
 import { Label } from "../label/index.native";

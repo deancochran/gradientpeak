@@ -4,9 +4,11 @@ import { resolveWahooCredentials, WAHOO_RECONNECT_REQUIRED_MESSAGE } from "./cre
 
 const freshIntegration = {
   accessToken: "access-1",
+  credentialGeneration: 1,
   expiresAt: "2026-04-03T14:00:00.000Z",
   externalId: "77",
   id: "integration-1",
+  integrationGeneration: 1,
   profileId: "profile-1",
   refreshToken: "refresh-1",
 };
@@ -56,7 +58,7 @@ describe("resolveWahooCredentials", () => {
       accessToken: "access-2",
       expiresAt: "2026-04-03T14:00:00.000Z",
       credentialGeneration: 1,
-      integrationGeneration: undefined,
+      integrationGeneration: 1,
       id: "integration-1",
       reconnectRequiredAt: null,
       refreshToken: "refresh-2",

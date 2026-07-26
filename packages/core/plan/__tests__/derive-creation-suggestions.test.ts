@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CreationContextSummary } from "../../schemas/training_plan_structure";
+import type { CreationContextSummary } from "../../schemas/training-plan-structure";
 import { deriveCreationSuggestions } from "../deriveCreationSuggestions";
 
 function buildContext(overrides: Partial<CreationContextSummary> = {}): CreationContextSummary {

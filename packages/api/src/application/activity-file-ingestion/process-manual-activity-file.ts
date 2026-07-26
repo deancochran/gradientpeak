@@ -48,7 +48,6 @@ export interface ProcessManualActivityFileInput {
   activityFilePath: string;
   name: string;
   notes?: string;
-  isPrivate?: boolean;
   contentVisibility?: ContentVisibility;
   originalName?: string | null;
   fileType: ActivityFileType;
@@ -215,17 +214,12 @@ export async function processManualActivityFile(
     });
     const contentVisibility =
       input.contentVisibility ??
-      (input.isPrivate === undefined
-        ? await deps.getProfileDefaultContentVisibility(db, input.profileId)
-        : input.isPrivate
-          ? "private"
-          : "followers");
+      (await deps.getProfileDefaultContentVisibility(db, input.profileId));
     await submitActivity(db, {
       requestedActivityId: activityId,
       profileId: input.profileId,
       name: input.name,
       notes: input.notes || null,
-      isPrivate: contentVisibility === "private",
       contentVisibility,
       startedAt: analysis.startedAt,
       finishedAt: analysis.activityCompletedAt,
@@ -240,7 +234,6 @@ export async function processManualActivityFile(
       maxHeartRate: analysis.summaryValues.max_heart_rate,
       avgPower: analysis.summaryValues.avg_power,
       maxPower: analysis.summaryValues.max_power,
-      normalizedPower: analysis.summaryValues.normalized_power,
       avgCadence: analysis.summaryValues.avg_cadence,
       maxCadence: analysis.summaryValues.max_cadence,
       avgSpeedMps: analysis.summaryValues.avg_speed_mps,

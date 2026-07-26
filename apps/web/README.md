@@ -35,7 +35,6 @@ pnpm --filter web test:e2e
 Core web origin and auth:
 
 - `APP_URL`
-- `NEXT_PUBLIC_APP_URL`
 - `BETTER_AUTH_SECRET`
 
 Database and Supabase:
@@ -47,12 +46,6 @@ Database and Supabase:
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 - `NEXT_PRIVATE_SUPABASE_SECRET_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
-
-Supabase auth redirect configuration:
-
-- `SUPABASE_AUTH_SITE_URL`
-- `SUPABASE_AUTH_WEB_REDIRECT_URL`
-- `SUPABASE_AUTH_WEB_REDIRECT_URL_SECURE`
 
 OAuth and webhook providers:
 
@@ -71,11 +64,10 @@ OAuth and webhook providers:
 
 Mobile callback and deep-link bridging:
 
-- `NEXT_PUBLIC_MOBILE_AUTH_REDIRECT_URI`
-- `NEXT_PUBLIC_MOBILE_REDIRECT_URI`
-- `NEXT_PUBLIC_MOBILE_REDIRECT_FALLBACK`
+- `AUTH_MOBILE_CALLBACK_URL`
+- `AUTH_MOBILE_SCHEME`
+- `OAUTH_MOBILE_CALLBACK_URL`
 - `AUTH_ALLOWED_DEEP_LINK_PREFIXES`
-- `EXPO_PUBLIC_APP_SCHEME` or `APP_SCHEME`
 
 Email delivery for Better Auth:
 
@@ -95,19 +87,9 @@ SMTP sinks.
 ## Production Cutover Checklist
 
 1. Point the public web hostname at the TanStack Start container built from `apps/web/Dockerfile`.
-2. Set `APP_URL` and `NEXT_PUBLIC_APP_URL` to the final public web origin.
+2. Set `APP_URL` to the final public web origin.
 3. Set `OAUTH_CALLBACK_BASE_URL` to the same public origin unless a provider-specific callback host is required.
 4. Update provider dashboards so OAuth callbacks target `/api/integrations/callback/<provider>` on the new origin.
 5. Update Wahoo webhook delivery to `/api/webhooks/wahoo` on the new origin.
-6. Update Better Auth email links and Supabase auth redirect settings to the new origin.
+6. Update Better Auth email links to the new origin.
 7. Run Playwright smoke tests with real service-role credentials before and after the DNS or ingress switch.
-
-## Container Publishing
-
-Production container publishing should be defined in:
-
-- `.github/workflows/publish-container.yml`
-
-When restored/enabled, it should build:
-
-- `apps/web/Dockerfile`

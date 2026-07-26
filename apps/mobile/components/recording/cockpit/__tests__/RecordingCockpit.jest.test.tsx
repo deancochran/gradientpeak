@@ -285,8 +285,8 @@ jest.mock("@/components/recording/footer", () => ({
 
 jest.mock("@/lib/hooks/useActivityRecorder", () => ({
   __esModule: true,
-  useActivityRecorderLiveData: () => ({
-    current: { power: 245, heartRate: 144, cadence: 88, speed: 3.2 },
+  useSessionView: () => ({
+    currentReadings: { power: 245, heartRate: 144, cadence: 88, speed: 3.2 },
     plan: {
       hasPlan: true,
       currentStep: {
@@ -324,7 +324,7 @@ jest.mock("@/lib/hooks/useActivityRecorder", () => ({
       skip: mockPlanSkip,
       advance: mockPlanAdvance,
     },
-    stats: {
+    sessionStats: {
       duration: 75,
       distance: 1200,
       normalizedPower: 241,
@@ -337,55 +337,10 @@ jest.mock("@/lib/hooks/useActivityRecorder", () => ({
       verticalSpeedMetersPerHour: 640,
     },
   }),
-  useCurrentReadings: () => ({ power: 245, heartRate: 144, cadence: 88, speed: 3.2 }),
-  usePlan: () => ({
-    hasPlan: true,
-    currentStep: {
-      id: "00000000-0000-4000-8000-000000000002",
-      occurrenceId: "activity:segment-1:interval-1:0:step-1",
-      globalOrdinal: 1,
-      segmentId: "00000000-0000-4000-8000-000000000010",
-      segmentIndex: 0,
-      role: "activity",
-      category: "bike",
-      intervalId: "00000000-0000-4000-8000-000000000011",
-      intervalIndex: 0,
-      stepId: "00000000-0000-4000-8000-000000000002",
-      stepIndex: 1,
-      repeatIteration: 0,
-      completionPolicy: "time",
-      name: "Tempo block",
-      duration: { type: "time", seconds: 600 },
-      targets: [{ type: "%FTP", intensity: 88 }],
-    },
-    stepIndex: 1,
-    stepCount: 2,
-    progress: {
-      movingTime: 120000,
-      duration: 600000,
-      progress: 0.2,
-      requiresManualAdvance: mockManualAdvance,
-      canAutoAdvance: false,
-      canManualAdvance: mockManualAdvance,
-      canAdvance: mockManualAdvance,
-    },
-    canGoBack: true,
-    canSkip: !mockManualAdvance,
-    previous: mockPlanPrevious,
-    skip: mockPlanSkip,
-    advance: mockPlanAdvance,
-  }),
-  useSessionStats: () => ({
-    duration: 75,
-    distance: 1200,
-    normalizedPower: 241,
-    trainingStressScore: 12,
-    intensityFactor: 0.83,
-    currentHeartRateZone: 2,
-    currentPowerZone: 3,
-    currentGrade: 4.2,
-    gradeAdjustedPaceSecondsPerKm: 315,
-    verticalSpeedMetersPerHour: 640,
+  useRecordingCommands: () => ({
+    advancePlanStep: mockPlanAdvance,
+    previousPlanStep: mockPlanPrevious,
+    skipPlanStep: mockPlanSkip,
   }),
 }));
 
@@ -1024,7 +979,23 @@ describe("recording cockpit", () => {
     });
     const props: ComponentProps<typeof TrainerInsightCardComponent> = {
       mode: "expanded",
-      plan: { hasPlan: false, select: jest.fn(), clear: jest.fn() },
+      plan: {
+        hasPlan: false,
+        stepIndex: 0,
+        stepCount: 0,
+        currentSegment: null,
+        nextSegment: null,
+        progress: null,
+        isLast: false,
+        isFinished: false,
+        canAdvance: false,
+        canSkip: false,
+        canGoBack: false,
+        planTimeRemaining: 0,
+        advance: jest.fn(),
+        previous: jest.fn(),
+        skip: jest.fn(),
+      },
       readings: { power: 210 },
       sensorCount: 1,
       service,

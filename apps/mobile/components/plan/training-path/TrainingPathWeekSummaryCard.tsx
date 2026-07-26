@@ -139,8 +139,6 @@ function ScheduledRecordPlanCard({
         estimatedDuration={activity.estimatedDuration}
         owner={activity.owner}
         presentation={presentation}
-        routeName={activity.routeName}
-        routeProvided={!!activity.routeId}
         showAttribution
         structure={activity.structure}
         title={activity.name}
@@ -155,10 +153,6 @@ function ScheduledRecordPlanCard({
             estimated_duration: activity.estimatedDuration,
             estimated_distance: activity.estimatedDistance,
           },
-          route: {
-            distance: activity.estimatedDistance,
-          },
-          route_id: activity.routeId,
           structure: activity.structure,
         }}
         presentation={presentation}
@@ -190,7 +184,6 @@ function getScheduledActivityPlanCardData(event: CalendarEvent): ActivityPlanCar
     estimatedDuration: metrics.estimated_duration ?? undefined,
     commonLoad: plan.common_load,
     notes: plan.notes ?? event.notes ?? undefined,
-    routeId: plan.route_id ?? undefined,
     scheduledDate: event.starts_at ?? event.scheduled_date ?? undefined,
     structure: plan.structure as ActivityPlanCardData["structure"],
     createdAt: plan.created_at ?? undefined,
@@ -224,7 +217,6 @@ function getGroupEventActivityPlanCardData(event: CalendarGroupEvent): ActivityP
     estimatedDuration: metrics.estimated_duration ?? undefined,
     commonLoad: plan.common_load,
     notes: plan.notes ?? undefined,
-    routeId: plan.route_id ?? undefined,
     scheduledDate: event.starts_at,
     structure: plan.structure as ActivityPlanCardData["structure"],
     createdAt: plan.created_at ?? undefined,

@@ -1,4 +1,5 @@
-import { type ActivityPlanStructureV3, formatDuration } from "@repo/core";
+import type { ActivityPlanStructureV3 } from "@repo/core";
+import { formatDuration } from "@repo/core/duration/time-format";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Clock } from "lucide-react-native";

@@ -26,6 +26,7 @@ import {
 } from "@/components/event/EventEditorCard";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { AppConfirmModal, AppFormModal } from "@/components/shared/AppFormModal";
+import { RouteCard } from "@/components/shared/RouteCard";
 import { type ResourcePickerItem, ResourcePickerModal } from "@/components/shared/resource-picker";
 import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
@@ -309,8 +310,8 @@ export default function EventDetailScreen() {
   const recurring = useMemo(() => isRecurringEvent(event), [event]);
   const isReadOnlyImported = !startsInCreateMode && event?.event_type === "imported";
   const activityPlan = event?.activity_plan;
-  const hasActivityPlan = Boolean(activityPlan?.id);
-  const isPlannedEvent = !startsInCreateMode && event?.event_type === "planned" && hasActivityPlan;
+  const route = event?.route;
+  const isPlannedEvent = !startsInCreateMode && event?.event_type === "planned";
   const updateSupportsRecurrence = !isPlannedEvent;
   const comments = useEntityCommentsController({ entityId: event?.id, entityType: "event" });
   const { data: sourceTrainingPlan } = api.trainingPlans.getById.useQuery(
@@ -363,6 +364,11 @@ export default function EventDetailScreen() {
     });
   };
 
+  const handleOpenRouteDetail = () => {
+    if (!route?.id) return;
+    navigateTo(ROUTES.ROUTES.DETAIL(route.id));
+  };
+
   const handleOpenSourceTrainingPlan = () => {
     if (!event?.training_plan_id) {
       return;
@@ -402,7 +408,7 @@ export default function EventDetailScreen() {
         scope: "single",
         patch: {
           activity_plan_id: null,
-          event_type: "custom",
+          event_type: event.route_id ? "planned" : "custom",
           title: event.title?.trim() || activityPlan?.name || "Event",
         },
       });
@@ -649,6 +655,24 @@ export default function EventDetailScreen() {
               Search visible activity plans and associate one with this event.
             </Text>
           </Pressable>
+        ) : null}
+
+        {!startsInCreateMode && route ? (
+          <View className="gap-3 rounded-2xl bg-card p-4">
+            <View className="gap-0.5">
+              <Text className="text-base font-semibold text-foreground">Route</Text>
+              <Text className="text-sm text-muted-foreground">
+                Open the linked route to review its course details.
+              </Text>
+            </View>
+            <RouteCard
+              onPress={handleOpenRouteDetail}
+              route={route}
+              showAttribution={false}
+              showLike={false}
+              variant="compact"
+            />
+          </View>
         ) : null}
 
         {startsInCreateMode ? (

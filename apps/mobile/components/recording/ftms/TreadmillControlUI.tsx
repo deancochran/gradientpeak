@@ -16,7 +16,7 @@
 import { Text } from "@repo/ui/components/text";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Pressable, View } from "react-native";
-import { usePlan } from "@/lib/hooks/useActivityRecorder";
+import { useSessionView } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 
 export interface TreadmillControlUIProps {
@@ -26,7 +26,7 @@ export interface TreadmillControlUIProps {
 }
 
 export function TreadmillControlUI({ service, controlMode }: TreadmillControlUIProps) {
-  const plan = usePlan(service);
+  const plan = useSessionView(service)?.plan;
 
   // Treadmill control state
   const [speedKmh, setSpeedKmh] = useState<number>(8.0); // km/h
@@ -282,7 +282,7 @@ export function TreadmillControlUI({ service, controlMode }: TreadmillControlUIP
       )}
 
       {/* Plan Target Display (when in Auto mode) */}
-      {controlMode === "auto" && plan.hasPlan && plan.currentStep && (
+      {controlMode === "auto" && plan?.hasPlan && plan.currentStep && (
         <View className="bg-primary/10 p-4 rounded-lg border border-primary/20">
           <Text className="text-sm font-medium mb-1">Following Plan</Text>
           <Text className="text-xs text-muted-foreground">

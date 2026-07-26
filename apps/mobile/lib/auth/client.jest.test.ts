@@ -24,11 +24,17 @@ jest.mock("@/lib/storage/safe-secure-store", () => ({
   safeSecureStore: { getItem: jest.fn(), setItem: jest.fn() },
 }));
 
+let getEmailVerificationCallbackUrl: typeof import("./client").getEmailVerificationCallbackUrl;
+let getPasswordResetCallbackUrl: typeof import("./client").getPasswordResetCallbackUrl;
 let subscribeToMobileAuthSession: typeof import("./client").subscribeToMobileAuthSession;
 
 describe("mobile auth session emission", () => {
   beforeAll(async () => {
-    ({ subscribeToMobileAuthSession } = await import("./client"));
+    ({
+      getEmailVerificationCallbackUrl,
+      getPasswordResetCallbackUrl,
+      subscribeToMobileAuthSession,
+    } = await import("./client"));
   });
 
   beforeEach(() => {
@@ -58,6 +64,22 @@ describe("mobile auth session emission", () => {
       process.off("unhandledRejection", unhandledRejection);
       consoleError.mockRestore();
     }
+  });
+
+  it.each([
+    ["email verification", () => getEmailVerificationCallbackUrl(), "email-verification"],
+    ["password reset", () => getPasswordResetCallbackUrl(), "password-reset"],
+  ])("routes %s through the canonical web confirmation callback", (_label, callbackUrl, intent) => {
+    const callback = new URL(callbackUrl());
+
+    expect(callback.origin).toBe("https://api.example.test");
+    expect(callback.pathname).toBe("/auth/confirm");
+    expect(Object.fromEntries(callback.searchParams)).toEqual({
+      fallback: "/auth/login",
+      intent,
+      target: "mobile",
+    });
+    expect(callback.protocol).toBe("https:");
   });
 
   it("isolates a failing listener so later listeners still receive the session", async () => {

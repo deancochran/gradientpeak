@@ -2,7 +2,7 @@ import {
   type CanonicalTrainingPlanStructure,
   type TrainingPlanSessionEventOverrides,
   trainingPlanSchema,
-} from "../schemas/training_plan_structure";
+} from "../schemas/training-plan-structure";
 import type { DailyLoadDistributionPoint } from "./dailyLoadDistribution";
 import type { DailyLoadRecommendationPrimaryFocus } from "./dailyLoadRecommendation";
 import { addDaysDateOnlyUtc, diffDateOnlyUtcDays } from "./dateOnlyUtc";

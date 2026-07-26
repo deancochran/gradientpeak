@@ -51,7 +51,6 @@ const feedActivityRowSchema = z
     avg_cadence: z.number().int().nullable(),
     calories: z.number().int().nullable(),
     polyline: z.string().nullable(),
-    is_private: z.boolean(),
     started_at: timestampSchema,
     finished_at: timestampSchema,
     created_at: timestampSchema,
@@ -95,7 +94,6 @@ export const feedActivityDtoSchema = z.object({
   polyline: z.string().nullable(),
   likes_count: z.number(),
   comments_count: z.number().int().nonnegative(),
-  is_private: z.boolean(),
   content_visibility: z.enum(["private", "followers", "public"]),
   created_at: z.string(),
   profile: feedProfileSchema,
@@ -155,7 +153,6 @@ export function mapFeedActivity(
     polyline: activity.polyline,
     likes_count: getLikeStats(options.likeStats, activity.id).likes_count,
     comments_count: options.commentCounts.get(activity.id) ?? 0,
-    is_private: activity.is_private,
     content_visibility: activity.content_visibility,
     created_at: toIsoString(activity.created_at),
     profile: {
@@ -198,7 +195,7 @@ export async function listFeedActivityRows(
       a.max_heart_rate, a.avg_power, a.max_power, a.avg_cadence, a.avg_speed_mps,
       a.max_speed_mps, a.normalized_speed_mps,
       a.normalized_graded_speed_mps, a.elevation_gain_meters, a.calories, a.polyline,
-      a.is_private, a.content_visibility, a.created_at,
+       a.content_visibility, a.created_at,
       p.username as profile_username, p.avatar_url as profile_avatar_url,
       afi.status as ingestion_status, afi.last_error_message as ingestion_last_error_message
     from activities a

@@ -41,7 +41,6 @@ import {
 } from "../application/activity-file-ingestion/analyze-parsed-activity-file";
 import {
   beginMobileRecordingUploadClaim,
-  claimLegacyMobileRecordingUpload,
   drainPendingMobileRecordingStagingCleanup,
   MobileRecordingUploadError,
 } from "../application/activity-file-ingestion/mobile-recording-upload";
@@ -50,8 +49,6 @@ import { processUploadedActivityFile } from "../application/activity-file-ingest
 import {
   beginMobileRecordingUploadInputSchema,
   beginMobileRecordingUploadOutputSchema,
-  claimLegacyMobileRecordingUploadInputSchema,
-  claimLegacyMobileRecordingUploadOutputSchema,
 } from "../contracts/recording-submission";
 import { getRequiredDb } from "../db";
 import { createActivityAnalysisStore } from "../infrastructure/repositories/drizzle-activity-analysis-repository";
@@ -214,7 +211,6 @@ const processActivityFileInput = z
     activityFilePath: activityStoragePathSchema,
     name: z.string().trim().min(1, "Activity name is required"),
     notes: z.string().trim().optional(),
-    is_private: z.boolean().optional(),
     content_visibility: contentVisibilitySchema.optional(),
     importProvenance: manualHistoricalImportProvenanceSchema.optional(),
   })
@@ -622,40 +618,6 @@ export const activityFilesRouter = createTRPCRouter({
         });
       }
     }),
-  claimLegacyMobileRecordingUpload: protectedProcedure
-    .input(claimLegacyMobileRecordingUploadInputSchema)
-    .output(claimLegacyMobileRecordingUploadOutputSchema)
-    .mutation(async ({ ctx, input }) => {
-      try {
-        return claimLegacyMobileRecordingUploadOutputSchema.parse(
-          await claimLegacyMobileRecordingUpload(
-            getRequiredDb(ctx),
-            getActivityArtifactStorageService(),
-            { profileId: ctx.session.user.id, ...input },
-          ),
-        );
-      } catch (error) {
-        if (error instanceof MobileRecordingUploadError) {
-          throw new TRPCError({
-            code:
-              error.code === "claim_conflict" || error.code === "claim_lost"
-                ? "CONFLICT"
-                : error.code === "claim_not_found"
-                  ? "NOT_FOUND"
-                  : error.code === "claim_invalid" || error.code === "expected_artifact_mismatch"
-                    ? "BAD_REQUEST"
-                    : "INTERNAL_SERVER_ERROR",
-            message: error.message,
-            cause: error,
-          });
-        }
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to claim legacy recording upload",
-          cause: error,
-        });
-      }
-    }),
   retryPendingMobileRecordingCleanup: protectedProcedure
     .input(z.object({ limit: z.number().int().min(1).max(25).default(10) }).strict())
     .output(
@@ -751,8 +713,7 @@ export const activityFilesRouter = createTRPCRouter({
   processActivityFile: protectedProcedure
     .input(processActivityFileInput)
     .mutation(async ({ ctx, input }) => {
-      const { activityFilePath, name, notes, is_private, content_visibility, importProvenance } =
-        input;
+      const { activityFilePath, name, notes, content_visibility, importProvenance } = input;
       const userId = ctx.session?.user?.id;
       const db = getRequiredDb(ctx);
 
@@ -784,7 +745,6 @@ export const activityFilesRouter = createTRPCRouter({
             activityFilePath,
             name,
             ...(notes === undefined ? {} : { notes }),
-            ...(is_private === undefined ? {} : { isPrivate: is_private }),
             ...(content_visibility === undefined ? {} : { contentVisibility: content_visibility }),
             originalName: importProvenance?.import_original_file_name ?? null,
             fileType: getActivityFileTypeFromPath(activityFilePath),

@@ -1,5 +1,5 @@
 import { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
-import { Platform } from "../../lib/react-native";
+import { Platform } from "react-native";
 import { fireEvent, renderNative } from "../../test/render-native";
 import { DateInput } from "./index.native";
 

@@ -8,8 +8,6 @@ type ScheduleGapDbClient = {
   execute: (query: string | SQLWrapper) => unknown;
 };
 
-type LegacyPlanningReader = { from: (...args: any[]) => any };
-
 type ActivityPlanLike = ActivityPlanMetricsLike & {
   id?: unknown;
   name?: unknown;
@@ -243,30 +241,17 @@ export function resolveScheduleGapActivityPlanMatchTarget(input: {
 }
 
 export async function loadOwnedActivityPlansForScheduleGap(input: {
-  db?: ScheduleGapDbClient;
-  supabase?: LegacyPlanningReader;
+  db: ScheduleGapDbClient;
   profileId: string;
   limit?: number;
 }) {
   const limit = input.limit ?? 25;
-  if (input.db) {
-    const result = await input.db.execute(sql<any>`
-      select activity_plans.*
-      from activity_plans
-      where activity_plans.profile_id = ${input.profileId}::uuid
-      order by activity_plans.created_at desc, activity_plans.id asc
-      limit ${limit}
-    `);
-    return getSqlRows<ActivityPlanLike>(result);
-  }
-
-  if (!input.supabase) return [];
-  const { data } = await input.supabase
-    .from("activity_plans")
-    .select("*")
-    .eq("profile_id", input.profileId)
-    .order("created_at", { ascending: false })
-    .limit(limit);
-
-  return (data ?? []) as ActivityPlanLike[];
+  const result = await input.db.execute(sql<ActivityPlanLike>`
+    select activity_plans.*
+    from activity_plans
+    where activity_plans.profile_id = ${input.profileId}::uuid
+    order by activity_plans.created_at desc, activity_plans.id asc
+    limit ${limit}
+  `);
+  return getSqlRows<ActivityPlanLike>(result);
 }

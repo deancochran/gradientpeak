@@ -15,7 +15,7 @@ const observedEffort: ActivityEffortCurveRow = {
   recorded_at: "2026-03-01T00:00:00.000Z",
   duration_seconds: 3600,
   value: 300,
-  unit: "W",
+  unit: "watts",
   source: "manual",
   provenance: {
     trusted: true,
@@ -32,6 +32,7 @@ describe("activity effort curves", () => {
         activity_category: "run",
         effort_type: "speed",
         value: 4,
+        unit: "meters_per_second",
       }),
     ).toBe("4:10/km");
     expect(
@@ -40,6 +41,7 @@ describe("activity effort curves", () => {
         activity_category: "swim",
         effort_type: "speed",
         value: 1.25,
+        unit: "meters_per_second",
       }),
     ).toBe("1:20/100m");
   });

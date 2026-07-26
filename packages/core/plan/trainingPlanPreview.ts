@@ -1,5 +1,5 @@
 import type { CanonicalSport } from "../schemas/sport";
-import type { MinimalTrainingPlanCreate } from "../schemas/training_plan_structure";
+import type { MinimalTrainingPlanCreate } from "../schemas/training-plan-structure";
 import {
   parseDateOnly,
   parseDistanceKmToMeters,

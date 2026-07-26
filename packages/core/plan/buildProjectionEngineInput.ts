@@ -1,9 +1,9 @@
 import type { AthletePreferenceProfile } from "../schemas/settings/profile_settings";
 import type {
-  GoalTargetV2,
   InferredStateSnapshot,
   TrainingPlanCreationConfig,
-} from "../schemas/training_plan_structure";
+  TrainingPlanGoalTarget,
+} from "../schemas/training-plan-structure";
 import type { DailyLoadDistributionSchedulingConstraints } from "./dailyLoadDistribution";
 import type { DailyRecommendedLoadSession } from "./dailyRecommendedLoad";
 import type { NoHistoryAnchorContext } from "./projection/no-history";
@@ -24,7 +24,7 @@ type ExpandedPlanInput = {
     name: string;
     target_date: string;
     priority?: number;
-    targets?: GoalTargetV2[];
+    targets?: TrainingPlanGoalTarget[];
   }>;
 };
 

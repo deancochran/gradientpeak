@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateCTL } from "../../calculations";
+import { calculateCTL } from "../../load/progression";
 import { defaultAthletePreferenceProfile } from "../../schemas/settings/profile_settings";
 import { buildDeterministicProjectionPayload as buildDeterministicProjectionPayloadFromEngine } from "../projection/engine";
 import {

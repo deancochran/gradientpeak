@@ -137,7 +137,7 @@ describe("Wahoo disconnect job worker", () => {
   });
 
   it("cannot let a stale pre-call generation read credentials or call Wahoo", async () => {
-    const deps = createDeps(disconnectJob({ jobType: "wahoo.publish_event" }));
+    const deps = createDeps(disconnectJob({ jobType: "wahoo.activity_history_reconcile" }));
     deps.providerSyncRepository.isIntegrationGenerationActive.mockResolvedValue(false);
 
     await expect(process(deps)).resolves.toEqual({ completed: 1, failed: 0, processed: 1 });

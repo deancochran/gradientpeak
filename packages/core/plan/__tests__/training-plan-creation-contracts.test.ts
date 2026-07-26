@@ -4,7 +4,7 @@ import {
   previewCreationConfigResponseCompatSchema,
 } from "../../contracts";
 import { trainingPlanCreationConfigFormSchema } from "../../schemas/form-schemas";
-import { trainingPlanCreationConfigSchema } from "../../schemas/training_plan_structure";
+import { trainingPlanCreationConfigSchema } from "../../schemas/training-plan-structure";
 import { normalizeCreationConfig } from "../normalizeCreationConfig";
 
 const minimalPlan = {

@@ -32,9 +32,6 @@ export * from "./recurrence";
 export * from "./schedule-date";
 export * from "./stream-sampling";
 
-// Export temporal metrics utilities
-export * from "./temporal-metrics";
-
 // NOTE: streamDecompression is NOT exported from the runtime-neutral utils API.
 // - Server-side code should import from: import { decompressStream } from "@repo/core/server/stream-decompression"
 // - Mobile code should use: apps/mobile/lib/utils/streamDecompression.ts (React Native compatible)

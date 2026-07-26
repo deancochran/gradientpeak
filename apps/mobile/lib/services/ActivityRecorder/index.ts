@@ -69,7 +69,7 @@ import {
   persistRecordingCheckpoint,
   releaseRecordingCheckpointClaim,
 } from "./checkpointStorage";
-import { persistPendingFinalizedArtifact } from "./finalizedArtifactStorage";
+import { deleteFinalizedArtifactFiles } from "./finalizedArtifactStorage";
 import {
   appendActivityRecorderFitRecord,
   rebaseRecordingDistance,
@@ -86,6 +86,7 @@ import {
   allocateRecordingEvidenceSession,
   commitFinalizedArtifactAndHandoff,
   createRecordingStreamJournalAdapter,
+  discardFinalizedRecordingEvidence,
   fenceRecordingEvidenceSession,
   quarantineRecordingEvidenceSession,
   recoverHeadlessGpsLocations,
@@ -3728,12 +3729,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       }
 
       if (this.finalizedArtifact) {
-        // SQLite committed the validated artifact and handoff above. The old
-        // AsyncStorage entry is only a compatibility mirror and is never a
-        // reason to report finalization failure.
-        try {
-          await persistPendingFinalizedArtifact(this.finalizedArtifact);
-        } catch {}
         this.emit("artifactReady", this.finalizedArtifact);
         await clearRecordingCheckpoint(this.finalizedArtifact.sessionId);
       }
@@ -4196,6 +4191,29 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
    */
   async cleanup(options: { dispose?: boolean } = {}): Promise<void> {
     return this.runLifecycleTransition(() => this.cleanupTransition(options));
+  }
+
+  /**
+   * Commits the user's discard decision before removing the finalized FIT or
+   * stream directories. A failed transition leaves both the in-memory artifact
+   * and its files intact so the submit screen can retry without resurrecting it
+   * through startup recovery.
+   */
+  async discardFinalizedArtifact(): Promise<void> {
+    return this.runLifecycleTransition(async () => {
+      const artifact = this.finalizedArtifact;
+      if (!artifact) return;
+      if (artifact.profileId !== this.profile.id) {
+        throw new Error("Finalized recording belongs to a different profile");
+      }
+      await discardFinalizedRecordingEvidence({
+        sessionId: artifact.sessionId,
+        profileId: this.profile.id,
+        activityFilePath: artifact.activityFilePath,
+        streamArtifactPaths: artifact.streamArtifactPaths,
+      });
+      await deleteFinalizedArtifactFiles(artifact);
+    });
   }
 
   private async cleanupTransition({ dispose = false }: { dispose?: boolean }): Promise<void> {

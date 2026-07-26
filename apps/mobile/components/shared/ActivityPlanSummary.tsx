@@ -28,8 +28,6 @@ type ActivityPlanSummaryProps = {
   intensityFactor?: number | null;
   owner?: EntityOwner | null;
   presentation?: ActivityPlanPresentationModel | null;
-  routeName?: string | null;
-  routeProvided?: boolean;
   structure?: ActivityPlanStructureV3 | unknown;
   subtitle?: string | null;
   testID?: string;
@@ -143,8 +141,6 @@ export function ActivityPlanSummary({
   commonLoad,
   owner,
   presentation,
-  routeName,
-  routeProvided,
   structure,
   subtitle,
   testID,
@@ -153,8 +149,6 @@ export function ActivityPlanSummary({
   variant = "embedded",
   showAttribution = true,
 }: ActivityPlanSummaryProps) {
-  const routeLabel = routeName?.trim() || (routeProvided ? "Route included" : null);
-
   return (
     <View
       className={
@@ -176,11 +170,6 @@ export function ActivityPlanSummary({
           </Text>
           {description?.trim() ? (
             <Text className="text-xs leading-5 text-muted-foreground">{description.trim()}</Text>
-          ) : null}
-          {routeLabel ? (
-            <View className="flex-row flex-wrap items-center gap-x-2 gap-y-1">
-              <Text className="text-xs text-muted-foreground">{routeLabel}</Text>
-            </View>
           ) : null}
         </View>
         {headerAccessory}

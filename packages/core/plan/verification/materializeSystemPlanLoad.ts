@@ -1,8 +1,4 @@
-import {
-  estimateFromRoute,
-  estimateFromStructure,
-  estimateFromTemplate,
-} from "../../estimation/strategies";
+import { estimateFromStructure, estimateFromTemplate } from "../../estimation/strategies";
 import { SYSTEM_TEMPLATES, type SystemTemplate } from "../../samples";
 import type { SystemTrainingPlanTemplate } from "../../samples/training-plans";
 import { materializePlanToEvents } from "../materializePlanToEvents";
@@ -38,7 +34,6 @@ export type MaterializedSystemPlanEstimationSource =
   | "missing"
   | "structure"
   | "structure_partial"
-  | "route"
   | "template";
 
 export interface MaterializedSystemPlanLoadSession {
@@ -75,18 +70,6 @@ function hasIntervals(template: SystemTemplate): boolean {
   );
 }
 
-function hasRoute(template: SystemTemplate): template is SystemTemplate & {
-  route: {
-    distanceMeters: number;
-    totalAscent: number;
-    totalDescent: number;
-    averageGrade?: number;
-  };
-} {
-  const route = (template as { route?: unknown }).route;
-  return Boolean(route && typeof route === "object");
-}
-
 function buildTemplateLookup(
   templates: ReadonlyArray<SystemTemplate>,
 ): Map<string, SystemTemplate> {
@@ -121,19 +104,14 @@ function estimateTemplateLoad(
         ...context,
         structure,
       } as Parameters<typeof estimateFromStructure>[0])
-    : hasRoute(template)
-      ? estimateFromRoute({
-          ...context,
-          route: template.route,
-        } as Parameters<typeof estimateFromRoute>[0])
-      : estimateFromTemplate(context as Parameters<typeof estimateFromTemplate>[0]);
+    : estimateFromTemplate(context as Parameters<typeof estimateFromTemplate>[0]);
 
   return {
     estimated_tss: estimation.tss,
     estimated_duration_seconds: structure
       ? calculateSystemTemplateDurationSeconds(template)
       : estimation.duration,
-    estimation_source: structure ? "structure" : hasRoute(template) ? "route" : "template",
+    estimation_source: structure ? "structure" : "template",
     estimation_confidence: estimation.confidence,
   };
 }

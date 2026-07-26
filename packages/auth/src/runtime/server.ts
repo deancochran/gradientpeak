@@ -316,12 +316,10 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
 export function getGradientPeakAuth() {
   if (!authSingleton) {
     authSingleton = createGradientPeakAuth({
-      appUrl:
-        process.env["APP_URL"] ?? process.env["NEXT_PUBLIC_APP_URL"] ?? "http://localhost:3000",
+      appUrl: process.env["APP_URL"] ?? "http://localhost:3000",
       databaseUrl: resolveDatabaseUrl(process.env),
       ...(process.env["BETTER_AUTH_SECRET"] ? { secret: process.env["BETTER_AUTH_SECRET"] } : {}),
-      mobileScheme:
-        process.env["EXPO_PUBLIC_APP_SCHEME"] ?? process.env["APP_SCHEME"] ?? "gradientpeak",
+      mobileScheme: process.env["AUTH_MOBILE_SCHEME"] ?? "gradientpeak",
     });
   }
 

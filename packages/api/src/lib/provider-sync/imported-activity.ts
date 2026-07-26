@@ -23,8 +23,7 @@ export type ImportedActivityCreateInput = {
   finishedAt: string;
   integrationId: string;
   integrationGeneration: number;
-  isPrivate: boolean;
-  contentVisibility?: ContentVisibility;
+  contentVisibility: ContentVisibility;
   movingSeconds: number;
   name: string;
   normalizedPower: number | null;
@@ -101,7 +100,7 @@ export function buildImportedActivityCreateInput(
     finishedAt: new Date(new Date(startedAt).getTime() + durationSeconds * 1000).toISOString(),
     integrationId: input.integrationId,
     integrationGeneration: input.integrationGeneration,
-    isPrivate: true,
+    contentVisibility: "private",
     movingSeconds: toInteger(
       input.parsedActivity?.summary.totalTime ?? input.fallback.movingSeconds,
     ),

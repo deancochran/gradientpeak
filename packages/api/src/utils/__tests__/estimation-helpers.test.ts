@@ -111,8 +111,8 @@ function createStoreReader(routeFixtures: Record<string, Record<string, unknown>
           effort_type: "speed" as const,
           activity_category: "run" as const,
           duration_seconds: 1200,
-          value: 15,
-          unit: "km_per_hour",
+          value: 15 / 3.6,
+          unit: "meters_per_second",
           recorded_at: "2026-07-01T00:00:00.000Z",
           activity_id: "00000000-0000-4000-8000-000000000104",
           source: "imported",
@@ -129,57 +129,6 @@ function createStoreReader(routeFixtures: Record<string, Record<string, unknown>
       ],
       routes: routeIds.map((routeId) => routeFixtures[routeId]).filter(Boolean),
     })),
-  };
-}
-
-function createLegacyReader(tableResults: Record<string, unknown>) {
-  const calls: Array<{ table: string; values: Record<string, unknown> }> = [];
-
-  return {
-    calls,
-    reader: {
-      from(table: string) {
-        const values: Record<string, unknown> = {};
-        calls.push({ table, values });
-
-        const builder: any = {
-          select: vi.fn(() => builder),
-          eq: vi.fn((column: string, value: unknown) => {
-            values[`eq:${column}`] = value;
-            return builder;
-          }),
-          gte: vi.fn((column: string, value: unknown) => {
-            values[`gte:${column}`] = value;
-            return builder;
-          }),
-          lte: vi.fn((column: string, value: unknown) => {
-            values[`lte:${column}`] = value;
-            return builder;
-          }),
-          in: vi.fn((column: string, value: unknown) => {
-            values[`in:${column}`] = value;
-            return builder;
-          }),
-          order: vi.fn(() => builder),
-          limit: vi.fn(() => builder),
-          single: vi.fn(async () => ({
-            data:
-              typeof tableResults[table] === "function"
-                ? (tableResults[table] as (values: Record<string, unknown>) => unknown)(values)
-                : (tableResults[table] ?? null),
-          })),
-          then: (onFulfilled: (value: { data: unknown }) => unknown) =>
-            Promise.resolve({
-              data:
-                typeof tableResults[table] === "function"
-                  ? (tableResults[table] as (values: Record<string, unknown>) => unknown)(values)
-                  : (tableResults[table] ?? []),
-            }).then(onFulfilled),
-        };
-
-        return builder;
-      },
-    },
   };
 }
 
@@ -333,49 +282,6 @@ describe("estimation-helpers", () => {
         }),
         route: null,
       }),
-    );
-  });
-
-  it("adds estimation for a single plan from the legacy reader without plan route lookup", async () => {
-    const { reader, calls } = createLegacyReader({
-      profiles: { dob: "1990-01-01" },
-      activity_efforts: [
-        {
-          effort_type: "power",
-          activity_category: "bike",
-          duration_seconds: 1200,
-          value: 240,
-          unit: "watts",
-        },
-      ],
-      profile_metrics: [{ metric_type: "weight_kg", value: 72, recorded_at: "2026-01-01" }],
-      activity_routes: {
-        distance_meters: 24000,
-        total_ascent: 180,
-        total_descent: 180,
-      },
-    });
-
-    const result = await addEstimationToPlan(
-      {
-        id: "plan-legacy",
-        profile_id: "profile-1",
-        name: "Tempo ride",
-        description: "",
-        structure: activityPlanStructure(),
-      },
-      reader as any,
-      "profile-1",
-    );
-
-    expect(calls.map((call) => call.table)).toEqual([
-      "profiles",
-      "activity_efforts",
-      "profile_metrics",
-    ]);
-    expect(result.authoritative_metrics.estimated_distance).toBe(0);
-    expect(vi.mocked(estimationCore.estimateActivity).mock.calls[0]?.[0]).toEqual(
-      expect.not.objectContaining({ route: expect.anything() }),
     );
   });
 
@@ -544,34 +450,5 @@ describe("estimation-helpers", () => {
     expect(vi.mocked(estimationCore.estimateActivity).mock.calls.at(-1)?.[0]).toEqual(
       expect.not.objectContaining({ route: expect.anything() }),
     );
-  });
-
-  it("computes metrics with a legacy reader without plan route lookup", async () => {
-    const { reader } = createLegacyReader({
-      profiles: { dob: "1990-01-01" },
-      activity_efforts: [],
-      profile_metrics: [],
-      activity_routes: {
-        total_distance: 18000,
-        total_ascent: 220,
-        total_descent: 220,
-        average_grade: 3,
-      },
-    });
-
-    const result = await computePlanMetrics(
-      {
-        structure: activityPlanStructure(),
-      },
-      reader as any,
-      "profile-1",
-    );
-
-    expect(result).toEqual({
-      estimated_tss: 42,
-      estimated_duration_seconds: 1800,
-      intensity_factor: 0.82,
-      estimated_distance_meters: 0,
-    });
   });
 });

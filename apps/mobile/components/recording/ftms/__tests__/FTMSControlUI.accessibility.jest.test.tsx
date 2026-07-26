@@ -13,8 +13,10 @@ jest.mock("@repo/ui/components/text", () => ({
 
 jest.mock("@/lib/hooks/useActivityRecorder", () => ({
   __esModule: true,
-  useCurrentReadings: () => ({ power: null }),
-  usePlan: () => ({ currentStep: null, hasPlan: false }),
+  useSessionView: () => ({
+    currentReadings: { power: null },
+    plan: { currentStep: null, hasPlan: false },
+  }),
 }));
 
 const { TreadmillControlUI } = require("../TreadmillControlUI");

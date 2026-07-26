@@ -11,7 +11,7 @@ import {
   users,
 } from "@repo/db/schema";
 import { eq } from "drizzle-orm";
-import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleOAuthCallback } from "../../application/integrations/oauthCallbackUseCase";
 import { getProviderSyncOverview } from "../../application/integrations/syncOverviewUseCase";
 import {
@@ -25,8 +25,10 @@ import {
   issueLocalOAuthAuthorizationCode,
 } from "../../lib/integrations/oauth-pkce";
 import { createOAuthStateBinding } from "../../lib/integrations/oauth-state-binding";
+import { encryptProviderToken } from "../../lib/provider-token-crypto";
 
 const userIds: string[] = [];
+const testProviderTokenKey = Buffer.alloc(32, 7).toString("base64");
 
 function futureBase(offsetMs: number) {
   return Date.now() + 86_400_000 + offsetMs;
@@ -92,6 +94,10 @@ async function seedRunningJob(input: {
   });
   return jobId;
 }
+
+beforeEach(() => {
+  vi.stubEnv("PROVIDER_TOKEN_ENCRYPTION_KEY", testProviderTokenKey);
+});
 
 afterEach(async () => {
   vi.unstubAllEnvs();
@@ -593,10 +599,10 @@ describe("provider sync PostgreSQL claims", () => {
     vi.stubEnv("PROVIDER_OAUTH_TEST_ADAPTER", "1");
     const owner = await seedOwner();
     await db.insert(integrationCredentials).values({
-      access_token: "encrypted-placeholder",
+      access_token: encryptProviderToken("access-token"),
       integration_id: owner.integrationId,
       reconnect_required_at: new Date(),
-      refresh_token: "encrypted-placeholder",
+      refresh_token: encryptProviderToken("refresh-token"),
     });
     const overview = await getProviderSyncOverview({ db, profileId: owner.profileId });
     expect(overview.find((provider) => provider.provider === "wahoo")).toMatchObject({
@@ -734,7 +740,7 @@ describe("provider sync PostgreSQL claims", () => {
     const input = {
       dedupeKey,
       integrationId: owner.integrationId,
-      jobType: "wahoo.publish_event",
+      jobType: "wahoo.activity_history_reconcile",
       payload: { eventId: randomUUID() },
       profileId: owner.profileId,
       provider: "wahoo" as const,
@@ -763,7 +769,7 @@ describe("provider sync PostgreSQL claims", () => {
       dedupeKey: `first-${eventId}`,
       integrationId: owner.integrationId,
       internalResourceId: eventId,
-      jobType: "wahoo.publish_event",
+      jobType: "wahoo.activity_history_reconcile",
       payload: { eventId },
       profileId: owner.profileId,
       provider: "wahoo",
@@ -773,7 +779,7 @@ describe("provider sync PostgreSQL claims", () => {
       dedupeKey: `newest-${eventId}`,
       integrationId: owner.integrationId,
       internalResourceId: eventId,
-      jobType: "wahoo.publish_event",
+      jobType: "wahoo.activity_history_reconcile",
       payload: { eventId },
       profileId: owner.profileId,
       provider: "wahoo",
@@ -783,7 +789,7 @@ describe("provider sync PostgreSQL claims", () => {
       dedupeKey: `unrelated-${unrelatedEventId}`,
       integrationId: owner.integrationId,
       internalResourceId: unrelatedEventId,
-      jobType: "wahoo.publish_event",
+      jobType: "wahoo.activity_history_reconcile",
       payload: { eventId: unrelatedEventId },
       profileId: owner.profileId,
       provider: "wahoo",
@@ -815,7 +821,7 @@ describe("provider sync PostgreSQL claims", () => {
     const initialInput = {
       dedupeKey: `publish-${eventId}`,
       integrationId: owner.integrationId,
-      jobType: "wahoo.publish_event",
+      jobType: "wahoo.activity_history_reconcile",
       operation: "publish",
       payload: { eventId, operation: "publish" },
       payloadHash: "publish-v1",
@@ -868,7 +874,7 @@ describe("provider sync PostgreSQL claims", () => {
     const runningPublish = await repository.enqueueJob({
       dedupeKey: publishDedupe,
       integrationId: owner.integrationId,
-      jobType: "wahoo.publish_event",
+      jobType: "wahoo.activity_history_reconcile",
       operation: "publish",
       payload: { eventId, operation: "publish" },
       payloadHash: "publish-v1",
@@ -878,7 +884,7 @@ describe("provider sync PostgreSQL claims", () => {
       syncLaneKey: lane,
     });
     const claimed = await repository.claimDueJobs({
-      jobTypes: ["wahoo.publish_event"],
+      jobTypes: ["wahoo.activity_history_reconcile"],
       limit: 1,
       lockExpiresAt: new Date(Date.now() + 60_000).toISOString(),
       now: new Date().toISOString(),
@@ -890,7 +896,7 @@ describe("provider sync PostgreSQL claims", () => {
     const unsyncSuccessor = await repository.enqueueJob({
       dedupeKey: `unsync-${eventId}`,
       integrationId: owner.integrationId,
-      jobType: "wahoo.unsync_event",
+      jobType: "wahoo.activity_history_reconcile",
       operation: "unsync",
       payload: { eventId, operation: "unsync" },
       payloadHash: "unsync-v1",
@@ -902,7 +908,7 @@ describe("provider sync PostgreSQL claims", () => {
     const latestPublish = await repository.enqueueJob({
       dedupeKey: publishDedupe,
       integrationId: owner.integrationId,
-      jobType: "wahoo.publish_event",
+      jobType: "wahoo.activity_history_reconcile",
       operation: "publish",
       payload: { eventId, operation: "publish" },
       payloadHash: "publish-v2",
@@ -980,7 +986,7 @@ describe("provider sync PostgreSQL claims", () => {
         id, created_at, updated_at, profile_id, integration_id, provider,
         job_type, sync_lane_key, status, priority, run_at, attempt, max_attempts,
         payload
-      ) values ($1, now(), now(), $2, $3, 'wahoo', 'wahoo.publish_event',
+       ) values ($1, now(), now(), $2, $3, 'wahoo', 'wahoo.activity_history_reconcile',
         $4, 'queued', 100, now(), 0, 3, '{}'::jsonb)
     `;
     const newWorkerInsert = insert
@@ -1027,7 +1033,7 @@ describe("provider sync PostgreSQL claims", () => {
         created_at: new Date(base),
         id: headId,
         integration_id: owner.integrationId,
-        job_type: "wahoo.publish_event",
+        job_type: "wahoo.activity_history_reconcile",
         payload: {},
         max_attempts: 3,
         priority: 100,
@@ -1043,7 +1049,7 @@ describe("provider sync PostgreSQL claims", () => {
         created_at: new Date(base),
         id: laterId,
         integration_id: owner.integrationId,
-        job_type: "wahoo.publish_event",
+        job_type: "wahoo.activity_history_reconcile",
         payload: {},
         max_attempts: 3,
         priority: 1,
@@ -1100,7 +1106,7 @@ describe("provider sync PostgreSQL claims", () => {
       created_at: new Date(base),
       id: jobId,
       integration_id: owner.integrationId,
-      job_type: "wahoo.publish_event",
+      job_type: "wahoo.activity_history_reconcile",
       payload: {},
       max_attempts: 3,
       priority: 100,

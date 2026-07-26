@@ -4,7 +4,7 @@ import {
   minimalTrainingPlanCreateSchema,
   periodizedPlanCreateSchema,
   trainingPlanCreationConfigSchema,
-} from "../../schemas/training_plan_structure";
+} from "../../schemas/training-plan-structure";
 import { normalizeCreationConfig } from "../normalizeCreationConfig";
 
 const goalOneId = "11111111-1111-4111-8111-111111111111";

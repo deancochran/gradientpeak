@@ -1,5 +1,5 @@
 import type { CanonicalSport } from "../../schemas/sport";
-import type { GoalTargetV2 } from "../../schemas/training_plan_structure";
+import type { TrainingPlanGoalTarget } from "../../schemas/training-plan-structure";
 import { normalizeTargetWeight } from "./weightedMean";
 
 export interface TargetProjectionSignals {
@@ -25,7 +25,7 @@ export interface EffectiveScoringTargetMetadata {
 }
 
 export interface TargetSatisfactionResult {
-  kind: GoalTargetV2["target_type"];
+  kind: TrainingPlanGoalTarget["target_type"];
   score_0_100: number;
   target_weight: number;
   unmet_gap?: number;
@@ -35,7 +35,7 @@ export interface TargetSatisfactionResult {
 
 export interface ResolveEffectiveScoringTargetInput {
   rawTarget: number;
-  targetType: GoalTargetV2["target_type"];
+  targetType: TrainingPlanGoalTarget["target_type"];
   surplusPreference?: number;
   readinessConfidence?: number;
   feasibilityConfidence?: number;
@@ -141,7 +141,7 @@ function smoothstep01(value: number): number {
   return clamped * clamped * (3 - 2 * clamped);
 }
 
-function getMaxSurplusPctByTargetType(targetType: GoalTargetV2["target_type"]): number {
+function getMaxSurplusPctByTargetType(targetType: TrainingPlanGoalTarget["target_type"]): number {
   switch (targetType) {
     case "race_performance":
       return 0.04;
@@ -199,7 +199,7 @@ export function resolveEffectiveScoringTarget(
  * Scores target satisfaction using continuous attainment distributions.
  */
 export function scoreTargetSatisfaction(input: {
-  target: GoalTargetV2;
+  target: TrainingPlanGoalTarget;
   projection: TargetProjectionSignals;
 }): TargetSatisfactionResult {
   const readiness = clamp(input.projection.readiness_score ?? 60, 0, 100);
