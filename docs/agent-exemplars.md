@@ -22,8 +22,6 @@ This catalog maps recurring task shapes to current production patterns. It is no
 | Accessible action | Supply a role, label, and disabled/busy state through the reusable action primitive. | [Header action](../apps/mobile/components/shared/HeaderAction.tsx) |
 | Query-backed list lifecycle | Distinguish loading, error with retry, empty, refresh, and data states. | [Notifications screen](../apps/mobile/app/(internal)/(standard)/notifications/index.tsx) |
 
-Mobile UI changes also require retained Maestro/manual video evidence under the coordination policy, or the exact declared risk `mobile video evidence local-only/deferred`.
-
 ## Web and shared UI
 
 | Task shape | Copy this behavior | Exemplar |

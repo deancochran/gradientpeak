@@ -27,12 +27,9 @@ Use this file when working in `apps/mobile`.
 - Use Zustand only for focused app-runtime state that is not already better owned by route state, query cache, or React Hook Form.
 - For mobile UI/UX work, load and apply the `mobile-frontend` skill before designing or editing screens, cards, forms, inputs, lists, search results, picker results, or detail surfaces.
 
-## Conventions
+## Composition
 
-- Use `@repo/ui` components first.
-- Keep app-local components focused on mobile-specific behavior and composition.
 - Preserve established NativeWind token usage instead of ad hoc color and spacing choices.
-- Keep `app/` route-only, `components/` composition-only, and `lib/` runtime-logic-only.
 - Start screen and component layout from content hierarchy, not from wrapper containers.
 - Prefer one strong parent surface with light child sections, and avoid card-inside-card composition unless the nested card is a truly separate object.
 - Use vertical flow by default for rich content like charts, maps, previews, and session structure, and only switch to horizontal layout when scanning clearly improves.
@@ -69,21 +66,12 @@ Use this file when working in `apps/mobile`.
 - Reserve bottom action bars for multi-step flows, modals/sheets, sticky review flows, or actions that must remain visible while scrolling.
 - Use lightweight save feedback for routine saves; avoid blocking success modals unless the user must make another decision.
 
-## Avoid
-
-- Creating app-local duplicate primitives that belong in `packages/ui`.
-- Moving native runtime concerns into `packages/core`.
-- Smearing route concerns, component composition, and runtime services across the wrong top-level directories.
-- One-off displays for resources that already have canonical cards or detail routes.
-- Heavy wrappers around simple settings and obvious controls.
-- Duplicated bottom cancel/save actions on simple screens that can use the header.
-
 ## Validation
 
 - Prefer the narrowest relevant mobile checks first.
 - Common commands from the repo root are `pnpm --filter mobile check-types`, `pnpm --filter mobile lint`, `pnpm --filter mobile test`, and `pnpm --filter mobile test:e2e` when needed.
 - Begin UI/data-flow work with the [mobile exemplars](../../docs/agent-exemplars.md). Reuse their state and accessibility behavior, not their feature-specific copy.
-- Observable mobile UI, navigation, or interaction changes require Maestro/manual video evidence under the coordination policy. If unavailable, the handoff must state `mobile video evidence local-only/deferred`.
+- Pair relevant automated checks with runtime validation when static checks cannot prove the changed behavior. Maestro/manual video is optional supporting evidence, not a completion or release requirement.
 
 ## References
 
