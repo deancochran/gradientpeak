@@ -4,11 +4,16 @@ import type { HostProps, PressableHostProps } from "../../../../test/mock-compon
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 import { BuilderScheduleEditor } from "../BuilderScheduleEditor";
 
+let mockScrollViewCount = 0;
+
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
   Pressable: (props: HostProps) => React.createElement("Pressable", props, props.children),
-  ScrollView: (props: HostProps) => React.createElement("ScrollView", props, props.children),
+  ScrollView: (props: HostProps) => {
+    mockScrollViewCount += 1;
+    return React.createElement("ScrollView", props, props.children);
+  },
   View: (props: HostProps) => React.createElement("View", props, props.children),
 }));
 
@@ -50,7 +55,25 @@ jest.mock("../BuilderTrainingPathReviewSection", () => ({
 
 jest.mock("../TrainingPlanBuilderEventCard", () => ({
   __esModule: true,
-  TrainingPlanBuilderEventCard: () => React.createElement("View", { testID: "mock-event-card" }),
+  TrainingPlanBuilderEventCard: ({
+    onDuplicate,
+    onEdit,
+    onMoveByDays,
+    onRemove,
+  }: {
+    onDuplicate: () => void;
+    onEdit: () => void;
+    onMoveByDays: (days: number) => void;
+    onRemove: () => void;
+  }) =>
+    React.createElement(
+      "View",
+      { testID: "mock-event-card" },
+      React.createElement("Pressable", { onPress: onEdit, testID: "event-edit" }),
+      React.createElement("Pressable", { onPress: onDuplicate, testID: "event-duplicate" }),
+      React.createElement("Pressable", { onPress: () => onMoveByDays(1), testID: "event-move" }),
+      React.createElement("Pressable", { onPress: onRemove, testID: "event-remove" }),
+    ),
 }));
 
 const makeWeeks = () => [
@@ -66,6 +89,12 @@ const makeTimelineWeeks = () =>
     sessions: [],
     weekIndex,
   }));
+
+function getFirstByTestId(testID: string) {
+  const first = screen.getAllByTestId(testID)[0];
+  if (!first) throw new Error(`Expected at least one element with testID ${testID}`);
+  return first;
+}
 
 const renderEditor = (
   selectedWeekIndex: number,
@@ -105,6 +134,9 @@ const renderEditor = (
 };
 
 describe("BuilderScheduleEditor selected day planning", () => {
+  beforeEach(() => {
+    mockScrollViewCount = 0;
+  });
   it("adds a workout at the selected week start offset", () => {
     const props = renderEditor(2);
 
@@ -134,5 +166,32 @@ describe("BuilderScheduleEditor selected day planning", () => {
 
     expect(props.onAddSessionAtOffset).toHaveBeenCalledTimes(1);
     expect(props.onAddSessionAtOffset).toHaveBeenCalledWith(10);
+  });
+
+  it("renders selected-day sessions in the parent vertical flow without a capped inner scroll area", () => {
+    const props = renderEditor(0, {
+      viewModel: {
+        timelineWeeks: [
+          {
+            sessions: [
+              { session: { localId: "session-1", offsetDays: 0 } },
+              { session: { localId: "session-2", offsetDays: 0 } },
+            ],
+            weekIndex: 0,
+          },
+        ],
+      },
+    } as unknown as Partial<React.ComponentProps<typeof BuilderScheduleEditor>>);
+
+    expect(screen.getAllByTestId("mock-event-card")).toHaveLength(2);
+    expect(mockScrollViewCount).toBe(0);
+    fireEvent.press(getFirstByTestId("event-edit"));
+    fireEvent.press(getFirstByTestId("event-duplicate"));
+    fireEvent.press(getFirstByTestId("event-move"));
+    fireEvent.press(getFirstByTestId("event-remove"));
+    expect(props.onPressSession).toHaveBeenCalledWith("session-1");
+    expect(props.onDuplicateSession).toHaveBeenCalledWith("session-1");
+    expect(props.onMoveSessionByDays).toHaveBeenCalledWith("session-1", 1);
+    expect(props.onRemoveSession).toHaveBeenCalledWith("session-1");
   });
 });

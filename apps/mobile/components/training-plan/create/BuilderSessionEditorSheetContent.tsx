@@ -9,6 +9,7 @@ type BuilderSessionEditorContentProps = {
   onChange: (session: TrainingPlanBuilderSession) => void;
   onDuplicate: (sessionId: string) => void;
   onOpenActivityPicker: (sessionId: string) => void;
+  onRemove: (sessionId: string) => void;
 };
 
 export function BuilderSessionEditorContent(props: BuilderSessionEditorContentProps) {
@@ -20,6 +21,7 @@ export function BuilderSessionEditorContent(props: BuilderSessionEditorContentPr
         onChange={props.onChange}
         onDuplicate={props.onDuplicate}
         onOpenActivityPicker={props.onOpenActivityPicker}
+        onRemove={props.onRemove}
       />
     </AppBottomSheetContent>
   );

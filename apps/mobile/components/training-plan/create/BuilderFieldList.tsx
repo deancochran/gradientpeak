@@ -176,7 +176,7 @@ function CompactNumberControl({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`Decrease ${label}`}
-        className="h-9 w-9 items-center justify-center rounded-full bg-background"
+        className="h-11 w-11 items-center justify-center rounded-full bg-background"
         disabled={!canDecrease}
         onPress={() => onChange(value !== null && value - step >= min ? value - step : null)}
       >
@@ -188,7 +188,7 @@ function CompactNumberControl({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`Increase ${label}`}
-        className="h-9 w-9 items-center justify-center rounded-full bg-background"
+        className="h-11 w-11 items-center justify-center rounded-full bg-background"
         disabled={!canIncrease}
         onPress={() =>
           onChange(max === undefined ? nextValue + step : Math.min(max, nextValue + step))

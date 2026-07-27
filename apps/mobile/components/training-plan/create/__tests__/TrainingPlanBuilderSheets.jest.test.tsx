@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 import type {
@@ -85,6 +86,7 @@ const planningConstraintFields = [
 function DraftHarness() {
   const drafts = useTrainingPlanBuilderSheetDrafts();
   const preferenceDraft = drafts.planningPreferencesForm.watch();
+  const [metadataApplyResult, setMetadataApplyResult] = useState<string | null>(null);
 
   return (
     <View>
@@ -124,18 +126,27 @@ function DraftHarness() {
       />
       <Pressable testID="preferences-apply" onPress={drafts.applyPlanningPreferencesDraft} />
 
-      <Text testID="profile-goal-can-save">{drafts.canSaveProfileGoal ? "yes" : "no"}</Text>
+      <Text testID="metadata-can-save">{drafts.canSaveMetadata ? "yes" : "no"}</Text>
+      <Text testID="metadata-draft">{JSON.stringify(drafts.metadataForm.watch())}</Text>
       <Pressable
-        testID="profile-goal-set-title"
-        onPress={() => drafts.profileGoalForm.setValue("title", "Raise FTP")}
+        testID="metadata-set-name"
+        onPress={() =>
+          drafts.metadataForm.setValue("name", "  Updated plan  ", { shouldValidate: true })
+        }
       />
       <Pressable
-        testID="profile-goal-cancel"
-        onPress={() => drafts.cancelDraftForSheet("profileGoalCreate")}
+        testID="metadata-set-invalid-name"
+        onPress={() => drafts.metadataForm.setValue("name", " ", { shouldValidate: true })}
       />
       <Pressable
-        testID="profile-goal-save"
-        onPress={() => drafts.saveProfileGoalDraft(jest.fn())}
+        testID="metadata-set-public"
+        onPress={() => drafts.setDraftTemplateVisibility("public")}
+      />
+      <Pressable testID="metadata-cancel" onPress={() => drafts.cancelDraftForSheet("metadata")} />
+      <Text testID="metadata-apply-result">{metadataApplyResult ?? "pending"}</Text>
+      <Pressable
+        testID="metadata-apply"
+        onPress={() => setMetadataApplyResult(String(drafts.applyMetadataDraft()))}
       />
     </View>
   );
@@ -147,12 +158,14 @@ function renderDraftHarness({
   sort = "oldest",
   onApplyActivityFilters = jest.fn(),
   onApplyPlanningPreferences = jest.fn(),
+  onApplyMetadata = jest.fn(),
 }: {
   activeSheet?: BuilderSheet | null;
   categoryFilter?: ActivityCategoryFilter;
   sort?: ActivityPlanSort;
   onApplyActivityFilters?: jest.Mock;
   onApplyPlanningPreferences?: jest.Mock;
+  onApplyMetadata?: jest.Mock;
 } = {}) {
   renderNative(
     <TrainingPlanBuilderSheetDraftsProvider
@@ -161,14 +174,16 @@ function renderDraftHarness({
       activityPlanSort={sort}
       planningConstraintFields={planningConstraintFields}
       planPreferences={basePlanPreferences}
+      planMetadata={{ name: "Plan", description: "", templateVisibility: "private" }}
       onApplyActivityFilters={onApplyActivityFilters}
       onApplyPlanningPreferences={onApplyPlanningPreferences}
+      onApplyMetadata={onApplyMetadata}
     >
       <DraftHarness />
     </TrainingPlanBuilderSheetDraftsProvider>,
   );
 
-  return { onApplyActivityFilters, onApplyPlanningPreferences };
+  return { onApplyActivityFilters, onApplyPlanningPreferences, onApplyMetadata };
 }
 
 describe("TrainingPlanBuilderSheetDraftsProvider", () => {
@@ -238,26 +253,37 @@ describe("TrainingPlanBuilderSheetDraftsProvider", () => {
     expect(onApplyPlanningPreferences).not.toHaveBeenCalled();
   });
 
-  it("clears profile goal drafts on cancel and after save", async () => {
-    renderDraftHarness({ activeSheet: "profileGoalCreate" });
+  it("keeps metadata local until save and restores it on cancel", async () => {
+    const { onApplyMetadata } = renderDraftHarness({ activeSheet: "metadata" });
 
-    fireEvent.press(screen.getByTestId("profile-goal-set-title"));
+    fireEvent.press(screen.getByTestId("metadata-set-name"));
+    fireEvent.press(screen.getByTestId("metadata-set-public"));
+    expect(onApplyMetadata).not.toHaveBeenCalled();
+
+    fireEvent.press(screen.getByTestId("metadata-cancel"));
     await waitFor(() => {
-      expect(screen.getByTestId("profile-goal-can-save").props.children).toBe("yes");
+      expect(screen.getByTestId("metadata-draft").props.children).toContain('"Plan"');
     });
 
-    fireEvent.press(screen.getByTestId("profile-goal-cancel"));
-    await waitFor(() => {
-      expect(screen.getByTestId("profile-goal-can-save").props.children).toBe("no");
+    fireEvent.press(screen.getByTestId("metadata-set-name"));
+    fireEvent.press(screen.getByTestId("metadata-set-public"));
+    fireEvent.press(screen.getByTestId("metadata-apply"));
+    expect(onApplyMetadata).toHaveBeenCalledWith({
+      name: "Updated plan",
+      description: "",
+      templateVisibility: "public",
     });
+  });
 
-    fireEvent.press(screen.getByTestId("profile-goal-set-title"));
+  it("marks invalid metadata drafts unsaveable", async () => {
+    renderDraftHarness({ activeSheet: "metadata" });
+    fireEvent.press(screen.getByTestId("metadata-set-invalid-name"));
     await waitFor(() => {
-      expect(screen.getByTestId("profile-goal-can-save").props.children).toBe("yes");
+      expect(screen.getByTestId("metadata-can-save").props.children).toBe("no");
     });
-    fireEvent.press(screen.getByTestId("profile-goal-save"));
+    fireEvent.press(screen.getByTestId("metadata-apply"));
     await waitFor(() => {
-      expect(screen.getByTestId("profile-goal-can-save").props.children).toBe("no");
+      expect(screen.getByTestId("metadata-apply-result").props.children).toBe("false");
     });
   });
 });

@@ -32,8 +32,8 @@ function getBuilderSheetPresentation(activeSheet: BuilderSheet | null) {
     return { initialSnapIndex: 1, snapPoints: ["88%", "96%"] };
   }
 
-  if (activeSheet === "profileGoalCreate" || activeSheet === "localGoalCreate") {
-    return { initialSnapIndex: 0, snapPoints: ["56%", "82%"] };
+  if (activeSheet === "localGoalCreate") {
+    return { initialSnapIndex: 0, snapPoints: ["82%", "96%"] };
   }
 
   return { initialSnapIndex: 0, snapPoints: ["72%", "96%"] };
@@ -45,7 +45,7 @@ function ActivityFiltersFooter() {
   return (
     <View className="flex-row gap-3">
       <Button
-        className="flex-1"
+        className="min-h-11 flex-1"
         disabled={!sheetDrafts.canResetActivityFilters}
         onPress={sheetDrafts.resetActivityFiltersDraft}
         variant="outline"
@@ -62,6 +62,7 @@ function TrainingPlanBuilderPreferencesSheet({
   builder,
   closeBuilderSheet,
   goBackSheet,
+  onRemoveSession,
   selection,
   pushSheet,
 }: {
@@ -70,6 +71,7 @@ function TrainingPlanBuilderPreferencesSheet({
   builder: TrainingPlanBuilderController["builder"];
   closeBuilderSheet: () => void;
   goBackSheet: () => void;
+  onRemoveSession: (sessionId: string) => void;
   selection: TrainingPlanBuilderController["selection"];
   pushSheet: (sheet: BuilderSheet) => void;
 }) {
@@ -83,7 +85,10 @@ function TrainingPlanBuilderPreferencesSheet({
       isSaveDisabled={
         !sheetDrafts.canResetPlanningPreferences || !sheetDrafts.canSavePlanningPreferences
       }
-      onClose={closeBuilderSheet}
+      onClose={() => {
+        sheetDrafts.cancelDraftForSheet("preferences");
+        closeBuilderSheet();
+      }}
       onReset={() => sheetDrafts.cancelDraftForSheet("preferences")}
       onSave={() => {
         sheetDrafts.applyPlanningPreferencesDraft();
@@ -104,6 +109,7 @@ function TrainingPlanBuilderPreferencesSheet({
           builder={builder}
           goBackSheet={goBackSheet}
           onSelectActivityPlan={activityPicker.selectPlan}
+          onRemoveSession={onRemoveSession}
           pushSheet={pushSheet}
           selectedSessionId={selection.sessionId}
           setActivityPlanSearchQuery={activityPicker.setSearchQuery}
@@ -143,8 +149,10 @@ export function TrainingPlanBuilderSheets({ controller }: TrainingPlanBuilderShe
       activityPlanSort={activityPicker.sort}
       planningConstraintFields={sheets.planningConstraintFields}
       planPreferences={sheets.planPreferences}
+      planMetadata={builder.state.details}
       onApplyActivityFilters={activityPicker.applyFiltersDraft}
       onApplyPlanningPreferences={builder.actions.updatePlanningPreferences}
+      onApplyMetadata={builder.actions.updateDetails}
     >
       {activeSheet === "preferences" ? (
         <TrainingPlanBuilderPreferencesSheet
@@ -153,19 +161,20 @@ export function TrainingPlanBuilderSheets({ controller }: TrainingPlanBuilderShe
           builder={builder}
           closeBuilderSheet={closeBuilderSheet}
           goBackSheet={goBackSheet}
+          onRemoveSession={controller.actions.confirmRemoveSession}
           selection={selection}
           pushSheet={pushSheet}
         />
       ) : (
         <TrainingPlanBuilderSheetFrame
           activeSheet={activeSheet}
-          builder={builder}
           canGoBack={canGoBack}
           closeSheet={closeBuilderSheet}
           contentKey={activeSheet ?? "closed"}
           contentMode={
             activeSheet === "activityAssignment" || activeSheet === "session" ? "custom" : "scroll"
           }
+          customHeaderInLayout={activeSheet === "activityAssignment" || activeSheet === "session"}
           description={sheetDescription}
           footer={activeSheet === "activityFilters" ? <ActivityFiltersFooter /> : null}
           goBackSheet={goBackSheet}
@@ -183,7 +192,8 @@ export function TrainingPlanBuilderSheets({ controller }: TrainingPlanBuilderShe
               />
             ) : undefined
           }
-          showTitleHeader={activeSheet !== "activityAssignment" && activeSheet !== "session"}
+          showTitleHeader
+          showCloseAction
           initialSnapIndex={sheetPresentation.initialSnapIndex}
           snapPoints={sheetPresentation.snapPoints}
           title={sheetTitle}
@@ -198,6 +208,7 @@ export function TrainingPlanBuilderSheets({ controller }: TrainingPlanBuilderShe
             builder={builder}
             goBackSheet={goBackSheet}
             onSelectActivityPlan={activityPicker.selectPlan}
+            onRemoveSession={controller.actions.confirmRemoveSession}
             pushSheet={pushSheet}
             selectedSessionId={selection.sessionId}
             setActivityPlanSearchQuery={activityPicker.setSearchQuery}

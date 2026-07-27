@@ -4,18 +4,15 @@ import type { ReactNode } from "react";
 import { AppBottomSheet } from "@/components/shared/AppBottomSheet";
 import type { BuilderSheet } from "@/components/training-plan/create/BuilderSheetTypes";
 import { useTrainingPlanBuilderSheetDrafts } from "@/components/training-plan/create/TrainingPlanBuilderSheetContent";
-import type { useTrainingPlanCreationService } from "@/lib/training-plan-creation/useTrainingPlanCreationService";
-
-type TrainingPlanBuilderService = ReturnType<typeof useTrainingPlanCreationService>;
 
 type TrainingPlanBuilderSheetFrameProps = {
   activeSheet: BuilderSheet | null;
-  builder: TrainingPlanBuilderService;
   canGoBack: boolean;
   children: ReactNode;
   closeSheet: () => void;
   contentKey: string;
   contentMode?: "scroll" | "custom";
+  customHeaderInLayout?: boolean;
   description?: string;
   footer: ReactNode;
   goBackSheet: () => void;
@@ -23,6 +20,7 @@ type TrainingPlanBuilderSheetFrameProps = {
   headerActionLabel: string;
   headerContent?: ReactNode;
   showTitleHeader?: boolean;
+  showCloseAction?: boolean;
   initialSnapIndex?: number;
   snapPoints?: string[];
   title: string;
@@ -30,12 +28,12 @@ type TrainingPlanBuilderSheetFrameProps = {
 
 export function TrainingPlanBuilderSheetFrame({
   activeSheet,
-  builder,
   canGoBack,
   children,
   closeSheet,
   contentKey,
   contentMode,
+  customHeaderInLayout,
   description,
   footer,
   goBackSheet,
@@ -44,6 +42,7 @@ export function TrainingPlanBuilderSheetFrame({
   headerContent,
   initialSnapIndex,
   showTitleHeader,
+  showCloseAction,
   snapPoints,
   title,
 }: TrainingPlanBuilderSheetFrameProps) {
@@ -66,16 +65,16 @@ export function TrainingPlanBuilderSheetFrame({
       return;
     }
 
-    if (activeSheet === "profileGoalCreate") {
-      if (sheetDrafts.saveProfileGoalDraft(builder.actions.addLocalGoal)) {
-        goBackSheet();
-      }
-      return;
-    }
-
     if (activeSheet === "preferences") {
       sheetDrafts.applyPlanningPreferencesDraft();
       closeSheet();
+      return;
+    }
+
+    if (activeSheet === "metadata") {
+      if (sheetDrafts.applyMetadataDraft()) {
+        closeSheet();
+      }
       return;
     }
 
@@ -87,6 +86,7 @@ export function TrainingPlanBuilderSheetFrame({
       visible={activeSheet !== null}
       contentKey={contentKey}
       contentMode={contentMode}
+      customHeaderInLayout={customHeaderInLayout}
       title={title}
       description={description}
       onBack={canGoBack ? cancelNestedSheet : undefined}
@@ -95,9 +95,10 @@ export function TrainingPlanBuilderSheetFrame({
         hasSaveAction ? (
           <Button
             disabled={
-              (activeSheet === "profileGoalCreate" && !sheetDrafts.canSaveProfileGoal) ||
-              (activeSheet === "preferences" && !sheetDrafts.canSavePlanningPreferences)
+              (activeSheet === "preferences" && !sheetDrafts.canSavePlanningPreferences) ||
+              (activeSheet === "metadata" && !sheetDrafts.canSaveMetadata)
             }
+            className="min-h-11 px-3"
             size="sm"
             variant="ghost"
             onPress={saveSheet}
@@ -110,6 +111,7 @@ export function TrainingPlanBuilderSheetFrame({
       headerContent={headerContent}
       initialSnapIndex={initialSnapIndex}
       showTitleHeader={showTitleHeader}
+      showCloseAction={showCloseAction}
       snapPoints={snapPoints}
       footer={footer}
       testID="training-plan-builder-sheet"

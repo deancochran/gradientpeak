@@ -25,6 +25,7 @@ type AppBottomSheetProps = {
   children: ReactNode;
   contentKey?: string;
   contentMode?: "scroll" | "custom";
+  customHeaderInLayout?: boolean;
   contentPaddingBottom?: number;
   description?: string;
   footer?: ReactNode;
@@ -33,6 +34,7 @@ type AppBottomSheetProps = {
   initialSnapIndex?: number;
   onBack?: () => void;
   onClose: () => void;
+  showCloseAction?: boolean;
   showTitleHeader?: boolean;
   snapPoints?: string[];
   testID?: string;
@@ -92,6 +94,7 @@ export function AppBottomSheet({
   children,
   contentKey,
   contentMode = "scroll",
+  customHeaderInLayout = false,
   contentPaddingBottom,
   description,
   footer,
@@ -100,6 +103,7 @@ export function AppBottomSheet({
   initialSnapIndex,
   onBack,
   onClose,
+  showCloseAction = false,
   showTitleHeader = true,
   snapPoints: snapPointProp,
   testID = "app-bottom-sheet",
@@ -156,6 +160,7 @@ export function AppBottomSheet({
               <Button
                 accessibilityLabel={`Back from ${title}`}
                 accessibilityState={{ disabled: false }}
+                className="min-h-11 min-w-11"
                 onPress={onBack}
                 role="button"
                 size="icon"
@@ -166,13 +171,29 @@ export function AppBottomSheet({
               </Button>
             ) : null}
             <View className="flex-1 gap-1">
-              <Text className="text-lg font-semibold text-foreground">{title}</Text>
+              <Text accessibilityRole="header" className="text-lg font-semibold text-foreground">
+                {title}
+              </Text>
               {description ? (
                 <Text className="text-sm leading-5 text-muted-foreground">{description}</Text>
               ) : null}
             </View>
           </View>
-          {hasHeaderAction ? <View>{headerAction}</View> : null}
+          <View className="flex-row items-center gap-1">
+            {hasHeaderAction ? <View>{headerAction}</View> : null}
+            {showCloseAction ? (
+              <Button
+                accessibilityLabel={`Close ${title}`}
+                className="min-h-11 px-3"
+                onPress={onClose}
+                role="button"
+                testId={`${testID}-close`}
+                variant="ghost"
+              >
+                <Text className="text-sm font-medium text-foreground">Close</Text>
+              </Button>
+            ) : null}
+          </View>
         </View>
       ) : null}
       {hasHeaderContent ? (
@@ -205,7 +226,7 @@ export function AppBottomSheet({
     >
       {contentMode === "custom" ? (
         <>
-          {header ? (
+          {header && !customHeaderInLayout ? (
             <BottomSheetView
               pointerEvents="box-none"
               style={{ left: 0, position: "absolute", right: 0, top: 0, zIndex: 10 }}
@@ -214,7 +235,14 @@ export function AppBottomSheet({
               {header}
             </BottomSheetView>
           ) : null}
-          {children}
+          {customHeaderInLayout ? (
+            <BottomSheetView style={{ flex: 1 }} testID={testID}>
+              {header}
+              {children}
+            </BottomSheetView>
+          ) : (
+            children
+          )}
         </>
       ) : (
         <BottomSheetView style={{ flex: 1 }} testID={testID}>

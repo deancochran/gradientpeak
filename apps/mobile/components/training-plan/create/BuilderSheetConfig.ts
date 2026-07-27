@@ -11,7 +11,6 @@ export function getBuilderSheetTitle(input: {
   if (activeSheet === "athleteContext") return "Athlete";
   if (activeSheet === "goals") return "Goals";
   if (activeSheet === "localGoalCreate") return "Create Plan Goal";
-  if (activeSheet === "profileGoalCreate") return "Create profile goal";
   if (activeSheet === "preferences") return "Preferences";
   if (activeSheet === "schedulePreview") return "Schedule preview";
   if (activeSheet === "session") return "Workout";
@@ -35,9 +34,6 @@ export function getBuilderSheetDescription(input: {
   }
   if (activeSheet === "goals") return "Create a new goal or select one from your profile.";
   if (activeSheet === "localGoalCreate") return "Create a goal for this plan only.";
-  if (activeSheet === "profileGoalCreate") {
-    return "Add a goal without leaving the builder.";
-  }
   if (activeSheet === "preferences") {
     return "Set optional limits for this plan.";
   }
@@ -58,14 +54,12 @@ export function builderSheetHasSaveAction(activeSheet: BuilderSheet | null) {
   return (
     activeSheet !== null &&
     activeSheet !== "activityAssignment" &&
-    activeSheet !== "localGoalCreate" &&
-    activeSheet !== "session"
+    activeSheet !== "localGoalCreate"
   );
 }
 
 export function getBuilderSheetActionLabel(activeSheet: BuilderSheet | null) {
   if (activeSheet === "activityFilters" || activeSheet === "preferences") return "Apply";
-  if (activeSheet === "profileGoalCreate") return "Add";
   if (activeSheet === "metadata") return "Save";
   return "Done";
 }

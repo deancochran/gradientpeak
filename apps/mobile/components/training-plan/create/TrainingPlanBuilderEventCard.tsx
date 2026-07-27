@@ -5,10 +5,11 @@ import { useZodForm } from "@repo/ui/hooks";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import { useCallback, useEffect } from "react";
 import { useWatch } from "react-hook-form";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, useWindowDimensions, View } from "react-native";
 import { z } from "zod";
 import { type ActivityPlan, ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import type { ResourceMetric } from "@/components/shared/ResourceCardPrimitives";
+import { shouldUseAccessibleBuilderLayout } from "@/components/training-plan/create/responsiveLayout";
 import { TrainingPlanEventCard } from "@/components/training-plan/TrainingPlanEventCard";
 import {
   BUILDER_WEEKDAY_NAMES,
@@ -33,10 +34,10 @@ const workoutTitleSchema = z.object({
 type TrainingPlanBuilderEventCardProps = {
   event: TrainingPlanBuilderSession;
   estimate?: ActivityPlanPlanningEstimate | null;
-  onDuplicate?: () => void;
-  onEdit?: () => void;
-  onMoveByDays?: (days: number) => void;
-  onRemove?: () => void;
+  onDuplicate: () => void;
+  onEdit: () => void;
+  onMoveByDays: (days: number) => void;
+  onRemove: () => void;
 };
 
 type TrainingPlanBuilderEventEditorProps = {
@@ -45,6 +46,7 @@ type TrainingPlanBuilderEventEditorProps = {
   onChange: (event: TrainingPlanBuilderSession) => void;
   onDuplicate: (eventId: string) => void;
   onOpenActivityPicker: (eventId: string) => void;
+  onRemove: (eventId: string) => void;
 };
 
 function getEventTitle(event: TrainingPlanBuilderSession) {
@@ -118,12 +120,16 @@ function compactOverrides(
 }
 
 function ChoicePill({
+  accessibilityLabel,
+  allowTextWrap = false,
   children,
   className,
   isSelected,
   onPress,
   textClassName,
 }: {
+  accessibilityLabel?: string;
+  allowTextWrap?: boolean;
   children: string;
   className?: string;
   isSelected: boolean;
@@ -132,9 +138,9 @@ function ChoicePill({
 }) {
   return (
     <Pressable
-      accessibilityLabel={children}
+      accessibilityLabel={accessibilityLabel ?? children}
       accessibilityRole="radio"
-      accessibilityState={{ selected: isSelected }}
+      accessibilityState={{ checked: isSelected }}
       className={`${
         isSelected
           ? "min-h-11 justify-center rounded-full bg-primary px-3.5 py-2"
@@ -148,7 +154,7 @@ function ChoicePill({
             ? "text-xs font-semibold text-primary-foreground"
             : "text-xs font-medium text-foreground"
         } text-center ${textClassName ?? ""}`}
-        numberOfLines={1}
+        numberOfLines={allowTextWrap ? undefined : 1}
       >
         {children}
       </Text>
@@ -159,22 +165,77 @@ function ChoicePill({
 export function TrainingPlanBuilderEventCard({
   event,
   estimate,
+  onDuplicate,
   onEdit,
+  onMoveByDays,
+  onRemove,
 }: TrainingPlanBuilderEventCardProps) {
   const meta = getEventMeta(event, estimate);
   const metrics = getActivityMetrics(event, estimate);
   const scheduleLabel = formatBuilderWeekdayWithWeek(event.offsetDays);
+  const { fontScale, width } = useWindowDimensions();
+  const useVerticalLayout = shouldUseAccessibleBuilderLayout({ fontScale, width });
 
   return (
-    <TrainingPlanEventCard
-      metrics={metrics}
-      onPress={onEdit}
-      scheduleLabel={scheduleLabel}
-      statusLabel={!event.activityPlan ? "Needs workout" : null}
-      subtitle={meta || null}
-      testID={`builder-timeline-workout-${event.localId}`}
-      title={getEventTitle(event)}
-    />
+    <View className="gap-2">
+      <TrainingPlanEventCard
+        metrics={metrics}
+        onPress={onEdit}
+        scheduleLabel={scheduleLabel}
+        statusLabel={!event.activityPlan ? "Needs workout" : null}
+        subtitle={meta || null}
+        testID={`builder-timeline-workout-${event.localId}`}
+        title={getEventTitle(event)}
+      />
+      {event.activityPlan ? (
+        <View className="gap-2" testID={`builder-workout-actions-${event.localId}`}>
+          <View className={useVerticalLayout ? "gap-2" : "flex-row gap-2"}>
+            <EventAction label="Edit" onPress={onEdit} />
+            <EventAction label="Duplicate" onPress={onDuplicate} />
+          </View>
+          <View className={useVerticalLayout ? "gap-2" : "flex-row gap-2"}>
+            <EventAction
+              disabled={event.offsetDays === 0}
+              label="Move earlier"
+              onPress={() => onMoveByDays(-1)}
+            />
+            <EventAction label="Move later" onPress={() => onMoveByDays(1)} />
+          </View>
+          <EventAction destructive label="Remove" onPress={onRemove} />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function EventAction({
+  destructive = false,
+  disabled = false,
+  label,
+  onPress,
+}: {
+  destructive?: boolean;
+  disabled?: boolean;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      className={`min-h-11 flex-1 items-center justify-center rounded-xl border px-3 py-2 disabled:opacity-40 ${
+        destructive ? "border-destructive/30 bg-destructive/10" : "border-border bg-background"
+      }`}
+      disabled={disabled}
+      onPress={onPress}
+    >
+      <Text
+        className={`text-center text-sm font-semibold ${destructive ? "text-destructive" : "text-foreground"}`}
+      >
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -182,7 +243,9 @@ export function TrainingPlanBuilderEventEditor({
   activityPlan,
   event,
   onChange,
+  onDuplicate,
   onOpenActivityPicker,
+  onRemove,
 }: TrainingPlanBuilderEventEditorProps) {
   const updateEvent = useCallback(
     (patch: Partial<TrainingPlanBuilderSession>) => {
@@ -204,6 +267,15 @@ export function TrainingPlanBuilderEventEditor({
   const selectedWeekdayIndex = getBuilderWeekdayIndex(event.offsetDays);
   const weekOffset = Math.floor(event.offsetDays / 7) * 7;
   const weekIndex = Math.floor(event.offsetDays / 7);
+  const { fontScale, width } = useWindowDimensions();
+  const useVerticalLayout = shouldUseAccessibleBuilderLayout({ fontScale, width });
+  const weekdayRows = useVerticalLayout
+    ? [
+        BUILDER_WEEKDAY_NAMES.slice(0, 3),
+        BUILDER_WEEKDAY_NAMES.slice(3, 6),
+        BUILDER_WEEKDAY_NAMES.slice(6),
+      ]
+    : [BUILDER_WEEKDAY_NAMES];
   const titlePlaceholder = event.activityPlan?.name ?? "Unassigned workout";
   const title = event.eventOverrides?.title ?? "";
   const workoutTitleForm = useZodForm({
@@ -326,48 +398,86 @@ export function TrainingPlanBuilderEventEditor({
 
         <View className="gap-2">
           <Text className="text-sm font-semibold text-muted-foreground">Day</Text>
-          <View className="flex-row flex-wrap gap-2">
-            {BUILDER_WEEKDAY_NAMES.map((weekday, weekdayIndex) => (
-              <ChoicePill
-                key={weekday}
-                className="items-center px-3 py-2"
-                isSelected={selectedWeekdayIndex === weekdayIndex}
-                onPress={() => setWeekday(weekdayIndex)}
-              >
-                {weekday.slice(0, 3)}
-              </ChoicePill>
+          <View accessibilityLabel="Workout day" accessibilityRole="radiogroup" className="gap-1">
+            {weekdayRows.map((weekdays) => (
+              <View className="flex-row gap-1" key={weekdays.join("-")}>
+                {weekdays.map((weekday) => {
+                  const weekdayIndex = BUILDER_WEEKDAY_NAMES.indexOf(weekday);
+                  return (
+                    <ChoicePill
+                      accessibilityLabel={weekday}
+                      allowTextWrap={useVerticalLayout}
+                      key={weekday}
+                      className="min-w-0 flex-1 items-center px-1 py-2"
+                      isSelected={selectedWeekdayIndex === weekdayIndex}
+                      onPress={() => setWeekday(weekdayIndex)}
+                    >
+                      {weekday.slice(0, 3)}
+                    </ChoicePill>
+                  );
+                })}
+              </View>
             ))}
           </View>
         </View>
 
         <View className="gap-2">
           <Text className="text-sm font-semibold text-muted-foreground">Time</Text>
-          <ScrollView
-            horizontal
-            keyboardShouldPersistTaps="handled"
-            showsHorizontalScrollIndicator={false}
-            contentContainerClassName="flex-row items-center gap-2"
-          >
-            <ChoicePill
-              className="px-3 py-2"
-              isSelected={!event.eventOverrides?.start_time}
-              onPress={() => updateOverride("start_time", "")}
-            >
-              No time
-            </ChoicePill>
-            {TIME_PRESETS.map((preset) => (
+          <View accessibilityLabel="Workout time" accessibilityRole="radiogroup" className="gap-2">
+            <View className={useVerticalLayout ? "gap-2" : "flex-row gap-2"}>
               <ChoicePill
-                key={preset.value}
-                className="px-3 py-2"
-                isSelected={event.eventOverrides?.start_time === preset.value}
-                onPress={() => updateOverride("start_time", preset.value)}
+                allowTextWrap={useVerticalLayout}
+                className="flex-1 px-2 py-2"
+                isSelected={!event.eventOverrides?.start_time}
+                onPress={() => updateOverride("start_time", "")}
               >
-                {preset.label}
+                No time
               </ChoicePill>
-            ))}
-          </ScrollView>
+              <ChoicePill
+                allowTextWrap={useVerticalLayout}
+                className="flex-1 px-2 py-2"
+                isSelected={event.eventOverrides?.start_time === TIME_PRESETS[0].value}
+                onPress={() => updateOverride("start_time", TIME_PRESETS[0].value)}
+              >
+                {TIME_PRESETS[0].label}
+              </ChoicePill>
+            </View>
+            <View className={useVerticalLayout ? "gap-2" : "flex-row gap-2"}>
+              {TIME_PRESETS.slice(1).map((preset) => (
+                <ChoicePill
+                  allowTextWrap={useVerticalLayout}
+                  className="flex-1 px-2 py-2"
+                  key={preset.value}
+                  isSelected={event.eventOverrides?.start_time === preset.value}
+                  onPress={() => updateOverride("start_time", preset.value)}
+                >
+                  {preset.label}
+                </ChoicePill>
+              ))}
+            </View>
+          </View>
         </View>
       </View>
+      {event.activityPlan ? (
+        <View className="gap-2">
+          <Text className="text-sm font-semibold text-muted-foreground">Workout actions</Text>
+          <View className={useVerticalLayout ? "gap-2" : "flex-row gap-2"}>
+            <EventAction label="Duplicate" onPress={() => onDuplicate(event.localId)} />
+            <EventAction
+              disabled={event.offsetDays === 0}
+              label="Move earlier"
+              onPress={() => updateEvent({ offsetDays: Math.max(0, event.offsetDays - 1) })}
+            />
+          </View>
+          <View className={useVerticalLayout ? "gap-2" : "flex-row gap-2"}>
+            <EventAction
+              label="Move later"
+              onPress={() => updateEvent({ offsetDays: event.offsetDays + 1 })}
+            />
+            <EventAction destructive label="Remove" onPress={() => onRemove(event.localId)} />
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }

@@ -71,6 +71,7 @@ export function TrainingPlanBuilderScreen({
               disabled={controller.header.primaryDisabled}
               onPress={() => void controller.header.save()}
               size="sm"
+              testID="training-plan-save-button"
               variant="ghost"
             >
               {controller.header.isSaving ? <ActivityIndicator size="small" /> : null}

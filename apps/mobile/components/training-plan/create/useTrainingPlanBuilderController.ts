@@ -243,12 +243,25 @@ export function useTrainingPlanBuilderController({
     setPendingSessionDraftId(null);
   }, [builder.actions, pendingSessionDraftId, selectedSessionId]);
 
-  const removeSelectedSession = useCallback(() => {
-    if (!selectedSession) return;
-    builder.actions.removeSession(selectedSession.localId);
-    setSelectedSessionId(null);
-    sheetStack.closeSheet();
-  }, [builder.actions, selectedSession, sheetStack.closeSheet]);
+  const confirmRemoveSession = useCallback(
+    (sessionId: string) => {
+      Alert.alert("Remove workout?", "This workout will be removed from the plan.", [
+        { style: "cancel", text: "Cancel" },
+        {
+          style: "destructive",
+          text: "Remove",
+          onPress: () => {
+            builder.actions.removeSession(sessionId);
+            if (selectedSessionId === sessionId) {
+              setSelectedSessionId(null);
+              sheetStack.closeSheet();
+            }
+          },
+        },
+      ]);
+    },
+    [builder.actions, selectedSessionId, sheetStack.closeSheet],
+  );
 
   const applyActivityFiltersDraft = useCallback(
     ({
@@ -280,10 +293,9 @@ export function useTrainingPlanBuilderController({
     () => ({
       session: selectedSession,
       sessionId: selectedSessionId,
-      removeSession: removeSelectedSession,
       setSessionId: setSelectedSessionId,
     }),
-    [removeSelectedSession, selectedSession, selectedSessionId],
+    [selectedSession, selectedSessionId],
   );
   const activityPicker = useMemo(
     () => ({
@@ -312,9 +324,17 @@ export function useTrainingPlanBuilderController({
       addSessionAtOffset,
       applyStructureProposal,
       cancelPendingSessionDraft,
+      confirmRemoveSession,
       handleSave,
     }),
-    [addSession, addSessionAtOffset, applyStructureProposal, cancelPendingSessionDraft, handleSave],
+    [
+      addSession,
+      addSessionAtOffset,
+      applyStructureProposal,
+      cancelPendingSessionDraft,
+      confirmRemoveSession,
+      handleSave,
+    ],
   );
 
   return {

@@ -53,15 +53,11 @@ export function useScheduleEditorController(controller: TrainingPlanBuilderContr
         selection.setSessionId(sessionId);
         openSheet("session");
       },
-      onRemoveSession: (sessionId: string) => {
-        builder.actions.removeSession(sessionId);
-        if (selection.sessionId === sessionId) {
-          selection.setSessionId(null);
-        }
-      },
+      onRemoveSession: actions.confirmRemoveSession,
     }),
     [
       actions.addSessionAtOffset,
+      actions.confirmRemoveSession,
       builder.actions,
       controller.chartReview,
       estimateBySessionId,

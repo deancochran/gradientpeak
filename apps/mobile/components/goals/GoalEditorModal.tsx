@@ -479,7 +479,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
                   accessibilityRole="button"
                   hitSlop={8}
                   onPress={() => handlePresetPress(preset)}
-                  className="min-h-9 justify-center rounded-full bg-secondary px-3 py-1.5"
+                  className="min-h-11 justify-center rounded-full bg-secondary px-3 py-1.5"
                 >
                   <Text className="text-xs text-secondary-foreground">{preset.label}</Text>
                 </Pressable>

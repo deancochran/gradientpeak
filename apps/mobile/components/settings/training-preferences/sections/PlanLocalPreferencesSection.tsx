@@ -3,25 +3,41 @@ import {
   type TrainingPreferenceField,
   type TrainingPreferenceTab,
   trainingPreferenceCatalog,
-  trainingPreferenceTabs,
 } from "@repo/core";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@repo/ui/components/select";
 import { Text } from "@repo/ui/components/text";
 import { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
-import { AvailabilitySection } from "@/components/settings/training-preferences/sections/AvailabilitySection";
-import { BaselineFitnessSection } from "@/components/settings/training-preferences/sections/BaselineFitnessSection";
 import { TrainingPreferenceFieldRenderer } from "@/components/settings/training-preferences/TrainingPreferenceFieldRenderer";
 import { TrainingPreferencesPanel } from "@/components/settings/training-preferences/TrainingPreferencesPanel";
-import {
-  type PreferencesTabKey,
-  TrainingPreferencesTabs,
-} from "@/components/settings/training-preferences/TrainingPreferencesTabs";
 import type {
   TrainingPlanPreferenceFieldDescriptor,
   TrainingPlanPreferenceFieldKey,
 } from "@/lib/training-plan-creation/preferences-context";
 
-const planLocalTabs = trainingPreferenceTabs as PreferencesTabKey[];
+const planLocalGroups = Array.from(
+  new Set(
+    trainingPreferenceCatalog
+      .filter((field) => field.planLocalSupport === "editable" && field.planLocalKey)
+      .map((field) => field.tab),
+  ),
+) as TrainingPreferenceTab[];
+
+const planLocalGroupLabels: Record<TrainingPreferenceTab, string> = {
+  preferences: "Adaptation",
+  availability: "Availability",
+  schedule: "Schedule",
+  "baseline-fitness": "Baseline fitness",
+  "training-style": "Training style",
+  recovery: "Recovery",
+  "goal-strategy": "Goal strategy",
+};
 
 type PlanLocalPreferencesSectionProps = {
   fields: TrainingPlanPreferenceFieldDescriptor[];
@@ -36,28 +52,46 @@ export function PlanLocalPreferencesSection({
   onChangeField,
   onRemoveField,
 }: PlanLocalPreferencesSectionProps) {
-  const [activeTab, setActiveTab] = useState<PreferencesTabKey>("schedule");
+  const [activeTab, setActiveTab] = useState<TrainingPreferenceTab>(
+    planLocalGroups[0] ?? "schedule",
+  );
   const fieldByKey = useMemo(
     () => new Map(fields.map((field) => [field.key, field] as const)),
     [fields],
   );
   const canonicalFields = trainingPreferenceCatalog.filter(
-    (field) => field.tab === (activeTab as TrainingPreferenceTab),
+    (field) =>
+      field.tab === activeTab && field.planLocalSupport === "editable" && field.planLocalKey,
   );
 
   useEffect(() => {
-    if (!planLocalTabs.includes(activeTab)) {
-      setActiveTab("schedule");
+    if (!planLocalGroups.includes(activeTab)) {
+      setActiveTab(planLocalGroups[0] ?? "schedule");
     }
   }, [activeTab]);
 
   return (
     <View className="gap-4">
-      <TrainingPreferencesTabs
-        activeTab={activeTab}
-        onSelectTab={setActiveTab}
-        visibleTabs={planLocalTabs}
-      />
+      <View className="gap-2">
+        <Text className="text-sm font-medium text-foreground">Preference group</Text>
+        <Select
+          value={{ label: planLocalGroupLabels[activeTab], value: activeTab }}
+          onValueChange={(option) => {
+            if (option?.value) setActiveTab(option.value as TrainingPreferenceTab);
+          }}
+        >
+          <SelectTrigger accessibilityLabel="Preference group" className="min-h-11">
+            <SelectValue placeholder="Select a preference group" />
+          </SelectTrigger>
+          <SelectContent>
+            {planLocalGroups.map((group) => (
+              <SelectItem key={group} label={planLocalGroupLabels[group]} value={group}>
+                {planLocalGroupLabels[group]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </View>
       <TrainingPreferencesPanel>
         {issues.length > 0 ? (
           <View className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
@@ -71,11 +105,7 @@ export function PlanLocalPreferencesSection({
             ))}
           </View>
         ) : null}
-        {activeTab === "availability" ? (
-          <AvailabilitySection fields={canonicalFields} mode="plan-local-readonly" />
-        ) : activeTab === "baseline-fitness" ? (
-          <BaselineFitnessSection fields={canonicalFields} mode="plan-local-readonly" />
-        ) : canonicalFields.length > 0 ? (
+        {canonicalFields.length > 0 ? (
           canonicalFields.map((field) => (
             <PlanLocalCatalogPreferenceField
               key={field.id}
@@ -99,18 +129,6 @@ export function PlanLocalPreferencesSection({
   );
 }
 
-function getDisabledReason(field: TrainingPreferenceField) {
-  if (field.planLocalSupport === "derived") {
-    return "Derived from plan-specific preferences.";
-  }
-
-  if (field.planLocalSupport === "profile-only") {
-    return "Profile-level preference.";
-  }
-
-  return null;
-}
-
 function PlanLocalCatalogPreferenceField({
   builderField,
   catalogField,
@@ -122,11 +140,8 @@ function PlanLocalCatalogPreferenceField({
   onChangeField: (fieldKey: TrainingPlanPreferenceFieldKey, value: number | null) => void;
   onRemoveField: (fieldKey: TrainingPlanPreferenceFieldKey) => void;
 }) {
-  const disabledReason = builderField ? null : getDisabledReason(catalogField);
-
   return (
     <TrainingPreferenceFieldRenderer
-      disabledReason={disabledReason}
       field={catalogField}
       isOverridden={builderField?.value.overridden}
       onChange={builderField ? (value) => onChangeField(builderField.key, value) : undefined}

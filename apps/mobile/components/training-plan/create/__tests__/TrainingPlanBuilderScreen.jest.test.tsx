@@ -318,11 +318,13 @@ jest.mock("@/components/shared/AppBottomSheet", () => ({
   __esModule: true,
   AppBottomSheet: ({
     children,
+    headerAction,
     headerContent,
     onClose,
     visible,
   }: {
     children?: React.ReactNode;
+    headerAction?: React.ReactNode;
     headerContent?: React.ReactNode;
     onClose?: () => void;
     visible?: boolean;
@@ -332,6 +334,7 @@ jest.mock("@/components/shared/AppBottomSheet", () => ({
         <Pressable testID="training-plan-builder-sheet-close" onPress={onClose}>
           <Text>Close</Text>
         </Pressable>
+        {headerAction}
         {headerContent}
         {children}
       </View>
@@ -341,22 +344,28 @@ jest.mock("@/components/shared/AppBottomSheet", () => ({
 jest.mock("../BuilderStrategyComposer", () => ({
   __esModule: true,
   BuilderStrategyComposer: ({
+    canUseStructureProposal,
+    onAddWorkout,
+    onApplyStructureProposal,
     onEditMetadata,
     onOpenAthleteContext,
     onOpenGoals,
     onOpenPlanningConstraints,
+    onOpenSchedulePreview,
     renderBelowChart,
-    modules,
-    savePlan,
+    planningBriefRows,
     state,
   }: {
+    canUseStructureProposal: boolean;
+    onAddWorkout: () => void;
+    onApplyStructureProposal: () => void;
     onEditMetadata?: () => void;
     onOpenAthleteContext?: () => void;
     onOpenGoals?: () => void;
     onOpenPlanningConstraints?: () => void;
+    onOpenSchedulePreview: () => void;
     renderBelowChart?: (context: { selectedDayPoint: null }) => React.ReactNode;
-    modules: Array<{ id: string; title: string; status: string }>;
-    savePlan?: { readiness?: { label?: string; detail?: string } };
+    planningBriefRows: Array<{ key: string; label: string; value: string }>;
     state: { details: { name?: string } };
   }) => (
     <View testID="builder-strategy-composer">
@@ -372,16 +381,22 @@ jest.mock("../BuilderStrategyComposer", () => ({
       <Pressable onPress={onOpenPlanningConstraints}>
         <Text>Preferences</Text>
       </Pressable>
-      <View testID="builder-adaptive-modules">
-        {modules.map((module: { id: string; title: string; status: string }) => (
-          <View key={module.id} accessibilityLabel={`${module.title}, ${module.status}`} />
+      <Pressable onPress={onOpenSchedulePreview}>
+        <Text>Schedule preview</Text>
+      </Pressable>
+      <View testID="builder-configuration-rows">
+        {planningBriefRows.map((row) => (
+          <View key={row.key} accessibilityLabel={`${row.label}: ${row.value}`} />
         ))}
       </View>
-      <View testID="builder-save-route-status">
-        <Text>Plan readiness</Text>
-        <Text>{savePlan?.readiness?.label ?? "Needs setup"}</Text>
-        <Text>{savePlan?.readiness?.detail ?? "Add enough goals, preferences, and workouts."}</Text>
-      </View>
+      <Pressable onPress={onAddWorkout}>
+        <Text>Add workout</Text>
+      </Pressable>
+      {canUseStructureProposal ? (
+        <Pressable onPress={onApplyStructureProposal}>
+          <Text>Use suggested schedule</Text>
+        </Pressable>
+      ) : null}
       {renderBelowChart?.({ selectedDayPoint: null })}
     </View>
   ),
@@ -577,12 +592,12 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(screen.getByText("New profile goal")).toBeTruthy();
   });
 
-  it("uses the adaptive module registry to render production builder modules", () => {
+  it("renders the compact production configuration rows", () => {
     renderNative(<TrainingPlanBuilderScreen />);
 
-    expect(screen.getByTestId("builder-adaptive-modules")).toBeTruthy();
-    expect(screen.getByLabelText("Plan goals, empty")).toBeTruthy();
-    expect(screen.getByLabelText("Training plan metadata, empty")).toBeTruthy();
+    expect(screen.getByTestId("builder-configuration-rows")).toBeTruthy();
+    expect(screen.getByLabelText(/Plan goals: No goals selected/)).toBeTruthy();
+    expect(screen.getByLabelText(/Schedule:/)).toBeTruthy();
   });
 
   it("creates a full plan-local goal without using profile goal creation", () => {
@@ -632,12 +647,11 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(screen.queryByText("Start date")).toBeNull();
   });
 
-  it("surfaces the lifecycle-derived readiness on the main composer", () => {
+  it("keeps schedule preview available on the main composer", () => {
     renderNative(<TrainingPlanBuilderScreen />);
 
-    expect(screen.getByTestId("builder-save-route-status")).toBeTruthy();
-    expect(screen.getByText("Plan readiness")).toBeTruthy();
-    expect(screen.getByText("Review plan")).toBeTruthy();
+    fireEvent.press(screen.getByText("Schedule preview"));
+    expect(screen.getByTestId("builder-schedule-preview-modal")).toBeTruthy();
   });
 
   it("opens activity assignment from the schedule editor", () => {
@@ -686,10 +700,10 @@ describe("TrainingPlanBuilderScreen", () => {
       screen.getByPlaceholderText("Base builder, race prep, return to training..."),
       "FTP build",
     );
-    fireEvent.press(screen.getByTestId("training-plan-builder-sheet-close"));
+    fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
     fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
     fireEvent.press(screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`));
-    fireEvent.press(screen.getByTestId("training-plan-builder-sheet-close"));
+    fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
     await waitFor(() => {
       expect(screen.getByText("Create")).toBeTruthy();
     });
@@ -722,10 +736,10 @@ describe("TrainingPlanBuilderScreen", () => {
       screen.getByPlaceholderText("Base builder, race prep, return to training..."),
       "FTP build",
     );
-    fireEvent.press(screen.getByTestId("training-plan-builder-sheet-close"));
+    fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
     fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
     fireEvent.press(screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`));
-    fireEvent.press(screen.getByTestId("training-plan-builder-sheet-close"));
+    fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
     await waitFor(() => {
       expect(screen.getByText("Create")).toBeTruthy();
     });

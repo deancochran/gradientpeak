@@ -3,7 +3,7 @@ import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { Plus } from "lucide-react-native";
 import { useMemo } from "react";
-import { ScrollView, View } from "react-native";
+import { View } from "react-native";
 import type { DailyTrainingAdjustmentPoint } from "@/components/plan/training-path/DailyTrainingAdjustmentChart";
 import { TrainingPathSelectedDayPanel } from "@/components/plan/training-path/TrainingPathSelectedDayPanel";
 import { buildTrainingPathLoadMetrics } from "@/components/plan/training-path/trainingPathLoadMetrics";
@@ -123,7 +123,7 @@ function BuilderSelectedDayPlanningPanel({
           size="sm"
           variant="outline"
           onPress={onAddWorkout}
-          className="shrink-0"
+          className="min-h-11 shrink-0"
           testID="builder-sessions-workspace-add"
         >
           <Plus size={14} className="text-foreground" />
@@ -140,12 +140,7 @@ function BuilderSelectedDayPlanningPanel({
       testID="builder-selected-day-panel"
       title={title}
     >
-      <ScrollView
-        nestedScrollEnabled
-        showsVerticalScrollIndicator={false}
-        style={{ maxHeight: 360 }}
-        contentContainerClassName="gap-2 pb-2"
-      >
+      <View className="gap-2 pb-2">
         {sessions.length === 0 ? (
           <View className="flex-row items-center gap-3 rounded-xl border border-dashed border-border/70 bg-muted/20 px-3 py-3">
             <View className="size-8 items-center justify-center rounded-full bg-background">
@@ -173,7 +168,7 @@ function BuilderSelectedDayPlanningPanel({
             />
           ))
         )}
-      </ScrollView>
+      </View>
     </TrainingPathSelectedDayPanel>
   );
 }

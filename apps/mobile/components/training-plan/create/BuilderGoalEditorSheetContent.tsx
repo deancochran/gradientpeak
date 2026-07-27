@@ -83,7 +83,7 @@ export function BuilderGoalEditorContent({
       <Pressable
         accessibilityLabel="Build without a goal"
         accessibilityRole="radio"
-        accessibilityState={{ selected: goalContext.selectedGoals.length === 0 }}
+        accessibilityState={{ checked: goalContext.selectedGoals.length === 0 }}
         className="min-h-11 justify-center rounded-xl border border-border bg-background px-3 py-2.5"
         onPress={onChooseNoGoal}
         testID="builder-no-goal-choice"
@@ -96,7 +96,12 @@ export function BuilderGoalEditorContent({
       <View className="gap-3">
         <View className="flex-row items-center justify-between gap-3">
           <Text className="text-sm font-semibold text-foreground">This plan</Text>
-          <Button size="sm" onPress={onCreateLocalGoal} testID="builder-create-plan-goal">
+          <Button
+            className="min-h-11"
+            size="sm"
+            onPress={onCreateLocalGoal}
+            testID="builder-create-plan-goal"
+          >
             <Plus size={14} className="text-primary-foreground" />
             <Text>Plan-only intent</Text>
           </Button>
@@ -121,7 +126,7 @@ export function BuilderGoalEditorContent({
         <View className="flex-row items-center justify-between gap-3">
           <Text className="text-sm font-semibold text-foreground">From profile</Text>
           {onCreateProfileGoal ? (
-            <Button size="sm" variant="ghost" onPress={onCreateProfileGoal}>
+            <Button className="min-h-11" size="sm" variant="ghost" onPress={onCreateProfileGoal}>
               <Plus size={14} className="text-foreground" />
               <Text className="text-foreground">New profile goal</Text>
             </Button>

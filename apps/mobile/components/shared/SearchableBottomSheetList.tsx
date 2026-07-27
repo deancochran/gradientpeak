@@ -14,6 +14,7 @@ type SearchableBottomSheetListProps<TItem> = {
   data: TItem[];
   emptyMessage: string;
   hasNextPage?: boolean;
+  headerInLayout?: boolean;
   isFetchingNextPage?: boolean;
   isLoading?: boolean;
   keyExtractor: (item: TItem) => string;
@@ -29,6 +30,7 @@ export function SearchableBottomSheetList<TItem>({
   data,
   emptyMessage,
   hasNextPage,
+  headerInLayout = false,
   isFetchingNextPage,
   isLoading,
   keyExtractor,
@@ -50,7 +52,7 @@ export function SearchableBottomSheetList<TItem>({
       style={{ flex: 1 }}
       contentContainerStyle={{
         paddingHorizontal: 16,
-        paddingTop: APP_BOTTOM_SHEET_SEARCH_HEADER_CONTENT_TOP_INSET,
+        paddingTop: headerInLayout ? 16 : APP_BOTTOM_SHEET_SEARCH_HEADER_CONTENT_TOP_INSET,
         paddingBottom: APP_BOTTOM_SHEET_ACTION_FOOTER_BOTTOM_INSET,
       }}
       ListHeaderComponent={

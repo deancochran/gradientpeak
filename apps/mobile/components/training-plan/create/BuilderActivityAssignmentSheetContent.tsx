@@ -79,6 +79,7 @@ export function BuilderActivityAssignmentSheetContent({
       data={activityPlanItemsWithEstimates}
       emptyMessage="No matching workouts."
       hasNextPage={hasNextPage}
+      headerInLayout
       isFetchingNextPage={isFetchingNextPage}
       isLoading={isLoading}
       keyExtractor={(item) => item.id}

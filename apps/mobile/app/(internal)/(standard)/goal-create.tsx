@@ -9,7 +9,7 @@ import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useRef } from "react";
-import { Alert, KeyboardAvoidingView, Platform, View } from "react-native";
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { GoalEditorForm, type GoalEditorFormHandle } from "@/components/goals";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
@@ -61,8 +61,8 @@ export default function GoalCreateScreen() {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      className="flex-1 gap-3 bg-background p-3"
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      className="flex-1 bg-background"
       keyboardVerticalOffset={80}
       testID="goal-create-screen"
     >
@@ -70,6 +70,7 @@ export default function GoalCreateScreen() {
         options={{
           headerRight: () => (
             <LoadingButton
+              className="min-h-11"
               disabled={createGoalMutation.isPending}
               loading={createGoalMutation.isPending}
               loadingLabel="Creating..."
@@ -83,18 +84,26 @@ export default function GoalCreateScreen() {
           ),
         }}
       />
-      <View className="gap-0.5">
-        <Text className="text-xl font-semibold text-foreground">Create Goal</Text>
-        <Text className="text-xs text-muted-foreground">Pick a focus, date, and target.</Text>
-      </View>
-      <GoalEditorForm
-        ref={formRef}
-        initialValue={initialDraft}
-        submitLabel="Create Goal"
-        isSubmitting={createGoalMutation.isPending}
-        showSubmitAction={false}
-        onSubmit={handleSubmit}
-      />
+      <ScrollView
+        className="flex-1"
+        contentContainerClassName="gap-3 p-3 pb-10"
+        keyboardShouldPersistTaps="handled"
+        testID="goal-create-scroll"
+      >
+        <View className="gap-0.5">
+          <Text className="text-xl font-semibold text-foreground">Create Goal</Text>
+          <Text className="text-xs text-muted-foreground">Pick a focus, date, and target.</Text>
+        </View>
+        <GoalEditorForm
+          ref={formRef}
+          contentSizing="intrinsic"
+          initialValue={initialDraft}
+          submitLabel="Create Goal"
+          isSubmitting={createGoalMutation.isPending}
+          showSubmitAction={false}
+          onSubmit={handleSubmit}
+        />
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }

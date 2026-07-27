@@ -130,4 +130,35 @@ describe("AppBottomSheet safe-area spacing", () => {
     fireEvent.press(backButton);
     expect(onBack).toHaveBeenCalledTimes(1);
   });
+
+  it("keeps Close opt-in and marks the title as a header", () => {
+    renderNative(
+      <AppBottomSheet onClose={jest.fn()} title="Default sheet" visible>
+        Content
+      </AppBottomSheet>,
+    );
+
+    expect(screen.queryByTestId("app-bottom-sheet-close")).toBeNull();
+    expect(screen.getByText("Default sheet").props.accessibilityRole).toBe("header");
+  });
+
+  it("provides an explicit opt-in Close action and can place a custom header in normal layout", () => {
+    const onClose = jest.fn();
+    renderNative(
+      <AppBottomSheet
+        contentMode="custom"
+        customHeaderInLayout
+        onClose={onClose}
+        showCloseAction
+        title="Workout"
+        visible
+      >
+        Content
+      </AppBottomSheet>,
+    );
+
+    fireEvent.press(screen.getByTestId("app-bottom-sheet-close"));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("app-bottom-sheet").props.style).toEqual({ flex: 1 });
+  });
 });

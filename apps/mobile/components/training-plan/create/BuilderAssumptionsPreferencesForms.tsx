@@ -98,7 +98,6 @@ export interface BuilderAthleteContextFormProps {
   fields: AthletePlanningContextFieldDescriptor[];
   onAddField: (fieldKey: AthletePlanningContextFieldKey) => void;
   onChangeField: (fieldKey: AthletePlanningContextFieldKey, value: number | null) => void;
-  onClose: () => void;
   onRemoveField: (fieldKey: AthletePlanningContextFieldKey) => void;
 }
 
@@ -107,7 +106,6 @@ export interface BuilderPlanPreferencesContextFormProps {
   issues?: TrainingPreferenceValidationIssue[];
   onAddField: (fieldKey: TrainingPlanPreferenceFieldKey) => void;
   onChangeField: (fieldKey: TrainingPlanPreferenceFieldKey, value: number | null) => void;
-  onClose: () => void;
   onRemoveField: (fieldKey: TrainingPlanPreferenceFieldKey) => void;
 }
 
@@ -255,7 +253,6 @@ export function BuilderAthleteContextForm({
   fields,
   onAddField,
   onChangeField,
-  onClose,
   onRemoveField,
 }: BuilderAthleteContextFormProps) {
   return (
@@ -269,7 +266,6 @@ export function BuilderAthleteContextForm({
         onChangeField={onChangeField}
         onRemoveField={onRemoveField}
       />
-      <DoneButton onClose={onClose} />
     </View>
   );
 }

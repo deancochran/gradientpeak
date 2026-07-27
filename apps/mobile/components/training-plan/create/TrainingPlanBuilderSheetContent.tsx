@@ -13,12 +13,10 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
-import { type UseFormReturn, useWatch } from "react-hook-form";
+import type { UseFormReturn } from "react-hook-form";
 import { Pressable, View } from "react-native";
-import { z } from "zod";
 import type { ActivityPlan } from "@/components/shared/ActivityPlanCard";
 import {
   type ActivityCategoryFilter,
@@ -41,39 +39,32 @@ import {
   applyTrainingPlanPreferenceFieldOverride,
   type TrainingPlanPreferenceFieldKey,
 } from "@/lib/training-plan-creation/preferences-context";
-import {
-  trainingPlanBuilderPlanPreferencesSchema,
-  trainingPlanBuilderProfileGoalDraftSchema,
-} from "@/lib/training-plan-creation/schemas";
-import type {
-  TrainingPlanBuilderPlanPreferences,
-  TrainingPlanBuilderProfileGoalDraft,
-} from "@/lib/training-plan-creation/types";
+import { trainingPlanBuilderPlanPreferencesSchema } from "@/lib/training-plan-creation/schemas";
+import type { TrainingPlanBuilderPlanPreferences } from "@/lib/training-plan-creation/types";
 import type { useTrainingPlanCreationService } from "@/lib/training-plan-creation/useTrainingPlanCreationService";
 import type { BuilderSheet } from "./BuilderSheetTypes";
+import {
+  type TrainingPlanMetadataFormValues,
+  trainingPlanMetadataFormSchema,
+} from "./trainingPlanMetadataForm";
 
 type TrainingPlanBuilderService = ReturnType<typeof useTrainingPlanCreationService>;
-
-const trainingPlanBuilderMetadataSchema = z.object({
-  name: z.string(),
-  description: z.string(),
-});
-
-type TrainingPlanBuilderMetadataFormValues = z.infer<typeof trainingPlanBuilderMetadataSchema>;
 
 type TrainingPlanBuilderSheetDraftsContextValue = {
   canResetActivityFilters: boolean;
   canResetPlanningPreferences: boolean;
   canSavePlanningPreferences: boolean;
-  canSaveProfileGoal: boolean;
+  canSaveMetadata: boolean;
   draftActivityPlanCategoryFilter: ActivityCategoryFilter;
   draftActivityPlanSort: ActivityPlanSort;
   draftPlanningConstraintFields: TrainingPlanBuilderService["derived"]["planningConstraintFields"];
   planningPreferenceIssues: TrainingPreferenceValidationIssue[];
   planningPreferencesForm: UseFormReturn<TrainingPlanBuilderPlanPreferences>;
-  profileGoalForm: UseFormReturn<TrainingPlanBuilderProfileGoalDraft>;
+  metadataForm: UseFormReturn<TrainingPlanMetadataFormValues>;
+  draftTemplateVisibility: "private" | "public";
   applyActivityFiltersDraft: () => void;
   applyPlanningPreferencesDraft: () => void;
+  applyMetadataDraft: () => boolean;
   cancelDraftForSheet: (sheet: BuilderSheet | null) => void;
   cancelSheetDrafts: () => void;
   prepareActivityFiltersDraft: () => void;
@@ -84,7 +75,7 @@ type TrainingPlanBuilderSheetDraftsContextValue = {
     fieldKey: TrainingPlanPreferenceFieldKey,
     value: number | null,
   ) => void;
-  saveProfileGoalDraft: (onSave: (title: string) => void) => boolean;
+  setDraftTemplateVisibility: Dispatch<SetStateAction<"private" | "public">>;
   setDraftActivityPlanCategoryFilter: Dispatch<SetStateAction<ActivityCategoryFilter>>;
   setDraftActivityPlanSort: Dispatch<SetStateAction<ActivityPlanSort>>;
 };
@@ -99,11 +90,19 @@ type TrainingPlanBuilderSheetDraftsProviderProps = {
   children: ReactNode;
   planningConstraintFields: TrainingPlanBuilderService["derived"]["planningConstraintFields"];
   planPreferences: TrainingPlanBuilderPlanPreferences;
+  planMetadata: {
+    name: string;
+    description: string;
+    templateVisibility: "private" | "public";
+  };
   onApplyActivityFilters: (filters: {
     categoryFilter: ActivityCategoryFilter;
     sort: ActivityPlanSort;
   }) => void;
   onApplyPlanningPreferences: (preferences: TrainingPlanBuilderPlanPreferences) => void;
+  onApplyMetadata: (
+    metadata: TrainingPlanMetadataFormValues & { templateVisibility: "private" | "public" },
+  ) => void;
 };
 
 export function TrainingPlanBuilderSheetDraftsProvider({
@@ -113,15 +112,19 @@ export function TrainingPlanBuilderSheetDraftsProvider({
   children,
   planningConstraintFields,
   planPreferences,
+  planMetadata,
   onApplyActivityFilters,
   onApplyPlanningPreferences,
+  onApplyMetadata,
 }: TrainingPlanBuilderSheetDraftsProviderProps) {
-  const profileGoalForm = useZodForm({
-    schema: trainingPlanBuilderProfileGoalDraftSchema,
-    defaultValues: { title: "" },
+  const metadataForm = useZodForm({
+    schema: trainingPlanMetadataFormSchema,
+    defaultValues: { name: planMetadata.name, description: planMetadata.description },
     mode: "onChange",
   });
-  const profileGoalTitle = profileGoalForm.watch("title");
+  const [draftTemplateVisibility, setDraftTemplateVisibility] = useState(
+    planMetadata.templateVisibility,
+  );
   const planningPreferencesForm = useZodForm({
     schema: trainingPlanBuilderPlanPreferencesSchema,
     defaultValues: planPreferences,
@@ -138,6 +141,8 @@ export function TrainingPlanBuilderSheetDraftsProvider({
   const canSavePlanningPreferences = planningPreferenceIssues.every(
     (issue) => issue.severity !== "blocking",
   );
+  const metadataValues = metadataForm.watch();
+  const canSaveMetadata = trainingPlanMetadataFormSchema.safeParse(metadataValues).success;
   const [draftActivityPlanCategoryFilter, setDraftActivityPlanCategoryFilter] =
     useState<ActivityCategoryFilter>(activityPlanCategoryFilter);
   const [draftActivityPlanSort, setDraftActivityPlanSort] = useState(activityPlanSort);
@@ -163,9 +168,16 @@ export function TrainingPlanBuilderSheetDraftsProvider({
     }
   }, [activeSheet, planPreferences, planningPreferencesForm]);
 
-  const resetProfileGoalDraft = useCallback(() => {
-    profileGoalForm.reset({ title: "" });
-  }, [profileGoalForm]);
+  const prepareMetadataDraft = useCallback(() => {
+    metadataForm.reset({ name: planMetadata.name, description: planMetadata.description });
+    setDraftTemplateVisibility(planMetadata.templateVisibility);
+  }, [metadataForm, planMetadata.description, planMetadata.name, planMetadata.templateVisibility]);
+
+  useEffect(() => {
+    if (activeSheet === "metadata") {
+      prepareMetadataDraft();
+    }
+  }, [activeSheet, prepareMetadataDraft]);
 
   const prepareActivityFiltersDraft = useCallback(() => {
     setDraftActivityPlanCategoryFilter(activityPlanCategoryFilter);
@@ -186,21 +198,21 @@ export function TrainingPlanBuilderSheetDraftsProvider({
       if (sheet === "activityFilters") {
         prepareActivityFiltersDraft();
       }
-      if (sheet === "profileGoalCreate") {
-        resetProfileGoalDraft();
+      if (sheet === "metadata") {
+        prepareMetadataDraft();
       }
       if (sheet === "preferences") {
         preparePlanningPreferencesDraft();
       }
     },
-    [prepareActivityFiltersDraft, preparePlanningPreferencesDraft, resetProfileGoalDraft],
+    [prepareActivityFiltersDraft, prepareMetadataDraft, preparePlanningPreferencesDraft],
   );
 
   const cancelSheetDrafts = useCallback(() => {
-    resetProfileGoalDraft();
     prepareActivityFiltersDraft();
     preparePlanningPreferencesDraft();
-  }, [prepareActivityFiltersDraft, preparePlanningPreferencesDraft, resetProfileGoalDraft]);
+    prepareMetadataDraft();
+  }, [prepareActivityFiltersDraft, prepareMetadataDraft, preparePlanningPreferencesDraft]);
 
   const applyActivityFiltersDraft = useCallback(() => {
     onApplyActivityFilters({
@@ -247,23 +259,19 @@ export function TrainingPlanBuilderSheetDraftsProvider({
     );
   }, [canSavePlanningPreferences, onApplyPlanningPreferences, planningPreferencesForm]);
 
-  const saveProfileGoalDraft = useCallback(
-    (onSave: (title: string) => void) => {
-      const result = trainingPlanBuilderProfileGoalDraftSchema.safeParse(
-        profileGoalForm.getValues(),
-      );
-      if (!result.success) {
-        profileGoalForm.setError("title", {
-          message: result.error.issues[0]?.message ?? "Goal title is required.",
-        });
-        return false;
+  const applyMetadataDraft = useCallback(() => {
+    const result = trainingPlanMetadataFormSchema.safeParse(metadataForm.getValues());
+    if (!result.success) {
+      for (const issue of result.error.issues) {
+        if (issue.path[0] === "name" || issue.path[0] === "description") {
+          metadataForm.setError(issue.path[0], { message: issue.message });
+        }
       }
-      onSave(result.data.title);
-      resetProfileGoalDraft();
-      return true;
-    },
-    [profileGoalForm, resetProfileGoalDraft],
-  );
+      return false;
+    }
+    onApplyMetadata({ ...result.data, templateVisibility: draftTemplateVisibility });
+    return true;
+  }, [draftTemplateVisibility, metadataForm, onApplyMetadata]);
 
   const value = useMemo<TrainingPlanBuilderSheetDraftsContextValue>(
     () => ({
@@ -271,15 +279,17 @@ export function TrainingPlanBuilderSheetDraftsProvider({
         draftActivityPlanCategoryFilter !== null || draftActivityPlanSort !== "newest",
       canResetPlanningPreferences,
       canSavePlanningPreferences,
-      canSaveProfileGoal: profileGoalTitle.trim().length > 0,
+      canSaveMetadata,
       draftActivityPlanCategoryFilter,
       draftActivityPlanSort,
       draftPlanningConstraintFields,
       planningPreferenceIssues,
       planningPreferencesForm,
-      profileGoalForm,
+      metadataForm,
+      draftTemplateVisibility,
       applyActivityFiltersDraft,
       applyPlanningPreferencesDraft,
+      applyMetadataDraft,
       cancelDraftForSheet,
       cancelSheetDrafts,
       prepareActivityFiltersDraft,
@@ -287,7 +297,7 @@ export function TrainingPlanBuilderSheetDraftsProvider({
       resetActivityFiltersDraft,
       addPlanningConstraintDraft,
       updatePlanningConstraintDraft,
-      saveProfileGoalDraft,
+      setDraftTemplateVisibility,
       setDraftActivityPlanCategoryFilter,
       setDraftActivityPlanSort,
     }),
@@ -297,12 +307,14 @@ export function TrainingPlanBuilderSheetDraftsProvider({
       draftPlanningConstraintFields,
       planningPreferenceIssues,
       planningPreferencesForm,
-      profileGoalForm,
-      profileGoalTitle,
       canResetPlanningPreferences,
       canSavePlanningPreferences,
+      canSaveMetadata,
+      metadataForm,
+      draftTemplateVisibility,
       applyActivityFiltersDraft,
       applyPlanningPreferencesDraft,
+      applyMetadataDraft,
       cancelDraftForSheet,
       cancelSheetDrafts,
       prepareActivityFiltersDraft,
@@ -310,7 +322,6 @@ export function TrainingPlanBuilderSheetDraftsProvider({
       resetActivityFiltersDraft,
       addPlanningConstraintDraft,
       updatePlanningConstraintDraft,
-      saveProfileGoalDraft,
     ],
   );
 
@@ -329,70 +340,9 @@ export function useTrainingPlanBuilderSheetDrafts() {
   return context;
 }
 
-function TrainingPlanBuilderMetadataSheetContent({
-  builder,
-}: {
-  builder: TrainingPlanBuilderService;
-}) {
-  const { details } = builder.state;
-  const metadataForm = useZodForm({
-    schema: trainingPlanBuilderMetadataSchema,
-    defaultValues: {
-      name: details.name,
-      description: details.description,
-    },
-    mode: "onChange",
-  });
-  const metadataValues = useWatch({ control: metadataForm.control });
-  const pendingBuilderSyncRef = useRef<TrainingPlanBuilderMetadataFormValues | null>(null);
-
-  useEffect(() => {
-    const builderValues = {
-      name: details.name,
-      description: details.description,
-    };
-
-    if (
-      metadataForm.getValues("name") === builderValues.name &&
-      metadataForm.getValues("description") === builderValues.description
-    ) {
-      return;
-    }
-
-    pendingBuilderSyncRef.current = builderValues;
-    metadataForm.reset(builderValues);
-  }, [details.description, details.name, metadataForm]);
-
-  useEffect(() => {
-    const formValues = {
-      name: metadataValues.name ?? "",
-      description: metadataValues.description ?? "",
-    };
-    const pendingBuilderSync = pendingBuilderSyncRef.current;
-
-    if (pendingBuilderSync) {
-      if (
-        formValues.name === pendingBuilderSync.name &&
-        formValues.description === pendingBuilderSync.description
-      ) {
-        pendingBuilderSyncRef.current = null;
-      }
-      return;
-    }
-
-    if (formValues.name !== details.name) {
-      builder.actions.updateDetails({ name: formValues.name });
-    }
-    if (formValues.description !== details.description) {
-      builder.actions.updateDetails({ description: formValues.description });
-    }
-  }, [
-    builder.actions,
-    details.description,
-    details.name,
-    metadataValues.description,
-    metadataValues.name,
-  ]);
+function TrainingPlanBuilderMetadataSheetContent() {
+  const { draftTemplateVisibility, metadataForm, setDraftTemplateVisibility } =
+    useTrainingPlanBuilderSheetDrafts();
 
   return (
     <Form {...metadataForm}>
@@ -404,6 +354,7 @@ function TrainingPlanBuilderMetadataSheetContent({
             label="Plan name"
             name="name"
             placeholder="Base builder, race prep, return to training..."
+            testId="builder-plan-name-input"
           />
           <FormTextareaField
             className="min-h-24"
@@ -414,9 +365,13 @@ function TrainingPlanBuilderMetadataSheetContent({
           />
           <View className="gap-2">
             <Text className="text-sm font-medium text-foreground">Visibility</Text>
-            <View className="flex-row gap-2">
+            <View
+              accessibilityLabel="Plan visibility"
+              accessibilityRole="radiogroup"
+              className="flex-row gap-2"
+            >
               {(["private", "public"] as const).map((visibility) => {
-                const selected = details.templateVisibility === visibility;
+                const selected = draftTemplateVisibility === visibility;
                 const label = visibility === "public" ? "Public" : "Private";
                 return (
                   <Pressable
@@ -427,9 +382,7 @@ function TrainingPlanBuilderMetadataSheetContent({
                       selected ? "border-primary bg-primary/10" : "border-border"
                     }`}
                     key={visibility}
-                    onPress={() =>
-                      builder.actions.updateDetails({ templateVisibility: visibility })
-                    }
+                    onPress={() => setDraftTemplateVisibility(visibility)}
                   >
                     <Text
                       className={`text-sm font-medium ${
@@ -463,6 +416,7 @@ type TrainingPlanBuilderSheetContentProps = {
   builder: TrainingPlanBuilderService;
   goBackSheet: () => void;
   onSelectActivityPlan: (activityPlan: ActivityPlan) => void;
+  onRemoveSession: (sessionId: string) => void;
   pushSheet: (sheet: BuilderSheet) => void;
   selectedSessionId: string | null;
   setActivityPlanSearchQuery: Dispatch<SetStateAction<string>>;
@@ -479,6 +433,7 @@ export function TrainingPlanBuilderSheetContent({
   builder,
   goBackSheet,
   onSelectActivityPlan,
+  onRemoveSession,
   pushSheet,
   selectedSessionId,
   setActivityPlanSearchQuery,
@@ -562,23 +517,8 @@ export function TrainingPlanBuilderSheetContent({
     );
   }
 
-  if (activeSheet === "profileGoalCreate") {
-    return (
-      <Form {...sheetDrafts.profileGoalForm}>
-        <View className="gap-4 pb-2">
-          <FormTextField
-            control={sheetDrafts.profileGoalForm.control}
-            label="Goal title"
-            name="title"
-            placeholder="Build FTP, finish a 10K, ride consistently..."
-          />
-        </View>
-      </Form>
-    );
-  }
-
   if (activeSheet === "metadata") {
-    return <TrainingPlanBuilderMetadataSheetContent builder={builder} />;
+    return <TrainingPlanBuilderMetadataSheetContent />;
   }
 
   if (activeSheet === "athleteContext") {
@@ -591,7 +531,6 @@ export function TrainingPlanBuilderSheetContent({
         onChangeField={(fieldKey, value) =>
           builder.actions.overrideAthleteContextField({ key: fieldKey, value })
         }
-        onClose={() => undefined}
         onRemoveField={builder.actions.removeAthleteContextField}
       />
     );
@@ -604,7 +543,6 @@ export function TrainingPlanBuilderSheetContent({
         issues={sheetDrafts.planningPreferenceIssues}
         onAddField={sheetDrafts.addPlanningConstraintDraft}
         onChangeField={sheetDrafts.updatePlanningConstraintDraft}
-        onClose={() => undefined}
         onRemoveField={(fieldKey) => sheetDrafts.updatePlanningConstraintDraft(fieldKey, null)}
       />
     );
@@ -641,6 +579,7 @@ export function TrainingPlanBuilderSheetContent({
           setSelectedSessionId(sessionId);
           pushSheet("activityAssignment");
         }}
+        onRemove={onRemoveSession}
         session={selectedSession}
       />
     );

@@ -18,18 +18,50 @@ env:
     id: "training-plans-list-create-trigger"
 - extendedWaitUntil:
     visible:
-      id: "training-plan-composer-screen"
+      id: "builder-strategy-composer"
     timeout: 10000
-- assertVisible:
-    id: "training-plan-name-input"
 - tapOn:
-    id: "training-plan-name-input"
+    id: "builder-edit-plan"
+- assertVisible:
+    id: "builder-plan-name-input"
+- tapOn:
+    id: "builder-plan-name-input"
 - inputText: "Maestro Draft Plan"
 - tapOn:
-    id: "training-plan-tab-goals"
+    id: "training-plan-builder-sheet-save"
 - assertVisible:
-    id: "training-plan-tab-review"
+    id: "builder-strategy-composer"
 - tapOn:
-    id: "training-plan-tab-review"
+    id: "builder-configuration-schedulePreview"
+- assertVisible:
+    id: "training-plan-builder-sheet"
+- tapOn:
+    id: "training-plan-builder-sheet-close"
+- assertVisible:
+    id: "builder-strategy-composer"
+- tapOn:
+    id: "builder-configuration-goals"
+- assertVisible:
+    id: "builder-goal-editor-modal"
+- tapOn:
+    id: "training-plan-builder-sheet-close"
+- assertVisible:
+    id: "builder-strategy-composer"
+- tapOn:
+    id: "builder-add-workout"
+- assertVisible:
+    id: "training-plan-builder-activity-picker-search-input"
+- tapOn:
+    id: "training-plan-builder-activity-picker-filter-button"
+- assertVisible:
+    id: "training-plan-builder-activity-filter-sheet"
+- tapOn:
+    id: "training-plan-builder-sheet-back"
+- assertVisible:
+    id: "training-plan-builder-activity-picker-search-input"
+- tapOn:
+    id: "training-plan-builder-sheet-close"
+- assertVisible:
+    id: "builder-strategy-composer"
 - assertVisible:
     id: "training-plan-save-button"

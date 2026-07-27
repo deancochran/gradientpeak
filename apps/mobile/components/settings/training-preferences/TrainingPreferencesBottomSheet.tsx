@@ -44,6 +44,7 @@ export function TrainingPreferencesBottomSheet({
       title={title}
       description={description}
       onClose={onClose}
+      showCloseAction
       contentKey={
         contentKey ?? (visible ? "training-preferences-open" : "training-preferences-closed")
       }
@@ -52,7 +53,7 @@ export function TrainingPreferencesBottomSheet({
       footer={
         <View className="flex-row gap-3">
           <Button
-            className="flex-1"
+            className="min-h-11 flex-1"
             disabled={isResetDisabled || isSaving}
             onPress={onReset}
             testID="training-preferences-reset-button"
@@ -61,7 +62,7 @@ export function TrainingPreferencesBottomSheet({
             <Text className="text-sm font-medium text-foreground">Reset</Text>
           </Button>
           <LoadingButton
-            className="flex-1"
+            className="min-h-11 flex-1"
             disabled={isSaveDisabled}
             loading={isSaving}
             loadingLabel={saveLoadingLabel}

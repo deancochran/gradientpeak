@@ -3,7 +3,6 @@ export type BuilderSheet =
   | "athleteContext"
   | "goals"
   | "localGoalCreate"
-  | "profileGoalCreate"
   | "preferences"
   | "schedulePreview"
   | "session"
