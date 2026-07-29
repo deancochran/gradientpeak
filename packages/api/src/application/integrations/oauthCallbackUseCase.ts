@@ -12,7 +12,10 @@ import {
 import { createOAuthStateBinding } from "../../lib/integrations/oauth-state-binding";
 import { activateWahooAccessToken } from "../../lib/integrations/wahoo/client";
 import { isWahooTokenLimitRejection } from "../../lib/integrations/wahoo/oauth-errors";
+import { hasWahooRouteMirrorScopes } from "../../lib/integrations/wahoo/planned-activity-scopes";
 import { logger } from "../../lib/logger";
+import { enqueueWahooGroupEventRouteDeliveryReconcile } from "../../lib/provider-sync/event-delivery/wahoo-group-event-route-delivery";
+import { enqueueWahooOwnedRouteReconcile } from "../../lib/provider-sync/owned-routes";
 import {
   IntegrationDisconnectPendingError,
   IntegrationLifecycleChangedError,
@@ -431,6 +434,24 @@ export async function handleOAuthCallback({
           transaction,
           trigger: "connect",
         });
+        if (hasWahooRouteMirrorScopes(tokens.scope)) {
+          await enqueueWahooOwnedRouteReconcile({
+            integrationGeneration: storedIntegration.generation,
+            integrationId: storedIntegration.id,
+            profileId: storedState.profile_id,
+            providerSyncRepository,
+            transaction,
+            trigger: "connect",
+          });
+          await enqueueWahooGroupEventRouteDeliveryReconcile({
+            integrationGeneration: storedIntegration.generation,
+            integrationId: storedIntegration.id,
+            profileId: storedState.profile_id,
+            providerSyncRepository,
+            transaction,
+            trigger: "connect",
+          });
+        }
       }
       return storedIntegration;
     });

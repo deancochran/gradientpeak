@@ -97,12 +97,14 @@ function materializeCanonicalPlan(
         activity_plan_id: session.activity_plan_id,
         source_day_offset: session.offset_days,
         source_path: `sessions.${index}`,
+        sourceSessionIndex: index,
       };
     })
     .sort(
       (a, b) =>
-        a.starts_at.localeCompare(b.starts_at) || a.source_path.localeCompare(b.source_path),
-    );
+        a.starts_at.localeCompare(b.starts_at) || a.sourceSessionIndex - b.sourceSessionIndex,
+    )
+    .map(({ sourceSessionIndex: _sourceSessionIndex, ...event }) => event);
 }
 
 function isDateOnlyString(value: unknown): value is string {

@@ -20,7 +20,7 @@ const plan = {
   structure: {
     id: "11111111-1111-4111-8111-111111111111",
     version: 1,
-    sport: ["run"],
+    activity_category: ["run"],
     sessions: [{ offset_days: 0, activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }],
   },
 };

@@ -77,6 +77,12 @@ const mockGroupEventsUseQuery = jest.fn((_input?: unknown, _options?: unknown) =
   error: null,
   refetch: mockGroupEventRefetch,
 }));
+const mockPlannedDaySummaryUseQuery = jest.fn((_input?: unknown, _options?: unknown) => ({
+  data: undefined,
+  isError: false,
+  isLoading: false,
+  refetch: jest.fn(async () => undefined),
+}));
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -200,6 +206,10 @@ jest.mock("@/lib/api", () => ({
       list: {
         useQuery: (input: unknown, options: unknown) => mockEventsUseQuery(input, options),
       },
+      plannedDaySummary: {
+        useQuery: (input: unknown, options: unknown) =>
+          mockPlannedDaySummaryUseQuery(input, options),
+      },
     },
     activityPlans: {
       getManyByIds: {
@@ -251,7 +261,7 @@ describe("calendar day screen", () => {
           id: "plan-1",
           name: "Tempo Builder",
           description: "Progressive tempo with a strong finish.",
-          activity_category: "outdoor_run",
+          activity_category: "run",
           estimated_duration: 3600,
           estimated_tss: 72,
           intensity_factor: 0.88,
@@ -276,6 +286,7 @@ describe("calendar day screen", () => {
     groupEventItems = [];
     pushMock.mockReset();
     mockEventsUseQuery.mockClear();
+    mockPlannedDaySummaryUseQuery.mockClear();
     mockGroupEventsUseQuery.mockClear();
     mockEventRefetch.mockClear();
     mockGroupEventRefetch.mockClear();

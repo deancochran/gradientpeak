@@ -16,7 +16,7 @@ const meta = {
   title: "Components/Select/Native",
   component: Select,
   args: {
-    value: selectFixtures.workoutType.options[1],
+    value: selectFixtures.sessionFocus.options[1],
     onValueChange: () => {},
   },
 } satisfies Meta<typeof Select>;
@@ -28,9 +28,9 @@ type Story = StoryObj<typeof meta>;
 export const Playground: Story = {
   render: (args) => {
     const [value, setValue] = React.useState<
-      | ((typeof selectFixtures.workoutType.options)[number] & { label: string; value: string })
+      | ((typeof selectFixtures.sessionFocus.options)[number] & { label: string; value: string })
       | undefined
-    >(selectFixtures.workoutType.options[1]);
+    >(selectFixtures.sessionFocus.options[1]);
 
     return (
       <View className="bg-background p-6">
@@ -40,11 +40,11 @@ export const Playground: Story = {
           value={value}
         >
           <SelectTrigger>
-            <SelectValue placeholder={selectFixtures.workoutType.placeholder} />
+            <SelectValue placeholder={selectFixtures.sessionFocus.placeholder} />
           </SelectTrigger>
           <SelectContent>
             <NativeSelectScrollView>
-              {selectFixtures.workoutType.options.map((option) => (
+              {selectFixtures.sessionFocus.options.map((option) => (
                 <SelectItem key={option.value} label={option.label} value={option as never} />
               ))}
             </NativeSelectScrollView>

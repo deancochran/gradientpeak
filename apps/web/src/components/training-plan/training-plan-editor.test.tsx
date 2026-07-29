@@ -55,8 +55,8 @@ describe("TrainingPlanEditor", () => {
     render(<TrainingPlanEditor onSaved={onSaved} />);
 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Base plan" } });
-    fireEvent.click(screen.getByRole("button", { name: "Add workout" }));
-    expect(screen.getByText("1 workouts")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add activity" }));
+    expect(screen.getByText("1 activities")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Create plan" }));
     expect((await screen.findByRole("alert")).textContent).toContain("temporary failure");

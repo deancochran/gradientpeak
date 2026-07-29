@@ -38,7 +38,7 @@ export async function finalizeTimerRecordingArtifact({
   const movingMs = Math.min(elapsedMs, state.timer.accumulatedMovingMs);
   const finishedAt = new Date(finishedAtMs).toISOString();
   const fileText = buildTimerTcx({
-    category: snapshot.activity.category,
+    activity_category: snapshot.activity.activity_category,
     distanceMeters: review.distanceMeters,
     elapsedSeconds: elapsedMs / 1_000,
     finishedAt,
@@ -87,7 +87,7 @@ export function buildCreateFromRecordingSummaryInput(
           globalOrdinal: 0,
           segmentId: artifact.segmentId,
           role: "activity" as const,
-          category: artifact.snapshot.activity.category,
+          activity_category: artifact.snapshot.activity.activity_category,
           startedAt: artifact.startedAt,
           completedAt: artifact.finishedAt,
           activeSeconds: artifact.movingMs / 1_000,
@@ -141,22 +141,23 @@ export async function sha256Text(value: string): Promise<string> {
 }
 
 function buildTimerTcx({
-  category,
+  activity_category,
   distanceMeters,
   elapsedSeconds,
   finishedAt,
   name,
   startedAt,
 }: {
-  category: string;
+  activity_category: string;
   distanceMeters: number;
   elapsedSeconds: number;
   finishedAt: string;
   name: string;
   startedAt: string;
 }): string {
-  const sport = category === "run" ? "Running" : category === "bike" ? "Biking" : "Other";
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"><Activities><Activity Sport="${sport}"><Id>${startedAt}</Id><Lap StartTime="${startedAt}"><TotalTimeSeconds>${elapsedSeconds}</TotalTimeSeconds><DistanceMeters>${distanceMeters}</DistanceMeters><Intensity>Active</Intensity><TriggerMethod>Manual</TriggerMethod><Track><Trackpoint><Time>${startedAt}</Time><DistanceMeters>0</DistanceMeters></Trackpoint><Trackpoint><Time>${finishedAt}</Time><DistanceMeters>${distanceMeters}</DistanceMeters></Trackpoint></Track><Notes>${escapeXml(name)}</Notes></Lap></Activity></Activities></TrainingCenterDatabase>`;
+  const tcxSport =
+    activity_category === "run" ? "Running" : activity_category === "bike" ? "Biking" : "Other";
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"><Activities><Activity Sport="${tcxSport}"><Id>${startedAt}</Id><Lap StartTime="${startedAt}"><TotalTimeSeconds>${elapsedSeconds}</TotalTimeSeconds><DistanceMeters>${distanceMeters}</DistanceMeters><Intensity>Active</Intensity><TriggerMethod>Manual</TriggerMethod><Track><Trackpoint><Time>${startedAt}</Time><DistanceMeters>0</DistanceMeters></Trackpoint><Trackpoint><Time>${finishedAt}</Time><DistanceMeters>${distanceMeters}</DistanceMeters></Trackpoint></Track><Notes>${escapeXml(name)}</Notes></Lap></Activity></Activities></TrainingCenterDatabase>`;
 }
 
 function escapeXml(value: string): string {

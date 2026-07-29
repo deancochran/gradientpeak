@@ -13,7 +13,9 @@ import type { z } from "zod";
 
 export type ActivityImportPhase = "idle" | "signing" | "uploading" | "processing" | "success";
 
-const browserActivityImportFormSchema = manualActivityImportFormSchema.omit({ sport: true });
+const browserActivityImportFormSchema = manualActivityImportFormSchema.omit({
+  activity_category: true,
+});
 
 type BrowserActivityImportInput = z.input<typeof browserActivityImportFormSchema>;
 type BrowserActivityImportOutput = z.output<typeof browserActivityImportFormSchema>;

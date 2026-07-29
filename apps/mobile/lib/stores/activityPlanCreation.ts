@@ -3,7 +3,7 @@ import type {
   ActivityPlanInterval,
   ActivityPlanIntervalStep,
   ActivityPlanSegmentV3,
-  CanonicalSport,
+  CanonicalActivityCategory,
   EditableActivityPlanStructure,
 } from "@repo/core";
 import { randomUUID } from "expo-crypto";
@@ -14,14 +14,15 @@ export type { EditableActivityPlanStructure } from "@repo/core";
 interface ActivityPlanCreationState {
   name: string;
   description: string;
-  /** Presentation default only; segment categories are authoritative. */
-  activityCategory: CanonicalSport;
+  /** The one plan-level activity_category; all authored activity segments inherit it. */
+  activityCategory: CanonicalActivityCategory;
   structure: EditableActivityPlanStructure;
   notes: string;
   setName: (name: string) => void;
   setDescription: (description: string) => void;
-  setActivityCategory: (category: CanonicalSport) => void;
+  setActivityCategory: (activity_category: CanonicalActivityCategory) => void;
   setStructure: (structure: EditableActivityPlanStructure) => void;
+  setSegments: (segments: ActivityPlanSegmentV3[]) => void;
   setNotes: (notes: string) => void;
   addSegment: (segment: ActivityPlanSegmentV3) => void;
   updateSegment: (segmentId: string, segment: ActivityPlanSegmentV3) => void;
@@ -46,7 +47,7 @@ interface ActivityPlanCreationState {
 
 export function createMinimalActivityPlanStructure(
   activityName = "Main Activity",
-  category: CanonicalSport = "run",
+  activity_category: CanonicalActivityCategory = "run",
 ): EditableActivityPlanStructure {
   return {
     version: 3,
@@ -55,7 +56,7 @@ export function createMinimalActivityPlanStructure(
         id: randomUUID(),
         name: activityName,
         role: "activity",
-        category,
+        activity_category,
         intervals: [
           {
             id: randomUUID(),
@@ -99,10 +100,19 @@ function mapActivitySegments(
   };
 }
 
+function canUsePlanSegments(
+  segments: ActivityPlanSegmentV3[],
+  activity_category: CanonicalActivityCategory,
+): boolean {
+  return segments.every(
+    (segment) => segment.role !== "activity" || segment.activity_category === activity_category,
+  );
+}
+
 const initialState = {
   name: generateDefaultActivityName(),
   description: "",
-  activityCategory: "run" as CanonicalSport,
+  activityCategory: "run" as CanonicalActivityCategory,
   structure: { version: 3 as const, segments: [] as ActivityPlanSegmentV3[] },
   notes: "",
 };
@@ -111,20 +121,40 @@ export const useActivityPlanCreationStore = create<ActivityPlanCreationState>((s
   ...initialState,
   setName: (name) => set({ name }),
   setDescription: (description) => set({ description }),
-  setActivityCategory: (activityCategory) => set({ activityCategory }),
-  setStructure: (structure) => set({ structure }),
+  setActivityCategory: (activityCategory) =>
+    set((state) => ({
+      activityCategory,
+      structure: mapActivitySegments(state.structure, (segment) => ({
+        ...segment,
+        activity_category: activityCategory,
+      })),
+    })),
+  setStructure: (structure) =>
+    set((state) =>
+      canUsePlanSegments(structure.segments, state.activityCategory) ? { structure } : state,
+    ),
+  setSegments: (segments) =>
+    set((state) =>
+      canUsePlanSegments(segments, state.activityCategory)
+        ? { structure: { version: 3, segments } }
+        : state,
+    ),
   setNotes: (notes) => set({ notes }),
   addSegment: (segment) =>
-    set((state) => ({
-      structure: { version: 3, segments: [...state.structure.segments, segment] },
-    })),
+    set((state) =>
+      canUsePlanSegments([segment], state.activityCategory)
+        ? { structure: { version: 3, segments: [...state.structure.segments, segment] } }
+        : state,
+    ),
   updateSegment: (segmentId, segment) =>
-    set((state) => ({
-      structure: {
-        version: 3,
-        segments: state.structure.segments.map((item) => (item.id === segmentId ? segment : item)),
-      },
-    })),
+    set((state) => {
+      const segments = state.structure.segments.map((item) =>
+        item.id === segmentId ? segment : item,
+      );
+      return canUsePlanSegments(segments, state.activityCategory)
+        ? { structure: { version: 3, segments } }
+        : state;
+    }),
   removeSegment: (segmentId) =>
     set((state) => ({
       structure: {
@@ -132,7 +162,12 @@ export const useActivityPlanCreationStore = create<ActivityPlanCreationState>((s
         segments: state.structure.segments.filter((item) => item.id !== segmentId),
       },
     })),
-  reorderSegments: (segments) => set({ structure: { version: 3, segments } }),
+  reorderSegments: (segments) =>
+    set((state) =>
+      canUsePlanSegments(segments, state.activityCategory)
+        ? { structure: { version: 3, segments } }
+        : state,
+    ),
   addInterval: (interval, segmentId) =>
     set((state) => ({
       structure: mapActivitySegments(state.structure, (segment) =>

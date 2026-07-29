@@ -6,7 +6,7 @@ import {
 } from "../activity-plan";
 import {
   getProviderCapabilityDefinition,
-  getProviderPlannedWorkoutCapability,
+  getProviderPlannedActivityCapability,
   type IntegrationProviderId,
   isProviderRuntimeEnabled,
   providerHasCapability,
@@ -53,7 +53,7 @@ export type ActivityPlanProviderReadinessStatus =
   | "uses_defaults"
   | "missing_anchor"
   | "unsupported_target"
-  | "unsupported_sport"
+  | "unsupported_activity_category"
   | "unsupported_provider";
 
 export type ActivityPlanProviderReadinessIssue = {
@@ -187,7 +187,7 @@ export function getActivityPlanProviderProjection(input: {
 
   if (input.provider !== "native") {
     const definition = getProviderCapabilityDefinition(input.provider);
-    const capability = getProviderPlannedWorkoutCapability(input.provider);
+    const capability = getProviderPlannedActivityCapability(input.provider);
     if (
       !isProviderRuntimeEnabled(input.provider) ||
       !providerHasCapability(input.provider, "planned_activity_push") ||
@@ -197,8 +197,8 @@ export function getActivityPlanProviderProjection(input: {
         disposition: "unsupported",
         message:
           input.provider === "garmin"
-            ? "Garmin planned-workout delivery remains evidence-gated until partner delivery support is available."
-            : `${definition.label} planned-workout delivery is not available in the current integration.`,
+            ? "Garmin planned-activity delivery remains evidence-gated until partner delivery support is available."
+            : `${definition.label} planned-activity delivery is not available in the current integration.`,
         path: ["provider"],
         reasonCode: "provider_delivery_evidence_missing",
         semantic: "provider",
@@ -208,17 +208,7 @@ export function getActivityPlanProviderProjection(input: {
 
   const compiled = compileActivityPlanV3(input.structure);
   const capability =
-    input.provider === "native" ? null : getProviderPlannedWorkoutCapability(input.provider);
-
-  if (input.provider !== "native" && compiled.categories.length > 1) {
-    findings.push({
-      disposition: "unsupported",
-      message: `${getProviderCapabilityDefinition(input.provider).label} accepts only one activity category per planned workout; mixed ${compiled.categories.join("/")} delivery would lose segment semantics.`,
-      path: ["structure", "segments"],
-      reasonCode: "mixed_activity_categories",
-      semantic: "provider",
-    });
-  }
+    input.provider === "native" ? null : getProviderPlannedActivityCapability(input.provider);
 
   for (const occurrence of compiled.occurrences) {
     const basePath = occurrencePath(occurrence);
@@ -251,15 +241,18 @@ export function getActivityPlanProviderProjection(input: {
       semantic: "occurrence_role",
     });
 
-    const sportSupported =
-      input.provider === "native" || capability?.supportedSports.includes(occurrence.category);
+    const activityCategorySupported =
+      input.provider === "native" ||
+      capability?.supportedActivityCategories.includes(occurrence.activity_category);
     findings.push({
-      disposition: sportSupported ? "compatible" : "unsupported",
-      message: sportSupported
-        ? `${occurrence.category} is supported.`
-        : `${occurrence.category} planned workouts are not supported by ${input.provider}.`,
-      path: [...basePath, "category"],
-      reasonCode: sportSupported ? "sport_supported" : "unsupported_sport",
+      disposition: activityCategorySupported ? "compatible" : "unsupported",
+      message: activityCategorySupported
+        ? `${occurrence.activity_category} is supported.`
+        : `${occurrence.activity_category} planned activities are not supported by ${input.provider}.`,
+      path: [...basePath, "activity_category"],
+      reasonCode: activityCategorySupported
+        ? "activity_category_supported"
+        : "unsupported_activity_category",
       semantic: "activity_category",
     });
 
@@ -270,21 +263,21 @@ export function getActivityPlanProviderProjection(input: {
       disposition: durationSupported ? "compatible" : "unsupported",
       message: durationSupported
         ? `${occurrence.duration.type} completion is preserved.`
-        : `${occurrence.duration.type} completion cannot be converted without changing workout semantics.`,
+        : `${occurrence.duration.type} completion cannot be converted without changing activity semantics.`,
       path: [...stepPath(occurrence), "duration"],
       reasonCode: durationSupported ? "duration_preserved" : "unsupported_duration",
       semantic: "duration",
     });
 
     const selectedTargetIndex = selectActivityPlanProviderTarget({
-      activityCategory: occurrence.category,
+      activityCategory: occurrence.activity_category,
       provider: input.provider,
       targets: occurrence.targets,
     })?.index;
     occurrence.targets.forEach((target, targetIndex) => {
       const targetSupported =
         isTargetTypePermittedForActivity({
-          activityCategory: occurrence.category,
+          activityCategory: occurrence.activity_category,
           targetType: target.type,
         }) &&
         (input.provider === "native" || capability?.supportedTargets.includes(target.type));
@@ -303,7 +296,7 @@ export function getActivityPlanProviderProjection(input: {
       findings.push({
         disposition,
         message: !targetSupported
-          ? `${target.type} targets are not supported for ${occurrence.category} on ${input.provider}.`
+          ? `${target.type} targets are not supported for ${occurrence.activity_category} on ${input.provider}.`
           : isDroppedTarget
             ? `${target.type} remains in GradientPeak but Wahoo displays only the selected preferred target.`
             : missingRequiredAnchor
@@ -348,8 +341,8 @@ export function getActivityPlanProviderReadiness(input: {
     const code: ActivityPlanProviderReadinessIssue["code"] =
       finding.reasonCode === "provider_delivery_evidence_missing"
         ? "unsupported_provider"
-        : finding.reasonCode === "unsupported_sport"
-          ? "unsupported_sport"
+        : finding.reasonCode === "unsupported_activity_category"
+          ? "unsupported_activity_category"
           : finding.reasonCode === "missing_target_anchor"
             ? "missing_anchor"
             : "unsupported_target";
@@ -385,8 +378,8 @@ export function getActivityPlanProviderReadiness(input: {
     (issue) => issue.code === "unsupported_provider",
   )
     ? "unsupported_provider"
-    : issues.some((issue) => issue.code === "unsupported_sport")
-      ? "unsupported_sport"
+    : issues.some((issue) => issue.code === "unsupported_activity_category")
+      ? "unsupported_activity_category"
       : issues.some((issue) => issue.code === "unsupported_target")
         ? "unsupported_target"
         : issues.some((issue) => issue.code === "missing_anchor")

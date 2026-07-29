@@ -1,4 +1,4 @@
-import type { CanonicalSport } from "../../schemas/sport";
+import type { CanonicalActivityCategory } from "../../schemas/activity-category";
 import {
   type CalculationResult,
   estimatedResult,
@@ -86,7 +86,7 @@ function hasTruncatedCoverage(
 function fieldEligibility(
   model: AthleteIntelligenceModelInput,
   evidenceSourceIds: readonly string[],
-  targetSport: CanonicalSport,
+  targetActivityCategory: CanonicalActivityCategory,
 ) {
   const eligibility = evidenceSourceIds.flatMap((sourceId) => {
     const evidence = model.evidenceRegistry[sourceId];
@@ -96,7 +96,7 @@ function fieldEligibility(
           resolveFieldEvidenceEligibility({
             evidence,
             asOf: model.assessmentAsOf,
-            requiredSport: targetSport,
+            requiredActivityCategory: targetActivityCategory,
           }),
         ];
   });
@@ -112,27 +112,27 @@ function fieldEligibility(
 
 function activityCapabilities(
   model: AthleteIntelligenceModelInput,
-  targetSport: CanonicalSport | null,
+  targetActivityCategory: CanonicalActivityCategory | null,
 ) {
-  if (targetSport === null)
+  if (targetActivityCategory === null)
     return {
       distance: unavailableResult({
         state: "unsupported",
         missingDataState: "unsupported_input",
         uncertainty: 1,
-        reasonCodes: ["goal_sport_missing"],
+        reasonCodes: ["goal_activity_category_missing"],
       }),
       duration: unavailableResult({
         state: "unsupported",
         missingDataState: "unsupported_input",
         uncertainty: 1,
-        reasonCodes: ["goal_sport_missing"],
+        reasonCodes: ["goal_activity_category_missing"],
       }),
       frequency: unavailableResult({
         state: "unsupported",
         missingDataState: "unsupported_input",
         uncertainty: 1,
-        reasonCodes: ["goal_sport_missing"],
+        reasonCodes: ["goal_activity_category_missing"],
       }),
     };
   if (hasTruncatedCoverage(model, "activities")) {
@@ -144,21 +144,21 @@ function activityCapabilities(
     distance: fieldEligibility(
       model,
       activity.metrics.distanceMeters.evidenceSourceIds,
-      targetSport,
+      targetActivityCategory,
     ),
     duration: fieldEligibility(
       model,
       activity.metrics.elapsedDurationSeconds.evidenceSourceIds,
-      targetSport,
+      targetActivityCategory,
     ),
     frequency: fieldEligibility(
       model,
       activity.metrics.elapsedDurationSeconds.evidenceSourceIds,
-      targetSport,
+      targetActivityCategory,
     ),
   }));
   const compatibleActivities = evaluatedActivities.filter(
-    ({ activity }) => activity.sport === targetSport,
+    ({ activity }) => activity.activity_category === targetActivityCategory,
   );
   const distanceRejections = evaluatedActivities.flatMap(({ distance }) => distance.rejections);
   const durationRejections = evaluatedActivities.flatMap(({ duration }) => duration.rejections);
@@ -349,29 +349,29 @@ function dimensionsForGoal(input: {
   curve?: DurationAwareEffortCurve;
   physiology: PhysiologyMetricsPolicyResult;
   activity: ReturnType<typeof activityCapabilities>;
-  goalSport: string | null;
+  goalActivityCategory: string | null;
   model: AthleteIntelligenceModelInput;
 }) {
   if (input.demand.state !== "complete") return [];
   const requirement = input.demand.requirement;
   if (requirement.type === "threshold") {
     const capability =
-      input.goalSport === null
+      input.goalActivityCategory === null
         ? unavailableResult({
             state: "unsupported",
             missingDataState: "unsupported_input",
             uncertainty: 1,
-            reasonCodes: ["goal_sport_missing"],
+            reasonCodes: ["goal_activity_category_missing"],
           })
-        : (requirement.metric === "power" && input.goalSport !== "bike") ||
+        : (requirement.metric === "power" && input.goalActivityCategory !== "bike") ||
             (requirement.metric === "pace" &&
-              input.goalSport !== "run" &&
-              input.goalSport !== "swim")
+              input.goalActivityCategory !== "run" &&
+              input.goalActivityCategory !== "swim")
           ? unavailableResult({
               state: "unsupported",
               missingDataState: "incompatible_data",
               uncertainty: 1,
-              reasonCodes: ["goal_sport_incompatible_with_direct_capability"],
+              reasonCodes: ["goal_activity_category_incompatible_with_direct_capability"],
             })
           : requirement.metric === "power" && hasTruncatedCoverage(input.model, "metrics")
             ? truncatedDomain("metrics")
@@ -400,12 +400,12 @@ function dimensionsForGoal(input: {
     return [
       compare(
         "speed",
-        input.goalSport === null
+        input.goalActivityCategory === null
           ? unavailableResult({
               state: "unsupported",
               missingDataState: "unsupported_input",
               uncertainty: 1,
-              reasonCodes: ["goal_sport_missing"],
+              reasonCodes: ["goal_activity_category_missing"],
             })
           : hasTruncatedCoverage(input.model, "efforts")
             ? truncatedDomain("efforts")
@@ -427,12 +427,12 @@ function dimensionsForGoal(input: {
 
 const dimensionOrder = ["threshold", "speed", "distance", "duration", "frequency"] as const;
 
-function goalSport(
+function goalActivityCategory(
   model: AthleteIntelligenceModelInput,
   goalSourceId: string,
-): CanonicalSport | null {
+): CanonicalActivityCategory | null {
   const goal = model.goals.find((entry) => entry.sourceId === goalSourceId);
-  return goal?.goalSport ?? null;
+  return goal?.goalActivityCategory ?? null;
 }
 
 function isRecommendationCompatible(result: CalculationResult): boolean {
@@ -470,7 +470,7 @@ export function assembleWholeAthleteProjectionV1(
         ...input.activityReadiness,
         endurance: truncatedDomain("activities"),
         durability: truncatedDomain("activities"),
-        sportSpecificity: truncatedDomain("activities"),
+        activityCategorySpecificity: truncatedDomain("activities"),
         volumeTrend: truncatedDomain("activities"),
         frequencyTrend: truncatedDomain("activities"),
         readinessContext: truncatedDomain("activities"),
@@ -494,8 +494,11 @@ export function assembleWholeAthleteProjectionV1(
         demand,
         curve: supplied?.effortCurve,
         physiology: input.physiology,
-        activity: activityCapabilities(input.model, goalSport(input.model, goal.sourceId)),
-        goalSport: goalSport(input.model, goal.sourceId),
+        activity: activityCapabilities(
+          input.model,
+          goalActivityCategory(input.model, goal.sourceId),
+        ),
+        goalActivityCategory: goalActivityCategory(input.model, goal.sourceId),
         model: input.model,
       }),
     };
@@ -611,7 +614,7 @@ export function assembleWholeAthleteProjectionV1(
       ),
       enduranceRecencyWeightedMinutes: activityReadiness.endurance,
       durabilityBaselineRatio: activityReadiness.durability,
-      sportSpecificity: activityReadiness.sportSpecificity,
+      activityCategorySpecificity: activityReadiness.activityCategorySpecificity,
     },
     readiness: {
       volumeTrend: activityReadiness.volumeTrend,

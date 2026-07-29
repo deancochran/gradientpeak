@@ -180,6 +180,8 @@ const model: TrainingPathViewModel = {
     },
   ],
 };
+const firstModelWeek = model.weeks[0];
+if (!firstModelWeek) throw new Error("Expected the training-path fixture to include a first week");
 
 describe("TrainingPathChart interactions", () => {
   beforeEach(() => {
@@ -229,7 +231,8 @@ describe("TrainingPathChart interactions", () => {
     expect(adjustable.props.accessibilityValue.text).toContain("Load 60");
     expect(adjustable.props.accessibilityValue.text).toContain("Intensity 0.80");
     expect(adjustable.props.accessibilityValue.text).not.toContain("TSS");
-    expect(adjustable.props.accessibilityValue.text).not.toContain("Target load");
+    expect(adjustable.props.accessibilityValue.text).toContain("Planned load 40");
+    expect(adjustable.props.accessibilityValue.text).not.toContain("Recommended load");
     expect(adjustable.props.accessibilityValue.text).toContain("Projected fitness 42");
 
     fireEvent(adjustable, "accessibilityAction", {
@@ -328,7 +331,7 @@ describe("TrainingPathChart interactions", () => {
     expect(screen.getByText("Actual fitness")).toBeTruthy();
     expect(screen.getByText("Projected fitness")).toBeTruthy();
     expect(screen.getByText("Target fitness")).toBeTruthy();
-    expect(screen.queryByText("Target")).toBeNull();
+    expect(screen.queryByText("Recommended")).toBeNull();
     expect(screen.getByText("Completed, load unavailable")).toBeTruthy();
     expect(screen.getByText("✓")).toBeTruthy();
     expect(legendDottedSwatch?.props.style).toEqual(
@@ -336,12 +339,12 @@ describe("TrainingPathChart interactions", () => {
     );
   });
 
-  it("renders canonical Load without a legacy target bar", () => {
+  it("renders completed and planned common Load without the legacy target series", () => {
     const sparseModel: TrainingPathViewModel = {
       ...model,
       weeks: [
         {
-          ...model.weeks[0],
+          ...firstModelWeek,
           completedLoad: null,
           plannedLoad: 40,
           targetLoad: 80,
@@ -363,7 +366,69 @@ describe("TrainingPathChart interactions", () => {
     const renderedRects = getHostNodes("SkiaRect");
     const chart = getHostNode("CartesianChart");
     expect(renderedRects).toHaveLength(2);
-    expect(chart.props.data[0]).toEqual(expect.objectContaining({ completedLoad: 20 }));
+    expect(chart.props.data[0]).toEqual(
+      expect.objectContaining({
+        completedLoad: 20,
+        plannedLoad: 40,
+        targetLoad: null,
+        targetFitness: null,
+      }),
+    );
+  });
+
+  it("renders the explicit common-Load recommendation instead of the legacy weekly target", () => {
+    const recommendationModel: TrainingPathViewModel = {
+      ...model,
+      weeks: [
+        {
+          ...firstModelWeek,
+          targetLoad: 1_000,
+          recommendedLoadStatus: "complete",
+          recommendedLoad: 80,
+        },
+      ],
+    };
+
+    renderNative(
+      <TrainingPathChart
+        model={recommendationModel}
+        range="season"
+        reviewWeeks
+        scrollX
+        onSelectedWeekChange={jest.fn()}
+      />,
+    );
+
+    expect(getHostNode("CartesianChart").props.data[0]).toEqual(
+      expect.objectContaining({ targetLoad: 80 }),
+    );
+    expect(
+      screen.getByLabelText("Weekly training path chart").props.accessibilityValue.text,
+    ).toContain("Recommended load 80");
+  });
+
+  it("does not use zero for an unavailable weekly planned base under tentative Load", () => {
+    const tentativeOnlyModel: TrainingPathViewModel = {
+      ...model,
+      weeks: [
+        {
+          ...firstModelWeek,
+          effectiveLoadStatus: "partial",
+          effectiveRemainingLoad: null,
+          effectiveTentativeLoad: 25,
+        },
+      ],
+    };
+
+    renderNative(<TrainingPathChart model={tentativeOnlyModel} range="season" />);
+
+    expect(getHostNode("CartesianChart").props.data[0]).toEqual(
+      expect.objectContaining({
+        plannedLoad: null,
+        plannedLoadWithTentative: null,
+        targetFitness: null,
+      }),
+    );
   });
 
   it("renders sparse two-week common Load bars without completed load anchors", () => {
@@ -396,21 +461,22 @@ describe("TrainingPathChart interactions", () => {
   });
 
   it("expands the load domain to fit common Load bars", () => {
-    const highTargetModel: TrainingPathViewModel = {
+    const highLoadModel: TrainingPathViewModel = {
       ...model,
       domains: { ...model.domains, load: [0, 100] },
       weeks: [
         {
-          ...model.weeks[0],
+          ...firstModelWeek,
           completedLoad: 20,
           plannedLoad: 40,
           targetLoad: 240,
           effectiveLoad: 240,
+          effectiveRemainingLoad: 240,
         },
       ],
     };
 
-    renderNative(<TrainingPathChart model={highTargetModel} range="season" />);
+    renderNative(<TrainingPathChart model={highLoadModel} range="season" />);
 
     const chart = getHostNode("CartesianChart");
     expect(chart.props.yAxis[0].domain[1]).toBeGreaterThan(240);

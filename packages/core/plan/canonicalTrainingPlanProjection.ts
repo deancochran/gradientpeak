@@ -19,7 +19,7 @@ type ProjectionPoint = DailyLoadDistributionPoint & {
 export type CanonicalTrainingPlanResolutionManifestEntry = {
   date: string;
   offset_days: number;
-  sport: DailyLoadDistributionPoint["activity_category"];
+  activity_category: DailyLoadDistributionPoint["activity_category"];
   focus: DailyLoadRecommendationPrimaryFocus;
   recommended_load_tss: number;
   phase: string | null;
@@ -29,11 +29,11 @@ export type CanonicalTrainingPlanResolutionManifestEntry = {
 
 export type CanonicalTrainingPlanResolutionFailure = {
   date: string;
-  sport: DailyLoadDistributionPoint["activity_category"];
+  activity_category: DailyLoadDistributionPoint["activity_category"];
   focus: DailyLoadRecommendationPrimaryFocus;
   recommended_load_tss: number;
   phase: string | null;
-  reason: "missing_exact_sport_focus_coverage" | "no_positive_training_days";
+  reason: "missing_exact_activity_category_focus_coverage" | "no_positive_training_days";
 };
 
 export type ProjectCanonicalTrainingPlanResult =
@@ -190,7 +190,7 @@ export function projectCanonicalTrainingPlan(input: {
     const phase = phaseForDate(input.projection, point.date);
     const compatible = input.candidates.filter(
       (candidate) =>
-        candidate.sport === point.activity_category &&
+        candidate.activity_category === point.activity_category &&
         compatibleFocus(point.primary_focus, candidate),
     );
     const selected = rankCandidates({
@@ -201,18 +201,18 @@ export function projectCanonicalTrainingPlan(input: {
     if (!selected) {
       unresolved.push({
         date: point.date,
-        sport: point.activity_category,
+        activity_category: point.activity_category,
         focus: point.primary_focus,
         recommended_load_tss: point.recommended_load_tss,
         phase,
-        reason: "missing_exact_sport_focus_coverage",
+        reason: "missing_exact_activity_category_focus_coverage",
       });
       continue;
     }
     resolutionManifest.push({
       date: point.date,
       offset_days: diffDateOnlyUtcDays(input.projection.start_date, point.date),
-      sport: point.activity_category,
+      activity_category: point.activity_category,
       focus: point.primary_focus,
       recommended_load_tss: point.recommended_load_tss,
       phase,
@@ -242,7 +242,7 @@ export function projectCanonicalTrainingPlan(input: {
           : [
               {
                 date: input.projection.start_date,
-                sport: "other",
+                activity_category: "other",
                 focus: "rest",
                 recommended_load_tss: 0,
                 phase: null,
@@ -272,7 +272,7 @@ export function projectCanonicalTrainingPlan(input: {
   const structure = trainingPlanSchema.parse({
     id: input.planId,
     version: 1,
-    sport: [...new Set(points.map((point) => point.activity_category))].sort(),
+    activity_category: [...new Set(points.map((point) => point.activity_category))].sort(),
     durationWeeks: {
       recommended: durationWeeks,
     },

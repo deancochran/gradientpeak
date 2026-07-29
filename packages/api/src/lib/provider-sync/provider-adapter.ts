@@ -15,7 +15,7 @@ export type ProviderPublishResult = {
   warnings?: string[];
 };
 
-export interface PlannedWorkoutProviderAdapter {
+export interface PlannedActivityProviderAdapter {
   getPublishEligibility(input: {
     integrationId: string;
     profileId: string;

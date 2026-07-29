@@ -3,7 +3,7 @@ import type { LoadDayObservation, LoadSeries } from "../load-series";
 import { computeAcwr, computeExternalWorkKj, computeMonotony, computeTrimp } from "../workload";
 
 const identity = {
-  sport: "cycling",
+  activity_category: "cycling",
   family: "tss" as const,
   method: "normalized_power",
   version: "1",

@@ -25,6 +25,8 @@ import { recordingSessionActivityId } from "./submit-activity";
 import { submitMobileRecording } from "./submit-mobile-recording";
 
 const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
+const OTHER_PROFILE_ID = "11111111-1111-4111-8111-111111111112";
+const PLAN_ID = "11111111-1111-4111-8111-111111111113";
 const INGESTION_ID = "22222222-2222-4222-8222-222222222222";
 const CLAIM_TOKEN = "33333333-3333-4333-8333-333333333333";
 const ACCEPTED_SHA256 = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
@@ -54,7 +56,7 @@ const submission = recordingSummarySubmissionInputSchema.parse({
         globalOrdinal: 0,
         segmentId: "44444444-4444-4444-8444-444444444444",
         role: "activity",
-        category: "run",
+        activity_category: "run",
         startedAt: "2026-07-24T08:00:00.000Z",
         completedAt: "2026-07-24T09:00:00.000Z",
         activeSeconds: 3600,
@@ -69,16 +71,45 @@ const submission = recordingSummarySubmissionInputSchema.parse({
   summary: { distanceMeters: 10_000 },
 });
 
+function activityPlanStructure(activity_categories: Array<"bike" | "run">) {
+  return {
+    version: 3,
+    segments: activity_categories.map((activity_category, index) => ({
+      id: `50000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      role: "activity" as const,
+      activity_category,
+      name: activity_category,
+      intervals: [
+        {
+          id: `60000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+          name: "Main",
+          repetitions: 1,
+          steps: [
+            {
+              id: `70000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+              name: "Step",
+              duration: { type: "time" as const, seconds: 600 },
+              targets: [{ type: "RPE" as const, intensity: 5 }],
+            },
+          ],
+        },
+      ],
+    })),
+  };
+}
+
 function createDb(input: {
   activities: Array<Record<string, unknown> | undefined>;
   ingestions?: Array<Record<string, unknown> | undefined>;
+  selectRows?: unknown[][];
 }) {
   const activities = [...input.activities];
   const ingestions = [...(input.ingestions ?? [])];
+  const selectRows = [...(input.selectRows ?? [[{ defaultContentVisibility: "private" }]])];
   const selectBuilder = {
     from: vi.fn(() => selectBuilder),
     where: vi.fn(() => selectBuilder),
-    limit: vi.fn(async () => [{ defaultContentVisibility: "private" }]),
+    limit: vi.fn(async () => selectRows.shift() ?? []),
   };
   return {
     query: {
@@ -95,6 +126,154 @@ describe("submitMobileRecording", () => {
     activityWriter.submitActivity.mockResolvedValue({ id: "activity-1" });
     uploadFlow.retryMobileRecordingStagingCleanup.mockResolvedValue(true);
     uploadFlow.loadAcceptedArtifactForClaim.mockResolvedValue(acceptedArtifact);
+    uploadFlow.prepareMobileRecordingArtifact.mockResolvedValue({
+      status: "claimed",
+      ingestion: { id: INGESTION_ID },
+      claimToken: CLAIM_TOKEN,
+      artifact: acceptedArtifact,
+    });
+  });
+
+  it("attaches an accessible single-activity-category plan to a new recording", async () => {
+    const db = createDb({
+      activities: [undefined, { id: "activity-1", profile_id: PROFILE_ID }],
+      ingestions: [
+        {
+          id: INGESTION_ID,
+          profile_id: PROFILE_ID,
+          source: "mobile_recording",
+          status: "ready",
+        },
+      ],
+      selectRows: [
+        [
+          {
+            id: PLAN_ID,
+            contentVisibility: "private",
+            isSystem: false,
+            ownerProfileId: PROFILE_ID,
+            structure: activityPlanStructure(["run", "run"]),
+          },
+        ],
+      ],
+    });
+
+    await submitMobileRecording(db as never, {} as never, {
+      actorProfileId: PROFILE_ID,
+      submission: recordingSummarySubmissionInputSchema.parse({
+        ...submission,
+        activityPlanId: PLAN_ID,
+        content_visibility: "private",
+        recordingSessionId: "single-activity-category-plan-session",
+      }),
+    });
+
+    expect(activityWriter.submitActivity).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ activityPlanId: PLAN_ID }),
+    );
+  });
+
+  it("rejects a mixed plan before storage work", async () => {
+    const db = createDb({
+      activities: [undefined, { id: "activity-1", profile_id: PROFILE_ID }],
+      ingestions: [
+        {
+          id: INGESTION_ID,
+          profile_id: PROFILE_ID,
+          source: "mobile_recording",
+          status: "ready",
+        },
+      ],
+      selectRows: [
+        [
+          {
+            id: PLAN_ID,
+            contentVisibility: "private",
+            isSystem: false,
+            ownerProfileId: PROFILE_ID,
+            structure: activityPlanStructure(["bike", "run"]),
+          },
+        ],
+      ],
+    });
+
+    await expect(
+      submitMobileRecording(db as never, {} as never, {
+        actorProfileId: PROFILE_ID,
+        submission: recordingSummarySubmissionInputSchema.parse({
+          ...submission,
+          activityPlanId: PLAN_ID,
+          content_visibility: "private",
+          recordingSessionId: "mixed-plan-rejection-session",
+        }),
+      }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    expect(activityWriter.submitActivity).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["missing", [[]]],
+    [
+      "strict-invalid",
+      [
+        [
+          {
+            id: PLAN_ID,
+            contentVisibility: "private",
+            isSystem: false,
+            ownerProfileId: PROFILE_ID,
+            structure: { version: 3, segments: [{ role: "activity" }] },
+          },
+        ],
+      ],
+    ],
+    [
+      "inaccessible",
+      [
+        [
+          {
+            id: PLAN_ID,
+            contentVisibility: "private",
+            isSystem: false,
+            ownerProfileId: OTHER_PROFILE_ID,
+            structure: activityPlanStructure(["run"]),
+          },
+        ],
+        [
+          {
+            id: PLAN_ID,
+            ownerProfileId: OTHER_PROFILE_ID,
+            templateVisibility: "private",
+            contentVisibility: "private",
+            isSystem: false,
+          },
+        ],
+        [],
+      ],
+    ],
+  ] as const)("rejects a %s plan before accepting recording artifacts", async (_label, selectRows) => {
+    const db = createDb({
+      activities: [undefined],
+      selectRows: selectRows.map((rows) => [...rows]),
+    });
+
+    await expect(
+      submitMobileRecording(db as never, {} as never, {
+        actorProfileId: PROFILE_ID,
+        submission: recordingSummarySubmissionInputSchema.parse({
+          ...submission,
+          activityPlanId: PLAN_ID,
+          content_visibility: "private",
+          recordingSessionId: `${_label}-plan-session`,
+        }),
+      }),
+    ).rejects.toMatchObject({
+      code: "forbidden",
+      message: "Activity plan is not available for mobile recording",
+    });
+    expect(uploadFlow.prepareMobileRecordingArtifact).not.toHaveBeenCalled();
+    expect(activityWriter.submitActivity).not.toHaveBeenCalled();
   });
 
   it("passes the exact upload lease into the atomic activity finalization", async () => {

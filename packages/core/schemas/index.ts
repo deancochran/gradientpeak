@@ -10,16 +10,16 @@ import {
 
 export * from "../activity-plan";
 export * from "../targets";
-// Export from activity_payload (includes ActivityType)
+// Export from activity_payload (includes ActivityCategory)
 export * from "./activity_payload";
 export * from "./activity_streams";
 export * from "./activity_target_capabilities";
+export * from "./activity-category";
 export * from "./content_visibility";
 // Export from form-schemas
 export * from "./form-schemas";
 // Export profile goals/settings (Phase 1 additive domain schemas)
 export * from "./goals/profile_goals";
-
 // Export from planned_activity
 export * from "./planned_activity";
 export * from "./planning";
@@ -30,7 +30,6 @@ export * from "./recording_ui_types";
 // Export recording session contracts
 export * from "./recording-session";
 export * from "./settings/profile_settings";
-export * from "./sport";
 export {
   activityPlanSpeedKphToMetersPerSecond,
   activityPlanSpeedMetersPerSecondToKph,

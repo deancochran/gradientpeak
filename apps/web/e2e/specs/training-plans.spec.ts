@@ -31,7 +31,7 @@ test("training-plan create and reorder journeys expose durable controls and stat
 
   await athletePage.goto("/training-plans/reorder");
   await expect(
-    athletePage.getByRole("heading", { name: "Reorder training plan workouts" }),
+    athletePage.getByRole("heading", { name: "Reorder training plan activities" }),
   ).toBeVisible();
   await expect(athletePage.getByRole("button", { name: /save order|retry save/i })).toBeDisabled();
 });

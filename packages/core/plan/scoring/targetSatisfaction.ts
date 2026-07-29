@@ -1,4 +1,4 @@
-import type { CanonicalSport } from "../../schemas/sport";
+import type { CanonicalActivityCategory } from "../../schemas/activity-category";
 import type { TrainingPlanGoalTarget } from "../../schemas/training-plan-structure";
 import { normalizeTargetWeight } from "./weightedMean";
 
@@ -67,7 +67,7 @@ function estimateHigherIsBetterProjection(targetValue: number, readiness: number
   return round3(targetValue * readinessFactor);
 }
 
-function resolveActivitySpeedCapMps(activity: CanonicalSport): number {
+function resolveActivitySpeedCapMps(activity: CanonicalActivityCategory): number {
   if (activity === "run") return 7.5;
   if (activity === "bike") return 20;
   if (activity === "swim") return 2.8;
@@ -75,7 +75,7 @@ function resolveActivitySpeedCapMps(activity: CanonicalSport): number {
   return 9;
 }
 
-function resolvePowerCapWatts(activity: CanonicalSport) {
+function resolvePowerCapWatts(activity: CanonicalActivityCategory) {
   if (activity === "bike") return 560;
   if (activity === "run") return 500;
   if (activity === "swim") return 420;

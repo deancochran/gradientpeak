@@ -312,7 +312,7 @@ export const creationConstraintsBaseSchema = z.object({
   max_sessions_per_week: z.number().int().min(0).max(21).optional(),
   max_single_session_duration_minutes: z.number().int().min(20).max(600).optional(),
   max_weekly_duration_minutes: z.number().int().min(30).max(10080).optional(),
-  sport_overrides: z
+  activity_category_overrides: z
     .record(
       z.string().min(1).max(40),
       z
@@ -374,7 +374,9 @@ export const creationConstraintsSchema = creationConstraintsBaseSchema.superRefi
     });
   }
 
-  for (const [sport, override] of Object.entries(data.sport_overrides ?? {})) {
+  for (const [activity_category, override] of Object.entries(
+    data.activity_category_overrides ?? {},
+  )) {
     if (
       override.min_sessions_per_week !== undefined &&
       override.max_sessions_per_week !== undefined &&
@@ -382,8 +384,9 @@ export const creationConstraintsSchema = creationConstraintsBaseSchema.superRefi
     ) {
       ctx.addIssue({
         code: "custom",
-        path: ["sport_overrides", sport, "min_sessions_per_week"],
-        message: "Sport minimum sessions cannot exceed sport maximum sessions",
+        path: ["activity_category_overrides", activity_category, "min_sessions_per_week"],
+        message:
+          "ActivityCategory minimum sessions cannot exceed activity_category maximum sessions",
       });
     }
 
@@ -394,8 +397,13 @@ export const creationConstraintsSchema = creationConstraintsBaseSchema.superRefi
     ) {
       ctx.addIssue({
         code: "custom",
-        path: ["sport_overrides", sport, "max_single_session_duration_minutes"],
-        message: "Sport single-session duration cannot exceed sport weekly duration",
+        path: [
+          "activity_category_overrides",
+          activity_category,
+          "max_single_session_duration_minutes",
+        ],
+        message:
+          "ActivityCategory single-session duration cannot exceed activity_category weekly duration",
       });
     }
   }

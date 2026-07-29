@@ -1,6 +1,6 @@
 import { z } from "zod";
+import { canonicalActivityCategorySchema } from "../schemas/activity-category";
 import type { AthletePreferenceProfile } from "../schemas/settings/profile_settings";
-import { canonicalSportSchema } from "../schemas/sport";
 import {
   type ActivityCategoryPrescription,
   activityCategoryPrescriptionSchema,
@@ -74,7 +74,7 @@ export const weeklyAllocationSchema = z
   .object({
     version: z.literal(1),
     activity_categories: z.partialRecord(
-      canonicalSportSchema,
+      canonicalActivityCategorySchema,
       weeklyAllocationActivityCategorySchema,
     ),
     totals: z

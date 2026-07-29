@@ -6,12 +6,12 @@ export interface RecordingLaunchPayload extends ActivityPayload {
 }
 
 export function defaultRecordLaunchPayload(
-  category: RecordingActivityCategory = "run",
+  activity_category: RecordingActivityCategory = "run",
 ): RecordingLaunchPayload {
   return {
     launchSource: "record_tab",
-    category,
-    gpsRecordingEnabled: category === "run" || category === "bike",
+    activity_category,
+    gpsRecordingEnabled: activity_category === "run" || activity_category === "bike",
   };
 }
 
@@ -36,7 +36,7 @@ class ActivitySelectionStore {
   setSelection(payload: RecordingLaunchPayload): void {
     console.log("[ActivitySelectionStore] Setting selection:", {
       launchSource: payload.launchSource,
-      category: payload.category,
+      activity_category: payload.activity_category,
       gpsRecordingEnabled: payload.gpsRecordingEnabled,
       hasPlan: !!payload.plan,
       eventId: payload.eventId,
@@ -54,7 +54,7 @@ class ActivitySelectionStore {
     if (current) {
       console.log(
         "[ActivitySelectionStore] Consuming selection:",
-        current.category,
+        current.activity_category,
         current.gpsRecordingEnabled,
       );
       this.selection = null;
@@ -80,7 +80,7 @@ class ActivitySelectionStore {
     if (this.selection) {
       console.log(
         "[ActivitySelectionStore] Clearing selection:",
-        this.selection.category,
+        this.selection.activity_category,
         this.selection.gpsRecordingEnabled,
       );
     } else {
@@ -101,13 +101,13 @@ class ActivitySelectionStore {
    */
   getSelectionInfo(): {
     hasSelection: boolean;
-    category?: string;
+    activity_category?: string;
     gpsRecordingEnabled?: boolean;
     hasPlan?: boolean;
   } {
     return {
       hasSelection: this.selection !== null,
-      category: this.selection?.category,
+      activity_category: this.selection?.activity_category,
       gpsRecordingEnabled: this.selection?.gpsRecordingEnabled,
       hasPlan: !!this.selection?.plan,
     };

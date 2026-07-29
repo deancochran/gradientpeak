@@ -92,7 +92,7 @@ const ACCEPTED_ARTIFACT = {
   originalName: "accepted.fit",
 };
 
-function singleSegmentSet(category: "run" | "bike" | "swim", elapsedMs = 3_600_000) {
+function singleSegmentSet(activity_category: "run" | "bike" | "swim", elapsedMs = 3_600_000) {
   return {
     version: 1 as const,
     elapsedMs,
@@ -101,7 +101,7 @@ function singleSegmentSet(category: "run" | "bike" | "swim", elapsedMs = 3_600_0
         id: SEGMENT_ID,
         ordinal: 0,
         role: "activity" as const,
-        category,
+        activity_category,
         startOffsetMs: 0,
         endOffsetMs: elapsedMs,
         summary: {
@@ -117,7 +117,34 @@ function singleSegmentSet(category: "run" | "bike" | "swim", elapsedMs = 3_600_0
   };
 }
 
-function recordingExecutionManifest(category: "run" | "bike" | "swim" = "run") {
+function activityPlanStructure(activity_categories: Array<"bike" | "run">) {
+  return {
+    version: 3 as const,
+    segments: activity_categories.map((activity_category, index) => ({
+      id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      role: "activity" as const,
+      activity_category,
+      name: activity_category,
+      intervals: [
+        {
+          id: `20000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+          name: "Main",
+          repetitions: 1,
+          steps: [
+            {
+              id: `30000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+              name: "Step",
+              duration: { type: "time" as const, seconds: 600 },
+              targets: [{ type: "RPE" as const, intensity: 5 }],
+            },
+          ],
+        },
+      ],
+    })),
+  };
+}
+
+function recordingExecutionManifest(activity_category: "run" | "bike" | "swim" = "run") {
   return {
     version: 1 as const,
     compilerVersion: 1,
@@ -128,7 +155,7 @@ function recordingExecutionManifest(category: "run" | "bike" | "swim" = "run") {
         globalOrdinal: 0,
         segmentId: SEGMENT_ID,
         role: "activity" as const,
-        category,
+        activity_category,
         startedAt: "2026-01-15T09:00:00.000Z",
         completedAt: "2026-01-15T10:00:00.000Z",
         activeSeconds: 3600,
@@ -155,14 +182,14 @@ function recordingCreateInput(profileId = OWNER_ID) {
   };
 }
 const RUN_TSS_IDENTITY = {
-  sport: "run",
+  activity_category: "run",
   method: "run_pace_threshold",
   source: "activity_analysis",
   version: "1",
   calibration: { type: "threshold_speed_mps", value: 4.2 },
 } as const;
 const BIKE_TSS_IDENTITY = {
-  sport: "bike",
+  activity_category: "bike",
   method: "power_threshold",
   source: "activity_analysis",
   version: "1",
@@ -171,9 +198,9 @@ const BIKE_TSS_IDENTITY = {
 const activityCategories = new Map<string, "bike" | "run" | "swim">();
 
 function buildActivityRow(overrides: Record<string, unknown> = {}) {
-  const { category = "run", ...rowOverrides } = overrides;
+  const { activity_category = "run", ...rowOverrides } = overrides;
   const id = typeof rowOverrides.id === "string" ? rowOverrides.id : ACTIVITY_ID;
-  activityCategories.set(id, category as "bike" | "run" | "swim");
+  activityCategories.set(id, activity_category as "bike" | "run" | "swim");
   return {
     id,
     created_at: new Date("2026-01-01T00:00:00.000Z"),
@@ -228,7 +255,7 @@ function buildActivityRow(overrides: Record<string, unknown> = {}) {
 function buildSegmentReadRow(
   activityId: string,
   ordinal: number,
-  category: "run" | "bike" | "swim",
+  activity_category: "run" | "bike" | "swim",
   overrides: Record<string, unknown> = {},
 ) {
   return {
@@ -236,9 +263,18 @@ function buildSegmentReadRow(
     activity_id: activityId,
     ordinal,
     role: "activity" as const,
-    category,
+    activity_category,
     start_offset_ms: ordinal * 1_000,
     end_offset_ms: (ordinal + 1) * 1_000,
+    source_artifact_id: null,
+    source_session_index: null,
+    source_message_index: null,
+    raw_type_string: null,
+    raw_type_integer: null,
+    raw_sport_string: null,
+    raw_sport_integer: null,
+    raw_sub_sport_string: null,
+    raw_sub_sport_integer: null,
     timing_coverage: "complete" as const,
     active_ms: 1_000,
     moving_ms: 900,
@@ -430,6 +466,7 @@ function createSequencedFn(values: unknown[]) {
 
 function createDbMock(options: {
   activityRows?: any[];
+  activityPlanRows?: any[];
   likeRows?: Array<{ entity_id: string; likes_count: number; has_liked: boolean }>;
   totalRows?: Array<{ total: number }>;
   joinedRows?: any[];
@@ -506,6 +543,7 @@ function createDbMock(options: {
     if (tableName === "integrations") return options.integrationRows ?? [];
     if (tableName === "provider_sync_state") return options.providerSyncRows ?? [];
     if (tableName === "activity_summaries") return options.activitySummaryRows ?? [];
+    if (tableName === "activity_plans") return options.activityPlanRows ?? [];
     if (tableName === "activity_imports") return options.activityImportRows ?? [];
     if (tableName === "activity_geometry") return options.activityGeometryRows ?? [];
     if (tableName === "activity_laps") return options.activityLapRows ?? [];
@@ -835,7 +873,7 @@ describe("activitiesRouter", () => {
     expect(toSql(db.__spies.selectWhere.mock.calls[0]?.[0])).not.toContain("select count(*)");
   });
 
-  it("filters by multisport composition and returns category-safe discovery DTOs", async () => {
+  it("filters by multisport composition and returns activity_category-safe discovery DTOs", async () => {
     const activity = buildActivityRow();
     const segments = [
       buildSegmentReadRow(ACTIVITY_ID, 0, "bike", {
@@ -871,7 +909,7 @@ describe("activitiesRouter", () => {
       segments.slice(1).map((segment, index) => ({
         activity_id: ACTIVITY_ID,
         segment_id: segment.id,
-        category: "run",
+        activity_category: "run",
         tss: index === 0 ? 20 : 30,
         tss_identity: RUN_TSS_IDENTITY,
         intensity_factor: 0.8,
@@ -904,20 +942,20 @@ describe("activitiesRouter", () => {
       segment_loads: [
         expect.objectContaining({
           segment_id: segments[1]?.id,
-          category: "run",
+          activity_category: "run",
           tss: 20,
           intensity_factor: 0.8,
         }),
         expect.objectContaining({
           segment_id: segments[2]?.id,
-          category: "run",
+          activity_category: "run",
           tss: 30,
           intensity_factor: 0.8,
         }),
       ],
     });
     const whereSql = toSql(db.__spies.selectWhere.mock.calls[0]?.[0]);
-    expect(whereSql).toContain('"activity_segments"."category" =');
+    expect(whereSql).toContain('"activity_segments"."activity_category" =');
     expect(whereSql).toContain("select count(*)");
     expect(whereSql).toContain("> 1");
   });
@@ -926,7 +964,10 @@ describe("activitiesRouter", () => {
     { sort_by: "distance" as const, expected: [ACTIVITY_ID_2, ACTIVITY_ID, ACTIVITY_ID_3] },
     { sort_by: "duration" as const, expected: [ACTIVITY_ID_2, ACTIVITY_ID, ACTIVITY_ID_3] },
     { sort_by: "tss" as const, expected: [ACTIVITY_ID, ACTIVITY_ID_2, ACTIVITY_ID_3] },
-  ])("sorts $sort_by by matched-category values with nulls last", async ({ sort_by, expected }) => {
+  ])("sorts $sort_by by matched-activity_category values with nulls last", async ({
+    sort_by,
+    expected,
+  }) => {
     const rows = [
       buildActivityRow({ id: ACTIVITY_ID }),
       buildActivityRow({ id: ACTIVITY_ID_2 }),
@@ -983,7 +1024,7 @@ describe("activitiesRouter", () => {
       {
         activity_id: ACTIVITY_ID,
         segment_id: segmentByActivityId.get(ACTIVITY_ID)![0]!.id,
-        category: "run",
+        activity_category: "run",
         tss: 30,
         tss_identity: RUN_TSS_IDENTITY,
         intensity_factor: 0.8,
@@ -995,7 +1036,7 @@ describe("activitiesRouter", () => {
       {
         activity_id: ACTIVITY_ID_2,
         segment_id: segmentByActivityId.get(ACTIVITY_ID_2)![0]!.id,
-        category: "run",
+        activity_category: "run",
         tss: 10,
         tss_identity: RUN_TSS_IDENTITY,
         intensity_factor: 0.7,
@@ -1114,7 +1155,7 @@ describe("activitiesRouter", () => {
       buildActivityRow({
         id: ACTIVITY_ID_2,
         name: "Big Ride",
-        category: "bike",
+        activity_category: "bike",
         started_at: new Date("2026-01-11T08:00:00.000Z"),
         finished_at: new Date("2026-01-11T10:00:00.000Z"),
       }),
@@ -1363,10 +1404,42 @@ describe("activitiesRouter", () => {
       profile_id: OWNER_ID,
       activity_plan_id: PLAN_ID,
       name: "Long Ride",
-      category: "bike",
+      activity_category: "bike",
     });
     const db = createDbMock({
-      queryEventsFindFirst: [{ activity_plan_id: PLAN_ID }],
+      queryEventsFindFirst: [
+        {
+          activity_plan_id: PLAN_ID,
+          activity_plan: {
+            structure: {
+              version: 3,
+              segments: [
+                {
+                  id: "10000000-0000-4000-8000-000000000001",
+                  role: "activity",
+                  activity_category: "bike",
+                  name: "Bike",
+                  intervals: [
+                    {
+                      id: "20000000-0000-4000-8000-000000000001",
+                      name: "Main",
+                      repetitions: 1,
+                      steps: [
+                        {
+                          id: "30000000-0000-4000-8000-000000000001",
+                          name: "Step",
+                          duration: { type: "time", seconds: 600 },
+                          targets: [{ type: "RPE", intensity: 5 }],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      ],
       executeRows: [{ id: ACTIVITY_ID }],
       queryActivitiesFindFirst: [createdActivity],
     });
@@ -1387,6 +1460,61 @@ describe("activitiesRouter", () => {
     expect(result).toEqual(createdActivity);
     expect(db.select).toHaveBeenCalled();
     expect(db.transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects direct Event recording for legacy or invalid linked plans", async () => {
+    for (const structure of [
+      activityPlanStructure(["bike", "run"]),
+      { version: 3, segments: [] },
+    ]) {
+      const db = createDbMock({
+        queryEventsFindFirst: [{ activity_plan_id: PLAN_ID, activity_plan: { structure } }],
+      });
+
+      await expect(
+        createCaller(db).create({
+          profile_id: OWNER_ID,
+          eventId: EVENT_ID,
+          name: "Rejected event recording",
+          startedAt: "2026-01-15T09:00:00.000Z",
+          finishedAt: "2026-01-15T10:00:00.000Z",
+          segmentSet: singleSegmentSet("bike"),
+          acceptedArtifact: ACCEPTED_ARTIFACT,
+          summary: { distanceMeters: 1000 },
+        }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "Linked event plan is not available for recording",
+      });
+      expect(db.transaction).not.toHaveBeenCalled();
+    }
+  });
+
+  it("allows direct Event recording for repeated same-category plans", async () => {
+    const createdActivity = buildActivityRow({ id: ACTIVITY_ID, profile_id: OWNER_ID });
+    const db = createDbMock({
+      queryEventsFindFirst: [
+        {
+          activity_plan_id: PLAN_ID,
+          activity_plan: { structure: activityPlanStructure(["bike", "bike"]) },
+        },
+      ],
+      executeRows: [{ id: ACTIVITY_ID }],
+      queryActivitiesFindFirst: [createdActivity],
+    });
+
+    await expect(
+      createCaller(db).create({
+        profile_id: OWNER_ID,
+        eventId: EVENT_ID,
+        name: "Repeated bike event recording",
+        startedAt: "2026-01-15T09:00:00.000Z",
+        finishedAt: "2026-01-15T10:00:00.000Z",
+        segmentSet: singleSegmentSet("bike"),
+        acceptedArtifact: ACCEPTED_ARTIFACT,
+        summary: { distanceMeters: 1000 },
+      }),
+    ).resolves.toEqual(createdActivity);
   });
 
   it("rejects native submission when accepted artifact bytes cannot be verified", async () => {
@@ -1415,7 +1543,7 @@ describe("activitiesRouter", () => {
     const createdActivity = buildActivityRow({
       id: ACTIVITY_ID,
       profile_id: OWNER_ID,
-      category: "swim",
+      activity_category: "swim",
       avg_temperature: 21.5,
       pool_length: 25,
     });
@@ -1447,7 +1575,7 @@ describe("activitiesRouter", () => {
       activity_plan_id: PLAN_ID,
       name: "Recorder Run",
       notes: "Phone GPS",
-      category: "run",
+      activity_category: "run",
       started_at: new Date("2026-01-15T09:00:00.000Z"),
       finished_at: new Date("2026-01-15T10:00:00.000Z"),
     });
@@ -1487,11 +1615,11 @@ describe("activitiesRouter", () => {
     expect(db.transaction).not.toHaveBeenCalled();
   });
 
-  it("persists an ordered multisport execution manifest without parent sport transport", async () => {
+  it("persists an ordered multisport execution manifest without parent activity_category transport", async () => {
     const bikeSegmentId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
     const transitionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2";
     const runSegmentId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3";
-    const createdActivity = buildActivityRow({ id: ACTIVITY_ID, category: "bike" });
+    const createdActivity = buildActivityRow({ id: ACTIVITY_ID, activity_category: "bike" });
     const ingestion = buildActivityFileIngestionRow({ status: "ready" });
     const db = createDbMock({
       insertedRowsByTable: {
@@ -1520,7 +1648,7 @@ describe("activitiesRouter", () => {
             globalOrdinal: 1,
             segmentId: transitionId,
             role: "transition",
-            category: null,
+            activity_category: null,
             startedAt: "2026-01-15T09:25:00.000Z",
             completedAt: "2026-01-15T09:30:00.000Z",
             activeSeconds: 300,
@@ -1546,11 +1674,57 @@ describe("activitiesRouter", () => {
         id: bikeSegmentId,
         ordinal: 0,
         role: "activity",
-        category: "bike",
+        activity_category: "bike",
       }),
-      expect.objectContaining({ id: transitionId, ordinal: 1, role: "transition", category: null }),
-      expect.objectContaining({ id: runSegmentId, ordinal: 2, role: "activity", category: "run" }),
+      expect.objectContaining({
+        id: transitionId,
+        ordinal: 1,
+        role: "transition",
+        activity_category: null,
+      }),
+      expect.objectContaining({
+        id: runSegmentId,
+        ordinal: 2,
+        role: "activity",
+        activity_category: "run",
+      }),
     ]);
+  });
+
+  it("rejects a mixed recording plan before persistence", async () => {
+    const createdActivity = buildActivityRow({
+      id: ACTIVITY_ID,
+      activity_plan_id: null,
+      activity_category: "run",
+    });
+    const ingestion = buildActivityFileIngestionRow({ status: "ready" });
+    const db = createDbMock({
+      activityPlanRows: [
+        {
+          id: PLAN_ID,
+          contentVisibility: "private",
+          isSystem: false,
+          ownerProfileId: OWNER_ID,
+          structure: activityPlanStructure(["bike", "run"]),
+        },
+      ],
+      insertedRowsByTable: {
+        activities: [createdActivity],
+        activity_file_ingestions: [ingestion],
+      },
+      queryActivitiesFindFirst: [undefined, createdActivity],
+      queryActivityFileIngestionsFindFirst: [ingestion],
+    });
+
+    await expect(
+      createCaller(db).createFromRecordingSummary({
+        ...recordingCreateInput(),
+        activityPlanId: PLAN_ID,
+        content_visibility: "private",
+        recordingSessionId: "mixed-plan-rejection",
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(findInsertedValue(db, "activities")).toBeUndefined();
   });
 
   it("rejects recording summary creation for another profile", async () => {
@@ -1732,6 +1906,80 @@ describe("activitiesRouter", () => {
     });
     expect(mockActivityAnalysis.resolveActivityContextAsOf).not.toHaveBeenCalled();
     expect(mockActivityAnalysis.analyzeActivityDerivedMetrics).not.toHaveBeenCalled();
+  });
+
+  it("returns ordered completed multisport source identity to the owner without raw payloads", async () => {
+    const activity = buildActivityRow({ profile_id: OWNER_ID });
+    const sourceArtifactId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const segments = [
+      {
+        ...buildSegmentReadRow(ACTIVITY_ID, 0, "bike"),
+        source_artifact_id: sourceArtifactId,
+        source_session_index: 2,
+        source_message_index: 8,
+        raw_type_string: "session",
+        raw_type_integer: null,
+        raw_sport_string: null,
+        raw_sport_integer: 2,
+        raw_sub_sport_string: "road",
+        raw_sub_sport_integer: null,
+      },
+      {
+        ...buildSegmentReadRow(ACTIVITY_ID, 1, "run", {
+          role: "unknown",
+          activity_category: null,
+        }),
+        source_artifact_id: sourceArtifactId,
+        source_session_index: 3,
+        source_message_index: 9,
+        raw_type_string: null,
+        raw_type_integer: 99,
+        raw_sport_string: "transition",
+        raw_sport_integer: null,
+        raw_sub_sport_string: null,
+        raw_sub_sport_integer: 17,
+      },
+      {
+        ...buildSegmentReadRow(ACTIVITY_ID, 2, "run"),
+        source_artifact_id: sourceArtifactId,
+        source_session_index: 4,
+        source_message_index: 10,
+        raw_type_string: "lap",
+        raw_type_integer: null,
+        raw_sport_string: "running",
+        raw_sport_integer: null,
+        raw_sub_sport_string: null,
+        raw_sub_sport_integer: null,
+      },
+    ];
+    mockActivityAnalysis.loadActivitySegmentsByActivityId.mockResolvedValue(
+      new Map([[ACTIVITY_ID, segments]]),
+    );
+    const db = createDbMock({
+      queryActivitiesFindFirst: [{ profile_id: OWNER_ID, content_visibility: "private" }],
+      joinedRows: [{ activity, activityPlan: null }],
+    });
+
+    const result = await createCaller(db).getById({ id: ACTIVITY_ID });
+
+    expect(result.activity.segments).toEqual(segments);
+    expect(result.activity.segments.map((segment) => segment.ordinal)).toEqual([0, 1, 2]);
+    expect(
+      result.activity.segments.map((segment) => ({
+        raw_sub_sport_integer: segment.raw_sub_sport_integer,
+        raw_sub_sport_string: segment.raw_sub_sport_string,
+      })),
+    ).toEqual([
+      { raw_sub_sport_integer: null, raw_sub_sport_string: "road" },
+      { raw_sub_sport_integer: 17, raw_sub_sport_string: null },
+      { raw_sub_sport_integer: null, raw_sub_sport_string: null },
+    ]);
+    expect(result.activity.segments).not.toContainEqual(
+      expect.objectContaining({ raw_payload: expect.anything() }),
+    );
+    expect(result.activity.segments).not.toContainEqual(
+      expect.objectContaining({ coordinates: expect.anything() }),
+    );
   });
 
   it("returns the latest effective session RPE evidence only to the activity owner", async () => {

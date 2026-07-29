@@ -50,7 +50,7 @@ const unavailableReasons: Record<
   private_data: "the required activity data is private",
   stale_threshold: "the applicable threshold is stale",
   threshold_missing: "no applicable threshold is available",
-  unsupported_modality: "this activity type is not supported",
+  unsupported_modality: "this activity category is not supported",
 };
 
 export function getCommonLoadPresentation(
@@ -118,17 +118,17 @@ export function getCommonLoadPresentation(
   };
 }
 
-export function getThresholdNextAction(activityType?: string | null): string {
-  if (activityType === "bike") {
+export function getThresholdNextAction(activityCategory?: string | null): string {
+  if (activityCategory === "bike") {
     return "Record qualifying bike activities to build a reliable power curve or establish bike LTHR.";
   }
-  if (activityType === "run") {
+  if (activityCategory === "run") {
     return "Record a qualifying 20-minute run effort or activity-derived run LTHR.";
   }
-  if (activityType === "swim") {
+  if (activityCategory === "swim") {
     return "Record a qualifying 20-minute swim effort or activity-derived swim LTHR.";
   }
-  return "Establish a sport-specific LTHR.";
+  return "Establish an activity-category-specific LTHR.";
 }
 
 export function formatCalibrationQuality(

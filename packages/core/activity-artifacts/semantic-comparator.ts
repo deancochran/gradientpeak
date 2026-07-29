@@ -1,8 +1,8 @@
 import { z } from "zod";
 
-import { canonicalSportSchema } from "../schemas/sport";
+import { segmentRawSourceValueSchema } from "../activity-segments/completed-segment-schema";
+import { canonicalActivityCategorySchema } from "../schemas/activity-category";
 
-const rawSourceValueSchema = z.union([z.string().min(1).max(128), z.number().int()]);
 const pauseRangeSchema = z
   .object({
     startOffsetMs: z.number().int().nonnegative(),
@@ -21,9 +21,9 @@ const timerEventSchema = z
   .strict();
 
 const semanticSegmentFields = {
-  rawType: rawSourceValueSchema.optional(),
-  rawSport: rawSourceValueSchema.optional(),
-  rawSubSport: rawSourceValueSchema.optional(),
+  rawType: segmentRawSourceValueSchema.optional(),
+  rawSport: segmentRawSourceValueSchema.optional(),
+  rawSubSport: segmentRawSourceValueSchema.optional(),
   startOffsetMs: z.number().int().nonnegative(),
   endOffsetMs: z.number().int().positive(),
   activeMs: z.number().int().nonnegative().optional(),
@@ -39,7 +39,7 @@ const semanticSegmentSchema = z
       .object({
         ...semanticSegmentFields,
         role: z.literal("activity"),
-        category: canonicalSportSchema,
+        activity_category: canonicalActivityCategorySchema,
       })
       .strict(),
     z.object({ ...semanticSegmentFields, role: z.literal("transition") }).strict(),
@@ -331,9 +331,9 @@ export function compareActivityArtifactSemantics(input: {
     if (!actual) return;
     exact(["segments", index, "role"], expected.role, actual.role);
     exact(
-      ["segments", index, "category"],
-      expected.role === "activity" ? expected.category : undefined,
-      actual.role === "activity" ? actual.category : undefined,
+      ["segments", index, "activity_category"],
+      expected.role === "activity" ? expected.activity_category : undefined,
+      actual.role === "activity" ? actual.activity_category : undefined,
     );
     exact(["segments", index, "rawType"], expected.rawType, actual.rawType);
     exact(["segments", index, "rawSport"], expected.rawSport, actual.rawSport);

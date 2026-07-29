@@ -60,14 +60,19 @@ function completeSourceCoverage() {
 }
 
 function availableLoad(
-  input: { sport?: "bike" | "run"; load?: number; duration?: number; fingerprint?: string } = {},
+  input: {
+    activity_category?: "bike" | "run";
+    load?: number;
+    duration?: number;
+    fingerprint?: string;
+  } = {},
 ): CommonLoadResult {
   const duration = input.duration ?? 3600;
   const load = input.load ?? 64;
-  const sport = input.sport ?? "bike";
-  const method = sport === "run" ? "run_pace_threshold" : "power_threshold";
+  const activity_category = input.activity_category ?? "bike";
+  const method = activity_category === "run" ? "run_pace_threshold" : "power_threshold";
   const thresholdEvidence =
-    sport === "run"
+    activity_category === "run"
       ? {
           type: "threshold_speed_mps" as const,
           value: 4,
@@ -78,7 +83,7 @@ function availableLoad(
     status: "available",
     model: "gradientpeak_relative_load",
     version: "1",
-    sport,
+    activity_category,
     method,
     load,
     intensity: Math.sqrt(load / (100 * (duration / 3600))),
@@ -94,7 +99,7 @@ function availableLoad(
       calculationVersion: "1",
       sourceFingerprint: "threshold-evidence",
     },
-    evidenceFingerprint: input.fingerprint ?? `${sport}-activity-evidence`,
+    evidenceFingerprint: input.fingerprint ?? `${activity_category}-activity-evidence`,
     computedAsOf: "2026-07-20T12:00:00.000Z",
     estimated: false,
   };
@@ -118,7 +123,7 @@ function unavailableLoad(): CommonLoadResult {
     status: "unavailable",
     model: "gradientpeak_relative_load",
     version: "1",
-    sport: "bike",
+    activity_category: "bike",
     method: "power_threshold",
     quality: null,
     thresholdEvidence: null,
@@ -138,7 +143,7 @@ function summary(
   return {
     activity_id: activityId,
     segment_id: segmentId,
-    category: commonLoad.sport,
+    activity_category: commonLoad.activity_category,
     tss: null,
     tss_identity: null,
     intensity_factor: null,
@@ -392,15 +397,15 @@ describe("common Load history", () => {
     expect(result).toMatchObject({ status: "unavailable", reason: "incomplete_observation" });
   });
 
-  it("aggregates cross-sport activities on one observed day", () => {
+  it("aggregates cross-category activities on one observed day", () => {
     const observations = buildCommonLoadHistoryObservations({
       activities: [
         { id: "bike", started_at: new Date("2026-07-20T08:00:00.000Z") },
         { id: "run", started_at: new Date("2026-07-20T12:00:00.000Z") },
       ],
       segmentSummaries: [
-        summary("bike", "bike-1", availableLoad({ sport: "bike", load: 64 })),
-        summary("run", "run-1", availableLoad({ sport: "run", load: 36 })),
+        summary("bike", "bike-1", availableLoad({ activity_category: "bike", load: 64 })),
+        summary("run", "run-1", availableLoad({ activity_category: "run", load: 36 })),
       ],
       currentPlanningDate: CURRENT_DATE,
       planningTimezone: "UTC",
@@ -471,7 +476,7 @@ describe("common Load history", () => {
     expect(changedThreshold?.evidenceFingerprints).not.toEqual(day.evidenceFingerprints);
   });
 
-  it("groups cross-sport segments into one multisport activity before daily aggregation", () => {
+  it("groups cross-category segments into one multisport activity before daily aggregation", () => {
     const observations = buildCommonLoadHistoryObservations({
       activities: [{ id: "multi", started_at: new Date("2026-07-20T08:00:00.000Z") }],
       segmentSummaries: [
@@ -479,7 +484,7 @@ describe("common Load history", () => {
         summary(
           "multi",
           "two",
-          availableLoad({ sport: "run", load: 32, duration: 1800, fingerprint: "two" }),
+          availableLoad({ activity_category: "run", load: 32, duration: 1800, fingerprint: "two" }),
         ),
       ],
       currentPlanningDate: CURRENT_DATE,

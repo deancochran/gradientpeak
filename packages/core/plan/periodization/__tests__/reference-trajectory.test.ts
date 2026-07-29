@@ -21,11 +21,11 @@ function buildTrajectoryFixture(args: {
   const resolvedDemands = goals
     .map((goal) => resolveEventDemand(goal))
     .flatMap((result) => (result.status === "supported" ? [result.demand] : []));
-  const primarySport = resolvedDemands[0]?.sport ?? "run";
+  const primaryActivityCategory = resolvedDemands[0]?.activity_category ?? "run";
   const constraintProfile = resolveConstraintProfile({
     optimizationProfile: "balanced",
     preferenceProfile,
-    sport: primarySport,
+    activity_category: primaryActivityCategory,
   });
   const endGoalDate = goals[goals.length - 1]?.target_date ?? args.endDate;
   const weeksToPeak = Math.max(

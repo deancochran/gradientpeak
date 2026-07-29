@@ -14,7 +14,7 @@ function candidate(
   return {
     template_id: runTemplateId,
     template_name: "Run aerobic",
-    sport: "run",
+    activity_category: "run",
     source_file: "fixture",
     execution_context: "outdoor",
     session_archetype: "aerobic_endurance",
@@ -25,7 +25,6 @@ function candidate(
     duration_band: "medium",
     load_band: "moderate",
     recovery_cost_band: "moderate",
-    category_composition: ["run"],
     normalized_structure: {},
     structure_signature: "{}",
     primary_work_signature: "[]",
@@ -161,11 +160,11 @@ describe("projectCanonicalTrainingPlan", () => {
     });
   });
 
-  it("does not use cross-sport fallback and reports the unresolved coverage cell", () => {
+  it("does not use cross-category fallback and reports the unresolved coverage cell", () => {
     const result = projectCanonicalTrainingPlan({
       planId,
       projection,
-      candidates: [candidate({ sport: "bike" })],
+      candidates: [candidate({ activity_category: "bike" })],
       dailyLoadPoints: [
         {
           date: "2026-01-06",
@@ -184,9 +183,9 @@ describe("projectCanonicalTrainingPlan", () => {
       unresolved: [
         {
           date: "2026-01-06",
-          sport: "run",
+          activity_category: "run",
           focus: "endurance",
-          reason: "missing_exact_sport_focus_coverage",
+          reason: "missing_exact_activity_category_focus_coverage",
         },
       ],
     });

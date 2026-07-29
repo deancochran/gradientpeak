@@ -328,7 +328,7 @@ export class LocationManager {
         },
         // Enable pausesLocationUpdatesAutomatically only on iOS
         pausesUpdatesAutomatically: false,
-        // Activity type for better battery management
+        // Expo activity hint for better battery management
         activityType: Location.ActivityType.Fitness,
       });
 

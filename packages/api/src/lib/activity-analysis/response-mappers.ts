@@ -5,7 +5,7 @@ import type { SegmentDerivedSummary } from "./derived";
 function toPublicSegmentLoad(summary: SegmentDerivedSummary) {
   return {
     segment_id: summary.segment_id,
-    category: summary.category,
+    activity_category: summary.activity_category,
     tss: summary.tss,
     tss_identity: summary.tss_identity,
     intensity_factor: summary.intensity_factor,

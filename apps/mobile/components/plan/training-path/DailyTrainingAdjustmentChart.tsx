@@ -45,6 +45,8 @@ export type DailyTrainingAdjustmentPoint = {
   effectiveCompletedLoad?: number | null;
   effectiveRemainingLoad?: number | null;
   effectiveTentativeLoad?: number | null;
+  recommendedLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
+  recommendedLoad?: number | null;
   plannedLoadTss?: number | null;
   tentativePlannedLoadTss?: number | null;
   completedLoadTss?: number | null;

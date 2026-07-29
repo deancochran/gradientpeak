@@ -17,7 +17,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   outputDir: "test-results/",
   webServer: {
-    command: "pnpm test:serve",
+    command: "pnpm dev:e2e",
     env: {
       ...process.env,
       DATABASE_URL: process.env.DATABASE_URL ?? process.env.POSTGRES_URL ?? localDatabaseUrl,

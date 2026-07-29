@@ -58,7 +58,7 @@ export interface ActivitySession {
 export interface ActivitySegment {
   sessionMessageIndex: number;
   role: "activity" | "transition" | "rest" | "unknown";
-  category?: "run" | "bike" | "swim" | "strength" | "other";
+  activity_category?: "run" | "bike" | "swim" | "strength" | "other";
   rawSport?: string | number;
   rawSubSport?: string | number;
   startTime: Date;

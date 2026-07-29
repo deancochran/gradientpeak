@@ -148,10 +148,10 @@ function submissionReducer(state: SubmissionState, action: Action): SubmissionSt
 }
 
 function buildDefaultActivityName(artifact: RecordingSessionArtifact): string {
-  const category = artifact.snapshot.activity.category;
+  const activity_category = artifact.snapshot.activity.activity_category;
   const gpsLabel = artifact.snapshot.activity.gpsMode === "on" ? "GPS ON" : "GPS OFF";
 
-  return `${category} (${gpsLabel}) - ${new Date(
+  return `${activity_category} (${gpsLabel}) - ${new Date(
     artifact.snapshot.identity.startedAt,
   ).toLocaleDateString()}`;
 }
@@ -167,7 +167,7 @@ function buildActivityFromArtifact(args: {
     startedAt: new Date(artifact.snapshot.identity.startedAt),
     finishedAt: new Date(artifact.completedAt),
     name: buildDefaultActivityName(artifact),
-    activityType: artifact.snapshot.activity.category,
+    activityCategory: artifact.snapshot.activity.activity_category,
     durationSeconds: artifact.finalStats.durationSeconds,
     movingSeconds: artifact.finalStats.movingSeconds,
     distanceMeters: Math.round(artifact.finalStats.distanceMeters),
@@ -182,7 +182,7 @@ function toQueueDraft(activity: PreparedRecordedActivityDraft) {
     startedAt: activity.startedAt.toISOString(),
     finishedAt: activity.finishedAt.toISOString(),
     name: activity.name,
-    activityType: activity.activityType,
+    activity_category: activity.activityCategory,
     durationSeconds: activity.durationSeconds,
     movingSeconds: activity.movingSeconds,
     distanceMeters: activity.distanceMeters,
@@ -205,7 +205,7 @@ function buildQueueJob(args: {
   }
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     id: artifactId,
     artifactId,
     sessionId: args.artifact.sessionId,

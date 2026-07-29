@@ -49,7 +49,7 @@ export function toEstimationActivityPlan(input: {
   structure: unknown;
 }): CoreEstimationActivityPlanInput {
   return {
-    activity_category: compileActivityPlanV3(input.structure).primaryCategory,
+    activity_category: compileActivityPlanV3(input.structure).activity_category,
     structure: input.structure as CoreEstimationActivityPlanInput["structure"],
   };
 }
@@ -251,7 +251,7 @@ function resolveEstimationThresholds(
         });
         return [
           {
-            sport: "bike" as const,
+            activity_category: "bike" as const,
             metric: "power" as const,
             value,
             durationSeconds: 1200,
@@ -278,7 +278,7 @@ function resolveEstimationThresholds(
         });
         return [
           {
-            sport: effort.activity_category,
+            activity_category: effort.activity_category,
             metric: "speed" as const,
             value,
             durationSeconds: 1200,
@@ -313,7 +313,9 @@ export type ActivityPlanWithEstimation<
   estimation_warnings: string[];
   counts_toward_aggregation: boolean;
   category_loads: Array<{
-    category: NonNullable<ReturnType<typeof estimateActivity>["categoryDoses"]>[number]["category"];
+    activity_category: NonNullable<
+      ReturnType<typeof estimateActivity>["categoryDoses"]
+    >[number]["activity_category"];
     tss: number | null;
     intensity_factor: number | null;
     method: "power_threshold" | null;
@@ -352,7 +354,7 @@ export function buildEstimatedPlan<TPlan extends EstimationActivityPlanInput>(
     estimation_warnings: estimation.warnings ?? [],
     counts_toward_aggregation: estimation.tss !== null,
     category_loads: (estimation.categoryDoses ?? []).map((dose) => ({
-      category: dose.category,
+      activity_category: dose.activity_category,
       tss: dose.tss,
       intensity_factor: dose.intensityFactor,
       method: dose.tss === null ? null : "power_threshold",

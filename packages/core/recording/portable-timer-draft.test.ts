@@ -13,7 +13,7 @@ const sessionSnapshot: RecordingSessionSnapshot = {
     startedAt: "2026-07-17T12:00:00.000Z",
   },
   activity: {
-    category: "bike",
+    activity_category: "bike",
     mode: "free",
     gpsMode: "off",
     eventId: null,

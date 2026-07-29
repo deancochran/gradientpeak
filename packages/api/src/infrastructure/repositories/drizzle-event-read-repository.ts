@@ -1,4 +1,4 @@
-import { compileActivityPlanV3 } from "@repo/core/activity-plan";
+import { getScheduledDateKey } from "@repo/core/utils/schedule-date";
 import { type DrizzleDbClient, schema } from "@repo/db";
 import {
   and,
@@ -13,6 +13,7 @@ import {
   isNull,
   lt,
   lte,
+  ne,
   or,
   sql,
 } from "drizzle-orm";
@@ -20,7 +21,10 @@ import {
   getCurrentPlanningWeek,
   getPlanningDateRange,
 } from "../../application/training-plan/current-planning-week";
-import {} from "../../lib/activity-analysis";
+import {
+  toActivityPlanExecutionDto,
+  toAvailableActivityPlanExecutionDto,
+} from "../../dto/activity-plan";
 import type { EventReadRepository } from "../../repositories";
 import {
   filterSupersededProfileOverrides,
@@ -44,15 +48,21 @@ function addCalendarDays(date: string, days: number): string {
   return value.toISOString().slice(0, 10);
 }
 
-function serializeActivityPlanRow(activityPlan: typeof schema.activityPlans.$inferSelect | null) {
+function serializeActivityPlanRow(
+  activityPlan: typeof schema.activityPlans.$inferSelect | null,
+  invalidPlan: "null" | "throw" = "null",
+) {
   if (!activityPlan) {
     return null;
   }
 
+  const plan =
+    invalidPlan === "throw"
+      ? toActivityPlanExecutionDto(activityPlan)
+      : toAvailableActivityPlanExecutionDto(activityPlan);
+  if (!plan) return null;
   return {
-    ...activityPlan,
-    categories: compileActivityPlanV3(activityPlan.structure).categories,
-    primary_category: compileActivityPlanV3(activityPlan.structure).primaryCategory,
+    ...plan,
     created_at: activityPlan.created_at.toISOString(),
     updated_at: activityPlan.updated_at.toISOString(),
   };
@@ -73,34 +83,37 @@ function serializeActivityRouteRow(
   };
 }
 
-function serializeEventRow(row: {
-  activity_plan_id: string | null;
-  route_id: string | null;
-  activity_plan: typeof schema.activityPlans.$inferSelect | null;
-  activity_route: typeof schema.activityRoutes.$inferSelect | null;
-  all_day: boolean | null;
-  created_at: Date;
-  description: string | null;
-  ends_at: Date | null;
-  event_type: "planned" | "race_target" | "custom" | "imported";
-  id: string;
-  linked_activity_id: string | null;
-  notes: string | null;
-  occurrence_key: string | null;
-  original_starts_at: Date | null;
-  profile_id: string;
-  recurrence_rule: string | null;
-  recurrence_timezone: string | null;
-  scheduled_date: string;
-  series_id: string | null;
-  source_provider: string | null;
-  starts_at: Date;
-  status: "scheduled" | "completed" | "cancelled" | null;
-  timezone: string | null;
-  title: string | null;
-  training_plan_id: string | null;
-  updated_at: Date;
-}) {
+function serializeEventRow(
+  row: {
+    activity_plan_id: string | null;
+    route_id: string | null;
+    activity_plan: typeof schema.activityPlans.$inferSelect | null;
+    activity_route: typeof schema.activityRoutes.$inferSelect | null;
+    all_day: boolean | null;
+    created_at: Date;
+    description: string | null;
+    ends_at: Date | null;
+    event_type: "planned" | "race_target" | "custom" | "imported";
+    id: string;
+    linked_activity_id: string | null;
+    notes: string | null;
+    occurrence_key: string | null;
+    original_starts_at: Date | null;
+    profile_id: string;
+    recurrence_rule: string | null;
+    recurrence_timezone: string | null;
+    scheduled_date: string;
+    series_id: string | null;
+    source_provider: string | null;
+    starts_at: Date;
+    status: "scheduled" | "completed" | "cancelled" | null;
+    timezone: string | null;
+    title: string | null;
+    training_plan_id: string | null;
+    updated_at: Date;
+  },
+  invalidPlan: "null" | "throw" = "null",
+) {
   const { activity_route: _activityRoute, ...event } = row;
   return {
     ...event,
@@ -121,7 +134,7 @@ function serializeEventRow(row: {
     ends_at: row.ends_at?.toISOString() ?? null,
     original_starts_at: row.original_starts_at?.toISOString() ?? null,
     updated_at: row.updated_at.toISOString(),
-    activity_plan: serializeActivityPlanRow(row.activity_plan),
+    activity_plan: serializeActivityPlanRow(row.activity_plan, invalidPlan),
     route: serializeActivityRouteRow(row.activity_route),
   };
 }
@@ -195,6 +208,12 @@ export function createEventReadRepository(
         return {
           activities: [],
           events: [],
+          recommendationEvents: [],
+          recommendationSource: {
+            scheduleBatchId: null,
+            status: "complete" as const,
+            trainingPlanId: null,
+          },
           planningTimezone,
           resolvedRange: { startDate: null, endDate: null },
           sourceCounts: { activities: 0, events: 0 },
@@ -202,6 +221,7 @@ export function createEventReadRepository(
         };
       }
       const { startDate, endDate } = range;
+      const planningDate = getScheduledDateKey(asOf.toISOString(), planningTimezone);
       const envelopeStart = getPlanningDateRange({
         startDate: addCalendarDays(startDate, -1),
         endDate: addCalendarDays(startDate, -1),
@@ -213,7 +233,63 @@ export function createEventReadRepository(
         timezone: planningTimezone,
       }).endExclusiveInstant;
       const boundedLimit = 10_001;
-      const [eventRows, activityRows] = await Promise.all([
+      const activePlanEvent = await db
+        .select({
+          schedule_batch_id: schema.events.schedule_batch_id,
+          training_plan_id: schema.events.training_plan_id,
+        })
+        .from(schema.events)
+        .where(
+          and(
+            eq(schema.events.profile_id, profileId),
+            eq(schema.events.event_type, "planned"),
+            isNotNull(schema.events.training_plan_id),
+            gte(schema.events.scheduled_date, planningDate),
+            or(isNull(schema.events.status), ne(schema.events.status, "cancelled")),
+          ),
+        )
+        .orderBy(
+          asc(schema.events.scheduled_date),
+          asc(schema.events.starts_at),
+          asc(schema.events.id),
+        )
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
+      const activeTrainingPlanId = activePlanEvent?.training_plan_id ?? null;
+      const activeScheduleBatchId = activePlanEvent?.schedule_batch_id ?? null;
+      const recommendationQuery = activeTrainingPlanId
+        ? db
+            .select({
+              ...eventColumns,
+              activity_plan: schema.activityPlans,
+              activity_route: schema.activityRoutes,
+            })
+            .from(schema.events)
+            .leftJoin(
+              schema.activityPlans,
+              eq(schema.events.activity_plan_id, schema.activityPlans.id),
+            )
+            .leftJoin(schema.activityRoutes, eq(schema.events.route_id, schema.activityRoutes.id))
+            .where(
+              and(
+                eq(schema.events.profile_id, profileId),
+                eq(schema.events.event_type, "planned"),
+                eq(schema.events.training_plan_id, activeTrainingPlanId),
+                // Recommendation is the original applied prescription, not execution state.
+                // Keep moved/completed/cancelled items here; effective composition handles status.
+                activeScheduleBatchId
+                  ? eq(schema.events.schedule_batch_id, activeScheduleBatchId)
+                  : isNull(schema.events.schedule_batch_id),
+              ),
+            )
+            .orderBy(
+              asc(schema.events.scheduled_date),
+              asc(schema.events.starts_at),
+              asc(schema.events.id),
+            )
+            .limit(boundedLimit)
+        : Promise.resolve([]);
+      const [eventRows, activityRows, recommendationRows] = await Promise.all([
         db
           .select({
             ...eventColumns,
@@ -252,12 +328,23 @@ export function createEventReadRepository(
           )
           .orderBy(asc(schema.activities.started_at), asc(schema.activities.id))
           .limit(boundedLimit),
+        recommendationQuery,
       ]);
       const activitiesStatus = activityRows.length === boundedLimit ? "partial" : "complete";
       const scheduledItemsStatus = eventRows.length === boundedLimit ? "partial" : "complete";
+      const recommendationStatus =
+        recommendationRows.length === boundedLimit ? "partial" : "complete";
       return {
         activities: activityRows.slice(0, boundedLimit - 1),
         events: eventRows.slice(0, boundedLimit - 1).map((row) => serializeEventRow(row)),
+        recommendationEvents: recommendationRows
+          .slice(0, boundedLimit - 1)
+          .map((row) => serializeEventRow(row)),
+        recommendationSource: {
+          scheduleBatchId: activeScheduleBatchId,
+          status: recommendationStatus,
+          trainingPlanId: activeTrainingPlanId,
+        },
         planningTimezone,
         resolvedRange: { startDate, endDate },
         sourceCounts: {
@@ -284,7 +371,7 @@ export function createEventReadRepository(
         .where(and(eq(schema.events.id, eventId), eq(schema.events.profile_id, profileId)))
         .limit(1);
 
-      return row ? serializeEventRow(row) : null;
+      return row ? serializeEventRow(row, "throw") : null;
     },
 
     async countOwnedEventsInRange({ profileId, startsAtGte, startsAtLt }) {
@@ -340,6 +427,53 @@ export function createEventReadRepository(
         .orderBy(asc(schema.events.starts_at));
 
       return rows.map((row) => ({ starts_at: row.starts_at.toISOString() }));
+    },
+
+    async listOwnedPlannedEventsForDay({ date, limit, profileId }) {
+      const boundedEvents = db.$with("bounded_planned_day_events").as(
+        db
+          .select({
+            activity_plan_id: schema.events.activity_plan_id,
+            id: schema.events.id,
+            starts_at: schema.events.starts_at,
+          })
+          .from(schema.events)
+          .where(
+            and(
+              eq(schema.events.profile_id, profileId),
+              eq(schema.events.event_type, "planned"),
+              eq(schema.events.scheduled_date, date),
+              inArray(schema.events.status, ["scheduled", "completed"]),
+            ),
+          )
+          .orderBy(asc(schema.events.starts_at), asc(schema.events.id))
+          .limit(limit),
+      );
+      const rows = await db
+        .with(boundedEvents)
+        .select({
+          activity_plan_id: boundedEvents.activity_plan_id,
+          id: boundedEvents.id,
+          starts_at: boundedEvents.starts_at,
+          activity_plan: {
+            id: schema.activityPlans.id,
+            profile_id: schema.activityPlans.profile_id,
+            name: schema.activityPlans.name,
+            description: schema.activityPlans.description,
+            structure: schema.activityPlans.structure,
+            gps_recording_enabled: schema.activityPlans.gps_recording_enabled,
+            structure_hash: schema.activityPlans.structure_hash,
+            updated_at: schema.activityPlans.updated_at,
+          },
+        })
+        .from(boundedEvents)
+        .leftJoin(schema.activityPlans, eq(boundedEvents.activity_plan_id, schema.activityPlans.id))
+        .orderBy(asc(boundedEvents.starts_at), asc(boundedEvents.id));
+
+      return rows.map((row) => ({
+        ...row,
+        starts_at: row.starts_at.toISOString(),
+      }));
     },
 
     async getValidateConstraintsInputs({ activityPlanId, profileId, trainingPlanId }) {
@@ -707,7 +841,7 @@ export function createEventReadRepository(
       if (input.activityCategory) {
         conditions.push(
           sql`${schema.activityPlans.structure} @> ${JSON.stringify({
-            segments: [{ category: input.activityCategory }],
+            segments: [{ activity_category: input.activityCategory }],
           })}::jsonb`,
         );
       }

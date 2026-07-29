@@ -134,7 +134,7 @@ export function AddActivityModal({
   const canSchedule =
     selectedActivity && (validation?.canSchedule ?? false) && !scheduleMutation.isPending;
 
-  const activities = activitiesData?.items || [];
+  const activities = activitiesData?.items ?? [];
 
   return (
     <Modal
@@ -185,7 +185,9 @@ export function AddActivityModal({
                 <ActivitySelector
                   activities={activities}
                   selectedActivityId={selectedActivity?.id ?? null}
-                  onSelect={setSelectedActivity}
+                  onSelect={(activity) => {
+                    setSelectedActivity(activity);
+                  }}
                   disabled={scheduleMutation.isPending}
                 />
               </View>

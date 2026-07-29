@@ -10,7 +10,7 @@ const plansState = [
     name: "Marathon Build",
     description: "16-week progression",
     template_visibility: "private",
-    sport: ["run"],
+    activity_category: ["run"],
     sessions_per_week_target: 5,
     durationWeeks: { recommended: 16 },
     structure: {

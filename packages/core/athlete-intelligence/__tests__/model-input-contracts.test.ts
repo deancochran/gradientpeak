@@ -31,7 +31,12 @@ function input() {
   const evidence = (
     value: number | null,
     unit: string | null,
-    options: { id?: string; lineage?: string; sport?: string | null; sourceType?: string } = {},
+    options: {
+      id?: string;
+      lineage?: string;
+      activity_category?: string | null;
+      sourceType?: string;
+    } = {},
   ) => {
     const id = options.id ?? `manual:evidence-${nextId++}`;
     evidenceRegistry[id] = {
@@ -40,7 +45,7 @@ function input() {
       lineageGroupId: options.lineage ?? "manual-test:history",
       observedAt: "2026-07-09T12:00:00.000Z",
       rawObservation: { value, unit },
-      sport: options.sport ?? null,
+      activity_category: options.activity_category ?? null,
       modality: "manual",
       sourceType: options.sourceType ?? "manual_observation",
       qualityState: "known",
@@ -57,9 +62,9 @@ function input() {
   const recordSource = (
     id: string,
     lineage: string,
-    sport: string | null = null,
+    activity_category: string | null = null,
     sourceType = "manual_observation",
-  ) => evidence(null, null, { id, lineage, sport, sourceType });
+  ) => evidence(null, null, { id, lineage, activity_category, sourceType });
 
   const activitySourceId = recordSource(
     "activity:ride-1",
@@ -84,7 +89,7 @@ function input() {
   const planSourceId = evidence(null, null, {
     id: "manual:plan-1",
     lineage: "manual-test:race-history",
-    sport: "run",
+    activity_category: "run",
   });
   const preferenceEvidenceId = evidence(null, null);
   const effortDurationId = evidence(300, "seconds");
@@ -127,7 +132,7 @@ function input() {
         lineageGroupId: "activity:ride-history",
         startedAt: "2026-07-09T12:00:00.000Z",
         endedAt: "2026-07-09T13:00:00.000Z",
-        sport: "bike" as const,
+        activity_category: "bike" as const,
         metrics: Object.fromEntries(
           Object.entries(metricUnits).map(([key, unit]) => [
             key,
@@ -155,7 +160,7 @@ function input() {
         lineageGroupId: "manual-test:effort-history",
         activitySourceId: null,
         observedAt: "2026-07-09T10:00:00.000Z",
-        sport: "run" as const,
+        activity_category: "run" as const,
         kind: "speed" as const,
         startOffsetSeconds: {
           value: 0,
@@ -179,7 +184,7 @@ function input() {
         lineageGroupId: "manual-test:event-history",
         targetDate: "2026-10-01",
         priority: 10,
-        goalSport: "run" as const,
+        goalActivityCategory: "run" as const,
         objective: {
           type: "event_performance" as const,
           activity_category: "run" as const,
@@ -194,16 +199,16 @@ function input() {
       athleteId: "athlete-1",
       lineageGroupId: "manual-test:preferences-history",
       evidenceSourceIds: [trainingSourceId],
-      preferredSports: ["run" as const, "bike" as const],
+      preferredActivityCategories: ["run" as const, "bike" as const],
       weeklyTimeWindows: [{ day: "tuesday" as const, startMinuteLocal: 360, endMinuteLocal: 480 }],
       hardRestDays: ["monday" as const],
       maximumWeeklyMinutes: ev(600, "minutes"),
       maximumDailyMinutes: ev(180, "minutes"),
       maximumSessionsPerDay: ev(2, "count"),
       maximumSessionDurationMinutes: ev(150, "minutes"),
-      sportDoseLimits: [
+      activityCategoryDoseLimits: [
         {
-          sport: "run" as const,
+          activity_category: "run" as const,
           maximumWeeklyMinutes: ev(240, "minutes"),
           maximumSessionsPerWeek: ev(4, "count"),
           maximumSessionDurationMinutes: ev(120, "minutes"),
@@ -231,7 +236,7 @@ function input() {
         allDay: false,
         lifecycle: "confirmed" as const,
         eventType: "race" as const,
-        sport: "run" as const,
+        activity_category: "run" as const,
         recurrence: null,
         completionActivitySourceId: null,
         planSourceId,
@@ -256,12 +261,12 @@ function effort(candidate: ReturnType<typeof input>) {
   if (!value) throw new Error("fixture effort missing");
   return value as Omit<
     typeof value,
-    "activitySourceId" | "lineageGroupId" | "observedAt" | "sport"
+    "activitySourceId" | "lineageGroupId" | "observedAt" | "activity_category"
   > & {
     activitySourceId: string | null;
     lineageGroupId: string;
     observedAt: string;
-    sport: "run" | "bike";
+    activity_category: "run" | "bike";
   };
 }
 
@@ -270,10 +275,10 @@ function event(candidate: ReturnType<typeof input>) {
   if (!value) throw new Error("fixture schedule event missing");
   return value as Omit<
     typeof value,
-    "lifecycle" | "sport" | "completionActivitySourceId" | "planSourceId" | "recurrence"
+    "lifecycle" | "activity_category" | "completionActivitySourceId" | "planSourceId" | "recurrence"
   > & {
     lifecycle: "planned" | "confirmed" | "completed" | "cancelled";
-    sport: "run" | "bike" | null;
+    activity_category: "run" | "bike" | null;
     completionActivitySourceId: string | null;
     planSourceId: string | null;
     recurrence: {
@@ -290,7 +295,7 @@ describe("athlete intelligence model input contracts", () => {
     expect(athleteIntelligenceModelInputSchema.safeParse(input()).success).toBe(true);
   });
 
-  it("requires exact identity for numeric activity load and matching activity sport", () => {
+  it("requires exact identity for numeric activity load and matching activity category", () => {
     const missing = input();
     const load = activity(missing).metrics.trainingLoad as {
       value: number | null;
@@ -303,7 +308,7 @@ describe("athlete intelligence model input contracts", () => {
     const mismatchedLoad = activity(mismatched).metrics.trainingLoad as typeof load;
     mismatchedLoad.value = 50;
     mismatchedLoad.identity = {
-      sport: "run",
+      activity_category: "run",
       family: "trimp",
       method: "heart_rate_reserve",
       version: "1",
@@ -321,7 +326,7 @@ describe("athlete intelligence model input contracts", () => {
         identity: unknown;
       }
     ).identity = {
-      sport: "bike",
+      activity_category: "bike",
       family: "tss",
       method: "normalized_power",
       version: "1",
@@ -332,7 +337,7 @@ describe("athlete intelligence model input contracts", () => {
         identity: unknown;
       }
     ).identity = {
-      sport: "bike",
+      activity_category: "bike",
       family: "tss",
       method: "normalized_power",
       version: "1",
@@ -341,16 +346,16 @@ describe("athlete intelligence model input contracts", () => {
     rejects(candidate);
   });
 
-  it("keeps goal sport in the header for every objective discriminant", () => {
+  it("keeps goal activity_category in the header for every objective discriminant", () => {
     const candidate = input();
     const goal = candidate.goals[0];
     if (goal === undefined) throw new Error("fixture goal missing");
     const parsed = goalInputSchema.parse({
       ...goal,
-      goalSport: "bike",
+      goalActivityCategory: "bike",
       objective: { type: "consistency", target_sessions_per_week: 2, target_weeks: 8 },
     });
-    expect(parsed.goalSport).toBe("bike");
+    expect(parsed.goalActivityCategory).toBe("bike");
   });
 
   it("preserves explicit planning and recurrence timezones while accepting prior inputs", () => {
@@ -472,7 +477,7 @@ describe("athlete intelligence model input contracts", () => {
       const candidateActivity = activity(candidate);
       candidateEffort.activitySourceId = candidateActivity.sourceId;
       candidateEffort.lineageGroupId = candidateActivity.lineageGroupId;
-      candidateEffort.sport = "bike";
+      candidateEffort.activity_category = "bike";
       candidateEffort.observedAt = candidateActivity.startedAt;
       mutate(candidate);
       rejects(candidate);
@@ -483,7 +488,7 @@ describe("athlete intelligence model input contracts", () => {
     const cases = [
       ["activity:ride-1", "sourceType", "goal"],
       ["effort:manual-1", "lineageGroupId", "manual-test:wrong"],
-      ["goal:event", "sport", "bike"],
+      ["goal:event", "activity_category", "bike"],
       ["manual:preferences", "sourceType", "goal"],
       ["manual:schedule-race", "sourceType", "manual_observation"],
     ] as const;
@@ -558,7 +563,7 @@ describe("athlete intelligence model input contracts", () => {
       candidateEvent.lifecycle = "completed";
       candidateEvent.startAt = "2026-07-09T11:00:00.000Z";
       candidateEvent.endAt = "2026-07-09T14:00:00.000Z";
-      candidateEvent.sport = index === 2 ? "run" : "bike";
+      candidateEvent.activity_category = index === 2 ? "run" : "bike";
       mutate(candidate);
       rejects(candidate);
     }

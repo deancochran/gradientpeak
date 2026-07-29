@@ -26,12 +26,12 @@ export function ActivityPlanStructure({ structure }: { structure: unknown }) {
   return (
     <Card data-testid="activity-plan-structure">
       <CardHeader>
-        <CardTitle>Workout structure</CardTitle>
+        <CardTitle>Activity structure</CardTitle>
         <CardDescription>Ordered segments, intervals, steps, and targets.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {!parsed.success ? (
-          <p className="text-sm text-destructive">This workout structure cannot be displayed.</p>
+          <p className="text-sm text-destructive">This activity structure cannot be displayed.</p>
         ) : (
           parsed.data.segments.map((segment, segmentIndex) => (
             <section className="rounded-xl border p-4" key={segment.id}>
@@ -40,7 +40,7 @@ export function ActivityPlanStructure({ structure }: { structure: unknown }) {
                 <h3 className="font-semibold">{segment.name}</h3>
                 <Badge variant="secondary">{segment.role}</Badge>
                 {segment.role === "activity" ? (
-                  <Badge variant="outline">{segment.category}</Badge>
+                  <Badge variant="outline">{segment.activity_category}</Badge>
                 ) : null}
               </div>
               {segment.role === "activity" ? (

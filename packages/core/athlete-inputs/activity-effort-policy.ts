@@ -225,7 +225,7 @@ export function classifyActivityEffortPlausibility(
   }
 
   const supportedCombination = isSupportedActivityEffortCombination(input);
-  if (!supportedCombination) reasons.push("unsupported-sport-effort-combination");
+  if (!supportedCombination) reasons.push("unsupported-activity_category-effort-combination");
 
   const valueBounds =
     input.effortType === "heart_rate"

@@ -11,7 +11,7 @@ export const activityCompositionModeSchema = z.enum([
 ]);
 
 export type ActivityCompositionMode = z.infer<typeof activityCompositionModeSchema>;
-type ActivityCategory = NonNullable<ActivitySegmentReadRow["category"]>;
+type ActivityCategory = NonNullable<ActivitySegmentReadRow["activity_category"]>;
 
 export type MatchedCategorySummary = {
   segment_count: number;
@@ -27,7 +27,7 @@ export function describeActivityComposition(segments: readonly ActivitySegmentRe
     .filter((segment) => segment.role === "activity")
     .sort((left, right) => left.ordinal - right.ordinal);
   const activity_categories = activitySegments.flatMap((segment) =>
-    segment.category === null ? [] : [segment.category],
+    segment.activity_category === null ? [] : [segment.activity_category],
   );
   const activity_segment_count = activitySegments.length;
 
@@ -45,15 +45,15 @@ export function describeActivityComposition(segments: readonly ActivitySegmentRe
 
 export function buildActivityCompositionCondition(input: {
   activityId: SQLWrapper;
-  category?: ActivityCategory;
+  activity_category?: ActivityCategory;
   mode?: ActivityCompositionMode;
 }): SQL | undefined {
-  const categoryCondition = input.category
+  const categoryCondition = input.activity_category
     ? sql<boolean>`exists (
         select 1 from ${activitySegments}
         where ${activitySegments.activity_id} = ${input.activityId}
           and ${activitySegments.role} = 'activity'
-          and ${activitySegments.category} = ${input.category}
+          and ${activitySegments.activity_category} = ${input.activity_category}
       )`
     : undefined;
   const activitySegmentCount = sql<number>`(
@@ -79,11 +79,12 @@ function completeTotal(values: readonly (number | null)[]): number | null {
 
 export function summarizeMatchedCategory(input: {
   segments: readonly ActivitySegmentReadRow[];
-  category: ActivityCategory;
+  activity_category: ActivityCategory;
   derivedSegments?: readonly SegmentDerivedSummary[];
 }): MatchedCategorySummary {
   const matching = input.segments.filter(
-    (segment) => segment.role === "activity" && segment.category === input.category,
+    (segment) =>
+      segment.role === "activity" && segment.activity_category === input.activity_category,
   );
   const distanceMeters = matching.map((segment) => {
     const parsed = segmentSummarySchemaV1.safeParse(segment.summary);

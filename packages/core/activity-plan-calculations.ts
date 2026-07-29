@@ -4,14 +4,14 @@ import type {
   CompiledActivityStepOccurrence,
 } from "./activity-plan";
 import { type ActivityPlanDurationSummary, summarizeActivityPlanDuration } from "./duration";
-import type { CanonicalSport } from "./schemas/sport";
+import type { CanonicalActivityCategory } from "./schemas/activity-category";
 
 export type ActivityProfilePoint = {
   occurrenceId: string;
   globalOrdinal: number;
   segmentId: string;
   segmentIndex: number;
-  category: CanonicalSport | null;
+  activity_category: CanonicalActivityCategory | null;
   role: CompiledActivityPlanOccurrence["role"];
   durationSeconds: number | null;
   cumulativeExactSeconds: number | null;
@@ -19,13 +19,13 @@ export type ActivityProfilePoint = {
 };
 
 export type ActivityCategoryDose = {
-  category: CanonicalSport;
+  activity_category: CanonicalActivityCategory;
   occurrenceCount: number;
   timedActiveSeconds: number;
   distanceMeters: number;
   repetitionCount: number;
   openOccurrenceCount: number;
-  /** Cycling-only power evidence. Never combines target domains or sports. */
+  /** Cycling-only power evidence. Never combines target domains or activity_categories. */
   cyclingPower?: {
     averageFtpPercent: number;
     maximumFtpPercent: number;
@@ -34,7 +34,7 @@ export type ActivityCategoryDose = {
     eligibleTimedSeconds: number;
     evidenceCoverage: number;
     complete: boolean;
-    /** Stress for evidence-covered occurrences only; not a complete category load unless `complete`. */
+    /** Stress for evidence-covered occurrences only; not a complete activity_category load unless `complete`. */
     estimatedTss: number;
   };
 };
@@ -56,7 +56,7 @@ export function extractActivityProfile(plan: CompiledActivityPlan): ActivityProf
       globalOrdinal: occurrence.globalOrdinal,
       segmentId: occurrence.segmentId,
       segmentIndex: occurrence.segmentIndex,
-      category: occurrence.category,
+      activity_category: occurrence.activity_category,
       role: occurrence.role,
       durationSeconds,
       cumulativeExactSeconds,
@@ -70,76 +70,81 @@ export function extractActivityProfile(plan: CompiledActivityPlan): ActivityProf
   });
 }
 
-/** Calculates sport-isolated dose; only cycling power has supported load evidence here. */
+/** Calculates activity_category-isolated dose; only cycling power has supported load evidence here. */
 export function calculateActivityPlanStats(
   plan: CompiledActivityPlan,
   options?: { cyclingFtpWatts?: number },
 ): ActivityPlanStats {
   const duration = summarizeActivityPlanDuration(plan);
-  const occurrencesByCategory = new Map<CanonicalSport, CompiledActivityStepOccurrence[]>();
+  const occurrencesByCategory = new Map<
+    CanonicalActivityCategory,
+    CompiledActivityStepOccurrence[]
+  >();
   for (const occurrence of plan.occurrences) {
     if (occurrence.role !== "activity") continue;
-    const categoryOccurrences = occurrencesByCategory.get(occurrence.category) ?? [];
+    const categoryOccurrences = occurrencesByCategory.get(occurrence.activity_category) ?? [];
     categoryOccurrences.push(occurrence);
-    occurrencesByCategory.set(occurrence.category, categoryOccurrences);
+    occurrencesByCategory.set(occurrence.activity_category, categoryOccurrences);
   }
 
-  const categoryDoses = duration.categories.map<ActivityCategoryDose>((categoryDuration) => {
-    const occurrences = occurrencesByCategory.get(categoryDuration.category) ?? [];
-    const dose: ActivityCategoryDose = {
-      ...categoryDuration,
-      occurrenceCount: occurrences.length,
-    };
-    if (categoryDuration.category !== "bike") return dose;
-
-    let weightedFtpPercent = 0;
-    let evidenceSeconds = 0;
-    const eligibleTimedSeconds = occurrences.reduce(
-      (total, occurrence) =>
-        total + (occurrence.duration.type === "time" ? occurrence.duration.seconds : 0),
-      0,
-    );
-    let maximumFtpPercent = 0;
-    let highIntensityOccurrenceCount = 0;
-    let estimatedTss = 0;
-    for (const occurrence of occurrences) {
-      if (occurrence.duration.type !== "time") continue;
-      const target = occurrence.targets.find(
-        (candidate) => candidate.type === "%FTP" || candidate.type === "watts",
-      );
-      if (!target) continue;
-      const ftpPercent =
-        target.type === "%FTP"
-          ? target.intensity
-          : options?.cyclingFtpWatts
-            ? (target.intensity / options.cyclingFtpWatts) * 100
-            : null;
-      if (ftpPercent === null) continue;
-      weightedFtpPercent += ftpPercent * occurrence.duration.seconds;
-      evidenceSeconds += occurrence.duration.seconds;
-      estimatedTss += (occurrence.duration.seconds / 3600) * (ftpPercent / 100) ** 2 * 100;
-      maximumFtpPercent = Math.max(maximumFtpPercent, ftpPercent);
-      if (ftpPercent > 85) highIntensityOccurrenceCount += 1;
-    }
-    if (evidenceSeconds > 0) {
-      const averageFtpPercent = weightedFtpPercent / evidenceSeconds;
-      dose.cyclingPower = {
-        averageFtpPercent,
-        maximumFtpPercent,
-        highIntensityOccurrenceCount,
-        evidenceSeconds,
-        eligibleTimedSeconds,
-        evidenceCoverage: eligibleTimedSeconds > 0 ? evidenceSeconds / eligibleTimedSeconds : 0,
-        complete:
-          evidenceSeconds === eligibleTimedSeconds &&
-          categoryDuration.distanceMeters === 0 &&
-          categoryDuration.repetitionCount === 0 &&
-          categoryDuration.openOccurrenceCount === 0,
-        estimatedTss: Math.round(estimatedTss * 10_000) / 10_000,
+  const categoryDoses = duration.activity_categories.map<ActivityCategoryDose>(
+    (categoryDuration) => {
+      const occurrences = occurrencesByCategory.get(categoryDuration.activity_category) ?? [];
+      const dose: ActivityCategoryDose = {
+        ...categoryDuration,
+        occurrenceCount: occurrences.length,
       };
-    }
-    return dose;
-  });
+      if (categoryDuration.activity_category !== "bike") return dose;
+
+      let weightedFtpPercent = 0;
+      let evidenceSeconds = 0;
+      const eligibleTimedSeconds = occurrences.reduce(
+        (total, occurrence) =>
+          total + (occurrence.duration.type === "time" ? occurrence.duration.seconds : 0),
+        0,
+      );
+      let maximumFtpPercent = 0;
+      let highIntensityOccurrenceCount = 0;
+      let estimatedTss = 0;
+      for (const occurrence of occurrences) {
+        if (occurrence.duration.type !== "time") continue;
+        const target = occurrence.targets.find(
+          (candidate) => candidate.type === "%FTP" || candidate.type === "watts",
+        );
+        if (!target) continue;
+        const ftpPercent =
+          target.type === "%FTP"
+            ? target.intensity
+            : options?.cyclingFtpWatts
+              ? (target.intensity / options.cyclingFtpWatts) * 100
+              : null;
+        if (ftpPercent === null) continue;
+        weightedFtpPercent += ftpPercent * occurrence.duration.seconds;
+        evidenceSeconds += occurrence.duration.seconds;
+        estimatedTss += (occurrence.duration.seconds / 3600) * (ftpPercent / 100) ** 2 * 100;
+        maximumFtpPercent = Math.max(maximumFtpPercent, ftpPercent);
+        if (ftpPercent > 85) highIntensityOccurrenceCount += 1;
+      }
+      if (evidenceSeconds > 0) {
+        const averageFtpPercent = weightedFtpPercent / evidenceSeconds;
+        dose.cyclingPower = {
+          averageFtpPercent,
+          maximumFtpPercent,
+          highIntensityOccurrenceCount,
+          evidenceSeconds,
+          eligibleTimedSeconds,
+          evidenceCoverage: eligibleTimedSeconds > 0 ? evidenceSeconds / eligibleTimedSeconds : 0,
+          complete:
+            evidenceSeconds === eligibleTimedSeconds &&
+            categoryDuration.distanceMeters === 0 &&
+            categoryDuration.repetitionCount === 0 &&
+            categoryDuration.openOccurrenceCount === 0,
+          estimatedTss: Math.round(estimatedTss * 10_000) / 10_000,
+        };
+      }
+      return dose;
+    },
+  );
 
   return { occurrenceCount: plan.occurrences.length, duration, categoryDoses };
 }

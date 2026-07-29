@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { compileRecordingPlan, createFreeRecordingExecutionPlan } from "./plan";
 import { PlanExecution } from "./planExecution";
 
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
@@ -9,7 +10,7 @@ const structure = {
       id: id(1),
       role: "activity" as const,
       name: "Run",
-      category: "run" as const,
+      activity_category: "run" as const,
       intervals: [
         {
           id: id(2),
@@ -27,27 +28,21 @@ const structure = {
       ],
     },
     {
-      id: id(4),
-      role: "transition" as const,
-      name: "Change",
-      duration: { type: "time" as const, seconds: 30 },
-    },
-    {
       id: id(5),
       role: "activity" as const,
-      name: "Bike",
-      category: "bike" as const,
+      name: "Run steady",
+      activity_category: "run" as const,
       intervals: [
         {
           id: id(6),
-          name: "Bike",
+          name: "Run steady",
           repetitions: 1,
           steps: [
             {
               id: id(7),
-              name: "Ride",
+              name: "Run steady",
               duration: { type: "untilFinished" as const },
-              targets: [{ type: "%FTP" as const, intensity: 70 }],
+              targets: [{ type: "RPE" as const, intensity: 5 }],
             },
           ],
         },
@@ -63,7 +58,7 @@ const structure = {
       id: id(9),
       role: "activity" as const,
       name: "Run again",
-      category: "run" as const,
+      activity_category: "run" as const,
       intervals: [
         {
           id: id(10),
@@ -84,18 +79,44 @@ const structure = {
 };
 
 describe("PlanExecution V3", () => {
-  it("uses Core occurrence identity/global order and preserves repeated categories", () => {
+  it("creates a stable, single-segment execution structure for a free recording", () => {
+    const freeRun = createFreeRecordingExecutionPlan("run");
+    const freeRunAgain = createFreeRecordingExecutionPlan("run");
+    const compiled = compileRecordingPlan(freeRun);
+
+    expect(freeRun).toEqual(freeRunAgain);
+    expect(freeRun.id).toBeUndefined();
+    expect(freeRun.structure).toMatchObject({
+      version: 3,
+      segments: [
+        {
+          role: "activity",
+          activity_category: "run",
+          intervals: [{ repetitions: 1, steps: [{ duration: { type: "untilFinished" } }] }],
+        },
+      ],
+    });
+    expect(compiled.occurrences).toHaveLength(1);
+    expect(compiled.occurrences[0]).toMatchObject({
+      globalOrdinal: 0,
+      role: "activity",
+      activity_category: "run",
+    });
+  });
+
+  it("uses Core occurrence identity/global order for canonical same-activity_category segments", () => {
     const execution = new PlanExecution();
-    execution.loadPlan({ name: "Brick", structure });
+    execution.loadPlan({ name: "Run plan", structure });
     expect(
-      execution.getAllSteps().map((item) => [item.globalOrdinal, item.role, item.category]),
+      execution
+        .getAllSteps()
+        .map((item) => [item.globalOrdinal, item.role, item.activity_category]),
     ).toEqual([
       [0, "activity", "run"],
       [1, "activity", "run"],
-      [2, "transition", null],
-      [3, "activity", "bike"],
-      [4, "rest", null],
-      [5, "activity", "run"],
+      [2, "activity", "run"],
+      [3, "rest", null],
+      [4, "activity", "run"],
     ]);
     expect(execution.getAllSteps()[0]?.occurrenceId).toContain(`${id(1)}:${id(2)}:0:${id(3)}`);
     expect(execution.getAllSteps()[1]?.occurrenceId).toContain(`${id(1)}:${id(2)}:1:${id(3)}`);
@@ -103,7 +124,7 @@ describe("PlanExecution V3", () => {
 
   it("does not guess distance progression from elapsed time", () => {
     const execution = new PlanExecution();
-    execution.loadPlan({ name: "Brick", structure });
+    execution.loadPlan({ name: "Run plan", structure });
     execution.resetForRecordingStart(0, 50);
     expect(execution.getStepProgress(60_000, 50)?.progress).toBe(0);
     expect(execution.getStepProgress(60_000, 150)?.canAutoAdvance).toBe(true);
@@ -111,13 +132,13 @@ describe("PlanExecution V3", () => {
 
   it("restores exact mid-distance and mid-time occurrence counters after process death", () => {
     const execution = new PlanExecution();
-    execution.loadPlan({ name: "Brick", structure });
+    execution.loadPlan({ name: "Run plan", structure });
     const distanceOccurrence = execution.getAllSteps()[0];
     if (!distanceOccurrence) throw new Error("missing distance occurrence");
     execution.restoreOccurrence(distanceOccurrence.occurrenceId, 20_000, 400);
     expect(execution.getStepProgress(35_000, 445)?.progress).toBe(0.45);
 
-    const timeOccurrence = execution.getAllSteps()[5];
+    const timeOccurrence = execution.getAllSteps()[4];
     if (!timeOccurrence) throw new Error("missing time occurrence");
     execution.restoreOccurrence(timeOccurrence.occurrenceId, 80_000, 900);
     expect(execution.getStepProgress(88_000, 940)?.progress).toBe(0.4);
@@ -125,9 +146,9 @@ describe("PlanExecution V3", () => {
 
   it("allows manual occurrences and the final occurrence through user advance only", () => {
     const execution = new PlanExecution();
-    execution.loadPlan({ name: "Brick", structure });
-    const manualOccurrence = execution.getAllSteps()[3];
-    const finalOccurrence = execution.getAllSteps()[5];
+    execution.loadPlan({ name: "Run plan", structure });
+    const manualOccurrence = execution.getAllSteps()[2];
+    const finalOccurrence = execution.getAllSteps()[4];
     if (!manualOccurrence || !finalOccurrence) throw new Error("missing occurrence fixture");
 
     execution.restoreOccurrence(manualOccurrence.occurrenceId, 0, 0);

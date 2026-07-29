@@ -17,7 +17,7 @@ const phaseToneClass: Record<TrainingPlanVisualPhase, string> = {
   maintain: "bg-slate-500/25",
 };
 
-const sportAccentClasses: Record<string, string> = {
+const activityCategoryAccentClasses: Record<string, string> = {
   bike: "bg-blue-500",
   cycling: "bg-blue-500",
   mixed: "bg-zinc-400",
@@ -30,8 +30,8 @@ const sportAccentClasses: Record<string, string> = {
   triathlon: "bg-fuchsia-500",
 };
 
-function getSportAccentClass(sport: string) {
-  return sportAccentClasses[sport] ?? "bg-primary";
+function getActivityCategoryAccentClass(activity_category: string) {
+  return activityCategoryAccentClasses[activity_category] ?? "bg-primary";
 }
 
 export function TrainingPlanPeriodizationPreview({
@@ -47,7 +47,7 @@ export function TrainingPlanPeriodizationPreview({
       <View className={`${compact ? "px-3 pb-3 pt-3" : "px-3 pb-3 pt-4"}`}>
         <View className={`flex-row items-end gap-1 ${compact ? "h-28" : "h-32"}`}>
           {model.segments.map((segment) => {
-            const sportMixEntries = Object.entries(segment.sportMix)
+            const activityCategoryMixEntries = Object.entries(segment.activityCategoryMix)
               .filter(([, value]) => value > 0)
               .sort((left, right) => right[1] - left[1]);
             const totalSegmentCount = model.segments.length;
@@ -143,11 +143,11 @@ export function TrainingPlanPeriodizationPreview({
                   <View
                     className={`mt-1 ${accentHeightClass} ${widthClass} flex-row overflow-hidden rounded-full bg-muted/35`}
                   >
-                    {sportMixEntries.length > 0 ? (
-                      sportMixEntries.map(([sport, value]) => (
-                        <Fragment key={`${segment.index}-${sport}`}>
+                    {activityCategoryMixEntries.length > 0 ? (
+                      activityCategoryMixEntries.map(([activity_category, value]) => (
+                        <Fragment key={`${segment.index}-${activity_category}`}>
                           <View
-                            className={getSportAccentClass(sport)}
+                            className={getActivityCategoryAccentClass(activity_category)}
                             style={{ flex: Math.max(value, 0.08), opacity: 0.78 }}
                           />
                         </Fragment>

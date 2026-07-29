@@ -18,6 +18,9 @@ jest.mock("@repo/ui/components/text", () => ({
 
 jest.mock("../AppBottomSheet", () => ({
   __esModule: true,
+  APP_BOTTOM_SHEET_PRESENTATIONS: {
+    filter: { initialSnapIndex: 0, snapPoints: ["78%"] },
+  },
   AppBottomSheet: ({
     children,
     footer,
@@ -48,11 +51,13 @@ describe("IndexFilterSheet", () => {
 
     expect(screen.getByTestId("index-filter-sheet").props).toMatchObject({
       description: "Refine the index.",
+      initialSnapIndex: 0,
       onClose,
       snapPoints: ["78%"],
       title: "Sort & Filters",
       visible: true,
     });
+    expect(screen.getByText("Clear filters")).toBeTruthy();
     fireEvent.press(screen.getByTestId("index-filter-sheet-reset"));
     fireEvent.press(screen.getByTestId("index-filter-sheet-apply"));
 

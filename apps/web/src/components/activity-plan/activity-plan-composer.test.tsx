@@ -17,13 +17,14 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("ActivityPlanComposer", () => {
-  it("authors and submits a Core-valid multisport-ready V3 structure", async () => {
+  it("authors a single-activity-category V3 structure and exposes one plan-level activity category selector", async () => {
     const onSave = vi.fn();
     render(<ActivityPlanComposer mode="create" onCancel={vi.fn()} onSave={onSave} />);
 
     fireEvent.change(screen.getByLabelText("Plan name"), { target: { value: "Web tempo" } });
-    fireEvent.change(screen.getByLabelText("Sport"), { target: { value: "bike" } });
-    fireEvent.click(screen.getByRole("button", { name: "Transition" }));
+    fireEvent.change(screen.getByLabelText("Plan activity category"), {
+      target: { value: "bike" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Activity" }));
     fireEvent.click(screen.getByRole("button", { name: "Create plan" }));
 
@@ -33,13 +34,40 @@ describe("ActivityPlanComposer", () => {
       structure: {
         version: 3,
         segments: [
-          { category: "bike", role: "activity" },
-          { role: "transition" },
-          { category: "run", role: "activity" },
+          { activity_category: "bike", role: "activity" },
+          { activity_category: "bike", role: "activity" },
         ],
       },
     });
     expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty("route_id");
+    expect(screen.queryByRole("button", { name: "Transition" })).toBeNull();
+  });
+
+  it("requires confirmation before resetting incompatible targets and keeps the current activity category on cancel", async () => {
+    render(<ActivityPlanComposer mode="create" onCancel={vi.fn()} onSave={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Target"), { target: { value: "speed" } });
+    fireEvent.change(screen.getByLabelText("Plan activity category"), {
+      target: { value: "bike" },
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("alertdialog").textContent).toContain("Reset incompatible targets?"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Keep current activity category" }));
+    expect((screen.getByLabelText("Plan activity category") as HTMLSelectElement).value).toBe(
+      "run",
+    );
+
+    fireEvent.change(screen.getByLabelText("Plan activity category"), {
+      target: { value: "bike" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Change activity category and reset targets" }),
+    );
+    expect((screen.getByLabelText("Plan activity category") as HTMLSelectElement).value).toBe(
+      "bike",
+    );
+    expect((screen.getByLabelText("Target") as HTMLSelectElement).value).toBe("RPE");
   });
 
   it("does not present route selection when editing a structured plan", () => {
@@ -47,14 +75,14 @@ describe("ActivityPlanComposer", () => {
     render(
       <ActivityPlanComposer
         initial={{
-          name: "Route workout",
+          name: "Route activity",
           structure: {
             version: 3,
             segments: [
               {
                 id: "11111111-1111-4111-8111-111111111111",
                 role: "activity",
-                category: "run",
+                activity_category: "run",
                 name: "Run",
                 intervals: [
                   {
@@ -96,5 +124,17 @@ describe("ActivityPlanComposer", () => {
     expect(
       (screen.getByRole("button", { name: "Create plan" }) as HTMLButtonElement).disabled,
     ).toBe(true);
+  });
+
+  it("announces a rejected save and preserves save-button focus", async () => {
+    const onSave = vi.fn().mockRejectedValue(new Error("Server rejected this plan"));
+    render(<ActivityPlanComposer mode="create" onCancel={vi.fn()} onSave={onSave} />);
+
+    fireEvent.change(screen.getByLabelText("Plan name"), { target: { value: "Rejected" } });
+    const saveButton = screen.getByRole("button", { name: "Create plan" });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Server rejected"));
+    expect(document.activeElement).toBe(saveButton);
   });
 });

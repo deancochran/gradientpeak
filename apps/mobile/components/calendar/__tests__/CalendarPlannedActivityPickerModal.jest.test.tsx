@@ -4,8 +4,7 @@ import { fireEvent, renderNative, screen } from "../../../test/render-native";
 type ActivityPlanFixture = {
   id: string;
   name: string;
-  categories: string[];
-  primary_category: string;
+  activity_category: string;
   estimated_duration: number;
   estimated_tss: number;
   description?: string;
@@ -83,7 +82,13 @@ jest.mock("@/lib/api", () => ({
     activityPlans: {
       list: {
         useInfiniteQuery: () => ({
-          data: { pages: [{ items: activityPlansState.items }] },
+          data: {
+            pages: [
+              {
+                items: activityPlansState.items,
+              },
+            ],
+          },
           error: activityPlansState.error,
           fetchNextPage: jest.fn(),
           hasNextPage: false,
@@ -117,8 +122,7 @@ describe("CalendarPlannedActivityPickerModal", () => {
       {
         id: "favorite-1",
         name: "Favorite Long Run",
-        categories: ["run"],
-        primary_category: "run",
+        activity_category: "run",
         estimated_duration: 5400,
         estimated_tss: 90,
         description: "Steady aerobic long run.",
@@ -129,8 +133,7 @@ describe("CalendarPlannedActivityPickerModal", () => {
       {
         id: "recent-1",
         name: "Recent Tempo",
-        categories: ["run"],
-        primary_category: "run",
+        activity_category: "run",
         estimated_duration: 3600,
         estimated_tss: 78,
         updated_at: "2026-03-21T00:00:00.000Z",
@@ -138,8 +141,7 @@ describe("CalendarPlannedActivityPickerModal", () => {
       {
         id: "recent-2",
         name: "Recent Bike Build",
-        categories: ["bike"],
-        primary_category: "bike",
+        activity_category: "bike",
         estimated_duration: 4200,
         estimated_tss: 82,
         updated_at: "2026-03-20T00:00:00.000Z",
@@ -147,8 +149,7 @@ describe("CalendarPlannedActivityPickerModal", () => {
       {
         id: "recent-3",
         name: "Recent Swim",
-        categories: ["swim"],
-        primary_category: "swim",
+        activity_category: "swim",
         estimated_duration: 2400,
         estimated_tss: 45,
         updated_at: "2026-03-19T00:00:00.000Z",
@@ -156,8 +157,7 @@ describe("CalendarPlannedActivityPickerModal", () => {
       {
         id: "recent-4",
         name: "Recent Strength",
-        categories: ["strength"],
-        primary_category: "strength",
+        activity_category: "strength",
         estimated_duration: 1800,
         estimated_tss: 30,
         updated_at: "2026-03-18T00:00:00.000Z",
@@ -165,8 +165,7 @@ describe("CalendarPlannedActivityPickerModal", () => {
       {
         id: "suggested-1",
         name: "Threshold Builder",
-        categories: ["run"],
-        primary_category: "run",
+        activity_category: "run",
         estimated_duration: 4500,
         estimated_tss: 95,
         description: "Sharp threshold progression.",
@@ -175,8 +174,7 @@ describe("CalendarPlannedActivityPickerModal", () => {
       {
         id: "suggested-2",
         name: "VO2 Session",
-        categories: ["run"],
-        primary_category: "run",
+        activity_category: "run",
         estimated_duration: 3900,
         estimated_tss: 92,
         updated_at: "2026-02-28T00:00:00.000Z",
@@ -184,8 +182,7 @@ describe("CalendarPlannedActivityPickerModal", () => {
       {
         id: "suggested-3",
         name: "Brick Builder",
-        categories: ["bike"],
-        primary_category: "bike",
+        activity_category: "bike",
         estimated_duration: 4800,
         estimated_tss: 88,
         updated_at: "2026-02-27T00:00:00.000Z",
@@ -193,8 +190,7 @@ describe("CalendarPlannedActivityPickerModal", () => {
       {
         id: "suggested-4",
         name: "Progressive Climb",
-        categories: ["bike"],
-        primary_category: "bike",
+        activity_category: "bike",
         estimated_duration: 5100,
         estimated_tss: 84,
         updated_at: "2026-02-26T00:00:00.000Z",
@@ -202,8 +198,7 @@ describe("CalendarPlannedActivityPickerModal", () => {
       {
         id: "all-1",
         name: "Easy Recovery Spin",
-        categories: ["bike"],
-        primary_category: "bike",
+        activity_category: "bike",
         estimated_duration: 2400,
         estimated_tss: 28,
         updated_at: "2026-02-20T00:00:00.000Z",
@@ -213,7 +208,7 @@ describe("CalendarPlannedActivityPickerModal", () => {
     activityPlansState.error = null;
   });
 
-  it("renders browse-oriented sections and category filters", () => {
+  it("renders browse-oriented sections and activity_category filters", () => {
     renderNative(
       <CalendarPlannedActivityPickerModal
         visible
@@ -230,7 +225,7 @@ describe("CalendarPlannedActivityPickerModal", () => {
     expect(screen.getByTestId("calendar-planned-activity-filter-run")).toBeTruthy();
   });
 
-  it("supports category filtering and search-driven results", () => {
+  it("supports activity_category filtering and search-driven results", () => {
     renderNative(
       <CalendarPlannedActivityPickerModal
         visible

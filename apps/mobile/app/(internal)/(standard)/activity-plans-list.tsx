@@ -24,8 +24,6 @@ function ActivityPlansListScreen() {
     "run" | "bike" | "swim" | "strength" | "other" | null
   >(null);
   const [draftCategoryFilter, setDraftCategoryFilter] = useState<typeof categoryFilter>(null);
-  const [includeMultisport, setIncludeMultisport] = useState(true);
-  const [draftIncludeMultisport, setDraftIncludeMultisport] = useState(true);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const { data, isFetching, isLoading, error, refetch } = api.activityPlans.list.useQuery({
     ownerScope: "own",
@@ -33,13 +31,11 @@ function ActivityPlansListScreen() {
     includeSystemTemplates: false,
     search: searchQuery.trim() || undefined,
     activityCategories: categoryFilter ? [categoryFilter] : undefined,
-    compositionMode: includeMultisport ? "include_multisport" : "single_only",
     limit: 100,
   });
 
   const plans = data?.items ?? [];
-  const hasActiveQuery =
-    searchQuery.trim().length > 0 || categoryFilter !== null || !includeMultisport;
+  const hasActiveQuery = searchQuery.trim().length > 0 || categoryFilter !== null;
 
   return (
     <View className="flex-1 bg-background" testID="activity-plans-list-screen">
@@ -58,12 +54,11 @@ function ActivityPlansListScreen() {
       <IndexSearchBar
         value={searchQuery}
         placeholder="Search activity plans"
-        hasActiveFilters={categoryFilter !== null || !includeMultisport}
+        hasActiveFilters={categoryFilter !== null}
         onChangeText={setSearchQuery}
         onClear={() => setSearchQuery("")}
         onFilterPress={() => {
           setDraftCategoryFilter(categoryFilter);
-          setDraftIncludeMultisport(includeMultisport);
           setIsFilterSheetOpen(true);
         }}
         testIDPrefix="activity-plans-list"
@@ -107,14 +102,12 @@ function ActivityPlansListScreen() {
         visible={isFilterSheetOpen}
         title="Activity Plan Filters"
         description="Refine your activity plans list."
-        isResetDisabled={draftCategoryFilter === null && draftIncludeMultisport}
+        isResetDisabled={draftCategoryFilter === null}
         onReset={() => {
           setDraftCategoryFilter(null);
-          setDraftIncludeMultisport(true);
         }}
         onApply={() => {
           setCategoryFilter(draftCategoryFilter);
-          setIncludeMultisport(draftIncludeMultisport);
           setIsFilterSheetOpen(false);
         }}
         onClose={() => setIsFilterSheetOpen(false)}
@@ -140,19 +133,9 @@ function ActivityPlansListScreen() {
                       : (option.id as NonNullable<typeof categoryFilter>),
                   )
                 }
-                testID={`activity-plans-list-filter-category-${option.id}`}
+                testID={`activity-plans-list-filter-activity_category-${option.id}`}
               />
             ))}
-          </View>
-        </FilterSection>
-        <FilterSection title="Composition">
-          <View className="flex-row flex-wrap gap-2">
-            <FilterChip
-              label="Include multisport"
-              isActive={draftIncludeMultisport}
-              onPress={() => setDraftIncludeMultisport((current) => !current)}
-              testID="activity-plans-list-filter-include-multisport"
-            />
           </View>
         </FilterSection>
       </IndexFilterSheet>

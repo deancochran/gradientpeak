@@ -2,9 +2,11 @@ import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
 import { describe, expect, it } from "vitest";
 
 import {
+  applyActivityPlanActivityCategory,
   createActivityPlanInterval,
   createActivityPlanSegment,
   createActivityPlanStructure,
+  hasIncompatibleTargets,
   moveActivityPlanItem,
   updateActivityStep,
 } from "./activity-plan-authoring";
@@ -16,13 +18,36 @@ describe("activity plan authoring", () => {
     ).toBe(true);
   });
 
-  it("supports multisport structure without a web-only workout model", () => {
+  it("creates additional activity segments with the plan activity category and permits rest", () => {
     const structure = createActivityPlanStructure("run");
-    structure.segments.push(createActivityPlanSegment("transition"));
-    structure.segments.push(createActivityPlanSegment("activity", "bike"));
+    structure.segments.push(createActivityPlanSegment("rest"));
+    structure.segments.push(createActivityPlanSegment("activity", "run"));
     expect(
       activityPlanStructureSchemaV3.parse(structure).segments.map((item) => item.role),
-    ).toEqual(["activity", "transition", "activity"]);
+    ).toEqual(["activity", "rest", "activity"]);
+  });
+
+  it("preserves compatible targets and explicitly resets incompatible ones on activity_category change", () => {
+    const structure = createActivityPlanStructure("run");
+    const segment = structure.segments[0];
+    if (!segment || segment.role !== "activity") throw new Error("missing activity segment");
+    const interval = segment.intervals[0];
+    const step = interval?.steps[0];
+    if (!interval || !step) throw new Error("missing activity step");
+    interval.steps.splice(0, 1, {
+      ...step,
+      targets: [{ type: "speed", intensity: 3 }],
+    });
+
+    expect(hasIncompatibleTargets(structure, "bike")).toBe(true);
+    expect(applyActivityPlanActivityCategory(structure, "bike").segments[0]).toMatchObject({
+      activity_category: "bike",
+      intervals: [{ steps: [{ targets: [{ type: "speed", intensity: 3 }] }] }],
+    });
+    expect(applyActivityPlanActivityCategory(structure, "bike", true).segments[0]).toMatchObject({
+      activity_category: "bike",
+      intervals: [{ steps: [{ targets: [{ type: "RPE", intensity: 5 }] }] }],
+    });
   });
 
   it("immutably updates nested step content", () => {

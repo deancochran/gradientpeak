@@ -112,14 +112,14 @@ export function ActivityPlanDetailScreen({
     () => deriveActivityPlanPresentation(activityPlan?.structure),
     [activityPlan?.structure],
   );
-  const planCategory = activityPlan?.primary_category ?? activityPlan?.categories?.[0] ?? "other";
+  const planCategory = activityPlan?.activity_category ?? "other";
   const authoritativeMetrics = getAuthoritativeActivityPlanMetrics(activityPlan);
-  const categoryItems = getUniqueActivityCategoryConfigs(
-    presentation?.categories ?? activityPlan?.categories ?? [planCategory],
-  ).map((category) => ({
-    icon: category.icon,
-    iconClassName: category.color,
-    label: category.name,
+  const categoryItems = getUniqueActivityCategoryConfigs([
+    presentation?.activity_category ?? planCategory,
+  ]).map((activity_category) => ({
+    icon: activity_category.icon,
+    iconClassName: activity_category.color,
+    label: activity_category.name,
   }));
 
   const recordingCandidate = React.useMemo<RecordingObjectActionCandidate | null>(() => {
@@ -128,7 +128,7 @@ export function ActivityPlanDetailScreen({
       objectKind: "activity_plan",
       objectId: activityPlan.id,
       label: activityPlan.name,
-      category: planCategory,
+      activity_category: planCategory,
       plan: activityPlan,
     };
   }, [activityPlan, planCategory]);
@@ -161,6 +161,7 @@ export function ActivityPlanDetailScreen({
     queryClient,
     router,
     utils,
+    canCreateNewPlanWork: Boolean(activityPlan),
   });
 
   const handleEdit = () => {
@@ -247,14 +248,16 @@ export function ActivityPlanDetailScreen({
   const { Stack } = require("expo-router") as typeof import("expo-router");
 
   const renderOptionsMenu = () => {
-    const actions: DetailOverflowMenuAction[] = [
-      {
+    const actions: DetailOverflowMenuAction[] = [];
+
+    if (activityPlan) {
+      actions.push({
         disabled: recordingAction?.primaryAction === "disabled" || !recordingAction?.command,
         label: recordingAction?.label ?? "Start Activity",
         onPress: handleRecordNow,
         testID: "activity-plan-options-start",
-      },
-    ];
+      });
+    }
 
     if (!isEventContext) {
       actions.push({
@@ -272,12 +275,14 @@ export function ActivityPlanDetailScreen({
       });
     }
 
-    actions.push({
-      disabled: scheduling.duplicatePending,
-      label: scheduling.duplicatePending ? "Duplicating..." : "Duplicate",
-      onPress: scheduling.handleDuplicate,
-      testID: "activity-plan-options-duplicate",
-    });
+    if (activityPlan) {
+      actions.push({
+        disabled: scheduling.duplicatePending,
+        label: scheduling.duplicatePending ? "Duplicating..." : "Duplicate",
+        onPress: scheduling.handleDuplicate,
+        testID: "activity-plan-options-duplicate",
+      });
+    }
 
     if (isOwnedByUser) {
       actions.push(
@@ -356,6 +361,17 @@ export function ActivityPlanDetailScreen({
               variant="standalone"
               showAttribution={false}
             />
+            {recordingAction?.primaryAction === "disabled" && recordingAction.disabledReason ? (
+              <View
+                className="mt-4 rounded-2xl bg-muted/30 px-4 py-3"
+                testID="activity-plan-mobile-recording-unavailable"
+              >
+                <Text className="text-sm font-semibold">Mobile recording unavailable</Text>
+                <Text className="mt-0.5 text-sm leading-5 text-muted-foreground">
+                  {recordingAction.disabledReason}
+                </Text>
+              </View>
+            ) : null}
             {scheduling.isScheduled && scheduling.scheduledDate ? (
               <Pressable
                 className="mt-4 rounded-2xl bg-primary/10 px-4 py-3"

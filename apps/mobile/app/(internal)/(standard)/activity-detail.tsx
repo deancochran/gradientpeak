@@ -205,46 +205,47 @@ function readLapSpeed(lap: ActivityLapRecord, distance: number, duration: number
 }
 
 function formatLapMetric(
-  activityType: string | null | undefined,
+  activityCategory: string | null | undefined,
   metersPerSecond: number,
   preferredUnitSystem: PreferredUnitSystem,
 ): string {
   if (metersPerSecond <= 0) return "--";
-  if (activityType === "run") return formatPace(metersPerSecond, preferredUnitSystem);
-  if (activityType === "swim") return formatSwimPace(metersPerSecond, preferredUnitSystem);
+  if (activityCategory === "run") return formatPace(metersPerSecond, preferredUnitSystem);
+  if (activityCategory === "swim") return formatSwimPace(metersPerSecond, preferredUnitSystem);
   return formatSpeed(metersPerSecond, preferredUnitSystem);
 }
 
 function formatLapMetricValue(
-  activityType: string | null | undefined,
+  activityCategory: string | null | undefined,
   metersPerSecond: number,
   preferredUnitSystem: PreferredUnitSystem,
 ): string {
   return (
-    formatLapMetric(activityType, metersPerSecond, preferredUnitSystem).split(/[\s/]/)[0] ?? "--"
+    formatLapMetric(activityCategory, metersPerSecond, preferredUnitSystem).split(/[\s/]/)[0] ??
+    "--"
   );
 }
 
 function getLapIndexLabel(
-  activityType: string | null | undefined,
+  activityCategory: string | null | undefined,
   laps: LapDisplayEntry[],
   preferredUnitSystem: PreferredUnitSystem,
 ): string {
-  if (activityType === "run" || activityType === "walk" || activityType === "hike") {
+  if (activityCategory === "run" || activityCategory === "walk" || activityCategory === "hike") {
     return preferredUnitSystem === "imperial" ? "Mi" : "Km";
   }
-  if (activityType === "swim") return "Len";
+  if (activityCategory === "swim") return "Len";
 
   const hasDistanceSplits = laps.some((lap) => lap.distance > 0);
   return hasDistanceSplits ? (preferredUnitSystem === "imperial" ? "Mi" : "Km") : "Lap";
 }
 
-function getLapMetricLabel(activityType: string | null | undefined): string {
+function getLapMetricLabel(activityCategory: string | null | undefined): string {
   if (
-    activityType === "run" ||
-    activityType === "swim" ||
-    activityType === "walk" ||
-    activityType === "hike"
+    activityCategory === "run" ||
+    activityCategory === "swim" ||
+    activityCategory === "walk" ||
+    activityCategory === "hike"
   ) {
     return "Pace";
   }
@@ -254,7 +255,7 @@ function getLapMetricLabel(activityType: string | null | undefined): string {
 
 function buildLapDisplayEntries(
   laps: ActivityLapRecord[],
-  activityType: string | null | undefined,
+  activityCategory: string | null | undefined,
   preferredUnitSystem: PreferredUnitSystem,
 ): LapDisplayEntry[] {
   const baseEntries = laps
@@ -267,7 +268,7 @@ function buildLapDisplayEntries(
         distance,
         duration,
         index,
-        metricLabel: formatLapMetricValue(activityType, speed, preferredUnitSystem),
+        metricLabel: formatLapMetricValue(activityCategory, speed, preferredUnitSystem),
         performance: speed > 0 ? speed : duration > 0 ? 1 / duration : 0,
       };
     })
@@ -282,25 +283,25 @@ function buildLapDisplayEntries(
 }
 
 function LapVisualizationCard({
-  activityType,
+  activityCategory,
   laps,
   preferredUnitSystem,
 }: {
-  activityType?: string | null;
+  activityCategory?: string | null;
   laps: ActivityLapRecord[];
   preferredUnitSystem: PreferredUnitSystem;
 }) {
   const displayLaps = useMemo(
-    () => buildLapDisplayEntries(laps, activityType, preferredUnitSystem),
-    [activityType, laps, preferredUnitSystem],
+    () => buildLapDisplayEntries(laps, activityCategory, preferredUnitSystem),
+    [activityCategory, laps, preferredUnitSystem],
   );
 
   if (displayLaps.length === 0) {
     return <VisualStateCard title="Laps" message="No lap data is available for this activity." />;
   }
 
-  const lapIndexLabel = getLapIndexLabel(activityType, displayLaps, preferredUnitSystem);
-  const lapMetricLabel = getLapMetricLabel(activityType);
+  const lapIndexLabel = getLapIndexLabel(activityCategory, displayLaps, preferredUnitSystem);
+  const lapMetricLabel = getLapMetricLabel(activityCategory);
 
   return (
     <Card testID="lap-visualization-card">
@@ -357,7 +358,7 @@ function ActivityDetailScreen() {
     { enabled: !!linkedActivityPlanId },
   );
   const activityCategory =
-    activity?.segments?.find((segment) => segment.role === "activity")?.category ?? null;
+    activity?.segments?.find((segment) => segment.role === "activity")?.activity_category ?? null;
   const derived = activityData?.derived;
   const loadMethod = derived?.stress.method;
   const loadLabels = getActivityLoadLabels(loadMethod);
@@ -708,7 +709,7 @@ function ActivityDetailScreen() {
             <VisualStateCard title="Laps" state="private" message={detailedContentPrivateMessage} />
           ) : laps.length > 0 ? (
             <LapVisualizationCard
-              activityType={activityCategory ?? "other"}
+              activityCategory={activityCategory ?? "other"}
               laps={laps}
               preferredUnitSystem={preferredUnitSystem}
             />
@@ -806,7 +807,7 @@ function ActivityDetailScreen() {
             </Card>
           )}
 
-          {/* Canonical Load leads; sport-specific TSS/IF remains an advanced diagnostic. */}
+          {/* Canonical Load leads; activity-category-specific TSS/IF remains an advanced diagnostic. */}
           {(commonLoadPresentation || derived?.stress) && (
             <Card>
               <CardHeader>

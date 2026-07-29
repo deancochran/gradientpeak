@@ -13,9 +13,9 @@ export function getBuilderSheetTitle(input: {
   if (activeSheet === "localGoalCreate") return "Create Plan Goal";
   if (activeSheet === "preferences") return "Preferences";
   if (activeSheet === "schedulePreview") return "Schedule preview";
-  if (activeSheet === "session") return "Workout";
+  if (activeSheet === "session") return "Activity";
   if (activeSheet === "activityAssignment") {
-    return selectedSession?.activityPlan ? "Change workout" : "Assign workout";
+    return selectedSession?.activityPlan ? "Change activity" : "Assign activity";
   }
   if (activeSheet === "activityFilters") return "Filters";
   return "Training plan";
@@ -43,10 +43,10 @@ export function getBuilderSheetDescription(input: {
   if (activeSheet === "session") return undefined;
   if (activeSheet === "activityAssignment") {
     return selectedSession
-      ? `Choose a workout for ${formatBuilderWeekdayWithWeek(selectedSession.offsetDays)}.`
+      ? `Choose a activity for ${formatBuilderWeekdayWithWeek(selectedSession.offsetDays)}.`
       : undefined;
   }
-  if (activeSheet === "activityFilters") return "Refine the workouts shown here.";
+  if (activeSheet === "activityFilters") return "Refine the activities shown here.";
   return undefined;
 }
 

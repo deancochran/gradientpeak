@@ -79,7 +79,7 @@ export function mapAthletePreferencesToCreationDefaults(
       max_single_session_duration_minutes:
         preferences.dose_limits.max_single_session_duration_minutes,
       max_weekly_duration_minutes: preferences.dose_limits.max_weekly_duration_minutes,
-      sport_overrides: preferences.dose_limits.sport_overrides,
+      activity_category_overrides: preferences.dose_limits.activity_category_overrides,
     },
     post_goal_recovery_days: preferences.recovery_preferences.post_goal_recovery_days,
     recent_influence: {

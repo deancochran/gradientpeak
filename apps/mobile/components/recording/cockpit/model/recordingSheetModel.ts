@@ -83,7 +83,7 @@ function buildSetupItem(
         ...action,
         detail: action.disabled
           ? "Locked after session identity is set."
-          : "Choose the sport type.",
+          : "Choose the activity_category type.",
         section: "session",
         title: "Activity",
         tone: action.disabled ? "locked" : "idle",

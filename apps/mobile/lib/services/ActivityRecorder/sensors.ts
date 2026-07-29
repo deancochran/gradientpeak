@@ -1,8 +1,6 @@
 import {
-  detectFtmsMachineType,
   FTMS_SERVICE_UUIDS,
   type FtmsMachineType,
-  type FtmsMachineTypeSource,
   type FtmsParserDefinition,
   listFtmsParserDefinitions,
   type ParsedFtmsPayload,
@@ -26,15 +24,12 @@ import { type BleError, BleManager, type Characteristic, type Device } from "rea
 import { BleScanController } from "./BleScanController";
 import { decodeBase64ToBytes } from "./ble-bytes";
 import { DeviceGattQueueRegistry } from "./DeviceGattQueue";
-import {
-  type ControlMode,
-  type FTMSCommandContext,
-  type FTMSControlEvent,
-  FTMSController,
-  type FTMSFeatures,
-} from "./FTMSController";
+import { type FTMSCommandContext, FTMSController, type FTMSFeatures } from "./FTMSController";
 import { KnownSensorRegistry, type PersistedSensor } from "./KnownSensorRegistry";
+import { detectFtmsMachineType, type FtmsMachineTypeSource } from "./recordingTrainerPolicy";
 import type {
+  FtmsControlEvent,
+  FtmsControllerMode,
   RecordingServiceError,
   RecordingServiceErrorCategory,
   RecordingTrainerConnectionState,
@@ -89,7 +84,7 @@ export interface ConnectedSensor {
   isControllable?: boolean;
   ftmsController?: FTMSController;
   ftmsFeatures?: FTMSFeatures;
-  currentControlMode?: ControlMode;
+  currentControlMode?: FtmsControllerMode;
   lastServiceError?: RecordingServiceError;
 
   // Battery monitoring
@@ -141,7 +136,7 @@ export interface FtmsDeviceSnapshot {
   supportsControl: boolean;
 }
 
-/** --- Generic Sports BLE Manager --- */
+/** --- Generic ActivityCategories BLE Manager --- */
 export class SensorsManager {
   private bleManager = new BleManager();
   private scanController = new BleScanController(this.bleManager, (error) => {
@@ -2156,7 +2151,7 @@ export class SensorsManager {
   /**
    * Get control events for current session
    */
-  getControlEvents(): FTMSControlEvent[] {
+  getControlEvents(): FtmsControlEvent[] {
     const controller = this.getSelectedFTMSController();
     if (!controller) {
       return [];

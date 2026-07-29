@@ -45,19 +45,36 @@ const replaceMock = (jest.requireMock("expo-router") as { router: { replace: jes
 const serviceMock = (
   jest.requireMock("../services/ActivityRecorder") as {
     __service: {
+      cleanup: jest.Mock;
       stageRecoveredCheckpoint: jest.Mock;
       resumeRecoveredRecording: jest.Mock;
       discardRecoveredRecording: jest.Mock;
     };
   }
 ).__service;
+const recorderConstructorMock = (
+  jest.requireMock("../services/ActivityRecorder") as {
+    ActivityRecorderService: jest.Mock;
+  }
+).ActivityRecorderService;
 const checkpointMocks = jest.requireMock("../services/ActivityRecorder/checkpointStorage") as {
   quarantineActiveRecordingCheckpoint: jest.Mock;
+  releaseRecordingCheckpointClaim: jest.Mock;
+};
+const startupMocks = jest.requireMock("../services/mobileRecordingStartup") as {
+  prepareMobileRecordingStartup: jest.Mock;
 };
 
 function RecoveryStatus() {
   const { isRecoveryAvailable } = useRecordingRecovery();
   return <Text>{isRecoveryAvailable ? "Recovery available" : "No recovery"}</Text>;
+}
+
+let recoveryCommands: ReturnType<typeof useRecordingRecovery> | null = null;
+
+function RecoveryCommandProbe() {
+  recoveryCommands = useRecordingRecovery();
+  return <Text>{recoveryCommands.isRecoveryAvailable ? "Recovery available" : "No recovery"}</Text>;
 }
 
 function pressLatestAlertButton(text: string) {
@@ -67,7 +84,10 @@ function pressLatestAlertButton(text: string) {
 }
 
 describe("ActivityRecorderProvider recovery prompt", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    recoveryCommands = null;
+    jest.clearAllMocks();
+  });
 
   it("stages the single owner and resumes through the user prompt", async () => {
     render(
@@ -161,8 +181,334 @@ describe("ActivityRecorderProvider recovery prompt", () => {
     await waitFor(() =>
       expect(checkpointMocks.quarantineActiveRecordingCheckpoint).toHaveBeenCalledWith(
         "Corrupt stream chunk",
+        "profile-1",
       ),
     );
+    expect(alertMock).toHaveBeenCalledWith(
+      "Recording recovery unavailable",
+      "Corrupt stream chunk",
+    );
     expect(serviceMock.resumeRecoveredRecording).not.toHaveBeenCalled();
+  });
+
+  it("does not interrupt app startup when recovery inspection is unavailable", async () => {
+    const warning = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    startupMocks.prepareMobileRecordingStartup.mockRejectedValueOnce(
+      new Error("Could not load bundle"),
+    );
+
+    try {
+      render(
+        <ActivityRecorderProvider profile={{ id: "profile-1" }}>
+          <Text>child</Text>
+        </ActivityRecorderProvider>,
+      );
+
+      await waitFor(() =>
+        expect(warning).toHaveBeenCalledWith(
+          "[ActivityRecorderProvider] Unable to inspect saved recording recovery",
+          expect.objectContaining({ message: "Could not load bundle" }),
+        ),
+      );
+      expect(alertMock).not.toHaveBeenCalled();
+    } finally {
+      warning.mockRestore();
+    }
+  });
+
+  it("disposes the profile-scoped recorder before exposing a different profile", async () => {
+    startupMocks.prepareMobileRecordingStartup.mockResolvedValue({
+      checkpoint: { status: "none" },
+      queueJobs: [],
+      hasQuarantinedEvidence: false,
+      finalizedArtifactRecovery: [],
+    });
+    const view = render(
+      <ActivityRecorderProvider profile={{ id: "profile-1" }}>
+        <Text>child</Text>
+      </ActivityRecorderProvider>,
+    );
+    await waitFor(() => expect(recorderConstructorMock).toHaveBeenCalledWith({ id: "profile-1" }));
+
+    let finishCleanup: (() => void) | undefined;
+    serviceMock.cleanup.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishCleanup = resolve;
+        }),
+    );
+
+    view.rerender(
+      <ActivityRecorderProvider profile={{ id: "profile-2" }}>
+        <Text>child</Text>
+      </ActivityRecorderProvider>,
+    );
+
+    await waitFor(() => expect(serviceMock.cleanup).toHaveBeenCalledWith({ dispose: true }));
+    expect(recorderConstructorMock).not.toHaveBeenCalledWith({ id: "profile-2" });
+    await act(async () => finishCleanup?.());
+    await waitFor(() => expect(recorderConstructorMock).toHaveBeenCalledWith({ id: "profile-2" }));
+  });
+
+  it("invalidates an old profile's recovery prompt during an account switch", async () => {
+    startupMocks.prepareMobileRecordingStartup.mockImplementation(async (profileId: string) => ({
+      checkpoint:
+        profileId === "profile-1" ? { status: "recovered", checkpoint } : { status: "none" },
+      queueJobs: [],
+      hasQuarantinedEvidence: false,
+      finalizedArtifactRecovery: [],
+    }));
+    const view = render(
+      <ActivityRecorderProvider profile={{ id: "profile-1" }}>
+        <RecoveryStatus />
+      </ActivityRecorderProvider>,
+    );
+    await waitFor(() =>
+      expect(alertMock).toHaveBeenCalledWith(
+        "Resume recording?",
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+      ),
+    );
+    const oldPromptButtons = alertMock.mock.calls.at(-1)?.[2] as Array<{
+      text: string;
+      onPress: () => void;
+    }>;
+
+    view.rerender(
+      <ActivityRecorderProvider profile={{ id: "profile-2" }}>
+        <RecoveryStatus />
+      </ActivityRecorderProvider>,
+    );
+    await act(async () => oldPromptButtons.find((button) => button.text === "Resume")?.onPress());
+
+    expect(serviceMock.resumeRecoveredRecording).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByText("No recovery")).toBeTruthy());
+  });
+
+  it("releases a recovery claim when staging finishes after an account switch", async () => {
+    startupMocks.prepareMobileRecordingStartup.mockImplementation(async (profileId: string) => ({
+      checkpoint:
+        profileId === "profile-1" ? { status: "recovered", checkpoint } : { status: "none" },
+      queueJobs: [],
+      hasQuarantinedEvidence: false,
+      finalizedArtifactRecovery: [],
+    }));
+    let finishStaging: (() => void) | undefined;
+    serviceMock.stageRecoveredCheckpoint.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishStaging = resolve;
+        }),
+    );
+    const view = render(
+      <ActivityRecorderProvider profile={{ id: "profile-1" }}>
+        <RecoveryStatus />
+      </ActivityRecorderProvider>,
+    );
+    await waitFor(() => expect(serviceMock.stageRecoveredCheckpoint).toHaveBeenCalled());
+
+    view.rerender(
+      <ActivityRecorderProvider profile={{ id: "profile-2" }}>
+        <RecoveryStatus />
+      </ActivityRecorderProvider>,
+    );
+    expect(serviceMock.cleanup).not.toHaveBeenCalled();
+    expect(recorderConstructorMock).not.toHaveBeenCalledWith({ id: "profile-2" });
+    await act(async () => finishStaging?.());
+
+    await waitFor(() =>
+      expect(checkpointMocks.releaseRecordingCheckpointClaim).toHaveBeenCalledWith(
+        checkpoint.sessionId,
+      ),
+    );
+    expect(screen.getByText("No recovery")).toBeTruthy();
+    expect(alertMock).not.toHaveBeenCalledWith(
+      "Resume recording?",
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it("retains a resumed claim until the owning profile service is disposed", async () => {
+    const view = render(
+      <ActivityRecorderProvider profile={{ id: "profile-1" }}>
+        <RecoveryStatus />
+      </ActivityRecorderProvider>,
+    );
+    await waitFor(() =>
+      expect(alertMock).toHaveBeenCalledWith(
+        "Resume recording?",
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+      ),
+    );
+    await act(async () => pressLatestAlertButton("Resume"));
+    await waitFor(() => expect(serviceMock.resumeRecoveredRecording).toHaveBeenCalled());
+    expect(checkpointMocks.releaseRecordingCheckpointClaim).not.toHaveBeenCalled();
+    startupMocks.prepareMobileRecordingStartup.mockResolvedValue({
+      checkpoint: { status: "none" },
+      queueJobs: [],
+      hasQuarantinedEvidence: false,
+      finalizedArtifactRecovery: [],
+    });
+
+    view.rerender(
+      <ActivityRecorderProvider profile={{ id: "profile-2" }}>
+        <RecoveryStatus />
+      </ActivityRecorderProvider>,
+    );
+
+    await waitFor(() => expect(serviceMock.cleanup).toHaveBeenCalledWith({ dispose: true }));
+    await waitFor(() =>
+      expect(checkpointMocks.releaseRecordingCheckpointClaim).toHaveBeenCalledWith(
+        checkpoint.sessionId,
+      ),
+    );
+    await waitFor(() => expect(recorderConstructorMock).toHaveBeenCalledWith({ id: "profile-2" }));
+  });
+
+  it("honors a teardown obligation across a rapid profile switch back", async () => {
+    startupMocks.prepareMobileRecordingStartup.mockImplementation(async (profileId: string) => ({
+      checkpoint:
+        profileId === "profile-1" ? { status: "recovered", checkpoint } : { status: "none" },
+      queueJobs: [],
+      hasQuarantinedEvidence: false,
+      finalizedArtifactRecovery: [],
+    }));
+    let finishStaging: (() => void) | undefined;
+    serviceMock.stageRecoveredCheckpoint.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishStaging = resolve;
+        }),
+    );
+    const view = render(
+      <ActivityRecorderProvider profile={{ id: "profile-1" }}>
+        <RecoveryStatus />
+      </ActivityRecorderProvider>,
+    );
+    await waitFor(() => expect(serviceMock.stageRecoveredCheckpoint).toHaveBeenCalled());
+
+    view.rerender(
+      <ActivityRecorderProvider profile={{ id: "profile-2" }}>
+        <RecoveryStatus />
+      </ActivityRecorderProvider>,
+    );
+    view.rerender(
+      <ActivityRecorderProvider profile={{ id: "profile-1" }}>
+        <RecoveryStatus />
+      </ActivityRecorderProvider>,
+    );
+    expect(recorderConstructorMock).toHaveBeenCalledTimes(1);
+    await act(async () => finishStaging?.());
+
+    await waitFor(() => expect(serviceMock.cleanup).toHaveBeenCalledWith({ dispose: true }));
+    await waitFor(() => expect(recorderConstructorMock).toHaveBeenCalledTimes(2));
+    expect(recorderConstructorMock).not.toHaveBeenCalledWith({ id: "profile-2" });
+  });
+
+  it("retries a failed cleanup before exposing the next profile service", async () => {
+    startupMocks.prepareMobileRecordingStartup.mockResolvedValue({
+      checkpoint: { status: "none" },
+      queueJobs: [],
+      hasQuarantinedEvidence: false,
+      finalizedArtifactRecovery: [],
+    });
+    const view = render(
+      <ActivityRecorderProvider profile={{ id: "profile-1" }}>
+        <Text>child</Text>
+      </ActivityRecorderProvider>,
+    );
+    await waitFor(() => expect(recorderConstructorMock).toHaveBeenCalledWith({ id: "profile-1" }));
+    serviceMock.cleanup.mockRejectedValueOnce(new Error("Native teardown still settling"));
+
+    view.rerender(
+      <ActivityRecorderProvider profile={{ id: "profile-2" }}>
+        <Text>child</Text>
+      </ActivityRecorderProvider>,
+    );
+
+    await waitFor(() => expect(serviceMock.cleanup).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(recorderConstructorMock).toHaveBeenCalledWith({ id: "profile-2" }));
+  });
+
+  it("offers a fenced manual retry when bounded cleanup attempts fail", async () => {
+    startupMocks.prepareMobileRecordingStartup.mockResolvedValue({
+      checkpoint: { status: "none" },
+      queueJobs: [],
+      hasQuarantinedEvidence: false,
+      finalizedArtifactRecovery: [],
+    });
+    const view = render(
+      <ActivityRecorderProvider profile={{ id: "profile-1" }}>
+        <Text>child</Text>
+      </ActivityRecorderProvider>,
+    );
+    await waitFor(() => expect(recorderConstructorMock).toHaveBeenCalledWith({ id: "profile-1" }));
+    serviceMock.cleanup
+      .mockRejectedValueOnce(new Error("Native teardown still settling"))
+      .mockRejectedValueOnce(new Error("Native teardown still settling"));
+
+    view.rerender(
+      <ActivityRecorderProvider profile={{ id: "profile-2" }}>
+        <Text>child</Text>
+      </ActivityRecorderProvider>,
+    );
+
+    await waitFor(() =>
+      expect(alertMock).toHaveBeenCalledWith(
+        "Recording service unavailable",
+        expect.any(String),
+        expect.any(Array),
+        { cancelable: false },
+      ),
+    );
+    expect(recorderConstructorMock).not.toHaveBeenCalledWith({ id: "profile-2" });
+    await act(async () => pressLatestAlertButton("Try again"));
+
+    await waitFor(() => expect(serviceMock.cleanup).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(recorderConstructorMock).toHaveBeenCalledWith({ id: "profile-2" }));
+  });
+
+  it("fences a hook-triggered discard before disposing the profile service", async () => {
+    startupMocks.prepareMobileRecordingStartup.mockResolvedValue({
+      checkpoint: { status: "recovered", checkpoint },
+      queueJobs: [],
+      hasQuarantinedEvidence: false,
+      finalizedArtifactRecovery: [],
+    });
+    let finishDiscard: (() => void) | undefined;
+    serviceMock.discardRecoveredRecording.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDiscard = resolve;
+        }),
+    );
+    const view = render(
+      <ActivityRecorderProvider profile={{ id: "profile-1" }}>
+        <RecoveryCommandProbe />
+      </ActivityRecorderProvider>,
+    );
+    await waitFor(() => expect(screen.getByText("Recovery available")).toBeTruthy());
+
+    let discard: Promise<void> | undefined;
+    act(() => {
+      discard = recoveryCommands?.discard();
+    });
+    view.rerender(
+      <ActivityRecorderProvider profile={{ id: "profile-2" }}>
+        <RecoveryCommandProbe />
+      </ActivityRecorderProvider>,
+    );
+    expect(serviceMock.cleanup).not.toHaveBeenCalled();
+    await act(async () => finishDiscard?.());
+    await act(async () => discard);
+
+    await waitFor(() => expect(serviceMock.cleanup).toHaveBeenCalledWith({ dispose: true }));
+    await waitFor(() => expect(recorderConstructorMock).toHaveBeenCalledWith({ id: "profile-2" }));
   });
 });

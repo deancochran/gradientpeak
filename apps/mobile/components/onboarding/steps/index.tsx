@@ -34,7 +34,7 @@ import { isValidOnboardingUsername } from "@/lib/onboarding/validation";
 import {
   getCompactTrainingPreferencesValue,
   getTrainingPreferencesSummary,
-  PRIMARY_SPORT_OPTIONS,
+  PRIMARY_ACTIVITY_CATEGORY_OPTIONS,
 } from "../onboarding-data";
 import type { IntegrationProvider, OnboardingData, StepProps } from "../types";
 
@@ -239,35 +239,39 @@ export const IdentityStep = ({ data, updateData, usernameAvailability }: StepPro
   );
 };
 
-export const SportStep = ({ data, updateData }: StepProps) => {
-  const toggleSport = (sport: OnboardingData["sport_interests"][number]) => {
-    const hasSport = data.sport_interests.includes(sport);
+export const ActivityCategoryStep = ({ data, updateData }: StepProps) => {
+  const toggleActivityCategory = (
+    activity_category: OnboardingData["activity_category_interests"][number],
+  ) => {
+    const hasActivityCategory = data.activity_category_interests.includes(activity_category);
     updateData({
-      sport_interests: hasSport
-        ? data.sport_interests.filter((item) => item !== sport)
-        : [...data.sport_interests, sport],
+      activity_category_interests: hasActivityCategory
+        ? data.activity_category_interests.filter((item) => item !== activity_category)
+        : [...data.activity_category_interests, activity_category],
     });
   };
 
   return (
     <View className="gap-3">
       <SectionHeading
-        title="Sports you care about"
+        title="ActivityCategories you care about"
         description="Choose any that fit. We use these to show only relevant setup fields."
       />
-      {PRIMARY_SPORT_OPTIONS.map((sport) => {
-        const selected = data.sport_interests.includes(sport);
+      {PRIMARY_ACTIVITY_CATEGORY_OPTIONS.map((activity_category) => {
+        const selected = data.activity_category_interests.includes(activity_category);
 
         return (
           <TouchableOpacity
-            key={sport}
-            onPress={() => toggleSport(sport)}
-            testID={`onboarding-sport-${sport}`}
+            key={activity_category}
+            onPress={() => toggleActivityCategory(activity_category)}
+            testID={`onboarding-activity_category-${activity_category}`}
             className={`p-4 border rounded-xl flex-row items-center justify-between ${
               selected ? "border-primary bg-primary/5" : "border-border bg-card"
             }`}
           >
-            <Text className="font-semibold capitalize text-lg text-foreground">{sport}</Text>
+            <Text className="font-semibold capitalize text-lg text-foreground">
+              {activity_category}
+            </Text>
             {selected && <Icon as={Check} className="text-primary" />}
           </TouchableOpacity>
         );
@@ -319,7 +323,7 @@ export const ProfileAndIntentStep = (props: StepProps) => (
   <View className="gap-8">
     <IdentityStep {...props} />
     <IntentStep {...props} />
-    <SportStep {...props} />
+    <ActivityCategoryStep {...props} />
   </View>
 );
 
@@ -543,9 +547,11 @@ export const TrainingBaselineStep = ({ data, fieldSources, updateData }: StepPro
           cssSecondsPer100m: data.css,
         }}
         onChange={handleBaselineChange}
-        visibleSports={data.sport_interests.filter(
-          (sport): sport is "cycling" | "running" | "swimming" =>
-            sport === "cycling" || sport === "running" || sport === "swimming",
+        visibleActivityCategories={data.activity_category_interests.filter(
+          (activity_category): activity_category is "cycling" | "running" | "swimming" =>
+            activity_category === "cycling" ||
+            activity_category === "running" ||
+            activity_category === "swimming",
         )}
         sources={baselineSources}
         estimates={{
@@ -705,8 +711,11 @@ export const SummaryStep = ({ data }: { data: OnboardingData }) => {
         : null,
     },
     {
-      label: "Sports",
-      value: data.sport_interests.length > 0 ? data.sport_interests.join(", ") : null,
+      label: "ActivityCategories",
+      value:
+        data.activity_category_interests.length > 0
+          ? data.activity_category_interests.join(", ")
+          : null,
       capitalize: true,
     },
     { label: "Max HR", value: data.max_hr ? `${data.max_hr} bpm` : null },

@@ -11,7 +11,7 @@ import {
 const commonLoadProvenance = {
   model: "gradientpeak_relative_load" as const,
   version: "1" as const,
-  sport: "run" as const,
+  activity_category: "run" as const,
   method: "run_pace_threshold" as const,
   quality: {
     source: "validated_test" as const,
@@ -56,7 +56,7 @@ describe("calendar event presentation", () => {
       starts_at: "2026-03-23T06:30:00.000Z",
       activity_plan: {
         id: "plan-1",
-        activity_category: "outdoor_run",
+        activity_category: "run",
         authoritative_metrics: {
           estimated_duration: 3600,
           estimated_tss: 72,
@@ -67,12 +67,7 @@ describe("calendar event presentation", () => {
     };
 
     expect(getEventTimeLabel(event)).not.toBe("Scheduled");
-    expect(getEventPrimaryMeta(event)).toEqual([
-      "Outdoor Run",
-      "~1h",
-      "Load 64",
-      "Intensity Tempo · 0.80",
-    ]);
+    expect(getEventPrimaryMeta(event)).toEqual(["Run", "~1h", "Load 64", "Intensity Tempo · 0.80"]);
     expect(getEventSupportingLine(event)).toBe("Progressive tempo with a strong finish.");
     expect(getEventStatusLabel(event)).toBeNull();
   });
@@ -85,7 +80,7 @@ describe("calendar event presentation", () => {
       recurrence_rule: "RRULE:FREQ=WEEKLY",
       activity_plan: {
         id: "plan-2",
-        activity_category: "indoor_bike",
+        activity_category: "bike",
         authoritative_metrics: {
           estimated_tss: 88,
         },
@@ -93,11 +88,7 @@ describe("calendar event presentation", () => {
       },
     };
 
-    expect(getEventPrimaryMeta(event)).toEqual([
-      "Indoor Bike",
-      "Load 56",
-      "Intensity Tempo · 0.75",
-    ]);
+    expect(getEventPrimaryMeta(event)).toEqual(["Bike", "Load 56", "Intensity Tempo · 0.75"]);
     expect(getEventStatusLabel(event)).toBe("Completed");
   });
 

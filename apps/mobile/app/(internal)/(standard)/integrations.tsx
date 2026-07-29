@@ -47,10 +47,11 @@ export default function IntegrationsScreen() {
       const overview = query.state.data as IntegrationOverviewItem[] | undefined;
       const hasTransitionalState = overview?.some(
         (integration) =>
+          integration.providerHealth.status === "disconnecting" ||
           integration.activityHistory.status === "queued" ||
           integration.activityHistory.status === "importing" ||
-          integration.plannedWorkouts.status === "queued" ||
-          integration.plannedWorkouts.status === "syncing" ||
+          integration.plannedActivities.status === "queued" ||
+          integration.plannedActivities.status === "syncing" ||
           integration.setupData.status === "refreshing",
       );
 
@@ -68,7 +69,7 @@ export default function IntegrationsScreen() {
   ];
   const disconnectMutation = useReliableMutation(api.integrations.disconnect, {
     invalidate: invalidateIntegrations,
-    success: "Disconnected",
+    success: "Disconnecting",
   });
 
   const handleDeepLink = useCallback(

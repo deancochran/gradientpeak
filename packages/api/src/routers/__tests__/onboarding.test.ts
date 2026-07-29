@@ -640,7 +640,7 @@ describe("onboardingRouter", () => {
         min_sessions_per_week: 2,
         max_sessions_per_week: 8,
         max_weekly_duration_minutes: 900,
-        sport_overrides: {
+        activity_category_overrides: {
           run: { max_sessions_per_week: 6 },
           bike: { max_sessions_per_week: 7 },
         },
@@ -665,7 +665,9 @@ describe("onboardingRouter", () => {
     expect(saved.settings.dose_limits.min_sessions_per_week).toBe(4);
     expect(saved.settings.dose_limits.max_sessions_per_week).toBe(8);
     expect(saved.settings.dose_limits.max_weekly_duration_minutes).toBe(900);
-    expect(saved.settings.dose_limits.sport_overrides).toEqual(current.dose_limits.sport_overrides);
+    expect(saved.settings.dose_limits.activity_category_overrides).toEqual(
+      current.dose_limits.activity_category_overrides,
+    );
     expect(saved.settings.recovery_preferences.post_goal_recovery_days).toBe(12);
     expect(saved.settings.onboarding_intents).toEqual(lifecycleProfile.intents);
   });
@@ -687,12 +689,12 @@ describe("onboardingRouter", () => {
     expect(saved.settings.training_style.progression_pace).toBe(0.25);
   });
 
-  it("treats reordered sport override records as unchanged", async () => {
+  it("treats reordered activity_category override records as unchanged", async () => {
     const settings = {
       ...defaultAthletePreferenceProfile,
       dose_limits: {
         ...defaultAthletePreferenceProfile.dose_limits,
-        sport_overrides: {
+        activity_category_overrides: {
           bike: { max_sessions_per_week: 5 },
           run: { max_sessions_per_week: 4 },
         },

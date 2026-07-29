@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { isSupportedActivityEffortCombination } from "@repo/core/athlete-inputs";
+import {
+  classifyActivityEffortPlausibility,
+  isSupportedActivityEffortCombination,
+} from "@repo/core/athlete-inputs";
 import {
   calculateBestEfforts,
   calculateDecouplingFromStreams,
@@ -24,7 +27,7 @@ type DerivedStreamMetadata = Pick<
   >;
 
 export interface ActivityFileStreamDerivedMetricsInput {
-  activityType: string;
+  activityCategory: string;
   distance: number;
   duration: number;
   avgHeartRate?: number | null;
@@ -156,7 +159,7 @@ export function calculateActivityFileStreamDerivedMetrics(
 
   let normalizedGradedSpeed: number | null = null;
   let gradedSpeedStream: { values: number[]; timestamps: number[] } | null = null;
-  if (input.activityType === "run" && speedStream.length > 0 && altitudeStream.length > 0) {
+  if (input.activityCategory === "run" && speedStream.length > 0 && altitudeStream.length > 0) {
     gradedSpeedStream = buildGradedSpeedStream(input.streamMetadata);
     if (gradedSpeedStream.values.length > 0) {
       normalizedGradedSpeed = calculateNGP(gradedSpeedStream.values);
@@ -165,9 +168,9 @@ export function calculateActivityFileStreamDerivedMetrics(
 
   let efficiencyFactor: number | null = null;
   if (input.avgHeartRate && input.avgHeartRate > 0) {
-    if (input.activityType === "bike" && normalizedPower) {
+    if (input.activityCategory === "bike" && normalizedPower) {
       efficiencyFactor = calculateEfficiencyFactor(normalizedPower, input.avgHeartRate);
-    } else if (input.activityType === "run" && normalizedGradedSpeed) {
+    } else if (input.activityCategory === "run" && normalizedGradedSpeed) {
       efficiencyFactor = calculateEfficiencyFactor(normalizedGradedSpeed, input.avgHeartRate);
     }
   }
@@ -181,7 +184,7 @@ export function calculateActivityFileStreamDerivedMetrics(
       aligned.timestamps,
       calculateNormalizedPower,
     );
-  } else if (input.activityType === "run" && speedStream.length > 0 && hrStream.length > 0) {
+  } else if (input.activityCategory === "run" && speedStream.length > 0 && hrStream.length > 0) {
     const runPowerStream = gradedSpeedStream ?? {
       values: speedStream,
       timestamps: speedTimestamps,
@@ -219,7 +222,7 @@ export function calculateActivityFileStreamDerivedCalculations(
     effortsToInsert: buildActivityFileBestEffortRows({
       activityId: input.activityId,
       profileId: input.profileId,
-      activityType: input.activityType,
+      activityCategory: input.activityCategory,
       recordedAt: input.recordedAt,
       normalizedGradedSpeed: metrics.normalizedGradedSpeed,
       streamMetadata: input.streamMetadata,
@@ -230,7 +233,7 @@ export function calculateActivityFileStreamDerivedCalculations(
 export function buildActivityFileBestEffortRows(input: {
   activityId: string;
   profileId: string;
-  activityType: string;
+  activityCategory: string;
   recordedAt: Date;
   normalizedGradedSpeed: number | null;
   streamMetadata: Pick<
@@ -267,7 +270,7 @@ export function buildActivityFileBestEffortRows(input: {
   if (
     powerStream.length > 0 &&
     isSupportedActivityEffortCombination({
-      activityCategory: input.activityType,
+      activityCategory: input.activityCategory,
       effortType: "power",
     })
   ) {
@@ -276,9 +279,12 @@ export function buildActivityFileBestEffortRows(input: {
     }
   }
 
-  if (speedStream.length > 0 && (input.activityType === "run" || input.activityType === "swim")) {
+  if (
+    speedStream.length > 0 &&
+    (input.activityCategory === "run" || input.activityCategory === "swim")
+  ) {
     const streamToUse =
-      input.activityType === "run" && input.normalizedGradedSpeed
+      input.activityCategory === "run" && input.normalizedGradedSpeed
         ? buildGradedSpeedStream(input.streamMetadata)
         : { values: speedStream, timestamps: speedTimestamps };
     for (const effort of calculateBestEfforts(streamToUse.values, streamToUse.timestamps)) {
@@ -291,7 +297,7 @@ export function buildActivityFileBestEffortRows(input: {
   if (
     heartRateStream.length > 0 &&
     isSupportedActivityEffortCombination({
-      activityCategory: input.activityType,
+      activityCategory: input.activityCategory,
       effortType: "heart_rate",
     })
   ) {
@@ -302,7 +308,15 @@ export function buildActivityFileBestEffortRows(input: {
     }
   }
 
-  return effortsToInsert;
+  return effortsToInsert.filter(
+    (effort) =>
+      classifyActivityEffortPlausibility({
+        activityCategory: effort.activity_category,
+        effortType: effort.effort_type,
+        durationSeconds: effort.duration_seconds,
+        value: effort.value,
+      }).classification !== "hard-invalid",
+  );
 }
 
 function isBoundedHeartRateEffort(
@@ -325,7 +339,7 @@ function buildActivityFileBestEffortRow(
   input: {
     activityId: string;
     profileId: string;
-    activityType: string;
+    activityCategory: string;
     recordedAt: Date;
     streamMetadata: Pick<ActivityFileStreamMetadata, "timestamps">;
   },
@@ -347,7 +361,8 @@ function buildActivityFileBestEffortRow(
     activity_id: input.activityId,
     profile_id: input.profileId,
     recorded_at: input.recordedAt,
-    activity_category: input.activityType as typeof activityEfforts.$inferInsert.activity_category,
+    activity_category:
+      input.activityCategory as typeof activityEfforts.$inferInsert.activity_category,
     effort_type: effortType,
     duration_seconds: effort.duration,
     // The persistence column is whole seconds. Floor avoids claiming the window starts after its

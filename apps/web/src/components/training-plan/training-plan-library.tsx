@@ -71,7 +71,7 @@ function PlanGrid({ plans, onOpen }: { plans: LibraryPlan[]; onOpen: (id: string
               </p>
               <p className="text-sm">
                 {plan.structure
-                  ? `${summary.sessionCount} workouts · ${summary.weekCount} weeks`
+                  ? `${summary.sessionCount} activities · ${summary.weekCount} weeks`
                   : `${plan.sessions_per_week_target ?? "Flexible"} sessions/week · ${plan.duration_hours ?? "Flexible"} hours`}
               </p>
               <Button onClick={() => onOpen(plan.id)} type="button" variant="outline">

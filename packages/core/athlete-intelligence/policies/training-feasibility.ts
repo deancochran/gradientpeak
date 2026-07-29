@@ -55,13 +55,15 @@ export const trainingFeasibilityInputSchema = z
     maximumSessionsPerDay: z.number().int().positive().nullable(),
     maximumSessionDurationMinutes: nullableNonnegative,
     allowDoubleDays: z.boolean().nullable(),
-    sportOverrides: z.array(z.object({ sport: z.string().min(1), caps: capSchema }).strict()),
+    activityCategoryOverrides: z.array(
+      z.object({ activity_category: z.string().min(1), caps: capSchema }).strict(),
+    ),
     recoveryPreference: z.enum(["more", "balanced", "less"]).nullable(),
     requiredWeeklyMinutes: nullableNonnegative,
     requiredWeeklySessions: z.number().int().nonnegative().nullable(),
-    // Required-session coverage is sport-specific when a session target is stated.
+    // Required-session coverage is activity-category-specific when a session target is stated.
     // Optional preserves compatibility for callers that do not use session coverage.
-    targetGoalSport: z.string().trim().min(1).max(64).nullable().optional(),
+    targetGoalActivityCategory: z.string().trim().min(1).max(64).nullable().optional(),
     scheduleComplete: z.boolean(),
     plannedSchedule: z.array(
       z
@@ -71,7 +73,7 @@ export const trainingFeasibilityInputSchema = z
           endAt: z.string().datetime({ offset: true }),
           lifecycle: z.enum(["planned", "confirmed", "completed", "cancelled"]),
           eventType: z.enum(["training", "race", "rest", "other"]),
-          sport: z.string().min(1).nullable(),
+          activity_category: z.string().min(1).nullable(),
           timezone: z.string().trim().min(1).max(64).nullable().optional(),
           recurrence: z
             .object({
@@ -104,7 +106,7 @@ const constraintResultsSchema = z
     sessionDurationExcesses: calculationResultSchema,
     weeklyDurationExcesses: calculationResultSchema,
     weeklySessionCapExcesses: calculationResultSchema,
-    sportOverrideExcesses: calculationResultSchema,
+    activityCategoryOverrideExcesses: calculationResultSchema,
     recoveryPreferenceConflicts: calculationResultSchema,
   })
   .strict();
@@ -541,8 +543,8 @@ export function calculateTrainingFeasibility(
     validHorizon && input.requiredWeeklySessions !== null
       ? input.requiredWeeklySessions * (horizonDays / 7)
       : null;
-  const targetSportEvents = input.targetGoalSport
-    ? activeEvents.filter((event) => event.sport === input.targetGoalSport)
+  const targetActivityCategoryEvents = input.targetGoalActivityCategory
+    ? activeEvents.filter((event) => event.activity_category === input.targetGoalActivityCategory)
     : [];
   const coverage = (
     numerator: number,
@@ -628,27 +630,31 @@ export function calculateTrainingFeasibility(
       input.maximumWeeklySessions !== null &&
       distinctSourceEventCount(events) > input.maximumWeeklySessions,
   ).length;
-  let sportOverrideExcesses = 0;
-  for (const override of input.sportOverrides) {
-    const sportEvents = activeEvents.filter((event) => event.sport === override.sport);
-    sportOverrideExcesses += sportEvents.filter(
+  let activityCategoryOverrideExcesses = 0;
+  for (const override of input.activityCategoryOverrides) {
+    const activityCategoryEvents = activeEvents.filter(
+      (event) => event.activity_category === override.activity_category,
+    );
+    activityCategoryOverrideExcesses += activityCategoryEvents.filter(
       (event) =>
         override.caps.maximumSessionDurationMinutes !== null &&
         clippedDuration(event) > override.caps.maximumSessionDurationMinutes,
     ).length;
     for (const events of byWeek.values()) {
-      const sportWeek = events.filter((segment) => segment.event.sport === override.sport);
+      const activityCategoryWeek = events.filter(
+        (segment) => segment.event.activity_category === override.activity_category,
+      );
       if (
         override.caps.maximumWeeklyMinutes !== null &&
-        sportWeek.reduce((sum, segment) => sum + segment.durationMinutes, 0) >
+        activityCategoryWeek.reduce((sum, segment) => sum + segment.durationMinutes, 0) >
           override.caps.maximumWeeklyMinutes
       )
-        sportOverrideExcesses += 1;
+        activityCategoryOverrideExcesses += 1;
       if (
         override.caps.maximumSessionsPerWeek !== null &&
-        distinctSourceEventCount(sportWeek) > override.caps.maximumSessionsPerWeek
+        distinctSourceEventCount(activityCategoryWeek) > override.caps.maximumSessionsPerWeek
       )
-        sportOverrideExcesses += 1;
+        activityCategoryOverrideExcesses += 1;
     }
   }
   const recoveryPreferenceConflicts =
@@ -667,10 +673,10 @@ export function calculateTrainingFeasibility(
       "availability_time_coverage",
     ),
     requiredSessionCoverage:
-      demandedSessions !== null && !input.targetGoalSport
-        ? unavailable("target_goal_sport_required_for_session_coverage", source, true)
+      demandedSessions !== null && !input.targetGoalActivityCategory
+        ? unavailable("target_goal_activity_category_required_for_session_coverage", source, true)
         : scheduleCoverage(
-            targetSportEvents.length,
+            targetActivityCategoryEvents.length,
             demandedSessions,
             "required_weekly_sessions_missing",
             "required_session_coverage",
@@ -724,7 +730,10 @@ export function calculateTrainingFeasibility(
         weeklySessionCapExcesses,
         "weekly_session",
       ),
-      sportOverrideExcesses: constraintResult(sportOverrideExcesses, "sport_override_excesses"),
+      activityCategoryOverrideExcesses: constraintResult(
+        activityCategoryOverrideExcesses,
+        "activity_category_override_excesses",
+      ),
       recoveryPreferenceConflicts: timezoneUnavailable
         ? unavailable("timezone_missing_or_unsupported", source, true)
         : recoveryPreferenceConflicts === null

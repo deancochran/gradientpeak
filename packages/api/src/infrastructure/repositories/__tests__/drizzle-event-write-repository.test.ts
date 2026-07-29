@@ -3,6 +3,63 @@ import { describe, expect, it, vi } from "vitest";
 import type { CreateOwnedEventInput } from "../../../repositories";
 import { createEventWriteRepository } from "../drizzle-event-write-repository";
 
+function storedEvent(id: string, activityPlanId: string) {
+  const now = new Date("2026-07-13T10:00:00.000Z");
+  return {
+    activity_plan_id: activityPlanId,
+    all_day: false,
+    created_at: now,
+    description: null,
+    ends_at: new Date("2026-07-13T11:00:00.000Z"),
+    event_type: "planned" as const,
+    id,
+    linked_activity_id: null,
+    notes: null,
+    occurrence_key: "",
+    original_starts_at: null,
+    profile_id: "profile-123",
+    recurrence_rule: null,
+    recurrence_timezone: null,
+    route_id: null,
+    scheduled_date: "2026-07-13",
+    series_id: "series-123",
+    source_provider: null,
+    starts_at: now,
+    status: "scheduled" as const,
+    timezone: "UTC",
+    title: "Atomic event",
+    training_plan_id: null,
+    updated_at: now,
+  };
+}
+
+const validStructure = {
+  version: 3,
+  segments: [
+    {
+      id: "00000000-0000-4000-8000-000000000001",
+      role: "activity",
+      activity_category: "run",
+      name: "Run",
+      intervals: [
+        {
+          id: "10000000-0000-4000-8000-000000000001",
+          name: "Main",
+          repetitions: 1,
+          steps: [
+            {
+              id: "20000000-0000-4000-8000-000000000001",
+              name: "Step",
+              duration: { type: "time", seconds: 600 },
+              targets: [{ type: "RPE", intensity: 5 }],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
 function eventInput(overrides: Partial<CreateOwnedEventInput> = {}): CreateOwnedEventInput {
   return {
     activityPlanId: null,
@@ -97,6 +154,70 @@ function createTransactionalDb(failAtInsert?: number) {
 }
 
 describe("createEventWriteRepository", () => {
+  it("bulk reloads a scoped update instead of loading each updated event", async () => {
+    const planId = "11111111-1111-4111-8111-111111111111";
+    const updated = [storedEvent("event-1", planId), storedEvent("event-2", planId)];
+    const selectResults = [
+      updated.map(({ id, activity_plan_id, linked_activity_id, status }) => ({
+        id,
+        activity_plan_id,
+        linked_activity_id,
+        status,
+      })),
+      [{ id: planId, structure: validStructure }],
+      updated,
+    ];
+    let selectCount = 0;
+    const orderBy = vi.fn();
+    const query = (result: unknown) => ({
+      for: vi.fn(async () => result),
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve),
+    });
+    const tx = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => {
+            const resultQuery = query(selectResults[selectCount++]);
+            return {
+              ...resultQuery,
+              orderBy: vi.fn(() => {
+                orderBy();
+                return resultQuery;
+              }),
+            };
+          }),
+        })),
+      })),
+      update: vi.fn(() => ({
+        set: vi.fn(() => ({
+          where: vi.fn(() => ({
+            returning: vi.fn(async () => updated.map(({ id }) => ({ id }))),
+          })),
+        })),
+      })),
+    };
+    const db = {
+      transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
+        callback(tx),
+      ),
+    } as unknown as DrizzleDbClient;
+
+    const rows = await createEventWriteRepository(db).updateOwnedEventsForScope({
+      anchorEvent: {
+        id: "event-1",
+        series_id: "series-123",
+        starts_at: "2026-07-13T10:00:00.000Z",
+      },
+      eventUpdates: { title: "Bulk updated" },
+      profileId: "profile-123",
+      scope: "series",
+    });
+
+    expect(rows.map((row) => row.id)).toEqual(["event-1", "event-2"]);
+    expect(selectCount).toBe(3); // locked scope, current-plan classification, one bulk reload
+    expect(orderBy).toHaveBeenCalledTimes(1);
+  });
+
   it("persists an entire series in one transaction without partial external identity", async () => {
     const { db, transaction, committedValues } = createTransactionalDb();
     const repository = createEventWriteRepository(db);

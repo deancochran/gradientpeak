@@ -23,6 +23,7 @@ describe("useActivityPlanComposerProcess", () => {
         canSubmit: true,
         description: "",
         isEditMode: false,
+        isEditBlocked: false,
         isLoading: false,
         isSubmitting: false,
         name: "Morning Run",
@@ -48,5 +49,33 @@ describe("useActivityPlanComposerProcess", () => {
 
     expect(initialSubmit).not.toHaveBeenCalled();
     expect(latestSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it("removes the Save header action for a blocked edit route", () => {
+    const navigation = {
+      addListener: jest.fn(() => jest.fn()),
+      dispatch: jest.fn(),
+      setOptions: jest.fn(),
+    };
+
+    renderHook(() =>
+      useActivityPlanComposerProcess({
+        activityCategory: "run",
+        allowNavigationRef: { current: false },
+        canSubmit: false,
+        description: "",
+        isEditMode: true,
+        isEditBlocked: true,
+        isLoading: false,
+        isSubmitting: false,
+        name: "Legacy",
+        navigation,
+        notes: "",
+        structure,
+        submit: jest.fn(),
+      }),
+    );
+
+    expect(navigation.setOptions.mock.calls[0]?.[0].headerRight()).toBeNull();
   });
 });

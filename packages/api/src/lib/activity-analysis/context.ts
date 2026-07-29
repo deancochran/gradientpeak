@@ -36,11 +36,11 @@ type ResolveActivityContextAsOfInput = {
   evidenceScope?: "thresholds";
 };
 
-type LthrSport = "bike" | "run" | "swim";
+type LthrActivityCategory = "bike" | "run" | "swim";
 const CRITICAL_POWER_CALCULATION_VERSION = "critical-power-curve-fit-v1";
 type ResolvedActivityAnalysisContext = Omit<ActivityAnalysisContext, "profileMetrics"> & {
   profileMetrics: ActivityAnalysisContext["profileMetrics"] & {
-    lthr_by_sport?: Partial<Record<LthrSport, number>>;
+    lthr_by_activity_category?: Partial<Record<LthrActivityCategory, number>>;
   };
 };
 
@@ -153,10 +153,10 @@ export function resolveActivityContextFromEvidence(input: {
     }
 
     if (metric.metric_type === "lthr") {
-      const sport = lthrReferenceSport(metric);
-      if (sport) {
-        profileMetrics.lthr_by_sport ??= {};
-        profileMetrics.lthr_by_sport[sport] = metricValue;
+      const activity_category = lthrReferenceActivityCategory(metric);
+      if (activity_category) {
+        profileMetrics.lthr_by_activity_category ??= {};
+        profileMetrics.lthr_by_activity_category[activity_category] = metricValue;
       } else if (profileMetrics.lthr == null) {
         profileMetrics.lthr = metricValue;
       }
@@ -215,7 +215,7 @@ export function resolveActivityContextFromEvidence(input: {
       if (!canonicalPower || canonicalPower.unit !== "watts") return [];
       return [
         {
-          sport: "bike" as const,
+          activity_category: "bike" as const,
           metric: "power" as const,
           value: canonicalPower.value,
           durationSeconds: 1200,
@@ -232,7 +232,7 @@ export function resolveActivityContextFromEvidence(input: {
     ) {
       return [
         {
-          sport: effort.activity_category,
+          activity_category: effort.activity_category,
           metric: "speed" as const,
           value,
           durationSeconds: 1200,
@@ -287,14 +287,14 @@ export function resolveActivityContextFromEvidence(input: {
       runThreshold: thresholdQuality(thresholds.running_threshold_pace),
       swimThreshold: thresholdQuality(thresholds.swimming_css),
       lthr: metricQuality(latestMetrics.get("lthr:generic"), asOf, freshnessWindowMs),
-      lthrBySport: Object.fromEntries(
-        (["bike", "run", "swim"] as const).flatMap((sport) => {
+      lthrByActivityCategory: Object.fromEntries(
+        (["bike", "run", "swim"] as const).flatMap((activity_category) => {
           const quality = metricQuality(
-            latestMetrics.get(`lthr:${sport}`),
+            latestMetrics.get(`lthr:${activity_category}`),
             asOf,
             freshnessWindowMs,
           );
-          return quality ? [[sport, quality] as const] : [];
+          return quality ? [[activity_category, quality] as const] : [];
         }),
       ),
     },
@@ -465,7 +465,7 @@ function metricQuality(
 
 function metricObservationKey(metric: ActivityAnalysisMetricSnapshot): string {
   if (metric.metric_type !== "lthr") return metric.metric_type;
-  return `lthr:${lthrReferenceSport(metric) ?? "generic"}`;
+  return `lthr:${lthrReferenceActivityCategory(metric) ?? "generic"}`;
 }
 
 function selectStrongestActivityLthrMetrics(
@@ -477,7 +477,7 @@ function selectStrongestActivityLthrMetrics(
   for (const metric of metrics) {
     const observedAt = new Date(metric.recorded_at).getTime();
     const value = toNumber(metric.value);
-    const sport = lthrReferenceSport(metric);
+    const activity_category = lthrReferenceActivityCategory(metric);
     const provenance =
       metric.provenance &&
       typeof metric.provenance === "object" &&
@@ -490,7 +490,7 @@ function selectStrongestActivityLthrMetrics(
       !metric.reference_activity_id ||
       provenance?.derived_from !== "activity_file_stream" ||
       provenance.activity_id !== metric.reference_activity_id ||
-      !sport ||
+      !activity_category ||
       value === null ||
       !Number.isFinite(observedAt) ||
       observedAt > asOfMs ||
@@ -498,7 +498,7 @@ function selectStrongestActivityLthrMetrics(
     ) {
       continue;
     }
-    const current = selected.get(sport);
+    const current = selected.get(activity_category);
     const currentValue = current ? toNumber(current.value) : null;
     const currentObservedAt = current ? new Date(current.recorded_at).getTime() : Number.NaN;
     if (
@@ -506,13 +506,15 @@ function selectStrongestActivityLthrMetrics(
       value > currentValue ||
       (value === currentValue && observedAt > currentObservedAt)
     ) {
-      selected.set(sport, metric);
+      selected.set(activity_category, metric);
     }
   }
   return [...selected.values()];
 }
 
-function lthrReferenceSport(metric: ActivityAnalysisMetricSnapshot): LthrSport | null {
+function lthrReferenceActivityCategory(
+  metric: ActivityAnalysisMetricSnapshot,
+): LthrActivityCategory | null {
   if (metric.source === "manual" || !metric.reference_activity_id) return null;
   const category = metric.reference_activity_category;
   return category === "bike" || category === "run" || category === "swim" ? category : null;

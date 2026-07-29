@@ -19,10 +19,8 @@ const createPlan = createSystemActivityPlanBuilderFactory("other", [
  */
 export const YOGA_FLOW: RecordingServiceActivityPlan = {
   id: "3d6e7f8a-9b0c-1d2e-3f4a-5b6c7d8e9f0a",
-  version: "3.0",
   name: "Yoga Flow",
   description: "Gentle yoga flow for flexibility and mindfulness",
-  activity_category: "other",
   gps_recording_enabled: true,
   structure: createPlan()
     .step({
@@ -65,10 +63,8 @@ export const YOGA_FLOW: RecordingServiceActivityPlan = {
  */
 export const ROCK_CLIMBING_SESSION: RecordingServiceActivityPlan = {
   id: "4e7f8a9b-0c1d-2e3f-4a5b-6c7d8e9f0a1b",
-  version: "3.0",
   name: "Rock Climbing Session",
   description: "Indoor/outdoor rock climbing session with warm-up and cool-down",
-  activity_category: "other",
   gps_recording_enabled: true,
   structure: createPlan()
     .step({
@@ -122,10 +118,8 @@ export const ROCK_CLIMBING_SESSION: RecordingServiceActivityPlan = {
  */
 export const HIKING_ADVENTURE: RecordingServiceActivityPlan = {
   id: "5f8a9b0c-1d2e-3f4a-5b6c-7d8e9f0a1b2c",
-  version: "3.0",
   name: "Hiking Adventure",
   description: "Moderate-intensity hiking with varied terrain",
-  activity_category: "other",
   gps_recording_enabled: true,
   structure: createPlan()
     .step({
@@ -162,10 +156,8 @@ export const HIKING_ADVENTURE: RecordingServiceActivityPlan = {
  */
 export const CROSSFIT_WOD: RecordingServiceActivityPlan = {
   id: "6a9b0c1d-2e3f-4a5b-6c7d-8e9f0a1b2c3d",
-  version: "3.0",
   name: "CrossFit WOD",
   description: "High-intensity CrossFit activity of the day",
-  activity_category: "other",
   gps_recording_enabled: true,
   structure: createPlan()
     .step({
@@ -202,10 +194,8 @@ export const CROSSFIT_WOD: RecordingServiceActivityPlan = {
  */
 export const WALKING_RECOVERY: RecordingServiceActivityPlan = {
   id: "7b0c1d2e-3f4a-5b6c-7d8e-9f0a1b2c3d4e",
-  version: "3.0",
   name: "Recovery Walk",
   description: "Gentle walking session for active recovery",
-  activity_category: "other",
   gps_recording_enabled: true,
   structure: createPlan()
     .step({
@@ -229,13 +219,11 @@ export const WALKING_RECOVERY: RecordingServiceActivityPlan = {
     .build(),
 };
 
-/** Sport-agnostic rowing erg threshold development session. */
+/** ActivityCategory-agnostic rowing erg threshold development session. */
 export const OTHER_THRESHOLD_ROW: RecordingServiceActivityPlan = {
   id: "5d191bf2-0c3e-4a47-8d58-9bc83ef67101",
-  version: "3.0",
   name: "Rowing Erg Threshold Intervals",
   description: "Executable non-bike, non-run threshold intervals on a rowing ergometer.",
-  activity_category: "other",
   gps_recording_enabled: false,
   structure: createPlan()
     .warmup({ duration: Duration.minutes(12), targets: [Target.rpe(3)] })
@@ -251,13 +239,11 @@ export const OTHER_THRESHOLD_ROW: RecordingServiceActivityPlan = {
     .build(),
 };
 
-/** Long, low-intensity elliptical prescription for sport-agnostic endurance. */
+/** Long, low-intensity elliptical prescription for activity_category-agnostic endurance. */
 export const OTHER_LONG_ENDURANCE_ELLIPTICAL: RecordingServiceActivityPlan = {
   id: "5d191bf2-0c3e-4a47-8d58-9bc83ef67102",
-  version: "3.0",
   name: "Long Endurance Elliptical",
   description: "Long continuous low-impact endurance session on an elliptical trainer.",
-  activity_category: "other",
   gps_recording_enabled: false,
   structure: createPlan()
     .warmup({ duration: Duration.minutes(10), targets: [Target.rpe(2)] })

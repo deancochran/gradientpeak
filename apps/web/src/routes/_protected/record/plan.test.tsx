@@ -8,42 +8,32 @@ const mocks = vi.hoisted(() => ({ getToday: vi.fn(), navigate: vi.fn() }));
 
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
 
-function structure(...categories: Array<"run" | "bike" | "swim">) {
+function structure(activity_category: "run" | "bike" | "swim") {
   return {
     version: 3,
-    segments: categories.flatMap((category, index) => [
-      ...(index === 0
-        ? []
-        : [
-            {
-              duration: { seconds: 30, type: "time" },
-              id: id(index * 10),
-              name: "Transition",
-              role: "transition",
-            },
-          ]),
+    segments: [
       {
-        category,
-        id: id(index * 10 + 1),
+        activity_category,
+        id: id(1),
         intervals: [
           {
-            id: id(index * 10 + 2),
+            id: id(2),
             name: "Work",
             repetitions: 1,
             steps: [
               {
                 duration: { seconds: 60, type: "time" },
-                id: id(index * 10 + 3),
+                id: id(3),
                 name: "Step",
                 targets: [{ intensity: 5, type: "RPE" }],
               },
             ],
           },
         ],
-        name: category,
+        name: activity_category,
         role: "activity",
       },
-    ]),
+    ],
   };
 }
 
@@ -51,7 +41,7 @@ vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
     ...options,
     useNavigate: () => mocks.navigate,
-    useSearch: () => ({ category: "run" }),
+    useSearch: () => ({ activity_category: "run" }),
   }),
   Link: ({ children }: { children: React.ReactNode }) => <a href="/record">{children}</a>,
 }));
@@ -77,6 +67,7 @@ describe("RecordPlanPage search", () => {
           activity_plan: {
             description: "Steady aerobic work",
             name: "Tempo run",
+            activity_category: "run",
             structure: structure("run"),
           },
           id: "event-1",
@@ -86,6 +77,7 @@ describe("RecordPlanPage search", () => {
           activity_plan: {
             description: "Easy spin",
             name: "Recovery ride",
+            activity_category: "bike",
             structure: structure("bike"),
           },
           id: "event-2",
@@ -107,17 +99,27 @@ describe("RecordPlanPage search", () => {
     expect(screen.getByText("Recovery ride")).toBeTruthy();
   });
 
-  it("uses compiled primary categories for filtering and preserves repeated category composition", () => {
+  it("shows canonical plans and excludes malformed route-state data from the picker", () => {
     mocks.getToday.mockReturnValue({
       data: [
         {
           activity_plan: {
-            description: "Transition practice",
-            name: "Duathlon brick",
-            structure: structure("run", "bike", "run"),
+            description: "Repeat run",
+            name: "Double run",
+            activity_category: "run",
+            structure: structure("run"),
           },
           id: "event-1",
           scheduled_date: "2026-07-14T12:00:00.000Z",
+        },
+        {
+          activity_plan: {
+            name: "Malformed plan",
+            activity_category: null,
+            structure: { version: 3, segments: [] },
+          },
+          id: "event-invalid",
+          scheduled_date: "2026-07-14T13:00:00.000Z",
         },
       ],
       error: null,
@@ -125,18 +127,12 @@ describe("RecordPlanPage search", () => {
     });
     render(<RecordPlanPage />);
 
-    expect(screen.getByText("run")).toBeTruthy();
-    expect(screen.getByText("bike")).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "Bike" }));
-    expect(screen.queryByText("Duathlon brick")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Run" }));
-    expect(screen.getByText("Duathlon brick")).toBeTruthy();
+    expect(screen.getByText("Double run")).toBeTruthy();
+    expect(screen.queryByText("Malformed plan")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Attach plan" }));
     expect(mocks.navigate).toHaveBeenCalledWith({
-      search: { category: "run", eventId: "event-1" },
+      search: { activity_category: "run", eventId: "event-1" },
       to: "/record",
     });
   });

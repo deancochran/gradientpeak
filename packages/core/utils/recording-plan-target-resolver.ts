@@ -8,7 +8,7 @@ import { isTargetTypePermittedForActivity } from "../targets";
 import type { ActivityTarget } from "../targets/schema";
 
 export interface ResolveActivityOccurrenceTrainerIntentsParams {
-  occurrence: Pick<CompiledActivityStepOccurrence, "category" | "targets">;
+  occurrence: Pick<CompiledActivityStepOccurrence, "activity_category" | "targets">;
   profileSnapshot?: Pick<RecordingProfileSnapshot, "ftp" | "thresholdHr">;
   source?: RecordingTrainerIntentSource;
 }
@@ -90,7 +90,7 @@ export function resolveActivityOccurrenceTrainerIntents(
     (acc, target) => {
       if (
         !isTargetTypePermittedForActivity({
-          activityCategory: params.occurrence.category,
+          activityCategory: params.occurrence.activity_category,
           targetType: target.type,
         })
       ) {

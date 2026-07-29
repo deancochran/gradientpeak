@@ -22,7 +22,7 @@ export function createDrizzleTrendsDashboardRepository(
           select 1 from ${activitySegments}
           where ${activitySegments.activity_id} = ${activities.id}
             and ${activitySegments.role} = 'activity'
-            and ${activitySegments.category} = ${type}
+            and ${activitySegments.activity_category} = ${type}
         )`);
       }
       const rows = await db
@@ -54,7 +54,7 @@ export function createDrizzleTrendsDashboardRepository(
           activity_id: activitySegments.activity_id,
           ordinal: activitySegments.ordinal,
           role: activitySegments.role,
-          category: activitySegments.category,
+          activity_category: activitySegments.activity_category,
           start_offset_ms: activitySegments.start_offset_ms,
           end_offset_ms: activitySegments.end_offset_ms,
           timing_coverage: activitySegments.timing_coverage,

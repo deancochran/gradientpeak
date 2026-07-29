@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { materializeRecurrenceOccurrences } from "@repo/core";
+import { activityPlanStructureSchemaV3, materializeRecurrenceOccurrences } from "@repo/core";
 import {
   createOneOffGroupEventInputSchema,
   createRecurringEventSeriesInputSchema,
@@ -35,6 +35,11 @@ import {
   serializeSeriesRsvp,
 } from "../../application/groups/groupEventViews";
 import { getRequiredDb } from "../../db";
+import {
+  enqueueWahooGroupEventRouteDeliveryForAcceptedRecipients,
+  enqueueWahooGroupEventRouteDeliveryForProfile,
+  resolveCancelledGroupEventRouteDeliveries,
+} from "../../lib/provider-sync/event-delivery/wahoo-group-event-route-delivery";
 import { createTRPCRouter, protectedProcedure } from "../../trpc";
 import {
   GROUP_ACCESS_LEVEL_PUBLIC,
@@ -207,6 +212,7 @@ async function assertActivityPlansAvailableForGroupEvent(
       content_visibility: activityPlans.content_visibility,
       template_visibility: activityPlans.template_visibility,
       is_system_template: activityPlans.is_system_template,
+      structure: activityPlans.structure,
     })
     .from(activityPlans)
     .where(eq(activityPlans.id, activityPlanId))
@@ -216,6 +222,14 @@ async function assertActivityPlansAvailableForGroupEvent(
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Activity plan is not available for this group event",
+    });
+  }
+
+  if (!activityPlanStructureSchemaV3.safeParse(row.structure).success) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message:
+        "Only executable single-activity-category activity plans can be attached to group events",
     });
   }
 }
@@ -639,33 +653,46 @@ export const groupEventsRouter = createTRPCRouter({
         routeId: input.routeId,
       });
 
-      const [event] = await db
-        .update(groupEvents)
-        .set({
-          ...(input.title !== undefined ? { title: input.title } : {}),
-          ...(input.description !== undefined ? { description: input.description ?? null } : {}),
-          ...(input.startsAt !== undefined ? { starts_at: new Date(input.startsAt) } : {}),
-          ...(input.endsAt !== undefined ? { ends_at: parseDateTime(input.endsAt) } : {}),
-          ...(input.timezone !== undefined ? { timezone: input.timezone ?? null } : {}),
-          ...(input.locationName !== undefined
-            ? { location_name: input.locationName ?? null }
-            : {}),
-          ...(input.routeId !== undefined ? { route_id: input.routeId ?? null } : {}),
-          ...(input.activityPlanId !== undefined
-            ? { activity_plan_id: input.activityPlanId ?? null }
-            : {}),
-          ...(input.cancelledAt !== undefined
-            ? { cancelled_at: parseDateTime(input.cancelledAt) }
-            : {}),
-          updated_at: new Date(),
-        })
-        .where(eq(groupEvents.id, input.groupEventId))
-        .returning();
+      const [event] = await db.transaction(async (tx) => {
+        const [updatedEvent] = await tx
+          .update(groupEvents)
+          .set({
+            ...(input.title !== undefined ? { title: input.title } : {}),
+            ...(input.description !== undefined ? { description: input.description ?? null } : {}),
+            ...(input.startsAt !== undefined ? { starts_at: new Date(input.startsAt) } : {}),
+            ...(input.endsAt !== undefined ? { ends_at: parseDateTime(input.endsAt) } : {}),
+            ...(input.timezone !== undefined ? { timezone: input.timezone ?? null } : {}),
+            ...(input.locationName !== undefined
+              ? { location_name: input.locationName ?? null }
+              : {}),
+            ...(input.routeId !== undefined ? { route_id: input.routeId ?? null } : {}),
+            ...(input.activityPlanId !== undefined
+              ? { activity_plan_id: input.activityPlanId ?? null }
+              : {}),
+            ...(input.cancelledAt !== undefined
+              ? { cancelled_at: parseDateTime(input.cancelledAt) }
+              : {}),
+            updated_at: new Date(),
+          })
+          .where(eq(groupEvents.id, input.groupEventId))
+          .returning();
+        const routeDeliverySourceId = updatedEvent?.route_id ?? existingEvent.route_id;
+        if (input.routeId !== undefined && updatedEvent && routeDeliverySourceId) {
+          await enqueueWahooGroupEventRouteDeliveryForAcceptedRecipients({
+            db,
+            eventId: updatedEvent.id,
+            expectedEventUpdatedAt: updatedEvent.updated_at.toISOString(),
+            groupId: updatedEvent.group_id,
+            sourceRouteId: routeDeliverySourceId,
+            transaction: tx,
+          });
+        }
+        return [updatedEvent];
+      });
 
       if (!event) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Group event not found" });
       }
-
       const [serializedEvent] = await serializeGroupEventsForViewer(db, [event], profileId);
       return { event: serializedEvent };
     }),
@@ -684,33 +711,46 @@ export const groupEventsRouter = createTRPCRouter({
         routeId: input.routeId,
       });
 
-      const [event] = await db
-        .update(groupEvents)
-        .set({
-          ...(input.title !== undefined ? { title: input.title } : {}),
-          ...(input.description !== undefined ? { description: input.description ?? null } : {}),
-          ...(input.startsAt !== undefined ? { starts_at: new Date(input.startsAt) } : {}),
-          ...(input.endsAt !== undefined ? { ends_at: parseDateTime(input.endsAt) } : {}),
-          ...(input.timezone !== undefined ? { timezone: input.timezone ?? null } : {}),
-          ...(input.locationName !== undefined
-            ? { location_name: input.locationName ?? null }
-            : {}),
-          ...(input.routeId !== undefined ? { route_id: input.routeId ?? null } : {}),
-          ...(input.activityPlanId !== undefined
-            ? { activity_plan_id: input.activityPlanId ?? null }
-            : {}),
-          ...(input.cancelledAt !== undefined
-            ? { cancelled_at: parseDateTime(input.cancelledAt) }
-            : {}),
-          updated_at: new Date(),
-        })
-        .where(eq(groupEvents.id, input.groupEventId))
-        .returning();
+      const [event] = await db.transaction(async (tx) => {
+        const [updatedEvent] = await tx
+          .update(groupEvents)
+          .set({
+            ...(input.title !== undefined ? { title: input.title } : {}),
+            ...(input.description !== undefined ? { description: input.description ?? null } : {}),
+            ...(input.startsAt !== undefined ? { starts_at: new Date(input.startsAt) } : {}),
+            ...(input.endsAt !== undefined ? { ends_at: parseDateTime(input.endsAt) } : {}),
+            ...(input.timezone !== undefined ? { timezone: input.timezone ?? null } : {}),
+            ...(input.locationName !== undefined
+              ? { location_name: input.locationName ?? null }
+              : {}),
+            ...(input.routeId !== undefined ? { route_id: input.routeId ?? null } : {}),
+            ...(input.activityPlanId !== undefined
+              ? { activity_plan_id: input.activityPlanId ?? null }
+              : {}),
+            ...(input.cancelledAt !== undefined
+              ? { cancelled_at: parseDateTime(input.cancelledAt) }
+              : {}),
+            updated_at: new Date(),
+          })
+          .where(eq(groupEvents.id, input.groupEventId))
+          .returning();
+        const routeDeliverySourceId = updatedEvent?.route_id ?? existingEvent.route_id;
+        if (input.routeId !== undefined && updatedEvent && routeDeliverySourceId) {
+          await enqueueWahooGroupEventRouteDeliveryForAcceptedRecipients({
+            db,
+            eventId: updatedEvent.id,
+            expectedEventUpdatedAt: updatedEvent.updated_at.toISOString(),
+            groupId: updatedEvent.group_id,
+            sourceRouteId: routeDeliverySourceId,
+            transaction: tx,
+          });
+        }
+        return [updatedEvent];
+      });
 
       if (!event) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Group event not found" });
       }
-
       const [serializedEvent] = await serializeGroupEventsForViewer(db, [event], profileId);
       return { event: serializedEvent };
     }),
@@ -723,18 +763,21 @@ export const groupEventsRouter = createTRPCRouter({
 
     const cancelledAt = new Date();
     const [event] = await db.transaction(async (tx) => {
-      const [cancelledEvent] = await tx
+      const seriesId = existingEvent.series_id ?? existingEvent.id;
+      const cancelledEvents = await tx
         .update(groupEvents)
         .set({ cancelled_at: cancelledAt, updated_at: cancelledAt })
-        .where(eq(groupEvents.id, input.groupEventId))
+        .where(
+          input.scope === "series"
+            ? or(eq(groupEvents.id, seriesId), eq(groupEvents.series_id, seriesId))
+            : eq(groupEvents.id, input.groupEventId),
+        )
         .returning();
-
-      if (input.scope === "series") {
-        const seriesId = existingEvent.series_id ?? existingEvent.id;
-        await tx
-          .update(groupEvents)
-          .set({ cancelled_at: cancelledAt, updated_at: cancelledAt })
-          .where(or(eq(groupEvents.id, seriesId), eq(groupEvents.series_id, seriesId)));
+      const cancelledEvent = cancelledEvents.find(
+        (candidate) => candidate.id === input.groupEventId,
+      );
+      if (!cancelledEvent) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Group event not found" });
       }
 
       await notifyActiveGroupMembersOfCancellation(tx, {
@@ -743,6 +786,38 @@ export const groupEventsRouter = createTRPCRouter({
         groupEventId: input.groupEventId,
         groupId: existingEvent.group_id,
       });
+
+      let seriesRouteId =
+        cancelledEvents.find((candidate) => candidate.id === seriesId)?.route_id ?? null;
+      if (!seriesRouteId && cancelledEvent.series_id) {
+        const [series] = await tx
+          .select({ routeId: groupEvents.route_id })
+          .from(groupEvents)
+          .where(eq(groupEvents.id, cancelledEvent.series_id))
+          .limit(1);
+        seriesRouteId = series?.routeId ?? null;
+      }
+      const affectedById = new Map(cancelledEvents.map((candidate) => [candidate.id, candidate]));
+      const routeDeliveries = resolveCancelledGroupEventRouteDeliveries(
+        cancelledEvents.map((candidate) => ({
+          eventId: candidate.id,
+          routeId: candidate.route_id,
+          seriesId: candidate.series_id,
+        })),
+        seriesRouteId,
+      );
+      for (const delivery of routeDeliveries) {
+        const affectedEvent = affectedById.get(delivery.eventId);
+        if (!affectedEvent) continue;
+        await enqueueWahooGroupEventRouteDeliveryForAcceptedRecipients({
+          db,
+          eventId: affectedEvent.id,
+          expectedEventUpdatedAt: affectedEvent.updated_at.toISOString(),
+          groupId: affectedEvent.group_id,
+          sourceRouteId: delivery.sourceRouteId,
+          transaction: tx,
+        });
+      }
 
       return [cancelledEvent];
     });
@@ -764,14 +839,26 @@ export const groupEventsRouter = createTRPCRouter({
       await requireGroupEventRsvpAccess(db, group.id, profileId);
 
       if (input.status === null) {
-        await db
-          .delete(groupEventRsvps)
-          .where(
-            and(
-              eq(groupEventRsvps.group_event_id, input.groupEventId),
-              eq(groupEventRsvps.profile_id, profileId),
-            ),
-          );
+        await db.transaction(async (tx) => {
+          await tx
+            .delete(groupEventRsvps)
+            .where(
+              and(
+                eq(groupEventRsvps.group_event_id, input.groupEventId),
+                eq(groupEventRsvps.profile_id, profileId),
+              ),
+            );
+          if (event.route_id) {
+            await enqueueWahooGroupEventRouteDeliveryForProfile({
+              db,
+              eventId: event.id,
+              expectedEventUpdatedAt: event.updated_at.toISOString(),
+              profileId,
+              sourceRouteId: event.route_id,
+              transaction: tx,
+            });
+          }
+        });
 
         const [serializedEvent] = await serializeGroupEventsForViewer(db, [event], profileId);
         return {
@@ -779,22 +866,37 @@ export const groupEventsRouter = createTRPCRouter({
           rsvp: null,
         };
       }
+      const rsvpStatus = input.status;
 
-      const [rsvp] = await db
-        .insert(groupEventRsvps)
-        .values({
-          group_event_id: input.groupEventId,
-          profile_id: profileId,
-          status: input.status,
-        })
-        .onConflictDoUpdate({
-          target: [groupEventRsvps.group_event_id, groupEventRsvps.profile_id],
-          set: {
-            status: input.status,
-            updated_at: new Date(),
-          },
-        })
-        .returning();
+      const [rsvp] = await db.transaction(async (tx) => {
+        const [storedRsvp] = await tx
+          .insert(groupEventRsvps)
+          .values({
+            group_event_id: input.groupEventId,
+            profile_id: profileId,
+            status: rsvpStatus,
+          })
+          .onConflictDoUpdate({
+            target: [groupEventRsvps.group_event_id, groupEventRsvps.profile_id],
+            set: {
+              status: rsvpStatus,
+              updated_at: new Date(),
+            },
+          })
+          .returning();
+
+        if (event.route_id) {
+          await enqueueWahooGroupEventRouteDeliveryForProfile({
+            db,
+            eventId: event.id,
+            expectedEventUpdatedAt: event.updated_at.toISOString(),
+            profileId,
+            sourceRouteId: event.route_id,
+            transaction: tx,
+          });
+        }
+        return [storedRsvp];
+      });
 
       const [serializedEvent] = await serializeGroupEventsForViewer(db, [event], profileId);
       return {

@@ -6,7 +6,7 @@ const upcomingImpact = [
     activity_plan_id: "activity-plan-1",
     title: "Tempo ride",
     scheduled_at: "2026-07-16T12:00:00.000Z",
-    sport: "cycling",
+    activity_category: "bike" as const,
     estimated_load: 65,
     short_term_readiness_delta: null,
     fitness_contribution: null,

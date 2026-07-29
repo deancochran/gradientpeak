@@ -70,7 +70,7 @@ describe("useTrainingPlanBuilderController chart selection", () => {
     expect(result.current.chartReview).not.toHaveProperty("extendStart");
   });
 
-  it("does not remove a workout before destructive confirmation", () => {
+  it("does not remove a activity before destructive confirmation", () => {
     const alert = jest.spyOn(Alert, "alert").mockImplementation(jest.fn());
     const { result } = renderHook(() => useTrainingPlanBuilderController({ mode: "create" }));
 

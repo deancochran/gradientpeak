@@ -7,7 +7,7 @@ import {
 export type RecordingGpsMode = "on" | "off";
 
 export type RecordingLauncherSearch = {
-  category: RecordingActivityCategory;
+  activity_category: RecordingActivityCategory;
   gps: RecordingGpsMode;
   eventId?: string;
   routeId?: string;
@@ -35,7 +35,7 @@ export const recordingActivityOptions: Array<{
   { value: "bike", label: "Bike", description: "Road, trainer, or commute ride" },
   { value: "swim", label: "Swim", description: "Import only on web right now" },
   { value: "strength", label: "Strength", description: "Manual planning and import" },
-  { value: "other", label: "Other", description: "Fallback for unsupported sports" },
+  { value: "other", label: "Other", description: "Fallback for unsupported activity categories" },
 ];
 
 export const recordingGpsOptions: Array<{
@@ -63,13 +63,15 @@ export function normalizeRecordingActivityCategory(
 }
 
 export function validateRecordingSearch(search: Record<string, unknown>): RecordingLauncherSearch {
-  const category = normalizeRecordingActivityCategory(search.category, "run");
+  const activityCategory = normalizeRecordingActivityCategory(search.activity_category, "run");
   const gps =
-    search.gps === "on" || search.gps === "off" ? search.gps : defaultGpsModeForCategory(category);
+    search.gps === "on" || search.gps === "off"
+      ? search.gps
+      : defaultGpsModeForCategory(activityCategory);
   const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   return {
-    category,
+    activity_category: activityCategory,
     gps,
     eventId:
       typeof search.eventId === "string" && uuidPattern.test(search.eventId)

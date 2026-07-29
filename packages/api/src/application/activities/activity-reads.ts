@@ -34,7 +34,7 @@ import {
 } from "./activity-discovery";
 
 type Db = ReturnType<typeof getRequiredDb>;
-type ActivityCategory = NonNullable<ActivitySegmentReadRow["category"]>;
+type ActivityCategory = NonNullable<ActivitySegmentReadRow["activity_category"]>;
 
 export type ActivityListQueryInput = {
   limit: number;
@@ -113,7 +113,9 @@ export async function listActivitiesForProfile({
   const conditions = [eq(activities.profile_id, profileId)];
   const compositionCondition = buildActivityCompositionCondition({
     activityId: activities.id,
-    ...(input.activity_category === undefined ? {} : { category: input.activity_category }),
+    ...(input.activity_category === undefined
+      ? {}
+      : { activity_category: input.activity_category }),
     ...(input.composition_mode === undefined ? {} : { mode: input.composition_mode }),
   });
   if (compositionCondition) conditions.push(compositionCondition);
@@ -150,7 +152,7 @@ export async function listActivitiesForProfile({
             message:
               input.sort_by === "tss"
                 ? `TSS sorting supports at most ${tssSortMaximumHistory} matching activities; narrow the activity filters.`
-                : `Category metric sorting supports at most ${tssSortMaximumHistory} matching activities; narrow the activity filters.`,
+                : `ActivityCategory metric sorting supports at most ${tssSortMaximumHistory} matching activities; narrow the activity filters.`,
           });
         }
 
@@ -221,7 +223,7 @@ export async function listActivitiesForProfile({
           candidate.matchedCategorySummary = input.activity_category
             ? summarizeMatchedCategory({
                 segments: candidate.activity.segments,
-                category: input.activity_category,
+                activity_category: input.activity_category,
                 ...(derivedSegments === undefined ? {} : { derivedSegments }),
               })
             : null;
@@ -336,7 +338,7 @@ export async function listActivitiesForProfile({
           input.activity_category
             ? summarizeMatchedCategory({
                 segments: activity.segments,
-                category: input.activity_category,
+                activity_category: input.activity_category,
                 ...(derivedSegments === undefined ? {} : { derivedSegments }),
               })
             : null,

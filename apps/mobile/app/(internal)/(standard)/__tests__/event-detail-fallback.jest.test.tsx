@@ -58,7 +58,7 @@ const eventDetailData: {
     id: "plan-1",
     name: "Tempo Builder",
     description: "Progressive tempo with a strong finish.",
-    activity_category: "outdoor_run",
+    activity_category: "run",
     estimated_duration: 3600,
     estimated_tss: 72,
   },
@@ -77,6 +77,7 @@ const eventQueryState = {
 const routerNavigateMock = jest.fn();
 const navigateToMock = jest.fn();
 const deleteEventMutateMock = jest.fn();
+var getActivityColorMock = jest.fn((_activityCategory: string) => ({ name: "Outdoor Run" }));
 
 type StackScreenProps = Record<string, unknown> & {
   options?: { headerRight?: () => React.ReactNode };
@@ -197,7 +198,7 @@ jest.mock("@/lib/scheduling/refreshScheduleViews", () => ({
 jest.mock("@/lib/utils/plan/colors", () => ({
   __esModule: true,
   getActivityBgClass: () => "bg-primary",
-  getActivityColor: () => ({ name: "Outdoor Run" }),
+  getActivityColor: (activityCategory: string) => getActivityColorMock(activityCategory),
 }));
 
 jest.mock("@/lib/utils/plan/dateGrouping", () => ({
@@ -307,7 +308,7 @@ describe("event detail fallback screen", () => {
       id: "plan-1",
       name: "Tempo Builder",
       description: "Progressive tempo with a strong finish.",
-      activity_category: "outdoor_run",
+      activity_category: "run",
       estimated_duration: 3600,
       estimated_tss: 72,
     };
@@ -328,6 +329,7 @@ describe("event detail fallback screen", () => {
     expect(screen.queryByTestId("event-detail-options-open-activity-plan")).toBeNull();
     expect(screen.getByTestId("event-detail-options-trigger")).toBeTruthy();
     expect(screen.getByText("Comments (0)")).toBeTruthy();
+    expect(getActivityColorMock).toHaveBeenCalledWith("run");
   });
 
   it("does not present a cancelled linked event as completed", () => {

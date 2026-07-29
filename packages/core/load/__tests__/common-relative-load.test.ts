@@ -33,7 +33,7 @@ const thresholdByMethod = {
   heart_rate_zones: { type: "lthr_bpm", value: 170, unit: "beats_per_minute" },
 } as const;
 
-const sportByMethod = {
+const activityCategoryByMethod = {
   power_threshold: "bike",
   critical_power_threshold: "bike",
   run_pace_threshold: "run",
@@ -43,7 +43,7 @@ const sportByMethod = {
 
 function metadata(method: CommonLoadMethod = "power_threshold") {
   return {
-    sport: sportByMethod[method],
+    activity_category: activityCategoryByMethod[method],
     method,
     quality: {
       source: "validated_test" as const,
@@ -121,7 +121,7 @@ function unavailable(options: {
     status: "unavailable",
     model: COMMON_RELATIVE_LOAD_MODEL,
     version: COMMON_RELATIVE_LOAD_VERSION,
-    sport: "swim",
+    activity_category: "swim",
     method: null,
     quality: null,
     thresholdEvidence: null,
@@ -300,9 +300,9 @@ describe("common relative Load activity contract and calculation", () => {
     ).toBe(true);
 
     const validAvailable = available(3600, 1);
-    expect(commonLoadResultSchema.safeParse({ ...validAvailable, sport: "run" }).success).toBe(
-      false,
-    );
+    expect(
+      commonLoadResultSchema.safeParse({ ...validAvailable, activity_category: "run" }).success,
+    ).toBe(false);
     expect(
       commonLoadResultSchema.safeParse({
         ...validPartial,
@@ -420,7 +420,7 @@ describe("common relative Load aggregation", () => {
     expect(result.intensity).not.toBe(0.75);
   });
 
-  it("adds supported cross-sport methods within model version 1", () => {
+  it("adds supported cross-category methods within model version 1", () => {
     const result = aggregateCommonLoad([
       available(3600, 1, "power_threshold"),
       available(3600, 1, "critical_power_threshold"),

@@ -13,18 +13,22 @@ import {
 
 export const Route = createFileRoute("/_protected/scheduled-activities/")({
   validateSearch: (search: Record<string, unknown>) => ({
-    category: typeof search.category === "string" ? search.category : undefined,
+    activity_category:
+      typeof search.activity_category === "string" ? search.activity_category : undefined,
     range: search.range === "past" || search.range === "all" ? search.range : "upcoming",
   }),
   component: ScheduledActivitiesPage,
 });
 
 function ScheduledActivitiesPage() {
-  const search = Route.useSearch() as { category?: string; range: "all" | "past" | "upcoming" };
+  const search = Route.useSearch() as {
+    activity_category?: string;
+    range: "all" | "past" | "upcoming";
+  };
   const today = getTodayDateKey();
   const eventsQuery = api.events.list.useQuery({
     event_types: ["planned"],
-    ...(search.category ? { activity_category: search.category } : {}),
+    ...(search.activity_category ? { activity_category: search.activity_category } : {}),
     ...(search.range === "upcoming" ? { date_from: today } : {}),
     ...(search.range === "past" ? { date_to: today } : {}),
     include_adhoc: true,
@@ -57,8 +61,8 @@ function ScheduledActivitiesPage() {
         </select>
         <select
           aria-label="Activity category"
-          name="category"
-          defaultValue={search.category ?? ""}
+          name="activity_category"
+          defaultValue={search.activity_category ?? ""}
           className="h-10 rounded-md border bg-background px-3"
         >
           <option value="">All activities</option>

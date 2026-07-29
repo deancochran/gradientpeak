@@ -2,7 +2,7 @@ import {
   evaluateCriticalPower,
   type ObservedCriticalPowerEffort,
 } from "../../calculations/critical-power";
-import type { CanonicalSport } from "../../schemas/sport";
+import type { CanonicalActivityCategory } from "../../schemas/activity-category";
 import {
   type CalculationResult,
   estimatedResult,
@@ -44,7 +44,7 @@ function observedPowerEffort(
   model: Pick<AthleteIntelligenceModelInput, "assessmentAsOf" | "evidenceRegistry">,
   effort: EffortObservationInput,
 ): { effort: ObservedCriticalPowerEffort; sourceIds: string[] } | null {
-  if (effort.sport !== "bike" || effort.kind !== "power") return null;
+  if (effort.activity_category !== "bike" || effort.kind !== "power") return null;
   const eligibleSources = effort.evidenceSourceIds.flatMap((sourceId) => {
     const source = model.evidenceRegistry[sourceId];
     if (!source || source.modality !== "value") return [];
@@ -54,7 +54,7 @@ function observedPowerEffort(
     });
     return eligibility.eligible &&
       eligibility.evidence.sourceType === "activity_effort" &&
-      eligibility.evidence.sport === "bike" &&
+      eligibility.evidence.activity_category === "bike" &&
       eligibility.evidence.rawObservation.value === effort.powerWatts &&
       eligibility.evidence.rawObservation.unit === "watts"
       ? [sourceId]
@@ -120,12 +120,12 @@ export function calculateCriticalPowerCapability(input: {
     AthleteIntelligenceModelInput,
     "assessmentAsOf" | "efforts" | "evidenceRegistry" | "readCoverage"
   >;
-  targetSport?: CanonicalSport | null;
+  targetActivityCategory?: CanonicalActivityCategory | null;
 }): CriticalPowerCapability {
   if (
-    input.targetSport !== undefined &&
-    input.targetSport !== null &&
-    input.targetSport !== "bike"
+    input.targetActivityCategory !== undefined &&
+    input.targetActivityCategory !== null &&
+    input.targetActivityCategory !== "bike"
   ) {
     const result = unavailable("unsupported", "critical_power_only_supported_for_bike");
     return {

@@ -231,6 +231,85 @@ test("merge-base protection supports bootstrap and rejects policy weakening", ()
   );
 });
 
+test("merge-base enum source moves preserve equivalent coverage and reject value removal", () => {
+  const baseline = { version: 2, categories: {}, unsafe: {} };
+  const previousConfig = fixtureConfig(
+    { root: { roots: ["."] } },
+    {
+      enumParity: [
+        {
+          id: "activity-category",
+          db: { file: "db-old.ts", symbol: "activityCategory" },
+          core: { file: "core-old.ts", symbol: "activityCategory" },
+        },
+      ],
+    },
+  );
+  const currentConfig = structuredClone(previousConfig);
+  currentConfig.enumParity[0].db.file = "db-new.ts";
+  currentConfig.enumParity[0].db.symbol = "activityCategoryValues";
+  currentConfig.enumParity[0].core.file = "core-new.ts";
+  currentConfig.enumParity[0].core.symbol = "activityCategorySchema";
+  const completeValues = {
+    "activity-category": {
+      db: ["run", "bike", "swim", "strength", "other"],
+      core: ["run", "bike", "swim", "strength", "other"],
+    },
+  };
+  const previous = {
+    baseline,
+    config: previousConfig,
+    enumParityValues: completeValues,
+  };
+
+  assert.equal(
+    compareMergeBaseProtection(
+      { baseline, config: currentConfig, enumParityValues: completeValues },
+      previous,
+    ).findings.length,
+    0,
+  );
+
+  const reducedValues = {
+    "activity-category": {
+      db: ["run", "bike", "strength", "other"],
+      core: ["run", "bike", "strength", "other"],
+    },
+  };
+  const findings = compareMergeBaseProtection(
+    { baseline, config: currentConfig, enumParityValues: reducedValues },
+    previous,
+  ).findings;
+  assert(
+    findings.some(
+      (finding) =>
+        finding.category === "merge-base-coverage-weakening" &&
+        finding.details.removedEnumValues?.includes("swim"),
+    ),
+  );
+  assert(
+    compareMergeBaseProtection(
+      { baseline, config: previousConfig, enumParityValues: reducedValues },
+      previous,
+    ).findings.some(
+      (finding) =>
+        finding.category === "merge-base-coverage-weakening" &&
+        finding.details.removedEnumValues?.includes("swim"),
+    ),
+  );
+
+  assert(
+    compareMergeBaseProtection(
+      { baseline, config: currentConfig },
+      { baseline, config: previousConfig },
+    ).findings.some(
+      (finding) =>
+        finding.category === "merge-base-coverage-weakening" &&
+        finding.details.changedEnumSource === "db",
+    ),
+  );
+});
+
 test("canonical policy blocks widening while allowing debt reduction", () => {
   const baseline = { version: 2, categories: {}, unsafe: {} };
   const previous = {
@@ -303,9 +382,9 @@ test("merge-base canonical policy covers every enforcement surface", () => {
     },
     enumParity: [
       {
-        id: "sport",
-        db: { file: "db.ts", symbol: "sport" },
-        core: { file: "core.ts", symbol: "sport" },
+        id: "activity-category",
+        db: { file: "db.ts", symbol: "activityCategory" },
+        core: { file: "core.ts", symbol: "activityCategory" },
       },
     ],
     generatedOwners: [

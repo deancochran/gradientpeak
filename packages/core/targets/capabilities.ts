@@ -1,7 +1,7 @@
-import type { CanonicalSport } from "../schemas/sport";
+import type { CanonicalActivityCategory } from "../schemas/activity-category";
 import type { ActivityTargetType } from "./schema";
 
-export type ActivityTargetCategory = CanonicalSport;
+export type ActivityTargetCategory = CanonicalActivityCategory;
 
 export type ActivityTargetCapability = {
   allowed: readonly ActivityTargetType[];

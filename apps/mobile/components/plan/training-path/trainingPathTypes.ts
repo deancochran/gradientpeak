@@ -30,6 +30,8 @@ export type TrainingPathWeek = {
   effectiveCompletedLoad?: number | null;
   effectiveRemainingLoad?: number | null;
   effectiveTentativeLoad?: number | null;
+  recommendedLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
+  recommendedLoad?: number | null;
   weekStart: string;
   weekEnd: string;
   label: string;
@@ -62,6 +64,8 @@ export type TrainingPathWeekSummary = {
   effectiveCompletedLoad?: number | null;
   effectiveRemainingLoad?: number | null;
   effectiveTentativeLoad?: number | null;
+  recommendedLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
+  recommendedLoad?: number | null;
   plannedLoad: number;
   tentativePlannedLoad: number;
   targetLoad: number | null;

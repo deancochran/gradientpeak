@@ -3,7 +3,7 @@ import type { SegmentDerivedSummary } from "../../lib/activity-analysis";
 import { aggregateDailyTssObservations } from "./daily-tss-observations";
 
 const identity = {
-  sport: "bike",
+  activity_category: "bike",
   method: "power_threshold",
   source: "activity_analysis",
   version: "1",
@@ -14,7 +14,7 @@ function summary(segmentId: string, value: number): SegmentDerivedSummary {
   return {
     activity_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     segment_id: segmentId,
-    category: "bike",
+    activity_category: "bike",
     tss: value,
     tss_identity: identity,
     intensity_factor: 0.8,

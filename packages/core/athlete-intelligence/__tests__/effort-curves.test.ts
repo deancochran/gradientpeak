@@ -25,7 +25,7 @@ const effort = (input: {
   duration: number;
   value: number;
   kind?: "power" | "speed";
-  sport?: "bike" | "run" | "swim";
+  activity_category?: "bike" | "run" | "swim";
   linked?: boolean;
   observedAt?: string;
 }): EffortObservationInput =>
@@ -35,7 +35,7 @@ const effort = (input: {
     lineageGroupId: input.lineage ?? `manual-test:${input.id}`,
     activitySourceId: input.linked ? `activity:${input.id}` : null,
     observedAt: input.observedAt ?? "2026-07-01T00:00:00.000Z",
-    sport: input.sport ?? "bike",
+    activity_category: input.activity_category ?? "bike",
     startOffsetSeconds: null,
     endOffsetSeconds: null,
     durationSeconds: input.duration,
@@ -58,7 +58,7 @@ const model = (efforts: EffortObservationInput[]) => ({
           lineageGroupId: item.lineageGroupId,
           observedAt: item.observedAt,
           rawObservation: { value: item.durationSeconds, unit: "seconds" },
-          sport: item.sport,
+          activity_category: item.activity_category,
           modality: "duration",
           sourceType: "activity_effort",
           qualityState: "known",
@@ -77,7 +77,7 @@ const model = (efforts: EffortObservationInput[]) => ({
             value: item.kind === "power" ? item.powerWatts : item.speedMetersPerSecond,
             unit: item.kind === "power" ? "watts" : "meters_per_second",
           },
-          sport: item.sport,
+          activity_category: item.activity_category,
           modality: "value",
           sourceType: "activity_effort",
           qualityState: "known",
@@ -93,7 +93,7 @@ const target = (durationSeconds: number): EffortCurveTarget => ({
   durationSeconds,
   modality: "power",
   unit: "watts",
-  sport: "bike",
+  activity_category: "bike",
 });
 
 describe("calculateDurationAwareEffortCurve", () => {
@@ -102,11 +102,23 @@ describe("calculateDurationAwareEffortCurve", () => {
       durationSeconds,
       modality: "pace",
       unit: "seconds_per_100m",
-      sport: "swim",
+      activity_category: "swim",
     });
     const swimModel = model([
-      effort({ id: "swim-short", duration: 300, value: 100 / 90, kind: "speed", sport: "swim" }),
-      effort({ id: "swim-long", duration: 1_200, value: 100 / 105, kind: "speed", sport: "swim" }),
+      effort({
+        id: "swim-short",
+        duration: 300,
+        value: 100 / 90,
+        kind: "speed",
+        activity_category: "swim",
+      }),
+      effort({
+        id: "swim-long",
+        duration: 1_200,
+        value: 100 / 105,
+        kind: "speed",
+        activity_category: "swim",
+      }),
     ]);
 
     const available = calculateDurationAwareEffortCurve({
@@ -139,7 +151,7 @@ describe("calculateDurationAwareEffortCurve", () => {
         durationSeconds: 600,
         modality: "pace",
         unit: "seconds_per_kilometer",
-        sport: "swim",
+        activity_category: "swim",
       },
       highIntensity: target(600),
     }).threshold;
@@ -261,10 +273,10 @@ describe("calculateDurationAwareEffortCurve", () => {
     });
   });
 
-  it("returns explicit unsupported states for incompatible sports and units", () => {
+  it("returns explicit unsupported states for incompatible activity_categories and units", () => {
     const result = calculateDurationAwareEffortCurve({
       model: model([]),
-      threshold: { ...target(300), sport: "run" },
+      threshold: { ...target(300), activity_category: "run" },
       highIntensity: { ...target(60), unit: "seconds_per_kilometer" },
     });
 
@@ -315,20 +327,26 @@ describe("calculateDurationAwareEffortCurve", () => {
   it("builds a run pace curve from speed efforts without generic scores", () => {
     const result = calculateDurationAwareEffortCurve({
       model: model([
-        effort({ id: "fast", duration: 300, value: 5, kind: "speed", sport: "run" }),
-        effort({ id: "steady", duration: 1_200, value: 4, kind: "speed", sport: "run" }),
+        effort({ id: "fast", duration: 300, value: 5, kind: "speed", activity_category: "run" }),
+        effort({
+          id: "steady",
+          duration: 1_200,
+          value: 4,
+          kind: "speed",
+          activity_category: "run",
+        }),
       ]),
       threshold: {
         durationSeconds: 600,
         modality: "pace",
         unit: "seconds_per_kilometer",
-        sport: "run",
+        activity_category: "run",
       },
       highIntensity: {
         durationSeconds: 300,
         modality: "pace",
         unit: "seconds_per_kilometer",
-        sport: "run",
+        activity_category: "run",
       },
     });
 
@@ -433,7 +451,7 @@ describe("calculateDurationAwareEffortCurve", () => {
     ["unsupported evidence", { compatibilityState: "unsupported" }],
     ["raw value mismatch", { rawObservation: { value: 301, unit: "watts" } }],
     ["raw unit mismatch", { rawObservation: { value: 300, unit: "meters_per_second" } }],
-    ["sport mismatch", { sport: "run" }],
+    ["activity_category mismatch", { activity_category: "run" }],
     ["modality mismatch", { modality: "speed" }],
   ] as const)("excludes %s", (_label, override) => {
     const item = effort({ id: "rejected", duration: 100, value: 300 });

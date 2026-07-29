@@ -203,7 +203,7 @@ function rows(): AthleteIntelligenceRows {
         id: "effort-1",
         activityId: "activity-1",
         recordedAt: new Date("2026-05-31T10:10:00.000Z"),
-        sport: "bike",
+        activity_category: "bike",
         kind: "power",
         durationSeconds: 300,
         startOffsetSeconds: 600,
@@ -219,7 +219,7 @@ function rows(): AthleteIntelligenceRows {
         id: "effort-threshold",
         activityId: "activity-1",
         recordedAt: new Date("2026-05-31T10:45:00.000Z"),
-        sport: "bike",
+        activity_category: "bike",
         kind: "power",
         durationSeconds: 1200,
         startOffsetSeconds: 1200,
@@ -265,7 +265,9 @@ function rows(): AthleteIntelligenceRows {
         dose_limits: {
           max_single_session_duration_minutes: 120,
           max_weekly_duration_minutes: 600,
-          sport_overrides: { bike: { max_sessions_per_week: 4, max_weekly_duration_minutes: 400 } },
+          activity_category_overrides: {
+            bike: { max_sessions_per_week: 4, max_weekly_duration_minutes: 400 },
+          },
         },
         training_style: {
           progression_pace: 0.5,
@@ -299,7 +301,7 @@ function rows(): AthleteIntelligenceRows {
         routeId: "route-1",
         createdAt: new Date("2026-05-20T00:00:00.000Z"),
         updatedAt: new Date("2026-05-20T00:00:00.000Z"),
-        payload: { sport: "running" },
+        payload: { activity_category: "running" },
         recurrenceRule: null,
       },
     ],
@@ -422,7 +424,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     });
   });
 
-  it("materializes persisted goal sport into the canonical header when objective sport is omitted", async () => {
+  it("materializes persisted goal activity_category into the canonical header when objective activity_category is omitted", async () => {
     const persistedGoal = {
       ...first(rows().goals),
       activityCategory: "Cycling",
@@ -440,8 +442,8 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       type: "completion",
       distance_m: 10_000,
     });
-    expect(goal.goalSport).toBe("bike");
-    expect(result.evidenceRegistry[goal.sourceId]?.sport).toBe("bike");
+    expect(goal.goalActivityCategory).toBe("bike");
+    expect(result.evidenceRegistry[goal.sourceId]?.activity_category).toBe("bike");
   });
 
   it("marks schedule coverage truncated when a date-only goal has no typed planning timezone", async () => {
@@ -552,14 +554,14 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       mass: "pounds",
       temperature: "fahrenheit",
     });
-    expect(result.activities[0]).toMatchObject({ athleteId: profileId, sport: "bike" });
+    expect(result.activities[0]).toMatchObject({ athleteId: profileId, activity_category: "bike" });
     expect(result.activities[0]?.metrics.trainingLoad).toMatchObject({
       value: 225,
       identity: {
         family: "tss",
         method: "power_threshold",
         sourceDefinition: "activity_analysis",
-        sport: "bike",
+        activity_category: "bike",
         version: "1",
       },
     });
@@ -573,7 +575,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       ]),
     );
     expect(result.trainingContext).toMatchObject({
-      preferredSports: ["bike"],
+      preferredActivityCategories: ["bike"],
       weeklyTimeWindows: [{ day: "monday", startMinuteLocal: 360, endMinuteLocal: 480 }],
       hardRestDays: ["sunday"],
       allowDoubleDays: null,
@@ -581,7 +583,9 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       taperPreference: null,
       progressionPreference: null,
     });
-    expect(result.trainingContext.sportDoseLimits[0]?.maximumSessionsPerWeek.value).toBe(4);
+    expect(result.trainingContext.activityCategoryDoseLimits[0]?.maximumSessionsPerWeek.value).toBe(
+      4,
+    );
     expect(result.trainingContext.ctlOverride).toMatchObject({ value: null, identity: null });
     expect(result.plannedSchedule[0]?.startAt).toBe("2026-06-10T10:00:00.000Z");
     expect(result.readCoverage).toEqual({
@@ -637,7 +641,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     );
   });
 
-  it("materializes canonical running threshold pace and swimming CSS metrics with sport scope", async () => {
+  it("materializes canonical running threshold pace and swimming CSS metrics with activity-category scope", async () => {
     const sourceRows = rows();
     sourceRows.metrics.push(
       {
@@ -675,8 +679,12 @@ describe("materializeAthleteIntelligenceModelInput", () => {
 
     expect(run?.value).toMatchObject({ value: 270, unit: "seconds_per_km" });
     expect(swim?.value).toMatchObject({ value: 95, unit: "seconds_per_100m" });
-    expect(result.evidenceRegistry[run?.value.evidenceSourceIds[0] ?? ""]?.sport).toBe("run");
-    expect(result.evidenceRegistry[swim?.value.evidenceSourceIds[0] ?? ""]?.sport).toBe("swim");
+    expect(result.evidenceRegistry[run?.value.evidenceSourceIds[0] ?? ""]?.activity_category).toBe(
+      "run",
+    );
+    expect(result.evidenceRegistry[swim?.value.evidenceSourceIds[0] ?? ""]?.activity_category).toBe(
+      "swim",
+    );
   });
 
   it("maps the current test-sourced threshold to validated test evidence", async () => {
@@ -875,7 +883,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     });
   });
 
-  it("preserves reference-activity sport across current LTHR observations", async () => {
+  it("preserves reference-activity category across current LTHR observations", async () => {
     const value = rows();
     const genericLthr = value.metrics.find((metric) => metric.type === "lthr");
     if (!genericLthr) throw new Error("fixture LTHR missing");
@@ -885,7 +893,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
         id: "run-lthr",
         value: 168,
         referenceActivityId: "run-reference",
-        referenceActivityType: "run",
+        referenceActivityCategory: "run",
         recordedAt: new Date("2026-05-28T00:00:00.000Z"),
       },
       {
@@ -893,7 +901,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
         id: "bike-lthr",
         value: 178,
         referenceActivityId: "bike-reference",
-        referenceActivityType: "bike",
+        referenceActivityCategory: "bike",
         recordedAt: new Date("2026-05-29T00:00:00.000Z"),
       },
     );
@@ -908,7 +916,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     expect(
       lthrEvidence.map((metric) => {
         const evidenceId = first(metric.value.evidenceSourceIds);
-        return [metric.value.value, result.evidenceRegistry[evidenceId]?.sport];
+        return [metric.value.value, result.evidenceRegistry[evidenceId]?.activity_category];
       }),
     ).toEqual(
       expect.arrayContaining([
@@ -1061,8 +1069,8 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       { day: "monday", startMinuteLocal: 360, endMinuteLocal: 480 },
     ]);
     expect(result.trainingContext.maximumSessionsPerDay.value).toBe(2);
-    expect(result.trainingContext.sportDoseLimits[0]).toMatchObject({
-      sport: "bike",
+    expect(result.trainingContext.activityCategoryDoseLimits[0]).toMatchObject({
+      activity_category: "bike",
       maximumWeeklyMinutes: { value: 400 },
       maximumSessionsPerWeek: { value: 4 },
     });
@@ -1372,7 +1380,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     expect(result.readCoverage?.schedules.state).toBe("truncated");
   });
 
-  it("materializes a header-only consistency goal without borrowing a payload sport", async () => {
+  it("materializes a header-only consistency goal without borrowing a payload activity_category", async () => {
     const value = rows();
     value.goals[0] = {
       ...first(value.goals),
@@ -1388,10 +1396,10 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     const goal = first(result.goals);
 
     expect(goal).toMatchObject({
-      goalSport: "bike",
+      goalActivityCategory: "bike",
       objective: { type: "consistency", target_sessions_per_week: 2, target_weeks: 8 },
     });
-    expect(result.evidenceRegistry[goal.sourceId]?.sport).toBe("bike");
+    expect(result.evidenceRegistry[goal.sourceId]?.activity_category).toBe("bike");
   });
 
   it("marks schedule coverage truncated rather than treating a UTC cutoff as a planning-date bound", async () => {

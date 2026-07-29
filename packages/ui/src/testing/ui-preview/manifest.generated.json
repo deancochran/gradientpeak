@@ -41,20 +41,20 @@
         "ui-preview-form-username",
         "ui-preview-form-bio",
         "ui-preview-form-is-public",
-        "ui-preview-form-sport",
+        "ui-preview-form-activity-category",
         "ui-preview-form-submit"
       ]
     },
     {
-      "description": "Shared toggles and selectors for consent, channel, activity type, and sport choice.",
+      "description": "Shared toggles and selectors for consent, channel, session focus, and activity category choice.",
       "testId": "ui-preview-scenario-selection-controls",
       "title": "Selection controls",
       "key": "selectionControls",
       "selectors": [
         "accept-terms-checkbox",
         "email-notifications-switch",
-        "activity-type-select",
-        "preferred-sport-radio-group"
+        "session-focus-select",
+        "preferred-activity-category-radio-group"
       ]
     }
   ]

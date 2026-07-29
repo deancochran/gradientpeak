@@ -1,3 +1,4 @@
+import type { CanonicalActivityCategory } from "../../../schemas/activity-category";
 import type {
   CalculatedParameter,
   EventDemand,
@@ -5,7 +6,6 @@ import type {
   PlanningGoalPriorityClass,
   TrajectoryMode,
 } from "../../../schemas/planning";
-import type { CanonicalSport } from "../../../schemas/sport";
 
 const MICRO_TAPER_DAYS = 4;
 const MICRO_TAPER_FLATTEN_FRACTION = 0.95;
@@ -16,7 +16,7 @@ const SUSTAINED_PEAK_VALLEY_FLOOR_FRACTION = 0.9;
 export interface GoalTrajectoryCandidate {
   goal: NormalizedPlanningGoal;
   demand: EventDemand;
-  sport: CanonicalSport;
+  activity_category: CanonicalActivityCategory;
   targetCtl: number;
   taperDays: number;
   taperParameter: CalculatedParameter;
@@ -30,7 +30,7 @@ export type MergedGoalTrajectoryStrategy =
 
 export interface MergedGoalTrajectory {
   strategy: MergedGoalTrajectoryStrategy;
-  sport: CanonicalSport;
+  activity_category: CanonicalActivityCategory;
   goalDate: string;
   goalIds: string[];
   priorityClass: PlanningGoalPriorityClass;
@@ -115,7 +115,7 @@ export function mergeGoalTrajectories(
 
       return {
         strategy: sortedGroup.length > 1 ? "same_day_priority" : "independent",
-        sport: primary.sport,
+        activity_category: primary.activity_category,
         goalDate: primary.goal.target_date,
         goalIds,
         priorityClass: primary.goal.priority_class,

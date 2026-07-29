@@ -17,6 +17,14 @@ To reuse your normal development server instead, leave that server running and s
 EXPO_DEV_SERVER_LABEL="http://192.168.1.20:8081" pnpm --filter mobile test:e2e
 ```
 
+When running the E2E stack on alternate ports, export the same values for both server and test
+commands. Maestro derives its default Android server label and ADB reverse from `EXPO_PORT`:
+
+```bash
+PORT=3100 EXPO_PORT=8082 pnpm dev:e2e
+PORT=3100 EXPO_PORT=8082 pnpm --filter mobile test:e2e
+```
+
 Run one smoke flow:
 
 ```bash

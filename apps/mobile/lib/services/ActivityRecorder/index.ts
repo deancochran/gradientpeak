@@ -13,17 +13,13 @@
  * - 4 core events instead of 12+
  */
 
-import type {
-  FTMSFeatures,
-  FtmsAvailableMode,
-  FtmsControlMode,
-  FtmsMachineType,
-} from "@deancochran/ftms";
+import type { FTMSFeatures, FtmsMachineType } from "@deancochran/ftms";
 import {
   ACTIVITY_PLAN_COMPILER_VERSION,
   activityPlanStructureSchemaV3,
   type CurrentMetricValue,
   compileActivityPlanV3,
+  type FtmsControlMode,
   GLOBAL_DEFAULTS,
   type MetricFamily,
   type MetricSourceCandidate,
@@ -79,8 +75,15 @@ import { getNextGpsRecordingEnabled, shouldStartGpsTracking } from "./gpsRuntime
 import { LiveMetricsManager } from "./LiveMetricsManager";
 import { LocationManager } from "./location";
 import { NotificationsManager } from "./notification";
-import type { RecordingActivityPlanV3Input, RecordingPlanOccurrence } from "./plan";
+import {
+  type CompiledRecordingPlan,
+  compileRecordingPlan,
+  createFreeRecordingExecutionPlan,
+  type RecordingActivityPlanV3Input,
+  type RecordingPlanOccurrence,
+} from "./plan";
 import { PlanExecution } from "./planExecution";
+import { getMobileRecordingPlanSupport } from "./planSupport";
 import { type PlanValidationResult, validatePlanRequirements } from "./planValidation";
 import {
   allocateRecordingEvidenceSession,
@@ -110,6 +113,7 @@ import { type ConnectedSensor, SENSOR_READING_STALE_AFTER_MS, SensorsManager } f
 import { RecordingSessionController } from "./sessionController";
 import { inferTrainerMachineType, TrainerControl } from "./trainerControl";
 import type {
+  FtmsAvailableMode,
   RecorderProfileRef,
   RecordingMetadata,
   RecordingPlanView,
@@ -392,7 +396,7 @@ export interface ServiceEvents {
 
   // Unplanned activity was selected
   activitySelected: (data: {
-    category: RecordingActivityCategory;
+    activity_category: RecordingActivityCategory;
     gpsRecordingEnabled: boolean;
   }) => void;
 
@@ -453,6 +457,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private rewindJournal: NonNullable<RecordingCheckpoint["rewindJournal"]> = [];
   private checkpointRevision = 0;
   private planHash: string | null = null;
+  /** In-memory-only execution contract for the active free recording. */
+  private freeRecordingExecutionPlan: RecordingActivityPlanV3Input | undefined;
+  private freeRecordingCompiledPlan: CompiledRecordingPlan | null = null;
   private occurrenceStartedAt: number | null = null;
   private occurrenceStartStats = { movingSeconds: 0, distanceMeters: 0 };
   private timerEvents: Array<{ type: "pause" | "resume"; timestamp: number }> = [];
@@ -1395,8 +1402,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       hasPlan: true,
       name: this._plan?.name,
       description: this._plan?.description,
-      activityType: this._plan
-        ? compileActivityPlanV3(this._plan.structure).primaryCategory
+      activityCategory: this._plan
+        ? compileActivityPlanV3(this._plan.structure).occurrences.find(
+            (occurrence) => occurrence.role === "activity",
+          )?.activity_category
         : undefined,
       stepIndex: info.index,
       stepCount: info.total,
@@ -1406,11 +1415,15 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         ? {
             id: info.current.segmentId,
             role: info.current.role,
-            category: info.current.category,
+            activity_category: info.current.activity_category,
           }
         : null,
       nextSegment: info.next
-        ? { id: info.next.segmentId, role: info.next.role, category: info.next.category }
+        ? {
+            id: info.next.segmentId,
+            role: info.next.role,
+            activity_category: info.next.activity_category,
+          }
         : null,
       progress: info.progress,
       isLast: info.isLast,
@@ -1693,7 +1706,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         appBuild: "mobile-recorder-v1",
       },
       activity: {
-        category: this.selectedActivityCategory,
+        activity_category: this.selectedActivityCategory,
         mode: this.hasPlan ? "planned" : "free",
         gpsMode: this._gpsRecordingEnabled ? "on" : "off",
         eventId: this._eventId ?? null,
@@ -1948,6 +1961,14 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // ================================
 
   selectPlan(plan: RecordingActivityPlanV3Input, eventId?: string): void {
+    if (this.recoveredCheckpoint !== null) {
+      throw new Error("Resume or discard the recovered recording before selecting a new plan.");
+    }
+    const support = getMobileRecordingPlanSupport(plan);
+    if (!support.supported) {
+      throw new Error(support.message);
+    }
+
     console.log("[Service] Selected plan:", plan.name);
     console.log("[Service] Plan structure:", JSON.stringify(plan.structure, null, 2));
 
@@ -1972,7 +1993,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     }
 
     this.selectedActivityCategory =
-      this.currentStep?.category ?? compileActivityPlanV3(plan.structure).primaryCategory;
+      this.currentStep?.activity_category ?? support.activity_category;
     void this.syncGpsTrackingForCurrentState().catch((error) => {
       console.error("[Service] Failed to sync GPS tracking after selecting plan:", error);
     });
@@ -1992,6 +2013,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.hasConfiguredSetup = true;
     this._plan = undefined;
     this._eventId = undefined;
+    this.freeRecordingExecutionPlan = undefined;
+    this.freeRecordingCompiledPlan = null;
     this.planExecution.clear();
     this.completedOccurrences = [];
     this.boundaryJournal = [];
@@ -2124,10 +2147,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   private getFitSport(
-    category: RecordingActivityCategory,
+    activityCategory: RecordingActivityCategory,
     gpsRecordingEnabled: boolean,
   ): { sport: string; subSport: string } {
-    switch (category) {
+    switch (activityCategory) {
       case "bike":
         return {
           sport: "cycling",
@@ -2256,7 +2279,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.checkpointRevision += 1;
     if (!structureResult.success || !this.planHash) {
       await persistRecordingCheckpoint({
-        schemaVersion: 3,
+        schemaVersion: 4,
         variant: "unplanned",
         sessionId: snapshot.identity.sessionId,
         profileId: this.profile.id,
@@ -2269,7 +2292,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         revision: this.checkpointRevision,
         start: { startedAt: snapshot.identity.startedAt, updatedAt: new Date().toISOString() },
         draft: {
-          activityCategory: this.selectedActivityCategory,
+          activity_category: this.selectedActivityCategory,
           gpsMode: this._gpsRecordingEnabled ? "on" : "off",
         },
         summary: {
@@ -2319,7 +2342,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         accumulatedPauseSeconds: this.pausedTime / 1000,
       },
       policy: {
-        category: this.currentStep?.category ?? null,
+        activity_category: this.currentStep?.activity_category ?? null,
         gpsMode: this._gpsRecordingEnabled ? "on" : "off",
         activityGpsMode: this._plan?.gps_recording_enabled ? "on" : "off",
         selectedSources: this.getRuntimeSourceState().selectedSources,
@@ -2396,7 +2419,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       globalOrdinal: occurrence.globalOrdinal,
       segmentId: occurrence.segmentId,
       role: occurrence.role,
-      category: occurrence.category,
+      activity_category: occurrence.activity_category,
       startedAt: new Date(this.occurrenceStartedAt ?? this.startTime ?? completedAt).toISOString(),
       completedAt: new Date(completedAt).toISOString(),
       activeSeconds: occurrenceMovingSeconds,
@@ -2409,14 +2432,39 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   private buildExecutionManifest(): RecordingExecutionManifest | null {
-    if (!this._plan) return null;
-    const compiled = this.planExecution.getCompiledPlan();
+    const compiled = this._plan
+      ? this.planExecution.getCompiledPlan()
+      : this.freeRecordingCompiledPlan;
     if (!compiled || !this.planHash) return null;
+    const stats = this.getSessionStats();
+    const startedAt = new Date(this.startTime ?? Date.now()).toISOString();
+    const completedAt = new Date(this.recordingEndTime ?? Date.now()).toISOString();
+    let occurrences: RecordingOccurrenceResult[];
+    if (this._plan) {
+      occurrences = this.completedOccurrences;
+    } else {
+      const freeRecordingOccurrence = compiled.occurrences[0];
+      if (!freeRecordingOccurrence || freeRecordingOccurrence.role !== "activity") return null;
+      occurrences = [
+        {
+          occurrenceId: freeRecordingOccurrence.occurrenceId,
+          globalOrdinal: freeRecordingOccurrence.globalOrdinal,
+          segmentId: freeRecordingOccurrence.segmentId,
+          role: freeRecordingOccurrence.role,
+          activity_category: this.selectedActivityCategory,
+          startedAt,
+          completedAt,
+          activeSeconds: stats.movingTime,
+          movingSeconds: stats.movingTime,
+          distanceMeters: stats.distance,
+        },
+      ];
+    }
     return {
       version: 1,
       compilerVersion: compiled.compilerVersion,
       planHash: this.planHash,
-      occurrences: this.completedOccurrences.map((result) => ({
+      occurrences: occurrences.map((result) => ({
         ...result,
         timerEvents: this.timerEvents
           .filter((event) => {
@@ -2511,9 +2559,12 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         (total, occurrence) => total + occurrence.distanceMeters,
         0,
       );
-      const sport =
-        first.role === "activity" && first.category
-          ? this.getFitSport(first.category, this._plan?.gps_recording_enabled ?? false)
+      const fitSport =
+        first.role === "activity" && first.activity_category
+          ? this.getFitSport(
+              first.activity_category,
+              this._plan?.gps_recording_enabled ?? this._gpsRecordingEnabled,
+            )
           : { sport: "transition", subSport: "generic" };
       const timerEvents: RecordingExecutionManifest["occurrences"][number]["timerEvents"] = [];
       for (const event of occurrences.flatMap((occurrence) => occurrence.timerEvents)) {
@@ -2532,8 +2583,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         distance,
         avgSpeed: totalMovingSeconds > 0 ? distance / totalMovingSeconds : 0,
         maxSpeed: 0,
-        sport: sport.sport,
-        subSport: sport.subSport,
+        sport: fitSport.sport,
+        subSport: fitSport.subSport,
         role: first.role,
         timerEvents: timerEvents.map((event) => ({
           type: event.type,
@@ -2666,7 +2717,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         this.trainerControl.resetAdaptiveState();
       }
       if (target) {
-        this.selectedActivityCategory = target.category ?? this.selectedActivityCategory;
+        this.selectedActivityCategory = target.activity_category ?? this.selectedActivityCategory;
         this._gpsRecordingEnabled =
           target.role === "activity" && Boolean(this._plan?.gps_recording_enabled);
       }
@@ -2850,7 +2901,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this._gpsRecordingEnabled = true;
     this.emit("gpsTrackingChanged", true);
     this.emit("activitySelected", {
-      category: this.selectedActivityCategory,
+      activity_category: this.selectedActivityCategory,
       gpsRecordingEnabled: true,
     });
     await this.syncGpsTrackingForCurrentState();
@@ -2869,7 +2920,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this._gpsRecordingEnabled = false;
     this.emit("gpsTrackingChanged", false);
     this.emit("activitySelected", {
-      category: this.selectedActivityCategory,
+      activity_category: this.selectedActivityCategory,
       gpsRecordingEnabled: false,
     });
     await this.syncGpsTrackingForCurrentState();
@@ -2988,6 +3039,14 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   ): Promise<void> {
     if (checkpoint.profileId !== this.profile.id) throw new Error("Checkpoint profile mismatch");
     if ("variant" in checkpoint && checkpoint.variant === "unplanned") {
+      // The durable unplanned checkpoint intentionally stores only the selected
+      // activity category. Rebuild the deterministic execution-only contract
+      // so finalization emits the same manifest as an uninterrupted recording.
+      const freeRecordingExecutionPlan = createFreeRecordingExecutionPlan(
+        checkpoint.draft.activity_category,
+      );
+      const freeRecordingCompiledPlan = compileRecordingPlan(freeRecordingExecutionPlan);
+      const freeRecordingPlanHash = await hashRecordingPlan(freeRecordingExecutionPlan.structure);
       const { streamBuffer, replay: streamReplay } = await StreamBuffer.reopenForRecovery(
         checkpoint.streamArtifactPaths,
         createRecordingStreamJournalAdapter({
@@ -3001,8 +3060,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       );
       this._plan = undefined;
       this.planExecution.clear();
-      this.selectedActivityCategory = checkpoint.draft
-        .activityCategory as RecordingActivityCategory;
+      this.freeRecordingExecutionPlan = freeRecordingExecutionPlan;
+      this.freeRecordingCompiledPlan = freeRecordingCompiledPlan;
+      this.planHash = freeRecordingPlanHash;
+      this.selectedActivityCategory = checkpoint.draft.activity_category;
       this._gpsRecordingEnabled = checkpoint.draft.gpsMode === "on";
       this.timerEvents = checkpoint.executionState.timerEvents.map((event) => ({
         type: event.type,
@@ -3055,7 +3116,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     if ((await hashRecordingPlan(checkpoint.planSnapshot)) !== checkpoint.planHash) {
       throw new Error("Checkpoint plan hash mismatch");
     }
-    const compiled = compileActivityPlanV3(checkpoint.planSnapshot);
+    const parsedPlanSnapshot = activityPlanStructureSchemaV3.safeParse(checkpoint.planSnapshot);
+    if (!parsedPlanSnapshot.success) {
+      throw new Error("Checkpoint plan structure is invalid");
+    }
+    const compiled = compileActivityPlanV3(parsedPlanSnapshot.data);
     const compiledIds = compiled.occurrences.map((occurrence) => occurrence.occurrenceId);
     const completedIds = checkpoint.completedOccurrences.map(
       (occurrence) => occurrence.occurrenceId,
@@ -3081,7 +3146,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     const plan: RecordingActivityPlanV3Input = {
       name: "Recovered activity plan",
       gps_recording_enabled: checkpoint.policy.activityGpsMode === "on",
-      structure: checkpoint.planSnapshot,
+      structure: parsedPlanSnapshot.data,
     };
     this._plan = plan;
     this.planExecution.loadPlan(plan);
@@ -3104,7 +3169,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.checkpointRevision = checkpoint.revision;
     this.planHash = checkpoint.planHash;
     this.selectedActivityCategory =
-      this.currentStep?.category ?? checkpoint.policy.category ?? compiled.primaryCategory;
+      this.currentStep?.activity_category ??
+      checkpoint.policy.activity_category ??
+      compiled.occurrences.find((occurrence) => occurrence.role === "activity")
+        ?.activity_category ??
+      "other";
     this._gpsRecordingEnabled = checkpoint.policy.gpsMode === "on";
     this.startTime = Date.parse(checkpoint.timing.startedAt);
     this.pausedTime = checkpoint.timing.accumulatedPauseSeconds * 1000;
@@ -3146,7 +3215,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     });
     this.recordingMetadata = {
       startedAt: checkpoint.timing.startedAt,
-      activityCategory: snapshot.activity.category,
+      activityCategory: snapshot.activity.activity_category,
       gpsRecordingEnabled: checkpoint.policy.gpsMode === "on",
       profileId: this.profile.id,
       profile: this.profile,
@@ -3346,7 +3415,15 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       this.boundaryJournal = [];
       this.rewindJournal = [];
       this.checkpointRevision = 0;
-      this.planHash = this._plan ? await hashRecordingPlan(this._plan.structure) : null;
+      this.freeRecordingExecutionPlan = this._plan
+        ? undefined
+        : createFreeRecordingExecutionPlan(this.selectedActivityCategory);
+      this.freeRecordingCompiledPlan = this.freeRecordingExecutionPlan
+        ? compileRecordingPlan(this.freeRecordingExecutionPlan)
+        : null;
+      const executionPlan = this._plan ?? this.freeRecordingExecutionPlan;
+      if (!executionPlan) throw new Error("Free recording execution structure is unavailable");
+      this.planHash = await hashRecordingPlan(executionPlan.structure);
       this.occurrenceStartedAt = Date.now();
       this.occurrenceStartStats = { movingSeconds: 0, distanceMeters: 0 };
       this.timerEvents = [];
@@ -3365,7 +3442,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       );
       this.recordingMetadata = {
         startedAt,
-        activityCategory: sessionSnapshot.activity.category,
+        activityCategory: sessionSnapshot.activity.activity_category,
         gpsRecordingEnabled: sessionSnapshot.activity.gpsMode === "on",
         profileId: this.profile.id,
         profile: this.profile,
@@ -3649,7 +3726,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         }
 
         const executionManifest = this.buildExecutionManifest();
-        const fitSessions = executionManifest ? this.buildFitSessions(executionManifest) : [];
+        // Free recordings retain the established single FIT session behavior;
+        // their canonical occurrence is for the queue/API execution manifest.
+        const fitSessions =
+          this._plan && executionManifest ? this.buildFitSessions(executionManifest) : [];
         const fallbackSport = this.getFitSport(
           this.selectedActivityCategory,
           this._gpsRecordingEnabled,
@@ -3761,31 +3841,34 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // ================================
 
   updateActivityConfiguration(
-    category: RecordingActivityCategory,
+    activity_category: RecordingActivityCategory,
     gpsRecordingEnabled: boolean,
   ): void {
     if (!this.ensureMutableSessionIdentity("Activity configuration")) {
       return;
     }
 
-    this.selectedActivityCategory = category;
+    this.selectedActivityCategory = activity_category;
     if (gpsRecordingEnabled && !this._gpsRecordingEnabled) {
       void this.disconnectTrainerSensors();
     }
     this._gpsRecordingEnabled = gpsRecordingEnabled;
     this.syncGpsTrackingForCurrentState().catch(console.error);
     this.emit("gpsTrackingChanged", gpsRecordingEnabled);
-    this.emit("activitySelected", { category, gpsRecordingEnabled });
+    this.emit("activitySelected", { activity_category, gpsRecordingEnabled });
     this.publishSessionUpdate();
   }
 
-  selectUnplannedActivity(category: RecordingActivityCategory, gpsRecordingEnabled: boolean): void {
+  selectUnplannedActivity(
+    activity_category: RecordingActivityCategory,
+    gpsRecordingEnabled: boolean,
+  ): void {
     if (!this.ensureMutableSessionIdentity("Activity selection")) {
       return;
     }
 
     this.hasConfiguredSetup = true;
-    this.selectedActivityCategory = category;
+    this.selectedActivityCategory = activity_category;
     if (gpsRecordingEnabled && !this._gpsRecordingEnabled) {
       void this.disconnectTrainerSensors();
     }
@@ -3793,7 +3876,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.clearPlan();
     this.syncGpsTrackingForCurrentState().catch(console.error);
     this.emit("gpsTrackingChanged", gpsRecordingEnabled);
-    this.emit("activitySelected", { category, gpsRecordingEnabled });
+    this.emit("activitySelected", { activity_category, gpsRecordingEnabled });
     this.publishSessionUpdate();
   }
 
@@ -3801,12 +3884,30 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
    * Initialize activity recording from an ActivityPayload.
    * Handles both planned activities (with structure) and quick-start activities.
    *
-   * @param payload - ActivityPayload containing activity type and optional plan
+   * @param payload - ActivityPayload containing an activity category and optional plan
    */
   selectActivityFromPayload(payload: import("@repo/core").ActivityPayload): void {
     console.log("[Service] Initializing from payload:", payload);
 
     try {
+      if (this.recoveredCheckpoint !== null) {
+        throw new Error("Resume or discard the recovered recording before selecting a new plan.");
+      }
+      const plan: RecordingActivityPlanV3Input | null = payload.plan
+        ? {
+            name: payload.plan.name,
+            description: payload.plan.description || "",
+            structure: payload.plan.structure,
+            ...(payload.plan.id === undefined ? {} : { id: payload.plan.id }),
+          }
+        : null;
+      if (plan) {
+        const support = getMobileRecordingPlanSupport(plan);
+        if (!support.supported) {
+          throw new Error(support.message);
+        }
+      }
+
       this.currentLaunchSource =
         (payload as { launchSource?: RecordingConfiguration["input"]["launchSource"] })
           .launchSource ?? "manual";
@@ -3816,15 +3917,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         return;
       }
 
-      if (payload.plan) {
+      if (plan) {
         // Template or planned activity with structure
-        const plan: RecordingActivityPlanV3Input = {
-          id: payload.plan.id,
-          name: payload.plan.name,
-          description: payload.plan.description || "",
-          structure: payload.plan.structure,
-        };
-
         if (payload.gpsRecordingEnabled && !this._gpsRecordingEnabled) {
           void this.disconnectTrainerSensors();
         }
@@ -3842,20 +3936,20 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
           // True initial setup: no plan exists, state is pending
           console.log(
             "[Service] Selecting unplanned activity from payload (initial):",
-            payload.category,
+            payload.activity_category,
             payload.gpsRecordingEnabled,
           );
-          this.selectUnplannedActivity(payload.category, payload.gpsRecordingEnabled);
+          this.selectUnplannedActivity(payload.activity_category, payload.gpsRecordingEnabled);
         } else {
           // Plan exists OR recording has started: preserve plan and just update config
           console.log(
             "[Service] Updating activity configuration from payload:",
-            payload.category,
+            payload.activity_category,
             payload.gpsRecordingEnabled,
             "hasPlan:",
             this.hasPlan,
           );
-          this.updateActivityConfiguration(payload.category, payload.gpsRecordingEnabled);
+          this.updateActivityConfiguration(payload.activity_category, payload.gpsRecordingEnabled);
         }
       }
 
@@ -4281,6 +4375,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this._gpsRecordingEnabled = true;
     this._plan = undefined;
     this._eventId = undefined;
+    this.freeRecordingExecutionPlan = undefined;
+    this.freeRecordingCompiledPlan = null;
     this.planExecution.clear();
     this.clearCurrentRouteState();
     this.lastHandledLocationKey = null;

@@ -1,3 +1,4 @@
+import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -9,7 +10,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@repo/ui/components/alert-dialog";
-import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import {
   Card,
@@ -24,7 +24,6 @@ import { ArrowLeft, CalendarDays, Copy, Loader2, Pencil, Trash2 } from "lucide-r
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { ActivityPlanCategoryBadges } from "../../../components/activity-plan/activity-plan-category-badges";
 import { ActivityPlanComments } from "../../../components/activity-plan/activity-plan-comments";
 import { ActivityPlanComposer } from "../../../components/activity-plan/activity-plan-composer";
 import { ActivityPlanStructure } from "../../../components/activity-plan/activity-plan-structure";
@@ -35,7 +34,7 @@ import {
 } from "../../../components/protected/activity-route-primitives";
 import { useAuth } from "../../../components/providers/auth-provider";
 import { getActivityPlanMetricSummary } from "../../../lib/activity-plan-presentation";
-import { formatDate, getActivityBadgeLabel } from "../../../lib/activity-route-helpers";
+import { formatDate } from "../../../lib/activity-route-helpers";
 import { api } from "../../../lib/api/client";
 
 export const Route = createFileRoute("/_protected/activity-plans/$activityPlanId")({
@@ -63,6 +62,7 @@ function ActivityPlanDetailPage() {
   );
   const scheduledEvent = scheduledEvents[0];
   const isOwner = user?.id === plan?.profile_id;
+  const hasCanonicalStructure = activityPlanStructureSchemaV3.safeParse(plan?.structure).success;
 
   useEffect(() => {
     setLiked(plan?.has_liked ?? false);
@@ -157,13 +157,13 @@ function ActivityPlanDetailPage() {
     );
   }
 
-  if (planQuery.isError || !planQuery.data) {
+  if (planQuery.isError || !planQuery.data || !hasCanonicalStructure) {
     return (
       <Card className="mx-auto max-w-2xl border-destructive/30">
         <CardHeader>
           <CardTitle>Activity plan unavailable</CardTitle>
           <CardDescription>
-            This plan may have been removed, or you may no longer have access to it.
+            This plan may have been removed, is invalid, or you may no longer have access to it.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
@@ -277,7 +277,7 @@ function ActivityPlanDetailPage() {
             ) : null}
           </>
         }
-        badges={plan.categories.map(getActivityBadgeLabel)}
+        badges={[plan.activity_category]}
         description={plan.description || "Reusable structured activity plan."}
         eyebrow="Activity plan"
         title={plan.name}
@@ -293,8 +293,12 @@ function ActivityPlanDetailPage() {
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="flex flex-wrap gap-2">
-              <ActivityPlanCategoryBadges categories={plan.categories} />
-              <Badge variant="outline">{plan.content_visibility}</Badge>
+              <span className="rounded-full border px-2 py-0.5 text-xs font-medium capitalize">
+                {plan.activity_category}
+              </span>
+              <span className="rounded-full border px-2 py-0.5 text-xs font-medium">
+                {plan.content_visibility}
+              </span>
             </div>
             {metrics.length ? (
               <dl className="grid gap-3 sm:grid-cols-2">
@@ -337,12 +341,6 @@ function ActivityPlanDetailPage() {
                   {plan.gps_recording_enabled ? "GPS-capable on supported devices" : "Timer only"}
                 </dd>
               </div>
-              <div>
-                <dt className="text-muted-foreground">Composition</dt>
-                <dd className="font-medium">
-                  {plan.categories.map(getActivityBadgeLabel).join(", ")}
-                </dd>
-              </div>
             </dl>
           </CardContent>
         </Card>
@@ -377,7 +375,10 @@ function ActivityPlanDetailPage() {
             onClick={() => {
               const scheduledDate = `${scheduleDate}T09:00:00.000Z`;
               if (scheduledEvent) {
-                updateSchedule.mutate({ id: scheduledEvent.id, scheduled_date: scheduledDate });
+                updateSchedule.mutate({
+                  id: scheduledEvent.id,
+                  patch: { scheduled_date: scheduledDate },
+                });
               } else {
                 createSchedule.mutate({
                   activity_plan_id: plan.id,

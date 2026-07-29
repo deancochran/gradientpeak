@@ -33,7 +33,7 @@ function buildModernCompatibleTemplateStructure(input: {
   description: string;
   startDate: string;
   durationWeeks: number;
-  sports: readonly string[];
+  activity_categories: readonly string[];
   experienceLevel: readonly ("beginner" | "intermediate" | "advanced")[];
   weeklyTssRange: { min: number; max: number };
   sessionsPerWeekTarget: number;
@@ -43,7 +43,7 @@ function buildModernCompatibleTemplateStructure(input: {
 }) {
   return {
     version: 1,
-    sport: [...input.sports],
+    activity_category: [...input.activity_categories],
     experienceLevel: [...input.experienceLevel],
     durationWeeks: { recommended: input.durationWeeks },
     sessions: input.sessions,
@@ -65,8 +65,12 @@ const BIKE_RECOVERY_ID = "9b2c3d4e-5f6a-7b8c-9d0e-1f2a3b4c5d6e";
 const BIKE_CLIMBING_ID = "1f4a5b6c-7d8e-9f0a-1b2c-3d4e5f6a7b8c";
 const BIKE_LONG_ID = "a5f1b4c3-8e2b-7a6d-1c0f-2e9d5b4a3c1e";
 const BIKE_PROGRESSIVE_LONG_ID = "6f2a4c8e-1b3d-4f6a-8c9e-2d4b6f8a1c3e";
-const SPRINT_TRIATHLON_BRICK_ID = "73d53dd1-f8b8-4d7f-9ba7-dfa4de116101";
-const RUN_BIKE_RUN_TRANSITION_ID = "73d53dd1-f8b8-4d7f-9ba7-dfa4de116102";
+const SPRINT_TRIATHLON_SWIM_COMPONENT_ID = "73d53dd1-f8b8-4d7f-9ba7-dfa4de116201";
+const SPRINT_TRIATHLON_BIKE_COMPONENT_ID = "73d53dd1-f8b8-4d7f-9ba7-dfa4de116202";
+const SPRINT_TRIATHLON_RUN_COMPONENT_ID = "73d53dd1-f8b8-4d7f-9ba7-dfa4de116203";
+const DUATHLON_OPENING_RUN_COMPONENT_ID = "73d53dd1-f8b8-4d7f-9ba7-dfa4de116204";
+const DUATHLON_BIKE_COMPONENT_ID = "73d53dd1-f8b8-4d7f-9ba7-dfa4de116205";
+const DUATHLON_CLOSING_RUN_COMPONENT_ID = "73d53dd1-f8b8-4d7f-9ba7-dfa4de116206";
 const SWIM_TECHNIQUE_ID = "6c9d0e1f-2a3b-4c5d-6e7f-8a9b0c1d2e3f";
 const SWIM_ENDURANCE_ID = "7d0e1f2a-3b4c-5d6e-7f8a-9b0c1d2e3f4a";
 const STRENGTH_CIRCUIT_ID = "aaaa1111-2222-3333-4444-555555555555";
@@ -560,7 +564,7 @@ const RAW_SAMPLE_PLANS: Array<
         "Progressive marathon base with four key sessions per week and one weekly long run.",
       startDate: "2026-01-05",
       durationWeeks: 12,
-      sports: ["run"],
+      activity_categories: ["run"],
       experienceLevel: ["beginner"],
       weeklyTssRange: { min: 280, max: 420 },
       sessionsPerWeekTarget: 4,
@@ -582,7 +586,7 @@ const RAW_SAMPLE_PLANS: Array<
         "Balanced half-marathon cycle with threshold development and race-specific long efforts.",
       startDate: "2026-02-02",
       durationWeeks: 10,
-      sports: ["run"],
+      activity_categories: ["run"],
       experienceLevel: ["intermediate"],
       weeklyTssRange: { min: 240, max: 360 },
       sessionsPerWeekTarget: 4,
@@ -604,7 +608,7 @@ const RAW_SAMPLE_PLANS: Array<
         "Short race cycle emphasizing quality intervals, neuromuscular speed, and recovery balance.",
       startDate: "2026-03-02",
       durationWeeks: 8,
-      sports: ["run"],
+      activity_categories: ["run"],
       experienceLevel: ["intermediate"],
       weeklyTssRange: { min: 180, max: 240 },
       sessionsPerWeekTarget: 4,
@@ -626,7 +630,7 @@ const RAW_SAMPLE_PLANS: Array<
         "Endurance-focused bike progression with two quality rides and one long weekend ride.",
       startDate: "2026-01-12",
       durationWeeks: 12,
-      sports: ["bike"],
+      activity_categories: ["bike"],
       experienceLevel: ["beginner", "intermediate"],
       weeklyTssRange: { min: 220, max: 280 },
       sessionsPerWeekTarget: 4,
@@ -638,22 +642,23 @@ const RAW_SAMPLE_PLANS: Array<
   {
     id: "6a6f5a93-b8f3-4fca-9d4f-56a55b913005",
     name: "Sprint Triathlon Base (10 weeks)",
-    description: "Triathlon starter cycle balancing swim, bike, run, and weekly brick practice.",
-    sessions_per_week_target: 5,
+    description:
+      "Triathlon starter cycle balancing swim, bike, run, and same-day component sessions.",
+    sessions_per_week_target: 7,
     duration_hours: 8,
     structure: buildModernCompatibleTemplateStructure({
       name: "Sprint Triathlon Base (10 weeks)",
-      description: "Triathlon starter cycle balancing swim, bike, run, and weekly brick practice.",
+      description:
+        "Triathlon starter cycle balancing swim, bike, run, and same-day component sessions.",
       startDate: "2026-02-09",
       durationWeeks: 10,
-      sports: ["swim", "bike", "run"],
+      activity_categories: ["swim", "bike", "run"],
       experienceLevel: ["beginner"],
       weeklyTssRange: { min: 260, max: 390 },
-      sessionsPerWeekTarget: 5,
+      sessionsPerWeekTarget: 7,
       minRestDaysPerWeek: 1,
       maxConsecutiveDays: 3,
       sessions: Array.from({ length: 10 }, (_, weekIndex) => {
-        const buildWeek = weekIndex < 7;
         return [
           {
             offset_days: weekIndex * 7 + 1,
@@ -662,27 +667,38 @@ const RAW_SAMPLE_PLANS: Array<
           },
           {
             offset_days: weekIndex * 7 + 2,
-            activity_plan_id: buildWeek ? BIKE_ENDURANCE_ID : BIKE_RECOVERY_ID,
-            event_overrides: { title: buildWeek ? "Bike Endurance" : "Bike Taper" },
+            activity_plan_id: weekIndex < 7 ? BIKE_ENDURANCE_ID : BIKE_RECOVERY_ID,
+            event_overrides: { title: weekIndex < 7 ? "Bike Endurance" : "Bike Taper" },
           },
           {
             offset_days: weekIndex * 7 + 4,
-            activity_plan_id: buildWeek ? RUN_SPEED_ID : RUN_EASY_ID,
-            event_overrides: { title: buildWeek ? "Run Quality" : "Run Taper" },
+            activity_plan_id: weekIndex < 7 ? RUN_SPEED_ID : RUN_EASY_ID,
+            event_overrides: { title: weekIndex < 7 ? "Run Quality" : "Run Taper" },
           },
           {
             offset_days: weekIndex * 7 + 5,
             activity_plan_id: SWIM_ENDURANCE_ID,
             event_overrides: { title: "Swim Endurance" },
           },
-          {
+          ...(weekIndex % 2 === 0
+            ? [
+                { activity_plan_id: SPRINT_TRIATHLON_SWIM_COMPONENT_ID, title: "Sprint Base Swim" },
+                { activity_plan_id: SPRINT_TRIATHLON_BIKE_COMPONENT_ID, title: "Sprint Base Bike" },
+                { activity_plan_id: SPRINT_TRIATHLON_RUN_COMPONENT_ID, title: "Sprint Base Run" },
+              ]
+            : [
+                { activity_plan_id: DUATHLON_OPENING_RUN_COMPONENT_ID, title: "Duathlon Base Run" },
+                { activity_plan_id: DUATHLON_BIKE_COMPONENT_ID, title: "Duathlon Base Bike" },
+                {
+                  activity_plan_id: DUATHLON_CLOSING_RUN_COMPONENT_ID,
+                  title: "Duathlon Progression Run",
+                },
+              ]
+          ).map((component) => ({
             offset_days: weekIndex * 7 + 6,
-            activity_plan_id:
-              weekIndex % 2 === 0 ? SPRINT_TRIATHLON_BRICK_ID : RUN_BIKE_RUN_TRANSITION_ID,
-            event_overrides: {
-              title: buildWeek ? `Brick Progression ${weekIndex + 1}` : "Brick Race Rehearsal",
-            },
-          },
+            activity_plan_id: component.activity_plan_id,
+            event_overrides: { title: component.title },
+          })),
         ];
       }).flat(),
     }),
@@ -700,7 +716,7 @@ const RAW_SAMPLE_PLANS: Array<
         "Low-friction maintenance template to stay consistent with mixed aerobic and strength sessions.",
       startDate: "2026-01-05",
       durationWeeks: 6,
-      sports: ["run", "strength", "bike"],
+      activity_categories: ["run", "strength", "bike"],
       experienceLevel: ["beginner", "intermediate"],
       weeklyTssRange: { min: 180, max: 280 },
       sessionsPerWeekTarget: 3,

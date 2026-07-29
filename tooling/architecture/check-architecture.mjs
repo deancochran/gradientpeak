@@ -392,9 +392,13 @@ function extractLiteralValues(initializer) {
   return [];
 }
 
-function symbolValues(root, mapping) {
-  const path = resolve(root, mapping.file);
-  const sourceFile = sourceFileFor(mapping.file, readFileSync(path, "utf8"));
+function symbolValuesFromReader(mapping, readSource, resolving = new Set()) {
+  const resolutionKey = `${mapping.file}#${mapping.symbol}`;
+  if (resolving.has(resolutionKey)) return [];
+  const source = readSource(mapping.file);
+  if (typeof source !== "string") return [];
+  resolving.add(resolutionKey);
+  const sourceFile = sourceFileFor(mapping.file, source);
   const declarations = new Map();
   const imports = new Map();
   for (const statement of sourceFile.statements) {
@@ -427,9 +431,11 @@ function symbolValues(root, mapping) {
       if (imported?.source.startsWith("@repo/core/")) {
         const subpath = imported.source.slice("@repo/core/".length);
         const candidate = `packages/core/${subpath}.ts`;
-        if (existsSync(resolve(root, candidate))) {
-          return symbolValues(root, { file: candidate, symbol: imported.imported });
-        }
+        return symbolValuesFromReader(
+          { file: candidate, symbol: imported.imported },
+          readSource,
+          resolving,
+        );
       }
       return [];
     }
@@ -444,6 +450,25 @@ function symbolValues(root, mapping) {
 
   const initializer = declarations.get(mapping.symbol);
   return initializer ? resolveLiteralValues(initializer) : [];
+}
+
+function symbolValues(root, mapping) {
+  return symbolValuesFromReader(mapping, (path) => {
+    const absolute = resolve(root, path);
+    return existsSync(absolute) ? readFileSync(absolute, "utf8") : undefined;
+  });
+}
+
+function enumParityValueSnapshot(config, resolveMapping) {
+  return Object.fromEntries(
+    (config.enumParity ?? []).map((mapping) => [
+      mapping.id,
+      {
+        db: resolveMapping(mapping.db),
+        core: resolveMapping(mapping.core),
+      },
+    ]),
+  );
 }
 
 function isTrpcCall(node) {
@@ -1180,7 +1205,19 @@ export function compareMergeBaseProtection(current, previous, approved = false) 
       continue;
     }
     for (const field of ["db", "core"]) {
-      if (JSON.stringify(old[field]) !== JSON.stringify(mapping[field])) {
+      const descriptorChanged = JSON.stringify(old[field]) !== JSON.stringify(mapping[field]);
+      const oldValues = [...new Set(previous.enumParityValues?.[id]?.[field] ?? [])];
+      const currentValues = new Set(current.enumParityValues?.[id]?.[field] ?? []);
+      const removedEnumValues = oldValues.filter((value) => !currentValues.has(value));
+      if (oldValues.length > 0 && removedEnumValues.length > 0) {
+        findings.push(
+          policyFinding("merge-base-coverage-weakening", {
+            id,
+            enumSource: field,
+            removedEnumValues,
+          }),
+        );
+      } else if (oldValues.length === 0 && descriptorChanged) {
         findings.push(
           policyFinding("merge-base-coverage-weakening", { id, changedEnumSource: field }),
         );
@@ -1273,23 +1310,33 @@ function readMergeBasePolicy(root) {
       cwd: root,
       encoding: "utf8",
     }).trim();
-    const readAt = (path) => {
+    const readTextAt = (path) => {
       try {
-        return JSON.parse(
-          execFileSync("git", ["show", `${mergeBase}:${path}`], {
-            cwd: root,
-            encoding: "utf8",
-            stdio: ["ignore", "pipe", "ignore"],
-          }),
-        );
+        return execFileSync("git", ["show", `${mergeBase}:${path}`], {
+          cwd: root,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "ignore"],
+        });
       } catch {
         return undefined;
       }
     };
+    const readJsonAt = (path) => {
+      try {
+        const text = readTextAt(path);
+        return text === undefined ? undefined : JSON.parse(text);
+      } catch {
+        return undefined;
+      }
+    };
+    const config = readJsonAt("tooling/architecture/architecture.config.json");
     return {
       mergeBase,
-      baseline: readAt("tooling/architecture/architecture-baseline.json"),
-      config: readAt("tooling/architecture/architecture.config.json"),
+      baseline: readJsonAt("tooling/architecture/architecture-baseline.json"),
+      config,
+      enumParityValues: config
+        ? enumParityValueSnapshot(config, (mapping) => symbolValuesFromReader(mapping, readTextAt))
+        : undefined,
     };
   } catch {
     return undefined;
@@ -1366,7 +1413,15 @@ function main() {
     process.env.GITHUB_ACTIONS === "true" &&
     process.env.ARCHITECTURE_REVIEW_APPROVED === "1";
   const previous = readMergeBasePolicy(root);
-  const mergeProtection = compareMergeBaseProtection({ baseline, config }, previous, approved);
+  const mergeProtection = compareMergeBaseProtection(
+    {
+      baseline,
+      config,
+      enumParityValues: enumParityValueSnapshot(config, (mapping) => symbolValues(root, mapping)),
+    },
+    previous,
+    approved,
+  );
   if (mergeProtection.bootstrap)
     console.log("Architecture merge-base protection: initial bootstrap");
   const policyFindings = configErrors.map((error) =>

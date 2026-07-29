@@ -59,7 +59,7 @@ describe("submitImportedActivityArtifact", () => {
           id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
           ordinal: 0,
           role: "activity" as const,
-          category: "bike" as const,
+          activity_category: "bike" as const,
           startOffsetMs: 0,
           endOffsetMs: 3_600_000,
           summary: {

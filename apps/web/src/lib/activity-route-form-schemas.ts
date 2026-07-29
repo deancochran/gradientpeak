@@ -1,4 +1,8 @@
-import { type ActivityEffortSport, activityEffortSportSchema, BestEffortSchema } from "@repo/core";
+import {
+  type ActivityEffortCategoryValue,
+  activityEffortCategorySchema,
+  BestEffortSchema,
+} from "@repo/core";
 import { activityEffortTypeSchema } from "@repo/core/athlete-inputs";
 import { z } from "zod";
 
@@ -6,10 +10,10 @@ export const activityEffortCategoryOptions = [
   { label: "Run", value: "run" },
   { label: "Ride", value: "bike" },
   { label: "Swim", value: "swim" },
-] as const satisfies readonly { label: string; value: ActivityEffortSport }[];
+] as const satisfies readonly { label: string; value: ActivityEffortCategoryValue }[];
 
 export const activityEffortFormSchema = BestEffortSchema.extend({
-  activity_category: activityEffortSportSchema,
+  activity_category: activityEffortCategorySchema,
   duration_seconds: z.coerce.number().int().positive("Duration must be positive."),
   effort_type: activityEffortTypeSchema,
   recorded_at: z.string().min(1, "Choose when this effort was recorded."),

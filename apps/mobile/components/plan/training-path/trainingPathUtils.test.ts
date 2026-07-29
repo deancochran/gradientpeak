@@ -210,7 +210,7 @@ describe("trainingPathUtils", () => {
     expect(model.weeks.find((week) => week.weekStart === "2026-05-25")?.fitness).toBeNull();
   });
 
-  it("shows a path with recommended and completed load even without scheduled workouts", () => {
+  it("shows a path with recommended and completed load even without scheduled activities", () => {
     const model = buildTrainingPathViewModel({
       timeline: [
         {

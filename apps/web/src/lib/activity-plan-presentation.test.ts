@@ -2,15 +2,12 @@ import { aggregateCommonLoadEnvelopes, calculateAvailableCommonLoad } from "@rep
 import { describe, expect, it } from "vitest";
 
 import {
-  describeActivityPlanSegments,
   describeTrainingPlanSessions,
-  formatActivityPlanCategory,
   getActivityPlanMetricSummary,
-  summarizeActivityPlanSegments,
 } from "./activity-plan-presentation";
 
 const commonLoad = calculateAvailableCommonLoad({
-  sport: "bike",
+  activity_category: "bike",
   method: "power_threshold",
   quality: {
     source: "validated_test",
@@ -38,39 +35,9 @@ const commonLoad = calculateAvailableCommonLoad({
 });
 
 describe("activity plan presentation", () => {
-  const structure = {
-    version: 3,
-    segments: [
-      { id: "s1", role: "activity", category: "run" },
-      { id: "t1", role: "transition", duration: { type: "time", seconds: 300 } },
-      { id: "s2", role: "activity", category: "bike" },
-      { id: "r1", role: "rest", duration: { type: "time", seconds: 120 } },
-      { id: "s3", role: "activity", category: "run" },
-    ],
-  };
-
-  it("renders ordered V3 segments with repeated categories and boundaries", () => {
-    expect(summarizeActivityPlanSegments(structure).map((segment) => segment.label)).toEqual([
-      "Run",
-      "Transition · 5 min",
-      "Bike",
-      "Rest · 2 min",
-      "Run",
-    ]);
-    expect(describeActivityPlanSegments(structure)).toBe(
-      "Run → Transition · 5 min → Bike → Rest · 2 min → Run",
-    );
-  });
-
   it("summarizes canonical training plan sessions", () => {
     expect(describeTrainingPlanSessions({ sessions: [{}, {}] })).toBe("2 sessions");
     expect(describeTrainingPlanSessions({ phases: [] })).toBe("No sessions specified");
-  });
-
-  it("formats canonical activity categories for people", () => {
-    expect(formatActivityPlanCategory("bike")).toBe("Cycling");
-    expect(formatActivityPlanCategory("strength")).toBe("Strength");
-    expect(formatActivityPlanCategory(undefined)).toBe("Other");
   });
 
   it("builds a compact metric summary from authoritative estimates", () => {
@@ -82,7 +49,7 @@ describe("activity plan presentation", () => {
     ).toEqual(["Load 88", "Intensity 0.84", "1h 15m", "12.5 km"]);
   });
 
-  it("presents an aggregate common Load without falling back to legacy TSS", () => {
+  it("presents an aggregate common Load without falling back to TSS", () => {
     const aggregate = aggregateCommonLoadEnvelopes([commonLoad]);
     expect(getActivityPlanMetricSummary(undefined, aggregate)).toEqual([
       "Load 88",

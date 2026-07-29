@@ -18,7 +18,7 @@ const getLastKnownLocationMock = jest.fn<Promise<unknown>, []>(async () => null)
 
 const baseContract = {
   authority: {
-    category: "user",
+    activity_category: "user",
     structure: "none",
     spatial: "none",
     locationCapture: "gps",
@@ -634,8 +634,8 @@ describe("recording cockpit", () => {
           devices: { hasTrainer: true, trainerControllable: true },
           ui: {
             floatingPanel: {
-              defaultCard: "workout_interval",
-              availableCards: ["workout_interval", "metrics", "trainer"],
+              defaultCard: "activity_interval",
+              availableCards: ["activity_interval", "metrics", "trainer"],
               forcedExpanded: false,
               canMinimize: true,
             },
@@ -692,8 +692,8 @@ describe("recording cockpit", () => {
           guidance: { hasPlan: true, hasStructuredSteps: true },
           ui: {
             floatingPanel: {
-              defaultCard: "workout_interval",
-              availableCards: ["workout_interval"],
+              defaultCard: "activity_interval",
+              availableCards: ["activity_interval"],
               forcedExpanded: false,
               canMinimize: true,
             },
@@ -764,8 +764,8 @@ describe("recording cockpit", () => {
           guidance: { hasPlan: true, hasStructuredSteps: true },
           ui: {
             floatingPanel: {
-              defaultCard: "workout_interval",
-              availableCards: ["workout_interval", "metrics"],
+              defaultCard: "activity_interval",
+              availableCards: ["activity_interval", "metrics"],
               forcedExpanded: false,
               canMinimize: true,
             },
@@ -776,7 +776,7 @@ describe("recording cockpit", () => {
 
     expect(screen.queryByLabelText("Minimize recording cards")).toBeNull();
 
-    fireEvent.press(screen.getByTestId("recording-card-workout_interval-surface"));
+    fireEvent.press(screen.getByTestId("recording-card-activity_interval-surface"));
 
     expect(screen.getByLabelText("Minimize recording cards")).toBeTruthy();
     expect(screen.getByLabelText("Skip interval")).toBeTruthy();
@@ -784,7 +784,7 @@ describe("recording cockpit", () => {
     fireEvent.press(screen.getByLabelText("Minimize recording cards"));
 
     expect(screen.queryByLabelText("Minimize recording cards")).toBeNull();
-    expect(screen.getByTestId("recording-card-workout_interval-surface")).toBeTruthy();
+    expect(screen.getByTestId("recording-card-activity_interval-surface")).toBeTruthy();
   });
 
   it("exposes accessible 44-point panel controls with expansion state and pressed feedback", () => {
@@ -798,8 +798,8 @@ describe("recording cockpit", () => {
           guidance: { hasPlan: true, hasStructuredSteps: true },
           ui: {
             floatingPanel: {
-              defaultCard: "workout_interval",
-              availableCards: ["workout_interval", "metrics"],
+              defaultCard: "activity_interval",
+              availableCards: ["activity_interval", "metrics"],
               forcedExpanded: false,
               canMinimize: true,
             },
@@ -808,7 +808,7 @@ describe("recording cockpit", () => {
       />,
     );
 
-    const expandSurface = screen.getByTestId("recording-card-workout_interval-surface");
+    const expandSurface = screen.getByTestId("recording-card-activity_interval-surface");
 
     expect(expandSurface.props.accessibilityHint).toBe("Shows the full recording cards view");
     expect(expandSurface.props.accessibilityState).toEqual({ expanded: false });
@@ -878,8 +878,8 @@ describe("recording cockpit", () => {
           devices: { hasTrainer: true, trainerControllable: true },
           ui: {
             floatingPanel: {
-              defaultCard: "workout_interval",
-              availableCards: ["workout_interval", "route_progress", "metrics", "trainer"],
+              defaultCard: "activity_interval",
+              availableCards: ["activity_interval", "route_progress", "metrics", "trainer"],
               forcedExpanded: false,
               canMinimize: true,
             },
@@ -909,8 +909,8 @@ describe("recording cockpit", () => {
           devices: { hasTrainer: true, trainerControllable: true },
           ui: {
             floatingPanel: {
-              defaultCard: "workout_interval",
-              availableCards: ["workout_interval", "metrics", "trainer"],
+              defaultCard: "activity_interval",
+              availableCards: ["activity_interval", "metrics", "trainer"],
               forcedExpanded: false,
               canMinimize: true,
             },
@@ -933,8 +933,8 @@ describe("recording cockpit", () => {
           devices: { hasTrainer: true, trainerControllable: true },
           ui: {
             floatingPanel: {
-              defaultCard: "workout_interval",
-              availableCards: ["workout_interval", "metrics", "trainer"],
+              defaultCard: "activity_interval",
+              availableCards: ["activity_interval", "metrics", "trainer"],
               forcedExpanded: false,
               canMinimize: true,
             },
@@ -1034,8 +1034,8 @@ describe("recording cockpit", () => {
           },
           ui: {
             floatingPanel: {
-              defaultCard: "workout_interval",
-              availableCards: ["workout_interval", "route_progress", "metrics"],
+              defaultCard: "activity_interval",
+              availableCards: ["activity_interval", "route_progress", "metrics"],
               forcedExpanded: true,
               canMinimize: false,
             },
@@ -1049,7 +1049,7 @@ describe("recording cockpit", () => {
     expect(carousel.props.disableIntervalMomentum).toBe(true);
     expect(carousel.props.contentContainerStyle.paddingHorizontal).toBeGreaterThanOrEqual(28);
     expect(carousel.props.snapToInterval).toBeGreaterThan(
-      screen.getByTestId("recording-card-workout_interval").props.style.width,
+      screen.getByTestId("recording-card-activity_interval").props.style.width,
     );
   });
 
@@ -1065,8 +1065,8 @@ describe("recording cockpit", () => {
           devices: { hasTrainer: false, trainerControllable: false },
           ui: {
             floatingPanel: {
-              defaultCard: "workout_interval",
-              availableCards: ["workout_interval", "trainer", "metrics"],
+              defaultCard: "activity_interval",
+              availableCards: ["activity_interval", "trainer", "metrics"],
               forcedExpanded: false,
               canMinimize: true,
             },

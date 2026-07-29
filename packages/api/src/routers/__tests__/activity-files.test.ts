@@ -29,7 +29,7 @@ vi.mock("@repo/db", () => ({
   },
   activitySegments: {
     activity_id: "activity_segments.activity_id",
-    category: "activity_segments.category",
+    activity_category: "activity_segments.activity_category",
     role: "activity_segments.role",
   },
   activityGeometry: { table: "activity_geometry", activity_id: "activity_geometry.activity_id" },
@@ -388,7 +388,7 @@ beforeEach(() => {
     profileMetrics: {
       ftp: 300,
       lthr: null,
-      lthr_by_sport: { bike: 180 },
+      lthr_by_activity_category: { bike: 180 },
       threshold_speed_mps: null,
       swim_threshold_speed_mps: null,
     },
@@ -594,7 +594,7 @@ describe("activityFilesRouter", () => {
         {
           sessionMessageIndex: 0,
           role: "activity",
-          category: "bike",
+          activity_category: "bike",
           rawSport: "cycling",
           startTime,
           endTime: finishedAt,
@@ -662,14 +662,14 @@ describe("activityFilesRouter", () => {
     expect(mocks.readObjectBounded).not.toHaveBeenCalled();
   });
 
-  it("rejects the removed processActivityFile parent activity type field", async () => {
+  it("rejects the removed processActivityFile parent classification field", async () => {
     const { db } = createDbMock();
     const caller = createCaller({ db });
     await expect(
       (caller.processActivityFile as (input: unknown) => Promise<unknown>)({
         activityFilePath: "activities/11111111-1111-4111-8111-111111111111/uploads/legacy.fit",
         name: "Legacy transport",
-        activityType: "bike",
+        activityCategory: "bike",
       }),
     ).rejects.toThrow("Unrecognized key");
     expect(mocks.readObjectBounded).not.toHaveBeenCalled();
@@ -767,7 +767,7 @@ describe("activityFilesRouter", () => {
         {
           sessionMessageIndex: 0,
           role: "activity",
-          category: "bike",
+          activity_category: "bike",
           rawSport: "cycling",
           startTime,
           endTime: finishedAt,
@@ -933,7 +933,7 @@ describe("activityFilesRouter", () => {
             activityFilePath: `artifacts/sha256/11111111-1111-4111-8111-111111111111/${"a".repeat(64)}`,
             activityFileType: "fit",
             profile_id: "11111111-1111-4111-8111-111111111111",
-            activityType: "bike",
+            activityCategory: "bike",
             parentStartedAt: new Date("2026-03-01T10:00:00.000Z"),
             startOffsetMs: 0,
             endOffsetMs: 20_000,
@@ -971,7 +971,7 @@ describe("activityFilesRouter", () => {
         segments: [
           {
             role: "activity",
-            category: "bike",
+            activity_category: "bike",
             startOffsetMs: 0,
             endOffsetMs: 1_800_000,
             activeMs: 1_800_000,
@@ -1021,7 +1021,7 @@ describe("activityFilesRouter", () => {
       },
       analysis: {
         version: "2",
-        sport: "bike",
+        activity_category: "bike",
         distributions: {
           heart_rate: {
             threshold: 180,
@@ -1070,7 +1070,7 @@ describe("activityFilesRouter", () => {
               "activities/11111111-1111-4111-8111-111111111111/uploads/multisport.fit",
             activityFileType: "fit",
             profile_id: "11111111-1111-4111-8111-111111111111",
-            activityType: "run",
+            activityCategory: "run",
             parentStartedAt: new Date("2026-03-01T10:00:00.000Z"),
             startOffsetMs: 600_000,
             endOffsetMs: 1_200_000,
@@ -1098,7 +1098,7 @@ describe("activityFilesRouter", () => {
     expect(result.records).toEqual([
       expect.objectContaining({ sessionMessageIndex: 1, heartRate: 165 }),
     ]);
-    expect(result.analysis.sport).toBe("run");
+    expect(result.analysis.activity_category).toBe("run");
   });
 
   it("does not expose parser validation details when stream decoding fails", async () => {
@@ -1111,7 +1111,7 @@ describe("activityFilesRouter", () => {
               "activities/11111111-1111-4111-8111-111111111111/uploads/activity.fit",
             activityFileType: "fit",
             profile_id: "11111111-1111-4111-8111-111111111111",
-            activityType: "run",
+            activityCategory: "run",
             parentStartedAt: new Date("2026-03-01T10:00:00.000Z"),
             startOffsetMs: 0,
             endOffsetMs: 60_000,
@@ -1146,7 +1146,7 @@ describe("activityFilesRouter", () => {
           {
             activityFilePath: null,
             profile_id: "11111111-1111-4111-8111-111111111111",
-            activityType: "bike",
+            activityCategory: "bike",
           },
         ],
       ],
@@ -1170,7 +1170,7 @@ describe("activityFilesRouter", () => {
           {
             activityFilePath: "activities/22222222-2222-4222-8222-222222222222/uploads/public.fit",
             profile_id: "22222222-2222-4222-8222-222222222222",
-            activityType: "bike",
+            activityCategory: "bike",
           },
         ],
       ],

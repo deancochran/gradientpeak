@@ -4,6 +4,7 @@ const mockDiscardFinalizedRecordingEvidence = jest.fn(async (_input: unknown) =>
 const mockDeleteFinalizedArtifactFiles = jest.fn(async (_artifact: unknown) => undefined);
 const mockFitInstances: Array<Record<string, jest.Mock>> = [];
 const mockNotificationInstances: Array<Record<string, jest.Mock>> = [];
+const persistedCheckpoints = new Map<string, unknown>();
 
 jest.mock("expo", () => ({
   EventEmitter: class MockEventEmitter {
@@ -53,7 +54,15 @@ jest.mock("../activitySubmissionQueue/localArtifact", () => ({
 jest.mock("./checkpointStorage", () => ({
   clearRecordingCheckpoint: jest.fn(async () => undefined),
   hashRecordingPlan: jest.fn(async () => "0".repeat(64)),
-  persistRecordingCheckpoint: jest.fn(async () => undefined),
+  persistRecordingCheckpoint: jest.fn(async (checkpoint: { sessionId: string }) => {
+    persistedCheckpoints.set(checkpoint.sessionId, checkpoint);
+  }),
+  loadAndClaimRecordingCheckpoint: jest.fn(async (profileId: string) => {
+    const checkpoint = [...persistedCheckpoints.values()].find(
+      (value) => (value as { profileId: string }).profileId === profileId,
+    );
+    return checkpoint ? { status: "recovered", checkpoint } : { status: "none" };
+  }),
   releaseRecordingCheckpointClaim: jest.fn(),
 }));
 
@@ -116,6 +125,7 @@ jest.mock("./trainerControl", () => ({
 
 import { rebaseRetainedFitRecordDistances } from "./fitRecordWriter";
 import { ActivityRecorderService } from "./index";
+import { compileRecordingPlan, createFreeRecordingExecutionPlan } from "./plan";
 import { PlanExecution } from "./planExecution";
 
 const mockFitFiles = new Map<string, Uint8Array>();
@@ -164,6 +174,7 @@ jest.mock("expo-file-system", () => ({
 
 const checkpointStorageMocks = jest.requireMock("./checkpointStorage") as {
   clearRecordingCheckpoint: jest.Mock;
+  loadAndClaimRecordingCheckpoint: jest.Mock;
   persistRecordingCheckpoint: jest.Mock;
 };
 const evidenceJournalMocks = jest.requireMock("./recordingEvidenceJournal") as {
@@ -181,7 +192,7 @@ function createService() {
   const mutable = service as any;
   const snapshot = {
     identity: { sessionId: "session-1", startedAt: new Date(1_000).toISOString() },
-    activity: { category: "run", gpsMode: "off", eventId: null },
+    activity: { activity_category: "run", gpsMode: "off", eventId: null },
   };
 
   Object.assign(mutable, {
@@ -191,6 +202,8 @@ function createService() {
     _gpsAvailable: false,
     hasConfiguredSetup: true,
     currentLaunchSource: "manual",
+    recoveredCheckpoint: null,
+    recoveredReplay: null,
     profile: { id: "profile-1", displayName: "Recorder" },
     lifecycleTransition: Promise.resolve(),
     finalizedArtifact: null,
@@ -309,6 +322,44 @@ const navigationIds = {
   rest: "10000000-0000-4000-8000-000000000005",
 };
 
+function createMixedCategoryPlanStructure() {
+  const activity = (activity_category: "run" | "bike", prefix: string) => ({
+    id: `${prefix}0000-0000-4000-8000-000000000001`,
+    role: "activity" as const,
+    name: activity_category,
+    activity_category,
+    intervals: [
+      {
+        id: `${prefix}0000-0000-4000-8000-000000000002`,
+        name: activity_category,
+        repetitions: 1,
+        steps: [
+          {
+            id: `${prefix}0000-0000-4000-8000-000000000003`,
+            name: activity_category,
+            duration: { type: "time" as const, seconds: 60 },
+            targets: [{ type: "RPE" as const, intensity: 4 }],
+          },
+        ],
+      },
+    ],
+  });
+
+  return {
+    version: 3 as const,
+    segments: [
+      activity("run", "3000"),
+      {
+        id: "30000000-0000-4000-8000-000000000004",
+        role: "transition" as const,
+        name: "Transition",
+        duration: { type: "time" as const, seconds: 60 },
+      },
+      activity("bike", "4000"),
+    ],
+  };
+}
+
 type DistancePlanMutableRecorder = {
   _plan: Parameters<PlanExecution["loadPlan"]>[0];
   planExecution: PlanExecution;
@@ -333,7 +384,7 @@ function configureDistancePlan(mutable: DistancePlanMutableRecorder, includeRest
         id: navigationIds.segment,
         role: "activity" as const,
         name: "Run",
-        category: "run" as const,
+        activity_category: "run" as const,
         intervals: [
           {
             id: navigationIds.interval,
@@ -385,6 +436,7 @@ function configureDistancePlan(mutable: DistancePlanMutableRecorder, includeRest
 describe("ActivityRecorderService lifecycle", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    persistedCheckpoints.clear();
     mockFitFiles.clear();
     mockFitInstances.length = 0;
     mockNotificationInstances.length = 0;
@@ -398,6 +450,143 @@ describe("ActivityRecorderService lifecycle", () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it("rejects direct mixed-activity_category plan selection before mutating setup state", () => {
+    const { service, mutable } = createService();
+    mutable.hasConfiguredSetup = false;
+    mutable._plan = undefined;
+    mutable._eventId = undefined;
+
+    expect(() =>
+      service.selectPlan(
+        { name: "Mixed plan", structure: createMixedCategoryPlanStructure() },
+        "event-1",
+      ),
+    ).toThrow("This plan can't be recorded on mobile");
+    expect(mutable.hasConfiguredSetup).toBe(false);
+    expect(mutable._plan).toBeUndefined();
+    expect(mutable._eventId).toBeUndefined();
+    expect(mutable.planExecution.clear).not.toHaveBeenCalled();
+  });
+
+  it("rejects a mixed-plan checkpoint before opening recovery artifacts", async () => {
+    const { service } = createService();
+
+    await expect(
+      service.stageRecoveredCheckpoint({
+        compilerVersion: 1,
+        planHash: "0".repeat(64),
+        planSnapshot: createMixedCategoryPlanStructure(),
+        profileId: "profile-1",
+      } as never),
+    ).rejects.toThrow("Checkpoint plan structure is invalid");
+  });
+
+  it("keeps a genuinely persisted recovery separate from a new valid plan until discard", async () => {
+    const original = createService();
+    configureDistancePlan(original.mutable);
+    original.mutable.getMovingTime = jest.fn(() => 1_000);
+    original.mutable.getSessionStats = jest.fn(() => ({ movingTime: 1, distance: 10 }));
+    original.mutable.getRuntimeSourceState = jest.fn(() => ({ selectedSources: [] }));
+    original.mutable.getSessionOverrideState = jest.fn(() => ({ trainerMode: "auto" }));
+    original.mutable.syncGpsTrackingForCurrentState = jest.fn(async () => undefined);
+
+    original.service.skipStep();
+    await original.mutable.planBoundaryTransition;
+    const loaded = await checkpointStorageMocks.loadAndClaimRecordingCheckpoint("profile-1");
+    expect(loaded.status).toBe("recovered");
+    if (loaded.status !== "recovered") throw new Error("expected persisted recovery");
+
+    const recovered = createService();
+    recovered.mutable.planExecution = new PlanExecution();
+    await recovered.service.stageRecoveredCheckpoint(loaded.checkpoint);
+    const recoveredPlan = recovered.mutable._plan;
+    const recoveredCategory = recovered.mutable.selectedActivityCategory;
+    recovered.mutable.planExecution.loadPlan = jest.fn();
+    recovered.mutable.syncGpsTrackingForCurrentState = jest.fn(async () => undefined);
+    recovered.mutable.persistCurrentCheckpoint = jest.fn();
+    checkpointStorageMocks.persistRecordingCheckpoint.mockClear();
+    recovered.mutable.emit.mockClear();
+
+    const newPlan = {
+      name: "New run",
+      structure: {
+        version: 3 as const,
+        segments: [
+          {
+            id: "50000000-0000-4000-8000-000000000001",
+            role: "activity" as const,
+            name: "Run",
+            activity_category: "run" as const,
+            intervals: [
+              {
+                id: "50000000-0000-4000-8000-000000000002",
+                name: "Main",
+                repetitions: 1,
+                steps: [
+                  {
+                    id: "50000000-0000-4000-8000-000000000003",
+                    name: "Steady",
+                    duration: { type: "time" as const, seconds: 60 },
+                    targets: [{ type: "RPE" as const, intensity: 4 }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+
+    expect(() => recovered.service.selectPlan(newPlan, "event-new")).toThrow(
+      "Resume or discard the recovered recording",
+    );
+    expect(recovered.mutable._plan).toBe(recoveredPlan);
+    expect(recovered.mutable.selectedActivityCategory).toBe(recoveredCategory);
+    expect(recovered.mutable.planExecution.loadPlan).not.toHaveBeenCalled();
+    expect(recovered.mutable.syncGpsTrackingForCurrentState).not.toHaveBeenCalled();
+    expect(recovered.mutable.emit).not.toHaveBeenCalled();
+    expect(recovered.mutable.persistCurrentCheckpoint).not.toHaveBeenCalled();
+    expect(checkpointStorageMocks.persistRecordingCheckpoint).not.toHaveBeenCalled();
+
+    await recovered.service.discardRecoveredRecording();
+    recovered.service.selectPlan(newPlan, "event-new");
+    expect(recovered.mutable._plan).toBe(newPlan);
+    expect(recovered.mutable.selectedActivityCategory).toBe("run");
+    expect(recovered.mutable.planExecution.loadPlan).toHaveBeenCalledWith(newPlan);
+    expect(recovered.mutable.syncGpsTrackingForCurrentState).toHaveBeenCalledTimes(1);
+    expect(recovered.mutable.emit).toHaveBeenCalledWith("planSelected", {
+      plan: newPlan,
+      eventId: "event-new",
+    });
+  });
+
+  it("rejects a mixed-activity_category launch payload before runtime configuration effects", () => {
+    const { service, mutable } = createService();
+    mutable.hasConfiguredSetup = false;
+    mutable._plan = undefined;
+    mutable._eventId = undefined;
+    mutable.currentLaunchSource = "manual";
+    mutable._gpsRecordingEnabled = false;
+    mutable.syncGpsTrackingForCurrentState = jest.fn();
+    mutable.disconnectTrainerSensors = jest.fn();
+
+    expect(() =>
+      service.selectActivityFromPayload({
+        activity_category: "run",
+        gpsRecordingEnabled: true,
+        plan: { id: "plan-1", name: "Mixed plan", structure: createMixedCategoryPlanStructure() },
+      } as never),
+    ).toThrow("This plan can't be recorded on mobile");
+    expect(mutable.currentLaunchSource).toBe("manual");
+    expect(mutable._gpsRecordingEnabled).toBe(false);
+    expect(mutable.hasConfiguredSetup).toBe(false);
+    expect(mutable._plan).toBeUndefined();
+    expect(mutable._eventId).toBeUndefined();
+    expect(mutable.syncGpsTrackingForCurrentState).not.toHaveBeenCalled();
+    expect(mutable.disconnectTrainerSensors).not.toHaveBeenCalled();
+    expect(mutable.emit).not.toHaveBeenCalled();
   });
 
   it("serializes concurrent starts so only one recording can start", async () => {
@@ -420,6 +609,7 @@ describe("ActivityRecorderService lifecycle", () => {
 
   it("rolls back every acquired resource when required FIT setup fails", async () => {
     const { service, mutable } = createService();
+    const consoleError = jest.spyOn(console, "error").mockImplementation(() => undefined);
     const { GarminFitEncoder } = jest.requireMock("../fit/GarminFitEncoder") as {
       GarminFitEncoder: jest.Mock;
     };
@@ -442,6 +632,9 @@ describe("ActivityRecorderService lifecycle", () => {
     expect(mockNotificationInstances[0]?.stopForegroundService).toHaveBeenCalledTimes(1);
     expect(mockFitInstances[0]?.cleanup).toHaveBeenCalledTimes(1);
     expect(mutable.sensorsManager.setAutoReconnectEnabled).toHaveBeenLastCalledWith(false);
+    expect(consoleError).toHaveBeenCalledWith("[Service] Recording start failed", {
+      category: "Error",
+    });
   });
 
   it.each([
@@ -516,6 +709,19 @@ describe("ActivityRecorderService lifecycle", () => {
     expect(mockFitInstances[0]?.finalize).toHaveBeenCalledWith(
       expect.objectContaining({ endedAt: 5_000, totalTime: 1_000 }),
     );
+  });
+
+  it("reports a bounded error category when finalization fails", async () => {
+    const { service } = createService();
+    const consoleError = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    mockCommitFinalizedArtifactAndHandoff.mockRejectedValueOnce(new TypeError("storage failed"));
+    await service.startRecording();
+
+    await expect(service.finishRecording()).rejects.toThrow("storage failed");
+
+    expect(consoleError).toHaveBeenCalledWith("[Service] Recording finalization failed", {
+      category: "TypeError",
+    });
   });
 
   it("can clean up and reuse the same provider-owned service", async () => {
@@ -695,7 +901,7 @@ describe("ActivityRecorderService lifecycle", () => {
       id: segmentId,
       role: "activity" as const,
       name,
-      category: "run" as const,
+      activity_category: "run" as const,
       intervals: [
         {
           id: intervalId,
@@ -836,7 +1042,7 @@ describe("ActivityRecorderService lifecycle", () => {
           id: navigationIds.segment,
           role: "activity" as const,
           name: "Strength",
-          category: "strength" as const,
+          activity_category: "strength" as const,
           intervals: [
             {
               id: navigationIds.interval,
@@ -992,13 +1198,13 @@ describe("ActivityRecorderService lifecycle", () => {
       role: "activity" | "transition" | "rest",
       startedAt: string,
       completedAt: string,
-      category: "run" | "bike" | null,
+      activity_category: "run" | "bike" | null,
     ) => ({
       occurrenceId,
       globalOrdinal,
       segmentId,
       role,
-      category,
+      activity_category,
       startedAt,
       completedAt,
       activeSeconds: 10,
@@ -1068,7 +1274,7 @@ describe("ActivityRecorderService lifecycle", () => {
     expect(sessions.some((session: { role: string }) => session.role === "rest")).toBe(false);
   });
 
-  it("finalizes a valid V3 activity-to-rest plan without emitting a rest FIT sport session", async () => {
+  it("finalizes a valid V3 activity-to-rest plan without emitting a rest FIT activity_category session", async () => {
     const { service, mutable } = createService();
     configureDistancePlan(mutable, true);
     mutable.getMovingTime = jest.fn(() => 10_000);
@@ -1103,6 +1309,82 @@ describe("ActivityRecorderService lifecycle", () => {
     ).toEqual(["activity", "rest"]);
   });
 
+  it("finalizes a free recording with its canonical single activity occurrence", async () => {
+    const { service, mutable } = createService();
+    const freeExecutionPlan = createFreeRecordingExecutionPlan("run");
+    const compiled = compileRecordingPlan(freeExecutionPlan);
+    const startedAt = Date.parse("2026-01-01T10:00:00.000Z");
+    const endedAt = Date.parse("2026-01-01T10:03:00.000Z");
+    mutable.state = "recording";
+    mutable.startTime = startedAt;
+    mutable.recordingMetadata = {
+      startedAt: new Date(startedAt).toISOString(),
+      profileId: "profile-1",
+    };
+    mutable.freeRecordingExecutionPlan = freeExecutionPlan;
+    mutable.freeRecordingCompiledPlan = compiled;
+    mutable.planHash = "f".repeat(64);
+    mutable.getSessionStats = jest.fn(() => ({
+      duration: 180,
+      movingTime: 150,
+      distance: 725.5,
+      avgSpeed: 4.8,
+      maxSpeed: 5.2,
+      avgPower: 0,
+      maxPower: 0,
+      avgHeartRate: 120,
+      maxHeartRate: 140,
+      avgCadence: 80,
+      ascent: 1,
+      descent: 1,
+      calories: 5,
+    }));
+    mutable.persistCurrentCheckpoint = jest.fn(async () => undefined);
+    mutable.fitEncoder = {
+      getStatus: jest.fn(() => ({ recordCount: 1 })),
+      finalize: jest.fn(async () => undefined),
+      getFilePath: jest.fn(() => "/recording.fit"),
+    };
+
+    jest.useFakeTimers();
+    jest.setSystemTime(endedAt);
+    await service.finishRecording();
+    jest.useRealTimers();
+
+    const artifact = (
+      mockCommitFinalizedArtifactAndHandoff.mock.calls.at(-1)?.[0] as { artifact: any }
+    ).artifact;
+    expect(artifact.executionManifest).toMatchObject({
+      compilerVersion: compiled.compilerVersion,
+      planHash: "f".repeat(64),
+      occurrences: [
+        {
+          occurrenceId: compiled.occurrences[0]?.occurrenceId,
+          segmentId: compiled.occurrences[0]?.segmentId,
+          globalOrdinal: 0,
+          activity_category: "run",
+          startedAt: new Date(startedAt).toISOString(),
+          completedAt: new Date(endedAt).toISOString(),
+          activeSeconds: 150,
+          movingSeconds: 150,
+          distanceMeters: 725.5,
+          timerEvents: [],
+          laps: [
+            {
+              lapNumber: 1,
+              startedAt: new Date(startedAt).toISOString(),
+              endedAt: new Date(endedAt).toISOString(),
+              activeSeconds: 150,
+              distanceMeters: 725.5,
+            },
+          ],
+        },
+      ],
+    });
+    expect(mutable._plan).toBeUndefined();
+    expect(artifact.snapshot.activity.activityPlanId).toBeUndefined();
+  });
+
   it("routes only activity occurrence records to the encoder around internal and trailing rest", async () => {
     const { GarminFitEncoder: ActualGarminFitEncoder } = jest.requireActual(
       "../fit/GarminFitEncoder",
@@ -1118,7 +1400,7 @@ describe("ActivityRecorderService lifecycle", () => {
       id: segmentId,
       role: "activity" as const,
       name,
-      category: "run" as const,
+      activity_category: "run" as const,
       intervals: [
         {
           id: intervalId,
@@ -1232,12 +1514,20 @@ describe("ActivityRecorderService lifecycle", () => {
   it.each([
     ["time", { type: "time", seconds: 30 }, 15, 0],
     ["distance", { type: "distance", meters: 100 }, 5, 50],
-  ] as const)("restores exact mid-%s progress from checkpoint counters and durable replay", async (_kind, duration, movingSeconds, distanceMeters) => {
+  ] as const)("restores exact mid-%s progress from a canonical checkpoint and durable replay", async (_kind, duration, movingSeconds, distanceMeters) => {
     const { service, mutable } = createService();
     const segmentId = "20000000-0000-4000-8000-000000000001";
     const intervalId = "20000000-0000-4000-8000-000000000002";
     const stepId = "20000000-0000-4000-8000-000000000003";
     const occurrenceId = `activity:${segmentId}:${intervalId}:0:${stepId}`;
+    const followupSegments = [
+      {
+        id: "20000000-0000-4000-8000-000000000004",
+        role: "rest" as const,
+        name: "Rest",
+        duration: { type: "time" as const, seconds: 30 },
+      },
+    ];
     const planSnapshot = {
       version: 3,
       segments: [
@@ -1245,7 +1535,7 @@ describe("ActivityRecorderService lifecycle", () => {
           id: segmentId,
           role: "activity",
           name: "Run",
-          category: "run",
+          activity_category: "run",
           intervals: [
             {
               id: intervalId,
@@ -1262,6 +1552,7 @@ describe("ActivityRecorderService lifecycle", () => {
             },
           ],
         },
+        ...followupSegments,
       ],
     } as const;
     mutable.planExecution = new PlanExecution();
@@ -1303,7 +1594,7 @@ describe("ActivityRecorderService lifecycle", () => {
         accumulatedPauseSeconds: 0,
       },
       policy: {
-        category: "run",
+        activity_category: "run",
         gpsMode: "off",
         activityGpsMode: "off",
         selectedSources: [],
@@ -1330,7 +1621,7 @@ describe("ActivityRecorderService lifecycle", () => {
       segmentId,
       segmentIndex: 0,
       role: "activity",
-      category: "run",
+      activity_category: "run",
       intervalId,
       intervalIndex: 0,
       stepId: secondStepId,
@@ -1380,7 +1671,7 @@ describe("ActivityRecorderService lifecycle", () => {
             id: segmentId,
             role: "activity",
             name: "Run",
-            category: "run",
+            activity_category: "run",
             intervals: [
               {
                 id: intervalId,
@@ -1418,7 +1709,7 @@ describe("ActivityRecorderService lifecycle", () => {
           globalOrdinal: 0,
           segmentId,
           role: "activity",
-          category: "run",
+          activity_category: "run",
           startedAt: "2026-01-01T10:00:00.000Z",
           completedAt: "2026-01-01T10:00:30.000Z",
           activeSeconds: 30,
@@ -1444,7 +1735,7 @@ describe("ActivityRecorderService lifecycle", () => {
         accumulatedPauseSeconds: 0,
       },
       policy: {
-        category: "run",
+        activity_category: "run",
         gpsMode: "off",
         activityGpsMode: "off",
         selectedSources: [],
@@ -1491,17 +1782,17 @@ describe("ActivityRecorderService lifecycle", () => {
     expect(service.state).toBe("pending");
   });
 
-  it("stages an unplanned checkpoint without a plan and preserves its operation identity", async () => {
+  it("rebuilds an unplanned execution manifest and preserves its operation identity", async () => {
     const { service, mutable } = createService();
     const checkpoint = {
-      schemaVersion: 3 as const,
+      schemaVersion: 4 as const,
       variant: "unplanned" as const,
       sessionId: "profile-1:unplanned-operation",
       profileId: "profile-1",
       lifecycle: "recording" as const,
       revision: 1,
       start: { startedAt: "2026-01-01T10:00:00.000Z", updatedAt: "2026-01-01T10:00:01.000Z" },
-      draft: { activityCategory: "run", gpsMode: "off" as const },
+      draft: { activity_category: "run" as const, gpsMode: "off" as const },
       summary: { elapsedSeconds: 1, movingSeconds: 1, distanceMeters: 0 },
       executionState: { timerEvents: [] },
       streamArtifactPaths: ["/streams"],
@@ -1509,8 +1800,17 @@ describe("ActivityRecorderService lifecycle", () => {
 
     await service.stageRecoveredCheckpoint(checkpoint);
 
+    const freeExecutionPlan = createFreeRecordingExecutionPlan("run");
     expect(mutable.planExecution.clear).toHaveBeenCalled();
     expect(mutable._plan).toBeUndefined();
+    expect(mutable.freeRecordingExecutionPlan).toEqual(freeExecutionPlan);
+    expect(mutable.freeRecordingCompiledPlan).toEqual(compileRecordingPlan(freeExecutionPlan));
+    expect(mutable.planHash).toBe("0".repeat(64));
+    expect(mutable.buildExecutionManifest()).toMatchObject({
+      compilerVersion: expect.any(Number),
+      planHash: "0".repeat(64),
+      occurrences: [expect.objectContaining({ activity_category: "run", role: "activity" })],
+    });
     expect(mutable.sessionController.resetForNewSession).toHaveBeenCalledWith(
       expect.objectContaining({
         identity: expect.objectContaining({ sessionId: checkpoint.sessionId }),

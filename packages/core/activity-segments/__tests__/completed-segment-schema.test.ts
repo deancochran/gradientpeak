@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   completedActivitySegmentSetSchemaV1,
+  rawOnlySegmentSourceReferenceSchema,
   SEGMENT_SUMMARY_V1_LIMITS,
   segmentSummarySchemaV1,
 } from "../completed-segment-schema";
@@ -22,7 +23,7 @@ describe("completed activity segment contract", () => {
           id: id(1),
           ordinal: 0,
           role: "activity",
-          category: "run",
+          activity_category: "run",
           startOffsetMs: 0,
           endOffsetMs: 4_000,
           summary: completeSummary(3_000, 2_500),
@@ -39,7 +40,7 @@ describe("completed activity segment contract", () => {
           id: id(3),
           ordinal: 2,
           role: "activity",
-          category: "bike",
+          activity_category: "bike",
           startOffsetMs: 6_000,
           endOffsetMs: 10_000,
           summary: completeSummary(4_000),
@@ -50,7 +51,7 @@ describe("completed activity segment contract", () => {
     expect(result.segments).toHaveLength(3);
   });
 
-  it("structurally forbids category and creation labels on non-activity roles", () => {
+  it("structurally forbids activity_category and creation labels on non-activity roles", () => {
     const result = completedActivitySegmentSetSchemaV1.safeParse({
       version: 1,
       elapsedMs: 1_000,
@@ -59,7 +60,7 @@ describe("completed activity segment contract", () => {
           id: id(1),
           ordinal: 0,
           role: "rest",
-          category: "run",
+          activity_category: "run",
           createdBy: "mobile",
           startOffsetMs: 0,
           endOffsetMs: 1_000,
@@ -95,12 +96,25 @@ describe("completed activity segment contract", () => {
     ).toBe(true);
   });
 
+  it("bounds raw source strings by Unicode code point and integers by PostgreSQL range", () => {
+    const parse = (rawSubSport: string | number) =>
+      rawOnlySegmentSourceReferenceSchema.safeParse({ kind: "raw", rawSubSport }).success;
+
+    expect(parse("😀".repeat(128))).toBe(true);
+    expect(parse("")).toBe(false);
+    expect(parse("😀".repeat(129))).toBe(false);
+    expect(parse(-2_147_483_648)).toBe(true);
+    expect(parse(2_147_483_647)).toBe(true);
+    expect(parse(-2_147_483_649)).toBe(false);
+    expect(parse(2_147_483_648)).toBe(false);
+  });
+
   it("validates artifact locator shape and forbids artifact indexes on raw references", () => {
     const segment = {
       id: id(1),
       ordinal: 0,
       role: "activity",
-      category: "run",
+      activity_category: "run",
       startOffsetMs: 0,
       endOffsetMs: 1_000,
       summary: completeSummary(1_000),
@@ -128,7 +142,7 @@ describe("completed activity segment contract", () => {
     ).toBe(false);
     expect(
       completedActivitySegmentSetSchemaV1.safeParse(
-        set({ kind: "raw", rawType: "workout", sessionMessageIndex: 0 }),
+        set({ kind: "raw", rawType: "activity", sessionMessageIndex: 0 }),
       ).success,
     ).toBe(false);
   });

@@ -1,14 +1,16 @@
+import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
 import {
   type CompletedActivitySegmentSetV1,
   completedActivitySegmentSetSchemaV1,
 } from "@repo/core/activity-segments";
-import { activities, activityFileIngestions, profiles } from "@repo/db";
+import { activities, activityFileIngestions, activityPlans, profiles } from "@repo/db";
 import { and, eq } from "drizzle-orm";
 import type {
   MobileRecordingSubmissionInput,
   RecordingAcceptedArtifact,
 } from "../../contracts/recording-submission";
 import type { getRequiredDb } from "../../db";
+import { createContentAccessPermissions } from "../../permissions/content-access";
 import {
   type ActivityArtifactStorage,
   verifyAcceptedActivityArtifact,
@@ -101,7 +103,7 @@ function segmentSetFromExecutionManifest(input: MobileRecordingSubmissionInput) 
       },
     };
     if (first.role === "activity") {
-      return { ...base, role: "activity" as const, category: first.category };
+      return { ...base, role: "activity" as const, activity_category: first.activity_category };
     }
     return { ...base, role: first.role };
   });
@@ -115,6 +117,57 @@ async function loadDefaultContentVisibility(db: DbClient, profileId: string) {
     .where(eq(profiles.id, profileId))
     .limit(1);
   return profile?.defaultContentVisibility ?? "private";
+}
+
+async function resolveRecordingActivityPlanId(
+  db: DbClient,
+  input: { activityPlanId: string | null | undefined; profileId: string },
+) {
+  if (!input.activityPlanId) return null;
+
+  const [plan] = await db
+    .select({
+      id: activityPlans.id,
+      contentVisibility: activityPlans.content_visibility,
+      isSystem: activityPlans.is_system_template,
+      ownerProfileId: activityPlans.profile_id,
+      structure: activityPlans.structure,
+    })
+    .from(activityPlans)
+    .where(eq(activityPlans.id, input.activityPlanId))
+    .limit(1);
+  if (!plan) {
+    throw new MobileRecordingSubmissionError(
+      "forbidden",
+      "Activity plan is not available for mobile recording",
+    );
+  }
+
+  const access = await createContentAccessPermissions(db).canReadForRow({
+    actorProfileId: input.profileId,
+    resource: { type: "activity_plan", id: plan.id },
+    row: {
+      ownerProfileId: plan.ownerProfileId,
+      isPublic: plan.contentVisibility === "public",
+      visibility: plan.contentVisibility,
+      isSystem: plan.isSystem,
+    },
+  });
+  if (!access.allowed) {
+    throw new MobileRecordingSubmissionError(
+      "forbidden",
+      "Activity plan is not available for mobile recording",
+    );
+  }
+
+  if (!activityPlanStructureSchemaV3.safeParse(plan.structure).success) {
+    throw new MobileRecordingSubmissionError(
+      "forbidden",
+      "Activity plan is not available for mobile recording",
+    );
+  }
+
+  return plan.id;
 }
 
 async function loadAcceptedSubmission(
@@ -237,6 +290,10 @@ export async function submitMobileRecording(
     });
     return replay;
   }
+  const resolvedActivityPlanId = await resolveRecordingActivityPlanId(db, {
+    activityPlanId: submission.activityPlanId,
+    profileId: submission.profileId,
+  });
   let segmentSet: CompletedActivitySegmentSetV1;
   try {
     segmentSet = segmentSetFromExecutionManifest(submission);
@@ -293,7 +350,7 @@ export async function submitMobileRecording(
     await submitActivity(db, {
       requestedActivityId: activityId,
       profileId: submission.profileId,
-      activityPlanId: submission.activityPlanId ?? null,
+      activityPlanId: resolvedActivityPlanId,
       name: submission.name,
       notes: submission.notes ?? null,
       contentVisibility,

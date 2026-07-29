@@ -110,7 +110,7 @@ const createIntegrationOverview = (provider: "strava" | "wahoo", configured: boo
   connected: false,
   integrationId: null,
   label: provider === "strava" ? "Strava" : "Wahoo",
-  plannedWorkouts: {
+  plannedActivities: {
     lastError: null,
     lastFailedAt: null,
     lastSucceededAt: null,
@@ -1525,7 +1525,7 @@ describe("onboarding screen", () => {
   it("does not send custom advanced settings when a compact value changes", async () => {
     const savedSettings = {
       ...INITIAL_ONBOARDING_DATA.training_settings,
-      dose_limits: { sport_overrides: {} },
+      dose_limits: { activity_category_overrides: {} },
       training_style: {
         ...INITIAL_ONBOARDING_DATA.training_settings.training_style,
         progression_pace: 0.6,
@@ -1948,7 +1948,7 @@ describe("onboarding screen", () => {
           dob: "1990-01-01",
           ftp: 210,
           max_hr: 185,
-          sport_interests: ["cycling", "running", "swimming"],
+          activity_category_interests: ["cycling", "running", "swimming"],
           weight_kg: 72,
         }}
       />,
@@ -1977,7 +1977,7 @@ describe("onboarding screen", () => {
           dob: "1990-01-01",
           ftp: 220,
           max_hr: 190,
-          sport_interests: ["cycling"],
+          activity_category_interests: ["cycling"],
           weight_kg: 72,
         }}
       />,

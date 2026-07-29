@@ -5,7 +5,7 @@ import { Text } from "@repo/ui/components/text";
 import type { Control } from "react-hook-form";
 import { View } from "react-native";
 
-const sportOverrideOptions = [
+const activityCategoryOverrideOptions = [
   { key: "run", label: "Run" },
   { key: "bike", label: "Bike" },
   { key: "swim", label: "Swim" },
@@ -13,7 +13,7 @@ const sportOverrideOptions = [
   { key: "other", label: "Conditioning / HIIT / Other" },
 ] as const;
 
-export type SportOverrideKey = (typeof sportOverrideOptions)[number]["key"];
+export type ActivityCategoryOverrideKey = (typeof activityCategoryOverrideOptions)[number]["key"];
 
 type ScheduleValidation = {
   issues: string[];
@@ -26,14 +26,14 @@ type ScheduleValidation = {
 type ScheduleSectionProps = {
   control: Control<AthleteTrainingSettingsFormInput>;
   doseLimits: AthleteTrainingSettingsFormInput["dose_limits"];
-  onToggleSportDoseOverride: (sport: SportOverrideKey) => void;
+  onToggleActivityCategoryDoseOverride: (activity_category: ActivityCategoryOverrideKey) => void;
   scheduleValidation: ScheduleValidation;
 };
 
 export function ScheduleSection({
   control,
   doseLimits,
-  onToggleSportDoseOverride,
+  onToggleActivityCategoryDoseOverride,
   scheduleValidation,
 }: ScheduleSectionProps) {
   return (
@@ -103,29 +103,33 @@ export function ScheduleSection({
       <View className="mt-2 gap-3 border-t border-border pt-3">
         <View className="gap-1">
           <Text className="text-sm font-semibold text-foreground">
-            Sport-specific dose overrides
+            ActivityCategory-specific dose overrides
           </Text>
           <Text className="text-xs leading-4 text-muted-foreground">
             Tune weekly session and duration limits for run, bike, swim, strength, conditioning,
             HIIT, or other training categories.
           </Text>
         </View>
-        <View className="gap-3" testID="preferences-sport-overrides">
-          {sportOverrideOptions.map((sport) => {
-            const enabled = Boolean(doseLimits.sport_overrides?.[sport.key]);
+        <View className="gap-3" testID="preferences-activity_category-overrides">
+          {activityCategoryOverrideOptions.map((activity_category) => {
+            const enabled = Boolean(
+              doseLimits.activity_category_overrides?.[activity_category.key],
+            );
             return (
               <View
-                key={sport.key}
+                key={activity_category.key}
                 className="gap-2 rounded-xl border border-border bg-background px-3 py-2"
-                testID={`preferences-sport-override-${sport.key}`}
+                testID={`preferences-activity_category-override-${activity_category.key}`}
               >
                 <View className="flex-row items-center justify-between gap-3">
-                  <Text className="text-sm font-medium text-foreground">{sport.label}</Text>
+                  <Text className="text-sm font-medium text-foreground">
+                    {activity_category.label}
+                  </Text>
                   <Button
-                    accessibilityLabel={`${enabled ? "Disable" : "Enable"} ${sport.label} dose override`}
-                    onPress={() => onToggleSportDoseOverride(sport.key)}
+                    accessibilityLabel={`${enabled ? "Disable" : "Enable"} ${activity_category.label} dose override`}
+                    onPress={() => onToggleActivityCategoryDoseOverride(activity_category.key)}
                     size="sm"
-                    testID={`preferences-sport-override-toggle-${sport.key}`}
+                    testID={`preferences-activity_category-override-toggle-${activity_category.key}`}
                     variant={enabled ? "default" : "outline"}
                   >
                     <Text>{enabled ? "Enabled" : "Use global"}</Text>
@@ -140,8 +144,8 @@ export function ScheduleSection({
                           label="Min sessions"
                           max={21}
                           min={0}
-                          name={`dose_limits.sport_overrides.${sport.key}.min_sessions_per_week`}
-                          testId={`preferences-sport-override-${sport.key}-min-sessions`}
+                          name={`dose_limits.activity_category_overrides.${activity_category.key}.min_sessions_per_week`}
+                          testId={`preferences-activity_category-override-${activity_category.key}-min-sessions`}
                         />
                       </View>
                       <View className="flex-1">
@@ -150,8 +154,8 @@ export function ScheduleSection({
                           label="Max sessions"
                           max={21}
                           min={0}
-                          name={`dose_limits.sport_overrides.${sport.key}.max_sessions_per_week`}
-                          testId={`preferences-sport-override-${sport.key}-max-sessions`}
+                          name={`dose_limits.activity_category_overrides.${activity_category.key}.max_sessions_per_week`}
+                          testId={`preferences-activity_category-override-${activity_category.key}-max-sessions`}
                         />
                       </View>
                     </View>
@@ -160,16 +164,16 @@ export function ScheduleSection({
                       label="Max session duration"
                       max={600}
                       min={20}
-                      name={`dose_limits.sport_overrides.${sport.key}.max_single_session_duration_minutes`}
-                      testId={`preferences-sport-override-${sport.key}-max-duration`}
+                      name={`dose_limits.activity_category_overrides.${activity_category.key}.max_single_session_duration_minutes`}
+                      testId={`preferences-activity_category-override-${activity_category.key}-max-duration`}
                     />
                     <FormIntegerStepperField
                       control={control}
                       label="Max weekly duration"
                       max={10080}
                       min={30}
-                      name={`dose_limits.sport_overrides.${sport.key}.max_weekly_duration_minutes`}
-                      testId={`preferences-sport-override-${sport.key}-max-weekly-duration`}
+                      name={`dose_limits.activity_category_overrides.${activity_category.key}.max_weekly_duration_minutes`}
+                      testId={`preferences-activity_category-override-${activity_category.key}-max-weekly-duration`}
                     />
                   </View>
                 ) : null}
@@ -182,31 +186,35 @@ export function ScheduleSection({
   );
 }
 
-export function SportDoseOverridesSection({
+export function ActivityCategoryDoseOverridesSection({
   control,
   doseLimits,
-  onToggleSportDoseOverride,
-}: Pick<ScheduleSectionProps, "control" | "doseLimits" | "onToggleSportDoseOverride">) {
+  onToggleActivityCategoryDoseOverride,
+}: Pick<ScheduleSectionProps, "control" | "doseLimits" | "onToggleActivityCategoryDoseOverride">) {
   return (
     <View className="mt-2 gap-3 border-t border-border pt-3">
-      <Text className="text-sm font-semibold text-foreground">Sport-specific dose overrides</Text>
-      <View className="gap-3" testID="preferences-sport-overrides">
-        {sportOverrideOptions.map((sport) => {
-          const enabled = Boolean(doseLimits.sport_overrides?.[sport.key]);
+      <Text className="text-sm font-semibold text-foreground">
+        ActivityCategory-specific dose overrides
+      </Text>
+      <View className="gap-3" testID="preferences-activity_category-overrides">
+        {activityCategoryOverrideOptions.map((activity_category) => {
+          const enabled = Boolean(doseLimits.activity_category_overrides?.[activity_category.key]);
 
           return (
             <View
-              key={sport.key}
+              key={activity_category.key}
               className="gap-2 rounded-xl border border-border bg-background px-3 py-2"
-              testID={`preferences-sport-override-${sport.key}`}
+              testID={`preferences-activity_category-override-${activity_category.key}`}
             >
               <View className="flex-row items-center justify-between gap-3">
-                <Text className="text-sm font-medium text-foreground">{sport.label}</Text>
+                <Text className="text-sm font-medium text-foreground">
+                  {activity_category.label}
+                </Text>
                 <Button
-                  accessibilityLabel={`${enabled ? "Disable" : "Enable"} ${sport.label} dose override`}
-                  onPress={() => onToggleSportDoseOverride(sport.key)}
+                  accessibilityLabel={`${enabled ? "Disable" : "Enable"} ${activity_category.label} dose override`}
+                  onPress={() => onToggleActivityCategoryDoseOverride(activity_category.key)}
                   size="sm"
-                  testID={`preferences-sport-override-toggle-${sport.key}`}
+                  testID={`preferences-activity_category-override-toggle-${activity_category.key}`}
                   variant={enabled ? "default" : "outline"}
                 >
                   <Text>{enabled ? "Enabled" : "Use global"}</Text>
@@ -221,8 +229,8 @@ export function SportDoseOverridesSection({
                         label="Min sessions"
                         max={21}
                         min={0}
-                        name={`dose_limits.sport_overrides.${sport.key}.min_sessions_per_week`}
-                        testId={`preferences-sport-override-${sport.key}-min-sessions`}
+                        name={`dose_limits.activity_category_overrides.${activity_category.key}.min_sessions_per_week`}
+                        testId={`preferences-activity_category-override-${activity_category.key}-min-sessions`}
                       />
                     </View>
                     <View className="flex-1">
@@ -231,8 +239,8 @@ export function SportDoseOverridesSection({
                         label="Max sessions"
                         max={21}
                         min={0}
-                        name={`dose_limits.sport_overrides.${sport.key}.max_sessions_per_week`}
-                        testId={`preferences-sport-override-${sport.key}-max-sessions`}
+                        name={`dose_limits.activity_category_overrides.${activity_category.key}.max_sessions_per_week`}
+                        testId={`preferences-activity_category-override-${activity_category.key}-max-sessions`}
                       />
                     </View>
                   </View>
@@ -241,16 +249,16 @@ export function SportDoseOverridesSection({
                     label="Max session duration"
                     max={600}
                     min={20}
-                    name={`dose_limits.sport_overrides.${sport.key}.max_single_session_duration_minutes`}
-                    testId={`preferences-sport-override-${sport.key}-max-duration`}
+                    name={`dose_limits.activity_category_overrides.${activity_category.key}.max_single_session_duration_minutes`}
+                    testId={`preferences-activity_category-override-${activity_category.key}-max-duration`}
                   />
                   <FormIntegerStepperField
                     control={control}
                     label="Max weekly duration"
                     max={10080}
                     min={30}
-                    name={`dose_limits.sport_overrides.${sport.key}.max_weekly_duration_minutes`}
-                    testId={`preferences-sport-override-${sport.key}-max-weekly-duration`}
+                    name={`dose_limits.activity_category_overrides.${activity_category.key}.max_weekly_duration_minutes`}
+                    testId={`preferences-activity_category-override-${activity_category.key}-max-weekly-duration`}
                   />
                 </View>
               ) : null}

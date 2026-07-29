@@ -1,13 +1,16 @@
 import { z } from "zod";
 import type { ActivityStreamRecord } from "../schemas/activity_streams";
-import { type CanonicalSport, canonicalSportSchema } from "../schemas/sport";
+import {
+  type CanonicalActivityCategory,
+  canonicalActivityCategorySchema,
+} from "../schemas/activity-category";
 
 export const streamAnalysisInsufficientReasonValues = [
   "invalid_timestamps",
   "insufficient_samples",
   "threshold_missing",
   "low_coverage",
-  "sport_mismatch",
+  "activity_category_mismatch",
 ] as const;
 
 const streamAnalysisInsufficientReasonSchema = z.enum(streamAnalysisInsufficientReasonValues);
@@ -66,7 +69,7 @@ export const streamZoneDistributionSchema = z
 export const activityStreamAnalysisSchema = z
   .object({
     version: z.literal("2"),
-    sport: canonicalSportSchema,
+    activity_category: canonicalActivityCategorySchema,
     policy: z
       .object({
         max_accepted_gap_seconds: z.number().finite().positive(),
@@ -101,12 +104,14 @@ export type StreamAnalysisInsufficientReason = z.infer<
 export type ActivityStreamThresholdIdentity = z.infer<typeof activityStreamThresholdIdentitySchema>;
 
 export type ActivityStreamThresholds = {
-  lthrBySport?: Partial<Record<CanonicalSport, number | null>> | null;
+  lthrByActivityCategory?: Partial<Record<CanonicalActivityCategory, number | null>> | null;
   ftpWatts?: number | null;
   runThresholdSpeedMps?: number | null;
   swimThresholdSpeedMps?: number | null;
   identities?: {
-    lthrBySport?: Partial<Record<CanonicalSport, ActivityStreamThresholdIdentity | null>> | null;
+    lthrByActivityCategory?: Partial<
+      Record<CanonicalActivityCategory, ActivityStreamThresholdIdentity | null>
+    > | null;
     ftpWatts?: ActivityStreamThresholdIdentity | null;
     runThresholdSpeedMps?: ActivityStreamThresholdIdentity | null;
     swimThresholdSpeedMps?: ActivityStreamThresholdIdentity | null;
@@ -128,7 +133,7 @@ type DistributionInput = {
   zoneCount: number;
   maxAcceptedGapSeconds: number;
   minimumCoverageRatio: number;
-  sportMatches: boolean;
+  activityCategoryMatches: boolean;
   isValidValue?: (value: number) => boolean;
 };
 
@@ -213,9 +218,9 @@ function analyzeDistribution(
       value !== undefined && Number.isFinite(value) && (input.isValidValue?.(value) ?? value >= 0)
     );
   }).length;
-  if (!input.sportMatches) {
+  if (!input.activityCategoryMatches) {
     return unavailableDistribution({
-      reason: "sport_mismatch",
+      reason: "activity_category_mismatch",
       sampleCount,
       threshold: input.threshold,
       thresholdIdentity: input.thresholdIdentity,
@@ -372,7 +377,7 @@ function calculateHeartRateLoad(input: {
 /** Integrates each sample only until the next timestamp; the final sample receives no synthetic time. */
 export function analyzeActivityStreams(input: {
   records: ActivityStreamRecord[];
-  sport: CanonicalSport;
+  activity_category: CanonicalActivityCategory;
   thresholds: ActivityStreamThresholds;
   maxAcceptedGapSeconds?: number;
   minimumCoverageRatio?: number;
@@ -380,7 +385,7 @@ export function analyzeActivityStreams(input: {
   const maxAcceptedGapSeconds = input.maxAcceptedGapSeconds ?? 30;
   const minimumCoverageRatio = input.minimumCoverageRatio ?? 0.8;
   const timestamps = validateTimestamps(input.records);
-  const lthr = input.thresholds.lthrBySport?.[input.sport] ?? null;
+  const lthr = input.thresholds.lthrByActivityCategory?.[input.activity_category] ?? null;
   const common = {
     records: input.records,
     timestamps,
@@ -391,10 +396,11 @@ export function analyzeActivityStreams(input: {
     ...common,
     value: (record) => record.heartRate ?? record.heart_rate ?? record.heart_rate_bpm,
     threshold: lthr,
-    thresholdIdentity: input.thresholds.identities?.lthrBySport?.[input.sport] ?? null,
+    thresholdIdentity:
+      input.thresholds.identities?.lthrByActivityCategory?.[input.activity_category] ?? null,
     zoneForRatio: heartRateZone,
     zoneCount: 5,
-    sportMatches: true,
+    activityCategoryMatches: true,
     isValidValue: (value) => value > 0,
   });
   const power = analyzeDistribution({
@@ -404,7 +410,7 @@ export function analyzeActivityStreams(input: {
     thresholdIdentity: input.thresholds.identities?.ftpWatts ?? null,
     zoneForRatio: powerZone,
     zoneCount: 7,
-    sportMatches: input.sport === "bike",
+    activityCategoryMatches: input.activity_category === "bike",
   });
   const runPace = analyzeDistribution({
     ...common,
@@ -413,7 +419,7 @@ export function analyzeActivityStreams(input: {
     thresholdIdentity: input.thresholds.identities?.runThresholdSpeedMps ?? null,
     zoneForRatio: paceZone,
     zoneCount: 5,
-    sportMatches: input.sport === "run",
+    activityCategoryMatches: input.activity_category === "run",
   });
   const swimPace = analyzeDistribution({
     ...common,
@@ -422,7 +428,7 @@ export function analyzeActivityStreams(input: {
     thresholdIdentity: input.thresholds.identities?.swimThresholdSpeedMps ?? null,
     zoneForRatio: paceZone,
     zoneCount: 5,
-    sportMatches: input.sport === "swim",
+    activityCategoryMatches: input.activity_category === "swim",
   });
   const heartRateLoad =
     heartRate.quality.status === "sufficient" && heartRate.threshold !== null && timestamps.valid
@@ -436,7 +442,7 @@ export function analyzeActivityStreams(input: {
 
   return activityStreamAnalysisSchema.parse({
     version: "2",
-    sport: input.sport,
+    activity_category: input.activity_category,
     policy: {
       max_accepted_gap_seconds: maxAcceptedGapSeconds,
       minimum_coverage_ratio: minimumCoverageRatio,

@@ -94,8 +94,7 @@ const activityPlans = [
   {
     id: "ap-1",
     name: "Threshold Run",
-    categories: ["run"],
-    primary_category: "run",
+    activity_category: "run",
     created_at: "2026-04-01T10:00:00.000Z",
   },
 ];
@@ -106,7 +105,7 @@ const trainingPlans = [
     name: "10K Builder",
     description: "Build toward a faster 10K.",
     durationWeeks: { recommended: 8 },
-    sport: ["run"],
+    activity_category: ["run"],
     experienceLevel: ["beginner"],
     sessions_per_week_target: 4,
     created_at: "2026-04-03T10:00:00.000Z",
@@ -450,7 +449,7 @@ describe("discover screen", () => {
     });
   });
 
-  it("searches across the mixed list with the same debounced query", async () => {
+  it("searches canonical plans with the same debounced query", async () => {
     renderNative(<DiscoverScreen />);
 
     await act(() => {
@@ -516,12 +515,12 @@ describe("discover screen", () => {
 
     fireEvent.press(screen.getByTestId("discover-filter-button"));
     fireEvent.changeText(screen.getByTestId("discover-filter-activityPlans-tss-min"), "50");
-    expect(screen.queryByTestId("discover-filter-routes-category-run")).toBeNull();
-    expect(screen.queryByTestId("discover-filter-trainingPlans-sport-run")).toBeNull();
+    expect(screen.queryByTestId("discover-filter-routes-activity_category-run")).toBeNull();
+    expect(screen.queryByTestId("discover-filter-trainingPlans-activity_category-run")).toBeNull();
     fireEvent.press(screen.getByTestId("discover-filter-sort-field-created-at"));
     fireEvent.press(screen.getByTestId("discover-filter-sort-direction-asc"));
-    fireEvent.press(screen.getByTestId("discover-filter-activityPlans-category-run"));
-    fireEvent.press(screen.getByTestId("discover-filter-activityPlans-category-bike"));
+    fireEvent.press(screen.getByTestId("discover-filter-activityPlans-activity_category-run"));
+    fireEvent.press(screen.getByTestId("discover-filter-activityPlans-activity_category-bike"));
     fireEvent.press(screen.getByTestId("discover-filter-apply"));
 
     await waitFor(() => {
@@ -594,7 +593,7 @@ describe("discover screen", () => {
       expect(trainingPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         {
           search: undefined,
-          sport: undefined,
+          activity_category: undefined,
           experience_level: undefined,
           min_weeks: 8,
           max_weeks: undefined,

@@ -8,7 +8,7 @@ import {
 describe("compact onboarding training preferences", () => {
   const customSettings = {
     ...defaultAthletePreferenceProfile,
-    dose_limits: { sport_overrides: {} },
+    dose_limits: { activity_category_overrides: {} },
     training_style: {
       ...defaultAthletePreferenceProfile.training_style,
       progression_pace: 0.6,

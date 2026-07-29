@@ -50,7 +50,7 @@ export type PlanUpcomingImpact = {
   id: string;
   title: string;
   scheduledAt: string;
-  sport: string;
+  activity_category: string;
   estimatedLoad: number | null;
   loadContext: string;
 };
@@ -69,7 +69,7 @@ export type PlanActivityMatch = {
   id: string;
   name: string;
   targetDate: string;
-  activityCategory: string | null;
+  activity_category: string;
   estimatedTss: number | null;
   estimatedDurationSeconds: number | null;
   score: number;
@@ -213,7 +213,7 @@ function activityPlanMatchReasonCopy(code: string) {
     case "near_target_tss":
       return "Near target load";
     case "same_activity_category":
-      return "Same activity type";
+      return "Same activity_category";
     case "reasonable_duration":
       return "Duration estimated";
     case "owned_plan":
@@ -288,7 +288,7 @@ export function mapUpcomingImpact(impact: UpcomingImpactInput): PlanUpcomingImpa
     id: impact.activity_plan_id,
     title: impact.title,
     scheduledAt: impact.scheduled_at,
-    sport: impact.sport,
+    activity_category: impact.activity_category,
     estimatedLoad,
     loadContext:
       estimatedLoad === null
@@ -914,7 +914,7 @@ export function usePlanDashboardViewModel({
       id: match.activity_plan_id,
       name: match.name,
       targetDate: payload.target_date,
-      activityCategory: match.activity_category,
+      activity_category: match.activity_category,
       estimatedTss: match.estimated_tss,
       estimatedDurationSeconds: match.estimated_duration_seconds,
       score: match.score,

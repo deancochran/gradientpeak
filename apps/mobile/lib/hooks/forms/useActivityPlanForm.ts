@@ -77,6 +77,7 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
       options.onError?.(error) ?? showErrorAlert(error, "Failed to Update Plan");
     },
   });
+  const editStatus = !isEditMode ? "editable" : !existingPlan ? "loading" : "editable";
 
   useEffect(() => {
     if (!existingPlan || !isEditMode) return;
@@ -90,7 +91,7 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     store.setName(existingPlan.name);
     store.setDescription(existingPlan.description || "");
     store.setNotes(existingPlan.notes || "");
-    if (firstActivity) store.setActivityCategory(firstActivity.category);
+    if (firstActivity) store.setActivityCategory(firstActivity.activity_category);
     store.setStructure(parsed.data);
   }, [
     existingPlan,
@@ -133,6 +134,10 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
   const validation = useMemo(() => validate(), [validate]);
 
   const submit = useCallback(async () => {
+    if (isEditMode && editStatus !== "editable") {
+      Alert.alert("Plan unavailable", "Refresh this plan before editing.");
+      return null;
+    }
     const parsed = activityPlanStructureSchemaV3.safeParse(store.structure);
     const currentValidation = validate(store.structure);
     if (!parsed.success || !currentValidation.isValid) {
@@ -149,7 +154,6 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
       notes: store.notes.trim() || null,
     };
     try {
-      // API cutover is owned separately; runtime payload is already strict V3 here.
       if (isEditMode) {
         if (!options.planId) throw new Error("Edit mode requires a plan id");
         if (!existingPlan?.structure_hash)
@@ -169,6 +173,7 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     store,
     validate,
     isEditMode,
+    editStatus,
     options.planId,
     existingPlan?.structure_hash,
     createMutation,
@@ -213,7 +218,13 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     isSubmitting: createMutation.isPending || updateMutation.isPending,
     isLoading: isLoadingPlan,
     isEditMode,
-    canSubmit: validation.isValid && !createMutation.isPending && !updateMutation.isPending,
+    editStatus,
+    isEditBlocked: isEditMode && editStatus !== "editable",
+    canSubmit:
+      editStatus === "editable" &&
+      validation.isValid &&
+      !createMutation.isPending &&
+      !updateMutation.isPending,
     error: createMutation.error || updateMutation.error,
   };
 }

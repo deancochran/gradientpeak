@@ -3,7 +3,7 @@ import type { TRPCError } from "@trpc/server";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { estimationState, plannedWorkoutSyncState } = vi.hoisted(() => ({
+const { estimationState, plannedActivitySyncState } = vi.hoisted(() => ({
   estimationState: {
     getActivityPlanDerivedMetrics: vi.fn(async (plan: any) => ({
       ...plan,
@@ -42,13 +42,13 @@ const { estimationState, plannedWorkoutSyncState } = vi.hoisted(() => ({
     })),
     createEventReadRepository: vi.fn(() => ({ kind: "event-read-repository" })),
   },
-  plannedWorkoutSyncState: {
+  plannedActivitySyncState: {
     enqueueProviderPlannedActivityJobs: vi.fn(),
   },
 }));
 
 vi.mock("../../application/events", () => ({
-  enqueueProviderPlannedActivityJobs: plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs,
+  enqueueProviderPlannedActivityJobs: plannedActivitySyncState.enqueueProviderPlannedActivityJobs,
 }));
 
 vi.mock("../../utils/estimation-helpers", async (importOriginal) => {
@@ -102,7 +102,7 @@ const sampleStructure: any = {
     {
       id: "22222222-2222-4222-8222-222222222222",
       role: "activity",
-      category: "bike",
+      activity_category: "bike",
       name: "Bike",
       intervals: [
         {
@@ -123,19 +123,19 @@ const sampleStructure: any = {
   ],
 };
 
-function createCompositionStructure(categories: Array<"bike" | "run">) {
+function createCompositionStructure(activity_categories: Array<"bike" | "run">) {
   return {
     version: 3,
-    segments: categories.map((category, index) => {
+    segments: activity_categories.map((activity_category, index) => {
       const segment = structuredClone(sampleStructure.segments[0]);
       const suffix = (index + 1).toString().padStart(12, "0");
       segment.id = `10000000-0000-4000-8000-${suffix}`;
-      segment.category = category;
-      segment.name = category === "bike" ? "Bike" : "Run";
+      segment.activity_category = activity_category;
+      segment.name = activity_category === "bike" ? "Bike" : "Run";
       segment.intervals[0].id = `20000000-0000-4000-8000-${suffix}`;
       segment.intervals[0].steps[0].id = `30000000-0000-4000-8000-${suffix}`;
       segment.intervals[0].steps[0].targets =
-        category === "bike"
+        activity_category === "bike"
           ? [{ type: "%FTP", intensity: 75 }]
           : [{ type: "%MaxHR", intensity: 70 }];
       return segment;
@@ -314,7 +314,7 @@ function createProfileRow(overrides: Record<string, unknown> = {}) {
 describe("activityPlansRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs.mockResolvedValue(null);
+    plannedActivitySyncState.enqueueProviderPlannedActivityJobs.mockResolvedValue(null);
   });
 
   it("list returns estimated items, liked state, and a next cursor", async () => {
@@ -440,9 +440,9 @@ describe("activityPlansRouter", () => {
     expect(result.nextCursor).toBe("index:1");
   });
 
-  it("filters by categories contained in V3 segments instead of the storage column", async () => {
+  it("filters by activity_categories contained in V3 segments instead of the storage column", async () => {
     const runStructure = structuredClone(sampleStructure);
-    runStructure.segments[0].category = "run";
+    runStructure.segments[0].activity_category = "run";
     runStructure.segments[0].intervals[0].steps[0].targets = [{ type: "%MaxHR", intensity: 70 }];
     const runPlan = createActivityPlanRow({
       id: "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -460,16 +460,16 @@ describe("activityPlansRouter", () => {
     const result = await caller.list({ activityCategories: ["run"], limit: 20 });
 
     expect(result.items.map((item) => item.id)).toEqual([runPlan.id]);
-    expect(result.items[0]).toMatchObject({ categories: ["run"], primary_category: "run" });
-    expect(result.items[0]).not.toHaveProperty("activity_category");
+    expect(result.items[0]).toMatchObject({ activity_category: "run" });
+    expect(result.items[0]).not.toHaveProperty("sport");
   });
 
-  it("applies category containment in one bounded database query", async () => {
-    const row = (index: number, category: "bike" | "run") => {
+  it("applies activity_category containment in one bounded database query", async () => {
+    const row = (index: number, activity_category: "bike" | "run") => {
       const structure = structuredClone(sampleStructure);
-      structure.segments[0].category = category;
+      structure.segments[0].activity_category = activity_category;
       structure.segments[0].intervals[0].steps[0].targets =
-        category === "run"
+        activity_category === "run"
           ? [{ type: "%MaxHR", intensity: 70 }]
           : [{ type: "%FTP", intensity: 75 }];
       return createActivityPlanRow({
@@ -490,61 +490,37 @@ describe("activityPlansRouter", () => {
     const result = await caller.list({ activityCategories: ["run"], limit: 20 });
 
     expect(result.items).toHaveLength(20);
-    expect(result.items.every((item) => item.primary_category === "run")).toBe(true);
+    expect(result.items.every((item) => item.activity_category === "run")).toBe(true);
     expect(result.nextCursor).toBeDefined();
     expect(
       callLog.filter((call) => call.operation === "select" && call.table === "activity_plans"),
     ).toHaveLength(1);
   });
 
-  it("includes multisport plans by default and with the explicit include mode", async () => {
+  it("rejects metadata updates to mixed stored plans", async () => {
     const structure = createCompositionStructure(["run", "bike"]);
-    const plan = createActivityPlanRow({ structure });
-
-    for (const input of [
-      { limit: 20 },
-      { compositionMode: "include_multisport" as const, limit: 20 },
-    ]) {
-      const { caller, callLog } = createCaller({
-        state: {
-          "select:activity_plans": [[plan]],
-          "select:likes": [[]],
-          "select:profiles": [[createProfileRow()]],
-        },
-      });
-
-      const result = await caller.list(input);
-
-      expect(result.items[0]).toMatchObject({
-        activity_kind: "multisport",
-        activity_segment_count: 2,
-        category_composition: ["run", "bike"],
-      });
-      expect(getActivityPlanListQuery(callLog).sql).not.toContain("jsonb_path_query_array");
-    }
-  });
-
-  it("applies the single-only activity-segment condition", async () => {
-    const plan = createActivityPlanRow();
+    const structureHash = activityPlanStructureHash(structure);
+    const legacyPlan = createActivityPlanRow({ structure, structure_hash: structureHash });
     const { caller, callLog } = createCaller({
       state: {
-        "select:activity_plans": [[plan]],
-        "select:likes": [[]],
-        "select:profiles": [[createProfileRow()]],
+        "select:activity_plans": [[legacyPlan]],
       },
     });
 
-    await caller.list({ compositionMode: "single_only", limit: 20 });
-
-    expect(getActivityPlanListQuery(callLog).sql).toMatch(
-      /jsonb_array_length\(jsonb_path_query_array\(.+\)\) = 1/,
-    );
+    await expect(
+      caller.update({
+        id: legacyPlan.id,
+        expectedStructureHash: structureHash,
+        name: "Updated details",
+      }),
+    ).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR" });
+    expect(callLog.some((call) => call.operation === "update")).toBe(false);
   });
 
-  it("treats repeated categories in separate activity segments as multisport", async () => {
+  it("treats repeated activity_categories in separate activity segments as executable", async () => {
     const structure = createCompositionStructure(["bike", "bike"]);
     const plan = createActivityPlanRow({ structure });
-    const { caller, callLog } = createCaller({
+    const { caller } = createCaller({
       state: {
         "select:activity_plans": [[plan]],
         "select:likes": [[]],
@@ -552,21 +528,14 @@ describe("activityPlansRouter", () => {
       },
     });
 
-    const result = await caller.list({ compositionMode: "multisport_only", limit: 20 });
+    const result = await caller.list({ limit: 20 });
 
     expect(result.items[0]).toMatchObject({
-      activity_kind: "multisport",
-      activity_segment_count: 2,
-      categories: ["bike"],
-      category_composition: ["bike", "bike"],
-      primary_category: "bike",
+      activity_category: "bike",
     });
-    expect(getActivityPlanListQuery(callLog).sql).toMatch(
-      /jsonb_array_length\(jsonb_path_query_array\(.+\)\) > 1/,
-    );
   });
 
-  it("returns ordered composition fields in list and detail DTOs", async () => {
+  it("omits mixed rows and fails closed on direct detail", async () => {
     const structure = createCompositionStructure(["run", "bike", "run"]);
     const plan = createActivityPlanRow({ structure });
     const state: MockDbState = {
@@ -576,24 +545,15 @@ describe("activityPlansRouter", () => {
     };
     const { caller: listCaller } = createCaller({ state });
     const { caller: detailCaller } = createCaller({ state });
+    const listResult = await listCaller.list({ limit: 20 });
 
-    const [listResult, detailResult] = await Promise.all([
-      listCaller.list({ limit: 20 }),
-      detailCaller.getById({ id: plan.id }),
-    ]);
-
-    const composition = {
-      activity_kind: "multisport",
-      activity_segment_count: 3,
-      categories: ["run", "bike"],
-      category_composition: ["run", "bike", "run"],
-      primary_category: "run",
-    };
-    expect(listResult.items[0]).toMatchObject(composition);
-    expect(detailResult).toMatchObject(composition);
+    expect(listResult.items).toEqual([]);
+    await expect(detailCaller.getById({ id: plan.id })).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+    });
   });
 
-  it("uses role-aware category containment SQL", async () => {
+  it("uses role-aware activity_category containment SQL", async () => {
     const plan = createActivityPlanRow();
     const { caller, callLog } = createCaller({
       state: {
@@ -608,7 +568,7 @@ describe("activityPlansRouter", () => {
     const query = getActivityPlanListQuery(callLog);
     expect(query.sql).toContain("@>");
     expect(query.params).toContain(
-      JSON.stringify({ segments: [{ role: "activity", category: "run" }] }),
+      JSON.stringify({ segments: [{ role: "activity", activity_category: "run" }] }),
     );
   });
 
@@ -837,7 +797,7 @@ describe("activityPlansRouter", () => {
       id: createdRow.id,
       content_type: "activity_plan",
       visibility: "public",
-      primary_category: "bike",
+      activity_category: "bike",
     });
     expect(result).not.toHaveProperty("route");
     expect(result).not.toHaveProperty("route_id");
@@ -848,7 +808,7 @@ describe("activityPlansRouter", () => {
 
     await expect(
       caller.create({
-        name: "Route workout",
+        name: "Route activity",
         route_id: "99999999-9999-4999-8999-999999999999",
         structure: sampleStructure,
       } as never),
@@ -936,7 +896,7 @@ describe("activityPlansRouter", () => {
     const existingRow = createActivityPlanRow({ name: "Before Update" });
     const updatedRow = createActivityPlanRow({ name: "After Update" });
     const futureEvents = [{ id: "event-1" }, { id: "event-2" }];
-    plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs.mockResolvedValue({
+    plannedActivitySyncState.enqueueProviderPlannedActivityJobs.mockResolvedValue({
       affectedCount: 2,
       operation: "publish",
       queued: true,
@@ -956,12 +916,12 @@ describe("activityPlansRouter", () => {
       name: "After Update",
     });
 
-    expect(plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs).toHaveBeenCalledOnce();
-    expect(plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs).toHaveBeenCalledWith(
+    expect(plannedActivitySyncState.enqueueProviderPlannedActivityJobs).toHaveBeenCalledOnce();
+    expect(plannedActivitySyncState.enqueueProviderPlannedActivityJobs).toHaveBeenCalledWith(
       expect.anything(),
       { eventIds: ["event-1", "event-2"], operation: "publish" },
     );
-    expect(result.plannedWorkoutSync).toMatchObject({ operation: "publish", success: true });
+    expect(result.plannedActivitySync).toMatchObject({ operation: "publish", success: true });
   });
 
   it("update does not republish for a nonmaterial or unchanged material update", async () => {
@@ -985,11 +945,11 @@ describe("activityPlansRouter", () => {
       name: existingRow.name,
     });
 
-    expect(plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs).not.toHaveBeenCalled();
+    expect(plannedActivitySyncState.enqueueProviderPlannedActivityJobs).not.toHaveBeenCalled();
     expect(callLog.filter((call) => call.table === "events")).toHaveLength(0);
   });
 
-  it("rejects top-level category authority", async () => {
+  it("rejects top-level activity_category authority", async () => {
     const { caller, callLog } = createCaller();
 
     await expect(
@@ -1056,13 +1016,13 @@ describe("activityPlansRouter", () => {
     const result = await caller.delete({ id: "77777777-7777-4777-8777-777777777777" });
 
     expect(callLog.some((call) => call.operation === "delete")).toBe(true);
-    expect(result).toEqual({ success: true, plannedWorkoutSync: null, wahooSync: null });
+    expect(result).toEqual({ success: true, plannedActivitySync: null, wahooSync: null });
   });
 
   it("delete enqueues unsync for linked future planned events before allowing FK set-null", async () => {
     const ownedPlan = createActivityPlanRow({ id: "77777777-7777-4777-8777-777777777777" });
     const eventRows = [{ id: "event-1" }, { id: "event-2" }];
-    plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs.mockResolvedValue({
+    plannedActivitySyncState.enqueueProviderPlannedActivityJobs.mockResolvedValue({
       affectedCount: 2,
       operation: "unsync",
       queued: true,
@@ -1078,12 +1038,12 @@ describe("activityPlansRouter", () => {
 
     const result = await caller.delete({ id: "77777777-7777-4777-8777-777777777777" });
 
-    expect(plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs).toHaveBeenCalledWith(
+    expect(plannedActivitySyncState.enqueueProviderPlannedActivityJobs).toHaveBeenCalledWith(
       expect.anything(),
       { eventIds: ["event-1", "event-2"], operation: "unsync" },
     );
     expect(callLog.some((call) => call.operation === "delete")).toBe(true);
-    expect(result.plannedWorkoutSync).toMatchObject({ operation: "unsync", success: true });
+    expect(result.plannedActivitySync).toMatchObject({ operation: "unsync", success: true });
   });
 
   it("delete rejects an unowned plan without querying events or enqueueing unsync", async () => {
@@ -1099,12 +1059,12 @@ describe("activityPlansRouter", () => {
 
     expect(callLog.filter((call) => call.table === "events")).toHaveLength(0);
     expect(callLog.filter((call) => call.operation === "delete")).toHaveLength(0);
-    expect(plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs).not.toHaveBeenCalled();
+    expect(plannedActivitySyncState.enqueueProviderPlannedActivityJobs).not.toHaveBeenCalled();
   });
 
   it("delete keeps the plan when unsync enqueue reports failure", async () => {
     const ownedPlan = createActivityPlanRow({ id: "77777777-7777-4777-8777-777777777777" });
-    plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs.mockResolvedValue({
+    plannedActivitySyncState.enqueueProviderPlannedActivityJobs.mockResolvedValue({
       affectedCount: 1,
       error: "provider queue unavailable",
       operation: "unsync",
@@ -1122,7 +1082,7 @@ describe("activityPlansRouter", () => {
       caller.delete({ id: "77777777-7777-4777-8777-777777777777" }),
     ).rejects.toMatchObject({
       code: "CONFLICT",
-      message: "Activity plan cannot be deleted until linked device workouts can be unsynced",
+      message: "Activity plan cannot be deleted until linked device activities can be unsynced",
     } as Partial<TRPCError>);
 
     expect(callLog.filter((call) => call.operation === "delete")).toHaveLength(0);
@@ -1130,7 +1090,7 @@ describe("activityPlansRouter", () => {
 
   it("delete keeps the plan when unsync enqueue throws", async () => {
     const ownedPlan = createActivityPlanRow({ id: "77777777-7777-4777-8777-777777777777" });
-    plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs.mockRejectedValue(
+    plannedActivitySyncState.enqueueProviderPlannedActivityJobs.mockRejectedValue(
       new Error("provider queue unavailable"),
     );
     const { caller, callLog } = createCaller({
@@ -1144,7 +1104,7 @@ describe("activityPlansRouter", () => {
       caller.delete({ id: "77777777-7777-4777-8777-777777777777" }),
     ).rejects.toMatchObject({
       code: "CONFLICT",
-      message: "Activity plan cannot be deleted until linked device workouts can be unsynced",
+      message: "Activity plan cannot be deleted until linked device activities can be unsynced",
     } as Partial<TRPCError>);
 
     expect(callLog.filter((call) => call.operation === "delete")).toHaveLength(0);

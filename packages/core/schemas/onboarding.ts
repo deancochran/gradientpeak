@@ -14,13 +14,14 @@ import { z } from "zod";
 import { PROFILE_PERFORMANCE_THRESHOLD_BOUNDS } from "../athlete-inputs/profile-metrics";
 import { ianaTimezoneSchema } from "../athlete-intelligence/planning-context";
 import { isValidDateOfBirth } from "../profile/date-of-birth";
+import { canonicalActivityCategorySchema } from "./activity-category";
 
 /**
  * Experience level for onboarding.
  * Determines which baseline profile to use and which UI flows to show.
  */
 export const experienceLevelSchema = z.enum([
-  "beginner", // New to sport, auto-apply conservative defaults
+  "beginner", // New to activity_category, auto-apply conservative defaults
   "intermediate", // Regular training, validate estimates
   "advanced", // Knows metrics, manual entry
   "skip", // Minimal setup, configure later
@@ -28,12 +29,10 @@ export const experienceLevelSchema = z.enum([
 
 export type ExperienceLevel = z.infer<typeof experienceLevelSchema>;
 
-/**
- * Sport/activity type for onboarding sport interests.
- */
-export const sportSchema = z.enum(["cycling", "running", "swimming", "strength", "other"]);
+/** Canonical activity category selected during onboarding. */
+export const onboardingActivityCategorySchema = canonicalActivityCategorySchema;
 
-export type Sport = z.infer<typeof sportSchema>;
+export type OnboardingActivityCategory = z.infer<typeof onboardingActivityCategorySchema>;
 
 /** Personalization metadata selected during onboarding. */
 export const onboardingIntentSchema = z.enum([
@@ -151,9 +150,9 @@ export const onboardingStep2Schema = z.object({
 export type OnboardingStep2 = z.infer<typeof onboardingStep2Schema>;
 
 /**
- * Step 3: Performance Metrics (Optional, Sport-Specific)
+ * Step 3: Performance Metrics (Optional, ActivityCategory-Specific)
  *
- * Sport-specific performance data. Which fields are shown depends on selected sport interests:
+ * ActivityCategory-specific performance data. Which fields are shown depends on selected activity_category interests:
  * - Cycling: FTP
  * - Running: Threshold pace
  * - Swimming: CSS
@@ -274,17 +273,17 @@ export function validateHeartRates(data: OnboardingStep2): {
 }
 
 /**
- * Validates that at least one performance metric is provided for the given sport.
+ * Validates that at least one performance metric is provided for the given activity_category.
  */
-export function validateSportMetrics(
-  sport: Sport,
+export function validateActivityCategoryMetrics(
+  activityCategory: OnboardingActivityCategory,
   metrics: OnboardingStep3,
 ): {
   valid: boolean;
   error?: string;
 } {
-  switch (sport) {
-    case "cycling":
+  switch (activityCategory) {
+    case "bike":
       if (!metrics.ftp) {
         return {
           valid: false,
@@ -293,7 +292,7 @@ export function validateSportMetrics(
       }
       break;
 
-    case "running":
+    case "run":
       if (!metrics.threshold_pace_seconds_per_km) {
         return {
           valid: false,
@@ -302,7 +301,7 @@ export function validateSportMetrics(
       }
       break;
 
-    case "swimming":
+    case "swim":
       if (!metrics.css_seconds_per_hundred_meters) {
         return {
           valid: false,
@@ -313,7 +312,7 @@ export function validateSportMetrics(
 
     case "strength":
     case "other":
-      // No specific requirements for "other" sport
+      // No specific requirements for "other" activity_category
       break;
   }
 

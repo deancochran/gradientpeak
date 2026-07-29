@@ -23,6 +23,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Pencil, Trash2 } from "lucide-react";
 
 import { RouteFlashToast, type RouteFlashType } from "../../../../components/route-flash-toast";
+import { getActivityBadgeLabel } from "../../../../lib/activity-route-helpers";
 import { api } from "../../../../lib/api/client";
 import {
   formatDayLabel,
@@ -192,9 +193,9 @@ function EventDetailPage() {
             <div className="flex flex-wrap gap-2">
               <Badge variant="outline">{getEventTypeLabel(event.event_type)}</Badge>
               {event.status ? <Badge variant="secondary">{event.status}</Badge> : null}
-              {compiledActivityPlan?.categories.map((category) => (
-                <Badge key={category}>{category}</Badge>
-              ))}
+              {compiledActivityPlan ? (
+                <Badge>{getActivityBadgeLabel(compiledActivityPlan.activity_category)}</Badge>
+              ) : null}
             </div>
             <DetailRow
               label="When"

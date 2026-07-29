@@ -7,7 +7,7 @@ export type TrainingPreferenceCapabilityPath =
   | "dose_limits.max_sessions_per_week"
   | "dose_limits.max_single_session_duration_minutes"
   | "dose_limits.max_weekly_duration_minutes"
-  | "dose_limits.sport_overrides"
+  | "dose_limits.activity_category_overrides"
   | "training_style.progression_pace"
   | "training_style.week_pattern_preference"
   | "training_style.key_session_density_preference"
@@ -53,7 +53,7 @@ export const TRAINING_PREFERENCE_SCHEMA_CAPABILITY_PATHS: TrainingPreferenceCapa
   "dose_limits.max_sessions_per_week",
   "dose_limits.max_single_session_duration_minutes",
   "dose_limits.max_weekly_duration_minutes",
-  "dose_limits.sport_overrides",
+  "dose_limits.activity_category_overrides",
   "training_style.progression_pace",
   "training_style.week_pattern_preference",
   "training_style.key_session_density_preference",
@@ -137,13 +137,13 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
     },
   },
   {
-    path: "dose_limits.sport_overrides",
-    label: "Sport-specific dose overrides",
-    standalone: { status: "covered", testId: "preferences-sport-overrides" },
+    path: "dose_limits.activity_category_overrides",
+    label: "ActivityCategory-specific dose overrides",
+    standalone: { status: "covered", testId: "preferences-activity_category-overrides" },
     builderOverride: {
       status: "not-applicable",
       rationale:
-        "Plan-local builder currently applies plan-wide constraints, not per-sport overrides.",
+        "Plan-local builder currently applies plan-wide constraints, not per-activity_category overrides.",
     },
   },
   {

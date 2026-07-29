@@ -1,7 +1,7 @@
+import { getActivityCategoryTypicalSpeed } from "../activity-categories";
 import type { ProfileWithDob } from "../profile";
 import { calculateDateOfBirthAge } from "../profile/date-of-birth";
-import type { CanonicalSport } from "../schemas/sport";
-import { getSportTypicalSpeed } from "../sports";
+import type { CanonicalActivityCategory } from "../schemas/activity-category";
 import { estimatePowerZoneDistribution, getHrZoneIndexFromThresholdPercent } from "../zones";
 import type { EstimationContext, EstimationResult, MetricEstimations } from "./types";
 
@@ -81,7 +81,7 @@ function estimateCalories(
   ftp?: number | null,
   thresholdHr?: number | null,
   weightKg?: number | null,
-  activityCategory: CanonicalSport = "other",
+  activityCategory: CanonicalActivityCategory = "other",
   asOf = new Date(),
 ): number {
   // Method 1: Power-based (most accurate for cycling)
@@ -172,12 +172,12 @@ export function estimateAvgHR(
 }
 
 /**
- * Estimate distance based on activity type and effort
+ * Estimate distance based on activity category and effort
  */
 function estimateDistance(
   duration: number,
   intensityFactor: number,
-  activityCategory: CanonicalSport,
+  activityCategory: CanonicalActivityCategory,
   route?: { distanceMeters: number },
 ): number | undefined {
   // If route provided, use route distance
@@ -190,7 +190,7 @@ function estimateDistance(
     return undefined;
   }
 
-  // Typical speeds by activity type and effort level
+  // Typical speeds by activity category and effort level
   const effortLevel = getEffortLevel(intensityFactor);
   const speeds = getTypicalSpeeds(activityCategory, effortLevel);
 
@@ -207,13 +207,13 @@ function getEffortLevel(intensityFactor: number): "easy" | "moderate" | "hard" {
 }
 
 /**
- * Get typical speeds for activity types (m/s)
+ * Get typical speeds for activity categories (m/s)
  */
 function getTypicalSpeeds(
-  activityCategory: CanonicalSport,
+  activityCategory: CanonicalActivityCategory,
   effortLevel: "easy" | "moderate" | "hard",
 ): number {
-  return getSportTypicalSpeed(activityCategory, effortLevel);
+  return getActivityCategoryTypicalSpeed(activityCategory, effortLevel);
 }
 
 /**
@@ -223,7 +223,7 @@ function getTypicalSpeeds(
 export function estimateZoneDistribution(
   duration: number,
   intensityFactor: number,
-  activityCategory: CanonicalSport,
+  activityCategory: CanonicalActivityCategory,
 ): {
   powerZones?: number[]; // [z1-z7] in seconds
   hrZones?: number[]; // [z1-z5] in seconds

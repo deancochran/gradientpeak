@@ -202,11 +202,11 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
       where is_system_template = true
         and content_visibility = 'public'
         and (
-          ${filters?.sport ?? null}::text is null
+          ${filters?.activity_category ?? null}::text is null
           or exists (
             select 1
-            from jsonb_array_elements_text(coalesce(training_plans.structure->'sport', '[]'::jsonb)) as sport(value)
-            where sport.value = ${filters?.sport ?? null}
+            from jsonb_array_elements_text(coalesce(training_plans.structure->'activity_category', '[]'::jsonb)) as activity_category(value)
+            where activity_category.value = ${filters?.activity_category ?? null}
           )
         )
         and (

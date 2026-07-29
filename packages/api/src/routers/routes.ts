@@ -15,6 +15,7 @@ import {
 } from "../application/routes/serializeActivityRouteRow";
 import { getRequiredDb } from "../db";
 import { logger } from "../lib/logger";
+import { enqueueWahooOwnedRouteMirror } from "../lib/provider-sync/owned-routes";
 import {
   buildRouteFileArtifacts,
   getCanonicalRouteStorageFormat,
@@ -162,6 +163,19 @@ const uploadRouteSchema = z
     fileName: safeRouteFileNameSchema,
   })
   .strict();
+
+const updateRouteSchema = z
+  .object({
+    id: routeIdSchema,
+    // The shared upload schema normalizes omission to null. The outer optional preserves
+    // omission for PATCH-like updates so a name-only edit cannot clear the description.
+    description: routeDescriptionSchema.optional(),
+    name: routeNameSchema.optional(),
+  })
+  .strict()
+  .refine((input) => input.name !== undefined || input.description !== undefined, {
+    message: "Route update must include a name or description",
+  });
 
 export const routesRouter = createTRPCRouter({
   // ------------------------------
@@ -438,31 +452,42 @@ export const routesRouter = createTRPCRouter({
         }
 
         try {
-          const [routeData] = await db
-            .insert(activityRoutes)
-            .values({
-              id: routeId,
-              created_at: new Date(),
-              updated_at: new Date(),
-              profile_id: ctx.session.user.id,
-              name: input.name,
-              description: input.description,
-              file_path: filePath,
-              total_distance: artifacts.totalDistance,
-              total_ascent: artifacts.totalAscent,
-              total_descent: artifacts.totalDescent,
-              polyline: artifacts.polyline,
-              elevation_polyline: artifacts.elevationPolyline,
-              is_public: false,
-            })
-            .returning();
-
-          if (!routeData) {
-            throw new TRPCError({
-              code: "INTERNAL_SERVER_ERROR",
-              message: "Failed to save route",
+          const routeData = await db.transaction(async (tx) => {
+            const updatedAt = new Date();
+            const [createdRoute] = await tx
+              .insert(activityRoutes)
+              .values({
+                created_at: updatedAt,
+                description: input.description,
+                elevation_polyline: artifacts.elevationPolyline,
+                file_path: filePath,
+                id: routeId,
+                is_public: false,
+                name: input.name,
+                polyline: artifacts.polyline,
+                profile_id: ctx.session.user.id,
+                total_ascent: artifacts.totalAscent,
+                total_descent: artifacts.totalDescent,
+                total_distance: artifacts.totalDistance,
+                updated_at: updatedAt,
+              })
+              .returning();
+            if (!createdRoute) {
+              throw new TRPCError({
+                code: "INTERNAL_SERVER_ERROR",
+                message: "Failed to save route",
+              });
+            }
+            await enqueueWahooOwnedRouteMirror({
+              db,
+              expectedRouteUpdatedAt: updatedAt.toISOString(),
+              operation: "upsert",
+              profileId: ctx.session.user.id,
+              routeId,
+              transaction: tx,
             });
-          }
+            return createdRoute;
+          });
 
           return serializeActivityRouteRow(routeData);
         } catch {
@@ -509,6 +534,58 @@ export const routesRouter = createTRPCRouter({
       }
     }),
 
+  update: protectedProcedure
+    .input(updateRouteSchema)
+    .output(serializedActivityRouteSchema)
+    .mutation(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
+      const updatedRoute = await db.transaction(async (tx) => {
+        const [owned] = await tx
+          .select({ id: activityRoutes.id })
+          .from(activityRoutes)
+          .where(
+            and(
+              eq(activityRoutes.id, input.id),
+              eq(activityRoutes.profile_id, ctx.session.user.id),
+            ),
+          )
+          .for("update")
+          .limit(1);
+        if (!owned) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Route not found or you don't have permission to update it",
+          });
+        }
+        const updatedAt = new Date();
+        const [updated] = await tx
+          .update(activityRoutes)
+          .set({
+            ...(input.description !== undefined ? { description: input.description } : {}),
+            ...(input.name !== undefined ? { name: input.name } : {}),
+            updated_at: updatedAt,
+          })
+          .where(
+            and(
+              eq(activityRoutes.id, input.id),
+              eq(activityRoutes.profile_id, ctx.session.user.id),
+            ),
+          )
+          .returning();
+        if (!updated) throw new Error("route_update_failed");
+        await enqueueWahooOwnedRouteMirror({
+          db,
+          expectedRouteUpdatedAt: updatedAt.toISOString(),
+          operation: "upsert",
+          profileId: ctx.session.user.id,
+          routeId: input.id,
+          transaction: tx,
+        });
+        return updated;
+      });
+      return serializeActivityRouteRow(updatedRoute);
+    }),
+
   // ------------------------------
   // Delete route
   // ------------------------------
@@ -518,52 +595,72 @@ export const routesRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
-      const [route] = await db
-        .select()
-        .from(activityRoutes)
-        .where(
-          and(eq(activityRoutes.id, input.id), eq(activityRoutes.profile_id, ctx.session.user.id)),
-        )
-        .limit(1);
-
-      if (!route) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Route not found or you don't have permission to delete it",
+      const filePath = await db.transaction(async (tx) => {
+        const [route] = await tx
+          .select()
+          .from(activityRoutes)
+          .where(
+            and(
+              eq(activityRoutes.id, input.id),
+              eq(activityRoutes.profile_id, ctx.session.user.id),
+            ),
+          )
+          .for("update")
+          .limit(1);
+        if (!route) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Route not found or you don't have permission to delete it",
+          });
+        }
+        const [eventsCountRows] = await tx
+          .select({ value: count() })
+          .from(events)
+          .where(eq(events.route_id, input.id));
+        const [groupEventsCountRows] = await tx
+          .select({ value: count() })
+          .from(groupEvents)
+          .where(eq(groupEvents.route_id, input.id));
+        const linkedEventsCount =
+          (eventsCountRows?.value ?? 0) + (groupEventsCountRows?.value ?? 0);
+        if (linkedEventsCount > 0) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Cannot delete route because it is used by ${linkedEventsCount} event${linkedEventsCount > 1 ? "s" : ""}. Please remove the route from those events first.`,
+          });
+        }
+        await enqueueWahooOwnedRouteMirror({
+          db,
+          operation: "delete",
+          profileId: ctx.session.user.id,
+          routeId: input.id,
+          transaction: tx,
         });
-      }
+        const [deletedRoute] = await tx
+          .delete(activityRoutes)
+          .where(
+            and(
+              eq(activityRoutes.id, input.id),
+              eq(activityRoutes.profile_id, ctx.session.user.id),
+            ),
+          )
+          .returning({ id: activityRoutes.id });
+        if (!deletedRoute) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to delete route",
+          });
+        }
+        return route.file_path;
+      });
 
-      const [eventsCountRows, groupEventsCountRows] = await Promise.all([
-        db.select({ value: count() }).from(events).where(eq(events.route_id, input.id)),
-        db.select({ value: count() }).from(groupEvents).where(eq(groupEvents.route_id, input.id)),
-      ]);
-
-      const linkedEventsCount =
-        (eventsCountRows[0]?.value ?? 0) + (groupEventsCountRows[0]?.value ?? 0);
-
-      if (linkedEventsCount > 0) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: `Cannot delete route because it is used by ${linkedEventsCount} event${linkedEventsCount > 1 ? "s" : ""}. Please remove the route from those events first.`,
-        });
-      }
-
-      const [deletedRoute] = await db
-        .delete(activityRoutes)
-        .where(
-          and(eq(activityRoutes.id, input.id), eq(activityRoutes.profile_id, ctx.session.user.id)),
-        )
-        .returning({ id: activityRoutes.id });
-
-      if (!deletedRoute) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to delete route",
-        });
-      }
-
-      if (route.file_path) {
-        await storageService.storage.from(ROUTES_BUCKET).remove([route.file_path]);
+      if (filePath) {
+        const { error } = await storageService.storage.from(ROUTES_BUCKET).remove([filePath]);
+        if (error) {
+          logger.warn("Route storage cleanup will require repair", {
+            event: "route_storage_cleanup_failed",
+          });
+        }
       }
 
       return deleteRouteOutputSchema.parse({ success: true });

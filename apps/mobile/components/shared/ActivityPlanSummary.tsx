@@ -11,14 +11,14 @@ import {
   formatEstimatedDurationMinutes,
   formatEstimatedDurationSeconds,
 } from "@/lib/estimatedMetrics";
+import type { ActivityCategoryLoadMeasurement } from "./ActivityCategoryLoadBreakdown";
 import { ActivityPlanAttributionRow } from "./ActivityPlanAttributionRow";
 import type { EntityOwner } from "./EntityOwnerRow";
 import { ResourceMetricsRow } from "./ResourceCardPrimitives";
-import type { SportLoadMeasurement } from "./SportLoadBreakdown";
 
 type ActivityPlanSummaryProps = {
   activityCategory?: string | null;
-  categoryLoads?: readonly SportLoadMeasurement[];
+  categoryLoads?: readonly ActivityCategoryLoadMeasurement[];
   commonLoad?: unknown;
   description?: string | null;
   estimatedDuration?: number | null;

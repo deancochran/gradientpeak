@@ -4,10 +4,11 @@ import type {
   ActivityPlanIntervalStep,
   ActivityPlanSegmentV3,
   ActivityPlanStructureV3,
-  CanonicalSport,
+  CanonicalActivityCategory,
   EditableActivityPlanStructure,
 } from "@repo/core";
 import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
+import { isTargetTypePermittedForActivity } from "@repo/core/targets";
 
 export type ActivityPlanSegmentRole = ActivityPlanSegmentV3["role"];
 
@@ -35,14 +36,14 @@ export function createActivityPlanInterval(name = "Main set"): ActivityPlanInter
 
 export function createActivityPlanSegment(
   role: ActivityPlanSegmentRole,
-  category: CanonicalSport = "run",
+  activity_category: CanonicalActivityCategory = "run",
 ): ActivityPlanSegmentV3 {
   if (role === "activity") {
     return {
       id: id(),
       role,
       name: "Main activity",
-      category,
+      activity_category,
       intervals: [createActivityPlanInterval()],
     };
   }
@@ -50,15 +51,78 @@ export function createActivityPlanSegment(
   return {
     id: id(),
     role,
-    name: role === "transition" ? "Transition" : "Rest",
-    duration: { type: "time", seconds: role === "transition" ? 300 : 60 },
+    name: "Rest",
+    duration: { type: "time", seconds: 60 },
+  };
+}
+
+export function getActivityPlanActivityCategory(
+  structure: EditableActivityPlanStructure,
+): CanonicalActivityCategory {
+  return (
+    structure.segments.find((segment) => segment.role === "activity")?.activity_category ?? "run"
+  );
+}
+
+export function hasIncompatibleTargets(
+  structure: EditableActivityPlanStructure,
+  activity_category: CanonicalActivityCategory,
+) {
+  return structure.segments.some(
+    (segment) =>
+      segment.role === "activity" &&
+      segment.intervals.some((interval) =>
+        interval.steps.some((step) =>
+          step.targets.some(
+            (target) =>
+              !isTargetTypePermittedForActivity({
+                activityCategory: activity_category,
+                targetType: target.type,
+              }),
+          ),
+        ),
+      ),
+  );
+}
+
+export function applyActivityPlanActivityCategory(
+  structure: EditableActivityPlanStructure,
+  activity_category: CanonicalActivityCategory,
+  resetIncompatibleTargets = false,
+): EditableActivityPlanStructure {
+  return {
+    version: 3,
+    segments: structure.segments.map((segment) => {
+      if (segment.role !== "activity") return segment;
+      return {
+        ...segment,
+        activity_category: activity_category,
+        intervals: segment.intervals.map((interval) => ({
+          ...interval,
+          steps: interval.steps.map((step) => ({
+            ...step,
+            targets:
+              resetIncompatibleTargets &&
+              step.targets.some(
+                (target) =>
+                  !isTargetTypePermittedForActivity({
+                    activityCategory: activity_category,
+                    targetType: target.type,
+                  }),
+              )
+                ? [{ type: "RPE", intensity: 5 }]
+                : step.targets,
+          })),
+        })),
+      };
+    }),
   };
 }
 
 export function createActivityPlanStructure(
-  category: CanonicalSport = "run",
+  activity_category: CanonicalActivityCategory = "run",
 ): EditableActivityPlanStructure {
-  return { version: 3, segments: [createActivityPlanSegment("activity", category)] };
+  return { version: 3, segments: [createActivityPlanSegment("activity", activity_category)] };
 }
 
 export function parseActivityPlanStructure(value: unknown): ActivityPlanStructureV3 {

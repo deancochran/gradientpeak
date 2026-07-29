@@ -100,7 +100,7 @@ describe("BuilderProjectionOverview", () => {
       chartReview,
       canUseStructureProposal: true,
       saveReadiness: { detail: "Ready to review", label: "Review plan", status: "review" },
-      onAddWorkout: jest.fn(),
+      onAddActivity: jest.fn(),
       onApplyStructureProposal: jest.fn(),
       onOpenSchedulePreview: jest.fn(),
       planningBriefRows: [
@@ -146,14 +146,14 @@ describe("BuilderProjectionOverview", () => {
   });
 
   it("keeps schedule setup visible and wires its primary actions", () => {
-    const onAddWorkout = jest.fn();
+    const onAddActivity = jest.fn();
     const onApplyStructureProposal = jest.fn();
     const onOpenSchedulePreview = jest.fn();
     const props = {
       chartReview,
       canUseStructureProposal: true,
       saveReadiness: { detail: "Ready to review", label: "Review plan", status: "review" },
-      onAddWorkout,
+      onAddActivity,
       onApplyStructureProposal,
       onOpenSchedulePreview,
       planningBriefRows: [
@@ -202,11 +202,11 @@ describe("BuilderProjectionOverview", () => {
     );
     expect(screen.getByTestId("builder-readiness")).toBeTruthy();
     expect(screen.getByText("Review plan")).toBeTruthy();
-    fireEvent.press(screen.getByText("Add workout"));
+    fireEvent.press(screen.getByText("Add activity"));
     fireEvent.press(screen.getByLabelText("Use suggested schedule"));
     fireEvent.press(screen.getByTestId("builder-configuration-schedulePreview"));
 
-    expect(onAddWorkout).toHaveBeenCalledTimes(1);
+    expect(onAddActivity).toHaveBeenCalledTimes(1);
     expect(onApplyStructureProposal).toHaveBeenCalledTimes(1);
     expect(onOpenSchedulePreview).toHaveBeenCalledTimes(1);
     expect(screen.getByText("Use schedule")).toBeTruthy();
@@ -225,7 +225,7 @@ describe("BuilderProjectionOverview", () => {
 
     expect(screen.getByText("Needs assignment")).toBeTruthy();
     expect(screen.queryByLabelText("Use suggested schedule")).toBeNull();
-    expect(screen.getByTestId("builder-add-workout").props.className).toContain("w-full");
+    expect(screen.getByTestId("builder-add-activity").props.className).toContain("w-full");
 
     rerender(
       <BuilderStrategyComposer
@@ -239,8 +239,8 @@ describe("BuilderProjectionOverview", () => {
                   accessible: true,
                   estimatedDurationSeconds: 3600,
                   estimatedTss: 50,
-                  id: "workout-1",
-                  name: "Workout",
+                  id: "activity-1",
+                  name: "Activity",
                   published: true,
                 },
                 localId: "session-1",

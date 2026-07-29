@@ -1,4 +1,4 @@
-import { canonicalSportSchema } from "@repo/core";
+import { canonicalActivityCategorySchema } from "@repo/core";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { decodeFeedCursor } from "../application/feed/feedPage";
@@ -39,7 +39,7 @@ const feedActivityRowSchema = z
     id: z.string().uuid(),
     profile_id: z.string().uuid(),
     name: z.string(),
-    category_composition: z.array(canonicalSportSchema),
+    category_composition: z.array(canonicalActivityCategorySchema),
     elapsed_ms: positiveIntegerSchema,
     active_ms: nullableNonnegativeIntegerSchema,
     moving_ms: nullableNonnegativeIntegerSchema,
@@ -76,9 +76,9 @@ export const feedActivityDtoSchema = z.object({
   id: z.string().uuid(),
   profile_id: z.string().uuid(),
   name: z.string(),
-  type: canonicalSportSchema.nullable(),
+  type: canonicalActivityCategorySchema.nullable(),
   activity_kind: z.enum(["single", "multisport", "unknown"]),
-  activity_categories: z.array(canonicalSportSchema),
+  activity_categories: z.array(canonicalActivityCategorySchema),
   started_at: z.string(),
   finished_at: z.string(),
   distance_meters: z.number(),
@@ -186,7 +186,7 @@ export async function listFeedActivityRows(
     select
       a.id, a.profile_id, a.name, a.started_at, a.finished_at,
       coalesce(array(
-        select s.category from activity_segments s
+        select s.activity_category from activity_segments s
         where s.activity_id = a.id and s.role = 'activity'
         order by s.ordinal
       ), array[]::text[]) as category_composition,

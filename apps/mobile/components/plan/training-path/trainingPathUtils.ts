@@ -470,7 +470,6 @@ function resolveEmptyState(
       (week.completedLoad ?? 0) > 0 ||
       (week.plannedLoad ?? 0) > 0 ||
       (week.tentativePlannedLoad ?? 0) > 0 ||
-      (week.targetLoad ?? 0) > 0 ||
       typeof week.fitness === "number" ||
       typeof week.scheduledFitness === "number" ||
       typeof week.targetFitness === "number",
@@ -645,7 +644,6 @@ export function buildTrainingPathViewModel(input: BuildTrainingPathInput): Train
           typeof week.plannedLoad === "number" || typeof week.tentativePlannedLoad === "number"
             ? (week.plannedLoad ?? 0) + (week.tentativePlannedLoad ?? 0)
             : null,
-          week.targetLoad,
         ]),
         [0, 200],
       ),

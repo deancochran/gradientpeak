@@ -103,7 +103,7 @@ function PreferenceField({
   if (
     field.control === "availability-windows" ||
     field.control === "weekday-list" ||
-    field.control === "sport-overrides"
+    field.control === "activity_category-overrides"
   ) {
     return <ComplexJsonField field={field} onChange={update} value={value} />;
   }
@@ -244,6 +244,42 @@ export function TrainingPreferencesEditor() {
           These validated settings hydrate plan creation and scheduling across mobile and web.
         </p>
       </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Wahoo event routes</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <label
+            className="flex items-start gap-3 text-sm"
+            htmlFor="wahoo-event-route-delivery-enabled"
+          >
+            <Input
+              aria-describedby="wahoo-event-route-delivery-description"
+              checked={draft.wahooEventRouteDeliveryEnabled}
+              id="wahoo-event-route-delivery-enabled"
+              onChange={(event) => {
+                setDraft({ ...draft, wahooEventRouteDeliveryEnabled: event.target.checked });
+                setDirty(true);
+                setMessage(null);
+                setSaveFailed(false);
+              }}
+              type="checkbox"
+            />
+            <span>
+              <span className="font-medium">
+                Send routes for upcoming one-off group events I’m attending to Wahoo
+              </span>
+              <span
+                className="mt-1 block text-muted-foreground"
+                id="wahoo-event-route-delivery-description"
+              >
+                Routes are sent only while you are attending an upcoming one-off group event.
+                GradientPeak will not remove routes already sent to Wahoo.
+              </span>
+            </span>
+          </label>
+        </CardContent>
+      </Card>
       <nav aria-label="Preference sections" className="flex flex-wrap gap-2">
         {trainingPreferenceTabs.map((tab) => (
           <Button

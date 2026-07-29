@@ -19,14 +19,12 @@ describe("useActivityPlanDetailViewModel", () => {
       useActivityPlanDetailViewModel({
         activityPlanParam: JSON.stringify({
           id: "param-plan",
-          categories: ["bike"],
-          primary_category: "bike",
+          activity_category: "bike",
           structure: {},
         }),
         fetchedPlan: {
           id: "db-plan",
-          categories: ["swim"],
-          primary_category: "swim",
+          activity_category: "swim",
           structure: {},
         },
         formatDuration: (seconds) => `${seconds / 60}m`,
@@ -34,8 +32,7 @@ describe("useActivityPlanDetailViewModel", () => {
         plannedActivity: {
           activity_plan: {
             id: "planned-plan",
-            categories: ["run"],
-            primary_category: "run",
+            activity_category: "run",
             profile_id: "profile-1",
             estimated_tss: 30,
             authoritative_metrics: {
@@ -50,7 +47,7 @@ describe("useActivityPlanDetailViewModel", () => {
                   id: "00000000-0000-4000-8000-000000000001",
                   role: "activity",
                   name: "Run",
-                  category: "run",
+                  activity_category: "run",
                   intervals: [
                     {
                       id: "00000000-0000-4000-8000-000000000002",
@@ -74,8 +71,7 @@ describe("useActivityPlanDetailViewModel", () => {
         profile: { id: "profile-1" },
         template: JSON.stringify({
           id: "template-plan",
-          categories: ["other"],
-          primary_category: "other",
+          activity_category: "other",
           structure: {},
         }),
       }),

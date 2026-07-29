@@ -39,7 +39,7 @@ describe("duration module", () => {
     expect(formatDurationCompact(3_661)).toBe("1h 1m");
   });
 
-  it("separates active, rest, transition, distance, and open semantics", () => {
+  it("separates active, rest, distance, and open semantics", () => {
     const compiled = compileActivityPlanV3({
       version: 3,
       segments: [
@@ -47,7 +47,7 @@ describe("duration module", () => {
           role: "activity",
           id: ids[0],
           name: "Run",
-          category: "run",
+          activity_category: "run",
           intervals: [
             {
               id: ids[1],
@@ -76,31 +76,9 @@ describe("duration module", () => {
             },
           ],
         },
-        { role: "transition", id: ids[5], name: "T1", duration: { type: "time", seconds: 60 } },
-        {
-          role: "activity",
-          id: ids[6],
-          name: "Bike",
-          category: "bike",
-          intervals: [
-            {
-              id: ids[7],
-              name: "Bike",
-              repetitions: 1,
-              steps: [
-                {
-                  id: "10000000-0000-4000-8000-000000000009",
-                  name: "Bike",
-                  duration: { type: "time", seconds: 1 },
-                  targets: [{ type: "%FTP", intensity: 50 }],
-                },
-              ],
-            },
-          ],
-        },
         {
           role: "rest",
-          id: "10000000-0000-4000-8000-000000000010",
+          id: ids[5],
           name: "Rest",
           duration: { type: "time", seconds: 30 },
         },
@@ -109,9 +87,8 @@ describe("duration module", () => {
 
     expect(summarizeActivityPlanDuration(compiled)).toMatchObject({
       exactElapsedSeconds: null,
-      timedActiveSeconds: 301,
+      timedActiveSeconds: 300,
       restSeconds: 30,
-      transitionSeconds: 60,
       distanceMeters: 1000,
       openOccurrenceCount: 1,
     });

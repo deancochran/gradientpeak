@@ -38,6 +38,7 @@ function createDeps() {
     providerSyncRepository: {
       claimDueJobs: vi.fn(),
       completeJobWithSyncState: vi.fn().mockResolvedValue(true),
+      failJobWithSyncState: vi.fn().mockResolvedValue(true),
       isIntegrationGenerationActive: vi.fn(),
       markJobFailed: vi.fn(),
       markJobSucceeded: vi.fn(),
@@ -186,6 +187,7 @@ describe("WahooActivityHistoryJobService", () => {
     expect(deps.importer.importWorkoutSummary).toHaveBeenCalledWith(77, createSummary(123), {
       integrationGeneration: 1,
       integrationId: "integration-1",
+      signal: expect.any(AbortSignal),
     });
     expect(deps.providerSyncRepository.completeJobWithSyncState).toHaveBeenCalledWith({
       expectedIntegrationGeneration: 1,
@@ -278,7 +280,7 @@ describe("WahooActivityHistoryJobService", () => {
     deps.providerSyncRepository.completeJobWithSyncState.mockRejectedValueOnce(
       new Error("coverage persistence failed"),
     );
-    deps.providerSyncRepository.markJobFailed.mockResolvedValueOnce(true);
+    deps.providerSyncRepository.failJobWithSyncState.mockResolvedValueOnce(true);
     const service = new WahooActivityHistoryJobService({
       importer: deps.importer as never,
       providerSyncRepository: deps.providerSyncRepository as never,
@@ -291,14 +293,59 @@ describe("WahooActivityHistoryJobService", () => {
       failed: 1,
       processed: 1,
     });
-    expect(deps.providerSyncRepository.markJobFailed).toHaveBeenCalledWith(
+    expect(deps.providerSyncRepository.failJobWithSyncState).toHaveBeenCalledWith(
       expect.objectContaining({
+        expectedIntegrationGeneration: 1,
         id: "job-1",
+        integrationId: "integration-1",
         lastError: "activity_history_failed",
+        provider: "wahoo",
+        resource: "historical_activities",
         status: "failed",
         workerId: expect.stringMatching(/^worker-1:/),
       }),
     );
+  });
+
+  it("aborts import work without stale finalization when lease renewal loses ownership", async () => {
+    const deps = createDeps();
+    vi.useFakeTimers();
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([historyJob()]);
+    deps.providerSyncRepository.isIntegrationGenerationActive.mockResolvedValue(true);
+    deps.providerSyncRepository.renewJobLease.mockResolvedValue(false);
+    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue(activeIntegration());
+    deps.wahooClient.listWorkoutSummaries.mockResolvedValue({
+      sourceCount: 1,
+      summaries: [createSummary(123)],
+    });
+    let importSignal: AbortSignal | undefined;
+    deps.importer.importWorkoutSummary.mockImplementation(
+      (_providerUserId, _summary, options: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          importSignal = options.signal;
+          options.signal?.addEventListener("abort", () => reject(options.signal?.reason), {
+            once: true,
+          });
+        }),
+    );
+    const service = new WahooActivityHistoryJobService({
+      importer: deps.importer as never,
+      providerSyncRepository: deps.providerSyncRepository as never,
+      wahooClientFactory: () => deps.wahooClient,
+      wahooRepository: deps.wahooRepository,
+    });
+
+    const processing = service.processDueJobs({ leaseMs: 3_000, workerId: "worker-1" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(deps.importer.importWorkoutSummary).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    await expect(processing).resolves.toEqual({ completed: 0, failed: 1, processed: 1 });
+    expect(importSignal?.aborted).toBe(true);
+    expect(deps.providerSyncRepository.completeJobWithSyncState).not.toHaveBeenCalled();
+    expect(deps.providerSyncRepository.failJobWithSyncState).not.toHaveBeenCalled();
+    expect(deps.providerSyncRepository.markJobFailed).not.toHaveBeenCalled();
+    expect(deps.providerSyncRepository.updateSyncStateAfterFailure).not.toHaveBeenCalled();
   });
 
   it("dead-letters token-limit refresh failures with actionable reset guidance", async () => {
@@ -306,7 +353,7 @@ describe("WahooActivityHistoryJobService", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
     deps.providerSyncRepository.claimDueJobs.mockResolvedValue([historyJob()]);
-    deps.providerSyncRepository.markJobFailed.mockResolvedValue(true);
+    deps.providerSyncRepository.failJobWithSyncState.mockResolvedValue(true);
     deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue({
       ...activeIntegration(),
       expiresAt: "2026-04-03T11:00:00.000Z",
@@ -327,19 +374,17 @@ describe("WahooActivityHistoryJobService", () => {
       failed: 1,
       processed: 1,
     });
-    expect(deps.providerSyncRepository.markJobFailed).toHaveBeenCalledWith({
+    expect(deps.providerSyncRepository.failJobWithSyncState).toHaveBeenCalledWith({
+      expectedIntegrationGeneration: 1,
       id: "job-1",
+      integrationId: "integration-1",
       lastError: WAHOO_AUTHORIZATION_RESET_REQUIRED_MESSAGE,
       nextRunAt: undefined,
+      provider: "wahoo",
+      resource: "historical_activities",
       status: "dead_lettered",
       workerId: expect.stringMatching(/^worker-1:/),
     });
-    expect(deps.providerSyncRepository.updateSyncStateAfterFailure).toHaveBeenCalledWith(
-      expect.objectContaining({
-        lastError: WAHOO_AUTHORIZATION_RESET_REQUIRED_MESSAGE,
-        nextSyncAt: undefined,
-      }),
-    );
   });
 
   it("fails retryably after continuing past a per-summary import failure", async () => {
@@ -393,20 +438,16 @@ describe("WahooActivityHistoryJobService", () => {
 
     expect(deps.importer.importWorkoutSummary).toHaveBeenCalledTimes(2);
     expect(deps.providerSyncRepository.markJobSucceeded).not.toHaveBeenCalled();
-    expect(deps.providerSyncRepository.markJobFailed).toHaveBeenCalledWith(
+    expect(deps.providerSyncRepository.failJobWithSyncState).toHaveBeenCalledWith(
       expect.objectContaining({
+        expectedIntegrationGeneration: 1,
         id: "job-1",
-        lastError: "activity_history_failed",
-        status: "failed",
-        workerId: expect.stringMatching(/^wahoo-activity-history-worker:/),
-      }),
-    );
-    expect(deps.providerSyncRepository.updateSyncStateAfterFailure).toHaveBeenCalledWith(
-      expect.objectContaining({
         integrationId: "integration-1",
         lastError: "activity_history_failed",
         provider: "wahoo",
         resource: "historical_activities",
+        status: "failed",
+        workerId: expect.stringMatching(/^wahoo-activity-history-worker:/),
       }),
     );
   });
@@ -568,7 +609,7 @@ describe("WahooActivityHistoryJobService", () => {
     deps.wahooClient.listWorkoutSummaries.mockImplementation(({ page }) =>
       Promise.resolve({ page, sourceCount: 30, summaries: [], total }),
     );
-    deps.providerSyncRepository.markJobFailed.mockResolvedValue(true);
+    deps.providerSyncRepository.failJobWithSyncState.mockResolvedValue(true);
     const service = new WahooActivityHistoryJobService({
       importer: deps.importer as never,
       providerSyncRepository: deps.providerSyncRepository as never,
@@ -584,7 +625,7 @@ describe("WahooActivityHistoryJobService", () => {
     expect(deps.wahooClient.listWorkoutSummaries).toHaveBeenCalledTimes(24);
     expect(deps.importer.importWorkoutSummary).not.toHaveBeenCalled();
     expect(deps.providerSyncRepository.completeJobWithSyncState).not.toHaveBeenCalled();
-    expect(deps.providerSyncRepository.markJobFailed).toHaveBeenCalledWith(
+    expect(deps.providerSyncRepository.failJobWithSyncState).toHaveBeenCalledWith(
       expect.objectContaining({
         lastError: "activity_history_budget_exceeded",
         nextRunAt: "2026-04-03T12:05:00.000Z",
@@ -784,7 +825,7 @@ describe("WahooActivityHistoryJobService", () => {
       refreshToken: null,
     });
     deps.wahooClient.listWorkoutSummaries.mockRejectedValue(new Error(canary));
-    deps.providerSyncRepository.markJobFailed.mockResolvedValue(true);
+    deps.providerSyncRepository.failJobWithSyncState.mockResolvedValue(true);
     const service = new WahooActivityHistoryJobService({
       importer: deps.importer as never,
       providerSyncRepository: deps.providerSyncRepository as never,
@@ -797,10 +838,7 @@ describe("WahooActivityHistoryJobService", () => {
       failed: 1,
       processed: 1,
     });
-    const durable = JSON.stringify([
-      deps.providerSyncRepository.markJobFailed.mock.calls,
-      deps.providerSyncRepository.updateSyncStateAfterFailure.mock.calls,
-    ]);
+    const durable = JSON.stringify([deps.providerSyncRepository.failJobWithSyncState.mock.calls]);
     expect(durable).toContain("activity_history_failed");
     expect(durable).not.toContain(canary);
   });

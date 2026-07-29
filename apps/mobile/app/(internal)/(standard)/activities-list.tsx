@@ -218,7 +218,7 @@ function ActivitiesScreen() {
         onClose={() => setIsFilterSheetOpen(false)}
         testID="activities-list-filter-sheet"
       >
-        <FilterSection title="Activity type">
+        <FilterSection title="Activity category">
           <View className="flex-row flex-wrap gap-2">
             {[
               { id: "run", label: "Running" },

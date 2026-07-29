@@ -1,4 +1,3 @@
-import { compileActivityPlanV3 } from "@repo/core/activity-plan";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -32,7 +31,9 @@ export function RecordPlanPage() {
   const recording = useTimerOnlyRecording();
   const identityLocked = Boolean(recording.state.reducer.snapshot);
   const [searchText, setSearchText] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<"all" | typeof launcher.category>("all");
+  const [categoryFilter, setCategoryFilter] = useState<"all" | typeof launcher.activity_category>(
+    "all",
+  );
   const { data: events = [], isLoading, error } = api.events.getToday.useQuery();
 
   const filteredEvents = useMemo(() => {
@@ -40,17 +41,17 @@ export function RecordPlanPage() {
 
     return events.filter((event) => {
       const plan = event.activity_plan;
-      const category = normalizeRecordingActivityCategory(
-        plan ? compileActivityPlanV3(plan.structure).primaryCategory : null,
+      const activity_category = normalizeRecordingActivityCategory(
+        plan?.activity_category ?? null,
         "other",
       );
-      const matchesCategory = categoryFilter === "all" || category === categoryFilter;
+      const matchesCategory = categoryFilter === "all" || activity_category === categoryFilter;
       const matchesQuery =
         query.length === 0 ||
         plan?.name?.toLowerCase().includes(query) ||
         plan?.description?.toLowerCase().includes(query);
 
-      return Boolean(plan) && matchesCategory && Boolean(matchesQuery);
+      return Boolean(plan?.activity_category) && matchesCategory && Boolean(matchesQuery);
     });
   }, [categoryFilter, events, searchText]);
 
@@ -58,16 +59,17 @@ export function RecordPlanPage() {
     if (identityLocked) return;
     const event = events.find((candidate) => candidate.id === eventId);
     const plan = event?.activity_plan;
-    const category = normalizeRecordingActivityCategory(
-      plan ? compileActivityPlanV3(plan.structure).primaryCategory : null,
-      launcher.category,
+    if (!plan?.activity_category) return;
+    const activity_category = normalizeRecordingActivityCategory(
+      plan.activity_category,
+      launcher.activity_category,
     );
 
     void navigate({
       to: "/record",
       search: {
         ...launcher,
-        category,
+        activity_category,
         eventId,
       },
     });
@@ -123,7 +125,7 @@ export function RecordPlanPage() {
               variant={categoryFilter === "all" ? "default" : "outline"}
               onClick={() => setCategoryFilter("all")}
             >
-              All categories
+              All activity categories
             </Button>
             {recordingActivityOptions.map((option) => (
               <Button
@@ -169,7 +171,7 @@ export function RecordPlanPage() {
             <div>
               <p className="font-medium text-foreground">No matching plans for today</p>
               <p className="text-sm text-muted-foreground">
-                Adjust the search or come back after scheduling a activity in the planning flow.
+                Adjust the search or come back after scheduling an activity in the planning flow.
               </p>
             </div>
           </CardContent>
@@ -179,13 +181,11 @@ export function RecordPlanPage() {
       <div className="grid gap-4">
         {filteredEvents.map((event) => {
           const plan = event.activity_plan;
-          if (!plan) {
+          if (!plan?.activity_category) {
             return null;
           }
 
           const isSelected = launcher.eventId === event.id;
-          const compiledPlan = compileActivityPlanV3(plan.structure);
-
           return (
             <Card key={event.id} className={isSelected ? "border-primary" : undefined}>
               <CardHeader>
@@ -198,11 +198,7 @@ export function RecordPlanPage() {
                     </CardDescription>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {compiledPlan.categories.map((planCategory) => (
-                      <Badge key={planCategory} variant="outline">
-                        {planCategory}
-                      </Badge>
-                    ))}
+                    <Badge variant="outline">{plan.activity_category}</Badge>
                     <Badge variant="outline">{formatScheduledTime(event.scheduled_date)}</Badge>
                   </div>
                 </div>
@@ -211,7 +207,7 @@ export function RecordPlanPage() {
                 <p className="text-sm text-muted-foreground">
                   {isSelected
                     ? "Attached to the launcher. Choosing it again keeps this activity selected."
-                    : "Attach this activity to carry its category back to the launcher."}
+                    : "Attach this activity to carry its activity category back to the launcher."}
                 </p>
                 <Button disabled={identityLocked} onClick={() => attachPlan(event.id)}>
                   {isSelected ? <Check className="mr-2 h-4 w-4" /> : null}

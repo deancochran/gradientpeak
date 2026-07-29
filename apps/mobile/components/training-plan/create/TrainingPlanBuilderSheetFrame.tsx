@@ -95,7 +95,9 @@ export function TrainingPlanBuilderSheetFrame({
         hasSaveAction ? (
           <Button
             disabled={
-              (activeSheet === "preferences" && !sheetDrafts.canSavePlanningPreferences) ||
+              (activeSheet === "preferences" &&
+                (!sheetDrafts.canResetPlanningPreferences ||
+                  !sheetDrafts.canSavePlanningPreferences)) ||
               (activeSheet === "metadata" && !sheetDrafts.canSaveMetadata)
             }
             className="min-h-11 px-3"

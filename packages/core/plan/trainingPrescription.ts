@@ -1,7 +1,11 @@
 import { z } from "zod";
+import {
+  type CanonicalActivityCategory,
+  canonicalActivityCategorySchema,
+  canonicalActivityCategoryValues,
+} from "../schemas/activity-category";
 import type { ProfileGoal } from "../schemas/goals/profile_goals";
 import type { AthletePreferenceProfile } from "../schemas/settings/profile_settings";
-import { type CanonicalSport, canonicalSportSchema, canonicalSportValues } from "../schemas/sport";
 import type { TrainingPlanGoalTarget } from "../schemas/training-plan-structure";
 import type { TrainingPlanCreationConfig } from "../schemas/training-plan-structure/creation-config-schemas";
 
@@ -122,7 +126,7 @@ export const keyExposureTypeSchema = z.enum([
 export const keyExposureSchema = z
   .object({
     type: keyExposureTypeSchema,
-    activity_category: canonicalSportSchema,
+    activity_category: canonicalActivityCategorySchema,
     min_frequency_per_week: z.number().min(0),
     target_frequency_per_week: z.number().min(0),
     max_frequency_per_week: z.number().min(0),
@@ -165,7 +169,7 @@ export const goalPrescriptionProfileSchema = z
   .object({
     primary_goal_type: goalPrescriptionTypeSchema,
     specificity_mode: prescriptionSpecificityModeSchema,
-    primary_activity_categories: z.array(canonicalSportSchema).min(1),
+    primary_activity_categories: z.array(canonicalActivityCategorySchema).min(1),
     demand: goalPrescriptionDemandSchema,
   })
   .strict();
@@ -218,7 +222,10 @@ export const trainingPrescriptionSchema = z
   .object({
     version: z.literal(1),
     goal_profile: goalPrescriptionProfileSchema,
-    activity_categories: z.partialRecord(canonicalSportSchema, activityCategoryPrescriptionSchema),
+    activity_categories: z.partialRecord(
+      canonicalActivityCategorySchema,
+      activityCategoryPrescriptionSchema,
+    ),
     global_constraints: z
       .object({
         max_weekly_duration_minutes: z.number().int().min(30).max(10080).optional(),
@@ -271,7 +278,7 @@ type PrescriptionGoal = TrainingPrescriptionGoalInput | ProfileGoal;
 
 interface GoalSignal {
   goalType: GoalPrescriptionType;
-  activityCategory: CanonicalSport;
+  activityCategory: CanonicalActivityCategory;
   priority: number;
   demand: GoalPrescriptionDemand;
   distanceKm?: number;
@@ -295,14 +302,14 @@ function isProfileGoal(goal: PrescriptionGoal): goal is ProfileGoal {
   return "objective" in goal && "activity_category" in goal;
 }
 
-function toActivityCategory(value: string | undefined): CanonicalSport {
-  const parsed = canonicalSportSchema.safeParse(value);
+function toActivityCategory(value: string | undefined): CanonicalActivityCategory {
+  const parsed = canonicalActivityCategorySchema.safeParse(value);
   return parsed.success ? parsed.data : "other";
 }
 
 function demandForEvent(
   distanceKm: number,
-  category: CanonicalSport,
+  category: CanonicalActivityCategory,
   hasPerformanceTarget: boolean,
 ): GoalPrescriptionDemand {
   const endurancePressure = clamp01((distanceKm - 5) / 37.195);
@@ -323,7 +330,7 @@ function demandForEvent(
 
 function demandForThreshold(
   metric: "pace" | "power" | "hr",
-  category: CanonicalSport,
+  category: CanonicalActivityCategory,
 ): GoalPrescriptionDemand {
   return {
     endurance: metric === "hr" ? 0.55 : 0.64,
@@ -341,7 +348,7 @@ function demandForThreshold(
 function demandForCompletion(
   distanceKm: number,
   durationHours: number,
-  category: CanonicalSport,
+  category: CanonicalActivityCategory,
 ): GoalPrescriptionDemand {
   const workload = Math.max(clamp01((distanceKm - 5) / 37.195), clamp01((durationHours - 1) / 4));
   return {
@@ -582,7 +589,7 @@ function strengthIntensity() {
   };
 }
 
-function loadMethodFor(category: CanonicalSport, signal?: GoalSignal) {
+function loadMethodFor(category: CanonicalActivityCategory, signal?: GoalSignal) {
   if (category === "bike" && signal?.thresholdMetric === "power") return "bike_power";
   if (category === "bike") return "heart_rate";
   if (category === "run") return "run_pace";
@@ -592,7 +599,7 @@ function loadMethodFor(category: CanonicalSport, signal?: GoalSignal) {
 }
 
 function keyExposuresFor(input: {
-  category: CanonicalSport;
+  category: CanonicalActivityCategory;
   role: z.infer<typeof prescriptionActivityRoleSchema>;
   signal?: GoalSignal;
   demand: GoalPrescriptionDemand;
@@ -665,7 +672,7 @@ function keyExposuresFor(input: {
 }
 
 function buildActivityCategoryPrescription(input: {
-  category: CanonicalSport;
+  category: CanonicalActivityCategory;
   weight: number;
   role: z.infer<typeof prescriptionActivityRoleSchema>;
   signal?: GoalSignal;
@@ -786,7 +793,7 @@ export function resolveTrainingPrescription(input: {
   const recoveryPriority = input.preferences?.recovery_preferences.recovery_priority ?? 0.5;
   const fatigueTolerance =
     input.preferences?.recovery_preferences.systemic_fatigue_tolerance ?? 0.5;
-  const categoryWeights = new Map<CanonicalSport, number>();
+  const categoryWeights = new Map<CanonicalActivityCategory, number>();
   for (const signal of signals)
     categoryWeights.set(
       signal.activityCategory,
@@ -799,11 +806,13 @@ export function resolveTrainingPrescription(input: {
     categoryWeights.set("strength", 0.12 + strengthPriority * 0.22);
   }
   const totalWeight = [...categoryWeights.values()].reduce((sum, weight) => sum + weight, 0) || 1;
-  const order = canonicalSportValues;
+  const order = canonicalActivityCategoryValues;
   const normalized = [...categoryWeights.entries()]
     .map(([category, weight]) => [category, weight / totalWeight] as const)
     .sort((a, b) => b[1] - a[1] || order.indexOf(a[0]) - order.indexOf(b[0]));
-  const activity_categories: Partial<Record<CanonicalSport, ActivityCategoryPrescription>> = {};
+  const activity_categories: Partial<
+    Record<CanonicalActivityCategory, ActivityCategoryPrescription>
+  > = {};
   for (const [index, [category, weight]] of normalized.entries()) {
     const signal = signals
       .filter((candidate) => candidate.activityCategory === category)

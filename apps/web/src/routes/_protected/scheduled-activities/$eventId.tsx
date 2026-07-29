@@ -31,7 +31,10 @@ function ScheduledActivityDetailPage() {
   const search = Route.useSearch() as { flash?: string; flashType?: RouteFlashType };
   const [selectedPlanId, setSelectedPlanId] = useState("");
   const eventQuery = api.events.getById.useQuery({ id: eventId }, { enabled: Boolean(eventId) });
-  const plansQuery = api.activityPlans.list.useQuery({ ownerScope: "own", limit: 100 });
+  const plansQuery = api.activityPlans.list.useQuery({
+    ownerScope: "own",
+    limit: 100,
+  });
   const event = eventQuery.data;
   if (eventQuery.isLoading) return <p>Loading scheduled activity...</p>;
   if (eventQuery.isError)
@@ -43,6 +46,11 @@ function ScheduledActivityDetailPage() {
     );
   if (!event) return <p>Scheduled activity not found.</p>;
   const recurring = Boolean(event.series_id || event.recurrence_rule);
+  const linkedPlanState = event.activity_plan
+    ? "linked"
+    : event.activity_plan_id
+      ? "unavailable"
+      : "unlinked";
   return (
     <div className="space-y-6">
       <RouteFlashToast
@@ -64,19 +72,33 @@ function ScheduledActivityDetailPage() {
           <CardHeader>
             <CardTitle>Activity plan</CardTitle>
             <CardDescription>
-              Attach, change, or remove the persisted activity-plan association.
+              {linkedPlanState === "unavailable"
+                ? "The linked plan is unavailable and cannot be changed here."
+                : "Attach an activity plan to this event."}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <p>{event.activity_plan?.name ?? "No activity plan attached"}</p>
-            {plansQuery.isError ? (
+            <p>
+              {event.activity_plan?.name ??
+                (linkedPlanState === "unavailable"
+                  ? "Linked plan unavailable"
+                  : "No activity plan attached")}
+            </p>
+            {linkedPlanState === "unavailable" ? (
+              <p className="rounded-lg border border-destructive/40 p-3 text-sm" role="alert">
+                The linked activity plan is unavailable. Recording and replacement are disabled for
+                safety.
+              </p>
+            ) : null}
+            {(linkedPlanState === "linked" || linkedPlanState === "unlinked") &&
+            plansQuery.isError ? (
               <div role="alert">
                 <p>Activity plans could not be loaded.</p>
                 <Button size="sm" variant="outline" onClick={() => void plansQuery.refetch()}>
                   Retry
                 </Button>
               </div>
-            ) : (
+            ) : linkedPlanState === "linked" || linkedPlanState === "unlinked" ? (
               <form
                 action={attachCalendarActivityPlanAction.url}
                 method="post"
@@ -113,8 +135,8 @@ function ScheduledActivityDetailPage() {
                   Attach activity plan
                 </Button>
               </form>
-            )}
-            {event.activity_plan ? (
+            ) : null}
+            {linkedPlanState === "linked" && event.activity_plan ? (
               <form action={attachCalendarActivityPlanAction.url} method="post">
                 <input type="hidden" name="event_id" value={event.id} />
                 <input type="hidden" name="operation" value="remove" />
@@ -135,41 +157,47 @@ function ScheduledActivityDetailPage() {
             ) : null}
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Reschedule</CardTitle>
-            <CardDescription>
-              Rescheduling changes this occurrence only
-              {recurring ? "; series-wide time moves are not supported by the API" : ""}.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form action={updateCalendarEventAction.url} method="post" className="space-y-3">
-              <input type="hidden" name="event_id" value={event.id} />
-              <input type="hidden" name="scope" value="single" />
-              <input
-                type="hidden"
-                name="title"
-                value={event.title ?? event.activity_plan?.name ?? "Scheduled activity"}
-              />
-              <input type="hidden" name="notes" value={event.notes ?? ""} />
-              <input type="hidden" name="all_day" value="true" />
-              <input type="hidden" name="redirectTo" value={`/scheduled-activities/${event.id}`} />
-              <label className="block text-sm font-medium" htmlFor="reschedule-date">
-                New date
-              </label>
-              <input
-                id="reschedule-date"
-                className="h-10 w-full rounded-md border bg-background px-3"
-                type="date"
-                name="scheduled_date"
-                defaultValue={event.scheduled_date}
-                required
-              />
-              <Button type="submit">Reschedule occurrence</Button>
-            </form>
-          </CardContent>
-        </Card>
+        {linkedPlanState === "linked" || linkedPlanState === "unlinked" ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Reschedule</CardTitle>
+              <CardDescription>
+                Rescheduling changes this occurrence only
+                {recurring ? "; series-wide time moves are not supported by the API" : ""}.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form action={updateCalendarEventAction.url} method="post" className="space-y-3">
+                <input type="hidden" name="event_id" value={event.id} />
+                <input type="hidden" name="scope" value="single" />
+                <input
+                  type="hidden"
+                  name="title"
+                  value={event.title ?? event.activity_plan?.name ?? "Scheduled activity"}
+                />
+                <input type="hidden" name="notes" value={event.notes ?? ""} />
+                <input type="hidden" name="all_day" value="true" />
+                <input
+                  type="hidden"
+                  name="redirectTo"
+                  value={`/scheduled-activities/${event.id}`}
+                />
+                <label className="block text-sm font-medium" htmlFor="reschedule-date">
+                  New date
+                </label>
+                <input
+                  id="reschedule-date"
+                  className="h-10 w-full rounded-md border bg-background px-3"
+                  type="date"
+                  name="scheduled_date"
+                  defaultValue={event.scheduled_date}
+                  required
+                />
+                <Button type="submit">Reschedule occurrence</Button>
+              </form>
+            </CardContent>
+          </Card>
+        ) : null}
       </div>
       <Card>
         <CardHeader>

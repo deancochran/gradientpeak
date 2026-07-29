@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/ca
 import { Text } from "@repo/ui/components/text";
 import { useMemo } from "react";
 import { Pressable, View } from "react-native";
-import { TimelineChart } from "@/components/activity-plan/workout/TimelineChart";
+import { TimelineChart } from "@/components/activity-plan/activity/TimelineChart";
 import { getCommonLoadPresentation } from "@/lib/activity-load-presentation";
 import { markEstimated } from "@/lib/estimatedMetrics";
 

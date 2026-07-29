@@ -17,7 +17,7 @@ export type TrainingPlanTemplateListFilters = {
     | "duration_asc"
     | "sessions_desc"
     | "sessions_asc";
-  sport?: string;
+  activity_category?: string;
 };
 
 export interface ActiveTrainingPlanLookup {

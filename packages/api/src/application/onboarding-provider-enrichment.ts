@@ -15,7 +15,10 @@ import {
   type WahooUser,
 } from "../lib/integrations/wahoo/client";
 import { decryptNullableProviderToken, decryptProviderToken } from "../lib/provider-token-crypto";
-import { batchInsertActivityEfforts, deriveEffortsForSport } from "../utils/onboarding-helpers";
+import {
+  batchInsertActivityEfforts,
+  deriveEffortsForActivityCategory,
+} from "../utils/onboarding-helpers";
 import { isClearedProfileOverride } from "../utils/profile-override-observations";
 
 const ONBOARDING_ENRICHMENT_RESOURCE = "onboarding_enrichment";
@@ -749,7 +752,7 @@ export class OnboardingProviderEnrichmentService {
     await batchInsertActivityEfforts(
       this.db,
       profileId,
-      deriveEffortsForSport("cycling", ftp),
+      deriveEffortsForActivityCategory("cycling", ftp),
       "provider_wahoo_ftp",
     );
   }

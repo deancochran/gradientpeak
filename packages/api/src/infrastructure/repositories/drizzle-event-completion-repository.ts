@@ -58,6 +58,7 @@ const splitCompletionEventColumns = {
 
 function serializeCompletionRow(
   row: typeof splitCompletionEventColumns extends infer _T ? any : never,
+  activityPlan: typeof schema.activityPlans.$inferSelect | null = null,
 ) {
   return {
     ...row,
@@ -66,8 +67,20 @@ function serializeCompletionRow(
     ends_at: row.ends_at?.toISOString() ?? null,
     original_starts_at: row.original_starts_at?.toISOString() ?? null,
     updated_at: row.updated_at.toISOString(),
-    activity_plan: null,
+    activity_plan: activityPlan
+      ? {
+          ...activityPlan,
+          created_at: activityPlan.created_at.toISOString(),
+          updated_at: activityPlan.updated_at.toISOString(),
+        }
+      : null,
   };
+}
+
+function matchesExpectedActivityPlan(activityPlanId: string | null) {
+  return activityPlanId === null
+    ? isNull(schema.events.activity_plan_id)
+    : eq(schema.events.activity_plan_id, activityPlanId);
 }
 
 export function createEventCompletionRepository(db: DrizzleDbClient): EventCompletionRepository {
@@ -87,19 +100,26 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
     async getOwnedEventForCompletion({ eventId, profileId }) {
       const [row] = await db
         .select({
-          ...splitCompletionEventColumns,
+          event: splitCompletionEventColumns,
+          activity_plan: schema.activityPlans,
         })
         .from(schema.events)
-
+        .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
         .where(and(eq(schema.events.id, eventId), eq(schema.events.profile_id, profileId)))
         .limit(1);
 
       if (!row) return null;
 
-      return serializeCompletionRow(row);
+      return serializeCompletionRow(row.event, row.activity_plan);
     },
 
-    async updateEventCompletionLink({ eventId, profileId, linkedActivityId, status }) {
+    async updateEventCompletionLink({
+      eventId,
+      expectedActivityPlanId,
+      profileId,
+      linkedActivityId,
+      status,
+    }) {
       const now = new Date();
       const [row] = await db.transaction(async (tx) => {
         const [updatedEvent] = await tx
@@ -109,21 +129,34 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
             linked_activity_id: linkedActivityId,
             updated_at: now,
           })
-          .where(and(eq(schema.events.id, eventId), eq(schema.events.profile_id, profileId)))
+          .where(
+            and(
+              eq(schema.events.id, eventId),
+              eq(schema.events.profile_id, profileId),
+              matchesExpectedActivityPlan(expectedActivityPlanId),
+            ),
+          )
           .returning({ id: schema.events.id });
 
         if (!updatedEvent) return [];
 
         return tx
-          .select(splitCompletionEventColumns)
+          .select({
+            event: splitCompletionEventColumns,
+            activity_plan: schema.activityPlans,
+          })
           .from(schema.events)
+          .leftJoin(
+            schema.activityPlans,
+            eq(schema.events.activity_plan_id, schema.activityPlans.id),
+          )
           .where(and(eq(schema.events.id, eventId), eq(schema.events.profile_id, profileId)))
           .limit(1);
       });
 
       if (!row) return null;
 
-      return serializeCompletionRow(row);
+      return serializeCompletionRow(row.event, row.activity_plan);
     },
 
     async listHistoricalActivitiesForReconciliation({
@@ -165,13 +198,14 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
           id: schema.events.id,
           starts_at: schema.events.starts_at,
           activity_plan_id: schema.events.activity_plan_id,
+          activity_plan_structure: schema.activityPlans.structure,
           training_plan_id: schema.events.training_plan_id,
           status: schema.events.status,
           linked_activity_id: schema.events.linked_activity_id,
           event_type: schema.events.event_type,
         })
         .from(schema.events)
-
+        .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
         .where(
           and(
             eq(schema.events.profile_id, profileId),
@@ -188,6 +222,7 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
       return rows.map((row) => ({
         id: row.id,
         activity_plan_id: row.activity_plan_id,
+        activity_plan_structure: row.activity_plan_structure,
         training_plan_id: row.training_plan_id,
         status: row.status,
         linked_activity_id: row.linked_activity_id,
@@ -196,7 +231,12 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
       }));
     },
 
-    async linkHistoricalCompletionIfEligible({ activityId, eventId, profileId }) {
+    async linkHistoricalCompletionIfEligible({
+      activityId,
+      eventId,
+      expectedActivityPlanId,
+      profileId,
+    }) {
       const now = new Date();
       const [row] = await db.transaction(async (tx) => {
         const [updatedEvent] = await tx
@@ -210,6 +250,7 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
             and(
               eq(schema.events.id, eventId),
               eq(schema.events.profile_id, profileId),
+              matchesExpectedActivityPlan(expectedActivityPlanId),
               ne(schema.events.status, "cancelled"),
               isNull(schema.events.linked_activity_id),
             ),
@@ -267,7 +308,8 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
             event_type: schema.events.event_type,
           })
           .from(schema.events)
-          .where(applyDeleteScopeFilters({ anchorEvent, profileId, scope }));
+          .where(applyDeleteScopeFilters({ anchorEvent, profileId, scope }))
+          .orderBy(asc(schema.events.id));
         const lockableCandidateQuery = candidateQuery as typeof candidateQuery & {
           for?: (strength: "update") => typeof candidateQuery;
         };

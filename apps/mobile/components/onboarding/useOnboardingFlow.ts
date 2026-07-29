@@ -479,7 +479,7 @@ export function useOnboardingFlow() {
     if (
       estimatedFtp &&
       !hasImportedFtp &&
-      data.sport_interests.includes("cycling") &&
+      data.activity_category_interests.includes("cycling") &&
       (!touchedFields.has("ftp") || fieldSources.ftp?.kind === "estimated") &&
       fieldSources.ftp?.kind !== "cleared" &&
       data.ftp !== estimatedFtp
@@ -494,7 +494,7 @@ export function useOnboardingFlow() {
     data.dob,
     data.ftp,
     data.max_hr,
-    data.sport_interests,
+    data.activity_category_interests,
     data.weight_kg,
     fieldSources.ftp?.kind,
     fieldSources.max_hr?.kind,

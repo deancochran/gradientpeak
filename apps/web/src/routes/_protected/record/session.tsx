@@ -139,7 +139,7 @@ export function RecordSessionPage() {
               </Button>
             ) : null}
             <Button asChild>
-              <Link to="/record" search={{ category: "run", gps: "off" }}>
+              <Link to="/record" search={{ activity_category: "run", gps: "off" }}>
                 Return to recorder
               </Link>
             </Button>
@@ -159,7 +159,7 @@ export function RecordSessionPage() {
           </div>
           <CardTitle className="flex items-center justify-center gap-2 text-3xl">
             <Timer className="h-7 w-7" />
-            {snapshot?.activity.category ?? configuration.category} session
+            {snapshot?.activity.activity_category ?? configuration.activity_category} session
           </CardTitle>
           <CardDescription>
             Keep this page open in the foreground. This browser periodically saves a bounded timer

@@ -1,41 +1,20 @@
-import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
-import { type EventRow, type PublicActivityPlansRow, schema } from "@repo/db";
+import { type EventRow, schema } from "@repo/db";
 import { and, asc, eq, gte, lt } from "drizzle-orm";
-import { z } from "zod";
 import type { getRequiredDb } from "../../db";
+import {
+  type ActivityPlanExecutionDto,
+  toAvailableActivityPlanExecutionDto,
+} from "../../dto/activity-plan";
 import { getActivityPlansDerivedMetrics } from "../../utils/activity-plan-derived-metrics";
-
-const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-
-const activityPlanBoundarySchema = z
-  .object({
-    id: z.string(),
-    name: z.string().nullable().optional(),
-    structure: activityPlanStructureSchemaV3,
-    structure_hash: z.string().regex(/^v1:sha256:[0-9a-f]{64}$/),
-    gps_recording_enabled: z.boolean(),
-    estimated_distance: z.number().nullable().optional(),
-    estimated_duration: z.number().nullable().optional(),
-    estimated_tss: z.number().nullable().optional(),
-  })
-  .passthrough();
-
-const plannedActivityRowSchema = z
-  .object({
-    id: z.string(),
-    starts_at: z.date(),
-    notes: z.string().nullable(),
-    activity_plan: activityPlanBoundarySchema.nullable(),
-    scheduled_date: isoDateSchema,
-  })
-  .strict();
 
 type HomeDb = ReturnType<typeof getRequiredDb>;
 type EstimationStore = Parameters<typeof getActivityPlansDerivedMetrics>[2];
+type HomeActivityPlan = typeof schema.activityPlans.$inferSelect & ActivityPlanExecutionDto;
 
 export type PlannedActivityRow = Pick<EventRow, "id" | "notes"> & {
+  activity_plan_id: string | null;
   starts_at: Date;
-  activity_plan: PublicActivityPlansRow | null;
+  activity_plan: HomeActivityPlan | null;
   scheduled_date: string;
 };
 
@@ -53,6 +32,7 @@ export async function listPlannedActivitiesInRange(
       starts_at: schema.events.starts_at,
       scheduled_date: schema.events.scheduled_date,
       notes: schema.events.notes,
+      activity_plan_id: schema.events.activity_plan_id,
       activity_plan: schema.activityPlans,
     })
     .from(schema.events)
@@ -68,14 +48,11 @@ export async function listPlannedActivitiesInRange(
     )
     .orderBy(asc(schema.events.scheduled_date), asc(schema.events.starts_at));
 
-  return rows.map(
-    (row) =>
-      plannedActivityRowSchema.parse({
-        ...row,
-        activity_plan: (row.activity_plan as PublicActivityPlansRow | null) ?? null,
-        scheduled_date: row.scheduled_date,
-      }) as PlannedActivityRow,
-  );
+  return rows.map((row) => ({
+    ...row,
+    activity_plan: toAvailableActivityPlanExecutionDto(row.activity_plan),
+    scheduled_date: row.scheduled_date,
+  }));
 }
 
 export async function loadPlannedActivitiesWithEstimations(

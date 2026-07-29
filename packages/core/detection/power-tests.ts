@@ -192,7 +192,7 @@ export function detectPowerRampTest(
  * @param timestamps - Array of timestamps
  * @returns Interval activity metadata or null
  */
-export function detectIntervalWorkout(
+export function detectIntervalActivity(
   powerStream: number[],
   timestamps: number[],
 ): {

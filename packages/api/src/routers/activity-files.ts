@@ -11,7 +11,7 @@ import {
   type ActivityStreamThresholdIdentity,
   activityStreamAnalysisSchema,
   analyzeActivityStreams,
-  canonicalSportSchema,
+  canonicalActivityCategorySchema,
   contentVisibilitySchema,
 } from "@repo/core";
 import {
@@ -293,7 +293,7 @@ async function canAccessActivityStreams(
 ): Promise<{
   activityFilePath: string | null;
   activityFileType: ActivityFileType | null;
-  activityType: string;
+  activityCategory: string;
   parentStartedAt: Date;
   startOffsetMs: number;
   endOffsetMs: number;
@@ -309,7 +309,7 @@ async function canAccessActivityStreams(
       activityFileType: activityArtifacts.format,
       profile_id: activities.profile_id,
       parentStartedAt: activities.started_at,
-      activityType: activitySegments.category,
+      activityCategory: activitySegments.activity_category,
       startOffsetMs: activitySegments.start_offset_ms,
       endOffsetMs: activitySegments.end_offset_ms,
       sourceSessionIndex: activitySegments.source_session_index,
@@ -355,7 +355,7 @@ async function canAccessActivityStreams(
       activityFileType: activity.activityFilePath
         ? activityFileTypeSchema.parse(activity.activityFileType)
         : null,
-      activityType: activity.activityType ?? "other",
+      activityCategory: activity.activityCategory ?? "other",
       parentStartedAt: activity.parentStartedAt,
       startOffsetMs: activity.startOffsetMs,
       endOffsetMs: activity.endOffsetMs,
@@ -964,7 +964,7 @@ export const activityFilesRouter = createTRPCRouter({
           });
         }
 
-        const sport = canonicalSportSchema.parse(access.activityType);
+        const activity_category = canonicalActivityCategorySchema.parse(access.activityCategory);
         const context = await resolveActivityContextAsOf({
           store: createActivityAnalysisStore(db),
           profileId: userId,
@@ -972,13 +972,16 @@ export const activityFilesRouter = createTRPCRouter({
           activityId,
           evidenceScope: "thresholds",
         });
-        const sportLthr =
-          context.profileMetrics.lthr_by_sport?.[sport] ?? context.profileMetrics.lthr;
+        const activityCategoryLthr =
+          context.profileMetrics.lthr_by_activity_category?.[activity_category] ??
+          context.profileMetrics.lthr;
         const analysis = analyzeActivityStreams({
           records: scopedRecords,
-          sport,
+          activity_category,
           thresholds: {
-            ...(sportLthr === undefined ? {} : { lthrBySport: { [sport]: sportLthr } }),
+            ...(activityCategoryLthr === undefined
+              ? {}
+              : { lthrByActivityCategory: { [activity_category]: activityCategoryLthr } }),
             ...(context.profileMetrics.ftp === undefined
               ? {}
               : { ftpWatts: context.profileMetrics.ftp }),
@@ -989,9 +992,9 @@ export const activityFilesRouter = createTRPCRouter({
               ? {}
               : { swimThresholdSpeedMps: context.profileMetrics.swim_threshold_speed_mps }),
             identities: {
-              lthrBySport: {
-                [sport]: toStreamThresholdIdentity(
-                  context.calibrationQuality?.lthrBySport?.[sport] ??
+              lthrByActivityCategory: {
+                [activity_category]: toStreamThresholdIdentity(
+                  context.calibrationQuality?.lthrByActivityCategory?.[activity_category] ??
                     context.calibrationQuality?.lthr,
                 ),
               },

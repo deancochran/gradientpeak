@@ -24,16 +24,16 @@ type Story = StoryObj<typeof meta>;
 export const Playground: Story = {
   render: () => (
     <Table>
-      <TableCaption>{tableFixtures.weeklyWorkouts.caption}</TableCaption>
+      <TableCaption>{tableFixtures.weeklyActivities.caption}</TableCaption>
       <TableHeader>
         <TableRow>
-          {tableFixtures.weeklyWorkouts.columns.map((column) => (
+          {tableFixtures.weeklyActivities.columns.map((column) => (
             <TableHead key={column}>{column}</TableHead>
           ))}
         </TableRow>
       </TableHeader>
       <TableBody>
-        {tableFixtures.weeklyWorkouts.rows.map((row) => (
+        {tableFixtures.weeklyActivities.rows.map((row) => (
           <TableRow key={row[0]}>
             {row.map((cell) => (
               <TableCell key={cell}>{cell}</TableCell>

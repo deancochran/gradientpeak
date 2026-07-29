@@ -80,6 +80,9 @@ if (command === "migration") {
   throw new Error("generation 2 reset is available only through guarded disposable verification");
 } else if (command === "start") {
   runSupabaseCli(args);
+} else if (command === "ensure-started") {
+  runSupabaseCli(["start"], dbPackageRoot, "utf8");
+  console.info("[db:dev] local Supabase is running");
 } else if (command === "stop") {
   runSupabaseCli(args);
 } else if (command === "status") {

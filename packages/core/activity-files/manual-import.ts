@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { canonicalSportSchema } from "../schemas/sport";
+import { canonicalActivityCategorySchema } from "../schemas/activity-category";
 
 export const SUPPORTED_ACTIVITY_FILE_EXTENSIONS = ["fit", "gpx", "tcx"] as const;
 export const MAX_ACTIVITY_FILE_SIZE_BYTES = 50 * 1024 * 1024;
@@ -49,7 +49,7 @@ const normalizedNotesSchema = z
 export const manualActivityImportFormSchema = z
   .object({
     files: z.array(portableActivityFileMetadataSchema).length(1, "Select exactly one file"),
-    sport: canonicalSportSchema,
+    activity_category: canonicalActivityCategorySchema,
     name: z.string().trim().min(1, "Activity name is required").max(100),
     notes: normalizedNotesSchema,
   })

@@ -26,10 +26,10 @@ function toDisplayDateLabel(selectedDate: string): string {
   return format(new Date(`${selectedDate}T12:00:00.000Z`), "EEEE, MMM d");
 }
 
-function toCategoryLabel(category?: string | null): string {
-  if (!category) return "Activity";
+function toCategoryLabel(activity_category?: string | null): string {
+  if (!activity_category) return "Activity";
 
-  return category
+  return activity_category
     .split("_")
     .map((segment) =>
       segment.length > 0 ? `${segment[0]?.toUpperCase() ?? ""}${segment.slice(1)}` : segment,
@@ -185,8 +185,7 @@ export function CalendarPlannedActivityPickerModal({
         <ActivityPlanCard
           activityPlan={{
             ...plan,
-            categories: plan.activityCategory ? [plan.activityCategory] : ["other"],
-            primary_category: plan.activityCategory ?? "other",
+            activity_category: plan.activityCategory ?? "other",
             created_at: plan.createdAt ?? undefined,
             authoritative_metrics: {
               estimated_duration: plan.estimatedDuration,
@@ -211,7 +210,7 @@ export function CalendarPlannedActivityPickerModal({
       filterItems={filterItems}
       filterSlot={({ allItems }) => (
         <CategoryFilters
-          categories={
+          activity_categories={
             Array.from(
               new Set(allItems.map((plan) => plan.activityCategory).filter(Boolean)),
             ).sort() as string[]
@@ -290,34 +289,36 @@ export function CalendarPlannedActivityPickerModal({
 }
 
 function CategoryFilters({
-  categories,
+  activity_categories,
   onSelectCategory,
   selectedCategory,
 }: {
-  categories: string[];
-  onSelectCategory: (category: string) => void;
+  activity_categories: string[];
+  onSelectCategory: (activity_category: string) => void;
   selectedCategory: string;
 }) {
-  const categoryOptions = ["all", ...categories];
+  const categoryOptions = ["all", ...activity_categories];
 
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2">
-      {categoryOptions.map((category) => {
-        const isSelected = selectedCategory === category;
+      {categoryOptions.map((activity_category) => {
+        const isSelected = selectedCategory === activity_category;
         return (
           <TouchableOpacity
-            key={category}
+            key={activity_category}
             activeOpacity={0.8}
             className={`rounded-full border px-3 py-2 ${
               isSelected ? "border-primary bg-primary/10" : "border-border bg-background"
             }`}
-            onPress={() => onSelectCategory(category)}
-            testID={`calendar-planned-activity-filter-${category}`}
+            onPress={() => onSelectCategory(activity_category)}
+            testID={`calendar-planned-activity-filter-${activity_category}`}
           >
             <Text
               className={`text-xs font-semibold ${isSelected ? "text-primary" : "text-foreground"}`}
             >
-              {category === "all" ? "All Sports" : toCategoryLabel(category)}
+              {activity_category === "all"
+                ? "All ActivityCategories"
+                : toCategoryLabel(activity_category)}
             </Text>
           </TouchableOpacity>
         );

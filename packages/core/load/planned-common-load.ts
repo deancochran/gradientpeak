@@ -1,5 +1,5 @@
 import type { ActivityCalibrationQuality } from "../activity-analysis/calibration-quality";
-import type { CanonicalSport } from "../schemas/sport";
+import type { CanonicalActivityCategory } from "../schemas/activity-category";
 import {
   aggregateCommonLoad,
   COMMON_RELATIVE_LOAD_MODEL,
@@ -19,7 +19,7 @@ export type PlannedCommonLoadTarget =
   | { type: "speed_mps"; value: number };
 
 export type PlannedCommonLoadDose = {
-  sport: CanonicalSport;
+  activity_category: CanonicalActivityCategory;
   durationSeconds: number | null;
   target: PlannedCommonLoadTarget | null;
   method: CommonLoadMethod | null;
@@ -47,7 +47,7 @@ function unavailable(
     status: "unavailable",
     model: COMMON_RELATIVE_LOAD_MODEL,
     version: COMMON_RELATIVE_LOAD_VERSION,
-    sport: dose.sport,
+    activity_category: dose.activity_category,
     method: completeProvenance ? dose.method : reason === "threshold_missing" ? dose.method : null,
     quality: completeProvenance ? dose.quality : null,
     thresholdEvidence: completeProvenance ? dose.thresholdEvidence : null,
@@ -86,7 +86,11 @@ export function adaptPlannedCommonLoadDoses(input: {
   doses: readonly PlannedCommonLoadDose[];
 }): PlannedCommonLoadEnvelope {
   const doses = input.doses.map((dose): CommonLoadResult => {
-    if (dose.sport !== "bike" && dose.sport !== "run" && dose.sport !== "swim") {
+    if (
+      dose.activity_category !== "bike" &&
+      dose.activity_category !== "run" &&
+      dose.activity_category !== "swim"
+    ) {
       return unavailable(dose, input.computedAsOf, "unsupported_modality");
     }
     if (
@@ -122,7 +126,7 @@ export function adaptPlannedCommonLoadDoses(input: {
       return unavailable(dose, input.computedAsOf, "intensity_out_of_range");
     }
     return calculateAvailableCommonLoad({
-      sport: dose.sport,
+      activity_category: dose.activity_category,
       method: dose.method,
       quality: dose.quality,
       thresholdEvidence: dose.thresholdEvidence,

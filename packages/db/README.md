@@ -17,7 +17,7 @@ The semantic usage contract for athlete observations and effort curves is docume
 - Drizzle schema in `src/schema/**` is the relational source of truth.
 - `supabase/migrations/` is the only deployable migration authority.
 - `drizzle/deploy/` is a byte-equivalent review/tooling mirror, never a second authoring location.
-- `supabase/migrations/` contains exactly the generation-2 hard-reset baseline. `drizzle/deploy/` contains only its byte-identical mirror.
+- `supabase/migrations/` contains the immutable generation-2 baseline followed by an ordered hashed forward chain. `drizzle/deploy/` is generated from it and byte-identical.
 - `supabase/migrations-archive/` preserves the flat generation-0 archive and `generation-1/` chain byte-for-byte; neither is read by the Supabase CLI.
 - `migration-policy.json`, `migration-lock.json`, and `migration-ledger.json` define the sole supported endpoint. Generation-0/1 ledger evidence is historical only.
 - Drizzle has no deploy command. Its config points at the Supabase authority, while Studio remains available for inspection.
@@ -31,6 +31,9 @@ pnpm --filter @repo/db self-host:up
 pnpm --filter @repo/db db:verify:static
 pnpm --filter @repo/db db:verify
 pnpm --filter @repo/db db:migration:check
+pnpm --filter @repo/db db:migration:mirror
+pnpm --filter @repo/db db:migration:upgrade
+pnpm --filter @repo/db db:migration:supabase-cli # pinned CLI compatibility observation
 pnpm --filter @repo/db db:schema:check
 pnpm --filter @repo/db db:schema:fingerprint
 pnpm --filter @repo/db db:lint:local # explicit shared-local diagnostic only
@@ -41,10 +44,17 @@ pnpm --filter @repo/db self-host:down
 
 ## Migration workflow
 
-1. Generation 2 is hard-reset-only: do not add migrations, run migration repair, use migration up/down, or apply the baseline to an existing object graph. The package intentionally exposes no reset/update/downgrade alias; verification creates guarded disposable local targets only.
-2. Run `db:migration:check`; it verifies the sole active baseline, byte-identical mirror, recursive archive lock, hash, and exact active ledger.
-3. Run `db:verify`. Its create/drop operations require both `--disposable` and `--local`, enforce a localhost URL, and never inspect or mutate the shared local database.
-4. `db:diff` builds the same disposable authoritative target, runs Supabase lint against it, and requires an empty public-schema shadow diff.
+1. Generation 2 preserves its hard-reset baseline byte-for-byte and accepts only ordered additive forward migrations. Do not run migration repair, downgrade, or apply the baseline to an existing object graph. The package intentionally exposes no reset/update/downgrade alias; verification creates guarded disposable local targets only.
+2. Author each forward SQL file in `supabase/migrations/`, add its SHA-256 and declared `executionMode` (`transactional` or `autocommit`) to `migration-ledger.json`, then run `pnpm --filter @repo/db db:migration:mirror`. The authority directory is the only declarative source; never edit `drizzle/deploy/` directly.
+3. Run `db:migration:check`; it verifies the pinned baseline, exact ordered hashed forward chain, byte-identical mirror, recursive archive lock, and exact active ledger.
+4. `autocommit` forwards must declare one supported structured operation. This slice supports only `create_index_concurrently`, with schema/index/table/definition metadata. The checker and runner reject unknown kinds, extra statements, destructive SQL, and metadata/statement mismatches.
+5. The repository-owned disposable runner wraps only `transactional` files. It runs `autocommit` files on one guarded local session with policy-derived bounded lock/statement timeouts, applies the next file only after the prior file succeeds, and does not rely on undocumented Supabase CLI transaction behavior.
+6. The pinned-CLI compatibility verifier uses a repository-owned wrapper that injects the policy timeouts through the connection URL `options` runtime parameter. Its disposable proof creates PostgreSQL's documented invalid-index state with a failed duplicate unique concurrent build, removes it through the real migration metadata, then applies the pending migration through pinned history. Raw direct CLI invocation is compatibility-only and is not a supported bounded execution path.
+7. Run `db:verify`. Its create/drop operations require both `--disposable` and `--local`, enforce a localhost URL, never inspect or mutate the shared local database, and prove canonical ActivityPlans survive a baseline-to-forward upgrade. `db:activity-plans:preflight` is intentionally read-only but also accepts only an explicitly named disposable local database; it parses every row with Core's sole V3 schema.
+8. `CREATE INDEX CONCURRENTLY` files must be `autocommit`. If one fails, inspect for an invalid index and use `DROP INDEX CONCURRENTLY IF EXISTS public.<index_name>` before an explicitly authorized retry; do not use repair or downgrade commands.
+7. `db:diff` builds the same disposable authoritative target, runs Supabase lint against it, and requires an empty public-schema shadow diff.
+
+The pinned local Supabase CLI (`2.109.1`) is verified applying the isolated concurrent index file through the bounded wrapper after metadata-derived cleanup of PostgreSQL's invalid-index state. This is version-specific runtime evidence only, not a documented transaction-behavior guarantee; repository verification uses the controlled runner above instead.
 
 The checked-in fingerprint covers every public relation and sequence (including unmanaged extras), managed columns/defaults/indexes/constraints/enums, RLS and ACL state, default privileges for policy-declared owners, policy-declared extensions, public/auth functions and triggers, and owned storage buckets/policies. Supabase platform extensions and platform-role default privileges are intentionally outside repository ownership and are not serialized as environment noise. Update the fingerprint only from the guarded disposable fresh target.
 
@@ -67,6 +77,10 @@ Table access is backend-owned by default. Product surfaces should use tRPC/backe
 - Keep credential-bearing tables service-only. This includes `accounts`, `sessions`, `integrations`, `oauth_states`, `verifications`, and provider sync tables.
 - Prefer private schemas or narrow RPCs/views for operational diagnostics instead of exposing worker tables directly.
 - Keep diagnostic views in `internal` and grant them only to `service_role` unless a user-facing contract is explicitly designed.
+
+## ActivityPlan canonical structure guard
+
+`public.activity_plan_structure_is_canonical(jsonb)` is the durable coarse database guard for V3 plans: 1–64 segments, at least one activity, exactly one activity category, and only top-level `activity`/`rest` roles. Core's `activityPlanStructureSchemaV3` remains the exact parser and is used by the guarded inventory preflight. The forward migration aborts when any existing ActivityPlan is noncanonical. Reset or explicitly clean up the environment before retrying; no compatibility migration, conversion, deletion, detachment, rewrite, or silent preservation exists.
 
 ## Naming conventions
 

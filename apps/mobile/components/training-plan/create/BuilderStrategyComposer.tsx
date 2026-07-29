@@ -15,7 +15,7 @@ type BuilderStrategyComposerProps = {
   saveReadiness: TrainingPlanBuilderController["builder"]["derived"]["savePlan"]["readiness"];
   planningBriefRows: BuilderPlanningBriefRowViewModel[];
   canUseStructureProposal: boolean;
-  onAddWorkout: () => void;
+  onAddActivity: () => void;
   onApplyStructureProposal: () => void;
   onEditMetadata?: () => void;
   onOpenAthleteContext?: () => void;
@@ -35,7 +35,7 @@ const CONFIG_ACTIONS = {
 export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
   canUseStructureProposal,
   chartReview,
-  onAddWorkout,
+  onAddActivity,
   onApplyStructureProposal,
   onEditMetadata,
   onOpenAthleteContext,
@@ -133,10 +133,10 @@ export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
           className={
             canUseStructureProposal && !useVerticalLayout ? "min-h-11 flex-1" : "min-h-11 w-full"
           }
-          onPress={onAddWorkout}
-          testID="builder-add-workout"
+          onPress={onAddActivity}
+          testID="builder-add-activity"
         >
-          <Text>Add workout</Text>
+          <Text>Add activity</Text>
         </Button>
         {canUseStructureProposal ? (
           <Button

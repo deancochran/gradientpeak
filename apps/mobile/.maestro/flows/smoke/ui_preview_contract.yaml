@@ -37,9 +37,9 @@ appId: ${MAESTRO_APP_ID}
       id: "ui-preview-scenario-selection-controls"
     direction: DOWN
 - assertVisible:
-    id: "activity-type-select"
+    id: "session-focus-select"
 - assertVisible:
-    id: "preferred-sport-radio-group"
+    id: "preferred-activity-category-radio-group"
 - tapOn:
     id: "accept-terms-checkbox"
 - tapOn:
@@ -51,7 +51,7 @@ appId: ${MAESTRO_APP_ID}
 - assertVisible:
     id: "ui-preview-form-bio"
 - assertVisible:
-    id: "ui-preview-form-sport"
+    id: "ui-preview-form-activity-category"
 - tapOn:
     id: "ui-preview-form-username"
 - eraseText

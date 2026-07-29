@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   ACTIVITY_PLAN_COMPILER_VERSION,
   activityPlanStructureSchemaV3,
+  canonicalActivityCategorySchema,
   compileActivityPlanV3,
   type RecordingCheckpoint,
   recordingCheckpointSchema,
@@ -14,6 +15,8 @@ import {
   quarantineRecordingEvidenceSession,
 } from "./recordingEvidenceJournal";
 
+// Keep the established mirror namespace so pre-cutover payloads are discovered
+// and quarantined; schemaVersion, not the storage key, owns the payload contract.
 export const ACTIVE_RECORDING_CHECKPOINT_KEY = "activity-recorder:v3:active-checkpoint";
 export const QUARANTINED_RECORDING_CHECKPOINT_KEY = "activity-recorder:v3:quarantined-checkpoint";
 let claimedSessionId: string | null = null;
@@ -23,7 +26,7 @@ let claimedSessionId: string | null = null;
 // planned checkpoint shape.
 const unplannedRecordingCheckpointSchema = z
   .object({
-    schemaVersion: z.literal(3),
+    schemaVersion: z.literal(4),
     variant: z.literal("unplanned"),
     sessionId: z.string().min(1),
     profileId: z.string().min(1),
@@ -33,7 +36,10 @@ const unplannedRecordingCheckpointSchema = z
       .object({ startedAt: z.string().datetime(), updatedAt: z.string().datetime() })
       .strict(),
     draft: z
-      .object({ activityCategory: z.string().min(1), gpsMode: z.enum(["on", "off"]) })
+      .object({
+        activity_category: canonicalActivityCategorySchema,
+        gpsMode: z.enum(["on", "off"]),
+      })
       .strict(),
     summary: z
       .object({

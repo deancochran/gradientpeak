@@ -6,7 +6,7 @@ const normalizedNumberSchema = z.number().min(0).max(1);
 
 /**
  * Versioned lineage information supplied by a policy and its producing adapter.
- * Source names and sports intentionally remain extensible strings.
+ * Source names and activity_categories intentionally remain extensible strings.
  */
 export const evidenceProvenanceSchema = z
   .object({
@@ -29,7 +29,7 @@ export const evidenceCandidateSchema = z
     observedAt: z.string().datetime(),
     source: z.string().min(1),
     sourceId: z.string().min(1),
-    sport: z.string().min(1),
+    activity_category: z.string().min(1),
     correlationGroupId: z.string().min(1).nullable(),
     reasons: z.array(z.string().min(1)).default([]),
     provenance: evidenceProvenanceSchema,

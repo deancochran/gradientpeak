@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { commonLoadAggregateSchema, commonLoadResultSchema } from "../load/common-relative-load";
-import { canonicalSportSchema } from "../schemas/sport";
+import { canonicalActivityCategorySchema } from "../schemas/activity-category";
 import {
   type ActivityTssIdentityMethod,
-  activityTssCompatibleMethodsBySport,
+  activityTssCompatibleMethodsByActivityCategory,
   activityTssIdentityMethodValues,
   activityTssMethodValues,
 } from "./calculation-policy";
@@ -38,7 +38,7 @@ const activityTssCalibrationSchema = z.discriminatedUnion("type", [
 ]);
 
 const activityTssIdentityBaseShape = {
-  sport: canonicalSportSchema,
+  activity_category: canonicalActivityCategorySchema,
   source: z.literal("activity_analysis"),
   version: z.literal("1"),
   calibration: activityTssCalibrationSchema,
@@ -46,19 +46,19 @@ const activityTssIdentityBaseShape = {
 
 function validateTssIdentity(
   identity: {
-    sport: z.infer<typeof canonicalSportSchema>;
+    activity_category: z.infer<typeof canonicalActivityCategorySchema>;
     method: ActivityTssIdentityMethod;
     calibration: z.infer<typeof activityTssCalibrationSchema>;
   },
   context: z.RefinementCtx,
 ): void {
   const allowedMethods: readonly ActivityTssIdentityMethod[] =
-    activityTssCompatibleMethodsBySport[identity.sport];
+    activityTssCompatibleMethodsByActivityCategory[identity.activity_category];
   if (!allowedMethods.includes(identity.method)) {
     context.addIssue({
       code: "custom",
       path: ["method"],
-      message: "TSS method is not compatible with the activity sport",
+      message: "TSS method is not compatible with the activity category",
     });
   }
   const expected =

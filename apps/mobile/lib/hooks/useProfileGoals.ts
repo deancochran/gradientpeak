@@ -1,4 +1,8 @@
-import { type CanonicalSport, type ProfileGoal, parseProfileGoalRecord } from "@repo/core";
+import {
+  type CanonicalActivityCategory,
+  type ProfileGoal,
+  parseProfileGoalRecord,
+} from "@repo/core";
 import { useCallback, useMemo } from "react";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
@@ -11,7 +15,7 @@ interface UseProfileGoalsOptions {
   enabled?: boolean;
   loadAllPages?: boolean;
   search?: string;
-  activityCategory?: CanonicalSport;
+  activityCategory?: CanonicalActivityCategory;
   sortBy?: "created_at" | "target_date" | "priority";
   sortOrder?: "asc" | "desc";
 }

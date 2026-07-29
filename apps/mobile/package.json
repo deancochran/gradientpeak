@@ -43,7 +43,7 @@
     "test:e2e:clean": "node ./scripts/maestro.mjs clean"
   },
   "dependencies": {
-    "@deancochran/ftms": "0.1.11",
+    "@deancochran/ftms": "0.2.0",
     "@garmin/fitsdk": "^21.208.0",
     "@gorhom/bottom-sheet": "^5.2.14",
     "@posthog/react-native-plugin": "^2.2.3",

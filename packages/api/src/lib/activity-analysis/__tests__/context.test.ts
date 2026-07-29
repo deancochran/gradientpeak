@@ -571,7 +571,7 @@ describe("resolveActivityContextAsOf", () => {
     });
   });
 
-  it("prefers fresh observed 20-minute efforts over stale direct thresholds for each sport", () => {
+  it("prefers fresh observed 20-minute efforts over stale direct thresholds for each activity_category", () => {
     const result = resolveActivityContextFromEvidence({
       activityTimestamp: "2026-05-01T12:00:00.000Z",
       evidence: {
@@ -647,7 +647,7 @@ describe("resolveActivityContextAsOf", () => {
     });
   });
 
-  it("uses the strongest fresh activity-derived LTHR by sport and ignores manual values", () => {
+  it("uses the strongest fresh activity-derived LTHR by activity_category and ignores manual values", () => {
     const evidence = {
       profile: { dob: null, gender: null },
       profileMetrics: [
@@ -751,14 +751,14 @@ describe("resolveActivityContextAsOf", () => {
       activityId: "activity-under-analysis",
       evidence,
     }).profileMetrics;
-    expect(withoutSelf).toMatchObject({ lthr_by_sport: { bike: 174, run: 168 } });
+    expect(withoutSelf).toMatchObject({ lthr_by_activity_category: { bike: 174, run: 168 } });
     expect(withoutSelf.lthr).toBeUndefined();
-    expect(withoutSelf.lthr_by_sport).not.toHaveProperty("swim");
+    expect(withoutSelf.lthr_by_activity_category).not.toHaveProperty("swim");
     expect(
       resolveActivityContextFromEvidence({
         activityTimestamp: "2026-05-01T12:00:00.000Z",
         evidence,
-      }).profileMetrics.lthr_by_sport,
+      }).profileMetrics.lthr_by_activity_category,
     ).toMatchObject({ bike: 180, run: 168 });
   });
 
@@ -797,7 +797,7 @@ describe("resolveActivityContextAsOf", () => {
           profileMetrics: [malformedCurrent, currentBikeLthr],
           recentEfforts: [],
         },
-      }).profileMetrics.lthr_by_sport,
+      }).profileMetrics.lthr_by_activity_category,
     ).toBeUndefined();
 
     expect(
@@ -818,7 +818,7 @@ describe("resolveActivityContextAsOf", () => {
           ],
           recentEfforts: [],
         },
-      }).profileMetrics.lthr_by_sport,
+      }).profileMetrics.lthr_by_activity_category,
     ).toEqual({ bike: 170 });
   });
 

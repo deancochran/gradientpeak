@@ -64,7 +64,7 @@ test.describe("completed activities and imports", () => {
       await athletePage.getByLabel("Search activities").fill(name);
       await athletePage.getByRole("button", { name: "Search" }).click();
       await expect(athletePage.getByText(name)).toBeVisible();
-      await athletePage.getByLabel("Sport").selectOption("run");
+      await athletePage.getByLabel("Activity category").selectOption("run");
       await athletePage.getByLabel("Sort by").selectOption("distance");
       await athletePage.getByLabel("Order").selectOption("asc");
       await athletePage.getByLabel("From").fill("2026-01-01");

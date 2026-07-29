@@ -64,7 +64,7 @@ export default function ActivitySelectionScreen() {
 
     // The service will preserve any existing plan automatically.
     selectActivityFromPayload({
-      category: canEditActivity ? selectedCategory : activityCategory,
+      activity_category: canEditActivity ? selectedCategory : activityCategory,
       gpsRecordingEnabled: canEditGps ? selectedGpsRecordingEnabled : gpsRecordingEnabled,
     });
 

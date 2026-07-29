@@ -30,10 +30,8 @@ const createPlan = createSystemActivityPlanBuilderFactory("run", [
  */
 export const EASY_AEROBIC_RUN: SystemActivityPlanTemplate = {
   id: "3b6c7d8e-9f0a-1b2c-3d4e-5f6a7b8c9d0e",
-  version: "3.0",
   name: "Easy Aerobic Run",
   description: "Comfortable outdoor run focusing on aerobic base building",
-  activity_category: "run",
   gps_recording_enabled: true,
   structure: createPlan()
     .step({
@@ -51,10 +49,8 @@ export const EASY_AEROBIC_RUN: SystemActivityPlanTemplate = {
  * Estimated TSS: ~75
  */
 export const TEMPO_RUN: RecordingServiceActivityPlan = {
-  version: "3.0",
   name: "Tempo Run",
   description: "Sustained tempo effort with warm-up and cool-down",
-  activity_category: "run",
   gps_recording_enabled: true,
   structure: createPlan()
     .step({
@@ -85,10 +81,8 @@ export const TEMPO_RUN: RecordingServiceActivityPlan = {
  */
 export const INTERVAL_RUN: RecordingServiceActivityPlan = {
   id: "4c7d8e9f-0a1b-2c3d-4e5f-6a7b8c9d0e1f",
-  version: "3.0",
   name: "5K Pace Intervals",
   description: "High-intensity intervals at 5K race pace",
-  activity_category: "run",
   gps_recording_enabled: true,
   structure: createPlan()
     .step({
@@ -130,10 +124,8 @@ export const INTERVAL_RUN: RecordingServiceActivityPlan = {
  */
 export const LONG_RUN: RecordingServiceActivityPlan = {
   id: "5d8e9f0a-1b2c-3d4e-5f6a-7b8c9d0e1f2a",
-  version: "3.0",
   name: "Long Steady Run",
   description: "Extended aerobic run for endurance building",
-  activity_category: "run",
   gps_recording_enabled: true,
   structure: createPlan()
     .step({
@@ -164,10 +156,8 @@ export const LONG_RUN: RecordingServiceActivityPlan = {
  */
 export const FARTLEK_RUN: RecordingServiceActivityPlan = {
   id: "6e9f0a1b-2c3d-4e5f-6a7b-8c9d0e1f2a3b",
-  version: "3.0",
   name: "Fartlek Training",
   description: "Unstructured speed play with varied intensities",
-  activity_category: "run",
   gps_recording_enabled: true,
   structure: createPlan()
     .step({
@@ -204,11 +194,9 @@ export const FARTLEK_RUN: RecordingServiceActivityPlan = {
 
 export const SYSTEM_TEMPO_RUN: RecordingServiceActivityPlan = {
   id: "b6c2d5e4-9f3a-8b7c-2d1e-3f0a6b5c4d2f",
-  version: "3.0",
   name: "Tempo Run",
   description:
     "20 minute tempo run at 85% threshold heart rate - Comfortably hard sustained effort",
-  activity_category: "run",
   gps_recording_enabled: true,
   structure: createPlan()
     .warmup({
@@ -232,10 +220,8 @@ export const SYSTEM_TEMPO_RUN: RecordingServiceActivityPlan = {
 
 export const SYSTEM_THRESHOLD_INTERVALS_RUN: RecordingServiceActivityPlan = {
   id: "c7d3e6f5-0a4b-9c8d-3e2f-4a1b7c6d5e3a",
-  version: "3.0",
   name: "Threshold Intervals",
   description: "6x1km at 95% threshold heart rate with 2min recovery - Build speed endurance",
-  activity_category: "run",
   gps_recording_enabled: true,
   structure: createPlan()
     .warmup({
@@ -269,10 +255,8 @@ export const SYSTEM_THRESHOLD_INTERVALS_RUN: RecordingServiceActivityPlan = {
 
 export const SYSTEM_LONG_EASY_RUN: RecordingServiceActivityPlan = {
   id: "d8e4f7a6-1b5c-0d9e-4f3a-5b2c8d7e6f4b",
-  version: "3.0",
   name: "Long Easy Run",
   description: "15km easy long run at 70% threshold heart rate - Build aerobic endurance",
-  activity_category: "run",
   gps_recording_enabled: true,
   structure: createPlan()
     .warmup({
@@ -295,10 +279,8 @@ export const SYSTEM_LONG_EASY_RUN: RecordingServiceActivityPlan = {
 
 export const SYSTEM_MARATHON_PACE_LONG_RUN: RecordingServiceActivityPlan = {
   id: "7e5f8a9b-1c4d-4e6f-8a2b-9c1d3e5f7a9b",
-  version: "3.0",
   name: "Marathon Pace Long Run",
   description: "Long run with controlled marathon-pace segments to build race-specific durability.",
-  activity_category: "run",
   gps_recording_enabled: true,
   structure: createPlan()
     .warmup({
@@ -328,11 +310,9 @@ export const SYSTEM_MARATHON_PACE_LONG_RUN: RecordingServiceActivityPlan = {
 
 export const SYSTEM_TRACK_100M_STRIDES: RecordingServiceActivityPlan = {
   id: "df4c0572-9300-4926-b7e4-34c75aede87b",
-  version: "3.0",
   name: "Track 100m Strides",
   description:
     "Classic track strides session: easy distance warmup, 5x100m fast relaxed strides, 100m walk recoveries, and easy distance cooldown.",
-  activity_category: "run",
   gps_recording_enabled: true,
   structure: createPlan()
     .warmup({
@@ -368,10 +348,8 @@ export const SYSTEM_TRACK_100M_STRIDES: RecordingServiceActivityPlan = {
 
 export const SYSTEM_TRACK_200M_REPEATS: RecordingServiceActivityPlan = {
   id: "96297003-e275-4c4f-aec1-5bc881eea714",
-  version: "3.0",
   name: "Track 200m Repeats",
-  description: "Turnover-focused 16x200m track workout with equal-distance 200m jog recoveries.",
-  activity_category: "run",
+  description: "Turnover-focused 16x200m track activity with equal-distance 200m jog recoveries.",
   gps_recording_enabled: true,
   structure: createPlan()
     .warmup({
@@ -406,11 +384,9 @@ export const SYSTEM_TRACK_200M_REPEATS: RecordingServiceActivityPlan = {
 
 export const SYSTEM_TRACK_400M_REPEATS: RecordingServiceActivityPlan = {
   id: "c457ea7d-780b-4e31-acbf-2592ff6cd946",
-  version: "3.0",
   name: "Track 400m Repeats",
   description:
     "Staple 8x400m track session for 5K/10K speed, using 100m distance recoveries instead of timed rest.",
-  activity_category: "run",
   gps_recording_enabled: true,
   structure: createPlan()
     .warmup({
@@ -445,11 +421,9 @@ export const SYSTEM_TRACK_400M_REPEATS: RecordingServiceActivityPlan = {
 
 export const SYSTEM_TRACK_YASSO_800S: RecordingServiceActivityPlan = {
   id: "7be8a10e-c734-4d5a-a350-089b2ec154e7",
-  version: "3.0",
   name: "Track Yasso 800s",
   description:
-    "Well-known marathon benchmark workout: 8x800m at comfortably hard threshold effort with 400m jog recoveries.",
-  activity_category: "run",
+    "Well-known marathon benchmark activity: 8x800m at comfortably hard threshold effort with 400m jog recoveries.",
   gps_recording_enabled: true,
   structure: createPlan()
     .warmup({
@@ -484,11 +458,9 @@ export const SYSTEM_TRACK_YASSO_800S: RecordingServiceActivityPlan = {
 
 export const SYSTEM_TRACK_MILE_REPEATS: RecordingServiceActivityPlan = {
   id: "6afd44d7-1eb1-488b-9265-b724dd4a6bd8",
-  version: "3.0",
   name: "Track Mile Repeats",
   description:
     "Popular distance-runner benchmark: 3x1600m with 400m jog recoveries for pacing control and race-specific endurance.",
-  activity_category: "run",
   gps_recording_enabled: true,
   structure: createPlan()
     .warmup({
@@ -522,11 +494,9 @@ export const SYSTEM_TRACK_MILE_REPEATS: RecordingServiceActivityPlan = {
 
 export const SYSTEM_TRACK_LADDER_WORKOUT: RecordingServiceActivityPlan = {
   id: "4cdf7205-0093-46b9-a477-3daa1784f15e",
-  version: "3.0",
-  name: "Track Ladder Workout",
+  name: "Track Ladder Activity",
   description:
     "Classic track ladder progressing through 400m, 800m, 1200m, 1600m, then back down with distance-based recoveries.",
-  activity_category: "run",
   gps_recording_enabled: true,
   structure: createPlan()
     .warmup({

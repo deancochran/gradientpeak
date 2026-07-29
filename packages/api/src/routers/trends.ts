@@ -23,7 +23,7 @@ import {
 } from "../lib/activity-analysis";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
-const activityTypeSchema = publicActivityCategorySchema;
+const activityCategorySchema = publicActivityCategorySchema;
 const isoDatetimeSchema = z.string().datetime({ offset: true });
 const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected ISO date (YYYY-MM-DD)");
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -103,14 +103,14 @@ const dateRangeSchema = z
 const dashboardSchema = dateRangeSchema
   .extend({
     groupBy: z.enum(["day", "week", "month"]).default("week"),
-    type: activityTypeSchema.optional(),
+    type: activityCategorySchema.optional(),
     metric: z.enum(["power", "heartrate"]).default("power"),
   })
   .strict();
 
 const peakPerformancesSchema = z
   .object({
-    type: activityTypeSchema.optional(),
+    type: activityCategorySchema.optional(),
     metric: z.enum(["distance", "speed", "power", "duration", "tss"]),
     limit: z.number().int().min(1).max(50).default(10),
   })
@@ -136,7 +136,7 @@ function hasActivityCategory(category: (typeof publicActivityCategorySchema)["_o
     select 1 from ${activitySegments}
     where ${activitySegments.activity_id} = ${activities.id}
       and ${activitySegments.role} = 'activity'
-      and ${activitySegments.category} = ${category}
+      and ${activitySegments.activity_category} = ${category}
   )`;
 }
 
@@ -158,7 +158,7 @@ const peakPerformanceItemSchema = z
     date: isoDatetimeSchema,
     value: z.number().finite(),
     unit: z.string(),
-    category: activityTypeSchema,
+    activity_category: activityCategorySchema,
     rank: z.number().int().positive(),
   })
   .strict();

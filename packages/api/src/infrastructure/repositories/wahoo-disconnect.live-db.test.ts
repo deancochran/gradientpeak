@@ -128,7 +128,7 @@ function importedSubmission(profileId: string): ActivitySubmission {
       elapsedMs: 3_600_000,
       segments: [
         {
-          category: "bike",
+          activity_category: "bike",
           endOffsetMs: 3_600_000,
           id: randomUUID(),
           ordinal: 0,
@@ -247,6 +247,29 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
     const owner = await seed();
     const providerSyncRepository = createProviderSyncRepository({ db });
     await providerSyncRepository.requestWahooDisconnect({ profileId: owner.profileId });
+    const [queuedDisconnect] = await db
+      .select({ priority: providerSyncJobs.priority })
+      .from(providerSyncJobs)
+      .where(
+        and(
+          eq(providerSyncJobs.integration_id, owner.integrationId),
+          eq(providerSyncJobs.job_type, "wahoo.disconnect"),
+        ),
+      );
+    expect(queuedDisconnect?.priority).toBe(0);
+    const disconnecting = await getProviderSyncOverview({ db, profileId: owner.profileId });
+    expect(disconnecting.find((provider) => provider.provider === "wahoo")).toMatchObject({
+      actions: [],
+      connected: false,
+      integrationId: null,
+      primaryAction: null,
+      providerHealth: { status: "disconnecting" },
+      summary: {
+        badge: "Disconnecting",
+        health: "disconnecting",
+        subtitle: "Revoking provider access",
+      },
+    });
     const { job, workerId } = await claimDisconnect(owner.integrationId, owner.profileId);
     await expect(
       providerSyncRepository.beginWahooDisconnectAttempt({
@@ -298,6 +321,8 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
       activityHistory: { queuedJobId: null, status: "idle" },
       connected: false,
       integrationId: null,
+      primaryAction: "connect",
+      providerHealth: { status: "disconnected" },
     });
     expect(JSON.stringify(disconnected)).not.toContain("old-access");
     expect(JSON.stringify(disconnected)).not.toContain("old-refresh");

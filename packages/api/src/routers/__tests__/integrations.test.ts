@@ -65,6 +65,7 @@ describe("integrationsRouter", () => {
     process.env.WAHOO_CLIENT_ID = "wahoo-client-id";
     process.env.WAHOO_CLIENT_SECRET = "wahoo-client-secret";
     mocks.repositories.oauthStates.deleteExpired.mockResolvedValue(0);
+    mocks.repositories.integrations.listByProfileId.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -143,6 +144,20 @@ describe("integrationsRouter", () => {
         redirectUri: "https://attacker.example/integrations",
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(mocks.repositories.oauthStates.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects OAuth initiation while the provider disconnect is pending", async () => {
+    mocks.repositories.integrations.listByProfileId.mockResolvedValue([
+      { provider: "wahoo", lifecycle_status: "disconnect_pending" },
+    ]);
+
+    await expect(
+      createCaller().getAuthUrl({
+        provider: "wahoo",
+        redirectUri: "gradientpeak-dev://integrations",
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
     expect(mocks.repositories.oauthStates.create).not.toHaveBeenCalled();
   });
 

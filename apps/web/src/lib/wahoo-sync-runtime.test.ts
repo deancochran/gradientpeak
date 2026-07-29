@@ -19,7 +19,7 @@ describe("createSupabaseWahooRouteStorage", () => {
     await expect(
       createSupabaseWahooRouteStorage(storage).downloadRouteGpx("routes/missing.gpx"),
     ).resolves.toBeNull();
-    expect(from).toHaveBeenCalledWith("routes");
+    expect(from).toHaveBeenCalledWith("gpx-routes");
     expect(download).toHaveBeenCalledWith("routes/missing.gpx");
   });
 

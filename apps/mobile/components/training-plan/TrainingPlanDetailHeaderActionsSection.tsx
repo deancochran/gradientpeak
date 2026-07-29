@@ -22,7 +22,7 @@ interface TrainingPlanDetailHeaderActionsSectionProps {
   isLiked: boolean;
   likesCount: number;
   overview?: {
-    linkedWorkouts: number;
+    linkedActivities: number;
     microcycles: number;
     plannedTime: string;
     plannedTss: number;
@@ -118,7 +118,11 @@ export function TrainingPlanDetailHeaderActionsSection({
         <View className="flex-row justify-between gap-2">
           <SummaryMetricCard label="Duration" value={summaryMetrics.durationLabel} compact />
           <SummaryMetricCard label="Sessions" value={summaryMetrics.sessionsLabel} compact />
-          <SummaryMetricCard label="Sport" value={summaryMetrics.sportLabel} compact />
+          <SummaryMetricCard
+            label="Activity category"
+            value={summaryMetrics.activityCategoryLabel}
+            compact
+          />
           <SummaryMetricCard label="Level" value={summaryMetrics.experienceLabel} compact />
         </View>
       </View>
@@ -134,7 +138,7 @@ export function TrainingPlanDetailHeaderActionsSection({
           <View className="flex-row flex-wrap gap-2">
             <SummaryMetricCard label="Microcycles" value={`${overview.microcycles}`} />
             <SummaryMetricCard label="Sessions" value={`${overview.sessions}`} />
-            <SummaryMetricCard label="Linked activities" value={`${overview.linkedWorkouts}`} />
+            <SummaryMetricCard label="Linked activities" value={`${overview.linkedActivities}`} />
             <SummaryMetricCard
               label="Planned Load"
               value={markEstimated(`${overview.plannedTss}`) ?? "0"}

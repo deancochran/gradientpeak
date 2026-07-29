@@ -14,7 +14,7 @@ import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { logger } from "../../lib/logger";
-import { enqueuePlannedWorkoutSyncAfterCalendarMutation } from "../../lib/provider-sync/planned-workouts";
+import { enqueuePlannedActivitySyncAfterCalendarMutation } from "../../lib/provider-sync/planned-activities";
 import type {
   LockedPlanningTemplateRow,
   PlanningTemplateRepository,
@@ -33,7 +33,7 @@ type TrainingPlanUpdateInput = z.infer<typeof trainingPlanUpdateInputSchema> & {
   template_visibility?: "private" | "followers" | "public";
 };
 
-export type TrainingPlanWorkoutDateChange = {
+export type TrainingPlanActivityDateChange = {
   event_id: string;
   expected_scheduled_date: string;
   requested_scheduled_date: string;
@@ -125,16 +125,16 @@ function requirePublishedLinkedActivityPlans(input: {
   }
 }
 
-async function enqueuePlannedWorkoutSyncForCalendarWrite(input: {
+async function enqueuePlannedActivitySyncForCalendarWrite(input: {
   db: DrizzleDbClient;
   eventIds: string[];
   operation: "publish" | "unsync";
   profileId: string;
 }) {
   try {
-    await enqueuePlannedWorkoutSyncAfterCalendarMutation(input);
+    await enqueuePlannedActivitySyncAfterCalendarMutation(input);
   } catch (error) {
-    logger.error("Failed to enqueue planned workout sync after calendar write", {
+    logger.error("Failed to enqueue planned activity sync after calendar write", {
       error: error instanceof Error ? error.message : "Unknown error",
     });
   }
@@ -383,8 +383,8 @@ export async function updateTrainingPlanUseCase(input: {
   return data;
 }
 
-export async function reorderTrainingPlanWorkoutsUseCase(input: {
-  changes: TrainingPlanWorkoutDateChange[];
+export async function reorderTrainingPlanActivitiesUseCase(input: {
+  changes: TrainingPlanActivityDateChange[];
   db: DrizzleDbClient;
   profileId: string;
   trainingPlanId: string;
@@ -443,14 +443,14 @@ export async function reorderTrainingPlanWorkoutsUseCase(input: {
     if (updatedRows.length !== input.changes.length) {
       throw new TRPCError({
         code: "CONFLICT",
-        message: "Scheduled workouts changed or are no longer eligible; reload and try again",
+        message: "Scheduled activities changed or are no longer eligible; reload and try again",
       });
     }
 
     return updatedRows.map((row) => row.id);
   });
 
-  await enqueuePlannedWorkoutSyncForCalendarWrite({
+  await enqueuePlannedActivitySyncForCalendarWrite({
     db: input.db,
     eventIds: updatedEventIds,
     operation: "publish",
@@ -481,29 +481,44 @@ export async function deleteTrainingPlanUseCase(input: {
     });
   }
 
-  const removedEvents = await input.db
-    .delete(schema.events)
-    .where(
-      and(
-        eq(schema.events.event_type, plannedEventType),
-        eq(schema.events.profile_id, input.profileId),
-        eq(schema.events.training_plan_id, input.id),
-      ),
-    )
-    .returning({ id: schema.events.id });
+  await input.db.transaction(async (tx) => {
+    const plannedEvents = await tx
+      .select({ id: schema.events.id })
+      .from(schema.events)
+      .where(
+        and(
+          eq(schema.events.event_type, plannedEventType),
+          eq(schema.events.profile_id, input.profileId),
+          eq(schema.events.training_plan_id, input.id),
+        ),
+      )
+      .for("update");
+    const syncResult = await enqueuePlannedActivitySyncAfterCalendarMutation({
+      db: input.db,
+      eventIds: plannedEvents.map((event) => event.id),
+      operation: "unsync",
+      profileId: input.profileId,
+      transaction: tx,
+    });
+    if (syncResult && !syncResult.success) {
+      throw new Error(syncResult.error ?? "Failed to enqueue planned activity cleanup");
+    }
 
-  await enqueuePlannedWorkoutSyncForCalendarWrite({
-    db: input.db,
-    eventIds: removedEvents.map((event) => event.id),
-    operation: "unsync",
-    profileId: input.profileId,
+    await tx
+      .delete(schema.events)
+      .where(
+        and(
+          eq(schema.events.event_type, plannedEventType),
+          eq(schema.events.profile_id, input.profileId),
+          eq(schema.events.training_plan_id, input.id),
+        ),
+      );
+    await tx.execute(sql`
+      delete from training_plans
+      where id = ${input.id}::uuid
+        and profile_id = ${input.profileId}::uuid
+    `);
   });
-
-  await input.db.execute(sql`
-    delete from training_plans
-    where id = ${input.id}::uuid
-      and profile_id = ${input.profileId}::uuid
-  `);
 
   return { success: true };
 }
@@ -512,6 +527,7 @@ export async function duplicateTrainingPlanUseCase(input: {
   db: DrizzleDbClient;
   id: string;
   newName?: string;
+  planningTemplateRepository: PlanningTemplateRepository;
   profileId: string;
   repository: TrainingPlanRepository;
 }) {
@@ -539,16 +555,22 @@ export async function duplicateTrainingPlanUseCase(input: {
     id: duplicatedPlanId,
   });
 
-  const data = await insertTrainingPlan({
-    db: input.db,
-    values: {
-      name: input.newName?.trim() || `${sourcePlan.name} (Copy)`,
-      description: sourcePlan.description ?? null,
-      structure: duplicatedStructure,
-      profileId: input.profileId,
-      templateVisibility: "private",
+  const data = await input.planningTemplateRepository.withLockedPublishedTemplates(
+    duplicatedStructure.sessions.map((session) => session.activity_plan_id),
+    async ({ db, rows }) => {
+      requirePublishedLinkedActivityPlans({ rows, structure: duplicatedStructure });
+      return insertTrainingPlan({
+        db,
+        values: {
+          name: input.newName?.trim() || `${sourcePlan.name} (Copy)`,
+          description: sourcePlan.description ?? null,
+          structure: duplicatedStructure,
+          profileId: input.profileId,
+          templateVisibility: "private",
+        },
+      });
     },
-  });
+  );
 
   return mapTrainingPlanContentIdentity(data);
 }
@@ -558,6 +580,7 @@ export async function applyQuickAdjustmentUseCase(input: {
   db: DrizzleDbClient;
   expectedStructureHash: string;
   id: string;
+  planningTemplateRepository: PlanningTemplateRepository;
   profileId: string;
   repository: TrainingPlanRepository;
 }) {
@@ -576,13 +599,19 @@ export async function applyQuickAdjustmentUseCase(input: {
     throw new TRPCError({ code: "CONFLICT", message: "STALE_STRUCTURE_HASH" });
   }
 
-  const data = await updateOwnedTrainingPlanRow({
-    db: input.db,
-    id: input.id,
-    expectedStructureHash: input.expectedStructureHash,
-    profileId: input.profileId,
-    structure: input.adjustedStructure,
-  });
+  const data = await input.planningTemplateRepository.withLockedPublishedTemplates(
+    input.adjustedStructure.sessions.map((session) => session.activity_plan_id),
+    async ({ db, rows }) => {
+      requirePublishedLinkedActivityPlans({ rows, structure: input.adjustedStructure });
+      return updateOwnedTrainingPlanRow({
+        db,
+        id: input.id,
+        expectedStructureHash: input.expectedStructureHash,
+        profileId: input.profileId,
+        structure: input.adjustedStructure,
+      });
+    },
+  );
 
   if (!data) {
     throw new TRPCError({ code: "CONFLICT", message: "STALE_STRUCTURE_HASH" });

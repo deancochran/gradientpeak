@@ -120,7 +120,7 @@ export const STANDARD_SWIM_DURATIONS = [
  * Swim pace multipliers based on duration and race distance.
  * Based on swimming exercise physiology research.
  *
- * Note: Swimming HR is typically 10-15 bpm lower than land-based sports
+ * Note: Swimming HR is typically 10-15 bpm lower than land-based activity_categories
  * due to horizontal body position and cooling effect of water.
  */
 export const SWIM_PACE_MULTIPLIERS = {

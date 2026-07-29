@@ -79,9 +79,21 @@ jest.mock("@/lib/theme/native-bottom-sheet", () => ({
   }),
 }));
 
-const { AppBottomSheet, AppBottomSheetContent } = require("../AppBottomSheet");
+const {
+  APP_BOTTOM_SHEET_PRESENTATIONS,
+  AppBottomSheet,
+  AppBottomSheetContent,
+} = require("../AppBottomSheet");
 
 describe("AppBottomSheet safe-area spacing", () => {
+  it("exports stable presentation presets", () => {
+    expect(APP_BOTTOM_SHEET_PRESENTATIONS).toEqual({
+      filter: { initialSnapIndex: 0, snapPoints: ["78%"] },
+      inspector: { initialSnapIndex: 0, snapPoints: ["82%", "96%"] },
+      browser: { initialSnapIndex: 1, snapPoints: ["88%", "96%"] },
+    });
+  });
+
   it("adds the bottom safe-area inset to explicit scroll content padding", () => {
     renderNative(<AppBottomSheetContent paddingBottom={24}>Content</AppBottomSheetContent>);
 
@@ -150,7 +162,7 @@ describe("AppBottomSheet safe-area spacing", () => {
         customHeaderInLayout
         onClose={onClose}
         showCloseAction
-        title="Workout"
+        title="Activity"
         visible
       >
         Content

@@ -114,7 +114,8 @@ export function deriveTrainingPlanReadinessPresentation({
 
   if (localBlockerCount > 0) {
     return {
-      detail: "Review the highlighted plan details, workouts, goals, or preferences before saving.",
+      detail:
+        "Review the highlighted plan details, activities, goals, or preferences before saving.",
       label: "Review plan",
       status: "review",
     };
@@ -146,7 +147,7 @@ export function deriveTrainingPlanReadinessPresentation({
 
   if (saveLifecycle.status === "commit_blocked") {
     return {
-      detail: "Add enough goals, preferences, and workouts for a complete training plan preview.",
+      detail: "Add enough goals, preferences, and activities for a complete training plan preview.",
       label: "Needs setup",
       status: "blocked",
     };

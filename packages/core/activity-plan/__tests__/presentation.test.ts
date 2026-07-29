@@ -12,7 +12,7 @@ function structureWithTargets(
       {
         id: id(1),
         role: "activity",
-        category: "bike",
+        activity_category: "bike",
         name: "Work",
         intervals: [
           {
@@ -53,6 +53,7 @@ describe("deriveActivityPlanPresentation", () => {
     expect(threshold?.occurrences.map((occurrence) => occurrence.normalizedIntensity)).toEqual([
       0.75, 1,
     ]);
+    expect(threshold?.activity_category).toBe("bike");
   });
 
   it("uses plan-relative scaling for absolute targets without inventing an athlete threshold", () => {
@@ -70,14 +71,14 @@ describe("deriveActivityPlanPresentation", () => {
     expect(model?.occurrences[1]?.intensityLabel).toBe("watts 300");
   });
 
-  it("does not compare absolute targets across different sports", () => {
+  it("rejects mixed-category and transition structures", () => {
     const model = deriveActivityPlanPresentation({
       version: 3,
       segments: [
         {
           id: id(20),
           role: "activity",
-          category: "run",
+          activity_category: "run",
           name: "Run",
           intervals: [
             {
@@ -98,13 +99,13 @@ describe("deriveActivityPlanPresentation", () => {
         {
           id: id(23),
           role: "transition",
-          name: "Change sport",
+          name: "Change activity_category",
           duration: { type: "time", seconds: 60 },
         },
         {
           id: id(24),
           role: "activity",
-          category: "bike",
+          activity_category: "bike",
           name: "Bike",
           intervals: [
             {
@@ -125,9 +126,7 @@ describe("deriveActivityPlanPresentation", () => {
       ],
     });
 
-    expect(model?.occurrences[0]?.normalizedIntensity).toBeCloseTo(0.6);
-    expect(model?.occurrences[1]?.normalizedIntensity).toBeNull();
-    expect(model?.occurrences[2]?.normalizedIntensity).toBeCloseTo(0.6);
+    expect(model).toBeNull();
   });
 
   it("does not represent cadence alone as exercise intensity", () => {

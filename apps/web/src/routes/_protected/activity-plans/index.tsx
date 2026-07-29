@@ -12,7 +12,6 @@ import { ClipboardList, Loader2, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { ActivityPlanCategoryBadges } from "../../../components/activity-plan/activity-plan-category-badges";
 import { ActivityPlanComposer } from "../../../components/activity-plan/activity-plan-composer";
 import { DetailPageIntro } from "../../../components/protected/activity-route-primitives";
 import { getActivityPlanMetricSummary } from "../../../lib/activity-plan-presentation";
@@ -27,12 +26,6 @@ const categoryOptions = [
   { label: "Other", value: "other" },
 ] as const;
 
-const compositionOptions = [
-  { label: "Include multisport", value: "include_multisport" },
-  { label: "Single-sport only", value: "single_only" },
-  { label: "Multisport only", value: "multisport_only" },
-] as const;
-
 export const Route = createFileRoute("/_protected/activity-plans/")({
   component: ActivityPlansPage,
 });
@@ -42,13 +35,11 @@ function ActivityPlansPage() {
   const utils = api.useUtils();
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState("");
-  const [category, setCategory] = useState<(typeof categoryOptions)[number]["value"]>("all");
-  const [composition, setComposition] =
-    useState<(typeof compositionOptions)[number]["value"]>("include_multisport");
+  const [activity_category, setCategory] =
+    useState<(typeof categoryOptions)[number]["value"]>("all");
   const plansQuery = api.activityPlans.list.useInfiniteQuery(
     {
-      activityCategories: category === "all" ? undefined : [category],
-      compositionMode: composition,
+      activityCategories: activity_category === "all" ? undefined : [activity_category],
       includeEstimation: true,
       includeOwnOnly: true,
       includeSystemTemplates: false,
@@ -93,7 +84,7 @@ function ActivityPlansPage() {
             Create activity plan
           </Button>
         }
-        description="Search and review your reusable structured workouts before scheduling or recording them."
+        description="Search and review your reusable structured activities before scheduling or recording them."
         eyebrow="Training library"
         title="Activity plans"
       />
@@ -123,21 +114,7 @@ function ActivityPlansPage() {
                 onClick={() => setCategory(option.value)}
                 size="sm"
                 type="button"
-                variant={category === option.value ? "default" : "outline"}
-              >
-                {option.label}
-              </Button>
-            ))}
-          </fieldset>
-          <fieldset className="flex flex-wrap gap-2">
-            <legend className="sr-only">Activity composition</legend>
-            {compositionOptions.map((option) => (
-              <Button
-                key={option.value}
-                onClick={() => setComposition(option.value)}
-                size="sm"
-                type="button"
-                variant={composition === option.value ? "default" : "outline"}
+                variant={activity_category === option.value ? "default" : "outline"}
               >
                 {option.label}
               </Button>
@@ -177,9 +154,9 @@ function ActivityPlansPage() {
                 <div>
                   <p className="font-medium">No activity plans found</p>
                   <p className="text-sm text-muted-foreground">
-                    {search.trim() || category !== "all" || composition !== "include_multisport"
-                      ? "Try a different search, category, or composition."
-                      : "Your reusable workouts will appear here."}
+                    {search.trim() || activity_category !== "all"
+                      ? "Try a different search or activity category."
+                      : "Your reusable activities will appear here."}
                   </p>
                 </div>
               </div>
@@ -208,9 +185,9 @@ function ActivityPlansPage() {
                           {plan.description || "No description provided."}
                         </p>
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        <ActivityPlanCategoryBadges categories={plan.categories} />
-                      </div>
+                      <span className="rounded-full border px-2 py-0.5 text-xs font-medium capitalize">
+                        {plan.activity_category}
+                      </span>
                     </div>
                     {metrics.length ? (
                       <p className="mt-4 text-sm text-muted-foreground">{metrics.join(" · ")}</p>

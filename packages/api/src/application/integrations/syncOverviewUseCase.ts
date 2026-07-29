@@ -17,12 +17,14 @@ import {
   createProviderSyncRepository,
 } from "../../infrastructure/repositories";
 import { isProviderOAuthConfigured } from "../../lib/integrations/oauth-config";
+import { hasWahooPlannedActivityScopes } from "../../lib/integrations/wahoo/planned-activity-scopes";
 import { logger } from "../../lib/logger";
 
 const activityHistoryResource = "historical_activities";
 const profileEnrichmentResource = "profile_enrichment";
-const plannedWorkoutsResource = "planned_workouts";
+const plannedActivitiesResource = "planned_activities";
 const wahooActivityHistoryJobType = "wahoo.activity_history_reconcile";
+const wahooPlannedActivityJobTypes = new Set(["wahoo.publish_event", "wahoo.unsync_event"]);
 
 function parseBoundaryValue<T>(schema: z.ZodType<T>, value: unknown, message: string): T {
   const parsed = schema.safeParse(value);
@@ -133,9 +135,23 @@ function getCompactProviderSummary(input: {
   configured: boolean;
   label: string;
   plannedStatus: "automatic" | "queued" | "syncing" | "failed" | "unsupported";
-  providerHealthStatus: "connected" | "needs_reconnect" | "unsupported";
+  providerHealthStatus:
+    | "connected"
+    | "disconnecting"
+    | "disconnected"
+    | "needs_reconnect"
+    | "unsupported";
   setupStatus: "idle" | "refreshing" | "refreshed" | "failed" | "unsupported";
 }) {
+  if (input.providerHealthStatus === "disconnecting") {
+    return {
+      badge: "Disconnecting",
+      health: "disconnecting" as const,
+      subtitle: "Revoking provider access",
+      title: input.label,
+    };
+  }
+
   if (!input.configured) {
     return {
       badge: "Unavailable",
@@ -194,6 +210,15 @@ function getCompactProviderSummary(input: {
     };
   }
 
+  if (input.plannedStatus === "unsupported") {
+    return {
+      badge: "Limited",
+      health: "connected" as const,
+      subtitle: "Planned activities unavailable",
+      title: input.label,
+    };
+  }
+
   return {
     badge: "Auto",
     health: "connected" as const,
@@ -205,8 +230,14 @@ function getCompactProviderSummary(input: {
 function getPrimaryProviderAction(input: {
   connected: boolean;
   configured: boolean;
-  providerHealthStatus: "connected" | "needs_reconnect" | "unsupported";
+  providerHealthStatus:
+    | "connected"
+    | "disconnecting"
+    | "disconnected"
+    | "needs_reconnect"
+    | "unsupported";
 }): "connect" | "disconnect" | "reconnect" | null {
+  if (input.providerHealthStatus === "disconnecting") return null;
   if (!input.configured) return input.connected ? "disconnect" : null;
   if (!input.connected) return "connect";
   if (input.providerHealthStatus === "needs_reconnect") return "reconnect";
@@ -222,7 +253,12 @@ function getAllowedActions(input: {
   connected: boolean;
   grantedScope: string | null | undefined;
   provider: PublicIntegrationProvider;
-  providerHealthStatus: "connected" | "needs_reconnect" | "unsupported";
+  providerHealthStatus:
+    | "connected"
+    | "disconnecting"
+    | "disconnected"
+    | "needs_reconnect"
+    | "unsupported";
 }) {
   if (!input.connected) return [];
   if (!input.configured || input.providerHealthStatus !== "connected")
@@ -259,7 +295,7 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
     readActiveProviderSyncJobs(providerSyncRepository, input.profileId),
   ]);
   const integrationsByProvider = new Map(
-    activeIntegrations.map((integration) => [integration.provider, integration]),
+    integrations.map((integration) => [integration.provider, integration]),
   );
 
   return Promise.all(
@@ -267,7 +303,10 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
       .filter((definition) => isProviderRuntimeEnabled(definition.id))
       .map(async (definition) => {
         const configured = isProviderOAuthConfigured(definition.id);
-        const integration = integrationsByProvider.get(definition.id);
+        const lifecycleIntegration = integrationsByProvider.get(definition.id);
+        const disconnecting = lifecycleIntegration?.lifecycle_status === "disconnect_pending";
+        const integration =
+          lifecycleIntegration?.lifecycle_status === "active" ? lifecycleIntegration : undefined;
         const grant = integration
           ? await repositories.integrations.findGrantByProfileIdAndProvider({
               profileId: input.profileId,
@@ -292,7 +331,7 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
           ? syncStates.find(
               (candidate) =>
                 candidate.integrationId === integration.id &&
-                candidate.resource === plannedWorkoutsResource,
+                candidate.resource === plannedActivitiesResource,
             )
           : null;
         const activeActivityJob = integration
@@ -301,9 +340,22 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
                 job.integrationId === integration.id && job.jobType === wahooActivityHistoryJobType,
             )
           : null;
+        const activePlannedActivityJob = integration
+          ? activeJobs.find(
+              (job) =>
+                job.integrationId === integration.id &&
+                wahooPlannedActivityJobTypes.has(job.jobType),
+            )
+          : null;
         const activityHistorySupported = supportsActivityHistorySync(definition.id);
         const setupSupported = providerHasCapability(definition.id, "profile_enrichment_read");
-        const plannedSupported = providerHasCapability(definition.id, "planned_activity_push");
+        const plannedScopesGranted =
+          definition.id !== "wahoo" || hasWahooPlannedActivityScopes(grant?.scope);
+        const plannedSupported =
+          providerHasCapability(definition.id, "planned_activity_push") && plannedScopesGranted;
+        const plannedUnavailableReason = !plannedScopesGranted
+          ? "Reconnect Wahoo to grant planned activity permissions"
+          : null;
         const activityLastError = getCurrentSyncError({
           integrationUpdatedAt: integration?.updated_at,
           lastError: activityState?.lastError,
@@ -341,16 +393,22 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
                 : "idle";
         const plannedStatus = !plannedSupported
           ? "unsupported"
-          : plannedLastError
-            ? "failed"
-            : "automatic";
+          : activePlannedActivityJob?.status === "running"
+            ? "syncing"
+            : activePlannedActivityJob?.status === "queued"
+              ? "queued"
+              : plannedLastError
+                ? "failed"
+                : "automatic";
         const providerHealthLastError = activityLastError ?? setupLastError ?? plannedLastError;
         const connected = integration?.lifecycle_status === "active";
-        const providerHealthStatus = !connected
-          ? "unsupported"
-          : grant?.reconnect_required_at
-            ? "needs_reconnect"
-            : "connected";
+        const providerHealthStatus = disconnecting
+          ? "disconnecting"
+          : !connected
+            ? "disconnected"
+            : grant?.reconnect_required_at
+              ? "needs_reconnect"
+              : "connected";
         const label = getProviderCapabilityDefinition(definition.id).label;
         const summary = getCompactProviderSummary({
           activityStatus: activityHistoryStatus,
@@ -377,11 +435,11 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
             queuedJobId: activeActivityJob?.id ?? null,
             status: activityHistoryStatus,
           },
-          plannedWorkouts: {
-            lastError: plannedLastError,
+          plannedActivities: {
+            lastError: plannedUnavailableReason ?? plannedLastError,
             lastFailedAt: plannedState?.lastSyncFailedAt ?? null,
             lastSucceededAt: plannedState?.lastSyncSucceededAt ?? null,
-            queuedJobId: null,
+            queuedJobId: activePlannedActivityJob?.id ?? null,
             status: plannedStatus,
           },
           providerHealth: {

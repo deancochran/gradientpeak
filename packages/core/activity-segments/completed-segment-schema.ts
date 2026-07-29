@@ -1,13 +1,21 @@
 import { z } from "zod";
 
 import { activityArtifactSourceFormatSchema } from "../activity-artifacts/source-format";
-import { canonicalSportSchema } from "../schemas/sport";
+import { canonicalActivityCategorySchema } from "../schemas/activity-category";
 
-const rawSourceValueSchema = z.union([z.string().min(1).max(128), z.number().int()]);
+const rawSourceStringSchema = z.string().refine(
+  (value) => {
+    const length = Array.from(value).length;
+    return length >= 1 && length <= 128;
+  },
+  { message: "Raw source strings must contain between 1 and 128 Unicode characters." },
+);
+const rawSourceIntegerSchema = z.number().int().min(-2_147_483_648).max(2_147_483_647);
+export const segmentRawSourceValueSchema = z.union([rawSourceStringSchema, rawSourceIntegerSchema]);
 const rawSourceFields = {
-  rawType: rawSourceValueSchema.optional(),
-  rawSport: rawSourceValueSchema.optional(),
-  rawSubSport: rawSourceValueSchema.optional(),
+  rawType: segmentRawSourceValueSchema.optional(),
+  rawSport: segmentRawSourceValueSchema.optional(),
+  rawSubSport: segmentRawSourceValueSchema.optional(),
 };
 
 function hasRawSourceIdentity(value: {
@@ -231,7 +239,7 @@ const completedActivitySegmentSchema = z
   .object({
     ...completedSegmentBase,
     role: z.literal("activity"),
-    category: canonicalSportSchema,
+    activity_category: canonicalActivityCategorySchema,
     source: segmentSourceReferenceSchema.optional(),
   })
   .strict();

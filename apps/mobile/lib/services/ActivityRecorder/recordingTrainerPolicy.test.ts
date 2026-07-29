@@ -1,7 +1,8 @@
-import type { FtmsControlMode, FtmsMachineType } from "@deancochran/ftms";
-import { BLE_SERVICE_UUIDS } from "@repo/core";
+import { FTMS_CHARACTERISTICS, type FTMSFeatures, type FtmsMachineType } from "@deancochran/ftms";
+import { BLE_SERVICE_UUIDS, type FtmsControlMode } from "@repo/core";
 import { describe, expect, it } from "vitest";
 import {
+  detectFtmsMachineType,
   getTrainerSensorIdsToDisconnect,
   isFtmsModeAllowedForMachine,
   isKnownTrainerDevice,
@@ -29,6 +30,43 @@ function persistedSensor(
 }
 
 describe("recording trainer policy", () => {
+  it("uses machine-data characteristics before user or feature heuristics", () => {
+    expect(
+      detectFtmsMachineType({
+        characteristicUuids: [FTMS_CHARACTERISTICS.ROWER_DATA.toUpperCase()],
+        features: {
+          powerMeasurementSupported: true,
+          indoorBikeSimulationSupported: true,
+        },
+        userConfirmedMachineType: "treadmill",
+      }),
+    ).toEqual({
+      machineType: "rower",
+      source: "data_characteristic",
+      matchedCharacteristicUuid: FTMS_CHARACTERISTICS.ROWER_DATA,
+    });
+  });
+
+  it("uses explicit user confirmation when characteristic evidence is absent", () => {
+    expect(detectFtmsMachineType({ userConfirmedMachineType: "stair_climber" })).toEqual({
+      machineType: "stair_climber",
+      source: "user_confirmed",
+    });
+  });
+
+  it.each<[Partial<FTMSFeatures>, FtmsMachineType]>([
+    [{ forceOnBeltSupported: true }, "treadmill"],
+    [{ powerMeasurementSupported: true, indoorBikeSimulationSupported: true }, "bike"],
+    [{ strideCountSupported: true, resistanceLevelSupported: true }, "cross_trainer"],
+    [{ stepCountSupported: true }, "step_climber"],
+    [{}, "unknown"],
+  ])("infers %s from feature evidence", (features, machineType) => {
+    expect(detectFtmsMachineType({ features })).toEqual({
+      machineType,
+      source: machineType === "unknown" ? "unknown" : "feature_heuristic",
+    });
+  });
+
   it.each<[FtmsMachineType | undefined, FtmsControlMode[], FtmsControlMode[]]>([
     ["bike", ["erg", "grade", "resistance", "target_cadence"], ["speed", "inclination"]],
     ["treadmill", ["speed", "inclination"], ["erg", "grade", "resistance", "target_cadence"]],

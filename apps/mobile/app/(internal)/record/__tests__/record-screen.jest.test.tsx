@@ -18,7 +18,7 @@ type PlanValidation = {
   warnings: string[];
 };
 type ActivitySelection = {
-  category: string;
+  activity_category: string;
   gpsRecordingEnabled: boolean;
   eventId?: string;
   launchSource?: "route";
@@ -48,7 +48,7 @@ const service = {
 
 const activitySelectionStoreMock = {
   peekSelection: jest.fn<ActivitySelection | null, []>(() => ({
-    category: "bike",
+    activity_category: "bike",
     gpsRecordingEnabled: false,
     eventId: "event-9",
   })),
@@ -170,8 +170,8 @@ jest.mock("@/lib/hooks/useRecordingConfig", () => ({
       ui: {
         backdropMode: "ambient",
         floatingPanel: {
-          defaultCard: "workout_interval",
-          availableCards: ["workout_interval", "metrics"],
+          defaultCard: "activity_interval",
+          availableCards: ["activity_interval", "metrics"],
           forcedExpanded: true,
           canMinimize: false,
         },
@@ -207,7 +207,7 @@ jest.mock("@/lib/stores/activitySelectionStore", () => ({
   activitySelectionStore: activitySelectionStoreMock,
   defaultRecordLaunchPayload: jest.fn(() => ({
     launchSource: "record_tab",
-    category: "run",
+    activity_category: "run",
     gpsRecordingEnabled: true,
   })),
 }));
@@ -272,7 +272,7 @@ describe("record screen", () => {
     service.refreshAndCheckRecordingPermissions.mockResolvedValue(true);
     service.validatePlanRequirements.mockReturnValue({ isValid: true, warnings: [] });
     activitySelectionStoreMock.peekSelection.mockReturnValue({
-      category: "bike",
+      activity_category: "bike",
       gpsRecordingEnabled: false,
       eventId: "event-9",
     });
@@ -284,7 +284,7 @@ describe("record screen", () => {
 
     await waitFor(() => {
       expect(service.selectActivityFromPayload).toHaveBeenCalledWith(
-        expect.objectContaining({ category: "bike", eventId: "event-9" }),
+        expect.objectContaining({ activity_category: "bike", eventId: "event-9" }),
       );
     });
     expect(activitySelectionStoreMock.consumeSelection).toHaveBeenCalled();
@@ -293,7 +293,7 @@ describe("record screen", () => {
   it("initializes explicit route launches without waiting for route geometry", async () => {
     activitySelectionStoreMock.peekSelection.mockReturnValue({
       launchSource: "route",
-      category: "bike",
+      activity_category: "bike",
       gpsRecordingEnabled: false,
       routeId: "route-1",
     });
@@ -302,7 +302,7 @@ describe("record screen", () => {
 
     await waitFor(() => {
       expect(service.selectActivityFromPayload).toHaveBeenCalledWith(
-        expect.objectContaining({ category: "bike", routeId: "route-1" }),
+        expect.objectContaining({ activity_category: "bike", routeId: "route-1" }),
       );
       expect(activitySelectionStoreMock.consumeSelection).toHaveBeenCalled();
       expect(service.prepareRouteAttachment).toHaveBeenCalledWith("route-1");

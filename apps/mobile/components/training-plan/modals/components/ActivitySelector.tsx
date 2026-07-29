@@ -12,8 +12,7 @@ import { SearchField } from "@/components/shared/SearchField";
 export interface ActivityOption {
   id: string;
   name: string;
-  categories: readonly string[];
-  primary_category: string;
+  activity_category: string;
   structure?: unknown;
   authoritative_metrics?: {
     estimated_duration?: number | null;
@@ -59,10 +58,9 @@ export function ActivitySelector({
   const [searchQuery, setSearchQuery] = useState("");
 
   // Filter activities based on search query
-  const filteredActivities = activities.filter((activity) => {
-    const matchesSearch = activity.name.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesSearch;
-  });
+  const filteredActivities = activities.filter((activity) =>
+    activity.name.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
 
   const renderActivityItem = ({ item }: { item: ActivityOption }) => {
     const isSelected = selectedActivityId === item.id;

@@ -177,7 +177,7 @@ export const trainingConstraintsSchema = z.object({
   blocked_dates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
   min_rest_days_per_week: z.number().int().min(0).max(7).default(1),
   max_consecutive_training_days: z.number().int().min(1).max(365).optional(),
-  activity_type_constraints: z
+  activity_category_constraints: z
     .record(
       z.string(),
       z.object({
@@ -444,7 +444,7 @@ export type TrainingPlanBuilderPlanningSnapshot = z.infer<
 export const canonicalTrainingPlanStructureSchema = z
   .object({
     version: z.literal(1),
-    sport: z.array(z.string().trim().min(1)).optional(),
+    activity_category: z.array(z.string().trim().min(1)).optional(),
     experienceLevel: z.array(z.enum(["beginner", "intermediate", "advanced"])).optional(),
     durationWeeks: z
       .object({

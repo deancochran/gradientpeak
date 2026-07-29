@@ -1,14 +1,14 @@
 import { z } from "zod";
 
 import { activityPlanStructureSchemaV3 } from "../activity-plan";
+import { canonicalActivityCategorySchema } from "./activity-category";
 import { recordingCapabilitiesSchema } from "./recording_config";
-import { canonicalSportSchema } from "./sport";
 
 const isoTimestampSchema = z.string().min(1);
 const nullableUuidSchema = z.string().uuid().nullable();
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 
-export const recordingActivityCategorySchema = canonicalSportSchema;
+export const recordingActivityCategorySchema = canonicalActivityCategorySchema;
 
 export const recordingGpsModeSchema = z.enum(["on", "off"]);
 
@@ -234,7 +234,7 @@ export const recordingSessionIdentitySchema = z
 
 export const recordingSessionActivitySchema = z
   .object({
-    category: recordingActivityCategorySchema,
+    activity_category: recordingActivityCategorySchema,
     mode: recordingSessionModeSchema,
     gpsMode: recordingGpsModeSchema,
     eventId: nullableUuidSchema,
@@ -317,7 +317,7 @@ export const recordingOccurrenceResultSchema = z
     globalOrdinal: z.number().int().nonnegative(),
     segmentId: z.string().uuid(),
     role: z.enum(["activity", "transition", "rest"]),
-    category: recordingActivityCategorySchema.nullable(),
+    activity_category: recordingActivityCategorySchema.nullable(),
     startedAt: isoTimestampSchema,
     completedAt: isoTimestampSchema,
     activeSeconds: z.number().nonnegative(),
@@ -388,7 +388,7 @@ export const recordingCheckpointSchema = z
       .strict(),
     policy: z
       .object({
-        category: recordingActivityCategorySchema.nullable(),
+        activity_category: recordingActivityCategorySchema.nullable(),
         gpsMode: recordingGpsModeSchema,
         activityGpsMode: recordingGpsModeSchema,
         selectedSources: z.array(metricSourceSelectionSchema),

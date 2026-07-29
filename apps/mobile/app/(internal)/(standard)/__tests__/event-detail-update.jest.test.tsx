@@ -16,7 +16,12 @@ const mockActivityPlansListUseQuery: jest.Mock = jest.fn(() => ({
   refetch: jest.fn(),
 }));
 
-type ActivityPlanFixture = { id: string; name: string };
+type ActivityPlanFixture = {
+  activity_categories?: string[];
+  id: string;
+  name: string;
+  activity_category?: string;
+};
 type EventEditorInput = { starts_at: string; recurrence_rule?: string | null };
 type StackScreenProps = Record<string, unknown> & {
   options?: { headerRight?: () => React.ReactNode };
@@ -444,7 +449,14 @@ describe("event detail update screen", () => {
   it("attaches and detaches activity plans through the same update editor", async () => {
     mockActivityPlansListUseQuery.mockReturnValue({
       data: {
-        items: [{ id: "11111111-1111-4111-8111-111111111111", name: "Tempo Run" }],
+        items: [
+          {
+            activity_categories: ["run"],
+            id: "11111111-1111-4111-8111-111111111111",
+            name: "Tempo Run",
+            activity_category: "run",
+          },
+        ],
       },
       isLoading: false,
       error: null,
@@ -479,8 +491,10 @@ describe("event detail update screen", () => {
     eventDetailData.event_type = "planned";
     eventDetailData.activity_plan_id = "11111111-1111-4111-8111-111111111111";
     eventDetailData.activity_plan = {
+      activity_categories: ["run"],
       id: "11111111-1111-4111-8111-111111111111",
       name: "Tempo Run",
+      activity_category: "run",
     };
     updateEventMutateMock.mockClear();
 

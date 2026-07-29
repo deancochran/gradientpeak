@@ -8,8 +8,42 @@ import {
 
 describe("WahooClient", () => {
   const fetchMock = vi.fn();
+  const workout = (overrides: Record<string, unknown> = {}) => ({
+    created_at: "2026-04-03T09:55:00.000Z",
+    id: 456,
+    minutes: 60,
+    name: "Friday ride",
+    plan_id: 42,
+    plan_ids: [42],
+    starts: "2026-04-03T10:00:00.000Z",
+    updated_at: "2026-04-03T11:05:00.000Z",
+    workout_token: "event-1",
+    workout_type_id: 0,
+    ...overrides,
+  });
+  const route = (overrides: Record<string, unknown> = {}) => ({
+    ascent: 300,
+    created_at: "2026-04-03T12:00:00.000Z",
+    deleted: false,
+    descent: 250,
+    description: null,
+    distance: 12_000,
+    external_id: "gradientpeak:route:route-1",
+    file: { url: "https://example.com/route.fit" },
+    id: 3,
+    name: "Morning Route",
+    provider_updated_at: "2026-04-03T12:00:00.000Z",
+    start_lat: 35,
+    start_lng: -80,
+    updated_at: "2026-04-03T12:00:00.000Z",
+    user_id: 9,
+    workout_type_family_id: 255,
+    ...overrides,
+  });
 
   beforeEach(() => {
+    vi.stubEnv("WAHOO_CLIENT_ID", "client-id");
+    vi.stubEnv("WAHOO_CLIENT_SECRET", "client-secret");
     vi.stubGlobal("fetch", fetchMock);
     fetchMock.mockReset();
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -18,6 +52,7 @@ describe("WahooClient", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     vi.useRealTimers();
   });
@@ -67,7 +102,7 @@ describe("WahooClient", () => {
     expect(form.get("plan[provider_updated_at]")).toMatch(/\d{4}-\d{2}-\d{2}T/);
   });
 
-  it("creates workouts with route_id only when provided", async () => {
+  it("creates Wahoo workout calendar entries with route_id only when provided", async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -116,11 +151,59 @@ describe("WahooClient", () => {
     });
   });
 
+  it("propagates the operation signal to planned-activity POST requests", async () => {
+    const signal = new AbortController().signal;
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          deleted: false,
+          external_id: "plan-1",
+          id: 42,
+          name: "Plan",
+          provider_updated_at: "2026-04-03T12:00:00.000Z",
+        }),
+        { status: 200 },
+      ),
+    );
+    const client = new WahooClient({ accessToken: "access-token" });
+
+    await client.createPlan(
+      {
+        activityType: "bike",
+        description: "",
+        externalId: "plan-1",
+        name: "Plan",
+        structure: {},
+      },
+      signal,
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.wahooligan.com/v1/plans",
+      expect.objectContaining({ signal }),
+    );
+  });
+
   it("returns success for delete requests on 204 responses", async () => {
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
     const client = new WahooClient({ accessToken: "access-token" });
 
-    await expect(client.deleteWorkout("workout-1")).resolves.toEqual({ success: true });
+    await expect(client.deleteWorkout("wahoo-workout-1")).resolves.toEqual({ success: true });
+  });
+
+  it("bounds grant revocation with a request timeout", async () => {
+    const timeoutSignal = new AbortController().signal;
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeoutSignal);
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const client = new WahooClient({ accessToken: "access-token" });
+
+    await expect(client.disconnect()).resolves.toEqual({ success: true });
+
+    expect(timeout).toHaveBeenCalledWith(5_000);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.wahooligan.com/v1/permissions",
+      expect.objectContaining({ method: "DELETE", signal: timeoutSignal }),
+    );
   });
 
   it("encodes external_id query parameters when listing routes", async () => {
@@ -155,6 +238,60 @@ describe("WahooClient", () => {
 
     const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://api.wahooligan.com/v1/routes?external_id=route%2Fid%20with%20spaces");
+  });
+
+  it("creates and updates FIT routes with validated responses and abort signals", async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify(route()), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify(
+            route({ name: "Updated Route", provider_updated_at: "2026-04-04T12:00:00.000Z" }),
+          ),
+          { status: 200 },
+        ),
+      );
+    const client = new WahooClient({ accessToken: "access-token" });
+    const signal = new AbortController().signal;
+    const data = {
+      ascent: 300,
+      descent: 250,
+      distance: 12_000,
+      externalId: "gradientpeak:route:route-1",
+      file: "data:application/vnd.fit;base64,AAAA",
+      filename: "Morning Route.fit",
+      name: "Morning Route",
+      providerUpdatedAt: "2026-04-03T12:00:00.000Z",
+      startLat: 35,
+      startLng: -80,
+      workoutTypeFamilyId: 255,
+    };
+
+    await expect(client.createRoute(data, signal)).resolves.toMatchObject({ id: 3 });
+    await expect(
+      client.updateRoute("3", { ...data, description: null, name: "Updated Route" }, signal),
+    ).resolves.toMatchObject({ name: "Updated Route" });
+
+    const createRequest = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(createRequest[0]).toBe("https://api.wahooligan.com/v1/routes");
+    expect(createRequest[1]).toMatchObject({ method: "POST", signal });
+    expect(String(createRequest[1].body)).toContain(
+      "route%5Bfile%5D=data%3Aapplication%2Fvnd.fit%3Bbase64%2CAAAA",
+    );
+    const updateRequest = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(updateRequest[0]).toBe("https://api.wahooligan.com/v1/routes/3");
+    expect(updateRequest[1]).toMatchObject({ method: "PUT", signal });
+    expect(String(updateRequest[1].body)).not.toContain("external_id");
+    expect(String(updateRequest[1].body)).toContain("route%5Bdescription%5D=");
+  });
+
+  it("rejects malformed route responses at the client boundary", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ id: 3 }), { status: 200 }));
+    const client = new WahooClient({ accessToken: "access-token" });
+
+    await expect(client.getRoutes("route-1")).rejects.toThrow(
+      "Wahoo route list response was invalid",
+    );
   });
 
   it("lists and deletes plans by external id", async () => {
@@ -216,7 +353,7 @@ describe("WahooClient", () => {
     expect(options.headers).toMatchObject({ Authorization: "Bearer access-token" });
   });
 
-  it("lists workout summaries for a bounded history window", async () => {
+  it("lists Wahoo workout summaries for a bounded history window", async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -307,6 +444,82 @@ describe("WahooClient", () => {
     expect(options.headers).toMatchObject({ Authorization: "Bearer access-token" });
   });
 
+  it("finds a planned-activity resource by deterministic token across bounded pages", async () => {
+    const signal = new AbortController().signal;
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            page: 1,
+            total: 2,
+            workouts: [workout({ id: 1, workout_token: "other" })],
+          }),
+          {
+            status: 200,
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ page: 2, total: 2, workouts: [workout({ id: 2 })] }), {
+          status: 200,
+        }),
+      );
+    const client = new WahooClient({ accessToken: "access-token" });
+
+    await expect(
+      client.findWorkoutByToken({ maxPages: 2, perPage: 1, signal, token: "event-1" }),
+    ).resolves.toMatchObject({ complete: true, workout: { id: 2 } });
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "https://api.wahooligan.com/v1/workouts?page=2&per_page=1",
+      expect.objectContaining({ signal }),
+    );
+  });
+
+  it("reports an incomplete lookup instead of permitting an unsafe create", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          page: 1,
+          total: 100,
+          workouts: [workout({ workout_token: "other" })],
+        }),
+        { status: 200 },
+      ),
+    );
+    const client = new WahooClient({ accessToken: "access-token" });
+
+    await expect(
+      client.findWorkoutByToken({ maxPages: 1, perPage: 1, token: "event-1" }),
+    ).resolves.toEqual({ complete: false, workout: null });
+  });
+
+  it("rejects duplicate Wahoo planned-activity resources with the same deterministic token", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ page: 1, total: 2, workouts: [workout({ id: 1 }), workout({ id: 2 })] }),
+        { status: 200 },
+      ),
+    );
+    const client = new WahooClient({ accessToken: "access-token" });
+
+    await expect(
+      client.findWorkoutByToken({ maxPages: 1, perPage: 2, token: "event-1" }),
+    ).rejects.toThrow("Multiple Wahoo planned-activity resources");
+  });
+
+  it("rejects malformed Wahoo planned-activity resource-list responses", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ page: 1, total: 1, workouts: [{ id: "bad" }] }), {
+        status: 200,
+      }),
+    );
+    const client = new WahooClient({ accessToken: "access-token" });
+
+    await expect(client.findWorkoutByToken({ token: "event-1" })).rejects.toThrow(
+      "Invalid Wahoo workout response",
+    );
+  });
+
   it("surfaces safe API errors with status and provider code", async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(
@@ -320,7 +533,7 @@ describe("WahooClient", () => {
     );
     const client = new WahooClient({ accessToken: "access-token" });
 
-    await expect(client.getWorkout("workout-1")).rejects.toMatchObject({
+    await expect(client.getWorkout("wahoo-workout-1")).rejects.toMatchObject({
       message: "Wahoo API error: 400 Bad Request",
       status: 400,
       code: "WAHOO_4001",

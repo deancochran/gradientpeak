@@ -110,7 +110,7 @@ export function predictFatigue(
     },
     recoveryPlan: {
       daysToRecover: null,
-      nextHardWorkoutDate: null,
+      nextHardActivityDate: null,
       suggestedRestDays: null,
     },
     warnings,

@@ -1,7 +1,12 @@
 import {
   type ActivityPlanMetricsLike,
+  activityPlanStructureSchemaV3,
   getAuthoritativeActivityPlanMetrics,
 } from "@repo/core/activity-plan";
+import {
+  type CanonicalActivityCategory,
+  canonicalActivityCategorySchema,
+} from "@repo/core/schemas/activity-category";
 import { type SQLWrapper, sql } from "drizzle-orm";
 
 type ScheduleGapDbClient = {
@@ -11,7 +16,7 @@ type ScheduleGapDbClient = {
 type ActivityPlanLike = ActivityPlanMetricsLike & {
   id?: unknown;
   name?: unknown;
-  activity_category?: unknown;
+  structure?: unknown;
   estimated_duration_seconds?: unknown;
   created_at?: unknown;
 };
@@ -26,7 +31,7 @@ export type ScheduleGapActivityPlanMatchReasonCode =
 export type ScheduleGapActivityPlanMatch = {
   activity_plan_id: string;
   name: string;
-  activity_category: string | null;
+  activity_category: CanonicalActivityCategory;
   estimated_tss: number | null;
   estimated_duration_seconds: number | null;
   score: number;
@@ -89,10 +94,20 @@ function clampDateOnOrAfter(value: string, minimum: string) {
   return value >= minimum ? value : minimum;
 }
 
+function readCanonicalPlanActivityCategory(
+  plan: ActivityPlanLike,
+): CanonicalActivityCategory | null {
+  const parsed = activityPlanStructureSchemaV3.safeParse(plan.structure);
+  if (!parsed.success) return null;
+  return (
+    parsed.data.segments.find((segment) => segment.role === "activity")?.activity_category ?? null
+  );
+}
+
 export function buildScheduleGapActivityPlanMatches(input: {
   targetDate: string;
   targetTssDelta: number | null | undefined;
-  primaryCategory: string | null | undefined;
+  primaryActivityCategory: string | null | undefined;
   plans: ActivityPlanLike[];
   today: string;
   limit?: number;
@@ -117,10 +132,17 @@ export function buildScheduleGapActivityPlanMatches(input: {
   }
 
   const target = Math.round(targetTssDelta * 10) / 10;
-  const primaryCategory = input.primaryCategory ? String(input.primaryCategory) : null;
+  const primaryActivityCategoryResult = canonicalActivityCategorySchema.safeParse(
+    input.primaryActivityCategory,
+  );
+  const primaryActivityCategory = primaryActivityCategoryResult.success
+    ? primaryActivityCategoryResult.data
+    : null;
   let hasEstimatedTss = false;
   const matches = input.plans
     .map<ScheduleGapActivityPlanMatch | null>((plan) => {
+      const activity_category = readCanonicalPlanActivityCategory(plan);
+      if (!activity_category) return null;
       const metrics = getAuthoritativeActivityPlanMetrics(plan);
       const estimatedTss = readFinitePlanNumber(metrics.estimated_tss);
       if (estimatedTss === null) return null;
@@ -130,11 +152,7 @@ export function buildScheduleGapActivityPlanMatches(input: {
         metrics.estimated_duration !== undefined
           ? readFinitePlanNumber(metrics.estimated_duration)
           : readFinitePlanNumber(plan.estimated_duration_seconds);
-      const activityCategory =
-        typeof plan.activity_category === "string" && plan.activity_category.trim().length > 0
-          ? plan.activity_category
-          : null;
-      if (primaryCategory && activityCategory && activityCategory !== primaryCategory) {
+      if (primaryActivityCategory && activity_category !== primaryActivityCategory) {
         return null;
       }
       const absoluteTssGap = Math.round(Math.abs(estimatedTss - target) * 10) / 10;
@@ -143,19 +161,20 @@ export function buildScheduleGapActivityPlanMatches(input: {
       }
       const reasonCodes: ScheduleGapActivityPlanMatchReasonCode[] = ["owned_plan"];
       if (absoluteTssGap <= Math.max(10, target * 0.2)) reasonCodes.push("near_target_tss");
-      if (primaryCategory && activityCategory === primaryCategory)
+      if (primaryActivityCategory && activity_category === primaryActivityCategory)
         reasonCodes.push("same_activity_category");
       if (estimatedDurationSeconds !== null) reasonCodes.push("reasonable_duration");
       if (isRecentlyCreated(plan.created_at, input.today)) reasonCodes.push("recently_created");
 
-      const sameCategoryBonus = primaryCategory && activityCategory === primaryCategory ? 10 : 0;
+      const sameActivityCategoryBonus =
+        primaryActivityCategory && activity_category === primaryActivityCategory ? 10 : 0;
       const ownedPlanBonus = 5;
       const durationAvailabilityBonus = estimatedDurationSeconds !== null ? 2 : 0;
       const score =
         Math.round(
           (100 -
             Math.min(60, absoluteTssGap) +
-            sameCategoryBonus +
+            sameActivityCategoryBonus +
             ownedPlanBonus +
             durationAvailabilityBonus) *
             10,
@@ -164,7 +183,7 @@ export function buildScheduleGapActivityPlanMatches(input: {
       return {
         activity_plan_id: String(plan.id),
         name: String(plan.name ?? "Activity plan"),
-        activity_category: activityCategory,
+        activity_category,
         estimated_tss: estimatedTss,
         estimated_duration_seconds: estimatedDurationSeconds,
         score,

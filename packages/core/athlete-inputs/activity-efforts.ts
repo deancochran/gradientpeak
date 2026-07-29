@@ -1,12 +1,12 @@
 import { z } from "zod";
-import { canonicalSportSchema } from "../schemas/sport";
+import { canonicalActivityCategorySchema } from "../schemas/activity-category";
 import type { CanonicalEffortUnit } from "../units/effort";
 import { ACTIVITY_EFFORT_HARD_BOUNDS } from "./activity-effort-policy";
 
 export const activityEffortTypeSchema = z.enum(["power", "speed", "heart_rate"]);
 
 export type ActivityEffortType = z.infer<typeof activityEffortTypeSchema>;
-export type ActivityEffortCategory = z.infer<typeof canonicalSportSchema>;
+export type ActivityEffortCategory = z.infer<typeof canonicalActivityCategorySchema>;
 export type ActivityEffortInputKind = "integer" | "decimal";
 
 /**
@@ -234,7 +234,7 @@ export function getActivityEffortDefinitionId(input: {
   activity_category: ActivityEffortCategory | string;
   effort_type: ActivityEffortType | string;
 }): string | null {
-  const parsedCategory = canonicalSportSchema.safeParse(input.activity_category);
+  const parsedCategory = canonicalActivityCategorySchema.safeParse(input.activity_category);
   const parsedType = activityEffortTypeSchema.safeParse(input.effort_type);
   if (!parsedCategory.success || !parsedType.success) return null;
   return (
@@ -261,7 +261,7 @@ export function formatActivityEffortValue(input: {
   value: number;
   unit?: string | null;
 }): string {
-  const parsedCategory = canonicalSportSchema.safeParse(input.activity_category);
+  const parsedCategory = canonicalActivityCategorySchema.safeParse(input.activity_category);
   const parsedType = activityEffortTypeSchema.safeParse(input.effort_type);
   const definition =
     parsedCategory.success && parsedType.success
@@ -281,7 +281,7 @@ const activityEffortWritableFieldsSchema = z
   .object({
     activity_id: z.string().uuid().optional().nullable(),
     segment_id: z.string().uuid().optional().nullable(),
-    activity_category: canonicalSportSchema,
+    activity_category: canonicalActivityCategorySchema,
     duration_seconds: z
       .number()
       .int()

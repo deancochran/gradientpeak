@@ -1,4 +1,8 @@
-import { aggregateCommonLoadEnvelopes, type CommonLoadAggregate } from "@repo/core/load";
+import {
+  aggregateCommonLoadEnvelopes,
+  type CommonLoadAggregate,
+  type CommonLoadRecommendation,
+} from "@repo/core/load";
 import type {
   EffectiveCompositionItem,
   EffectiveLoadAggregate,
@@ -19,6 +23,8 @@ export type ServerEffectiveLoadSummary = {
   remainingLoad: number | null;
   tentativeLoad: number | null;
   hasUnavailableCompletedLoad: boolean;
+  recommendedLoadStatus: "complete" | "partial" | "known_zero" | "unavailable";
+  recommendedLoad: number | null;
 };
 
 type EffectiveLoadResponse =
@@ -27,6 +33,7 @@ type EffectiveLoadResponse =
       completed: CommonLoadAggregate;
       remaining: CommonLoadAggregate;
       tentative: CommonLoadAggregate;
+      recommendation?: CommonLoadRecommendation;
       effective:
         | {
             status: "available";
@@ -67,7 +74,57 @@ function summarize(
   };
 }
 
-function unavailableSummary(): ServerEffectiveLoadSummary {
+type RecommendationSummary = Pick<
+  ServerEffectiveLoadSummary,
+  "recommendedLoad" | "recommendedLoadStatus"
+>;
+
+function unavailableRecommendationSummary(): RecommendationSummary {
+  return { recommendedLoadStatus: "unavailable", recommendedLoad: null };
+}
+
+function summarizeRecommendation(
+  period: EffectiveLoadPeriod,
+  recommendation: CommonLoadRecommendation | undefined,
+): RecommendationSummary {
+  if (
+    !recommendation ||
+    recommendation.status === "unavailable" ||
+    period.startDate < recommendation.coverage.startDate ||
+    period.endDate > recommendation.coverage.endDate
+  ) {
+    return unavailableRecommendationSummary();
+  }
+  const points = recommendation.points.filter(
+    (point) => point.date >= period.startDate && point.date <= period.endDate,
+  );
+  if (points.length === 0) return unavailableRecommendationSummary();
+  let load = 0;
+  let hasNumericLoad = false;
+  let incomplete = false;
+  let hasPrescription = false;
+  for (const point of points) {
+    if (point.state === "known_zero") continue;
+    hasPrescription = true;
+    if (point.state === "unavailable") {
+      incomplete = true;
+      continue;
+    }
+    hasNumericLoad = true;
+    load += point.load;
+    if (point.state === "partial") incomplete = true;
+  }
+  if (!hasPrescription) return { recommendedLoadStatus: "known_zero", recommendedLoad: 0 };
+  if (!hasNumericLoad) return unavailableRecommendationSummary();
+  return {
+    recommendedLoadStatus: incomplete ? "partial" : "complete",
+    recommendedLoad: load,
+  };
+}
+
+function unavailableSummary(
+  recommendation: RecommendationSummary = unavailableRecommendationSummary(),
+): ServerEffectiveLoadSummary {
   return {
     status: "unavailable",
     commonLoad: null,
@@ -76,6 +133,7 @@ function unavailableSummary(): ServerEffectiveLoadSummary {
     remainingLoad: null,
     tentativeLoad: null,
     hasUnavailableCompletedLoad: false,
+    ...recommendation,
   };
 }
 
@@ -88,13 +146,27 @@ export function buildServerEffectiveLoadSummaries(input: {
   response: EffectiveLoadResponse | undefined;
 }): Map<string, ServerEffectiveLoadSummary> {
   const response = input.response;
-  if (!response || response.status !== "available" || response.effective.status !== "available") {
+  if (!response || response.status !== "available") {
     return new Map(input.periods.map((period) => [period.key, unavailableSummary()]));
   }
   const effective = response.effective;
 
   return new Map(
     input.periods.map((period) => {
+      const recommendation = summarizeRecommendation(period, response.recommendation);
+      if (effective.status !== "available") {
+        return [period.key, unavailableSummary(recommendation)];
+      }
+      const resolvedStartDate = response.resolvedRange.startDate;
+      const resolvedEndDate = response.resolvedRange.endDate;
+      if (
+        !resolvedStartDate ||
+        !resolvedEndDate ||
+        period.startDate < resolvedStartDate ||
+        period.endDate > resolvedEndDate
+      ) {
+        return [period.key, unavailableSummary(recommendation)];
+      }
       const firmItems = effective.firmItems.filter(
         (item) => item.date >= period.startDate && item.date <= period.endDate,
       );
@@ -108,7 +180,7 @@ export function buildServerEffectiveLoadSummaries(input: {
         effective.firm.status !== "complete" &&
         effective.firm.status !== "known_zero"
       ) {
-        return [period.key, unavailableSummary()];
+        return [period.key, unavailableSummary(recommendation)];
       }
       const firm = summarize(firmItems);
       const completed = aggregateCommonLoadEnvelopes(
@@ -131,6 +203,7 @@ export function buildServerEffectiveLoadSummaries(input: {
           hasUnavailableCompletedLoad:
             firmItems.some((item) => item.kind === "completed") &&
             (completed.status === "unavailable" || completed.status === "partial"),
+          ...recommendation,
         },
       ];
     }),

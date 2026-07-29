@@ -8,11 +8,23 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const appId = process.env.MAESTRO_APP_ID || "com.deancochran.gradientpeak.dev";
 const appScheme = process.env.MAESTRO_APP_SCHEME || "gradientpeak-dev";
-const defaultServerLabel = process.env.MAESTRO_EXPO_DEV_SERVER_LABEL || "http://10.0.2.2:8081";
+
+function resolvePort(value, fallback, name) {
+  const port = Number(value ?? fallback);
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error(`${name} must be an integer between 1 and 65535`);
+  }
+  return port;
+}
+
+const expoPort = resolvePort(process.env.EXPO_PORT, 8081, "EXPO_PORT");
+const webPort = resolvePort(process.env.PORT, 3000, "PORT");
+const defaultServerLabel =
+  process.env.MAESTRO_EXPO_DEV_SERVER_LABEL || `http://10.0.2.2:${expoPort}`;
 const artifactDir = process.env.MAESTRO_ARTIFACT_DIR || ".maestro/artifacts";
 const defaultCheckFlows = [".maestro/flows/smoke", ".maestro/flows/reusable"];
 const defaultTestFlows = [".maestro/flows/smoke"];
-const forwardedPorts = [8081, 3000, 3100, 54321];
+const forwardedPorts = [...new Set([expoPort, webPort, 8081, 3000, 3100, 54321])];
 const loadedEnvKeys = new Set();
 
 const command = process.argv[2] || "test";

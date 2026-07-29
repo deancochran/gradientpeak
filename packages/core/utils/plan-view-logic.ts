@@ -10,7 +10,7 @@ export interface RecordingViewConfig {
 
 /**
  * Determine what UI elements should be shown during activity recording
- * based on activity type, structure, and route presence
+ * based on activity category, structure, and route presence
  */
 export function getRecordingViewConfig(
   plan: CompiledActivityPlan,
@@ -31,13 +31,13 @@ export function getRecordingViewConfig(
 }
 
 /**
- * Check if an activity type can have a route
- * Note: All activity types can optionally have a route attached
+ * Check if an activity category can have a route
+ * Note: All activity categories can optionally have a route attached
  */
 export function canHaveRoute(plan: CompiledActivityPlan): boolean {
   return plan.occurrences.some(
     (occurrence) =>
       occurrence.role === "activity" &&
-      (occurrence.category === "run" || occurrence.category === "bike"),
+      (occurrence.activity_category === "run" || occurrence.activity_category === "bike"),
   );
 }

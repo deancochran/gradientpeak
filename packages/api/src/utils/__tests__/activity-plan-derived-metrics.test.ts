@@ -15,7 +15,7 @@ const estimateActivity = vi.hoisted(() =>
       intensityFactor: 0.8,
       categoryDoses: [
         {
-          category: "bike",
+          activity_category: "bike",
           timedActiveSeconds: duration,
           distanceMeters: 0,
           repetitionCount: 1,
@@ -58,7 +58,7 @@ function structure(duration = 1800, name = "Bike", percentFtp = 75) {
       {
         id: "22222222-2222-4222-8222-222222222222",
         role: "activity" as const,
-        category: "bike" as const,
+        activity_category: "bike" as const,
         name,
         intervals: [
           {
@@ -168,7 +168,7 @@ describe("on-demand activity plan estimation", () => {
     expect(result[0]?.common_load).toMatchObject({
       status: "available",
       method: "power_threshold",
-      sport: "bike",
+      activity_category: "bike",
       contributingDurationSeconds: 1800,
       intensity: 0.75,
       estimated: true,
@@ -258,7 +258,7 @@ describe("on-demand activity plan estimation", () => {
       estimation_warnings: ["fixture warning"],
       counts_toward_aggregation: true,
       category_loads: [
-        { category: "bike", tss: 42, intensity_factor: 0.8, method: "power_threshold" },
+        { activity_category: "bike", tss: 42, intensity_factor: 0.8, method: "power_threshold" },
       ],
     });
     expect(result[1]).toMatchObject({

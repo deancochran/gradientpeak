@@ -6,14 +6,14 @@ describe("GPS cutover schemas", () => {
   it("accepts gpsRecordingEnabled and rejects legacy location in ActivityPayloadSchema", () => {
     expect(
       ActivityPayloadSchema.safeParse({
-        category: "run",
+        activity_category: "run",
         gpsRecordingEnabled: true,
       }).success,
     ).toBe(true);
 
     expect(
       ActivityPayloadSchema.safeParse({
-        category: "run",
+        activity_category: "run",
         gpsRecordingEnabled: true,
         location: "outdoor",
       }).success,
@@ -42,14 +42,14 @@ describe("GPS cutover schemas", () => {
     ).toBe(false);
   });
 
-  it("requires strict V3 structure and rejects top-level location/category aliases", () => {
+  it("requires strict V3 structure and rejects top-level location/activity_category aliases", () => {
     const structure = {
       version: 3 as const,
       segments: [
         {
           id: "00000000-0000-4000-8000-000000000001",
           role: "activity" as const,
-          category: "run" as const,
+          activity_category: "run" as const,
           name: "Run",
           intervals: [
             {

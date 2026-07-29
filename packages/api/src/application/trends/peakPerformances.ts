@@ -22,7 +22,7 @@ export type PeakPerformancesResult = {
     date: string;
     value: number;
     unit: string;
-    category: string;
+    activity_category: string;
     rank: number;
   }>;
 };
@@ -70,7 +70,7 @@ export function buildPeakPerformances(
         date: activity.started_at.toISOString(),
         value,
         unit,
-        category: activity.type,
+        activity_category: activity.type,
       };
     })
     .filter((performance) => performance !== null);

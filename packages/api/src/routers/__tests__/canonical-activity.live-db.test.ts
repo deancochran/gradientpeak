@@ -77,7 +77,7 @@ function submission(
           id: randomUUID(),
           ordinal: 0,
           role: "activity",
-          category: "bike",
+          activity_category: "bike",
           startOffsetMs: 0,
           endOffsetMs: 3_600_000,
           summary: {
@@ -116,7 +116,7 @@ function segmentManifest(
   elapsedMs: number,
   activeMs: number,
   movingMs: number,
-  category: "bike" | "run" = "bike",
+  activity_category: "bike" | "run" = "bike",
   sourceArtifactId?: string,
 ): NonNullable<ActivitySubmission["segmentSet"]> {
   return {
@@ -127,7 +127,7 @@ function segmentManifest(
         id: randomUUID(),
         ordinal: 0,
         role: "activity",
-        category,
+        activity_category,
         startOffsetMs: 0,
         endOffsetMs: elapsedMs,
         ...(sourceArtifactId
@@ -319,7 +319,7 @@ describe("canonical activity persistence against PostgreSQL", () => {
       profile_id: profileId,
       ordinal: 0,
       role: "activity",
-      category: "run",
+      activity_category: "run",
       start_offset_ms: 0,
       end_offset_ms: 3_700_000,
       timing_coverage: "complete",

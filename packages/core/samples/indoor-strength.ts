@@ -18,10 +18,8 @@ const createPlan = createSystemActivityPlanBuilderFactory("strength", [
  * Estimated TSS: ~50
  */
 export const UPPER_BODY_STRENGTH: RecordingServiceActivityPlan = {
-  version: "3.0",
   name: "Upper Body Strength",
   description: "Comprehensive upper body strength training session",
-  activity_category: "strength",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({
@@ -68,10 +66,8 @@ export const UPPER_BODY_STRENGTH: RecordingServiceActivityPlan = {
  * Estimated TSS: ~60
  */
 export const LOWER_BODY_STRENGTH: RecordingServiceActivityPlan = {
-  version: "3.0",
   name: "Lower Body Strength",
   description: "Comprehensive lower body strength and power training",
-  activity_category: "strength",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({
@@ -119,10 +115,8 @@ export const LOWER_BODY_STRENGTH: RecordingServiceActivityPlan = {
  */
 export const FULL_BODY_CIRCUIT: RecordingServiceActivityPlan = {
   id: "aaaa1111-2222-3333-4444-555555555555",
-  version: "3.0",
   name: "Full Body Circuit",
   description: "High-intensity full body circuit training",
-  activity_category: "strength",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({
@@ -164,10 +158,8 @@ export const FULL_BODY_CIRCUIT: RecordingServiceActivityPlan = {
  */
 export const CORE_STABILITY: RecordingServiceActivityPlan = {
   id: "aaaa2222-3333-4444-5555-666666666666",
-  version: "3.0",
   name: "Core and Stability",
   description: "Focused core strength and stability training",
-  activity_category: "strength",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({
@@ -215,10 +207,8 @@ export const CORE_STABILITY: RecordingServiceActivityPlan = {
  */
 export const FUNCTIONAL_MOVEMENT: RecordingServiceActivityPlan = {
   id: "aaaa3333-4444-5555-6666-777777777777",
-  version: "3.0",
   name: "Functional Movement",
-  description: "Movement patterns for daily life and sport performance",
-  activity_category: "strength",
+  description: "Movement patterns for daily life and activity_category performance",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({
@@ -267,10 +257,8 @@ export const FUNCTIONAL_MOVEMENT: RecordingServiceActivityPlan = {
 
 export const SYSTEM_UPPER_BODY_STRENGTH: RecordingServiceActivityPlan = {
   id: "e9f5a8b7-2c6d-1e0f-5a4b-6c3d9e8f7a0b",
-  version: "3.0",
   name: "Upper Body Strength",
   description: "Bench press, rows, and overhead press - Complete upper body activity",
-  activity_category: "strength",
   gps_recording_enabled: false,
   structure: createPlan()
     .warmup({
@@ -337,10 +325,8 @@ export const SYSTEM_UPPER_BODY_STRENGTH: RecordingServiceActivityPlan = {
 
 export const SYSTEM_LOWER_BODY_STRENGTH: RecordingServiceActivityPlan = {
   id: "f0a6b9c8-3d7e-2f1a-6b5c-7d4e0f9a8b1c",
-  version: "3.0",
   name: "Lower Body Strength",
   description: "Squats, deadlifts, and lunges - Complete lower body activity",
-  activity_category: "strength",
   gps_recording_enabled: false,
   structure: createPlan()
     .warmup({

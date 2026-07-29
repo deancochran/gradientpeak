@@ -3,7 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeaders } from "@tanstack/react-start/server";
 import { z } from "zod";
 
-type ShareEntity = "activity" | "workout" | "training-plan";
+type ShareEntity = "activity" | "activity-plan" | "training-plan";
 
 const shareInputSchema = z.object({ id: z.string().uuid() }).strict();
 
@@ -48,10 +48,10 @@ function getOriginFromHeaders(headers: Headers) {
 
 export function getPublicSharePath(entity: ShareEntity, id: string) {
   switch (entity) {
+    case "activity-plan":
+      return `/share/activity-plans/${id}`;
     case "activity":
       return `/share/activities/${id}`;
-    case "workout":
-      return `/share/workouts/${id}`;
     case "training-plan":
       return `/share/training-plans/${id}`;
   }
@@ -75,6 +75,19 @@ async function createPublicShareCaller() {
   return { caller: appRouter.createCaller(context), origin: getOriginFromHeaders(headers) };
 }
 
+export const loadPublicActivityPlan = createServerFn({ method: "GET" })
+  .validator(shareInputSchema)
+  .handler(async ({ data }) => {
+    const { caller, origin } = await createPublicShareCaller();
+    const activityPlan = await caller.publicShare.activityPlan({ id: data.id });
+    return activityPlan
+      ? {
+          activityPlan,
+          canonicalUrl: getPublicShareUrl(origin, "activity-plan", activityPlan.id),
+        }
+      : null;
+  });
+
 export const loadPublicActivity = createServerFn({ method: "GET" })
   .validator(shareInputSchema)
   .handler(async ({ data }) => {
@@ -84,19 +97,6 @@ export const loadPublicActivity = createServerFn({ method: "GET" })
       ? {
           activity,
           canonicalUrl: getPublicShareUrl(origin, "activity", activity.id),
-        }
-      : null;
-  });
-
-export const loadPublicWorkout = createServerFn({ method: "GET" })
-  .validator(shareInputSchema)
-  .handler(async ({ data }) => {
-    const { caller, origin } = await createPublicShareCaller();
-    const workout = await caller.publicShare.workout({ id: data.id });
-    return workout
-      ? {
-          workout,
-          canonicalUrl: getPublicShareUrl(origin, "workout", workout.id),
         }
       : null;
   });
@@ -118,14 +118,14 @@ export const loadPublicTrainingPlan = createServerFn({ method: "GET" })
   });
 
 export function describeStructure(structure: unknown) {
-  if (!structure || typeof structure !== "object") return "Structured workout details";
+  if (!structure || typeof structure !== "object") return "Structured activity details";
 
   const record = structure as Record<string, unknown>;
   const steps = Array.isArray(record.steps) ? record.steps : null;
   const weeks = Array.isArray(record.weeks) ? record.weeks : null;
   const phases = Array.isArray(record.phases) ? record.phases : null;
 
-  if (steps) return `${steps.length} workout step${steps.length === 1 ? "" : "s"}`;
+  if (steps) return `${steps.length} activity step${steps.length === 1 ? "" : "s"}`;
   if (weeks) return `${weeks.length} week${weeks.length === 1 ? "" : "s"}`;
   if (phases) return `${phases.length} training phase${phases.length === 1 ? "" : "s"}`;
 

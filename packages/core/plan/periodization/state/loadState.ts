@@ -1,14 +1,17 @@
-import { type CanonicalSport, canonicalSportSchema } from "../../../schemas/sport";
-import type { SportLoadState } from "../sports";
 import {
-  advanceSportLoadState,
+  type CanonicalActivityCategory,
+  canonicalActivityCategorySchema,
+} from "../../../schemas/activity-category";
+import type { ActivityCategoryLoadState } from "../activity-categories";
+import {
+  advanceActivityCategoryLoadState,
   applyLoadDecay,
   calculateMechanicalFatigueScore,
 } from "./peripheralLoad";
 import {
   calculateSystemicLoadMetrics,
-  type DailySportLoadInput,
-  type HistoricalDailySportLoad,
+  type DailyActivityCategoryLoadInput,
+  type HistoricalDailyActivityCategoryLoad,
 } from "./systemicLoad";
 
 const SYSTEMIC_CTL_TAU_DAYS = 42;
@@ -20,16 +23,18 @@ export interface DailyLoadState {
   tsb: number;
   systemic_load_7d: number;
   systemic_load_28d: number;
-  sport_load_states: Partial<Record<CanonicalSport, SportLoadState>>;
+  activity_category_load_states: Partial<
+    Record<CanonicalActivityCategory, ActivityCategoryLoadState>
+  >;
   mechanical_fatigue_score: number;
   readiness_score: number;
 }
 
 export interface BuildDailyLoadStateInput {
-  dailySportLoads: DailySportLoadInput[];
-  history?: HistoricalDailySportLoad[];
-  previousState?: Partial<Pick<DailyLoadState, "ctl" | "atl" | "sport_load_states">>;
-  sportLoadHistory?: Partial<Record<CanonicalSport, number[]>>;
+  dailyActivityCategoryLoads: DailyActivityCategoryLoadInput[];
+  history?: HistoricalDailyActivityCategoryLoad[];
+  previousState?: Partial<Pick<DailyLoadState, "ctl" | "atl" | "activity_category_load_states">>;
+  activityCategoryLoadHistory?: Partial<Record<CanonicalActivityCategory, number[]>>;
 }
 
 function round(value: number): number {
@@ -40,18 +45,18 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function getDailyLoadForSport(
-  sport: CanonicalSport,
-  dailySportLoads: DailySportLoadInput[],
+function getDailyLoadForActivityCategory(
+  activity_category: CanonicalActivityCategory,
+  dailyActivityCategoryLoads: DailyActivityCategoryLoadInput[],
 ): number {
-  return dailySportLoads
-    .filter((entry) => entry.sport === sport)
+  return dailyActivityCategoryLoads
+    .filter((entry) => entry.activity_category === activity_category)
     .reduce((sum, entry) => sum + entry.load, 0);
 }
 
 export function buildDailyLoadState(input: BuildDailyLoadStateInput): DailyLoadState {
   const systemic = calculateSystemicLoadMetrics({
-    dailySportLoads: input.dailySportLoads,
+    dailyActivityCategoryLoads: input.dailyActivityCategoryLoads,
     history: input.history,
   });
   const nextCtl = applyLoadDecay(
@@ -64,24 +69,30 @@ export function buildDailyLoadState(input: BuildDailyLoadStateInput): DailyLoadS
     systemic.daily_systemic_load,
     SYSTEMIC_ATL_TAU_DAYS,
   );
-  const sportLoadStates: Partial<Record<CanonicalSport, SportLoadState>> = {};
+  const activityCategoryLoadStates: Partial<
+    Record<CanonicalActivityCategory, ActivityCategoryLoadState>
+  > = {};
 
-  for (const sport of canonicalSportSchema.options) {
-    const dailyLoad = getDailyLoadForSport(sport, input.dailySportLoads);
-    const previousSportState = input.previousState?.sport_load_states?.[sport];
-    const recentLoads = input.sportLoadHistory?.[sport] ?? [];
+  for (const activity_category of canonicalActivityCategorySchema.options) {
+    const dailyLoad = getDailyLoadForActivityCategory(
+      activity_category,
+      input.dailyActivityCategoryLoads,
+    );
+    const previousActivityCategoryState =
+      input.previousState?.activity_category_load_states?.[activity_category];
+    const recentLoads = input.activityCategoryLoadHistory?.[activity_category] ?? [];
 
-    sportLoadStates[sport] = advanceSportLoadState({
-      sport,
+    activityCategoryLoadStates[activity_category] = advanceActivityCategoryLoadState({
+      activity_category,
       dailyLoad,
-      previousState: previousSportState,
+      previousState: previousActivityCategoryState,
       recentLoads,
     });
   }
 
   const tsb = nextCtl - nextAtl;
   const mechanicalFatigueScore = calculateMechanicalFatigueScore({
-    dailySportLoads: input.dailySportLoads,
+    dailyActivityCategoryLoads: input.dailyActivityCategoryLoads,
     history: input.history,
   });
   const readinessScore = clamp(0.5 + tsb / 50 - mechanicalFatigueScore / 250, 0, 1);
@@ -92,7 +103,7 @@ export function buildDailyLoadState(input: BuildDailyLoadStateInput): DailyLoadS
     tsb: round(tsb),
     systemic_load_7d: systemic.systemic_load_7d,
     systemic_load_28d: systemic.systemic_load_28d,
-    sport_load_states: sportLoadStates,
+    activity_category_load_states: activityCategoryLoadStates,
     mechanical_fatigue_score: round(mechanicalFatigueScore),
     readiness_score: round(readinessScore),
   };

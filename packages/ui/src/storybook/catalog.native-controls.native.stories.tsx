@@ -329,7 +329,7 @@ export const ProgressStory: Story = {
 export const RadioGroupStory: Story = {
   name: "Radio Group",
   render: () => {
-    const fixture = radioGroupFixtures.sport;
+    const fixture = radioGroupFixtures.activityCategory;
     const [value, setValue] = React.useState<string>(fixture.value);
     return (
       <NativeFrame>
@@ -349,7 +349,7 @@ export const RadioGroupStory: Story = {
 export const SelectStory: Story = {
   name: "Select",
   render: () => {
-    const fixture = selectFixtures.workoutType;
+    const fixture = selectFixtures.sessionFocus;
     const [value, setValue] = React.useState<Option | undefined>(
       fixture.options.find((option) => option.value === fixture.value),
     );

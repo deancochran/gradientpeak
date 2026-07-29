@@ -1,5 +1,5 @@
 import type {
-  PlannedWorkoutProviderAdapter,
+  PlannedActivityProviderAdapter,
   ProviderPublishResult,
   ProviderSyncEligibility,
 } from "./provider-adapter";
@@ -12,17 +12,17 @@ function diffUtcDays(fromIso: string, toIso: string): number {
   return Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-export class GarminPlannedWorkoutAdapter implements PlannedWorkoutProviderAdapter {
+export class GarminPlannedActivityAdapter implements PlannedActivityProviderAdapter {
   async getPublishEligibility(input: {
     integrationId: string;
     profileId: string;
     resourceKind: "event" | "activity_plan" | "activity_route" | "activity";
     startsAt: string;
   }): Promise<ProviderSyncEligibility> {
-    const daysUntilWorkout = diffUtcDays(new Date().toISOString(), input.startsAt);
+    const daysUntilActivity = diffUtcDays(new Date().toISOString(), input.startsAt);
     const maturityReason =
-      "Garmin planned-workout delivery is evidence-gated; partner publish support is not available.";
-    if (daysUntilWorkout > DEFAULT_GARMIN_PUBLISH_HORIZON_DAYS) {
+      "Garmin planned-activity delivery is evidence-gated; partner publish support is not available.";
+    if (daysUntilActivity > DEFAULT_GARMIN_PUBLISH_HORIZON_DAYS) {
       const nextEligibleAt = new Date(input.startsAt);
       nextEligibleAt.setUTCDate(nextEligibleAt.getUTCDate() - DEFAULT_GARMIN_PUBLISH_HORIZON_DAYS);
 
@@ -42,7 +42,7 @@ export class GarminPlannedWorkoutAdapter implements PlannedWorkoutProviderAdapte
   async publishResource(): Promise<ProviderPublishResult> {
     return {
       action: "noop",
-      error: "Garmin planned workout publish is not implemented yet",
+      error: "Garmin planned activity publish is not implemented yet",
       success: false,
     };
   }
@@ -50,7 +50,7 @@ export class GarminPlannedWorkoutAdapter implements PlannedWorkoutProviderAdapte
   async unsyncResource(): Promise<ProviderPublishResult> {
     return {
       action: "noop",
-      error: "Garmin planned workout unsync is not implemented yet",
+      error: "Garmin planned activity unsync is not implemented yet",
       success: false,
     };
   }

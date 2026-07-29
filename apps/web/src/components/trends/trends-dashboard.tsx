@@ -407,7 +407,7 @@ export function TrendsDashboard() {
                       #{peak.rank} {peak.activityName}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {formatDate(peak.date)} · {peak.category}
+                      {formatDate(peak.date)} · {peak.activity_category}
                     </p>
                   </div>
                   <Badge>

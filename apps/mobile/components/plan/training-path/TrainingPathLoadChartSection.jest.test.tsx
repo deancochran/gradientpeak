@@ -30,7 +30,11 @@ describe("TrainingPathLoadChartSection", () => {
   it("keeps an existing chart mounted while a wider date range loads", () => {
     const props = {
       dailyPoints: [
-        { date: "2026-06-02", effectiveLoadStatus: "complete" as const, effectiveLoad: 50 },
+        {
+          date: "2026-06-02",
+          effectiveLoadStatus: "complete" as const,
+          effectiveRemainingLoad: 50,
+        },
       ],
     };
     const { rerender } = render(<TrainingPathLoadChartSection {...props} />);
@@ -41,6 +45,92 @@ describe("TrainingPathLoadChartSection", () => {
 
     expect(screen.getByTestId("training-path-daily-adjustment-chart")).toBeTruthy();
     expect(screen.queryByText("Loading training path…")).toBeNull();
+  });
+
+  it("renders chartable daily data instead of a no-goal state", () => {
+    const emptyModel = {
+      domains: { fitness: [0, 1] as [number, number], load: [0, 1] as [number, number] },
+      emptyState: "noGoal" as const,
+      goalMarkers: [],
+      selectedWeekSummary: null,
+      todayKey: "2026-07-18",
+      weeks: [],
+    };
+
+    render(
+      <TrainingPathLoadChartSection
+        dailyPoints={[{ date: "2026-06-02", effectiveCompletedLoad: 42 }]}
+        model={emptyModel}
+        onCreateGoal={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("training-path-daily-adjustment-chart")).toBeTruthy();
+    expect(screen.queryByTestId("training-path-empty-state")).toBeNull();
+    expect(screen.queryByText("Add goal")).toBeNull();
+  });
+
+  it("keeps the no-goal action when date buckets contain no chartable data", () => {
+    const emptyModel = {
+      domains: { fitness: [0, 1] as [number, number], load: [0, 1] as [number, number] },
+      emptyState: "noGoal" as const,
+      goalMarkers: [],
+      selectedWeekSummary: null,
+      todayKey: "2026-07-18",
+      weeks: [],
+    };
+
+    render(
+      <TrainingPathLoadChartSection
+        dailyPoints={[{ date: "2026-06-02" }]}
+        model={emptyModel}
+        onCreateGoal={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("training-path-empty-state")).toBeTruthy();
+    expect(screen.getByText("Add goal")).toBeTruthy();
+    expect(screen.queryByTestId("training-path-daily-adjustment-chart")).toBeNull();
+  });
+
+  it("does not let a legacy weekly target suppress the no-goal state", () => {
+    const emptyModel = {
+      domains: { fitness: [0, 1] as [number, number], load: [0, 1] as [number, number] },
+      emptyState: "noGoal" as const,
+      goalMarkers: [],
+      selectedWeekSummary: null,
+      todayKey: "2026-07-18",
+      weeks: [
+        {
+          weekStart: "2026-07-13",
+          weekEnd: "2026-07-19",
+          label: "Jul 13",
+          completedLoad: null,
+          plannedLoad: null,
+          tentativePlannedLoad: null,
+          targetLoad: 500,
+          fitness: null,
+          scheduledFitness: null,
+          targetFitness: null,
+          fatigue: null,
+          form: null,
+          riskZone: null,
+          isCurrent: true,
+          isSelected: true,
+        },
+      ],
+    };
+
+    render(
+      <TrainingPathLoadChartSection
+        model={emptyModel}
+        onCreateGoal={jest.fn()}
+        onSelectedWeekChange={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Add goal")).toBeTruthy();
+    expect(screen.queryByTestId("weekly-training-path-chart")).toBeNull();
   });
 
   it("prefers an explicit unavailable state over the model empty state", () => {
@@ -73,16 +163,18 @@ describe("TrainingPathLoadChartSection", () => {
   it("keeps the primary legend visible and exposes 44-point chart controls", () => {
     render(
       <TrainingPathLoadChartSection
-        dailyPoints={[{ date: "2026-06-02", effectiveLoadStatus: "complete", effectiveLoad: 50 }]}
+        dailyPoints={[
+          { date: "2026-06-02", effectiveLoadStatus: "complete", effectiveRemainingLoad: 50 },
+        ]}
         onOpenSettings={jest.fn()}
       />,
     );
 
     expect(screen.getByTestId("training-path-primary-legend")).toBeTruthy();
-    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("Planned")).toBeTruthy();
     expect(screen.getByText("Completed")).toBeTruthy();
     expect(screen.getByText("Tentative")).toBeTruthy();
-    expect(screen.queryByText("Target")).toBeNull();
+    expect(screen.queryByText("Recommended")).toBeNull();
     expect(screen.queryByText("Completed, load unavailable")).toBeNull();
     expect(screen.queryByText("Actual fitness")).toBeNull();
 
@@ -97,7 +189,7 @@ describe("TrainingPathLoadChartSection", () => {
     expect(screen.getByText("✓")).toBeTruthy();
     expect(screen.getByText("Actual fitness")).toBeTruthy();
     expect(screen.getByText("Projected fitness")).toBeTruthy();
-    expect(screen.getByText("Target fitness")).toBeTruthy();
+    expect(screen.queryByText("Target fitness")).toBeNull();
     expect(screen.getByText("Selected day")).toBeTruthy();
     expect(screen.queryByText("Today")).toBeNull();
     expect(screen.queryByText("Goal")).toBeNull();

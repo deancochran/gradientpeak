@@ -76,7 +76,7 @@
     }
   },
   "dialog": {
-    "workoutDetails": {
+    "activityDetails": {
       "testId": "activity-details-dialog"
     }
   },
@@ -180,15 +180,15 @@
     }
   },
   "radio-group": {
-    "sport": {
-      "id": "preferred-sport",
-      "testId": "preferred-sport-radio-group"
+    "activityCategory": {
+      "id": "preferred-activity-category",
+      "testId": "preferred-activity-category-radio-group"
     }
   },
   "select": {
-    "workoutType": {
-      "id": "activity-type",
-      "testId": "activity-type-select"
+    "sessionFocus": {
+      "id": "session-focus",
+      "testId": "session-focus-select"
     }
   },
   "separator": {

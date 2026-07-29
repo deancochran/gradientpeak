@@ -30,12 +30,14 @@ function addDays(date: string, days: number): string {
 
 function available(
   load: number,
-  sport: "bike" | "run" = "bike",
-  method: CommonLoadMethod = sport === "bike" ? "power_threshold" : "run_pace_threshold",
+  activity_category: "bike" | "run" = "bike",
+  method: CommonLoadMethod = activity_category === "bike"
+    ? "power_threshold"
+    : "run_pace_threshold",
 ): CommonLoadResult {
   const intensity = Math.sqrt(load / 100);
   const thresholdEvidence =
-    sport === "bike"
+    activity_category === "bike"
       ? { type: "ftp_watts" as const, value: 250, unit: "watts" as const }
       : {
           type: "threshold_speed_mps" as const,
@@ -46,7 +48,7 @@ function available(
     status: "available",
     model: COMMON_RELATIVE_LOAD_MODEL,
     version: COMMON_RELATIVE_LOAD_VERSION,
-    sport,
+    activity_category,
     method,
     load,
     intensity,
@@ -58,7 +60,7 @@ function available(
       stale: false,
       estimate: false,
       calculation_version: "threshold-v1",
-      evidence_fingerprint: `quality-${sport}`,
+      evidence_fingerprint: `quality-${activity_category}`,
     },
     thresholdEvidence: {
       ...thresholdEvidence,
@@ -67,9 +69,9 @@ function available(
       validAt: computedAsOf,
       freshness: "current",
       calculationVersion: "threshold-v1",
-      sourceFingerprint: `threshold-${sport}`,
+      sourceFingerprint: `threshold-${activity_category}`,
     },
-    evidenceFingerprint: `activity-${sport}`,
+    evidenceFingerprint: `activity-${activity_category}`,
     computedAsOf,
     estimated: false,
   });
@@ -80,7 +82,7 @@ function unavailableActivity(): CommonLoadResult {
     status: "unavailable",
     model: COMMON_RELATIVE_LOAD_MODEL,
     version: COMMON_RELATIVE_LOAD_VERSION,
-    sport: "run",
+    activity_category: "run",
     method: null,
     quality: null,
     thresholdEvidence: null,
@@ -238,7 +240,7 @@ describe("common Load history v1 replay", () => {
     expect(result.points[0]?.date).toBe("2026-04-28");
   });
 
-  it("accepts a complete mixed-sport common aggregate", () => {
+  it("accepts a complete mixed-category common aggregate", () => {
     const mixedAggregate = aggregateCommonLoad([available(100, "bike"), available(49, "run")]);
     expect(mixedAggregate.status).toBe("complete");
     const days = knownZeroDays().map(

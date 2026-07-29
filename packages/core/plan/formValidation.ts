@@ -1,7 +1,10 @@
 import { z } from "zod";
+import {
+  type CanonicalActivityCategory,
+  goalTargetActivityCategorySchema,
+} from "../schemas/activity-category";
 import type { ProfileGoal } from "../schemas/goals/profile_goals";
 import type { AthleteTrainingSettings } from "../schemas/settings/profile_settings";
-import { type CanonicalSport, goalTargetSportSchema } from "../schemas/sport";
 import type { CreationAvailabilityConfig } from "../schemas/training-plan-structure/creation-config-schemas";
 import type { CreationFeasibilitySafetySummary } from "../schemas/training-plan-structure/diagnostics-context-schemas";
 import {
@@ -21,7 +24,7 @@ const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 interface GoalTargetForValidation {
   id: string;
   targetType: "race_performance" | "pace_threshold" | "power_threshold" | "hr_threshold";
-  activityCategory?: CanonicalSport;
+  activityCategory?: CanonicalActivityCategory;
   distanceKm?: string;
   completionTimeHms?: string;
   paceMmSs?: string;
@@ -47,7 +50,7 @@ const goalTargetSchema = z
   .object({
     id: z.string().min(1),
     targetType: z.enum(["race_performance", "pace_threshold", "power_threshold", "hr_threshold"]),
-    activityCategory: goalTargetSportSchema.optional(),
+    activityCategory: goalTargetActivityCategorySchema.optional(),
     distanceKm: z.string().optional(),
     completionTimeHms: z.string().optional(),
     paceMmSs: z.string().optional(),

@@ -73,12 +73,15 @@ export class RecordingConfigResolver {
     };
   }
 
-  /** Resolves sport-specific recording UI and metrics for the active compiled segment. */
+  /** Resolves activity-category-specific recording UI and metrics for the active compiled segment. */
   static resolveForOccurrence(
     input: RecordingConfigInput,
-    occurrence: Pick<CompiledActivityStepOccurrence, "category">,
+    occurrence: Pick<CompiledActivityStepOccurrence, "activity_category">,
   ): RecordingConfiguration {
-    return RecordingConfigResolver.resolve({ ...input, activityCategory: occurrence.category });
+    return RecordingConfigResolver.resolve({
+      ...input,
+      activityCategory: occurrence.activity_category,
+    });
   }
 
   /**
@@ -138,7 +141,7 @@ export class RecordingConfigResolver {
 
     return {
       launchSource: context.launchSource ?? "manual",
-      activityCategory: snapshot.activity.category,
+      activityCategory: snapshot.activity.activity_category,
       gpsRecordingEnabled: snapshot.activity.gpsMode === "on",
       mode: activityPlanId ? "planned" : "unplanned",
       eventId: snapshot.activity.eventId,
@@ -304,8 +307,8 @@ export class RecordingConfigResolver {
                 target.type === "watts" ||
                 target.type === "speed" ||
                 target.type === "cadence") &&
-              // V3 validation has already checked category/target compatibility.
-              occurrence.category !== "other",
+              // V3 validation has already checked activity_category/target compatibility.
+              occurrence.activity_category !== "other",
           ),
       );
     } catch {
@@ -355,7 +358,7 @@ export class RecordingConfigResolver {
 
     return {
       authority: {
-        category: hasPlan ? "plan" : "user",
+        activity_category: hasPlan ? "plan" : "user",
         structure: hasPlan ? "plan" : "none",
         spatial: hasRoute ? "route" : "none",
         locationCapture: "gps",
@@ -489,7 +492,7 @@ export class RecordingConfigResolver {
     const cards: RecordingInsightCard[] = [];
 
     if (params.hasStructuredPlan) {
-      cards.push("workout_interval");
+      cards.push("activity_interval");
     }
 
     if (params.hasRouteGeometry) {

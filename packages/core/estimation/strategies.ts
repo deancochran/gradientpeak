@@ -1,11 +1,11 @@
+import {
+  getActivityCategoryRouteBaseSpeed,
+  getActivityCategoryTemplateDefaults,
+  getActivityCategoryThresholdToEndurancePaceMultiplier,
+} from "../activity-categories";
 import { compileActivityPlanV3 } from "../activity-plan";
 import { calculateActivityPlanStats } from "../activity-plan-calculations";
-import type { CanonicalSport } from "../schemas/sport";
-import {
-  getSportRouteBaseSpeed,
-  getSportTemplateDefaults,
-  getSportThresholdToEndurancePaceMultiplier,
-} from "../sports";
+import type { CanonicalActivityCategory } from "../schemas/activity-category";
 import type { EstimationContext, EstimationResult, Route } from "./types";
 
 // ==============================
@@ -23,7 +23,7 @@ export function estimateFromStructure(context: EstimationContext): EstimationRes
     cyclingFtpWatts: context.ftp ?? undefined,
   });
   const categoryDoses = stats.categoryDoses.map((dose) => ({
-    category: dose.category,
+    activity_category: dose.activity_category,
     timedActiveSeconds: dose.timedActiveSeconds,
     distanceMeters: dose.distanceMeters,
     repetitionCount: dose.repetitionCount,
@@ -38,7 +38,7 @@ export function estimateFromStructure(context: EstimationContext): EstimationRes
   const soleDose = categoryDoses.length === 1 ? categoryDoses[0] : undefined;
   const warnings = categoryDoses
     .filter((dose) => dose.tss === null)
-    .map((dose) => `No supported load evidence for ${dose.category} segments.`);
+    .map((dose) => `No supported load evidence for ${dose.activity_category} segments.`);
   if (stats.duration.exactElapsedSeconds === null) {
     warnings.push("Exact elapsed duration is unavailable for non-time prescriptions.");
   }
@@ -53,7 +53,7 @@ export function estimateFromStructure(context: EstimationContext): EstimationRes
     confidence:
       soleDose?.tss != null && stats.duration.exactElapsedSeconds !== null ? "high" : "low",
     confidenceScore: soleDose?.tss != null ? 90 : 40,
-    factors: ["compiled-v3-occurrences", "sport-isolated-dose"],
+    factors: ["compiled-v3-occurrences", "activity_category-isolated-dose"],
     warnings: warnings.length > 0 ? warnings : undefined,
   };
 }
@@ -85,11 +85,12 @@ export function estimateFromRoute(context: EstimationContext): EstimationResult 
     throw new Error("Route-based estimation requires route data");
   }
 
-  // Estimate base speed based on activity type and fitness level
+  // Estimate base speed based on activity category and fitness level
   let baseSpeed = estimateBaseSpeed(activityCategory, fitnessState);
   if (activityCategory === "run" && thresholdPaceSecondsPerKm) {
     const endurancePaceSecondsPerKm =
-      thresholdPaceSecondsPerKm * getSportThresholdToEndurancePaceMultiplier(activityCategory);
+      thresholdPaceSecondsPerKm *
+      getActivityCategoryThresholdToEndurancePaceMultiplier(activityCategory);
     baseSpeed = 1000 / endurancePaceSecondsPerKm;
   }
 
@@ -148,14 +149,14 @@ export function estimateFromRoute(context: EstimationContext): EstimationResult 
 }
 
 /**
- * Estimate base speed for activity type
+ * Estimate base speed for activity category
  */
 function estimateBaseSpeed(
-  activityCategory: CanonicalSport,
+  activityCategory: CanonicalActivityCategory,
   fitnessState?: { ctl: number },
 ): number {
   // Base speeds in m/s for moderate effort
-  let speed = getSportRouteBaseSpeed(activityCategory);
+  let speed = getActivityCategoryRouteBaseSpeed(activityCategory);
 
   // Adjust for fitness level (CTL)
   if (fitnessState && fitnessState.ctl > 0) {
@@ -174,7 +175,10 @@ function estimateBaseSpeed(
 /**
  * Calculate terrain adjustment factor for speed
  */
-function calculateTerrainAdjustment(route: Route, activityCategory: CanonicalSport): number {
+function calculateTerrainAdjustment(
+  route: Route,
+  activityCategory: CanonicalActivityCategory,
+): number {
   if (activityCategory === "strength" || activityCategory === "swim") {
     return 1.0; // No terrain adjustment
   }
@@ -215,7 +219,7 @@ function estimatePowerFromElevation(
   distanceMeters: number,
   weightKg: number,
   _ftp?: number | null,
-  activityCategory?: CanonicalSport,
+  activityCategory?: CanonicalActivityCategory,
 ): number | undefined {
   if (activityCategory !== "bike") return undefined;
 
@@ -241,14 +245,14 @@ function estimatePowerFromElevation(
 // ==============================
 
 /**
- * Estimate using activity type templates
+ * Estimate using activity category templates
  * Lowest accuracy - fallback for activities without structure/route
  * Accuracy: 50-65%
  */
 export function estimateFromTemplate(context: EstimationContext): EstimationResult {
   const { activityCategory = "other", fitnessState } = context;
 
-  const template = getSportTemplateDefaults(activityCategory);
+  const template = getActivityCategoryTemplateDefaults(activityCategory);
 
   // Adjust based on user fitness level (CTL)
   const fitnessMultiplier = fitnessState ? 1 + (fitnessState.ctl - 50) / 100 : 1.0;
@@ -266,7 +270,7 @@ export function estimateFromTemplate(context: EstimationContext): EstimationResu
     intensityFactor: template.avgIF,
     confidence: "low",
     confidenceScore: 50,
-    factors: ["template-based", "activity-type-default"],
+    factors: ["template-based", "activity-category-default"],
     warnings,
   };
 }

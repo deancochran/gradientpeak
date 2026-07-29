@@ -47,10 +47,7 @@ export function UpcomingActivitiesCard({ activities }: UpcomingActivitiesCardPro
                 plannedActivity={{
                   ...activity,
                   activity_plan_id: activity.activity_plan.id,
-                  activity_plan: {
-                    ...activity.activity_plan,
-                    primary_category: activity.activity_plan.activity_category,
-                  },
+                  activity_plan: activity.activity_plan,
                 }}
                 onPress={() => handleActivityPress(activity.id)}
                 showScheduleInfo

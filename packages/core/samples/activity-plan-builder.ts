@@ -4,7 +4,7 @@ import type {
   ActivityPlanTarget,
 } from "../activity-plan";
 import { deterministicUuidFromSeed } from "../plan/normalizeGoalInput";
-import type { CanonicalSport } from "../schemas/sport";
+import type { CanonicalActivityCategory } from "../schemas/activity-category";
 
 type StepInput = {
   name: string;
@@ -26,7 +26,7 @@ export class SystemActivityPlanBuilder {
   private readonly intervals: DraftInterval[] = [];
 
   constructor(
-    private readonly category: CanonicalSport,
+    private readonly activity_category: CanonicalActivityCategory,
     private readonly identity: string,
   ) {}
 
@@ -70,16 +70,16 @@ export class SystemActivityPlanBuilder {
   build(): ActivityPlanStructureV3 {
     if (this.intervals.length === 0) throw new Error("Plan must have at least one interval");
 
-    const segmentSeed = `system-template:${this.category}:${this.identity}`;
+    const segmentSeed = `system-template:${this.activity_category}:${this.identity}`;
 
     return {
       version: 3,
       segments: [
         {
           id: deterministicUuidFromSeed(`segment:0:${segmentSeed}`),
-          name: `${this.category} activity`,
+          name: `${this.activity_category} activity`,
           role: "activity",
-          category: this.category,
+          activity_category: this.activity_category,
           intervals: this.intervals.map((interval, intervalIndex) => ({
             id: deterministicUuidFromSeed(`interval:${intervalIndex}:${segmentSeed}`),
             name: interval.name,
@@ -100,20 +100,24 @@ export class SystemActivityPlanBuilder {
   }
 }
 
-export function createSystemActivityPlanBuilder(category: CanonicalSport, identity: string) {
-  return new SystemActivityPlanBuilder(category, identity);
+export function createSystemActivityPlanBuilder(
+  activity_category: CanonicalActivityCategory,
+  identity: string,
+) {
+  return new SystemActivityPlanBuilder(activity_category, identity);
 }
 
 /** Binds explicit, ordered identity keys to a source module's authored template definitions. */
 export function createSystemActivityPlanBuilderFactory(
-  category: CanonicalSport,
+  activity_category: CanonicalActivityCategory,
   identities: readonly string[],
 ) {
   let nextIdentityIndex = 0;
   return () => {
     const identity = identities[nextIdentityIndex];
-    if (!identity) throw new Error(`Missing stable identity for ${category} system template`);
+    if (!identity)
+      throw new Error(`Missing stable identity for ${activity_category} system template`);
     nextIdentityIndex += 1;
-    return createSystemActivityPlanBuilder(category, identity);
+    return createSystemActivityPlanBuilder(activity_category, identity);
   };
 }

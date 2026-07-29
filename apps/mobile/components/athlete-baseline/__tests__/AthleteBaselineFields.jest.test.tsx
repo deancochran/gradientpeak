@@ -98,7 +98,7 @@ function ControlledHarness({
       <AthleteBaselineFields
         value={value}
         onChange={handleChange}
-        visibleSports={["cycling", "running", "swimming"]}
+        visibleActivityCategories={["cycling", "running", "swimming"]}
         sources={sources}
         estimates={{ maxHr: 185, ftp: 210 }}
       />
@@ -112,9 +112,13 @@ function ControlledHarness({
 }
 
 describe("AthleteBaselineFields", () => {
-  it("never exposes manually editable sport thresholds", () => {
+  it("never exposes manually editable activity-category thresholds", () => {
     const { rerender } = renderNative(
-      <AthleteBaselineFields value={baseValue} onChange={jest.fn()} visibleSports={["running"]} />,
+      <AthleteBaselineFields
+        value={baseValue}
+        onChange={jest.fn()}
+        visibleActivityCategories={["running"]}
+      />,
     );
 
     expect(screen.queryByLabelText("Running threshold pace (Optional)")).toBeNull();
@@ -125,7 +129,7 @@ describe("AthleteBaselineFields", () => {
       <AthleteBaselineFields
         value={baseValue}
         onChange={jest.fn()}
-        visibleSports={["cycling", "swimming"]}
+        visibleActivityCategories={["cycling", "swimming"]}
       />,
     );
     expect(screen.queryByTestId("athlete-baseline-ftp")).toBeNull();
@@ -139,7 +143,7 @@ describe("AthleteBaselineFields", () => {
       <AthleteBaselineFields
         value={{ ...baseValue, restingHr: 52 }}
         onChange={onChange}
-        visibleSports={[]}
+        visibleActivityCategories={[]}
       />,
     );
 
@@ -152,7 +156,7 @@ describe("AthleteBaselineFields", () => {
       <AthleteBaselineFields
         value={baseValue}
         onChange={jest.fn()}
-        visibleSports={[]}
+        visibleActivityCategories={[]}
         sources={{ restingHr: { kind: "cleared" } }}
       />,
     );
@@ -167,7 +171,7 @@ describe("AthleteBaselineFields", () => {
       <AthleteBaselineFields
         value={{ ...baseValue, restingHr: 52 }}
         onChange={onChange}
-        visibleSports={[]}
+        visibleActivityCategories={[]}
       />,
     );
 
@@ -185,7 +189,7 @@ describe("AthleteBaselineFields", () => {
       <AthleteBaselineFields
         value={{ ...baseValue, experience: "intermediate", gender: "female" }}
         onChange={jest.fn()}
-        visibleSports={[]}
+        visibleActivityCategories={[]}
       />,
     );
 
@@ -219,7 +223,7 @@ describe("AthleteBaselineFields", () => {
       <AthleteBaselineFields
         value={{ ...baseValue, gender: "female" }}
         onChange={onChange}
-        visibleSports={[]}
+        visibleActivityCategories={[]}
       />,
     );
 
@@ -251,7 +255,7 @@ describe("AthleteBaselineFields", () => {
       <AthleteBaselineFields
         value={{ ...baseValue, maxHr: 190 }}
         onChange={onChange}
-        visibleSports={[]}
+        visibleActivityCategories={[]}
         sources={{ maxHr: { kind: "manual" } }}
         estimates={{ maxHr: 185 }}
       />,
@@ -267,7 +271,7 @@ describe("AthleteBaselineFields", () => {
       <AthleteBaselineFields
         value={{ ...baseValue, weightDisplayUnit: "lbs" }}
         onChange={onChange}
-        visibleSports={[]}
+        visibleActivityCategories={[]}
       />,
     );
 

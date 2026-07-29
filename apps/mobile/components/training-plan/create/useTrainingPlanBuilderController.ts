@@ -245,7 +245,7 @@ export function useTrainingPlanBuilderController({
 
   const confirmRemoveSession = useCallback(
     (sessionId: string) => {
-      Alert.alert("Remove workout?", "This workout will be removed from the plan.", [
+      Alert.alert("Remove activity?", "This activity will be removed from the plan.", [
         { style: "cancel", text: "Cancel" },
         {
           style: "destructive",

@@ -1,10 +1,10 @@
-import {
-  compileActivityPlanV3,
-  type RecordingActivityCategory,
-  type RecordingServiceActivityPlan,
-} from "@repo/core";
+import type { RecordingActivityCategory, RecordingServiceActivityPlan } from "@repo/core";
 import { Alert } from "react-native";
 import type { ActivityRecorderService, RecordingLifecycle } from "@/lib/services/ActivityRecorder";
+import {
+  getMobileRecordingPlanSupport,
+  type MobileRecordingPlanSupport,
+} from "@/lib/services/ActivityRecorder/planSupport";
 import {
   activitySelectionStore,
   type RecordingLaunchPayload,
@@ -31,7 +31,7 @@ export interface RecordingObjectActionCandidate {
   objectKind: RecordingObjectKind;
   objectId: string;
   label?: string | null;
-  category?: string | null;
+  activity_category?: string | null;
   plan?: RecordingServiceActivityPlan & { id?: string | null };
   canReadGeometry?: boolean;
 }
@@ -57,11 +57,31 @@ function isSamePlan(
   return Boolean(currentPlan?.id && candidate.plan?.id && currentPlan.id === candidate.plan.id);
 }
 
-function getCategory(category: string | null | undefined): RecordingActivityCategory {
-  if (category === "run" || category === "bike" || category === "swim" || category === "strength") {
-    return category;
+function getCategory(activity_category: string | null | undefined): RecordingActivityCategory {
+  if (
+    activity_category === "run" ||
+    activity_category === "bike" ||
+    activity_category === "swim" ||
+    activity_category === "strength"
+  ) {
+    return activity_category;
   }
   return "other";
+}
+
+function getUnsupportedPlanResolution(
+  support: Extract<MobileRecordingPlanSupport, { supported: false }>,
+): RecordingObjectActionResolution {
+  return {
+    primaryAction: "disabled",
+    secondaryActions: [],
+    label: "Mobile Recording Unavailable",
+    disabledReason: support.message,
+    consequence: null,
+    command: null,
+    shouldNavigateToRecord: false,
+    confirmationCopy: null,
+  };
 }
 
 export function resolveRecordingObjectAction({
@@ -84,6 +104,13 @@ export function resolveRecordingObjectAction({
       shouldNavigateToRecord: false,
       confirmationCopy: null,
     };
+  }
+
+  if (candidate.objectKind === "activity_plan" && !isSamePlan(service, candidate)) {
+    const support = getMobileRecordingPlanSupport(candidate.plan);
+    if (!support.supported) {
+      return getUnsupportedPlanResolution(support);
+    }
   }
 
   if (lifecycle === "active") {
@@ -178,12 +205,26 @@ export async function handleRecordingObjectAction({
     }
 
     if (command === "start_with_plan") {
-      if (!candidate.plan) return;
+      const plan = candidate.plan;
+      if (!plan) {
+        const missingPlanSupport = getMobileRecordingPlanSupport(plan);
+        if (!missingPlanSupport.supported) {
+          const resolution = getUnsupportedPlanResolution(missingPlanSupport);
+          Alert.alert(resolution.label, resolution.disabledReason ?? "Try a different plan.");
+        }
+        return;
+      }
+      const support = getMobileRecordingPlanSupport(plan);
+      if (!support.supported) {
+        const resolution = getUnsupportedPlanResolution(support);
+        Alert.alert(resolution.label, resolution.disabledReason ?? "Try a different plan.");
+        return;
+      }
       const payload: RecordingLaunchPayload = {
         launchSource: "activity_plan",
-        category: compileActivityPlanV3(candidate.plan.structure).primaryCategory,
+        activity_category: support.activity_category,
         gpsRecordingEnabled: true,
-        plan: candidate.plan,
+        plan,
       };
       activitySelectionStore.setSelection(payload);
       navigateToRecord();
@@ -191,11 +232,11 @@ export async function handleRecordingObjectAction({
     }
 
     if (command === "start_with_route") {
-      const category = getCategory(candidate.category);
+      const activity_category = getCategory(candidate.activity_category);
       const payload: RecordingLaunchPayload = {
         launchSource: "route",
-        category,
-        gpsRecordingEnabled: category === "run" || category === "bike",
+        activity_category,
+        gpsRecordingEnabled: activity_category === "run" || activity_category === "bike",
         routeId: candidate.objectId,
       };
       activitySelectionStore.setSelection(payload);
@@ -206,8 +247,22 @@ export async function handleRecordingObjectAction({
     if (!service) return;
 
     if (command === "attach_plan") {
-      if (!candidate.plan) return;
-      service.selectPlan(candidate.plan);
+      const plan = candidate.plan;
+      if (!plan) {
+        const missingPlanSupport = getMobileRecordingPlanSupport(plan);
+        if (!missingPlanSupport.supported) {
+          const resolution = getUnsupportedPlanResolution(missingPlanSupport);
+          Alert.alert(resolution.label, resolution.disabledReason ?? "Try a different plan.");
+        }
+        return;
+      }
+      const support = getMobileRecordingPlanSupport(plan);
+      if (!support.supported) {
+        const resolution = getUnsupportedPlanResolution(support);
+        Alert.alert(resolution.label, resolution.disabledReason ?? "Try a different plan.");
+        return;
+      }
+      service.selectPlan(plan);
       navigateToRecord();
       return;
     }

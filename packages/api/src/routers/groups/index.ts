@@ -16,9 +16,16 @@ import {
   updateGroupInputSchema,
   updateMemberRoleInputSchema,
 } from "@repo/core/groups";
-import { groupInvitations, groupJoinRequests, groupMemberships, groups, profiles } from "@repo/db";
+import {
+  groupEvents,
+  groupInvitations,
+  groupJoinRequests,
+  groupMemberships,
+  groups,
+  profiles,
+} from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
 import { z } from "zod";
 import { createOrGetPendingGroupJoinRequest } from "../../application/groups/joinRequestMutations";
 import {
@@ -26,6 +33,10 @@ import {
   setGroupMembershipActive,
 } from "../../application/groups/membershipMutations";
 import { getRequiredDb } from "../../db";
+import {
+  enqueueWahooGroupEventRouteDeliveryForAcceptedRecipients,
+  enqueueWahooGroupEventRouteDeliveryReconcileForProfile,
+} from "../../lib/provider-sync/event-delivery/wahoo-group-event-route-delivery";
 import { createTRPCRouter, protectedProcedure } from "../../trpc";
 import {
   buildGroupViewerStateForProfile,
@@ -400,6 +411,20 @@ export const groupsRouter = createTRPCRouter({
             eq(groupJoinRequests.status, GROUP_JOIN_REQUEST_STATUS_PENDING),
           ),
         );
+      const routedEvents = await tx
+        .select({ eventId: groupEvents.id, routeId: groupEvents.route_id })
+        .from(groupEvents)
+        .where(and(eq(groupEvents.group_id, input.groupId), isNotNull(groupEvents.route_id)));
+      for (const event of routedEvents) {
+        if (!event.routeId) continue;
+        await enqueueWahooGroupEventRouteDeliveryForAcceptedRecipients({
+          db,
+          eventId: event.eventId,
+          groupId: input.groupId,
+          sourceRouteId: event.routeId,
+          transaction: tx,
+        });
+      }
     });
 
     return { success: true };
@@ -554,15 +579,23 @@ export const groupsRouter = createTRPCRouter({
       });
     }
 
-    await db
-      .update(groupMemberships)
-      .set({ status: GROUP_MEMBERSHIP_STATUS_LEFT, updated_at: new Date() })
-      .where(
-        and(
-          eq(groupMemberships.group_id, input.groupId),
-          eq(groupMemberships.profile_id, profileId),
-        ),
-      );
+    await db.transaction(async (tx) => {
+      await tx
+        .update(groupMemberships)
+        .set({ status: GROUP_MEMBERSHIP_STATUS_LEFT, updated_at: new Date() })
+        .where(
+          and(
+            eq(groupMemberships.group_id, input.groupId),
+            eq(groupMemberships.profile_id, profileId),
+          ),
+        );
+      await enqueueWahooGroupEventRouteDeliveryReconcileForProfile({
+        db,
+        profileId,
+        transaction: tx,
+        trigger: "access_changed",
+      });
+    });
 
     return { success: true };
   }),
@@ -957,16 +990,25 @@ export const groupsRouter = createTRPCRouter({
         throw new TRPCError({ code: "FORBIDDEN", message: "You cannot remove this group member" });
       }
 
-      const [membership] = await db
-        .update(groupMemberships)
-        .set({ status: GROUP_MEMBERSHIP_STATUS_REMOVED, updated_at: new Date() })
-        .where(
-          and(
-            eq(groupMemberships.group_id, input.groupId),
-            eq(groupMemberships.profile_id, input.profileId),
-          ),
-        )
-        .returning();
+      const [membership] = await db.transaction(async (tx) => {
+        const [updatedMembership] = await tx
+          .update(groupMemberships)
+          .set({ status: GROUP_MEMBERSHIP_STATUS_REMOVED, updated_at: new Date() })
+          .where(
+            and(
+              eq(groupMemberships.group_id, input.groupId),
+              eq(groupMemberships.profile_id, input.profileId),
+            ),
+          )
+          .returning();
+        await enqueueWahooGroupEventRouteDeliveryReconcileForProfile({
+          db,
+          profileId: input.profileId,
+          transaction: tx,
+          trigger: "access_changed",
+        });
+        return [updatedMembership];
+      });
 
       return { membership: serializeMembership(membership as MembershipRow) };
     }),

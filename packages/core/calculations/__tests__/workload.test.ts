@@ -9,7 +9,7 @@ import {
 } from "../workload";
 
 const identity = {
-  sport: "cycling",
+  activity_category: "cycling",
   family: "tss" as const,
   method: "normalized_power",
   version: "1",

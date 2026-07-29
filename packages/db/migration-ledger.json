@@ -3,7 +3,47 @@
   "entries": [
     {
       "version": "20260726005149",
-      "name": "generation_2_baseline"
+      "name": "generation_2_baseline",
+      "sha256": "84292946d4e61fd3dd46312ba31343471fb8248c7af644b06593b91d08e8d57c",
+      "executionMode": "transactional"
+    },
+    {
+      "version": "20260727090000",
+      "name": "add_activity_plan_structure_canonical_check",
+      "sha256": "202cc2a87bc1c9e38ffdb263e61f22af91182f4d644b0e00f82111174beead3d",
+      "executionMode": "transactional"
+    },
+    {
+      "version": "20260727090002",
+      "name": "add_planned_day_summary_index",
+      "sha256": "c9acbedc187d565b717994892b2e22af84eab9a8dac1e416becc8b07e0345af7",
+      "executionMode": "autocommit",
+      "operation": {
+        "kind": "create_index_concurrently",
+        "schema": "public",
+        "indexName": "idx_events_planned_day_summary",
+        "table": "public.events",
+        "definition": "profile_id, scheduled_date, starts_at, id, activity_plan_id",
+        "predicate": "event_type = 'planned' and status in ('scheduled', 'completed')"
+      }
+    },
+    {
+      "version": "20260728090000",
+      "name": "add_activity_segments_raw_sub_sport",
+      "sha256": "d23d747458dc70c17813b150f80fb699abe520a3749f360829483023a8d3a499",
+      "executionMode": "transactional"
+    },
+    {
+      "version": "20260728090001",
+      "name": "drop_multisport_cutover_audits",
+      "sha256": "7888dd9cb5102e957a93fe0d0349b6f4295b83b12891eca494c4a21b3b8204b0",
+      "executionMode": "transactional"
+    },
+    {
+      "version": "20260729090000",
+      "name": "add_group_event_route_delivery_resource_kind",
+      "sha256": "f84b182cc546ad6f436983710be0d511a79d2699c73a0c3a5532a0742d7bac6e",
+      "executionMode": "transactional"
     }
   ]
 }

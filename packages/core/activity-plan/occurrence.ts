@@ -1,4 +1,4 @@
-import type { CanonicalSport } from "../schemas/sport";
+import type { CanonicalActivityCategory } from "../schemas/activity-category";
 import type { ActivityPlanDuration, ActivityPlanTarget } from "./v3-schema";
 
 export type CompiledActivityStepOccurrence = {
@@ -7,7 +7,7 @@ export type CompiledActivityStepOccurrence = {
   segmentId: string;
   segmentIndex: number;
   role: "activity";
-  category: CanonicalSport;
+  activity_category: CanonicalActivityCategory;
   intervalId: string;
   intervalIndex: number;
   stepId: string;
@@ -18,13 +18,13 @@ export type CompiledActivityStepOccurrence = {
   targets: readonly ActivityPlanTarget[];
 };
 
-export type CompiledBoundaryOccurrence = {
+export type CompiledRestOccurrence = {
   occurrenceId: string;
   globalOrdinal: number;
   segmentId: string;
   segmentIndex: number;
-  role: "transition" | "rest";
-  category: null;
+  role: "rest";
+  activity_category: null;
   intervalId: null;
   intervalIndex: null;
   stepId: null;
@@ -37,7 +37,7 @@ export type CompiledBoundaryOccurrence = {
 
 export type CompiledActivityPlanOccurrence =
   | CompiledActivityStepOccurrence
-  | CompiledBoundaryOccurrence;
+  | CompiledRestOccurrence;
 
 /** IDs are delimiter-safe because every identity component has fixed UUID or integer grammar. */
 export function createActivityStepOccurrenceId(input: {

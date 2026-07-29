@@ -20,7 +20,11 @@ Run the web app:
 ```bash
 pnpm --filter web dev:local
 pnpm --filter web dev:tunnel
+pnpm --filter web dev:e2e
 ```
+
+The E2E server verifies the local database migration ledger before binding to `PORT` (default
+`3000`). It fails rather than moving to another port when that port is occupied.
 
 Run the main checks:
 

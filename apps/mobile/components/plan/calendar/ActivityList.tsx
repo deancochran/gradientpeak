@@ -52,7 +52,7 @@ function transformToCardData(plannedActivity: PlannedActivity): ActivityPlanCard
   return {
     id: plannedActivity.id,
     name: plan?.name || "Unnamed Activity",
-    activityType: plan?.activity_category || "other",
+    activity_category: plan?.activity_category || "other",
     structure: plan?.structure,
     estimatedDuration: planMetrics.estimated_duration ?? undefined,
     estimatedTss: planMetrics.estimated_tss ?? undefined,
@@ -80,7 +80,7 @@ function GroupSection({ title, activities, onPress }: GroupSectionProps) {
         {activities.map((activity) => (
           <ActivityPlanCard
             key={activity.id}
-            activity={transformToCardData(activity)}
+            cardData={transformToCardData(activity)}
             onPress={() => onPress(activity.id)}
             variant="default"
             showScheduleInfo={true}
@@ -141,7 +141,7 @@ export function ActivityList({
         {displayActivities.map((activity) => (
           <ActivityPlanCard
             key={activity.id}
-            activity={transformToCardData(activity)}
+            cardData={transformToCardData(activity)}
             onPress={() => onActivityPress(activity.id)}
             variant="default"
             showScheduleInfo={true}
@@ -191,7 +191,7 @@ export function ActivityListCompact({
       {displayActivities.map((activity) => (
         <ActivityPlanCard
           key={activity.id}
-          activity={transformToCardData(activity)}
+          cardData={transformToCardData(activity)}
           onPress={() => onActivityPress(activity.id)}
           variant="compact"
           showScheduleInfo={true}

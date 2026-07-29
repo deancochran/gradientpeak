@@ -1,8 +1,30 @@
 import { z } from "zod";
 
-import { canonicalSportSchema } from "../schemas/sport";
+import { canonicalActivityCategorySchema } from "../schemas/activity-category";
 import { type ActivityTarget, saveableActivityTargetSchema } from "../targets/schema";
 import { ACTIVITY_PLAN_V3_LIMITS, addActivityPlanV3DocumentIssues } from "./v3-validation";
+
+const NIL_UUID = "00000000-0000-0000-0000-000000000000";
+
+const activityPlanIdSchema = z
+  .string()
+  .uuid()
+  .refine((value) => value.toLowerCase() !== NIL_UUID, {
+    message: "ActivityPlan IDs must not use the nil UUID.",
+  });
+
+const codePointBoundedString = (minimum: number, maximum: number) =>
+  z.string().refine(
+    (value) => {
+      const length = Array.from(value).length;
+      return length >= minimum && length <= maximum;
+    },
+    { message: `String must contain between ${minimum} and ${maximum} Unicode characters.` },
+  );
+
+const activityPlanNameSchema = codePointBoundedString(1, 100);
+const activityPlanDescriptionSchema = codePointBoundedString(0, 500);
+const activityPlanNotesSchema = codePointBoundedString(0, 1_000);
 
 export const activityPlanTimeDurationSchema = z
   .object({
@@ -44,10 +66,10 @@ export type ActivityPlanTarget = ActivityTarget;
 
 export const activityPlanIntervalStepSchema = z
   .object({
-    id: z.string().uuid(),
-    name: z.string().min(1).max(100).default("Step"),
-    description: z.string().max(500).optional(),
-    notes: z.string().max(1000).optional(),
+    id: activityPlanIdSchema,
+    name: activityPlanNameSchema,
+    description: activityPlanDescriptionSchema.optional(),
+    notes: activityPlanNotesSchema.optional(),
     duration: activityPlanDurationSchema,
     targets: z.array(activityPlanTargetSchema).min(1).max(3),
   })
@@ -56,34 +78,29 @@ export type ActivityPlanIntervalStep = z.infer<typeof activityPlanIntervalStepSc
 
 export const activityPlanIntervalSchema = z
   .object({
-    id: z.string().uuid(),
-    name: z.string().min(1).max(100),
-    repetitions: z
-      .number()
-      .int()
-      .min(1)
-      .max(ACTIVITY_PLAN_V3_LIMITS.maxIntervalRepetitions)
-      .default(1),
+    id: activityPlanIdSchema,
+    name: activityPlanNameSchema,
+    repetitions: z.number().int().min(1).max(ACTIVITY_PLAN_V3_LIMITS.maxIntervalRepetitions),
     steps: z
       .array(activityPlanIntervalStepSchema)
       .min(1)
       .max(ACTIVITY_PLAN_V3_LIMITS.maxStepsPerInterval),
-    notes: z.string().max(1000).optional(),
+    notes: activityPlanNotesSchema.optional(),
   })
   .strict();
 export type ActivityPlanInterval = z.infer<typeof activityPlanIntervalSchema>;
 
 const segmentBase = {
-  id: z.string().uuid(),
-  name: z.string().min(1).max(100),
-  notes: z.string().max(1000).optional(),
+  id: activityPlanIdSchema,
+  name: activityPlanNameSchema,
+  notes: activityPlanNotesSchema.optional(),
 };
 
 export const activityPlanActivitySegmentSchema = z
   .object({
     ...segmentBase,
     role: z.literal("activity"),
-    category: canonicalSportSchema,
+    activity_category: canonicalActivityCategorySchema,
     intervals: z
       .array(activityPlanIntervalSchema)
       .min(1)
@@ -91,7 +108,7 @@ export const activityPlanActivitySegmentSchema = z
   })
   .strict();
 
-const boundarySegment = <T extends "transition" | "rest">(role: T) =>
+const boundarySegment = (role: "rest") =>
   z
     .object({
       ...segmentBase,
@@ -100,11 +117,9 @@ const boundarySegment = <T extends "transition" | "rest">(role: T) =>
     })
     .strict();
 
-export const activityPlanTransitionSegmentSchema = boundarySegment("transition");
 export const activityPlanRestSegmentSchema = boundarySegment("rest");
 export const activityPlanSegmentSchema = z.discriminatedUnion("role", [
   activityPlanActivitySegmentSchema,
-  activityPlanTransitionSegmentSchema,
   activityPlanRestSegmentSchema,
 ]);
 
@@ -119,10 +134,9 @@ const activityPlanStructureShapeSchemaV3 = z
   .strict();
 
 export type ActivityPlanActivitySegment = z.infer<typeof activityPlanActivitySegmentSchema>;
-export type ActivityPlanTransitionSegment = z.infer<typeof activityPlanTransitionSegmentSchema>;
 export type ActivityPlanRestSegment = z.infer<typeof activityPlanRestSegmentSchema>;
 export type ActivityPlanSegmentV3 = z.infer<typeof activityPlanSegmentSchema>;
-/** Strict authored and persisted V3 contract, including document-wide invariants. */
+/** The sole persisted and executable V3 contract, including document-wide invariants. */
 export const activityPlanStructureSchemaV3 = activityPlanStructureShapeSchemaV3
   .superRefine(addActivityPlanV3DocumentIssues)
   .brand<"ValidatedActivityPlanStructureV3">();

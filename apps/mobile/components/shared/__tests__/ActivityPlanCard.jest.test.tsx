@@ -10,7 +10,7 @@ const activityPlanStructure = {
     {
       id: id(1),
       role: "activity",
-      category: "run",
+      activity_category: "run",
       name: "Tempo run",
       intervals: [
         {
@@ -34,7 +34,7 @@ const availableCommonLoad = {
   status: "available" as const,
   model: "gradientpeak_relative_load" as const,
   version: "1" as const,
-  sport: "run" as const,
+  activity_category: "run" as const,
   method: "run_pace_threshold" as const,
   load: 64,
   intensity: 0.8,
@@ -67,7 +67,7 @@ const unsupportedCommonLoad = {
   status: "unavailable" as const,
   model: "gradientpeak_relative_load" as const,
   version: "1" as const,
-  sport: "strength" as const,
+  activity_category: "strength" as const,
   method: null,
   quality: null,
   thresholdEvidence: null,
@@ -157,8 +157,7 @@ describe("ActivityPlanCard", () => {
           id: "plan-1",
           name: "Tempo Builder",
           description: "Progressive tempo with a strong finish.",
-          categories: ["run"],
-          primary_category: "run",
+          activity_category: "run",
           updated_at: "2026-03-21T08:00:00.000",
           owner: null,
         }}
@@ -181,8 +180,7 @@ describe("ActivityPlanCard", () => {
         activityPlan={{
           id: "plan-1",
           name: "Tempo Builder",
-          categories: ["run"],
-          primary_category: "run",
+          activity_category: "run",
           updated_at: "2026-03-21T08:00:00.000",
           owner: {
             id: "owner-1",
@@ -198,34 +196,29 @@ describe("ActivityPlanCard", () => {
     expect(screen.queryByText("Updated Mar 21, 2026")).toBeNull();
   });
 
-  it("shows every unique category for a multisport activity plan", () => {
+  it("shows the canonical plan activity category", () => {
     renderNative(
       <ActivityPlanCard
         activityPlan={{
-          id: "plan-multisport",
-          name: "Brick builder",
-          categories: ["run", "bike", "run"],
-          primary_category: "run",
+          id: "plan-run",
+          name: "Run builder",
+          activity_category: "run",
         }}
       />,
     );
 
-    expect(screen.getByTestId("resource-category-items").props.accessibilityLabel).toBe(
-      "Run, Bike",
-    );
+    expect(screen.getByTestId("resource-category-items").props.accessibilityLabel).toBe("Run");
     expect(screen.getByText("Run")).toBeTruthy();
-    expect(screen.getByText("Bike")).toBeTruthy();
-    expect(screen.queryByLabelText("Open activity plan Brick builder")).toBeNull();
+    expect(screen.queryByLabelText("Open activity plan Run builder")).toBeNull();
   });
 
   it("abstains from legacy and unsupported common load metrics", () => {
     renderNative(
       <ActivityPlanCard
         activityPlan={{
-          id: "plan-multisport-load",
+          id: "plan-load",
           name: "Brick builder",
-          categories: ["bike", "run"],
-          primary_category: "bike",
+          activity_category: "bike",
           authoritative_metrics: {
             estimated_duration: 5400,
             estimated_tss: null,
@@ -234,13 +227,13 @@ describe("ActivityPlanCard", () => {
           common_load: unsupportedCommonLoad,
           category_loads: [
             {
-              category: "bike",
+              activity_category: "bike",
               tss: 64,
               intensity_factor: 0.84,
               method: "power_threshold",
             },
             {
-              category: "run",
+              activity_category: "run",
               tss: null,
               intensity_factor: null,
             },
@@ -249,25 +242,24 @@ describe("ActivityPlanCard", () => {
       />,
     );
 
-    expect(screen.queryByText("Sport-specific load")).toBeNull();
+    expect(screen.queryByText("ActivityCategory-specific load")).toBeNull();
     expect(screen.queryByText("Load")).toBeNull();
     expect(screen.queryByText("Intensity")).toBeNull();
     expect(screen.queryByText(/TSS|IF/)).toBeNull();
   });
 
-  it("does not duplicate aggregate metrics for a single-sport plan", () => {
+  it("does not duplicate aggregate metrics for a single-activity-category plan", () => {
     renderNative(
       <ActivityPlanCard
         activityPlan={{
-          id: "plan-single-sport-load",
+          id: "plan-single-activity-category-load",
           name: "Bike tempo",
-          categories: ["bike"],
-          primary_category: "bike",
+          activity_category: "bike",
           structure: {
             ...activityPlanStructure,
             segments: activityPlanStructure.segments.map((segment) => ({
               ...segment,
-              category: "bike",
+              activity_category: "bike",
             })),
           },
           authoritative_metrics: {
@@ -278,7 +270,7 @@ describe("ActivityPlanCard", () => {
           common_load: availableCommonLoad,
           category_loads: [
             {
-              category: "bike",
+              activity_category: "bike",
               tss: 64,
               intensity_factor: 0.84,
               method: "power_threshold",
@@ -288,7 +280,7 @@ describe("ActivityPlanCard", () => {
       />,
     );
 
-    expect(screen.queryByText("Sport-specific load")).toBeNull();
+    expect(screen.queryByText("ActivityCategory-specific load")).toBeNull();
     expect(screen.getAllByText("Load")).toHaveLength(1);
     expect(screen.getAllByText("64")).toHaveLength(1);
     expect(screen.getAllByText("Intensity")).toHaveLength(1);
@@ -305,8 +297,7 @@ describe("ActivityPlanCard", () => {
           id: "plan-list-1",
           name: "Tempo Builder",
           description: "Progressive tempo with a strong finish.",
-          categories: ["run"],
-          primary_category: "run",
+          activity_category: "run",
           authoritative_metrics: {
             estimated_duration: 3600,
             estimated_tss: 72,
@@ -347,13 +338,13 @@ describe("ActivityPlanCard", () => {
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
-  it("passes only structured workout data to its preview", () => {
+  it("passes only structured activity data to its preview", () => {
     renderNative(
       <ActivityPlanCard
         activityPlan={{
           id: "plan-route-preview",
           name: "Structured Tempo",
-          categories: ["run"],
+          activity_category: "run",
           structure: activityPlanStructure,
         }}
       />,
@@ -376,7 +367,7 @@ describe("ActivityPlanCard", () => {
         activityPlan={{
           id: "plan-like-boundary",
           name: "Tempo Builder",
-          categories: ["run"],
+          activity_category: "run",
           likes_count: 3,
           has_liked: false,
         }}

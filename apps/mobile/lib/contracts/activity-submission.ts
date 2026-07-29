@@ -12,5 +12,5 @@ export interface PreparedRecordedActivityDraft {
   notes?: string | null;
   profileId: string;
   startedAt: Date;
-  activityType: RecordingActivityCategory;
+  activityCategory: RecordingActivityCategory;
 }

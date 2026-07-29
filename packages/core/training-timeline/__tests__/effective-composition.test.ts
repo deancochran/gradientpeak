@@ -18,7 +18,7 @@ const computedAsOf = "2026-07-21T12:00:00.000Z";
 
 function available(durationSeconds: number, intensity: number): CommonLoadResult {
   return calculateAvailableCommonLoad({
-    sport: "bike",
+    activity_category: "bike",
     method: "power_threshold",
     quality: {
       source: "validated_test",
@@ -53,7 +53,7 @@ function unavailable(durationSeconds: number | null = 3600): CommonLoadResult {
     status: "unavailable",
     model: COMMON_RELATIVE_LOAD_MODEL,
     version: COMMON_RELATIVE_LOAD_VERSION,
-    sport: "bike",
+    activity_category: "bike",
     method: null,
     quality: null,
     thresholdEvidence: null,

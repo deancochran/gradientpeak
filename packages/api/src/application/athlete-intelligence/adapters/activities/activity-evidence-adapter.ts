@@ -50,7 +50,7 @@ function candidate(input: {
   confidence: number;
   observedAt: Date;
   sourceId: string;
-  sport: string;
+  activity_category: string;
   correlationGroupId: string | null;
   reasons: string[];
 }): EvidenceCandidate {
@@ -63,7 +63,7 @@ function candidate(input: {
     observedAt: input.observedAt.toISOString(),
     source: "activity_summary",
     sourceId: input.sourceId,
-    sport: input.sport,
+    activity_category: input.activity_category,
     correlationGroupId: input.correlationGroupId,
     reasons: input.reasons,
     provenance: {
@@ -84,7 +84,7 @@ function unknownCandidate(input: {
     value: null,
     confidence: 0,
     sourceId: `activity-window:${input.capabilityId}`,
-    sport: "unknown",
+    activity_category: "unknown",
     correlationGroupId: null,
     reasons: [input.reason],
     observedAt: input.now,
@@ -118,7 +118,7 @@ export class ActivityEvidenceAdapter {
       .select({
         id: activitySegments.id,
         activity_id: activities.id,
-        category: activitySegments.category,
+        category: activitySegments.activity_category,
         started_at: activities.started_at,
         start_offset_ms: activitySegments.start_offset_ms,
         duration_seconds: sql<number | null>`case
@@ -193,7 +193,7 @@ export class ActivityEvidenceAdapter {
           confidence: coverage * 0.7,
           observedAt: row.started_at,
           sourceId: row.id,
-          sport: row.category,
+          activity_category: row.category,
           correlationGroupId,
           reasons: [coverageReason, "Activity duration supports endurance evidence."],
         }),
@@ -217,7 +217,7 @@ export class ActivityEvidenceAdapter {
             confidence: coverage * 0.6,
             observedAt: row.started_at,
             sourceId: row.id,
-            sport: row.category,
+            activity_category: row.category,
             correlationGroupId: `activity:${row.activity_id}`,
             reasons: [
               coverageReason,
@@ -251,7 +251,7 @@ export class ActivityEvidenceAdapter {
             confidence: coverage * 0.6,
             observedAt: row.started_at,
             sourceId: row.id,
-            sport: row.category,
+            activity_category: row.category,
             correlationGroupId: `activity:${row.activity_id}`,
             reasons: [
               coverageReason,

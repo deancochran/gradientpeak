@@ -52,7 +52,7 @@ const plan = {
       id: ids.segment,
       role: "activity" as const,
       name: "Run",
-      category: "run" as const,
+      activity_category: "run" as const,
       intervals: [
         {
           id: ids.interval,
@@ -101,7 +101,7 @@ async function checkpoint(): Promise<ActivityRecorderCheckpoint> {
         globalOrdinal: 0,
         segmentId: ids.segment,
         role: "activity",
-        category: "run",
+        activity_category: "run",
         startedAt: "2026-01-01T10:00:00.000Z",
         completedAt: "2026-01-01T10:00:30.000Z",
         activeSeconds: 30,
@@ -127,7 +127,7 @@ async function checkpoint(): Promise<ActivityRecorderCheckpoint> {
       accumulatedPauseSeconds: 0,
     },
     policy: {
-      category: "run",
+      activity_category: "run",
       gpsMode: "on",
       activityGpsMode: "on",
       selectedSources: [],
@@ -246,14 +246,14 @@ describe("recording checkpoint recovery", () => {
 
   it("restores an exact unplanned allocation without inventing a plan", async () => {
     const unplanned = {
-      schemaVersion: 3 as const,
+      schemaVersion: 4 as const,
       variant: "unplanned" as const,
       sessionId: "session-unplanned",
       profileId: "profile-1",
       lifecycle: "recording" as const,
       revision: 1,
       start: { startedAt: "2026-01-01T10:00:00.000Z", updatedAt: "2026-01-01T10:00:01.000Z" },
-      draft: { activityCategory: "run", gpsMode: "off" as const },
+      draft: { activity_category: "run" as const, gpsMode: "off" as const },
       summary: { elapsedSeconds: 1, movingSeconds: 1, distanceMeters: 0 },
       executionState: { timerEvents: [] },
       streamArtifactPaths: ["file:///streams/unplanned"],
@@ -287,7 +287,7 @@ describe("recording checkpoint recovery", () => {
     [
       "unplanned with planned plan fields",
       {
-        schemaVersion: 3,
+        schemaVersion: 4,
         variant: "unplanned",
         sessionId: "session",
         profileId: "profile-1",
@@ -301,5 +301,29 @@ describe("recording checkpoint recovery", () => {
     await expect(loadAndClaimRecordingCheckpoint("profile-1")).resolves.toMatchObject({
       status: "quarantined",
     });
+  });
+
+  it("quarantines the pre-cutover unplanned checkpoint shape", async () => {
+    const legacy = {
+      schemaVersion: 3,
+      variant: "unplanned",
+      sessionId: "legacy-session",
+      profileId: "profile-1",
+      lifecycle: "recording",
+      revision: 1,
+      start: { startedAt: "2026-01-01T10:00:00.000Z", updatedAt: "2026-01-01T10:00:01.000Z" },
+      draft: { activityCategory: "run", gpsMode: "off" },
+      summary: { elapsedSeconds: 1, movingSeconds: 1, distanceMeters: 0 },
+      executionState: { timerEvents: [] },
+      streamArtifactPaths: ["file:///streams/legacy"],
+    };
+    storage.set(ACTIVE_RECORDING_CHECKPOINT_KEY, JSON.stringify(legacy));
+
+    await expect(loadAndClaimRecordingCheckpoint("profile-1")).resolves.toMatchObject({
+      status: "quarantined",
+    });
+    expect(journalMocks.quarantineSession).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "legacy-session", profileId: "profile-1" }),
+    );
   });
 });

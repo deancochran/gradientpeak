@@ -50,7 +50,7 @@ export type EffortCurveTarget = {
   durationSeconds: number;
   modality: EffortCurveModality;
   unit: EffortCurveUnit;
-  sport: string;
+  activity_category: string;
 };
 
 export type DurationAwareEffortCurve = {
@@ -99,11 +99,11 @@ const UNKNOWN_UNCERTAINTY = parseUncertainty(1);
 function compatibilityReason(target: EffortCurveTarget): string | null {
   if (target.modality === "power") {
     if (target.unit !== "watts") return "unsupported_effort_curve_unit";
-    return target.sport === "bike" ? null : "unsupported_effort_curve_sport";
+    return target.activity_category === "bike" ? null : "unsupported_effort_curve_sport";
   }
-  if (target.sport === "run")
+  if (target.activity_category === "run")
     return target.unit === "seconds_per_kilometer" ? null : "unsupported_effort_curve_unit";
-  if (target.sport === "swim")
+  if (target.activity_category === "swim")
     return target.unit === "seconds_per_100m" ? null : "unsupported_effort_curve_unit";
   return "unsupported_effort_curve_sport";
 }
@@ -138,7 +138,11 @@ function matchingEvidenceSources(input: {
       evidence: source,
       asOf: input.assessmentAsOf,
     });
-    if (!eligibility.eligible || eligibility.evidence.sport !== input.effort.sport) continue;
+    if (
+      !eligibility.eligible ||
+      eligibility.evidence.activity_category !== input.effort.activity_category
+    )
+      continue;
     const observation = eligibility.evidence.rawObservation;
     if (
       eligibility.evidence.modality === "duration" &&
@@ -290,7 +294,7 @@ function calculateTarget(
 
   const points: CurvePoint[] = [];
   for (const effort of model.efforts) {
-    if (effort.sport !== target.sport) continue;
+    if (effort.activity_category !== target.activity_category) continue;
     const evidenceSources = matchingEvidenceSources({
       effort,
       evidenceRegistry: model.evidenceRegistry,

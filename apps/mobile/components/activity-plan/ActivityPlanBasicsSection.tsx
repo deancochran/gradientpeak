@@ -3,7 +3,7 @@ import { Form, FormTextareaField, FormTextField } from "@repo/ui/components/form
 import { Text } from "@repo/ui/components/text";
 import type { UseFormReturn } from "react-hook-form";
 import { View } from "react-native";
-import { ActivityCategorySelector } from "@/components/activity-plan/workout/ActivityCategorySelector";
+import { ActivityCategorySelector } from "@/components/activity-plan/activity/ActivityCategorySelector";
 
 export type ActivityPlanBasicsFormData = {
   name: string;
@@ -14,7 +14,7 @@ type ActivityPlanBasicsSectionProps = {
   activityCategory: string;
   activityCategoryError?: string;
   form: UseFormReturn<ActivityPlanBasicsFormData>;
-  onChangeActivityCategory: (category: string) => void;
+  onChangeActivityCategory: (activity_category: string) => void;
 };
 
 export function ActivityPlanBasicsSection({
@@ -32,6 +32,8 @@ export function ActivityPlanBasicsSection({
               value={activityCategory}
               onChange={onChangeActivityCategory}
               compact
+              accessibilityLabel="Plan activity category"
+              accessibilityHint="Sets the activity category for every activity segment in this plan"
             />
             <View className="flex-1">
               <FormTextField
@@ -45,7 +47,9 @@ export function ActivityPlanBasicsSection({
           </View>
 
           {activityCategoryError ? (
-            <Text className="text-xs text-destructive">{activityCategoryError}</Text>
+            <Text accessibilityRole="alert" className="text-xs text-destructive">
+              {activityCategoryError}
+            </Text>
           ) : null}
 
           <FormTextareaField

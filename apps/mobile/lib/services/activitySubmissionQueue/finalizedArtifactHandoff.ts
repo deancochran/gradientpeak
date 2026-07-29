@@ -17,12 +17,13 @@ async function handoffOnce(
     throw new Error("Finalized recording is missing its FIT path or execution manifest");
   }
   const firstActivity = artifact.executionManifest.occurrences.find(
-    (occurrence) => occurrence.role === "activity" && occurrence.category,
+    (occurrence) => occurrence.role === "activity" && occurrence.activity_category,
   );
-  const category = firstActivity?.category ?? artifact.snapshot.activity.category;
+  const activity_category =
+    firstActivity?.activity_category ?? artifact.snapshot.activity.activity_category;
   const now = new Date().toISOString();
   const job = activitySubmissionQueueJobSchema.parse({
-    schemaVersion: 2,
+    schemaVersion: 3,
     id: artifact.sessionId,
     artifactId: artifact.sessionId,
     sessionId: artifact.sessionId,
@@ -34,8 +35,8 @@ async function handoffOnce(
       profileId,
       startedAt: artifact.snapshot.identity.startedAt,
       finishedAt: artifact.completedAt,
-      name: `${category} activity`,
-      activityType: category,
+      name: `${activity_category} activity`,
+      activity_category,
       durationSeconds: artifact.finalStats.durationSeconds,
       movingSeconds: artifact.finalStats.movingSeconds,
       distanceMeters: artifact.finalStats.distanceMeters,

@@ -122,7 +122,7 @@ function DashboardPage() {
                     <div>
                       <p className="font-medium">{item.activityName}</p>
                       <p className="text-sm text-muted-foreground">
-                        {item.activityType} on {item.date}
+                        {item.activity_category} on {item.date}
                       </p>
                     </div>
                     <div className="text-right text-sm text-muted-foreground">

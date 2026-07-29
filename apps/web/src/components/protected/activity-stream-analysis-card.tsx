@@ -30,11 +30,11 @@ function unavailableCopy(reason: StreamAnalysisInsufficientReason | null): strin
     case "insufficient_samples":
       return "Unavailable because too few stream samples were recorded.";
     case "threshold_missing":
-      return "Unavailable because no prior sport-specific threshold was available.";
+      return "Unavailable because no prior activity-category-specific threshold was available.";
     case "low_coverage":
       return "Unavailable because stream coverage is too low for a reliable distribution.";
-    case "sport_mismatch":
-      return "Not applicable to this activity sport.";
+    case "activity_category_mismatch":
+      return "Not applicable to this activity category.";
     default:
       return "Stream analysis is unavailable.";
   }

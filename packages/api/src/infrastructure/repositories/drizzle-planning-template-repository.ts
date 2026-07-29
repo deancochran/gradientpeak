@@ -2,6 +2,7 @@ import {
   activityPlanStructureSchemaV3,
   buildSystemActivityTemplateCatalog,
   compileActivityPlanV3,
+  deriveSystemActivityTemplateActivityCategory,
   normalizeActivityTemplateStructureForAudit,
   SYSTEM_TEMPLATES,
 } from "@repo/core";
@@ -50,7 +51,7 @@ const sourceMetadata = new Map(
   SYSTEM_TEMPLATES.map((template) => [
     template.id,
     {
-      activityCategory: template.activity_category,
+      activityCategory: deriveSystemActivityTemplateActivityCategory(template.structure),
       gpsRecordingEnabled: template.gps_recording_enabled,
     },
   ]),
@@ -74,7 +75,7 @@ function isMatchingV3SystemTemplate(row: {
   const parsed = activityPlanStructureSchemaV3.safeParse(row.structure);
   if (!parsed.success) return false;
   if (activityPlanStructureHash(parsed.data) !== row.structure_hash) return false;
-  if (compileActivityPlanV3(parsed.data).primaryCategory !== expectedMetadata.activityCategory) {
+  if (compileActivityPlanV3(parsed.data).activity_category !== expectedMetadata.activityCategory) {
     return false;
   }
   return (
@@ -138,7 +139,7 @@ export function createPlanningTemplateRepository(db: DrizzleDbClient): PlanningT
           const parsed = activityPlanStructureSchemaV3.safeParse(row.structure);
           const activityCategory =
             parsed.success && activityPlanStructureHash(parsed.data) === row.structure_hash
-              ? compileActivityPlanV3(parsed.data).primaryCategory
+              ? compileActivityPlanV3(parsed.data).activity_category
               : "other";
           return {
             activityCategory,

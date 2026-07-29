@@ -18,7 +18,7 @@ export const goalDemandPolicyInputSchema = z
     athleteId: z.string().min(1),
     goalSourceId: goalSourceIdSchema,
     goalType: z.string().min(1),
-    sport: z.string().min(1).nullable(),
+    activity_category: z.string().min(1).nullable(),
     distanceMeters: z.number().positive().nullable(),
     targetDurationSeconds: z.number().positive().nullable(),
     targetPowerWatts: z.number().positive().nullable(),

@@ -152,6 +152,93 @@ describe("provider sync PostgreSQL claims", () => {
     ).toEqual([]);
   });
 
+  it("atomically fails an owned current-generation job and writes failure sync state", async () => {
+    const owner = await seedOwner();
+    const repository = createProviderSyncRepository({ db });
+    const workerId = `worker:${randomUUID()}`;
+    const jobId = await seedRunningJob({
+      integrationId: owner.integrationId,
+      lockExpiresAt: new Date(Date.now() + 60_000),
+      profileId: owner.profileId,
+      workerId,
+    });
+    const resource = `failure-fence-${randomUUID()}`;
+    const nextRunAt = new Date(Date.now() + 300_000).toISOString();
+
+    await expect(
+      repository.failJobWithSyncState({
+        expectedIntegrationGeneration: 1,
+        id: jobId,
+        integrationId: owner.integrationId,
+        lastError: "activity_history_failed",
+        nextRunAt,
+        provider: "wahoo",
+        resource,
+        status: "failed",
+        workerId,
+      }),
+    ).resolves.toBe(true);
+
+    await expect(
+      db.select().from(providerSyncJobs).where(eq(providerSyncJobs.id, jobId)),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        last_error: "activity_history_failed",
+        locked_by: null,
+        status: "failed",
+      }),
+    ]);
+    await expect(
+      db.select().from(providerSyncState).where(eq(providerSyncState.resource, resource)),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        consecutive_failures: 1,
+        last_error: "activity_history_failed",
+      }),
+    ]);
+  });
+
+  it("does not fail a job or write sync state after its integration generation changes", async () => {
+    const owner = await seedOwner();
+    const repository = createProviderSyncRepository({ db });
+    const workerId = `worker:${randomUUID()}`;
+    const jobId = await seedRunningJob({
+      integrationId: owner.integrationId,
+      lockExpiresAt: new Date(Date.now() + 60_000),
+      profileId: owner.profileId,
+      workerId,
+    });
+    const resource = `stale-failure-fence-${randomUUID()}`;
+    await db
+      .update(integrations)
+      .set({ generation: 2, updated_at: new Date() })
+      .where(eq(integrations.id, owner.integrationId));
+    const beforeJob = await db
+      .select()
+      .from(providerSyncJobs)
+      .where(eq(providerSyncJobs.id, jobId));
+
+    await expect(
+      repository.failJobWithSyncState({
+        expectedIntegrationGeneration: 1,
+        id: jobId,
+        integrationId: owner.integrationId,
+        lastError: "activity_history_failed",
+        provider: "wahoo",
+        resource,
+        status: "failed",
+        workerId,
+      }),
+    ).resolves.toBe(false);
+
+    expect(await db.select().from(providerSyncJobs).where(eq(providerSyncJobs.id, jobId))).toEqual(
+      beforeJob,
+    );
+    expect(
+      await db.select().from(providerSyncState).where(eq(providerSyncState.resource, resource)),
+    ).toEqual([]);
+  });
+
   it("does not complete a job for a different integration owned by the same profile", async () => {
     const owner = await seedOwner();
     const otherIntegrationId = randomUUID();
@@ -860,6 +947,78 @@ describe("provider sync PostgreSQL claims", () => {
     expect(active.rows).toEqual([
       { id: running.id, payload_hash: "publish-v1", status: "running" },
       { id: successors[0]?.id, payload_hash: "publish-v2", status: "queued" },
+    ]);
+  });
+
+  it("retains different resources as ordered successors in a shared lane", async () => {
+    const owner = await seedOwner();
+    const repository = createProviderSyncRepository({ db });
+    const lane = `shared-${randomUUID()}`;
+    const runAt = new Date().toISOString();
+    const workerId = `worker-${randomUUID()}`;
+    const eventA = randomUUID();
+    const eventB = randomUUID();
+    const eventC = randomUUID();
+    const enqueue = (eventId: string, operation: "publish" | "unsync") =>
+      repository.enqueueJob({
+        dedupeKey: `${operation}-${eventId}`,
+        integrationId: owner.integrationId,
+        internalResourceId: eventId,
+        jobType: "wahoo.activity_history_reconcile",
+        operation,
+        payload: { eventId, operation },
+        payloadHash: `${operation}-${eventId}`,
+        profileId: owner.profileId,
+        provider: "wahoo",
+        resourceKind: "event",
+        runAt,
+        syncLaneKey: lane,
+      });
+
+    const running = await enqueue(eventA, "publish");
+    await repository.claimDueJobs({
+      jobTypes: ["wahoo.activity_history_reconcile"],
+      limit: 1,
+      lockExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+      now: new Date().toISOString(),
+      provider: "wahoo",
+      workerId,
+    });
+    const second = await enqueue(eventB, "publish");
+    const third = await enqueue(eventC, "publish");
+    const revisedSecond = await enqueue(eventB, "unsync");
+
+    expect(revisedSecond.id).toBe(second.id);
+    const active = await pool.query<{
+      id: string;
+      internal_resource_id: string;
+      operation: string;
+      status: string;
+    }>(
+      `select id, internal_resource_id, operation, status
+       from public.provider_sync_jobs
+       where sync_lane_key = $1 and status in ('queued', 'running') order by queue_sequence`,
+      [lane],
+    );
+    expect(active.rows).toEqual([
+      {
+        id: running.id,
+        internal_resource_id: eventA,
+        operation: "publish",
+        status: "running",
+      },
+      {
+        id: second.id,
+        internal_resource_id: eventB,
+        operation: "unsync",
+        status: "queued",
+      },
+      {
+        id: third.id,
+        internal_resource_id: eventC,
+        operation: "publish",
+        status: "queued",
+      },
     ]);
   });
 

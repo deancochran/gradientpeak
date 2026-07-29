@@ -55,7 +55,7 @@ function isDefiniteStorageNotFound(error: unknown): boolean {
 export function createSupabaseWahooRouteStorage(storage: RouteStorageClient) {
   return createWahooRouteStorage({
     async downloadRouteGpx(filePath) {
-      const { data, error } = await storage.from("routes").download(filePath);
+      const { data, error } = await storage.from("gpx-routes").download(filePath);
       if (error) {
         if (isDefiniteStorageNotFound(error)) return null;
         throw error;

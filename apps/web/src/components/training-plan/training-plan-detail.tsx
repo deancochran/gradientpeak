@@ -160,7 +160,7 @@ export function TrainingPlanDetail({
         <Card>
           <CardContent className="pt-6">
             <strong>{summary.sessionCount}</strong>
-            <p className="text-sm text-muted-foreground">Workouts</p>
+            <p className="text-sm text-muted-foreground">Activities</p>
           </CardContent>
         </Card>
         <Card>
@@ -194,7 +194,7 @@ export function TrainingPlanDetail({
           <TabsTrigger value="structure">Structure</TabsTrigger>
           <TabsTrigger value="progress">Progress</TabsTrigger>
           <TabsTrigger value="insights">Insights</TabsTrigger>
-          <TabsTrigger value="workouts">Workouts</TabsTrigger>
+          <TabsTrigger value="activities">Activities</TabsTrigger>
         </TabsList>
         <TabsContent value="structure">
           <Card>
@@ -211,7 +211,7 @@ export function TrainingPlanDetail({
                       `${session.offsetDays}-${session.activityPlanId}-${session.title}`
                     }
                   >
-                    Day {session.offsetDays + 1}: {session.title || "Workout"}
+                    Day {session.offsetDays + 1}: {session.title || "Activity"}
                   </li>
                 ))}
               </ol>
@@ -268,19 +268,19 @@ export function TrainingPlanDetail({
             </CardContent>
           </Card>
         </TabsContent>
-        <TabsContent value="workouts">
+        <TabsContent value="activities">
           <Card>
             <CardHeader>
-              <CardTitle>Linked workouts</CardTitle>
+              <CardTitle>Linked activities</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {linkedPlans.isLoading ? <p>Loading workouts…</p> : null}
+              {linkedPlans.isLoading ? <p>Loading activities…</p> : null}
               {linkedPlans.error ? <p role="alert">{linkedPlans.error.message}</p> : null}
-              {linkedPlans.data?.items.map((workout) => (
-                <div className="rounded-lg border p-3" key={workout.id}>
-                  <strong>{workout.name}</strong>
+              {linkedPlans.data?.items.map((activity) => (
+                <div className="rounded-lg border p-3" key={activity.id}>
+                  <strong>{activity.name}</strong>
                   <p className="text-sm text-muted-foreground">
-                    {workout.description || "No description"}
+                    {activity.description || "No description"}
                   </p>
                 </div>
               ))}
@@ -335,8 +335,12 @@ export function TrainingPlanDetail({
                 disabled={remove.isPending}
                 onClick={() =>
                   void runAction(
-                    () => remove.mutateAsync({ schedule_batch_id: activeScheduleBatchId }),
-                    "Scheduled workouts removed.",
+                    () =>
+                      remove.mutateAsync({
+                        training_plan_id: plan.id,
+                        schedule_batch_id: activeScheduleBatchId,
+                      }),
+                    "Scheduled activities removed.",
                   )
                 }
                 type="button"
@@ -381,7 +385,8 @@ export function TrainingPlanDetail({
             <Button
               disabled={deletePlan.isPending}
               onClick={() => {
-                if (!window.confirm("Delete this training plan and its planned workouts?")) return;
+                if (!window.confirm("Delete this training plan and its planned activities?"))
+                  return;
                 void runAction(async () => {
                   await deletePlan.mutateAsync({ id: plan.id });
                   onDeleted();

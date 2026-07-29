@@ -34,6 +34,29 @@ type SerializedEventDate = { starts_at: string };
 export type EffectivePlanLoadEventRecord = EventCompletionEventRecord & {
   scheduled_date: string;
 };
+/** A bounded, owner-scoped calendar-day read used by the derived day summary. */
+export type PlannedDaySummaryActivityPlanRecord = Pick<
+  ActivityPlanRow,
+  | "id"
+  | "profile_id"
+  | "name"
+  | "description"
+  | "structure"
+  | "gps_recording_enabled"
+  | "structure_hash"
+  | "updated_at"
+>;
+export type PlannedDaySummaryEventRecord = {
+  activity_plan: PlannedDaySummaryActivityPlanRecord | null;
+  activity_plan_id: string | null;
+  id: string;
+  starts_at: string;
+};
+export type PlannedDaySummaryReadInput = {
+  date: string;
+  limit: number;
+  profileId: string;
+};
 type ConstraintActivityPlan = Pick<
   ActivityPlanRow,
   "id" | "gps_recording_enabled" | "structure" | "structure_hash"
@@ -115,6 +138,12 @@ export interface EventReadRepository {
   }): Promise<{
     activities: ActivityRow[];
     events: EffectivePlanLoadEventRecord[];
+    recommendationEvents: EffectivePlanLoadEventRecord[];
+    recommendationSource: {
+      scheduleBatchId: string | null;
+      status: "complete" | "partial";
+      trainingPlanId: string | null;
+    };
     planningTimezone: string | null;
     resolvedRange: { endDate: string | null; startDate: string | null };
     sourceCounts: { activities: number; events: number };
@@ -142,6 +171,9 @@ export interface EventReadRepository {
     startsAtGte: string;
     startsAtLte: string;
   }): Promise<SerializedEventDate[]>;
+  listOwnedPlannedEventsForDay(
+    input: PlannedDaySummaryReadInput,
+  ): Promise<PlannedDaySummaryEventRecord[]>;
   getValidateConstraintsInputs(input: {
     activityPlanId: string;
     effortCutoffIso: string;

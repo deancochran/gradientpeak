@@ -50,7 +50,7 @@ export function GroupEventActivityPlanOptionsSection({
   return (
     <View className="gap-3 rounded-2xl bg-card p-4">
       <View className="gap-0.5">
-        <Text className="text-base font-semibold text-foreground">Workout plan</Text>
+        <Text className="text-base font-semibold text-foreground">Activity plan</Text>
         <Text className="text-sm text-muted-foreground">
           Open the group event activity plan to review the work.
         </Text>

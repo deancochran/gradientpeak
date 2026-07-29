@@ -165,7 +165,8 @@ export class WahooActivityHistoryJobService {
             lockExpiresAt: new Date(Date.now() + leaseMs).toISOString(),
             workerId,
           }),
-        processJob: async (job) => {
+        processJob: async (job, { signal }) => {
+          signal.throwIfAborted();
           if (
             !(await (this.deps.providerSyncRepository.isIntegrationGenerationActive?.({
               generation: job.integrationGeneration ?? 1,
@@ -200,6 +201,7 @@ export class WahooActivityHistoryJobService {
 
             const generation = job.integrationGeneration ?? 1;
             const assertActive = async () => {
+              signal.throwIfAborted();
               if (
                 !(await (this.deps.providerSyncRepository.isIntegrationGenerationActive?.({
                   generation,
@@ -209,6 +211,7 @@ export class WahooActivityHistoryJobService {
               ) {
                 throw new StaleIntegrationGenerationError();
               }
+              signal.throwIfAborted();
             };
             await assertActive();
 
@@ -264,7 +267,7 @@ export class WahooActivityHistoryJobService {
                     const workoutId = summary.workout_id ?? summary.workout?.id;
                     if (!workoutId) {
                       throw new Error(
-                        `Wahoo summary ${summary.id} omitted its artifact URL and workout identity`,
+                        `Wahoo summary ${summary.id} omitted its artifact URL and Wahoo workout identity`,
                       );
                     }
                     await assertActive();
@@ -282,7 +285,11 @@ export class WahooActivityHistoryJobService {
               const result = await this.deps.importer.importWorkoutSummary(
                 providerUserId,
                 importSummary,
-                { integrationGeneration: generation, integrationId: job.integrationId },
+                {
+                  integrationGeneration: generation,
+                  integrationId: job.integrationId,
+                  signal,
+                },
               );
               await assertActive();
               if (!result.success) {
@@ -323,6 +330,7 @@ export class WahooActivityHistoryJobService {
             if (finalized === false) return "failed";
             return "completed";
           } catch (error) {
+            if (signal.aborted) return "failed";
             if (error instanceof StaleIntegrationGenerationError) {
               await this.deps.providerSyncRepository.markJobSucceeded(job.id, workerId);
               return "completed";
@@ -338,21 +346,18 @@ export class WahooActivityHistoryJobService {
             const nextRunAt = shouldDeadLetter
               ? undefined
               : addMinutes(now, Math.min(job.attempt * 5, 60));
-            const finalized = await this.deps.providerSyncRepository.markJobFailed({
+            const finalized = await this.deps.providerSyncRepository.failJobWithSyncState({
+              expectedIntegrationGeneration: job.integrationGeneration ?? 1,
               id: job.id,
+              integrationId: job.integrationId,
               lastError,
               nextRunAt,
+              provider: "wahoo",
+              resource: WAHOO_ACTIVITY_HISTORY_RESOURCE,
               status: shouldDeadLetter ? "dead_lettered" : "failed",
               workerId,
             });
             if (finalized === false) return "failed";
-            await this.deps.providerSyncRepository.updateSyncStateAfterFailure({
-              integrationId: job.integrationId,
-              lastError,
-              nextSyncAt: nextRunAt,
-              provider: "wahoo",
-              resource: WAHOO_ACTIVITY_HISTORY_RESOURCE,
-            });
             return shouldDeadLetter ? "dead_lettered" : "failed";
           }
         },

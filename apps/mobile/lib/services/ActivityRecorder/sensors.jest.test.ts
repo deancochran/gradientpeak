@@ -40,29 +40,7 @@ jest.mock("@repo/core", () => ({
     SUPPORTED_POWER_RANGE: "ftms-supported-power-range",
     SUPPORTED_RESISTANCE_LEVEL_RANGE: "ftms-supported-resistance-range",
   },
-  ControlMode: {
-    ERG: "erg",
-    SIM: "sim",
-    RESISTANCE: "resistance",
-    SPEED: "speed",
-    INCLINATION: "inclination",
-    HEART_RATE: "heart_rate",
-    CADENCE: "cadence",
-  },
   canTrainerIntentPreempt: jest.fn(() => false),
-  detectFtmsMachineType: jest.fn(({ characteristicUuids }) => {
-    const present = new Set(characteristicUuids ?? []);
-    if (present.has("ftms-treadmill-data")) {
-      return { machineType: "treadmill", source: "data_characteristic" };
-    }
-    if (present.has("ftms-rower-data")) {
-      return { machineType: "rower", source: "data_characteristic" };
-    }
-    if (present.has("ftms-indoor-bike-data")) {
-      return { machineType: "bike", source: "data_characteristic" };
-    }
-    return { machineType: "unknown", source: "unknown" };
-  }),
   listFtmsParserDefinitions: jest.fn(() => [
     {
       uuid: "ftms-treadmill-data",
@@ -178,7 +156,6 @@ jest.mock("@deancochran/ftms", () => {
   const core = jest.requireMock("@repo/core") as {
     BLE_SERVICE_UUIDS: { FITNESS_MACHINE: string };
     FTMS_CHARACTERISTICS: typeof actual.FTMS_CHARACTERISTICS;
-    detectFtmsMachineType: typeof actual.detectFtmsMachineType;
     listFtmsParserDefinitions: typeof actual.listFtmsParserDefinitions;
   };
 
@@ -186,7 +163,6 @@ jest.mock("@deancochran/ftms", () => {
     ...actual,
     FTMS_SERVICE_UUIDS: { FITNESS_MACHINE: core.BLE_SERVICE_UUIDS.FITNESS_MACHINE },
     FTMS_CHARACTERISTICS: core.FTMS_CHARACTERISTICS,
-    detectFtmsMachineType: core.detectFtmsMachineType,
     listFtmsParserDefinitions: core.listFtmsParserDefinitions,
   };
 });

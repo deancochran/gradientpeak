@@ -25,7 +25,7 @@ function createBenchmarkPlan(index: number) {
       {
         id: fixtureUuid(identityBase + 1),
         role: "activity" as const,
-        category: "bike" as const,
+        activity_category: "bike" as const,
         name: "Benchmark ride",
         intervals: [
           {

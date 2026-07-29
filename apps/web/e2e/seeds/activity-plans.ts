@@ -34,7 +34,7 @@ export async function seedOwnedActivityPlan(pool: Pool, profileId: string) {
       {
         id: "e1000000-0000-4000-8000-000000000001",
         role: "activity",
-        category: "bike",
+        activity_category: "bike",
         name: "Tempo ride",
         intervals: [
           {
@@ -56,7 +56,7 @@ export async function seedOwnedActivityPlan(pool: Pool, profileId: string) {
   };
 
   await upsertActivityPlan(pool, {
-    description: "A deterministic tempo workout for browser journeys.",
+    description: "A deterministic tempo activity plan for browser journeys.",
     id: TEST_ACTIVITY_PLAN_ID,
     name: "Playwright Tempo Builder",
     notes: "Bring bottles",
@@ -65,43 +65,38 @@ export async function seedOwnedActivityPlan(pool: Pool, profileId: string) {
   });
 
   for (let index = 1; index <= 21; index += 1) {
-    const categories =
-      index === 21 ? (["bike", "run"] as const) : ([index % 2 === 0 ? "run" : "bike"] as const);
+    const activity_category = index % 2 === 0 ? "run" : "bike";
     const libraryStructure = {
       version: 3,
-      segments: categories.map((category, segmentIndex) => ({
-        id: `f1000000-0000-4000-8000-${String(index * 10 + segmentIndex).padStart(12, "0")}`,
-        role: "activity",
-        category,
-        name: `${category} segment`,
-        intervals: [
-          {
-            id: `f2000000-0000-4000-8000-${String(index * 10 + segmentIndex).padStart(12, "0")}`,
-            name: "Steady work",
-            repetitions: 1,
-            steps: [
-              {
-                id: `f3000000-0000-4000-8000-${String(index * 10 + segmentIndex).padStart(12, "0")}`,
-                name: "Steady",
-                duration: { type: "time", seconds: 600 },
-                targets: [{ type: "RPE", intensity: 5 }],
-              },
-            ],
-          },
-        ],
-      })),
+      segments: [
+        {
+          id: `f1000000-0000-4000-8000-${String(index * 10).padStart(12, "0")}`,
+          role: "activity",
+          activity_category,
+          name: `${activity_category} segment`,
+          intervals: [
+            {
+              id: `f2000000-0000-4000-8000-${String(index * 10).padStart(12, "0")}`,
+              name: "Steady work",
+              repetitions: 1,
+              steps: [
+                {
+                  id: `f3000000-0000-4000-8000-${String(index * 10).padStart(12, "0")}`,
+                  name: "Steady",
+                  duration: { type: "time", seconds: 600 },
+                  targets: [{ type: "RPE", intensity: 5 }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
     };
 
     await upsertActivityPlan(pool, {
-      description:
-        index === 21
-          ? "A deterministic bike and run brick workout."
-          : `Deterministic ${categories[0]} library fixture ${index}.`,
+      description: `Deterministic ${activity_category} library fixture ${index}.`,
       id: `f0000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-      name:
-        index === 21
-          ? "Playwright Multisport Brick"
-          : `Playwright Library ${String(index).padStart(2, "0")}`,
+      name: `Playwright Library ${String(index).padStart(2, "0")}`,
       notes: null,
       profileId,
       structure: libraryStructure,

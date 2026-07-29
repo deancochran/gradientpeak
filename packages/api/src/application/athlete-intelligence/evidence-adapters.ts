@@ -23,7 +23,7 @@ export function addEvidence(input: {
   observedAt: Date;
   value: number | null;
   unit: string | null;
-  sport: "run" | "bike" | "swim" | "strength" | "other" | null;
+  activity_category: "run" | "bike" | "swim" | "strength" | "other" | null;
   modality: string;
   sourceType: EvidenceSourceType;
   validityState?: EvidenceItem["validityState"];
@@ -35,7 +35,7 @@ export function addEvidence(input: {
     lineageGroupId: input.lineageGroupId,
     observedAt: input.observedAt.toISOString(),
     rawObservation: { value: input.value, unit: input.unit },
-    sport: input.sport,
+    activity_category: input.activity_category,
     modality: input.modality,
     sourceType: input.sourceType,
     qualityState: input.value === null ? "unknown" : "known",
@@ -45,13 +45,18 @@ export function addEvidence(input: {
   return input.sourceId;
 }
 
-export function normalizeSport(value: string | null | undefined) {
-  const sport = value?.toLowerCase() ?? "";
-  if (sport.includes("run")) return "run" as const;
-  if (sport.includes("cycl") || sport.includes("bike") || sport.includes("ride"))
+export function normalizeActivityCategory(value: string | null | undefined) {
+  const activity_category = value?.toLowerCase() ?? "";
+  if (activity_category.includes("run")) return "run" as const;
+  if (
+    activity_category.includes("cycl") ||
+    activity_category.includes("bike") ||
+    activity_category.includes("ride")
+  )
     return "bike" as const;
-  if (sport.includes("swim")) return "swim" as const;
-  if (sport.includes("strength") || sport.includes("weight")) return "strength" as const;
+  if (activity_category.includes("swim")) return "swim" as const;
+  if (activity_category.includes("strength") || activity_category.includes("weight"))
+    return "strength" as const;
   return "other" as const;
 }
 

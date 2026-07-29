@@ -92,7 +92,7 @@ export const mobileJourneyCoverageManifest = {
     ],
     runtimeVerificationStatus: "declared",
     selectors: {
-      addWorkout: "builder-add-workout",
+      addActivity: "builder-add-activity",
       goalsControl: "builder-configuration-goals",
       nameInput: "builder-plan-name-input",
       scheduleControl: "builder-configuration-schedulePreview",

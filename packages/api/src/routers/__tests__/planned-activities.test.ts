@@ -15,6 +15,7 @@ vi.mock("../../infrastructure/repositories", () => ({
   createEventWriteRepository: vi.fn(() => ({
     createOwnedEvent: vi.fn(async () => undefined),
     getAccessibleActivityPlan: vi.fn(async () => null),
+    getActivityPlanById: vi.fn(async () => null),
     getOwnedTrainingPlan: vi.fn(async () => null),
     updateOwnedEventsForScope: vi.fn(async () => []),
   })),

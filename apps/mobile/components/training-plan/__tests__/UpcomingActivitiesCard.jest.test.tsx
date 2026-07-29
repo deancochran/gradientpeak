@@ -80,7 +80,7 @@ describe("UpcomingActivitiesCard", () => {
             activity_plan: {
               id: "activity-plan-1",
               name: "Tempo Builder",
-              activity_category: "outdoor_run",
+              activity_category: "run",
               authoritative_metrics: {
                 estimated_duration: 3600,
                 estimated_tss: 72,

@@ -1,5 +1,9 @@
 import { estimateFromStructure, estimateFromTemplate } from "../../estimation/strategies";
-import { SYSTEM_TEMPLATES, type SystemTemplate } from "../../samples";
+import {
+  deriveSystemActivityTemplateActivityCategory,
+  SYSTEM_TEMPLATES,
+  type SystemTemplate,
+} from "../../samples";
 import type { SystemTrainingPlanTemplate } from "../../samples/training-plans";
 import { materializePlanToEvents } from "../materializePlanToEvents";
 import { aggregateWeeklyPlannedLoad } from "./aggregateWeeklyPlannedLoad";
@@ -45,7 +49,7 @@ export interface MaterializedSystemPlanLoadSession {
   all_day: boolean;
   activity_plan_id: string | null;
   resolved_activity_template_id: string | null;
-  activity_category: SystemTemplate["activity_category"] | null;
+  activity_category: ReturnType<typeof deriveSystemActivityTemplateActivityCategory> | null;
   estimated_tss: number | null;
   estimated_duration_seconds: number | null;
   estimation_source: MaterializedSystemPlanEstimationSource;
@@ -87,7 +91,7 @@ function estimateTemplateLoad(
 } {
   const context = {
     profile: {},
-    activityCategory: template.activity_category,
+    activityCategory: deriveSystemActivityTemplateActivityCategory(template.structure),
     structure: template.structure,
     fitnessState: input.estimationContext?.fitnessState,
     ftp: input.estimationContext?.ftp,
@@ -169,7 +173,7 @@ export function materializeSystemPlanLoad(
     return {
       ...event,
       resolved_activity_template_id: template.id,
-      activity_category: template.activity_category,
+      activity_category: deriveSystemActivityTemplateActivityCategory(template.structure),
       ...estimation,
     };
   });

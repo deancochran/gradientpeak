@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   getConfigurableProviderActions,
   getProviderCapabilityUnavailableReason,
-  getProviderPlannedWorkoutCapability,
+  getProviderPlannedActivityCapability,
   getProviderSyncMode,
   getProvidersWithCapability,
   integrationProviderIdValues,
@@ -49,24 +49,32 @@ describe("provider capability registry", () => {
   it("filters connected providers by capability", () => {
     expect(
       getProvidersWithCapability(["wahoo", "strava", "trainingpeaks"], "planned_activity_push"),
-    ).toEqual([]);
+    ).toEqual(["wahoo"]);
   });
 
-  it("fails closed for Wahoo outbound planned workouts and routes", () => {
-    expect(providerHasCapability("wahoo", "planned_activity_push")).toBe(false);
+  it("declares Wahoo implementation support separately from route delivery", () => {
+    expect(providerHasCapability("wahoo", "planned_activity_push")).toBe(true);
     expect(providerHasCapability("wahoo", "route_push")).toBe(false);
-    expect(getProviderSyncMode("wahoo", "planned_activity_push")).toBe("unsupported");
-    expect(getProviderCapabilityUnavailableReason("wahoo", "planned_activity_push")).toBe(
-      "Wahoo planned-workout creation is disabled because uncertain create outcomes cannot be reconciled under the documented API.",
-    );
-    expect(getProviderPlannedWorkoutCapability("wahoo")).toMatchObject({
-      maturity: "evidence_gated",
-      supportedSports: [],
+    expect(getProviderSyncMode("wahoo", "planned_activity_push")).toBe("automatic");
+    expect(getProviderCapabilityUnavailableReason("wahoo", "planned_activity_push")).toBeNull();
+    expect(getProviderPlannedActivityCapability("wahoo")).toMatchObject({
+      maturity: "available",
+      supportedActivityCategories: ["run", "bike"],
+      supportedDurations: ["time", "distance"],
+      supportedTargets: expect.arrayContaining([
+        "%FTP",
+        "%MaxHR",
+        "%ThresholdHR",
+        "watts",
+        "bpm",
+        "speed",
+        "cadence",
+      ]),
       supportsBoundaries: false,
     });
-    expect(getProviderPlannedWorkoutCapability("garmin")).toMatchObject({
+    expect(getProviderPlannedActivityCapability("garmin")).toMatchObject({
       maturity: "evidence_gated",
-      supportedSports: [],
+      supportedActivityCategories: [],
       supportedTargets: [],
     });
   });

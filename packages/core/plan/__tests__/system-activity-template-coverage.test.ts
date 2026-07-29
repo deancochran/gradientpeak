@@ -27,7 +27,7 @@ describe("system activity-template coverage", () => {
     const cellRows = buildCoverageCellSummaries([
       {
         template_id: "run-long-only",
-        sport: "run",
+        activity_category: "run",
         session_archetype: "long_endurance",
         intensity_family: "endurance",
         duration_seconds: 7200,
@@ -42,7 +42,7 @@ describe("system activity-template coverage", () => {
     const cellRows = buildCoverageCellSummaries([
       {
         template_id: "bike-long-a",
-        sport: "bike",
+        activity_category: "bike",
         session_archetype: "long_endurance",
         intensity_family: "endurance",
         duration_seconds: 9000,
@@ -50,7 +50,7 @@ describe("system activity-template coverage", () => {
       },
       {
         template_id: "bike-long-b",
-        sport: "bike",
+        activity_category: "bike",
         session_archetype: "long_endurance",
         intensity_family: "moderate",
         duration_seconds: 9300,

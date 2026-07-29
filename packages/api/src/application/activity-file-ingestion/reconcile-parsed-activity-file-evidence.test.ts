@@ -68,7 +68,7 @@ const analysisResult = {
 function activity(activityId: string) {
   return {
     activityId,
-    activityType: "bike",
+    activityCategory: "bike",
     parsedData: {
       metadata: { startTime: new Date("2026-01-01T10:00:00Z"), type: "cycling" },
       summary: { totalTime: 3_600, totalDistance: 20_000 },

@@ -32,7 +32,9 @@ function input() {
   return {
     model: buildAthleteIntelligenceModel(),
     internalResponse: channel({ value: 1 }),
-    externalWork: [{ sport: "run", loadIdentity: "trimp:v1", ...channel({ loads: [1, 2] }) }],
+    externalWork: [
+      { activity_category: "run", loadIdentity: "trimp:v1", ...channel({ loads: [1, 2] }) },
+    ],
     mechanicalExposure: channel(null, unsupported),
     strengthExposure: channel(null, unsupported),
     wellnessContext: channel({ value: 1 }),
@@ -53,10 +55,10 @@ describe("planning context", () => {
 });
 
 describe("assembleAthleteState", () => {
-  it("derives genuine coverage and explicit sport/load identity", () => {
+  it("derives genuine coverage and explicit activity_category/load identity", () => {
     const state = assembleAthleteState(input());
     expect(state.externalWork[0]).toMatchObject({
-      sport: "run",
+      activity_category: "run",
       loadIdentity: "trimp:v1",
       coverage: { state: "complete", sourceIds: ["activity:ride-1"] },
     });

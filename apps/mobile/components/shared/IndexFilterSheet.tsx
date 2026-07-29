@@ -1,7 +1,7 @@
 import { Text } from "@repo/ui/components/text";
 import type React from "react";
 import { TouchableOpacity, View } from "react-native";
-import { AppBottomSheet } from "./AppBottomSheet";
+import { APP_BOTTOM_SHEET_PRESENTATIONS, AppBottomSheet } from "./AppBottomSheet";
 
 interface IndexFilterSheetProps {
   visible: boolean;
@@ -15,8 +15,6 @@ interface IndexFilterSheetProps {
   onClose: () => void;
   testID: string;
 }
-
-const INDEX_FILTER_SHEET_SNAP_POINTS = ["78%"];
 
 export function IndexFilterSheet({
   visible,
@@ -41,7 +39,7 @@ export function IndexFilterSheet({
           isResetDisabled ? "border-border bg-muted/40" : "border-border bg-background"
         }`}
       >
-        <Text className="text-sm font-medium text-foreground">Reset</Text>
+        <Text className="text-sm font-medium text-foreground">Clear filters</Text>
       </TouchableOpacity>
       <TouchableOpacity
         onPress={onApply}
@@ -67,8 +65,9 @@ export function IndexFilterSheet({
     <AppBottomSheet
       description={description}
       footer={footer}
+      initialSnapIndex={APP_BOTTOM_SHEET_PRESENTATIONS.filter.initialSnapIndex}
       onClose={onClose}
-      snapPoints={INDEX_FILTER_SHEET_SNAP_POINTS}
+      snapPoints={APP_BOTTOM_SHEET_PRESENTATIONS.filter.snapPoints}
       testID={testID}
       title={title}
       visible={visible}

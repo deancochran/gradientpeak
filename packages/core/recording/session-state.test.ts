@@ -14,7 +14,7 @@ const snapshot: RecordingSessionSnapshot = {
     appBuild: "test",
   },
   activity: {
-    category: "bike",
+    activity_category: "bike",
     mode: "free",
     gpsMode: "off",
     eventId: null,

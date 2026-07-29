@@ -5,7 +5,7 @@ import {
   parseRecurrenceEndDate,
   parseRecurrenceFrequency,
 } from "@/components/event/EventEditorCard";
-import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { type ActivityPlan, ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { getEventStatusLabel } from "@/lib/calendar/eventPresentation";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
 
@@ -79,6 +79,16 @@ export function PlannedAgendaEventCard({
   const eventTitle = event.title?.trim() || "Scheduled activity";
   const eventDescription = readEventDescription(event);
   const scheduleSummary = buildScheduleSummary(event, statusLabel);
+  let linkedActivityPlan: ActivityPlan | null = null;
+  if (event.activity_plan?.id && event.activity_plan.name) {
+    const { activity_category, ...planWithoutActivityCategory } = event.activity_plan;
+    linkedActivityPlan = {
+      ...planWithoutActivityCategory,
+      id: event.activity_plan.id,
+      name: event.activity_plan.name,
+      ...(activity_category ? { activity_category } : {}),
+    };
+  }
 
   return (
     <TouchableOpacity
@@ -106,19 +116,12 @@ export function PlannedAgendaEventCard({
           ) : null}
         </View>
 
-        {event.activity_plan?.id && event.activity_plan.name ? (
+        {linkedActivityPlan ? (
           <View className="gap-2">
             <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               Linked activity plan
             </Text>
-            <ActivityPlanCard
-              activityPlan={{
-                ...event.activity_plan,
-                id: event.activity_plan.id,
-                name: event.activity_plan.name,
-              }}
-              variant="compact"
-            />
+            <ActivityPlanCard activityPlan={linkedActivityPlan} variant="compact" />
           </View>
         ) : null}
       </View>

@@ -111,7 +111,7 @@ describe("RecordingConfigResolver", () => {
       }),
     );
 
-    expect(config.session.authority.category).toBe("plan");
+    expect(config.session.authority.activity_category).toBe("plan");
     expect(config.session.surfaces.defaultPrimarySurface).toBe("activity");
     expect(config.session.surfaces.availablePrimarySurfaces).toContain("activity");
     expect(config.session.surfaces.availablePrimarySurfaces).toContain("route");
@@ -136,11 +136,11 @@ describe("RecordingConfigResolver", () => {
       }),
     );
 
-    expect(freeSession.session.authority.category).toBe("user");
+    expect(freeSession.session.authority.activity_category).toBe("user");
     expect(freeSession.session.editing.canEditActivity).toBe(true);
     expect(freeSession.session.surfaces.quickActions).toContain("activity");
 
-    expect(planLedSession.session.authority.category).toBe("plan");
+    expect(planLedSession.session.authority.activity_category).toBe("plan");
     expect(planLedSession.session.editing.canEditActivity).toBe(false);
     expect(planLedSession.session.surfaces.quickActions).not.toContain("activity");
     expect(planLedSession.session.editing.locksIdentityAfterStart).toBe(true);
@@ -365,9 +365,9 @@ describe("RecordingConfigResolver", () => {
       }),
     );
 
-    expect(plannedRouteTrainer.session.ui.floatingPanel.defaultCard).toBe("workout_interval");
+    expect(plannedRouteTrainer.session.ui.floatingPanel.defaultCard).toBe("activity_interval");
     expect(plannedRouteTrainer.session.ui.floatingPanel.availableCards).toEqual([
-      "workout_interval",
+      "activity_interval",
       "route_progress",
       "trainer",
       "metrics",
@@ -457,7 +457,7 @@ describe("RecordingConfigResolver", () => {
                 role: "activity",
                 id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                 name: "Bike",
-                category: "bike",
+                activity_category: "bike",
                 intervals: [
                   {
                     id: "11111111-1111-4111-8111-111111111111",
@@ -516,7 +516,7 @@ describe("RecordingConfigResolver", () => {
                 role: "activity",
                 id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                 name: "Bike",
-                category: "bike",
+                activity_category: "bike",
                 intervals: [
                   {
                     id: "33333333-3333-4333-8333-333333333333",
@@ -695,7 +695,7 @@ describe("RecordingConfigResolver", () => {
         startedAt: "2026-03-20T10:00:00Z",
       },
       activity: {
-        category: "bike",
+        activity_category: "bike",
         mode: "planned",
         gpsMode: "off",
         eventId: null,
@@ -784,7 +784,7 @@ describe("RecordingConfigResolver", () => {
     expect(detachedPlanConfig.input.mode).toBe("unplanned");
     expect(detachedPlanConfig.session.guidance.hasPlan).toBe(false);
     expect(detachedPlanConfig.session.ui.floatingPanel.availableCards).not.toContain(
-      "workout_interval",
+      "activity_interval",
     );
   });
 });

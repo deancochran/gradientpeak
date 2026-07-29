@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import type { Context } from "../../context";
 import type { DrizzleTransactionClient } from "../../db";
 import type { createEventCompletionRepository } from "../../infrastructure/repositories";
-import type { PlannedWorkoutQueueResult } from "../../lib/provider-sync/planned-workouts";
+import type { PlannedActivityQueueResult } from "../../lib/provider-sync/planned-activities";
 import type { createContentAccessPermissions } from "../../permissions/content-access";
 
 type ProtectedContext = Context & {
@@ -36,13 +36,12 @@ type DeleteEventUseCaseDependencies = {
   enqueueProviderPlannedActivityJobs: (
     ctx: ProtectedContext,
     input: {
-      drainDueJobs?: boolean;
       eventIds: string[];
       operation: "publish" | "unsync";
       profileId?: string;
       transaction?: DrizzleTransactionClient;
     },
-  ) => Promise<PlannedWorkoutQueueResult | null>;
+  ) => Promise<PlannedActivityQueueResult | null>;
   getContentPermissions: (
     ctx: Context,
     transaction?: DrizzleTransactionClient,
@@ -96,7 +95,6 @@ export async function deleteEventUseCase<
           .map((row) => row.id);
         if (plannedEventIds.length > 0) {
           const result = await dependencies.enqueueProviderPlannedActivityJobs(ctx, {
-            drainDueJobs: false,
             eventIds: plannedEventIds,
             operation: "unsync",
             transaction: tx,

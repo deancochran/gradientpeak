@@ -1,6 +1,9 @@
-import type { CanonicalSport } from "../../../schemas/sport";
-import { getSportModelConfig, type SportLoadState } from "../sports";
-import type { DailySportLoadInput } from "./systemicLoad";
+import type { CanonicalActivityCategory } from "../../../schemas/activity-category";
+import {
+  type ActivityCategoryLoadState,
+  getActivityCategoryModelConfig,
+} from "../activity-categories";
+import type { DailyActivityCategoryLoadInput } from "./systemicLoad";
 
 const DEFAULT_CTL_TAU_DAYS = 42;
 
@@ -27,13 +30,13 @@ export function applyLoadDecay(
   return previousLoad * decayFactor + incomingLoad * (1 - decayFactor);
 }
 
-export function advanceSportLoadState(input: {
-  sport: CanonicalSport;
+export function advanceActivityCategoryLoadState(input: {
+  activity_category: CanonicalActivityCategory;
   dailyLoad: number;
-  previousState?: Pick<SportLoadState, "ctl" | "atl">;
+  previousState?: Pick<ActivityCategoryLoadState, "ctl" | "atl">;
   recentLoads?: number[];
-}): SportLoadState {
-  const config = getSportModelConfig(input.sport);
+}): ActivityCategoryLoadState {
+  const config = getActivityCategoryModelConfig(input.activity_category);
   const loadSeries = [...(input.recentLoads ?? []), input.dailyLoad];
   const nextCtl = applyLoadDecay(
     input.previousState?.ctl ?? 0,
@@ -55,7 +58,7 @@ export function advanceSportLoadState(input: {
         : 0;
 
   return {
-    sport: input.sport,
+    activity_category: input.activity_category,
     ctl: round(nextCtl),
     atl: round(nextAtl),
     tsb: round(nextCtl - nextAtl),
@@ -69,15 +72,17 @@ export function advanceSportLoadState(input: {
 }
 
 export function calculateMechanicalFatigueScore(input: {
-  dailySportLoads: DailySportLoadInput[];
-  history?: Array<{ sport_loads: DailySportLoadInput[] }>;
+  dailyActivityCategoryLoads: DailyActivityCategoryLoadInput[];
+  history?: Array<{ activity_category_loads: DailyActivityCategoryLoadInput[] }>;
 }): number {
-  const mechanicalSeries = [...(input.history ?? []), { sport_loads: input.dailySportLoads }].map(
-    (day) =>
-      day.sport_loads.reduce((sum, load) => {
-        const config = getSportModelConfig(load.sport);
-        return sum + load.load * config.mechanical_multiplier;
-      }, 0),
+  const mechanicalSeries = [
+    ...(input.history ?? []),
+    { activity_category_loads: input.dailyActivityCategoryLoads },
+  ].map((day) =>
+    day.activity_category_loads.reduce((sum, load) => {
+      const config = getActivityCategoryModelConfig(load.activity_category);
+      return sum + load.load * config.mechanical_multiplier;
+    }, 0),
   );
 
   return round(averageWindow(mechanicalSeries, 7));

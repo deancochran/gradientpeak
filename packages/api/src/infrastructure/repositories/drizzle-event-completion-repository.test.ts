@@ -7,13 +7,24 @@ function createDeleteDb(
   ],
 ) {
   const operations: string[] = [];
+  const orderBy = vi.fn();
+  const candidatesQuery = {
+    for: vi.fn(async () => {
+      operations.push("select-candidates");
+      return candidates;
+    }),
+    then: (resolve: (value: typeof candidates) => unknown) =>
+      Promise.resolve(candidates).then(resolve),
+  };
   const tx = {
     select: vi.fn(() => ({
       from: () => ({
-        where: async () => {
-          operations.push("select-candidates");
-          return candidates;
-        },
+        where: () => ({
+          orderBy: vi.fn(() => {
+            orderBy();
+            return candidatesQuery;
+          }),
+        }),
       }),
     })),
     update: vi.fn(() => ({
@@ -32,7 +43,7 @@ function createDeleteDb(
   const db = {
     transaction: vi.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
   };
-  return { db, operations };
+  return { candidatesForUpdate: candidatesQuery.for, db, operations, orderBy };
 }
 
 describe("event completion repository deletion scopes", () => {
@@ -120,6 +131,28 @@ describe("event completion repository deletion scopes", () => {
 
     expect(beforeDelete).toHaveBeenCalledOnce();
     expect(operations).toEqual(["select-candidates", "before-delete", "delete-events"]);
+  });
+
+  it("orders scoped candidate locks by Event ID before FOR UPDATE", async () => {
+    const { candidatesForUpdate, db, orderBy } = createDeleteDb([
+      { activity_plan_id: null, event_type: "custom", id: "event-1" },
+      { activity_plan_id: null, event_type: "custom", id: "event-2" },
+    ]);
+
+    await createEventCompletionRepository(db as never).deleteOwnedEventsForScope({
+      anchorEvent: {
+        id: "event-1",
+        series_id: "series-1",
+        starts_at: "2026-07-12T08:00:00.000Z",
+        training_plan_id: null,
+        updated_at: "2026-07-01T00:00:00.000Z",
+      },
+      profileId: "profile-1",
+      scope: "series",
+    });
+
+    expect(orderBy).toHaveBeenCalledOnce();
+    expect(candidatesForUpdate).toHaveBeenCalledWith("update");
   });
 
   it("aborts an empty locked candidate set without invoking the callback or delete", async () => {

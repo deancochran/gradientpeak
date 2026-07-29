@@ -1,6 +1,11 @@
 import type { RecordingServiceActivityPlan } from "@repo/core";
+import { Alert } from "react-native";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import { handleRecordingObjectAction } from "../recordingObjectActions";
+import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
+import {
+  handleRecordingObjectAction,
+  resolveRecordingObjectAction,
+} from "../recordingObjectActions";
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -12,16 +17,46 @@ jest.mock("@/lib/stores/activitySelectionStore", () => ({
   activitySelectionStore: { setSelection: jest.fn() },
 }));
 
+const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
+
+const activitySegment = (activity_category: "run" | "bike", value: number) => ({
+  id: id(value),
+  role: "activity" as const,
+  name: activity_category,
+  activity_category,
+  intervals: [
+    {
+      id: id(value + 100),
+      name: activity_category,
+      repetitions: 1,
+      steps: [
+        {
+          id: id(value + 200),
+          name: activity_category,
+          duration: { type: "time" as const, seconds: 60 },
+          targets: [{ type: "RPE" as const, intensity: 4 }],
+        },
+      ],
+    },
+  ],
+});
+
+const plan = (segments: unknown, idValue = "plan-1") =>
+  ({
+    id: idValue,
+    name: "Tempo",
+    structure: { version: 3, segments },
+  }) as unknown as RecordingServiceActivityPlan & { id: string };
+
+const singleActivityCategoryPlan = () => plan([activitySegment("bike", 1)]);
+const multisportPlan = () => plan([activitySegment("run", 1), activitySegment("bike", 2)]);
+
 describe("handleRecordingObjectAction", () => {
   it("returns to the recorder after attaching a plan", async () => {
     const navigateToRecord = jest.fn();
     const service = { selectPlan: jest.fn() } as unknown as ActivityRecorderService;
-    const plan = {
-      id: "plan-1",
-      name: "Tempo",
-      activity_category: "bike",
-    } as unknown as RecordingServiceActivityPlan;
-    const { id: planId, ...planWithoutId } = plan;
+    const selectedPlan = singleActivityCategoryPlan();
+    const { id: planId, ...planWithoutId } = selectedPlan;
 
     await handleRecordingObjectAction({
       candidate: {
@@ -37,7 +72,7 @@ describe("handleRecordingObjectAction", () => {
       service,
     });
 
-    expect(service.selectPlan).toHaveBeenCalledWith(plan);
+    expect(service.selectPlan).toHaveBeenCalledWith(selectedPlan);
     expect(navigateToRecord).toHaveBeenCalledTimes(1);
   });
 
@@ -59,5 +94,65 @@ describe("handleRecordingObjectAction", () => {
 
     expect(service.attachRoute).toHaveBeenCalledWith("route-1");
     expect(navigateToRecord).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables a malformed plan while idle", () => {
+    const resolution = resolveRecordingObjectAction({
+      candidate: { objectKind: "activity_plan", objectId: "plan-1", plan: multisportPlan() },
+      lifecycle: "idle",
+      service: null,
+    });
+
+    expect(resolution).toMatchObject({
+      primaryAction: "disabled",
+      command: null,
+      disabledReason: "This plan can't be recorded on mobile. Check the plan and try again.",
+    });
+  });
+
+  it("does not let bypassed start or attach commands select an unsupported plan", async () => {
+    const navigateToRecord = jest.fn();
+    const service = { selectPlan: jest.fn() } as unknown as ActivityRecorderService;
+    const candidate = {
+      objectKind: "activity_plan" as const,
+      objectId: "plan-1",
+      plan: multisportPlan(),
+    };
+
+    await handleRecordingObjectAction({
+      candidate,
+      command: "start_with_plan",
+      navigateToRecord,
+      service,
+    });
+    await handleRecordingObjectAction({
+      candidate,
+      command: "attach_plan",
+      navigateToRecord,
+      service,
+    });
+
+    expect(activitySelectionStore.setSelection).not.toHaveBeenCalled();
+    expect(service.selectPlan).not.toHaveBeenCalled();
+    expect(navigateToRecord).not.toHaveBeenCalled();
+    expect(Alert.alert).toHaveBeenCalledTimes(2);
+  });
+
+  it("preserves selected and return actions for an already-selected unsupported plan", () => {
+    const selectedPlan = multisportPlan();
+    const service = { plan: selectedPlan } as unknown as ActivityRecorderService;
+    const candidate = {
+      objectKind: "activity_plan" as const,
+      objectId: "plan-1",
+      plan: selectedPlan,
+    };
+
+    expect(resolveRecordingObjectAction({ candidate, lifecycle: "setup", service })).toMatchObject({
+      primaryAction: "selected",
+      label: "Selected for Recording",
+    });
+    expect(resolveRecordingObjectAction({ candidate, lifecycle: "active", service })).toMatchObject(
+      { primaryAction: "selected", secondaryActions: ["return"] },
+    );
   });
 });

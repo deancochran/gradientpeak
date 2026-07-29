@@ -1,4 +1,8 @@
-import { ALL_SAMPLE_PLANS, SYSTEM_TEMPLATES } from "../../../samples";
+import {
+  ALL_SAMPLE_PLANS,
+  deriveSystemActivityTemplateActivityCategory,
+  SYSTEM_TEMPLATES,
+} from "../../../samples";
 import { normalizeLinkedActivityPlanId } from "../../../samples/template-ids";
 import type {
   LinkedSystemActivityTemplateFixture,
@@ -90,7 +94,7 @@ function resolveLinkedActivityTemplates(
     return {
       id,
       name: template.name,
-      activity_category: template.activity_category ?? "other",
+      activity_category: deriveSystemActivityTemplateActivityCategory(template.structure),
       source_activity_plan_id: id,
       normalized_from_legacy_id: false,
     };
@@ -102,7 +106,7 @@ function buildSystemPlanCatalogEntry(
 ): SystemPlanFixtureCatalogEntry {
   const linkedActivityTemplates = resolveLinkedActivityTemplates(plan.structure);
   const dominantActivityCategories = uniqueStrings(
-    linkedActivityTemplates.map((template) => template.activity_category),
+    linkedActivityTemplates.map((linkedActivity) => linkedActivity.activity_category),
   );
   const declaredCycleWeeks = parseDeclaredCycleWeeks(plan.name);
   const offsetDays = collectFieldValues(plan.structure, "offset_days")
@@ -124,7 +128,7 @@ function buildSystemPlanCatalogEntry(
 
   if (dominantActivityCategories.length > 1) {
     limitations.push(
-      "Mixed-sport linkage exists, but current heuristic goal targets remain primarily single-sport oriented.",
+      "Mixed-activity_category linkage exists, but current heuristic goal targets remain primarily single-activity-category oriented.",
     );
     auditFields.push("dominant_activity_categories");
   }
@@ -324,6 +328,6 @@ export const SYSTEM_PLAN_MAPPING_GAPS = [
     plan_id: "6a6f5a93-b8f3-4fca-9d4f-56a55b913005",
     plan_name: "Sprint Triathlon Base (10 weeks)",
     reason:
-      "Catalogued with exact linked template IDs, but left unmapped for now because the current heuristic goal-target fixture layer is still single-sport first.",
+      "Catalogued with exact linked template IDs, but left unmapped for now because the current heuristic goal-target fixture layer is still single-activity-category first.",
   },
 ] as const;

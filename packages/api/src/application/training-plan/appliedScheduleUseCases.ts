@@ -8,7 +8,7 @@ import type { DrizzleDbClient } from "@repo/db/client";
 import { TRPCError } from "@trpc/server";
 import { and, eq, gte, inArray, ne } from "drizzle-orm";
 import type { DrizzleTransactionClient } from "../../db";
-import { enqueuePlannedWorkoutSyncAfterCalendarMutation } from "../../lib/provider-sync/planned-workouts";
+import { enqueuePlannedActivitySyncAfterCalendarMutation } from "../../lib/provider-sync/planned-activities";
 import type { TrainingPlanRepository } from "../../repositories";
 
 const plannedEventType = "planned" as const;
@@ -27,15 +27,14 @@ function getRequiredPlanningTimezone(value: string | null | undefined): string {
   });
 }
 
-async function enqueuePlannedWorkoutSyncForCalendarWrite(input: {
+async function enqueuePlannedActivitySyncForCalendarWrite(input: {
   db: DrizzleDbClient;
-  drainDueJobs?: boolean;
   eventIds: string[];
   operation: "publish" | "unsync";
   profileId: string;
   transaction?: DrizzleTransactionClient;
 }) {
-  return enqueuePlannedWorkoutSyncAfterCalendarMutation(input);
+  return enqueuePlannedActivitySyncAfterCalendarMutation(input);
 }
 
 export async function removeAppliedScheduleUseCase(input: {
@@ -44,6 +43,7 @@ export async function removeAppliedScheduleUseCase(input: {
   permissionsFactory?: (db: DrizzleTransactionClient) => ContentPermissions;
   profileId: string;
   scheduleBatchId: string;
+  trainingPlanId: string;
 }) {
   const [profile] = await input.db
     .select({ planningTimezone: schema.profiles.planning_timezone })
@@ -64,6 +64,7 @@ export async function removeAppliedScheduleUseCase(input: {
         and(
           eq(schema.events.profile_id, input.profileId),
           eq(schema.events.event_type, plannedEventType),
+          eq(schema.events.training_plan_id, input.trainingPlanId),
           eq(schema.events.schedule_batch_id, input.scheduleBatchId),
           gte(schema.events.starts_at, new Date(todayStart)),
           ne(schema.events.status, "completed"),
@@ -79,16 +80,15 @@ export async function removeAppliedScheduleUseCase(input: {
 
     const permissions = input.permissionsFactory?.(tx) ?? input.permissions;
     await Promise.all(candidates.map((event) => permissions.revokeEventGrants(event.id)));
-    const queueResult = await enqueuePlannedWorkoutSyncForCalendarWrite({
+    const queueResult = await enqueuePlannedActivitySyncForCalendarWrite({
       db: input.db,
-      drainDueJobs: false,
       eventIds: candidates.map((event) => event.id),
       operation: "unsync",
       profileId: input.profileId,
       transaction: tx,
     });
     if (queueResult && !queueResult.success) {
-      throw new Error("Failed to enqueue planned workout unsync jobs");
+      throw new Error("Failed to enqueue planned activity unsync jobs");
     }
     await tx.delete(schema.events).where(
       inArray(
@@ -102,6 +102,7 @@ export async function removeAppliedScheduleUseCase(input: {
   return {
     success: true,
     schedule_batch_id: input.scheduleBatchId,
+    training_plan_id: input.trainingPlanId,
     scheduled_sessions_removed: deletedEvents.length,
   };
 }

@@ -51,46 +51,46 @@ export function summarizeTrainingPlan(structure: unknown) {
   };
 }
 
-export function moveScheduledWorkout<T extends { id: string; scheduled_date: string }>(
-  workouts: readonly T[],
-  workoutId: string,
+export function moveScheduledActivity<T extends { id: string; scheduled_date: string }>(
+  activities: readonly T[],
+  activityId: string,
   days: number,
 ): T[] {
-  return workouts.map((workout) => {
-    if (workout.id !== workoutId) return { ...workout };
-    const date = new Date(`${workout.scheduled_date}T12:00:00.000Z`);
+  return activities.map((activity) => {
+    if (activity.id !== activityId) return { ...activity };
+    const date = new Date(`${activity.scheduled_date}T12:00:00.000Z`);
     date.setUTCDate(date.getUTCDate() + days);
-    return { ...workout, scheduled_date: date.toISOString().slice(0, 10) };
+    return { ...activity, scheduled_date: date.toISOString().slice(0, 10) };
   });
 }
 
-export function buildWorkoutReorderInput<
+export function buildActivityReorderInput<
   T extends { id: string; scheduled_date: string; training_plan_id: string },
 >(original: readonly T[], next: readonly T[]) {
-  const originalById = new Map(original.map((workout) => [workout.id, workout]));
+  const originalById = new Map(original.map((activity) => [activity.id, activity]));
   const changed = next.filter(
-    (workout) => originalById.get(workout.id)?.scheduled_date !== workout.scheduled_date,
+    (activity) => originalById.get(activity.id)?.scheduled_date !== activity.scheduled_date,
   );
   if (changed.length === 0) return null;
 
   const trainingPlanId = changed[0]?.training_plan_id;
   if (
     !trainingPlanId ||
-    changed.some((workout) => workout.training_plan_id !== trainingPlanId) ||
-    changed.some((workout) => originalById.get(workout.id)?.training_plan_id !== trainingPlanId)
+    changed.some((activity) => activity.training_plan_id !== trainingPlanId) ||
+    changed.some((activity) => originalById.get(activity.id)?.training_plan_id !== trainingPlanId)
   ) {
     throw new Error("Save changes for one training plan at a time.");
   }
 
   return {
     training_plan_id: trainingPlanId,
-    changes: changed.map((workout) => {
-      const previous = originalById.get(workout.id);
-      if (!previous) throw new Error("Workout schedule changed; reload and try again.");
+    changes: changed.map((activity) => {
+      const previous = originalById.get(activity.id);
+      if (!previous) throw new Error("Activity schedule changed; reload and try again.");
       return {
-        event_id: workout.id,
+        event_id: activity.id,
         expected_scheduled_date: previous.scheduled_date,
-        requested_scheduled_date: workout.scheduled_date,
+        requested_scheduled_date: activity.scheduled_date,
       };
     }),
   };

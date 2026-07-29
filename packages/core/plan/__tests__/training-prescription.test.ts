@@ -106,7 +106,7 @@ describe("resolveTrainingPrescription", () => {
     ).toBe(true);
   });
 
-  it("keeps cycling threshold requirements sport-specific", () => {
+  it("keeps cycling threshold requirements activity-category-specific", () => {
     const prescription = resolveTrainingPrescription({
       goals: [
         {
@@ -135,7 +135,7 @@ describe("resolveTrainingPrescription", () => {
     ).toBe(true);
   });
 
-  it("represents tri-style multi-sport goals without collapsing load to one sport", () => {
+  it("represents tri-style multi-activity_category goals without collapsing load to one activity_category", () => {
     const prescription = resolveTrainingPrescription({
       goals: [
         {
@@ -229,7 +229,7 @@ describe("resolveTrainingPrescription", () => {
     expect(prescription.activity_categories.strength).toBeDefined();
   });
 
-  it("lets preferences alter support sports and global prescription constraints", () => {
+  it("lets preferences alter support activity_categories and global prescription constraints", () => {
     const preferences = {
       ...defaultAthletePreferenceProfile,
       dose_limits: {

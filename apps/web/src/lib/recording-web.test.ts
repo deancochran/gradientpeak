@@ -11,7 +11,7 @@ describe("recording route unit presentation", () => {
 describe("validateRecordingSearch", () => {
   it("defaults to a run launcher state", () => {
     expect(validateRecordingSearch({})).toEqual({
-      category: "run",
+      activity_category: "run",
       gps: "on",
       eventId: undefined,
       routeId: undefined,
@@ -21,12 +21,12 @@ describe("validateRecordingSearch", () => {
   it("keeps an explicit indoor gps override", () => {
     expect(
       validateRecordingSearch({
-        category: "bike",
+        activity_category: "bike",
         gps: "off",
         routeId: "11111111-1111-4111-8111-111111111111",
       }),
     ).toEqual({
-      category: "bike",
+      activity_category: "bike",
       gps: "off",
       eventId: undefined,
       routeId: "11111111-1111-4111-8111-111111111111",

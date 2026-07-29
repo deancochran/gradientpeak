@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getPlanCategoryComposition, projectCommonLoad } from "../home";
+import {
+  getPlanCategoryComposition,
+  getScheduleExecutionPresentation,
+  projectCommonLoad,
+} from "../home";
 
 const step = (id: string) => ({
   id,
@@ -52,7 +56,7 @@ describe("home plan card projection", () => {
     ).toEqual([expect.objectContaining({ status: "partial" })]);
   });
 
-  it("derives ordered repeated and multisport composition from V3 segments", () => {
+  it("rejects mixed-category composition from V3 segments", () => {
     const structure = {
       version: 3 as const,
       segments: [
@@ -101,6 +105,15 @@ describe("home plan card projection", () => {
       ],
     };
 
-    expect(getPlanCategoryComposition(structure)).toEqual(["run", "bike", "run"]);
+    expect(getPlanCategoryComposition(structure)).toEqual([]);
+  });
+
+  it("uses canonical activity_category schedule presentation", () => {
+    expect(
+      getScheduleExecutionPresentation({
+        activity_category: "bike",
+      }),
+    ).toEqual({ activity_category: "bike" });
+    expect(getScheduleExecutionPresentation(null)).toEqual({ activity_category: null });
   });
 });

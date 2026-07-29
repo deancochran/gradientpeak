@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { CanonicalSport } from "../../schemas/sport";
+import type { CanonicalActivityCategory } from "../../schemas/activity-category";
 import { type AthleteMetricType, athleteMetricRoleByType } from "../evidence-contracts";
 import type { AthleteIntelligenceModelInput } from "../model-input-contracts";
 import {
@@ -33,7 +33,7 @@ type Observation = {
   sourceType?: "profile_metric" | "activity_effort";
   valid?: boolean;
   lineageGroupId?: string;
-  sport?: CanonicalSport | null;
+  activity_category?: CanonicalActivityCategory | null;
 };
 
 function model(
@@ -48,7 +48,7 @@ function model(
     daysAgo = 1,
     valid = true,
     lineageGroupId?: string,
-    sport: CanonicalSport | null = null,
+    activity_category: CanonicalActivityCategory | null = null,
   ) => {
     const sourceId = `manual:physiology-${id++}`;
     evidenceRegistry[sourceId] = {
@@ -59,7 +59,7 @@ function model(
         : `manual-test:physiology-${id}`,
       observedAt: new Date(Date.parse(AS_OF) - daysAgo * 86_400_000).toISOString(),
       rawObservation: { value, unit },
-      sport,
+      activity_category,
       modality: "manual",
       sourceType,
       qualityState: "known",
@@ -89,7 +89,7 @@ function model(
             item.daysAgo,
             item.valid,
             item.lineageGroupId,
-            item.sport,
+            item.activity_category,
           ),
         ],
       },
@@ -122,14 +122,14 @@ function model(
       athleteId: "athlete-1",
       lineageGroupId: "manual-test:physiology-1",
       evidenceSourceIds: [trainingId],
-      preferredSports: [],
+      preferredActivityCategories: [],
       weeklyTimeWindows: [],
       hardRestDays: [],
       maximumWeeklyMinutes: ev(null, "minutes"),
       maximumDailyMinutes: ev(null, "minutes"),
       maximumSessionsPerDay: ev(null, "count"),
       maximumSessionDurationMinutes: ev(null, "minutes"),
-      sportDoseLimits: [],
+      activityCategoryDoseLimits: [],
       allowDoubleDays: null,
       minimumRecoveryHours: ev(null, "hours"),
       maximumConsecutiveTrainingDays: ev(null, "days"),
@@ -209,8 +209,8 @@ describe("physiology metric policy", () => {
   it("publishes canonical running threshold pace and swimming CSS policy outputs", () => {
     const result = evaluatePhysiologyMetrics(
       model({
-        threshold_pace_seconds_per_km: [{ value: 270, sport: "run" }],
-        css_seconds_per_100m: [{ value: 95, sport: "swim" }],
+        threshold_pace_seconds_per_km: [{ value: 270, activity_category: "run" }],
+        css_seconds_per_100m: [{ value: 95, activity_category: "swim" }],
       }),
     );
 
@@ -416,11 +416,11 @@ describe("physiology metric policy", () => {
     expect(fresh.result.uncertainty).toBeLessThan(old.result.uncertainty);
   });
 
-  it("selects the LTHR observation matching the requested sport before a newer other-sport value", () => {
+  it("selects the LTHR observation matching the requested activity_category before a newer other-activity_category value", () => {
     const input = model({
       lthr: [
-        { value: 168, daysAgo: 10, sport: "run" },
-        { value: 178, daysAgo: 1, sport: "bike" },
+        { value: 168, daysAgo: 10, activity_category: "run" },
+        { value: 178, daysAgo: 1, activity_category: "bike" },
       ],
     });
 

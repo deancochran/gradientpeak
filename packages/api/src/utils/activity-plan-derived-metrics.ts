@@ -23,7 +23,7 @@ import {
 
 export const ESTIMATOR_VERSION = "2026-05-estimated-provenance-v1";
 
-type SupportedActivityPlan = EstimationActivityPlanInput &
+export type SupportedActivityPlan = EstimationActivityPlanInput &
   Pick<ActivityPlanRow, "gps_recording_enabled" | "structure" | "structure_hash"> & {
     updated_at: Date | string;
   };
@@ -62,25 +62,25 @@ function plannedCommonLoad(input: {
 }): CommonLoadResult | CommonLoadAggregate {
   const computedAsOf = input.asOf.toISOString();
   const compiled = compileActivityPlanV3(input.structure);
-  const thresholdForSport = (sport: "bike" | "run" | "swim") => {
+  const thresholdForActivityCategory = (activity_category: "bike" | "run" | "swim") => {
     const threshold =
-      sport === "bike"
+      activity_category === "bike"
         ? input.thresholds.cycling_ftp
-        : sport === "run"
+        : activity_category === "run"
           ? input.thresholds.running_threshold_pace
           : input.thresholds.swimming_css;
     const value =
       threshold.value === null
         ? null
-        : sport === "bike"
+        : activity_category === "bike"
           ? threshold.value
-          : sport === "run"
+          : activity_category === "run"
             ? 1000 / threshold.value
             : 100 / threshold.value;
     const method =
-      sport === "bike"
+      activity_category === "bike"
         ? ("power_threshold" as const)
-        : sport === "run"
+        : activity_category === "run"
           ? ("run_pace_threshold" as const)
           : ("swim_pace_threshold" as const);
     if (value === null || threshold.observedAt === null) {
@@ -96,13 +96,13 @@ function plannedCommonLoad(input: {
     ]);
     const thresholdEvidence = {
       type:
-        sport === "bike"
+        activity_category === "bike"
           ? ("ftp_watts" as const)
-          : sport === "run"
+          : activity_category === "run"
             ? ("threshold_speed_mps" as const)
             : ("swim_threshold_speed_mps" as const),
       value,
-      unit: sport === "bike" ? ("watts" as const) : ("meters_per_second" as const),
+      unit: activity_category === "bike" ? ("watts" as const) : ("meters_per_second" as const),
       source: threshold.source,
       observedAt: threshold.observedAt,
       validAt: threshold.observedAt,
@@ -127,15 +127,15 @@ function plannedCommonLoad(input: {
   };
   const doses = compiled.occurrences.flatMap((occurrence) => {
     if (occurrence.role !== "activity") return [];
-    const sport = occurrence.category;
+    const activity_category = occurrence.activity_category;
     const provenance =
-      sport === "bike" || sport === "run" || sport === "swim"
-        ? thresholdForSport(sport)
+      activity_category === "bike" || activity_category === "run" || activity_category === "swim"
+        ? thresholdForActivityCategory(activity_category)
         : { method: null, quality: null, thresholdEvidence: null };
     const supportedTarget = occurrence.targets.find((target) =>
-      sport === "bike"
+      activity_category === "bike"
         ? target.type === "%FTP" || target.type === "watts"
-        : sport === "run" || sport === "swim"
+        : activity_category === "run" || activity_category === "swim"
           ? target.type === "speed"
           : false,
     );
@@ -152,7 +152,7 @@ function plannedCommonLoad(input: {
       occurrence.duration.type === "time" ? occurrence.duration.seconds : null;
     return [
       {
-        sport,
+        activity_category,
         durationSeconds,
         target,
         ...provenance,
@@ -260,9 +260,9 @@ function toFailedResult<TPlan extends EstimationActivityPlanInput>(
   route: ActivityPlanRouteSummary | null = null,
   asOf = new Date(),
 ): ActivityPlanWithDerivedMetrics<TPlan> {
-  let sport: CommonLoadResult["sport"] = "other";
+  let activity_category: CommonLoadResult["activity_category"] = "other";
   try {
-    sport = toEstimationActivityPlan(plan).activity_category ?? "other";
+    activity_category = toEstimationActivityPlan(plan).activity_category;
   } catch {
     // The failed estimate remains unavailable without inventing a modality.
   }
@@ -272,7 +272,7 @@ function toFailedResult<TPlan extends EstimationActivityPlanInput>(
       status: "unavailable",
       model: COMMON_RELATIVE_LOAD_MODEL,
       version: COMMON_RELATIVE_LOAD_VERSION,
-      sport,
+      activity_category,
       method: null,
       quality: null,
       thresholdEvidence: null,

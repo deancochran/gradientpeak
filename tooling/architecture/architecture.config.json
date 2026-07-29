@@ -362,12 +362,12 @@
     {
       "id": "activity-category",
       "db": {
-        "file": "packages/db/src/schema/canonical-categories.ts",
+        "file": "packages/db/src/schema/canonical-activity-categories.ts",
         "symbol": "canonicalActivityCategoryDbValues"
       },
       "core": {
-        "file": "packages/core/schemas/sport.ts",
-        "symbol": "canonicalSportSchema"
+        "file": "packages/core/schemas/activity-category.ts",
+        "symbol": "canonicalActivityCategorySchema"
       }
     },
     {

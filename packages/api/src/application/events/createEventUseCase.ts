@@ -1,10 +1,10 @@
-import { getScheduledDateKey } from "@repo/core";
+import { activityPlanStructureSchemaV3, getScheduledDateKey } from "@repo/core";
 import type { PublicEventStatus } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import type { Context } from "../../context";
 import type { createEventWriteRepository } from "../../infrastructure/repositories";
 import { logger } from "../../lib/logger";
-import type { PlannedWorkoutQueueResult } from "../../lib/provider-sync/planned-workouts";
+import type { PlannedActivityQueueResult } from "../../lib/provider-sync/planned-activities";
 import type { createContentAccessPermissions } from "../../permissions/content-access";
 
 type ProtectedContext = Context & {
@@ -79,7 +79,7 @@ type CreateEventUseCaseDependencies<
   enqueueProviderPlannedActivityJobs: (
     ctx: ProtectedContext,
     input: { eventIds: string[]; operation: "publish" | "unsync"; profileId?: string },
-  ) => Promise<PlannedWorkoutQueueResult | null>;
+  ) => Promise<PlannedActivityQueueResult | null>;
   ensurePersistableRecurrence: (recurrence: TNormalized["recurrence"]) => void;
   getContentPermissions: (ctx: Context) => ContentPermissions;
   getEventWriteRepository: (ctx: Context) => ReturnType<typeof createEventWriteRepository>;
@@ -133,18 +133,27 @@ export async function createEventUseCase<
         { type: "activity_plan", id: normalizedCreate.activityPlanId },
         "Activity plan not found or not accessible",
       );
-    } else {
-      const activityPlan = await eventWriteRepository.getAccessibleActivityPlan({
-        activityPlanId: normalizedCreate.activityPlanId,
-        profileId: ctx.session.user.id,
-      });
-
-      if (!activityPlan) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Activity plan not found or not accessible",
+    }
+    const activityPlan = permissions
+      ? await eventWriteRepository.getActivityPlanById({
+          activityPlanId: normalizedCreate.activityPlanId,
+        })
+      : await eventWriteRepository.getAccessibleActivityPlan({
+          activityPlanId: normalizedCreate.activityPlanId,
+          profileId: ctx.session.user.id,
         });
-      }
+
+    if (!activityPlan) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Activity plan not found or not accessible",
+      });
+    }
+    if (!activityPlanStructureSchemaV3.safeParse(activityPlan.structure).success) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Only executable single-category activity plans can be scheduled",
+      });
     }
   }
 
@@ -276,19 +285,19 @@ export async function createEventUseCase<
     }
   }
 
-  let plannedWorkoutSyncResult: PlannedWorkoutQueueResult | null = null;
+  let plannedActivitySyncResult: PlannedActivityQueueResult | null = null;
   // Route-only Wahoo targets are terminally unsupported; avoid a no-op publish job.
   if (event.event_type === "planned" && normalizedCreate.activityPlanId) {
     try {
-      plannedWorkoutSyncResult = await dependencies.enqueueProviderPlannedActivityJobs(ctx, {
+      plannedActivitySyncResult = await dependencies.enqueueProviderPlannedActivityJobs(ctx, {
         eventIds: createdEvents.map((createdEvent) => createdEvent.id),
         operation: "publish",
       });
     } catch (error) {
-      logger.error("Failed to enqueue planned workout sync", {
+      logger.error("Failed to enqueue planned activity sync", {
         error: error instanceof Error ? error.message : "Unknown error",
       });
-      plannedWorkoutSyncResult = {
+      plannedActivitySyncResult = {
         affectedCount: 1,
         operation: "publish",
         queued: false,
@@ -296,15 +305,15 @@ export async function createEventUseCase<
         error:
           error instanceof Error
             ? error.message
-            : "Unknown error during planned workout sync queueing",
+            : "Unknown error during planned activity sync queueing",
       };
     }
   }
 
   return {
     ...event,
-    plannedWorkoutSync: plannedWorkoutSyncResult,
-    wahooSync: plannedWorkoutSyncResult,
+    plannedActivitySync: plannedActivitySyncResult,
+    wahooSync: plannedActivitySyncResult,
     insight_refresh_hint: dependencies.buildInsightRefreshHint({
       trainingPlanId: event.training_plan_id,
       changedDate: event.scheduled_date,

@@ -118,14 +118,14 @@ function ActivitiesPage() {
           </form>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <FilterSelect
-              label="Sport"
+              label="Activity category"
               onChange={(value) => {
                 const category = CATEGORIES.find((candidate) => candidate === value);
                 updateSearch(category ? { category } : {}, category ? [] : ["category"]);
               }}
               value={search.category ?? ""}
               options={[
-                { value: "", label: "All sports" },
+                { value: "", label: "All activity categories" },
                 ...CATEGORIES.map((value) => ({
                   value,
                   label: value[0]?.toUpperCase() + value.slice(1),

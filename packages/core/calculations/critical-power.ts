@@ -2,7 +2,7 @@ import {
   classifyActivityEffortPlausibility,
   getActivityEffortObservationStatus,
 } from "../athlete-inputs/activity-effort-policy";
-import type { CanonicalSport } from "../schemas";
+import type { CanonicalActivityCategory } from "../schemas";
 import type { BestEffort } from "../schemas/activity_efforts";
 
 export interface CriticalPowerResult {
@@ -141,7 +141,7 @@ export function calculateSeasonBestCurve<T extends BestEffort>(
   options: {
     days?: number;
     now?: Date;
-    activity_category?: CanonicalSport;
+    activity_category?: CanonicalActivityCategory;
     effort_type?: "power" | "speed" | "heart_rate";
   } = {},
 ): T[] {

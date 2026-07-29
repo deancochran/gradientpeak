@@ -1,4 +1,4 @@
-import { canonicalSportSchema } from "@repo/core";
+import { canonicalActivityCategorySchema } from "@repo/core";
 import { canonicalEffortUnitSchema } from "@repo/core/units";
 import { createInsertSchema, createSelectSchema, createUpdateSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -49,7 +49,7 @@ import {
   trainingPlans,
 } from "../schema/tables";
 
-export const publicActivityCategorySchema = canonicalSportSchema;
+export const publicActivityCategorySchema = canonicalActivityCategorySchema;
 export const publicActivityFileIngestionSourceSchema = z.enum(
   activityFileIngestionSourceEnum.enumValues,
 );

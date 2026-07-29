@@ -182,7 +182,7 @@ export const publicShareRouter = createTRPCRouter({
           a.avg_speed_mps, a.max_speed_mps,
           coalesce((
             select jsonb_agg(jsonb_build_object(
-              'id', s.id, 'ordinal', s.ordinal, 'role', s.role, 'category', s.category,
+              'id', s.id, 'ordinal', s.ordinal, 'role', s.role, 'activity_category', s.activity_category,
               'startOffsetMs', s.start_offset_ms, 'endOffsetMs', s.end_offset_ms,
               'summary', s.summary,
               'source', case when s.source_artifact_id is not null then jsonb_strip_nulls(jsonb_build_object(
@@ -263,7 +263,7 @@ export const publicShareRouter = createTRPCRouter({
       });
     }),
 
-  workout: publicProcedure
+  activityPlan: publicProcedure
     .input(uuidInputSchema)
     .output(publicActivityPlanSchema.nullable())
     .query(async ({ ctx, input }) => {

@@ -1,10 +1,10 @@
 # GradientPeak Activity Plan Samples
 
-This directory contains comprehensive sample activity plans for all supported activity types in the GradientPeak platform. These samples serve as templates for users and provide realistic examples for testing and development.
+This directory contains comprehensive sample activity plans for all supported activity categories in the GradientPeak platform. These samples serve as templates for users and provide realistic examples for testing and development.
 
 ## Overview
 
-The samples provide structured activity plans across 7 different activity types, with at least 5 different activities per activity type, totaling **36 unique activity plans**.
+The samples provide structured activity plans across 7 different activity categories, with at least 5 different activities per activity category, totaling **36 unique activity plans**.
 
 ## Activity Types & Activities
 
@@ -87,7 +87,7 @@ const bikeActivities = getSampleActivitiesByType('indoor_bike_trainer');
 ```typescript
 import { SAMPLE_ACTIVITIES_BY_TYPE } from "@gradientpeak/core/samples";
 
-// Access activities by activity type
+// Access activities by activity category
 const strengthActivities = SAMPLE_ACTIVITIES_BY_TYPE.indoor_strength;
 const swimActivities = SAMPLE_ACTIVITIES_BY_TYPE.indoor_swim;
 ```
@@ -101,7 +101,7 @@ interface RecordingServiceActivityPlan {
   version: string;
   name: string;
   description: string;
-  activity_type: PublicActivityType;
+  activity_category: PublicActivityCategory;
   estimated_tss?: number;
   estimated_duration?: number; // in seconds
   structure: {
@@ -130,7 +130,7 @@ When adding new sample activities:
 1. Create activity constants following naming convention: `WORKOUT_NAME_TYPE`
 2. Export individual activities for direct access
 3. Add to the appropriate `SAMPLE_<ACTIVITY>_ACTIVITIES` array
-4. Ensure each activity type has at least 5 varied activities
+4. Ensure each activity category has at least 5 varied activities
 5. Include realistic TSS and duration estimates
 6. Provide clear descriptions and notes for guidance
 

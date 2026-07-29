@@ -11,10 +11,10 @@
  * Resistance = Torque / DeviceSpecificConstant
  */
 
-import type { FTMSDeviceType, FTMSFeatures } from "@deancochran/ftms";
+import type { FTMSFeatures } from "@deancochran/ftms";
 import { RollingBuffer } from "./RollingBuffer";
 
-export type { FTMSDeviceType } from "@deancochran/ftms";
+type PredictiveResistanceDeviceType = "bike" | "rower" | "elliptical" | "treadmill";
 
 /**
  * Device-specific constants for torque-to-resistance mapping
@@ -65,7 +65,7 @@ export class PredictiveResistanceCalculator {
   calculateResistance(
     targetPower: number,
     currentCadence: number,
-    deviceType: FTMSDeviceType,
+    deviceType: PredictiveResistanceDeviceType,
     deviceFeatures?: FTMSFeatures,
   ): number {
     const now = Date.now();
@@ -160,7 +160,7 @@ export class PredictiveResistanceCalculator {
    */
   private getFallbackResistance(
     targetPower: number,
-    deviceType: FTMSDeviceType,
+    deviceType: PredictiveResistanceDeviceType,
     deviceFeatures?: FTMSFeatures,
   ): number {
     // Use last known resistance if available
@@ -182,7 +182,7 @@ export class PredictiveResistanceCalculator {
    * Device-specific torque-to-resistance mapping
    * This is where device differences are handled
    */
-  private torqueToResistance(torque: number, deviceType: FTMSDeviceType): number {
+  private torqueToResistance(torque: number, deviceType: PredictiveResistanceDeviceType): number {
     const constants = DEVICE_CONSTANTS[deviceType];
     return torque / constants.torquePerResistanceLevel;
   }

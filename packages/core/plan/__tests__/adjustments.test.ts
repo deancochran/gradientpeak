@@ -49,7 +49,7 @@ describe("recording validation", () => {
   it("warns when plan targets require missing threshold metrics", () => {
     const result = validatePlanRequirements(
       {
-        activity_category: "bike",
+        activity_activity_category: "bike",
         structure: {
           version: 3,
           segments: [
@@ -57,7 +57,7 @@ describe("recording validation", () => {
               role: "activity",
               id: "60000000-0000-4000-8000-000000000001",
               name: "Bike",
-              category: "bike",
+              activity_category: "bike",
               intervals: [
                 {
                   id: "60000000-0000-4000-8000-000000000002",

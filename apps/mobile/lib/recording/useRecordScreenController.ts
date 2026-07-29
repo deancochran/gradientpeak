@@ -155,7 +155,7 @@ export function useRecordScreenController() {
 
         console.log("[RecordModal] Selection loaded:", {
           launchSource: selection.launchSource,
-          category: selection.category,
+          activity_category: selection.activity_category,
           gpsRecordingEnabled: selection.gpsRecordingEnabled,
           hasPlan: !!selection.plan,
           eventId: selection.eventId,
@@ -183,7 +183,7 @@ export function useRecordScreenController() {
   }, [service, isInitialized, router, recordingLifecycle]);
 
   const handleActivityQuickEdit = React.useCallback(
-    (category: RecordingActivityCategory, nextGpsRecordingEnabled: boolean) => {
+    (activity_category: RecordingActivityCategory, nextGpsRecordingEnabled: boolean) => {
       if (!service) {
         Alert.alert("Error", "Service not initialized");
         return;
@@ -191,11 +191,14 @@ export function useRecordScreenController() {
 
       const canEditActivity = sessionContract?.editing.canEditActivity ?? true;
       const canEditGps = sessionContract?.editing.canEditGps ?? true;
-      const categoryChanged = category !== activityCategory;
+      const categoryChanged = activity_category !== activityCategory;
       const gpsChanged = nextGpsRecordingEnabled !== gpsRecordingEnabled;
 
       if (categoryChanged && !canEditActivity) {
-        Alert.alert("Activity Locked", "The attached plan owns this session's activity category.");
+        Alert.alert(
+          "Activity Locked",
+          "The attached plan owns this session's activity activity_category.",
+        );
         return;
       }
 
@@ -205,17 +208,17 @@ export function useRecordScreenController() {
       }
 
       console.log("[RecordModal] Activity quick edit selected:", {
-        category,
+        activity_category,
         gpsRecordingEnabled: nextGpsRecordingEnabled,
       });
 
       const payload: ActivityPayload = {
-        category: canEditActivity ? category : activityCategory,
+        activity_category: canEditActivity ? activity_category : activityCategory,
         gpsRecordingEnabled: nextGpsRecordingEnabled,
       };
 
       console.log("[RecordModal] Updating activity configuration:", {
-        category,
+        activity_category,
         gpsRecordingEnabled: nextGpsRecordingEnabled,
         hasPlan: !!service.plan,
       });
@@ -377,7 +380,7 @@ export function useRecordScreenController() {
     }
 
     service.selectActivityFromPayload({
-      category: activityCategory,
+      activity_category: activityCategory,
       gpsRecordingEnabled: !gpsRecordingEnabled,
     });
   }, [activityCategory, gpsRecordingEnabled, service, sessionContract]);

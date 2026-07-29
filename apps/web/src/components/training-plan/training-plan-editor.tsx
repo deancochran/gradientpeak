@@ -22,7 +22,10 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
   const planQuery = api.trainingPlans.get.useQuery(planId ? { id: planId } : undefined, {
     enabled: Boolean(planId),
   });
-  const activityPlansQuery = api.activityPlans.list.useQuery({ ownerScope: "own", limit: 100 });
+  const activityPlansQuery = api.activityPlans.list.useQuery({
+    ownerScope: "own",
+    limit: 100,
+  });
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [sessions, setSessions] = useState<TrainingPlanSessionDraft[]>([]);
@@ -76,7 +79,7 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
       return;
     }
     if (!preview.structure) {
-      setFormError(preview.error ?? "Add at least one valid workout.");
+      setFormError(preview.error ?? "Add at least one valid activity.");
       return;
     }
 
@@ -140,21 +143,23 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
         </label>
         <Card>
           <CardHeader className="flex-row items-center justify-between">
-            <CardTitle>Workouts</CardTitle>
+            <CardTitle>Activities</CardTitle>
             <Button
               disabled={activityPlansQuery.isLoading}
               onClick={addSession}
               type="button"
               variant="outline"
             >
-              Add workout
+              Add activity
             </Button>
           </CardHeader>
           <CardContent className="space-y-4">
             {activityPlansQuery.error ? (
-              <p role="alert">Could not load owned workouts: {activityPlansQuery.error.message}</p>
+              <p role="alert">
+                Could not load owned activities: {activityPlansQuery.error.message}
+              </p>
             ) : null}
-            {sessions.length === 0 ? <p>Add a workout to build the plan structure.</p> : null}
+            {sessions.length === 0 ? <p>Add a activity to build the plan structure.</p> : null}
             {sessions.map((session, index) => (
               <fieldset
                 className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_8rem_auto]"
@@ -163,7 +168,7 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
                   `${session.offsetDays}-${session.activityPlanId}-${session.title}`
                 }
               >
-                <legend className="px-1 text-sm font-medium">Workout {index + 1}</legend>
+                <legend className="px-1 text-sm font-medium">Activity {index + 1}</legend>
                 <label
                   className="space-y-1"
                   htmlFor={`training-plan-session-activity-${session.draftId}`}
@@ -183,7 +188,7 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
                     }
                     value={session.activityPlanId}
                   >
-                    <option value="">Choose a workout</option>
+                    <option value="">Choose a activity</option>
                     {activityPlans.map((plan) => (
                       <option key={plan.id} value={plan.id}>
                         {plan.name}
@@ -244,10 +249,10 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
           <CardTitle>Preview</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <p>{preview.summary.sessionCount} workouts</p>
+          <p>{preview.summary.sessionCount} activities</p>
           <p>{preview.summary.weekCount} weeks</p>
           {preview.error ? (
-            <p className="text-sm text-destructive">Complete each workout to preview and save.</p>
+            <p className="text-sm text-destructive">Complete each activity to preview and save.</p>
           ) : null}
           <ol className="space-y-2 text-sm">
             {sessions.map((session) => (
@@ -257,7 +262,7 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
                   `${session.offsetDays}-${session.activityPlanId}-${session.title}`
                 }
               >
-                Day {session.offsetDays + 1}: {session.title || "Workout"}
+                Day {session.offsetDays + 1}: {session.title || "Activity"}
               </li>
             ))}
           </ol>

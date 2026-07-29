@@ -325,13 +325,9 @@ export default function EventDetailScreen() {
     },
   );
   const completed = isPlannedEvent && event ? isAuthoritativeCompletedCalendarEvent(event) : false;
-  const activityType =
-    activityPlan &&
-    "primary_category" in activityPlan &&
-    typeof activityPlan.primary_category === "string"
-      ? activityPlan.primary_category
-      : "other";
-  const activityColor = getActivityColor(activityType);
+  const activityCategory =
+    typeof activityPlan?.activity_category === "string" ? activityPlan.activity_category : "other";
+  const activityColor = getActivityColor(activityCategory);
   const _detailTitle = startsInCreateMode
     ? "Create Event"
     : isPlannedEvent
@@ -635,7 +631,7 @@ export default function EventDetailScreen() {
         {!startsInCreateMode && activityPlan ? (
           <View className="gap-3 rounded-2xl bg-card p-4">
             <View className="gap-0.5">
-              <Text className="text-base font-semibold text-foreground">Workout</Text>
+              <Text className="text-base font-semibold text-foreground">Activity</Text>
               <Text className="text-sm text-muted-foreground">
                 Open the linked plan to review the session details.
               </Text>

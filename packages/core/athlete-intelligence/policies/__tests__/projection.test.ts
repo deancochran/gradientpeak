@@ -72,7 +72,7 @@ const readiness = (
   policyVersion: "activity_readiness_v1",
   endurance: result(180, "minutes"),
   durability: result(0.9, "ratio"),
-  sportSpecificity: result(0.8, "ratio"),
+  activityCategorySpecificity: result(0.8, "ratio"),
   volumeTrend: result(1, "ratio"),
   frequencyTrend: result(1, "ratio"),
   readinessContext: result(0.2, "bounded_baseline_deviation"),
@@ -92,7 +92,7 @@ const feasibility = (coverage = 1): TrainingFeasibilityResults => ({
     sessionDurationExcesses: result(0, "count"),
     weeklyDurationExcesses: result(0, "count"),
     weeklySessionCapExcesses: result(0, "count"),
-    sportOverrideExcesses: result(0, "count"),
+    activityCategoryOverrideExcesses: result(0, "count"),
     recoveryPreferenceConflicts: result(0, "count"),
   },
 });
@@ -121,7 +121,7 @@ type Objective =
 type Goal = {
   id: string;
   priority: number;
-  goalSport?: "bike" | "run" | null;
+  goalActivityCategory?: "bike" | "run" | null;
   objective: Objective;
 };
 
@@ -144,7 +144,7 @@ function model(
       lineageGroupId: string;
       observedAt: string;
       rawObservation: { value: number | null; unit: string | null };
-      sport: "bike" | "run" | null;
+      activity_category: "bike" | "run" | null;
       modality: "manual";
       sourceType: "manual_observation" | "activity" | "goal";
       qualityState: "known";
@@ -159,7 +159,7 @@ function model(
     unit: string | null,
     metadata: {
       lineageGroupId?: string;
-      sport?: "bike" | "run" | null;
+      activity_category?: "bike" | "run" | null;
       sourceType?: "manual_observation" | "activity" | "goal";
     } = {},
   ) => {
@@ -169,7 +169,8 @@ function model(
       lineageGroupId: metadata.lineageGroupId ?? `manual-test:${sourceId.replace(":", "-")}`,
       observedAt: AS_OF,
       rawObservation: { value, unit },
-      sport: metadata.sport === undefined ? "bike" : metadata.sport,
+      activity_category:
+        metadata.activity_category === undefined ? "bike" : metadata.activity_category,
       modality: "manual",
       sourceType: metadata.sourceType ?? "manual_observation",
       qualityState: "known",
@@ -178,7 +179,7 @@ function model(
     };
     return sourceId;
   };
-  addEvidence(source, null, null, { lineageGroupId: "manual-test:test", sport: null });
+  addEvidence(source, null, null, { lineageGroupId: "manual-test:test", activity_category: null });
   const ev = <T extends number | null>(value: T, unit: string) => ({
     value,
     unit,
@@ -191,7 +192,7 @@ function model(
     lineageGroupId: `activity:${index}`,
     startedAt: `2026-07-0${index + 1}T12:00:00.000Z`,
     endedAt: null,
-    sport: "bike" as const,
+    activity_category: "bike" as const,
     metrics: {
       elapsedDurationSeconds: ev(activity.duration, "seconds"),
       movingDurationSeconds: nullEv("seconds"),
@@ -219,14 +220,14 @@ function model(
   for (let index = 0; index < activity.count; index++)
     addEvidence(`activity:${index}`, null, null, {
       lineageGroupId: `activity:${index}`,
-      sport: "bike",
+      activity_category: "bike",
       sourceType: "activity",
     });
   for (const goal of goals)
     addEvidence(goal.id, null, null, {
       lineageGroupId: `manual-test:${goal.id}`,
-      sport:
-        goal.goalSport ??
+      activity_category:
+        goal.goalActivityCategory ??
         ("activity_category" in goal.objective ? (goal.objective.activity_category ?? null) : null),
       sourceType: "goal",
     });
@@ -256,8 +257,8 @@ function model(
       lineageGroupId: `manual-test:${goal.id}`,
       targetDate: null,
       priority: goal.priority,
-      goalSport:
-        goal.goalSport ??
+      goalActivityCategory:
+        goal.goalActivityCategory ??
         ("activity_category" in goal.objective ? (goal.objective.activity_category ?? null) : null),
       objective: goal.objective,
       evidenceSourceIds: [source],
@@ -267,14 +268,14 @@ function model(
       athleteId: "athlete-1",
       lineageGroupId: "manual-test:test",
       evidenceSourceIds: [source],
-      preferredSports: [],
+      preferredActivityCategories: [],
       weeklyTimeWindows: [],
       hardRestDays: [],
       maximumWeeklyMinutes: nullEv("minutes"),
       maximumDailyMinutes: nullEv("minutes"),
       maximumSessionsPerDay: nullEv("count"),
       maximumSessionDurationMinutes: nullEv("minutes"),
-      sportDoseLimits: [],
+      activityCategoryDoseLimits: [],
       allowDoubleDays: null,
       minimumRecoveryHours: nullEv("hours"),
       maximumConsecutiveTrainingDays: nullEv("days"),
@@ -367,7 +368,7 @@ describe("whole athlete projection v1", () => {
       {
         id: "goal:consistency",
         priority: 0,
-        goalSport: "bike" as const,
+        goalActivityCategory: "bike" as const,
         objective: { type: "consistency", target_sessions_per_week: 2, target_weeks: 8 } as const,
       },
     ];
@@ -1017,7 +1018,7 @@ describe("whole athlete projection v1", () => {
   it.each([
     ["distance", "evidence_invalid", { validityState: "invalid" }],
     ["duration", "evidence_value_unknown", { qualityState: "unknown" }],
-    ["duration", "evidence_incompatible_sport", { sport: "run" }],
+    ["duration", "evidence_incompatible_sport", { activity_category: "run" }],
   ] as const)("does not use %s completion evidence when its field is ineligible", (dimension, reasonCode, evidenceOverride) => {
     const goal = {
       id: "goal:completion",
@@ -1112,12 +1113,14 @@ describe("whole athlete projection v1", () => {
       model: athleteIntelligenceModelInputSchema.parse({
         ...baseModel,
         activities: baseModel.activities.map((activity, index) =>
-          index === 1 ? { ...activity, sport: "run" as const } : activity,
+          index === 1 ? { ...activity, activity_category: "run" as const } : activity,
         ),
         evidenceRegistry: Object.fromEntries(
           Object.entries(baseModel.evidenceRegistry).map(([sourceId, evidence]) => [
             sourceId,
-            runEvidenceIds.includes(sourceId) ? { ...evidence, sport: "run" as const } : evidence,
+            runEvidenceIds.includes(sourceId)
+              ? { ...evidence, activity_category: "run" as const }
+              : evidence,
           ]),
         ),
       }),
@@ -1141,7 +1144,7 @@ describe("whole athlete projection v1", () => {
     const goal = {
       id: "goal:consistency",
       priority: 1,
-      goalSport: "bike" as const,
+      goalActivityCategory: "bike" as const,
       objective: { type: "consistency", target_sessions_per_week: 2, target_weeks: 8 } as const,
     };
     const baseModel = model([goal], { distance: 80_000, duration: 10_800, count: 2 });
@@ -1156,15 +1159,17 @@ describe("whole athlete projection v1", () => {
       runActivity.sourceId,
       ...runActivity.metrics.elapsedDurationSeconds.evidenceSourceIds,
     ];
-    const sportFilteredModel = athleteIntelligenceModelInputSchema.parse({
+    const activityCategoryFilteredModel = athleteIntelligenceModelInputSchema.parse({
       ...baseModel,
       activities: baseModel.activities.map((activity, index) =>
-        index === 1 ? { ...activity, sport: "run" as const } : activity,
+        index === 1 ? { ...activity, activity_category: "run" as const } : activity,
       ),
       evidenceRegistry: Object.fromEntries(
         Object.entries(baseModel.evidenceRegistry).map(([sourceId, evidence]) => [
           sourceId,
-          runEvidenceIds.includes(sourceId) ? { ...evidence, sport: "run" as const } : evidence,
+          runEvidenceIds.includes(sourceId)
+            ? { ...evidence, activity_category: "run" as const }
+            : evidence,
         ]),
       ),
     });
@@ -1182,7 +1187,7 @@ describe("whole athlete projection v1", () => {
           },
         ],
       ),
-      model: sportFilteredModel,
+      model: activityCategoryFilteredModel,
     };
     const projection = assembleWholeAthleteProjectionV1(input);
     expect(projection.goalCoverage[0]?.dimensions[0]?.capability).toMatchObject({
@@ -1190,13 +1195,14 @@ describe("whole athlete projection v1", () => {
       contributingSourceIds: [bikeDurationSourceId],
     });
 
-    const bikeDurationEvidence = sportFilteredModel.evidenceRegistry[bikeDurationSourceId];
+    const bikeDurationEvidence =
+      activityCategoryFilteredModel.evidenceRegistry[bikeDurationSourceId];
     if (bikeDurationEvidence === undefined)
       throw new Error("Bike duration evidence fixture missing");
-    const futureSportSpecificModel = {
-      ...sportFilteredModel,
+    const futureActivityCategorySpecificModel = {
+      ...activityCategoryFilteredModel,
       evidenceRegistry: {
-        ...sportFilteredModel.evidenceRegistry,
+        ...activityCategoryFilteredModel.evidenceRegistry,
         [bikeDurationSourceId]: {
           ...bikeDurationEvidence,
           observedAt: "2026-07-12T12:00:00.000Z",
@@ -1205,7 +1211,7 @@ describe("whole athlete projection v1", () => {
     };
     const futureProjection = assembleWholeAthleteProjectionV1({
       ...input,
-      model: futureSportSpecificModel,
+      model: futureActivityCategorySpecificModel,
     });
     expect(futureProjection.goalCoverage[0]?.dimensions[0]?.capability).toMatchObject({
       estimate: null,
@@ -1216,19 +1222,19 @@ describe("whole athlete projection v1", () => {
     });
   });
 
-  it("does not use another sport or an unspecified sport as direct goal capability", () => {
-    const missingSport = {
-      id: "goal:missing-sport",
+  it("does not use another activity category or an unspecified activity_category as direct goal capability", () => {
+    const missingActivityCategory = {
+      id: "goal:missing-activity_category",
       priority: 1,
       objective: { type: "threshold", metric: "power", value: 350, test_duration_s: 1200 } as const,
     };
     const projection = assembleWholeAthleteProjectionV1(
       baseInput(
-        [missingSport],
+        [missingActivityCategory],
         [
           {
-            goalSourceId: missingSport.id,
-            demand: demand(missingSport.id, {
+            goalSourceId: missingActivityCategory.id,
+            demand: demand(missingActivityCategory.id, {
               type: "threshold",
               metric: "power",
               target: result(350, "W"),
@@ -1240,7 +1246,7 @@ describe("whole athlete projection v1", () => {
     );
     expect(projection.goalCoverage[0]?.dimensions[0]?.capability).toMatchObject({
       state: "unsupported",
-      reasonCodes: ["goal_sport_missing"],
+      reasonCodes: ["goal_activity_category_missing"],
     });
     expect(projection.opportunities.training).toEqual([]);
   });

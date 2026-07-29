@@ -71,7 +71,7 @@ const syncOverviewSchema = z.array(
           status: z.enum(["idle", "queued", "importing", "synced", "failed", "unsupported"]),
         })
         .strict(),
-      plannedWorkouts: z
+      plannedActivities: z
         .object({
           lastError: z.string().nullable(),
           lastFailedAt: z.string().nullable(),
@@ -83,7 +83,13 @@ const syncOverviewSchema = z.array(
       providerHealth: z
         .object({
           lastError: z.string().nullable(),
-          status: z.enum(["connected", "needs_reconnect", "unsupported"]),
+          status: z.enum([
+            "connected",
+            "disconnecting",
+            "disconnected",
+            "needs_reconnect",
+            "unsupported",
+          ]),
         })
         .strict(),
       configured: z.boolean(),
@@ -105,6 +111,7 @@ const syncOverviewSchema = z.array(
           badge: z.string().min(1),
           health: z.enum([
             "connected",
+            "disconnecting",
             "syncing",
             "queued",
             "needs_reconnect",
@@ -199,6 +206,15 @@ export const integrationsRouter = createTRPCRouter({
       throw new TRPCError({
         code: "BAD_REQUEST",
         message: "Integration is not configured on this server",
+      });
+    }
+    const existingIntegration = (
+      await repositories.integrations.listByProfileId(ctx.session.user.id)
+    ).find((integration) => integration.provider === input.provider);
+    if (existingIntegration?.lifecycle_status === "disconnect_pending") {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: "Integration disconnect is still in progress",
       });
     }
     await repositories.oauthStates.deleteExpired({ profileId: ctx.session.user.id, now });

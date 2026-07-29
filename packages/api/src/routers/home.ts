@@ -3,7 +3,7 @@ import {
   activityTssIdentityMethodValues,
   addDaysDateOnlyUtc,
   calculateRollingTrainingQuality,
-  canonicalSportSchema,
+  canonicalActivityCategorySchema,
   getLoadBalanceStatus,
 } from "@repo/core";
 import {
@@ -51,6 +51,21 @@ function readCommonLoadEnvelope(value: unknown) {
   if (result.success) return result.data;
   const aggregate = commonLoadAggregateSchema.safeParse(value);
   return aggregate.success ? aggregate.data : null;
+}
+
+export function getPlanCategoryComposition(structure: unknown) {
+  const parsed = activityPlanStructureSchemaV3.safeParse(structure);
+  return parsed.success
+    ? parsed.data.segments.flatMap((segment) =>
+        segment.role === "activity" ? [segment.activity_category] : [],
+      )
+    : [];
+}
+
+export function getScheduleExecutionPresentation(plan: { activity_category: string } | null) {
+  return {
+    activity_category: plan?.activity_category ?? null,
+  };
 }
 
 const upcomingDaysSchema = z.object({
@@ -140,7 +155,7 @@ const workloadEnvelopeSchema = z
     previous: z.number().optional(),
     identity: z
       .object({
-        sport: canonicalSportSchema,
+        activity_category: canonicalActivityCategorySchema,
         method: z.enum(activityTssIdentityMethodValues),
         source: z.literal("activity_analysis"),
         version: z.literal("1"),
@@ -159,9 +174,7 @@ const scheduleItemSchema = z
     isToday: z.boolean(),
     isCompleted: z.boolean(),
     activityName: z.string(),
-    activityType: canonicalSportSchema.nullable(),
-    activityKind: z.enum(["single", "multisport", "unknown"]),
-    activityCategories: z.array(canonicalSportSchema),
+    activity_category: canonicalActivityCategorySchema.nullable(),
     estimatedDuration: z.number().nullable(),
     estimatedDistance: z.number().nullable(),
     commonLoad: z.union([commonLoadResultSchema, commonLoadAggregateSchema]),
@@ -412,12 +425,6 @@ async function listDashboardActivitiesInRange(
     ...activity,
     segments: segmentsByActivityId.get(activity.id) ?? [],
   }));
-}
-
-export function getPlanCategoryComposition(structure: unknown) {
-  return activityPlanStructureSchemaV3
-    .parse(structure)
-    .segments.flatMap((segment) => (segment.role === "activity" ? [segment.category] : []));
 }
 
 async function getAccessibleTrainingPlan(
@@ -773,7 +780,7 @@ export const homeRouter = createTRPCRouter({
               status: "unavailable",
               model: "gradientpeak_relative_load",
               version: "1",
-              sport: "other",
+              activity_category: "other",
               method: null,
               quality: null,
               thresholdEvidence: null,
@@ -788,23 +795,16 @@ export const homeRouter = createTRPCRouter({
             commonLoad.status === "partial"
               ? commonLoad
               : null;
-          const activityCategories = pa.activity_plan
-            ? getPlanCategoryComposition(pa.activity_plan.structure)
-            : [];
+          const execution = pa.activity_plan
+            ? { activity_category: pa.activity_plan.activity_category }
+            : null;
           return {
             id: pa.id,
             date: pa.scheduled_date,
             isToday: pa.scheduled_date?.startsWith(todayStr) || false,
             isCompleted: completedActivityMap.get(pa.id) || false,
             activityName: pa.activity_plan?.name || "Activity",
-            activityType: activityCategories.length === 1 ? (activityCategories[0] ?? null) : null,
-            activityKind:
-              activityCategories.length === 0
-                ? "unknown"
-                : activityCategories.length === 1
-                  ? "single"
-                  : "multisport",
-            activityCategories,
+            ...getScheduleExecutionPresentation(execution),
             estimatedDuration: metrics.estimated_duration ?? null,
             estimatedDistance: metrics.estimated_distance ?? null,
             commonLoad,
@@ -944,7 +944,7 @@ export const homeRouter = createTRPCRouter({
           status: "unavailable",
           model: "gradientpeak_relative_load",
           version: "1",
-          sport: "other",
+          activity_category: "other",
           method: null,
           quality: null,
           thresholdEvidence: null,

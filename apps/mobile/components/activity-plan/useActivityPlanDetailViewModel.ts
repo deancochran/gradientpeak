@@ -4,19 +4,18 @@ import {
   compileActivityPlanV3,
 } from "@repo/core";
 import { useMemo } from "react";
-import type { SportLoadMeasurement } from "@/components/shared/SportLoadBreakdown";
+import type { ActivityCategoryLoadMeasurement } from "@/components/shared/ActivityCategoryLoadBreakdown";
 import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
 
 type ActivityPlanLike = {
-  categories?: readonly string[];
-  primary_category?: string | null;
+  activity_category?: string | null;
   authoritative_metrics?: {
     estimated_duration?: number | null;
     estimated_tss?: number | null;
     intensity_factor?: number | null;
     estimated_distance?: number | null;
   } | null;
-  category_loads?: readonly SportLoadMeasurement[];
+  category_loads?: readonly ActivityCategoryLoadMeasurement[];
   profile_id?: string | null;
   structure?: unknown;
   [key: string]: unknown;
@@ -101,10 +100,7 @@ export function useActivityPlanDetailViewModel({
   const isOwnedByUser = activityPlan?.profile_id === profile?.id;
   const detailBadges = activityPlan
     ? [
-        compiled?.categories.join(" → ") ||
-          activityPlan.categories?.join(" → ") ||
-          activityPlan.primary_category ||
-          "Other",
+        compiled?.activity_category || activityPlan.activity_category || "Other",
         isScheduled ? "Scheduled" : isOwnedByUser ? "My plan" : "Template",
       ]
     : [];

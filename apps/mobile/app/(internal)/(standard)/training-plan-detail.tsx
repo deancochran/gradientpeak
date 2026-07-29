@@ -605,7 +605,7 @@ export default function TrainingPlanOverview() {
     });
     return usage;
   }, [structureSessionRows]);
-  const linkedWorkoutCards = useMemo(
+  const linkedActivityCards = useMemo(
     () =>
       uniqueLinkedActivityPlans.map((linkedPlan) => ({
         ...linkedPlan,
@@ -694,22 +694,22 @@ export default function TrainingPlanOverview() {
 
     return ids;
   }, [selectedMicrocycleGroup]);
-  const selectedMicrocycleWorkoutCards = useMemo(
+  const selectedMicrocycleActivityCards = useMemo(
     () =>
-      linkedWorkoutCards.filter((planItem) => selectedMicrocycleActivityPlanIds.has(planItem.id)),
-    [linkedWorkoutCards, selectedMicrocycleActivityPlanIds],
+      linkedActivityCards.filter((planItem) => selectedMicrocycleActivityPlanIds.has(planItem.id)),
+    [linkedActivityCards, selectedMicrocycleActivityPlanIds],
   );
-  const selectedMicrocycleWorkoutById = useMemo(
-    () => new Map(selectedMicrocycleWorkoutCards.map((planItem) => [planItem.id, planItem])),
-    [selectedMicrocycleWorkoutCards],
+  const selectedMicrocycleActivityById = useMemo(
+    () => new Map(selectedMicrocycleActivityCards.map((planItem) => [planItem.id, planItem])),
+    [selectedMicrocycleActivityCards],
   );
   const selectedMicrocycleMinutes = useMemo(
     () =>
-      selectedMicrocycleWorkoutCards.reduce(
+      selectedMicrocycleActivityCards.reduce(
         (sum, planItem) => sum + Math.max(0, planItem.estimatedDurationMinutes || 0),
         0,
       ),
-    [selectedMicrocycleWorkoutCards],
+    [selectedMicrocycleActivityCards],
   );
   const selectedMicrocycleLoad = useMemo(
     () => weeklyLoadSummary.find((week) => week.microcycle === activeMicrocycle)?.estimatedTss ?? 0,
@@ -970,7 +970,7 @@ export default function TrainingPlanOverview() {
             isLiked={headerActions.isLiked}
             likesCount={headerActions.likesCount}
             overview={{
-              linkedWorkouts: linkedWorkoutCards.length,
+              linkedActivities: linkedActivityCards.length,
               microcycles: groupedStructureSessions.length || 0,
               plannedTime: markEstimated(formatMinutesLabel(totalPlannedMinutes)) ?? "0 min",
               plannedTss: Math.round(totalPlannedTss),
@@ -1025,7 +1025,7 @@ export default function TrainingPlanOverview() {
                   <SummaryMetricCard label="Sessions" value={`${selectedMicrocycleSessionCount}`} />
                   <SummaryMetricCard
                     label="Linked activities"
-                    value={`${selectedMicrocycleWorkoutCards.length}`}
+                    value={`${selectedMicrocycleActivityCards.length}`}
                   />
                   <SummaryMetricCard
                     label="Planned TSS"
@@ -1063,7 +1063,7 @@ export default function TrainingPlanOverview() {
                       return null;
                     }
 
-                    const linkedPlan = selectedMicrocycleWorkoutById.get(session.activityPlanId);
+                    const linkedPlan = selectedMicrocycleActivityById.get(session.activityPlanId);
                     if (!linkedPlan) {
                       return null;
                     }
@@ -1167,6 +1167,7 @@ export default function TrainingPlanOverview() {
             onPress: () => {
               if (typeof scheduling.activePlan?.schedule_batch_id === "string") {
                 removeScheduledPlanMutation.mutate({
+                  training_plan_id: plan.id,
                   schedule_batch_id: scheduling.activePlan.schedule_batch_id,
                 });
               }

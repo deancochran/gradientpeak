@@ -9,6 +9,8 @@ type TrainingPathLoadMetricPoint = {
   effectiveCompletedLoad?: number | null | undefined;
   effectiveRemainingLoad?: number | null | undefined;
   effectiveTentativeLoad?: number | null | undefined;
+  recommendedLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable" | undefined;
+  recommendedLoad?: number | null | undefined;
   plannedLoadTss?: number | null;
   targetLoadTss?: number | null;
   tentativePlannedLoadTss?: number | null;
@@ -72,6 +74,15 @@ export function buildTrainingPathLoadMetrics(
     }
     if (point.effectiveTentativeLoad != null) {
       metrics.push({ label: "Tentative", value: formatLoad(point.effectiveTentativeLoad) });
+    }
+    if (point.recommendedLoadStatus) {
+      metrics.push({
+        label: "Target",
+        value:
+          point.recommendedLoadStatus === "unavailable" || point.recommendedLoad == null
+            ? "Unavailable"
+            : `${formatLoad(point.recommendedLoad)}${point.recommendedLoadStatus === "partial" ? " incomplete" : ""}`,
+      });
     }
     return metrics;
   }

@@ -19,7 +19,7 @@ export const trainingPreferenceControlSchema = z.enum([
   "date",
   "weekday-list",
   "availability-windows",
-  "sport-overrides",
+  "activity_category-overrides",
   "disabled-row",
 ]);
 
@@ -226,16 +226,16 @@ export const trainingPreferenceCatalog = [
     testIdStem: "max-weekly-duration",
   }),
   field({
-    id: "sportDoseOverrides",
+    id: "activityCategoryDoseOverrides",
     tab: "schedule",
-    label: "Sport-specific dose overrides",
-    shortLabel: "Sport overrides",
-    control: "sport-overrides",
+    label: "ActivityCategory-specific dose overrides",
+    shortLabel: "ActivityCategory overrides",
+    control: "activity_category-overrides",
     unit: null,
-    globalPath: "dose_limits.sport_overrides",
+    globalPath: "dose_limits.activity_category_overrides",
     planLocalKey: null,
     planLocalSupport: "profile-only",
-    testIdStem: "sport-dose-overrides",
+    testIdStem: "activity_category-dose-overrides",
   }),
   field({
     id: "progressionPace",

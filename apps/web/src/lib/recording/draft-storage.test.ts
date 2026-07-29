@@ -43,7 +43,7 @@ class FakeTimerDraftStorage implements TimerDraftStorage {
 
 function startedRecording() {
   const configured = configureTimerOnlyRecording(createInitialTimerOnlyRecordingState(), {
-    category: "run",
+    activity_category: "run",
     eventId: "00000000-0000-4000-8000-000000000001",
     activityPlanId: "00000000-0000-4000-8000-000000000003",
   }).state;
@@ -58,7 +58,7 @@ const submissionArtifact = portableWebRecordingArtifactSchema.parse({
   snapshot: {
     identity: { sessionId: "session-1", revision: 0, startedAt: "2026-07-20T10:00:00.000Z" },
     activity: {
-      category: "run",
+      activity_category: "run",
       mode: "free",
       gpsMode: "off",
       eventId: null,
@@ -174,7 +174,7 @@ describe("web timer draft persistence", () => {
     expect(recovered.rejectedReason).toBeNull();
     expect(recovered.state.reducer.lifecycle).toBe("paused");
     expect(recovered.state.configuration).toMatchObject({
-      category: "run",
+      activity_category: "run",
       eventId: "00000000-0000-4000-8000-000000000001",
     });
     expect(getTimerOnlyRecordingTimes(recovered.state, 100_000)).toEqual({

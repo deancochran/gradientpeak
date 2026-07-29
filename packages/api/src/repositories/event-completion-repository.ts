@@ -21,6 +21,7 @@ type EventCompletionBase = Pick<
   | "notes"
   | "status"
   | "linked_activity_id"
+  | "scheduled_date"
 > & {
   created_at: string;
   updated_at: string;
@@ -53,6 +54,7 @@ export interface EventCompletionRepository {
   }): Promise<EventCompletionEventRecord | null>;
   updateEventCompletionLink(input: {
     eventId: string;
+    expectedActivityPlanId: string | null;
     profileId: string;
     linkedActivityId: string | null;
     status: PublicEventStatus;
@@ -70,6 +72,7 @@ export interface EventCompletionRepository {
   }): Promise<
     Array<{
       activity_plan_id: string | null;
+      activity_plan_structure: ActivityPlanRow["structure"] | null;
       event_type: "planned" | "race_target";
       id: string;
       linked_activity_id: string | null;
@@ -81,6 +84,7 @@ export interface EventCompletionRepository {
   linkHistoricalCompletionIfEligible(input: {
     activityId: string;
     eventId: string;
+    expectedActivityPlanId: string | null;
     profileId: string;
   }): Promise<
     (Pick<EventRow, "id" | "training_plan_id"> & { starts_at: string; updated_at: string }) | null

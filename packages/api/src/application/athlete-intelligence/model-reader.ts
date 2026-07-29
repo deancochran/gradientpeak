@@ -43,7 +43,7 @@ import {
   type EvidenceRegistry,
   lineageId,
   metricUnits,
-  normalizeSport,
+  normalizeActivityCategory,
   parseScheduleRecurrence,
   sourceId,
 } from "./evidence-adapters";
@@ -75,7 +75,7 @@ export interface AthleteIntelligenceRows {
     id: string;
     parentActivityId?: string;
     referenceActivityId: string | null;
-    referenceActivityType?: string | null;
+    referenceActivityCategory?: string | null;
     type: string;
     value: number;
     unit: string;
@@ -117,7 +117,7 @@ export interface AthleteIntelligenceRows {
     id: string;
     activityId: string | null;
     recordedAt: Date;
-    sport: string;
+    activity_category: string;
     kind: "power" | "speed" | "heart_rate";
     durationSeconds: number;
     startOffsetSeconds: number | null;
@@ -410,7 +410,7 @@ export function createDrizzleAthleteIntelligenceDataSource(
             profileId: profileMetrics.profile_id,
             id: profileMetrics.id,
             referenceActivityId: profileMetrics.reference_activity_id,
-            referenceActivityType: sql<null>`null`,
+            referenceActivityCategory: sql<null>`null`,
             type: profileMetrics.metric_type,
             value: profileMetrics.value,
             unit: profileMetrics.unit,
@@ -446,7 +446,7 @@ export function createDrizzleAthleteIntelligenceDataSource(
             parentActivityId: activities.id,
             activityPlanId: activities.activity_plan_id,
             routeId: sql<string | null>`null`,
-            type: sql<string>`${activitySegments.category}`,
+            type: sql<string>`${activitySegments.activity_category}`,
             startedAt: sql<Date>`${activities.started_at} + (${activitySegments.start_offset_ms} * interval '1 millisecond')`,
             finishedAt: sql<Date>`${activities.started_at} + (${activitySegments.end_offset_ms} * interval '1 millisecond')`,
             durationSeconds: sql<number>`coalesce(${activitySegments.active_ms}, ${activitySegments.end_offset_ms} - ${activitySegments.start_offset_ms}) / 1000.0`,
@@ -511,7 +511,7 @@ export function createDrizzleAthleteIntelligenceDataSource(
             id: activityEfforts.id,
             activityId: activityEfforts.activity_id,
             recordedAt: activityEfforts.recorded_at,
-            sport: activityEfforts.activity_category,
+            activity_category: activityEfforts.activity_category,
             kind: activityEfforts.effort_type,
             durationSeconds: activityEfforts.duration_seconds,
             startOffsetSeconds: activityEfforts.start_offset,
@@ -660,7 +660,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     value: number | null,
     unit: string | null,
     sourceType: Parameters<typeof addEvidence>[0]["sourceType"],
-    sport: ReturnType<typeof normalizeSport> | null = null,
+    activity_category: ReturnType<typeof normalizeActivityCategory> | null = null,
     lineageOpaqueId = id,
     lineageGroupOverride?: string,
     rawValue = value,
@@ -685,7 +685,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       observedAt,
       value: rawValue,
       unit: rawUnit,
-      sport,
+      activity_category,
       modality: field,
       sourceType,
       validityState,
@@ -699,7 +699,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     value: number | null,
     unit: string,
     type: Parameters<typeof evidence>[6],
-    sport: Parameters<typeof evidence>[7] = null,
+    activity_category: Parameters<typeof evidence>[7] = null,
     lineageOpaqueId = id,
     lineageGroupOverride?: string,
     rawValue = value,
@@ -718,7 +718,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
         value,
         unit,
         type,
-        sport,
+        activity_category,
         lineageOpaqueId,
         lineageGroupOverride,
         rawValue,
@@ -742,11 +742,11 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     .filter((r) => r.recordedAt <= asOf && r.createdAt <= asOf && r.updatedAt <= asOf)
     .sort((a, b) => b.recordedAt.getTime() - a.recordedAt.getTime() || b.id.localeCompare(a.id))
     .slice(0, modelReaderBounds.metrics);
-  const metricSport = (row: AthleteIntelligenceRows["metrics"][number]) => {
+  const metricActivityCategory = (row: AthleteIntelligenceRows["metrics"][number]) => {
     if (row.type === "threshold_pace_seconds_per_km") return "run" as const;
     if (row.type === "css_seconds_per_100m") return "swim" as const;
-    return row.type === "lthr" && row.source !== "manual" && row.referenceActivityType
-      ? normalizeSport(row.referenceActivityType)
+    return row.type === "lthr" && row.source !== "manual" && row.referenceActivityCategory
+      ? normalizeActivityCategory(row.referenceActivityCategory)
       : null;
   };
   for (const row of boundedMetrics) {
@@ -763,7 +763,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       row.value,
       row.unit,
       "profile_metric",
-      metricSport(row),
+      metricActivityCategory(row),
       row.id,
       row.referenceActivityId ? lineageId("activity", row.referenceActivityId) : undefined,
       row.value,
@@ -773,7 +773,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     );
   }
   const resolvedLatestMetrics = resolveLatestObservationsByKey(boundedMetrics, (row) =>
-    row.type === "lthr" ? `lthr:${metricSport(row) ?? "generic"}` : row.type,
+    row.type === "lthr" ? `lthr:${metricActivityCategory(row) ?? "generic"}` : row.type,
   );
   const latest = new Map<AthleteMetricType, AthleteIntelligenceRows["metrics"][number]>();
   const currentLthrRows: AthleteIntelligenceRows["metrics"] = [];
@@ -792,13 +792,13 @@ export async function materializeAthleteIntelligenceModelInput(input: {
           (row.updatedAt === null || row.updatedAt <= asOf),
       )
       .sort((a, b) => b.recordedAt.getTime() - a.recordedAt.getTime() || b.id.localeCompare(a.id)),
-    (row) => `${row.sport}:${row.kind}:${row.durationSeconds}:${row.unit}`,
+    (row) => `${row.activity_category}:${row.kind}:${row.durationSeconds}:${row.unit}`,
   );
   const isManualFtpEffort = (row: AthleteIntelligenceRows["efforts"][number]) =>
     isActiveManualFtpOverride({
       ...row,
       activity_id: row.activityId,
-      activity_category: row.sport,
+      activity_category: row.activity_category,
       duration_seconds: row.durationSeconds,
       effort_type: row.kind,
     });
@@ -907,7 +907,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
                 value,
                 metricUnits[type],
                 "profile_metric",
-                metricSport(row),
+                metricActivityCategory(row),
                 row.id,
                 metricLineage,
               ),
@@ -1059,7 +1059,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     efforts: boundedLoadEfforts,
   });
   const activitiesOut = boundedActivityRows.map((row) => {
-    const sport = normalizeSport(row.type);
+    const activity_category = normalizeActivityCategory(row.type);
     const trainingLoad = trainingLoads.get(row.id) ?? null;
     const record = evidence(
       "activity",
@@ -1069,17 +1069,26 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       null,
       null,
       "activity",
-      sport,
+      activity_category,
     );
     const m = (field: string, value: number | null, unit: string) =>
-      measured("activity", row.id, field, row.finishedAt, value, unit, "activity", sport);
+      measured(
+        "activity",
+        row.id,
+        field,
+        row.finishedAt,
+        value,
+        unit,
+        "activity",
+        activity_category,
+      );
     return {
       sourceId: record,
       athleteId: input.profileId,
       lineageGroupId: lineageId("activity", row.id),
       startedAt: row.startedAt.toISOString(),
       endedAt: row.finishedAt.toISOString(),
-      sport,
+      activity_category,
       metrics: {
         elapsedDurationSeconds: m("elapsed", row.durationSeconds, "seconds"),
         movingDurationSeconds: m("moving", row.movingSeconds, "seconds"),
@@ -1116,16 +1125,16 @@ export async function materializeAthleteIntelligenceModelInput(input: {
   );
   const efforts = filterSupersededProfileOverrides(
     boundedEfforts,
-    (row) => `${row.sport}:${row.kind}:${row.durationSeconds}:${row.unit}`,
+    (row) => `${row.activity_category}:${row.kind}:${row.durationSeconds}:${row.unit}`,
   ).flatMap((row) => {
     if (isManualFtpEffort(row)) return [];
-    const sport = normalizeSport(row.sport);
+    const activity_category = normalizeActivityCategory(row.activity_category);
     const effortLineage = row.activityId ?? `effort-${row.id}`;
     const canonical = canonicalEffortValue({ kind: row.kind, value: row.value, unit: row.unit });
     const observationStatus =
-      sport === "bike" || sport === "run" || sport === "swim"
+      activity_category === "bike" || activity_category === "run" || activity_category === "swim"
         ? getActivityEffortObservationStatus({
-            activityCategory: sport,
+            activityCategory: activity_category,
             effortType: row.kind,
             durationSeconds: row.durationSeconds,
             value: row.value,
@@ -1136,7 +1145,11 @@ export async function materializeAthleteIntelligenceModelInput(input: {
             provenance: row.provenance,
           })
         : ("invalid" as const);
-    if (sport === "other" || sport === "strength" || observationStatus !== "observed") {
+    if (
+      activity_category === "other" ||
+      activity_category === "strength" ||
+      observationStatus !== "observed"
+    ) {
       evidence(
         "effort",
         row.id,
@@ -1145,7 +1158,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
         row.value,
         row.unit,
         "activity_effort",
-        sport,
+        activity_category,
         effortLineage,
         undefined,
         row.value,
@@ -1163,7 +1176,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       row.value,
       row.unit,
       "activity_effort",
-      sport,
+      activity_category,
       effortLineage,
       undefined,
       row.value,
@@ -1182,7 +1195,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       null,
       null,
       "activity_effort",
-      sport,
+      activity_category,
       effortLineage,
     );
     const durationEvidence = evidence(
@@ -1193,7 +1206,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       row.durationSeconds,
       "seconds",
       "activity_effort",
-      sport,
+      activity_category,
       effortLineage,
     );
     const valueEvidence = evidence(
@@ -1204,10 +1217,10 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       canonical.value,
       canonical.unit,
       "activity_effort",
-      sport,
+      activity_category,
       effortLineage,
     );
-    const { endSeconds, startSeconds } = resolveEffortWindowBoundaries(row, sport);
+    const { endSeconds, startSeconds } = resolveEffortWindowBoundaries(row, activity_category);
     const start =
       startSeconds === null
         ? null
@@ -1219,7 +1232,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
             startSeconds,
             "seconds",
             "activity_effort",
-            sport,
+            activity_category,
             effortLineage,
           );
     const end =
@@ -1233,7 +1246,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
             endSeconds,
             "seconds",
             "activity_effort",
-            sport,
+            activity_category,
             effortLineage,
           );
     return [
@@ -1243,7 +1256,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
         lineageGroupId: lineageId("activity", effortLineage),
         activitySourceId: row.activityId ? sourceId("activity", row.activityId, "record") : null,
         observedAt: row.recordedAt.toISOString(),
-        sport,
+        activity_category,
         startOffsetSeconds: start,
         endOffsetSeconds: end,
         durationSeconds: row.durationSeconds,
@@ -1262,7 +1275,8 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     .flatMap((row) => {
       const parsedObjective = canonicalGoalObjectiveSchema.safeParse(row.targetPayload);
       if (!parsedObjective.success) return [];
-      const goalSport = row.activityCategory === null ? null : normalizeSport(row.activityCategory);
+      const goalActivityCategory =
+        row.activityCategory === null ? null : normalizeActivityCategory(row.activityCategory);
       const goalLineage = `goal-${row.id}`;
       const record = evidence(
         "goal",
@@ -1272,7 +1286,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
         null,
         null,
         "goal",
-        goalSport,
+        goalActivityCategory,
         goalLineage,
       );
       return [
@@ -1282,7 +1296,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
           lineageGroupId: lineageId("manual-test", goalLineage),
           targetDate: row.targetDate,
           priority: row.priority,
-          goalSport,
+          goalActivityCategory,
           objective: parsedObjective.data,
           evidenceSourceIds: [record],
         },
@@ -1311,7 +1325,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       unit,
       "manual_observation",
     );
-  const sportOverrides = settings?.dose_limits.sport_overrides ?? {};
+  const activityCategoryOverrides = settings?.dose_limits.activity_category_overrides ?? {};
   const weeklyTimeWindows = (settings?.availability.weekly_windows ?? []).flatMap((day) =>
     day.windows.map((window) => ({
       day: day.day,
@@ -1329,7 +1343,9 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     athleteId: input.profileId,
     lineageGroupId: lineageId("manual-test", `settings-${input.profileId}`),
     evidenceSourceIds: [contextId],
-    preferredSports: Object.keys(sportOverrides).slice(0, 5).map(normalizeSport),
+    preferredActivityCategories: Object.keys(activityCategoryOverrides)
+      .slice(0, 5)
+      .map(normalizeActivityCategory),
     weeklyTimeWindows: weeklyTimeWindows.slice(0, 35),
     hardRestDays: (settings?.availability.hard_rest_days ?? []).slice(0, 7),
     maximumWeeklyMinutes: setting(
@@ -1344,22 +1360,22 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       settings?.dose_limits.max_single_session_duration_minutes ?? null,
       "minutes",
     ),
-    sportDoseLimits: Object.entries(sportOverrides)
+    activityCategoryDoseLimits: Object.entries(activityCategoryOverrides)
       .slice(0, 5)
-      .map(([sport, limits]) => ({
-        sport: normalizeSport(sport),
+      .map(([activity_category, limits]) => ({
+        activity_category: normalizeActivityCategory(activity_category),
         maximumWeeklyMinutes: setting(
-          `sport-${sport}-weekly`,
+          `activity_category-${activity_category}-weekly`,
           limits.max_weekly_duration_minutes ?? null,
           "minutes",
         ),
         maximumSessionsPerWeek: setting(
-          `sport-${sport}-sessions`,
+          `activity_category-${activity_category}-sessions`,
           limits.max_sessions_per_week ?? null,
           "count",
         ),
         maximumSessionDurationMinutes: setting(
-          `sport-${sport}-session-duration`,
+          `activity_category-${activity_category}-session-duration`,
           limits.max_single_session_duration_minutes ?? null,
           "minutes",
         ),
@@ -1377,7 +1393,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     strategy: null,
     taperPreference: null,
     progressionPreference: null,
-    // Persisted baseline overrides do not retain the exact sport/family/method/version/provider
+    // Persisted baseline overrides do not retain the exact activity_category/family/method/version/provider
     // identity needed to compare them with any activity load series. Abstain rather than leak a
     // dimensionless number into model calculations.
     ctlOverride: { ...setting("ctl-unavailable", null, "training_load"), identity: null },
@@ -1416,9 +1432,9 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     .flatMap((row) => {
       const end = row.endsAt ?? row.startsAt;
       if (end < row.startsAt) return [];
-      const sport =
-        row.payload && typeof row.payload === "object" && "sport" in row.payload
-          ? normalizeSport(String(row.payload.sport))
+      const activity_category =
+        row.payload && typeof row.payload === "object" && "activity_category" in row.payload
+          ? normalizeActivityCategory(String(row.payload.activity_category))
           : null;
       const eventType =
         row.type === "race_target"
@@ -1444,7 +1460,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
         null,
         null,
         eventType === "race_target" ? "goal" : "manual_observation",
-        sport,
+        activity_category,
       );
       const planLinkKinds = [
         row.trainingPlanId ? "training-plan" : null,
@@ -1463,7 +1479,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
               null,
               null,
               "manual_observation",
-              sport,
+              activity_category,
               `event-${row.id}`,
               eventLineage,
             );
@@ -1478,7 +1494,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
           allDay: row.allDay,
           lifecycle,
           eventType,
-          sport,
+          activity_category,
           recurrence: (() => {
             const parsed = parsePersistedScheduleRecurrence(row.recurrenceRule, row.startsAt);
             if (parsed.state === "unsupported" || parsed.state === "malformed") {

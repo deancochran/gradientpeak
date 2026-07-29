@@ -17,7 +17,7 @@ jest.mock("@/components/activity/charts/ElevationProfileChart", () => ({
   ElevationProfileChart: createHost("ElevationProfileChart"),
 }));
 
-jest.mock("@/components/activity-plan/workout/TimelineChart", () => ({
+jest.mock("@/components/activity-plan/activity/TimelineChart", () => ({
   __esModule: true,
   TimelineChart: createHost("TimelineChart"),
 }));
@@ -35,7 +35,7 @@ const structure = {
     {
       id: id(1),
       role: "activity",
-      category: "run",
+      activity_category: "run",
       name: "Tempo run",
       intervals: [
         {
@@ -89,7 +89,7 @@ describe("ActivityPlanContentPreview", () => {
     expect(screen.queryByText("Intensity profile")).toBeNull();
   });
 
-  it("collapses repeated segment, category, interval, and step labels in a multisport flow", () => {
+  it("collapses repeated segment, activity_category, interval, and step labels", () => {
     renderNative(
       <ActivityPlanContentPreview
         plan={{
@@ -99,7 +99,7 @@ describe("ActivityPlanContentPreview", () => {
               {
                 id: id(10),
                 role: "activity",
-                category: "swim",
+                activity_category: "swim",
                 name: "Swim",
                 intervals: [
                   {
@@ -117,33 +117,6 @@ describe("ActivityPlanContentPreview", () => {
                   },
                 ],
               },
-              {
-                id: id(13),
-                role: "transition",
-                name: "Transition 1",
-                duration: { type: "time", seconds: 240 },
-              },
-              {
-                id: id(14),
-                role: "activity",
-                category: "bike",
-                name: "Bike",
-                intervals: [
-                  {
-                    id: id(15),
-                    name: "Bike",
-                    repetitions: 1,
-                    steps: [
-                      {
-                        id: id(16),
-                        name: "Bike",
-                        duration: { type: "time", seconds: 2700 },
-                        targets: [{ type: "RPE", intensity: 6 }],
-                      },
-                    ],
-                  },
-                ],
-              },
             ],
           },
         }}
@@ -154,12 +127,6 @@ describe("ActivityPlanContentPreview", () => {
     expect(screen.getAllByText("Swim")).toHaveLength(1);
     expect(screen.queryByText("swim")).toBeNull();
     expect(screen.getByText("RPE 5 · 20min")).toBeTruthy();
-    expect(screen.getByText("Transition 1")).toBeTruthy();
-    expect(screen.queryByText("transition")).toBeNull();
-    expect(screen.getByText("4min")).toBeTruthy();
-    expect(screen.getAllByText("Bike")).toHaveLength(1);
-    expect(screen.queryByText("bike")).toBeNull();
-    expect(screen.getByText("RPE 6 · 45min")).toBeTruthy();
   });
 
   it("keeps distinct hierarchy labels and formats longer target summaries", () => {
@@ -172,7 +139,7 @@ describe("ActivityPlanContentPreview", () => {
               {
                 id: id(20),
                 role: "activity",
-                category: "run",
+                activity_category: "run",
                 name: "Run",
                 intervals: [
                   {

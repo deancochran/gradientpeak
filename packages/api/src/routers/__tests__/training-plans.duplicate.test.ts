@@ -1,4 +1,6 @@
+import { SYSTEM_TEMPLATES } from "@repo/core";
 import { describe, expect, it } from "vitest";
+import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
 import { createQueryMapDbMock } from "../../test/mock-query-db";
 import { trainingPlansRouter } from "../planning/training-plans";
 
@@ -6,6 +8,16 @@ describe("trainingPlansRouter.duplicate", () => {
   it("allows public plans and creates a private owned copy without scheduling", async () => {
     const sourcePlanId = "11111111-1111-4111-8111-111111111111";
     const { db, callLog } = createQueryMapDbMock({
+      activity_plans: {
+        data: {
+          id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          gps_recording_enabled: true,
+          is_system_template: false,
+          structure: SYSTEM_TEMPLATES[0]?.structure,
+          structure_hash: activityPlanStructureHash(SYSTEM_TEMPLATES[0]?.structure),
+        },
+        error: null,
+      },
       training_plans: [
         {
           data: {
@@ -18,7 +30,7 @@ describe("trainingPlansRouter.duplicate", () => {
             structure: {
               id: sourcePlanId,
               version: 1,
-              sport: ["run"],
+              activity_category: ["run"],
               sessions: [
                 {
                   offset_days: 0,
@@ -40,7 +52,7 @@ describe("trainingPlansRouter.duplicate", () => {
             structure: {
               id: "33333333-3333-4333-8333-333333333333",
               version: 1,
-              sport: ["run"],
+              activity_category: ["run"],
               sessions: [
                 {
                   offset_days: 0,

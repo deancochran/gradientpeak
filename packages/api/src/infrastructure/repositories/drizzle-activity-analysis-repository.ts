@@ -47,12 +47,12 @@ export function createActivityAnalysisStore(db: DrizzleQueryExecutor): ActivityA
         calculation_version: schema.profileMetrics.calculation_version,
         provenance: schema.profileMetrics.provenance,
         reference_activity_id: schema.profileMetrics.reference_activity_id,
-        // Preserve sport identity only for a single activity-role segment. Multisport parents,
-        // including repeated same-category legs, remain unscoped rather than fabricating one sport.
+        // Preserve activity-category identity only for a single activity-role segment. Multisport parents,
+        // including repeated same-category legs, remain unscoped rather than fabricating one activity_category.
         reference_activity_category: sql<string | null>`(
           select case
             when count(*) = 1
-              then min(reference_segment.category)
+              then min(reference_segment.activity_category)
             else null
           end
           from activity_segments as reference_segment

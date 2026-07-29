@@ -4,8 +4,8 @@ import {
   eventDemandSchema,
   type NormalizedPlanningGoal,
 } from "../../../schemas/planning";
+import { getActivityCategoryModelConfig } from "../activity-categories";
 import { MAX_BIASED_AGGREGATION_WEIGHT, WEIGHTED_AVERAGE_AGGREGATION_WEIGHT } from "../constants";
-import { getSportModelConfig } from "../sports";
 
 export interface EventDemandResolutionSuccess {
   status: "supported";
@@ -112,7 +112,7 @@ export function resolveEventDemand(goal: NormalizedPlanningGoal): EventDemandRes
     status: "supported",
     demand: eventDemandSchema.parse({
       goal_id: goal.id,
-      sport: goal.activity_category,
+      activity_category: goal.activity_category,
       demand_family: resolveAggregateFamily(resolved.map((item) => item.family)),
       demand_duration_minutes: round(weightedDuration),
       required_peak_ctl: requiredPeakCtl,
@@ -129,7 +129,7 @@ export function resolveEventDemand(goal: NormalizedPlanningGoal): EventDemandRes
         resolved.length > 1
           ? "multi_target_demand_aggregation_max_weighted"
           : "single_target_demand_applied",
-        `sport_acwr_ceiling_${getSportModelConfig(goal.activity_category).acwr_ceiling}`,
+        `activity_category_acwr_ceiling_${getActivityCategoryModelConfig(goal.activity_category).acwr_ceiling}`,
       ],
     }),
   };

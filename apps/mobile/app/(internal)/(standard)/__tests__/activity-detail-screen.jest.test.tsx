@@ -12,7 +12,7 @@ const activityData = {
       {
         id: "22222222-2222-4222-8222-222222222222",
         role: "activity",
-        category: "run",
+        activity_category: "run",
       },
     ],
     name: "Morning Threshold",
@@ -48,7 +48,7 @@ const activityData = {
         status: "available" as const,
         model: "gradientpeak_relative_load" as const,
         version: "1" as const,
-        sport: "run" as const,
+        activity_category: "run" as const,
         method: "run_pace_threshold" as const,
         load: (3120 / 3600) * 0.88 ** 2 * 100,
         intensity: 0.88,
@@ -110,7 +110,7 @@ const unavailableHeartRateSegment = {
   status: "unavailable",
   model: "gradientpeak_relative_load",
   version: "1",
-  sport: "run",
+  activity_category: "run",
   method: "heart_rate_zones",
   quality: null,
   thresholdEvidence: null,
@@ -133,7 +133,7 @@ const streamsData = {
   laps: [] as Array<{ totalDistance: number; totalTimerTime: number }>,
   analysis: {
     version: "2" as const,
-    sport: "run" as const,
+    activity_category: "run" as const,
     policy: { max_accepted_gap_seconds: 30, minimum_coverage_ratio: 0.7 },
     distributions: {
       heart_rate: {
@@ -159,7 +159,7 @@ const streamsData = {
       power: {
         quality: {
           status: "insufficient" as const,
-          reason: "sport_mismatch" as const,
+          reason: "activity_category_mismatch" as const,
           sample_count: 0,
           observed_span_seconds: 120,
           integrated_seconds: 0,
@@ -193,7 +193,7 @@ const streamsData = {
       swim_pace: {
         quality: {
           status: "insufficient" as const,
-          reason: "sport_mismatch" as const,
+          reason: "activity_category_mismatch" as const,
           sample_count: 0,
           observed_span_seconds: 120,
           integrated_seconds: 0,
@@ -551,7 +551,7 @@ describe("activity detail screen", () => {
         segment_loads: [
           {
             segment_id: "segment-hr",
-            category: "run",
+            activity_category: "run",
             common_load: unavailableHeartRateSegment,
           },
         ],
@@ -561,7 +561,9 @@ describe("activity detail screen", () => {
 
     renderNative(<ActivityDetailScreen />);
 
-    expect(screen.getAllByText(/sport-specific LTHR is missing for this activity/)).toHaveLength(2);
+    expect(
+      screen.getAllByText(/activity-category-specific LTHR is missing for this activity/),
+    ).toHaveLength(2);
     expect(screen.queryByText("A required threshold is missing.")).toBeNull();
   });
 

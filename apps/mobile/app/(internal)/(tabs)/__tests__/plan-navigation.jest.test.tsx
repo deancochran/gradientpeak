@@ -55,6 +55,21 @@ const completeKnownEmptyEffectiveLoadResponse = {
     tentative: emptyCommonLoadAggregate,
     includingTentative: { status: "known_zero" as const, load: 0, intensity: null },
   },
+  recommendation: {
+    status: "unavailable" as const,
+    reason: "no_active_training_plan" as const,
+    policyVersion: "common_load_recommendation_v1" as const,
+    model: "gradientpeak_relative_load" as const,
+    version: "1" as const,
+    source: "applied_training_plan_prescription" as const,
+    computedAsOf: "2026-04-05T12:00:00.000Z",
+    planningTimezone: "America/Los_Angeles",
+    trainingPlanId: null,
+    scheduleBatchId: null,
+    sourceItemCount: 0,
+    coverage: { startDate: "2026-04-05", endDate: "2026-10-04" },
+    points: [],
+  },
   model: "gradientpeak_relative_load" as const,
   version: "1" as const,
   sourceCounts: { activities: 0, events: 0 },
@@ -548,7 +563,7 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
           recovery_pressure: 0.2,
           notes: [],
         },
-        sport_load_states: [],
+        activity_category_load_states: [],
         recovery_segments: [],
         readiness_points: [
           { date: "2026-04-01", readiness_score: 62, predicted_fitness_ctl: 45 },
@@ -706,7 +721,7 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
           activity_plan_id: "plan-activity-1",
           title: "Tempo Run",
           scheduled_at: "2026-04-06T12:00:00.000Z",
-          sport: "run",
+          activity_category: "run",
           estimated_load: 52,
           short_term_readiness_delta: -1.5,
           fitness_contribution: 4.3,
@@ -888,6 +903,14 @@ jest.mock("@/lib/api", () => ({
       },
     },
     activities: {
+      commonLoadHistory: {
+        useQuery: () => ({
+          data: { status: "unavailable", reason: "insufficient_history" },
+          isFetching: false,
+          isLoading: false,
+          refetch: jest.fn(async () => undefined),
+        }),
+      },
       dailyCommonLoadObservations: {
         useQuery: () => ({
           data: { observations: [] },

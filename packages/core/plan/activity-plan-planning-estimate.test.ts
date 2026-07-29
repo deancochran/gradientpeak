@@ -10,7 +10,7 @@ const singleBike = activityPlanStructureSchemaV3.parse({
       role: "activity",
       id: id(1),
       name: "Bike",
-      category: "bike",
+      activity_category: "bike",
       intervals: [
         {
           id: id(2),
@@ -36,18 +36,17 @@ describe("estimateActivityPlanForTrainingContext", () => {
       durationSeconds: 3600,
       activeSeconds: 3600,
       restSeconds: 0,
-      transitionSeconds: 0,
       intensityFactor: 0.8,
       tss: 64,
       categoryDoses: [
-        { category: "bike", intensityFactor: 0.8, tss: 64, evidence: "cycling_power" },
+        { activity_category: "bike", intensityFactor: 0.8, tss: 64, evidence: "cycling_power" },
       ],
       confidence: "high",
     });
   });
 
-  it("keeps multisport dose separate and abstains where evidence is unsupported", () => {
-    const structure = activityPlanStructureSchemaV3.parse({
+  it("fails closed on mixed-category and transition plans", () => {
+    const structure = {
       version: 3,
       segments: [
         ...singleBike.segments,
@@ -56,7 +55,7 @@ describe("estimateActivityPlanForTrainingContext", () => {
           role: "activity",
           id: id(5),
           name: "Run",
-          category: "run",
+          activity_category: "run",
           intervals: [
             {
               id: id(6),
@@ -74,15 +73,8 @@ describe("estimateActivityPlanForTrainingContext", () => {
           ],
         },
       ],
-    });
-    const estimate = estimateActivityPlanForTrainingContext({ structure });
-    expect(estimate.durationSeconds).toBeNull();
-    expect(estimate.transitionSeconds).toBe(120);
-    expect(estimate.tss).toBeNull();
-    expect(estimate.categoryDoses).toEqual([
-      expect.objectContaining({ category: "bike", tss: 64 }),
-      expect.objectContaining({ category: "run", tss: null, evidence: "unsupported" }),
-    ]);
+    };
+    expect(() => estimateActivityPlanForTrainingContext({ structure })).toThrow();
   });
 
   it("does not report complete high-confidence load from partial cycling-power evidence", () => {
@@ -93,7 +85,7 @@ describe("estimateActivityPlanForTrainingContext", () => {
           role: "activity",
           id: id(20),
           name: "Bike",
-          category: "bike",
+          activity_category: "bike",
           intervals: [
             {
               id: id(21),
@@ -125,7 +117,7 @@ describe("estimateActivityPlanForTrainingContext", () => {
       confidence: "medium",
       categoryDoses: [
         {
-          category: "bike",
+          activity_category: "bike",
           evidence: "partial_cycling_power",
           evidenceCoverage: 0.5,
           tss: null,

@@ -13,9 +13,15 @@ export type EnqueueProviderSyncJobInput = {
   operation?: string;
   payload: unknown;
   payloadHash?: string;
+  priority?: number;
   profileId: string;
   provider: "wahoo";
-  resourceKind?: "event" | "activity_plan" | "activity_route" | "activity";
+  resourceKind?:
+    | "event"
+    | "activity_plan"
+    | "activity_route"
+    | "group_event_route_delivery"
+    | "activity";
   runAt: string;
   supersedesJobId?: string;
   syncLaneKey?: string;
@@ -37,7 +43,13 @@ export type ProviderSyncJobRecord = {
   profileId: string;
   provider: "wahoo" | "strava" | "trainingpeaks" | "garmin" | "zwift";
   queueSequence?: number;
-  resourceKind: "event" | "activity_plan" | "activity_route" | "activity" | null;
+  resourceKind:
+    | "event"
+    | "activity_plan"
+    | "activity_route"
+    | "group_event_route_delivery"
+    | "activity"
+    | null;
   runAt: string;
   staleLockRecovered?: boolean;
   status: ProviderSyncJobStatus;
@@ -86,6 +98,17 @@ export type WahooDisconnectAttemptResult =
   | { disposition: "superseded" };
 
 export interface ProviderSyncRepository {
+  failJobWithSyncState(input: {
+    expectedIntegrationGeneration: number;
+    id: string;
+    integrationId: string;
+    lastError: string;
+    nextRunAt?: string;
+    provider: "wahoo";
+    resource: string;
+    status: Extract<ProviderSyncJobStatus, "failed" | "dead_lettered">;
+    workerId: string;
+  }): Promise<boolean>;
   completeJobWithSyncState(input: {
     expectedIntegrationGeneration?: number;
     highWatermark: string;

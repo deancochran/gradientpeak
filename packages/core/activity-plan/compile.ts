@@ -1,4 +1,4 @@
-import type { CanonicalSport } from "../schemas/sport";
+import type { CanonicalActivityCategory } from "../schemas/activity-category";
 import {
   type CompiledActivityPlanOccurrence,
   createActivityStepOccurrenceId,
@@ -11,8 +11,7 @@ export const ACTIVITY_PLAN_COMPILER_VERSION = 1 as const;
 export type CompiledActivityPlan = {
   compilerVersion: typeof ACTIVITY_PLAN_COMPILER_VERSION;
   structureVersion: 3;
-  primaryCategory: CanonicalSport;
-  categories: readonly CanonicalSport[];
+  activity_category: CanonicalActivityCategory;
   occurrences: readonly CompiledActivityPlanOccurrence[];
   explicitTimedDurationSeconds: number;
 };
@@ -28,9 +27,7 @@ export function compileValidatedActivityPlanV3(
   structure: ActivityPlanStructureV3,
 ): CompiledActivityPlan {
   const occurrences: CompiledActivityPlanOccurrence[] = [];
-  const categories: CanonicalSport[] = [];
-  const seenCategories = new Set<CanonicalSport>();
-  let primaryCategory: CanonicalSport | undefined;
+  let activity_category: CanonicalActivityCategory | undefined;
   let explicitTimedDurationSeconds = 0;
 
   structure.segments.forEach((segment, segmentIndex) => {
@@ -42,7 +39,7 @@ export function compileValidatedActivityPlanV3(
         segmentId: segment.id,
         segmentIndex,
         role: segment.role,
-        category: null,
+        activity_category: null,
         intervalId: null,
         intervalIndex: null,
         stepId: null,
@@ -55,11 +52,13 @@ export function compileValidatedActivityPlanV3(
       return;
     }
 
-    if (!seenCategories.has(segment.category)) {
-      seenCategories.add(segment.category);
-      categories.push(segment.category);
+    if (activity_category === undefined) {
+      activity_category = segment.activity_category;
+    } else if (activity_category !== segment.activity_category) {
+      throw new Error(
+        "Validated activity plan must contain activity segments for exactly one activity_category.",
+      );
     }
-    primaryCategory ??= segment.category;
 
     segment.intervals.forEach((interval, intervalIndex) => {
       for (let repeatIteration = 0; repeatIteration < interval.repetitions; repeatIteration += 1) {
@@ -78,7 +77,7 @@ export function compileValidatedActivityPlanV3(
             segmentId: segment.id,
             segmentIndex,
             role: "activity",
-            category: segment.category,
+            activity_category: segment.activity_category,
             intervalId: interval.id,
             intervalIndex,
             stepId: step.id,
@@ -93,15 +92,14 @@ export function compileValidatedActivityPlanV3(
     });
   });
 
-  if (primaryCategory === undefined) {
+  if (activity_category === undefined) {
     throw new Error("Validated activity plan must contain an activity segment.");
   }
 
   return {
     compilerVersion: ACTIVITY_PLAN_COMPILER_VERSION,
     structureVersion: 3,
-    primaryCategory,
-    categories,
+    activity_category,
     occurrences,
     explicitTimedDurationSeconds,
   };

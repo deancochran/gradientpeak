@@ -65,6 +65,25 @@ const MAX_ACTIVITY_FILE_BYTES = 50 * 1024 * 1024;
 const ACTIVITY_FILE_DOWNLOAD_TIMEOUT_MS = 15_000;
 const DEFAULT_ACTIVITY_FILE_HOSTS = ["*.wahooligan.com"];
 
+type WahooActivityImportStage =
+  | "resolve_integration"
+  | "deduplicate"
+  | "resolve_link"
+  | "load_artifact"
+  | "parse_artifact"
+  | "build_activity"
+  | "persist_activity";
+
+const WAHOO_ACTIVITY_IMPORT_FAILURE_MESSAGES = {
+  resolve_integration: "Wahoo activity import failed while resolving the integration",
+  deduplicate: "Wahoo activity import failed during deduplication",
+  resolve_link: "Wahoo activity import failed while resolving planned activity linkage",
+  load_artifact: "Wahoo activity import failed while loading the activity artifact",
+  parse_artifact: "Wahoo activity import failed while parsing the activity artifact",
+  build_activity: "Wahoo activity import failed while building the activity record",
+  persist_activity: "Wahoo activity import failed while persisting the activity",
+} as const satisfies Record<WahooActivityImportStage, string>;
+
 function isAllowedActivityFileHost(hostname: string, allowedHosts: readonly string[]): boolean {
   const normalizedHostname = hostname.toLowerCase();
   return allowedHosts.some((configuredHost) => {
@@ -209,9 +228,9 @@ export class WahooActivityImporter {
   ) {}
 
   /**
-   * Import a completed workout summary from Wahoo webhook
+   * Import a completed Wahoo workout summary from a Wahoo webhook
    * @param wahooUserId - Wahoo user ID from webhook
-   * @param summary - Workout summary from webhook payload
+   * @param summary - Wahoo workout summary from the webhook payload
    */
   async importWorkoutSummary(
     wahooUserId: number,
@@ -220,6 +239,7 @@ export class WahooActivityImporter {
   ): Promise<ImportResult> {
     let ownedStagePath: string | null = null;
     let completed = false;
+    let stage: WahooActivityImportStage = "resolve_integration";
     try {
       options.signal?.throwIfAborted();
       // 1. Find user by external_id
@@ -265,6 +285,7 @@ export class WahooActivityImporter {
       };
 
       // 2. Check for duplicate provider resource before file download or parsing.
+      stage = "deduplicate";
       const existing = await this.deps.repository.findImportedActivityLinkByExternalId({
         externalId: summary.id.toString(),
         integrationId: integration.integrationId,
@@ -342,8 +363,9 @@ export class WahooActivityImporter {
       }
 
       // 3. Find linked planned activity event (if any)
-      // Note: This queries integration_resource_links to map external workouts back to planned events
+      // Note: This queries integration_resource_links to map external Wahoo workout resources to planned events
       // The external_id column stores the Wahoo workout ID
+      stage = "resolve_link";
       const linkedWorkoutId = summary.workout_id ?? summary.workout?.id ?? null;
       const linkedEventId = linkedWorkoutId
         ? await this.deps.repository.findLinkedPlannedEventId({
@@ -355,6 +377,7 @@ export class WahooActivityImporter {
       options.signal?.throwIfAborted();
       // The signal is only a latency optimization. The generation fence is the
       // authority immediately before the first external effect.
+      stage = "load_artifact";
       await assertGenerationActive();
       const storedActivityFile =
         repairCandidate?.activityFilePath && this.deps.activityFileStorage.readActivityFile
@@ -389,6 +412,7 @@ export class WahooActivityImporter {
       // Do not parse or promote a staged object once its integration was
       // disconnected while the upload was in flight.
       await assertGenerationActive();
+      stage = "parse_artifact";
       const parsedActivity = this.parseActivityFile(
         activityFile.bytes,
         activityFile.path,
@@ -406,6 +430,7 @@ export class WahooActivityImporter {
       }
 
       const resolvedCategory = this.resolveActivityType(summary, parsedActivity);
+      stage = "build_activity";
       const activity = buildImportedActivityCreateInput({
         activityFile: {
           path: activityFile.path,
@@ -438,6 +463,7 @@ export class WahooActivityImporter {
 
       // 7. Create activity
       let newActivity: { id: string };
+      stage = "persist_activity";
       try {
         options.signal?.throwIfAborted();
         if (repairCandidate) {
@@ -461,9 +487,9 @@ export class WahooActivityImporter {
         }
       } catch (insertError) {
         if (!isExpectedProviderUniqueViolation(insertError)) {
-          logger.warn("Wahoo activity import failed", {
+          logger.warn(WAHOO_ACTIVITY_IMPORT_FAILURE_MESSAGES.persist_activity, {
             operation: "persist_activity",
-            outcome: "failure",
+            outcome: "unexpected_error",
             provider: "wahoo",
           });
           return {
@@ -520,9 +546,9 @@ export class WahooActivityImporter {
             error: "Provider activity identity is owned by another profile",
           };
         }
-        logger.warn("Wahoo activity import failed", {
+        logger.warn(WAHOO_ACTIVITY_IMPORT_FAILURE_MESSAGES.persist_activity, {
           operation: "persist_activity",
-          outcome: "failure",
+          outcome: "unexpected_error",
           provider: "wahoo",
         });
         return {
@@ -543,10 +569,10 @@ export class WahooActivityImporter {
         success: true,
         activityId: newActivity.id,
       };
-    } catch (error) {
-      logger.warn("Wahoo activity import failed", {
+    } catch {
+      logger.warn(WAHOO_ACTIVITY_IMPORT_FAILURE_MESSAGES[stage], {
         operation: "import_activity",
-        outcome: "failure",
+        outcome: "unexpected_error",
         provider: "wahoo",
       });
       return {
@@ -571,15 +597,15 @@ export class WahooActivityImporter {
   }
 
   /**
-   * Infer activity type from workout summary
-   * In production, this should fetch the workout details from Wahoo API
+   * Infer the Wahoo activity type from a Wahoo workout summary
+   * In production, this should fetch Wahoo workout details from the Wahoo API
    * to get the actual workout_type_id
    */
   private inferActivityType(summary: WahooWorkoutSummary): WahooActivityType {
     const workoutTypeId = summary.workout?.workout_type_id;
-    if (workoutTypeId !== undefined && WAHOO_WORKOUT_TYPE_MAP[workoutTypeId] !== undefined) {
-      return WAHOO_WORKOUT_TYPE_MAP[workoutTypeId]!;
-    }
+    const mappedActivityType =
+      workoutTypeId === undefined ? undefined : WAHOO_WORKOUT_TYPE_MAP[workoutTypeId];
+    if (mappedActivityType !== undefined) return mappedActivityType;
 
     // Hard-cutover rule: only map explicit 1:1 workout_type_id values.
     // Ambiguous or unknown activities (yoga, hiking, walking, skiing, etc.)
@@ -737,7 +763,7 @@ export class WahooActivityImporter {
   /**
    * Calculate start time by subtracting total duration from current time
    * Note: This is an approximation. Ideally, the webhook would include
-   * the actual start time, or we'd fetch it from the workout details
+   * the actual start time, or we'd fetch it from the Wahoo workout details
    */
   private calculateStartTime(summary: WahooWorkoutSummary): string {
     if (summary.started_at) {

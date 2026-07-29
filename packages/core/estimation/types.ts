@@ -1,5 +1,5 @@
 import type { ProfileWithDob } from "../profile";
-import type { CanonicalSport } from "../schemas/sport";
+import type { CanonicalActivityCategory } from "../schemas/activity-category";
 
 // ==============================
 // User Profile & Context Types
@@ -43,12 +43,12 @@ export interface EstimationContext {
   fitnessState?: FitnessState;
 
   // Activity details used only for unstructured route/template estimation.
-  activityCategory?: CanonicalSport;
+  activityCategory?: CanonicalActivityCategory;
 
   // Optional route data
   route?: Route;
 
-  // Strict modern plan structure; segment categories own structured calculations.
+  // Strict modern plan structure; segment activity_categories own structured calculations.
   structure?: unknown;
 
   // Scheduling context
@@ -65,7 +65,7 @@ export type EstimationWarningHandler = (warning: {
 export interface ActivityPlanEstimationInput {
   id: string;
   structure?: EstimationContext["structure"];
-  activity_category: CanonicalSport;
+  activity_category: CanonicalActivityCategory;
 }
 
 export interface EstimationProfileInput {
@@ -79,7 +79,7 @@ export interface EstimationProfileInput {
 }
 
 export interface EstimationActivityPlanInput {
-  activity_category: CanonicalSport;
+  activity_category: CanonicalActivityCategory;
   structure?: EstimationContext["structure"];
 }
 
@@ -114,7 +114,7 @@ export interface EstimationResult {
   intensityFactor: number | null;
 
   categoryDoses?: Array<{
-    category: CanonicalSport;
+    activity_category: CanonicalActivityCategory;
     timedActiveSeconds: number;
     distanceMeters: number;
     repetitionCount: number;
@@ -190,8 +190,8 @@ export interface FatiguePrediction {
   recoveryPlan: {
     /** @deprecated Exact physiological recovery cannot be inferred from TSS/TSB. */
     daysToRecover: number | null;
-    /** @deprecated This estimator does not clear an athlete for a hard workout. */
-    nextHardWorkoutDate: Date | null;
+    /** @deprecated This estimator does not clear an athlete for a hard activity. */
+    nextHardActivityDate: Date | null;
     /** @deprecated This estimator does not prescribe exact rest duration. */
     suggestedRestDays: number | null;
   };

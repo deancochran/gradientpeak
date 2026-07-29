@@ -23,7 +23,7 @@ describe("profile metric presentation", () => {
     expect(hasCanonicalProfileMetricCoverage()).toBe(true);
   });
 
-  it("formats sport threshold paces in athlete-facing units", () => {
+  it("formats activity-category threshold paces in athlete-facing units", () => {
     expect(
       formatProfileMetricDisplayValue({
         metric_type: "threshold_pace_seconds_per_km",

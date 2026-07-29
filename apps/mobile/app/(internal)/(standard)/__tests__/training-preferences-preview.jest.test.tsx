@@ -495,22 +495,23 @@ describe("training preferences editor", () => {
     act(() => {
       getTab("Schedule").props.onPress();
     });
-    expect(screen.getByTestId("preferences-sport-overrides")).toBeTruthy();
-    expect(screen.getByTestId("preferences-sport-override-run")).toBeTruthy();
+    expect(screen.getByTestId("preferences-activity_category-overrides")).toBeTruthy();
+    expect(screen.getByTestId("preferences-activity_category-override-run")).toBeTruthy();
     act(() => {
-      screen.getByTestId("preferences-sport-override-toggle-run").props.onPress();
+      screen.getByTestId("preferences-activity_category-override-toggle-run").props.onPress();
     });
-    expect(screen.getByTestId("preferences-sport-override-run-min-sessions").props.label).toBe(
-      "Min sessions",
-    );
-    expect(screen.getByTestId("preferences-sport-override-run-max-sessions").props.label).toBe(
-      "Max sessions",
-    );
-    expect(screen.getByTestId("preferences-sport-override-run-max-duration").props.label).toBe(
-      "Max session duration",
-    );
     expect(
-      screen.getByTestId("preferences-sport-override-run-max-weekly-duration").props.label,
+      screen.getByTestId("preferences-activity_category-override-run-min-sessions").props.label,
+    ).toBe("Min sessions");
+    expect(
+      screen.getByTestId("preferences-activity_category-override-run-max-sessions").props.label,
+    ).toBe("Max sessions");
+    expect(
+      screen.getByTestId("preferences-activity_category-override-run-max-duration").props.label,
+    ).toBe("Max session duration");
+    expect(
+      screen.getByTestId("preferences-activity_category-override-run-max-weekly-duration").props
+        .label,
     ).toBe("Max weekly duration");
   });
 

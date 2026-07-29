@@ -110,7 +110,7 @@ describe("standards-first FIT decoding", () => {
     });
   });
 
-  it("does not collapse repeated sports", () => {
+  it("does not collapse repeated activity_categories", () => {
     const semantics = projectFitArtifactSemantics(
       decodeFitActivityArtifact(fitFixtures.repeatedSport()),
     );
@@ -147,13 +147,13 @@ describe("standards-first FIT decoding", () => {
 
     expect(semantics.segments[0]).toMatchObject({ role: "unknown", rawSport: 3 });
     expect(semantics.segments[1]).toMatchObject({ role: "unknown", rawSport: 3 });
-    expect(semantics.segments[2]).toMatchObject({ role: "activity", category: "run" });
+    expect(semantics.segments[2]).toMatchObject({ role: "activity", activity_category: "run" });
   });
 
   it("projects pause/resume ranges and timer events", () => {
-    const semantics = projectFitArtifactSemantics(
-      decodeFitActivityArtifact(fitFixtures.pausedRun()),
-    );
+    const fixture = fitFixtures.pausedRun();
+    const semantics = projectFitArtifactSemantics(decodeFitActivityArtifact(fixture));
+    const activity = parseFitFileWithSDK(fixture);
     expect(semantics.segments[0]).toMatchObject({
       activeMs: 50_000,
       movingMs: 50_000,
@@ -165,6 +165,48 @@ describe("standards-first FIT decoding", () => {
         { type: "stop", offsetMs: 60_000 },
       ],
     });
+    expect(activity.summary.totalTime).toBe(60);
+    expect(activity.sessions?.[0]).toMatchObject({
+      totalElapsedTime: 60,
+      totalTimerTime: 50,
+      totalMovingTime: 50,
+    });
+  });
+
+  it("omits source timing that contradicts complete timer-event evidence", () => {
+    const artifact = decodeFitActivityArtifact(fitFixtures.pausedRun());
+    const session = artifact.sessions[0];
+    if (!session?.extensions) throw new Error("Expected a paused fixture session.");
+    session.extensions["fit.totalTimerTime"] = 60;
+    session.extensions["fit.totalMovingTime"] = 50;
+
+    const semantics = projectFitArtifactSemantics(artifact);
+
+    expect(semantics.segments[0]).toMatchObject({
+      pauseRanges: [{ startOffsetMs: 20_000, endOffsetMs: 30_000 }],
+    });
+    expect(semantics.segments[0]).not.toHaveProperty("activeMs");
+    expect(semantics.segments[0]).not.toHaveProperty("movingMs");
+    expect(semantics.totals).not.toHaveProperty("activeMs");
+    expect(semantics.totals).not.toHaveProperty("movingMs");
+  });
+
+  it("omits moving-only timing that exceeds complete timer-event evidence", () => {
+    const artifact = decodeFitActivityArtifact(fitFixtures.pausedRun());
+    const session = artifact.sessions[0];
+    if (!session?.extensions) throw new Error("Expected a paused fixture session.");
+    delete session.extensions["fit.totalTimerTime"];
+    session.extensions["fit.totalMovingTime"] = 60;
+
+    const semantics = projectFitArtifactSemantics(artifact);
+
+    expect(semantics.segments[0]).toMatchObject({
+      pauseRanges: [{ startOffsetMs: 20_000, endOffsetMs: 30_000 }],
+    });
+    expect(semantics.segments[0]).not.toHaveProperty("activeMs");
+    expect(semantics.segments[0]).not.toHaveProperty("movingMs");
+    expect(semantics.totals).not.toHaveProperty("activeMs");
+    expect(semantics.totals).not.toHaveProperty("movingMs");
   });
 
   it("preserves unknown raw sport values as unknown semantics", () => {
@@ -174,12 +216,12 @@ describe("standards-first FIT decoding", () => {
     expect(semantics.segments[0]).toMatchObject({ role: "unknown", rawSport: 200 });
   });
 
-  it("maps known uncategorized official sports to other while retaining identity", () => {
+  it("maps known uncategorized official activity_categories to other while retaining identity", () => {
     const activity = parseFitFileWithSDK(fitFixtures.knownOtherSport());
     expect(activity.metadata.type).toBe("basketball");
     expect(activity.semantics?.segments[0]).toMatchObject({
       role: "activity",
-      category: "other",
+      activity_category: "other",
       rawSport: 6,
     });
   });
@@ -213,7 +255,7 @@ describe("standards-first FIT decoding", () => {
       segments: [
         {
           role: "activity",
-          category: "run",
+          activity_category: "run",
           rawSport: 1,
           rawSubSport: 2,
           startOffsetMs: 0,

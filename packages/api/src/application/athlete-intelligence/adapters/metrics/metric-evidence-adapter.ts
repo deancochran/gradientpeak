@@ -257,7 +257,7 @@ export class MetricEvidenceAdapter {
             ? "profile_metrics:reference_activity"
             : "profile_metrics",
           sourceId: row.id,
-          sport: "unknown",
+          activity_category: "unknown",
           correlationGroupId: `profile_metric:${metricType}:${row.reference_activity_id ?? row.id}`,
           reasons: [
             "metric_available",
@@ -330,7 +330,7 @@ export class MetricEvidenceAdapter {
           ? "profile_metrics:reference_activity"
           : "profile_metrics",
         sourceId,
-        sport: "unknown",
+        activity_category: "unknown",
         correlationGroupId: `profile_metric:${input.metricType}:${input.row?.reference_activity_id ?? sourceId}`,
         reasons: [input.reason],
         provenance: input.policy.provenance,

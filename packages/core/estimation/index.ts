@@ -75,7 +75,7 @@ const withWarnings = (result: EstimationResult, warnings: string[]): EstimationR
  * Strategy priority:
  * 1. Structure-based (highest accuracy) - if activity has steps
  * 2. Route-based (medium accuracy) - if route data is provided
- * 3. Template-based (lowest accuracy) - fallback using activity type defaults
+ * 3. Template-based (lowest accuracy) - fallback using activity category defaults
  *
  * @param context - User profile, activity details, and optional structure/route
  * @returns Estimation result with TSS, duration, IF, and metadata

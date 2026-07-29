@@ -35,7 +35,7 @@ function projection() {
       effortCurves: [],
       enduranceRecencyWeightedMinutes: unavailable,
       durabilityBaselineRatio: unavailable,
-      sportSpecificity: unavailable,
+      activityCategorySpecificity: unavailable,
     },
     readiness: {
       volumeTrend: unavailable,
@@ -56,7 +56,7 @@ function projection() {
         sessionDurationExcesses: unavailable,
         weeklyDurationExcesses: unavailable,
         weeklySessionCapExcesses: unavailable,
-        sportOverrideExcesses: unavailable,
+        activityCategoryOverrideExcesses: unavailable,
         recoveryPreferenceConflicts: unavailable,
       },
     },

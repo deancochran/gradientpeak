@@ -35,45 +35,45 @@ function completeQuality(fingerprint: string) {
 describe("activity analysis", () => {
   it.each([
     {
-      sport: "bike",
+      activity_category: "bike",
       activity: { normalized_power: 200, avg_heart_rate: 150 },
       profileMetrics: { ftp: 250, lthr: 150 },
       method: "power_threshold",
       intensityFactor: 0.8,
     },
     {
-      sport: "run",
+      activity_category: "run",
       activity: { normalized_graded_speed_mps: 4, avg_heart_rate: 150 },
       profileMetrics: { threshold_speed_mps: 5, lthr: 150 },
       method: "run_pace_threshold",
       intensityFactor: 0.8,
     },
     {
-      sport: "swim",
+      activity_category: "swim",
       activity: { normalized_speed_mps: 1.2, avg_heart_rate: 150 },
       profileMetrics: { swim_threshold_speed_mps: 1.5, lthr: 150 },
       method: "swim_pace_threshold",
       intensityFactor: 0.8,
     },
     {
-      sport: "strength",
+      activity_category: "strength",
       activity: { avg_heart_rate: 150 },
       profileMetrics: { lthr: 150 },
       method: "heart_rate_threshold",
       intensityFactor: 1,
     },
     {
-      sport: "other",
+      activity_category: "other",
       activity: { avg_heart_rate: 150 },
       profileMetrics: { lthr: 150 },
       method: "heart_rate_threshold",
       intensityFactor: 1,
     },
-  ] as const)("uses the ordered stress policy for $sport", (example) => {
+  ] as const)("uses the ordered stress policy for $activity_category", (example) => {
     const derived = analyzeActivityDerivedMetrics({
       activity: {
-        id: `activity-${example.sport}`,
-        type: example.sport,
+        id: `activity-${example.activity_category}`,
+        type: example.activity_category,
         ...timestamps,
         duration_seconds: 3600,
         ...example.activity,
@@ -141,7 +141,7 @@ describe("activity analysis", () => {
     });
   });
 
-  it("uses generic LTHR when a sport-specific threshold is absent", () => {
+  it("uses generic LTHR when an activity-category-specific threshold is absent", () => {
     const derived = analyzeActivityDerivedMetrics({
       activity: {
         id: "generic-lthr",
@@ -168,10 +168,10 @@ describe("activity analysis", () => {
     });
   });
 
-  it("prefers sport-specific LTHR over generic LTHR", () => {
+  it("prefers activity-category-specific LTHR over generic LTHR", () => {
     const derived = analyzeActivityDerivedMetrics({
       activity: {
-        id: "sport-lthr",
+        id: "activity_category-lthr",
         type: "bike",
         ...timestamps,
         duration_seconds: 3600,
@@ -180,7 +180,7 @@ describe("activity analysis", () => {
       context: {
         profileMetrics: {
           lthr: 180,
-          lthr_by_sport: { bike: 150 },
+          lthr_by_activity_category: { bike: 150 },
         },
         recentEfforts: [],
         profile: {},
@@ -452,10 +452,10 @@ describe("activity analysis", () => {
   it.each([
     [3600, "activity_data_missing"],
     [Number.POSITIVE_INFINITY, "invalid_data"],
-  ] as const)("handles unknown runtime sports conservatively", (duration, reason) => {
+  ] as const)("handles unknown runtime activity_categories conservatively", (duration, reason) => {
     const derived = analyzeActivityDerivedMetrics({
       activity: {
-        id: "unknown-sport",
+        id: "unknown-activity_category",
         type: "ride",
         ...timestamps,
         duration_seconds: duration,
@@ -474,7 +474,7 @@ describe("activity analysis", () => {
       unavailable_reason: reason,
       common_load: {
         status: "unavailable",
-        sport: "other",
+        activity_category: "other",
         reason: Number.isFinite(duration) ? "unsupported_modality" : "invalid_data",
       },
     });
@@ -483,7 +483,7 @@ describe("activity analysis", () => {
 
   it("enforces method-aware stress and list invariants", () => {
     const identity = {
-      sport: "bike",
+      activity_category: "bike",
       method: "heart_rate_threshold",
       source: "activity_analysis",
       version: "1",
@@ -556,7 +556,7 @@ describe("activity analysis", () => {
     const preTrancheDetail = {
       tss: 64,
       tss_identity: {
-        sport: "bike",
+        activity_category: "bike",
         method: "power_threshold",
         source: "activity_analysis",
         version: "1",
@@ -576,7 +576,7 @@ describe("activity analysis", () => {
 
   it("keeps historical heart-rate-reserve identities parseable but not selectable", () => {
     const historicalIdentity = {
-      sport: "bike",
+      activity_category: "bike",
       method: "heart_rate_reserve",
       source: "activity_analysis",
       version: "1",
@@ -623,7 +623,7 @@ describe("activity analysis", () => {
   it.each([
     {
       name: "FTP power",
-      sport: "bike",
+      activity_category: "bike",
       activity: { normalized_power: 200 },
       profileMetrics: { ftp: 250 },
       calibrationQuality: { ftp: completeQuality("ftp-evidence") },
@@ -633,7 +633,7 @@ describe("activity analysis", () => {
     },
     {
       name: "Critical Power",
-      sport: "bike",
+      activity_category: "bike",
       activity: { normalized_power: 200 },
       profileMetrics: {
         cycling_power_watts: 250,
@@ -646,7 +646,7 @@ describe("activity analysis", () => {
     },
     {
       name: "run pace",
-      sport: "run",
+      activity_category: "run",
       activity: { normalized_graded_speed_mps: 4 },
       profileMetrics: { threshold_speed_mps: 5 },
       calibrationQuality: { runThreshold: completeQuality("run-evidence") },
@@ -656,7 +656,7 @@ describe("activity analysis", () => {
     },
     {
       name: "swim pace",
-      sport: "swim",
+      activity_category: "swim",
       activity: { normalized_speed_mps: 1.2 },
       profileMetrics: { swim_threshold_speed_mps: 1.5 },
       calibrationQuality: { swimThreshold: completeQuality("swim-evidence") },
@@ -667,8 +667,8 @@ describe("activity analysis", () => {
   ] as const)("emits evidenced common Load for $name without changing legacy fields", (example) => {
     const derived = analyzeActivityDerivedMetrics({
       activity: {
-        id: `common-${example.sport}`,
-        type: example.sport,
+        id: `common-${example.activity_category}`,
+        type: example.activity_category,
         ...timestamps,
         duration_seconds: 3600,
         ...example.activity,
@@ -824,15 +824,15 @@ describe("activity analysis", () => {
 
   it.each([
     {
-      name: "sport-specific threshold with only generic quality",
-      profileMetrics: { lthr: 160, lthr_by_sport: { run: 150 } },
+      name: "activity-category-specific threshold with only generic quality",
+      profileMetrics: { lthr: 160, lthr_by_activity_category: { run: 150 } },
       calibrationQuality: { lthr: completeQuality("generic-mismatch") },
     },
     {
-      name: "generic threshold with only sport-specific quality",
+      name: "generic threshold with only activity-category-specific quality",
       profileMetrics: { lthr: 150 },
       calibrationQuality: {
-        lthrBySport: { run: completeQuality("sport-mismatch") },
+        lthrByActivityCategory: { run: completeQuality("activity_category-mismatch") },
       },
     },
   ] as const)("does not cross-fallback LTHR quality for $name", (example) => {

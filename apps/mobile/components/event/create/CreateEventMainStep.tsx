@@ -27,12 +27,13 @@ export type EventRouteSummary = {
   total_distance?: number | null;
 };
 
-export type CreateEventMainFormValues = {
+export type EventFormValues = {
   allDay: boolean;
   customDate: string;
   customTime: string;
   notes: string;
   plannedDate: string;
+  recurrenceEndDate: string | null;
   title: string;
 };
 
@@ -137,6 +138,7 @@ export function CreateEventMainStep({
   formErrorMessage,
   helperText,
   isPending,
+  isReadOnly = false,
   onCancel,
   onChangeMode,
   onOpenActivityPlan,
@@ -151,11 +153,12 @@ export function CreateEventMainStep({
   testIDPrefix,
   titleErrorMessage,
 }: {
-  control: Control<CreateEventMainFormValues>;
+  control: Control<EventFormValues>;
   draft: CreateEventDraft;
   formErrorMessage?: string | null;
   helperText?: string | null;
   isPending: boolean;
+  isReadOnly?: boolean;
   onCancel: () => void;
   onChangeMode: (mode: CreateEventMode) => void;
   onOpenActivityPlan: () => void;
@@ -170,6 +173,25 @@ export function CreateEventMainStep({
   testIDPrefix: string;
   titleErrorMessage?: string | null;
 }) {
+  if (isReadOnly) {
+    return (
+      <Card className="rounded-3xl border border-border bg-card">
+        <CardContent className="gap-4 p-4">
+          <View
+            accessibilityRole="alert"
+            className="gap-2 rounded-xl border border-border bg-muted/30 p-4"
+          >
+            <Text className="font-semibold text-foreground">This event is read-only on mobile</Text>
+            <Text className="text-sm text-muted-foreground">
+              Its linked activity plan is legacy or unavailable. Go back to view the event, or use
+              the event removal action to remove it.
+            </Text>
+          </View>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="rounded-3xl border border-border bg-card">
       <CardContent className="gap-4 p-4">

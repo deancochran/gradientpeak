@@ -27,14 +27,14 @@ export const Playground: Story = {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button type="button" variant="outline">
-          {dropdownMenuFixtures.workoutActions.triggerLabel}
+          {dropdownMenuFixtures.activityActions.triggerLabel}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent>
-        <DropdownMenuItem>{dropdownMenuFixtures.workoutActions.duplicateLabel}</DropdownMenuItem>
+        <DropdownMenuItem>{dropdownMenuFixtures.activityActions.duplicateLabel}</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive">
-          {dropdownMenuFixtures.workoutActions.deleteLabel}
+          {dropdownMenuFixtures.activityActions.deleteLabel}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -42,8 +42,8 @@ export const Playground: Story = {
   play: async ({ canvasElement }) => {
     const { trigger } = await exerciseDropdownMenuStory({
       canvasElement,
-      itemLabel: dropdownMenuFixtures.workoutActions.deleteLabel,
-      triggerLabel: dropdownMenuFixtures.workoutActions.triggerLabel,
+      itemLabel: dropdownMenuFixtures.activityActions.deleteLabel,
+      triggerLabel: dropdownMenuFixtures.activityActions.triggerLabel,
     });
 
     await expect(trigger).toBeVisible();

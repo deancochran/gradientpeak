@@ -1,4 +1,4 @@
-import type { CanonicalSport } from "../schemas/sport";
+import type { CanonicalActivityCategory } from "../schemas/activity-category";
 import {
   ACTIVITY_READINESS_CONSTANTS,
   ACTIVITY_READINESS_POLICY_VERSION,
@@ -31,7 +31,7 @@ export type CalculationPolicyId =
   | "projection-decision-quality"
   | "training-feasibility";
 
-type SupportedSports = readonly CanonicalSport[] | "any";
+type SupportedActivityCategories = readonly CanonicalActivityCategory[] | "any";
 type PolicyConstants = Readonly<Record<string, unknown>>;
 
 export type PolicyDescriptor<
@@ -41,7 +41,7 @@ export type PolicyDescriptor<
 > = Readonly<{
   id: Id;
   version: Version;
-  supportedSports: SupportedSports;
+  supportedActivityCategories: SupportedActivityCategories;
   supportedModalities: readonly string[];
   constants: Constants;
 }>;
@@ -53,14 +53,16 @@ function createPolicyDescriptor<
 >(descriptor: {
   id: Id;
   version: Version;
-  supportedSports: SupportedSports;
+  supportedActivityCategories: SupportedActivityCategories;
   supportedModalities: readonly string[];
   constants: Constants;
 }): PolicyDescriptor<Id, Version, Constants> {
   return Object.freeze({
     ...descriptor,
-    supportedSports:
-      descriptor.supportedSports === "any" ? "any" : Object.freeze([...descriptor.supportedSports]),
+    supportedActivityCategories:
+      descriptor.supportedActivityCategories === "any"
+        ? "any"
+        : Object.freeze([...descriptor.supportedActivityCategories]),
     supportedModalities: Object.freeze([...descriptor.supportedModalities]),
   });
 }
@@ -89,7 +91,7 @@ export const trainingFeasibilityPolicyConstants = Object.freeze({
 export const activityReadinessPolicyDescriptor = createPolicyDescriptor({
   id: "activity-readiness",
   version: ACTIVITY_READINESS_POLICY_VERSION,
-  supportedSports: "any",
+  supportedActivityCategories: "any",
   supportedModalities: ["activity", "readiness_context"],
   constants: activityReadinessPolicyConstants,
 });
@@ -97,7 +99,7 @@ export const activityReadinessPolicyDescriptor = createPolicyDescriptor({
 export const effortCurvePolicyDescriptor = createPolicyDescriptor({
   id: "effort-curve",
   version: EFFORT_CURVE_POLICY_VERSION,
-  supportedSports: ["bike", "run"],
+  supportedActivityCategories: ["bike", "run"],
   supportedModalities: ["power", "pace"],
   constants: effortCurvePolicyConstants,
 });
@@ -106,7 +108,7 @@ export const effortCurvePolicyDescriptor = createPolicyDescriptor({
 export const effortCurveDecisionUncertaintyPolicyDescriptor = createPolicyDescriptor({
   id: "effort-curve-decision-uncertainty",
   version: EFFORT_CURVE_DECISION_UNCERTAINTY_POLICY_VERSION,
-  supportedSports: ["bike", "run"],
+  supportedActivityCategories: ["bike", "run"],
   supportedModalities: ["power", "pace"],
   constants: effortCurveDecisionUncertaintyPolicyConstants,
 });
@@ -114,7 +116,7 @@ export const effortCurveDecisionUncertaintyPolicyDescriptor = createPolicyDescri
 export const goalDemandPolicyDescriptor = createPolicyDescriptor({
   id: "goal-demand",
   version: GOAL_DEMAND_POLICY_VERSION,
-  supportedSports: "any",
+  supportedActivityCategories: "any",
   supportedModalities: ["event_performance", "threshold", "completion", "consistency"],
   constants: goalDemandPolicyConstants,
 });
@@ -122,7 +124,7 @@ export const goalDemandPolicyDescriptor = createPolicyDescriptor({
 export const physiologyMetricsPolicyDescriptor = createPolicyDescriptor({
   id: "physiology-metrics",
   version: PHYSIOLOGY_METRICS_POLICY_VERSION,
-  supportedSports: "any",
+  supportedActivityCategories: "any",
   supportedModalities: ["profile_metric", "manual_observation", "activity", "activity_effort"],
   constants: physiologyMetricsPolicyConstants,
 });
@@ -130,7 +132,7 @@ export const physiologyMetricsPolicyDescriptor = createPolicyDescriptor({
 export const projectionDecisionQualityPolicyDescriptor = createPolicyDescriptor({
   id: "projection-decision-quality",
   version: PROJECTION_DECISION_QUALITY_POLICY_VERSION,
-  supportedSports: "any",
+  supportedActivityCategories: "any",
   supportedModalities: ["projection"],
   constants: projectionDecisionQualityPolicyConstants,
 });
@@ -138,7 +140,7 @@ export const projectionDecisionQualityPolicyDescriptor = createPolicyDescriptor(
 export const trainingFeasibilityPolicyDescriptor = createPolicyDescriptor({
   id: "training-feasibility",
   version: TRAINING_FEASIBILITY_POLICY_VERSION,
-  supportedSports: "any",
+  supportedActivityCategories: "any",
   supportedModalities: ["schedule", "availability", "training_context"],
   constants: trainingFeasibilityPolicyConstants,
 });

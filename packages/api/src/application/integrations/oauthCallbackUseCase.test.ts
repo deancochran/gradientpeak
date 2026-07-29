@@ -66,7 +66,7 @@ function createDependencies(
     upsertFromOAuthStateInTransaction: vi.fn(async () => {
       if (!available) return null;
       available = false;
-      return { id: INTEGRATION_ID };
+      return { generation: 3, id: INTEGRATION_ID };
     }),
   };
   const providerSyncRepository = {
@@ -168,6 +168,31 @@ describe("OAuth callback use case", () => {
         payload: { trigger: "connect", windowMonths: 12 },
       }),
     );
+    expect(deps.providerSyncRepositoryMock.enqueueJobInTransaction).toHaveBeenCalledWith(
+      deps.transaction,
+      expect.objectContaining({
+        integrationGeneration: 3,
+        integrationId: INTEGRATION_ID,
+        jobType: "wahoo.reconcile_owned_routes",
+        payload: { trigger: "connect" },
+        profileId: PROFILE_ID,
+        provider: "wahoo",
+        resourceKind: "activity_route",
+      }),
+    );
+    expect(deps.providerSyncRepositoryMock.enqueueJobInTransaction).toHaveBeenCalledWith(
+      deps.transaction,
+      expect.objectContaining({
+        integrationGeneration: 3,
+        integrationId: INTEGRATION_ID,
+        jobType: "wahoo.reconcile_group_event_route_deliveries",
+        payload: { trigger: "connect" },
+        profileId: PROFILE_ID,
+        provider: "wahoo",
+        resourceKind: "group_event_route_delivery",
+      }),
+    );
+    expect(deps.providerSyncRepositoryMock.enqueueJobInTransaction).toHaveBeenCalledTimes(3);
   });
 
   it("rejects a provider mismatch and clears the stored state", async () => {

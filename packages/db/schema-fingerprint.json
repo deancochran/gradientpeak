@@ -38,7 +38,13 @@
     },
     {
       "name": "integration_resource_kind",
-      "values": ["event", "activity_plan", "activity_route", "activity"]
+      "values": [
+        "event",
+        "activity_plan",
+        "activity_route",
+        "activity",
+        "group_event_route_delivery"
+      ]
     },
     {
       "name": "like_entity_type",
@@ -272,18 +278,6 @@
       "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
       "rls": true,
       "name": "messages",
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
-      "rls": true,
-      "name": "multisport_cutover_audits",
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
-      "rls": true,
-      "name": "multisport_cutover_template_audits",
       "forceRls": false
     },
     {
@@ -2149,7 +2143,7 @@
       "generated": ""
     },
     {
-      "name": "category",
+      "name": "activity_category",
       "type": "text",
       "table": "activity_segments",
       "default": "",
@@ -2336,6 +2330,26 @@
       "notNull": true,
       "identity": "",
       "position": 24,
+      "generated": ""
+    },
+    {
+      "name": "raw_sub_sport_string",
+      "type": "text",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 25,
+      "generated": ""
+    },
+    {
+      "name": "raw_sub_sport_integer",
+      "type": "integer",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 26,
       "generated": ""
     },
     {
@@ -4336,176 +4350,6 @@
       "notNull": false,
       "identity": "",
       "position": 7,
-      "generated": ""
-    },
-    {
-      "name": "run_id",
-      "type": "uuid",
-      "table": "multisport_cutover_audits",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 1,
-      "generated": ""
-    },
-    {
-      "name": "manifest_checksum",
-      "type": "text",
-      "table": "multisport_cutover_audits",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
-      "generated": ""
-    },
-    {
-      "name": "final_manifest_checksum",
-      "type": "text",
-      "table": "multisport_cutover_audits",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 3,
-      "generated": ""
-    },
-    {
-      "name": "snapshot_hash",
-      "type": "text",
-      "table": "multisport_cutover_audits",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 4,
-      "generated": ""
-    },
-    {
-      "name": "staging_hash",
-      "type": "text",
-      "table": "multisport_cutover_audits",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 5,
-      "generated": ""
-    },
-    {
-      "name": "backup_hash",
-      "type": "text",
-      "table": "multisport_cutover_audits",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 6,
-      "generated": ""
-    },
-    {
-      "name": "storage_archive_hash",
-      "type": "text",
-      "table": "multisport_cutover_audits",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 7,
-      "generated": ""
-    },
-    {
-      "name": "storage_inventory_hash",
-      "type": "text",
-      "table": "multisport_cutover_audits",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 8,
-      "generated": ""
-    },
-    {
-      "name": "status",
-      "type": "text",
-      "table": "multisport_cutover_audits",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 9,
-      "generated": ""
-    },
-    {
-      "name": "migrated_at",
-      "type": "timestamp with time zone",
-      "table": "multisport_cutover_audits",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 10,
-      "generated": ""
-    },
-    {
-      "name": "audited_at",
-      "type": "timestamp with time zone",
-      "table": "multisport_cutover_audits",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 11,
-      "generated": ""
-    },
-    {
-      "name": "run_id",
-      "type": "uuid",
-      "table": "multisport_cutover_template_audits",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 1,
-      "generated": ""
-    },
-    {
-      "name": "activity_plan_id",
-      "type": "uuid",
-      "table": "multisport_cutover_template_audits",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
-      "generated": ""
-    },
-    {
-      "name": "before_semantic_hash",
-      "type": "text",
-      "table": "multisport_cutover_template_audits",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 3,
-      "generated": ""
-    },
-    {
-      "name": "after_semantic_hash",
-      "type": "text",
-      "table": "multisport_cutover_template_audits",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 4,
-      "generated": ""
-    },
-    {
-      "name": "source_semantic_hash",
-      "type": "text",
-      "table": "multisport_cutover_template_audits",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 5,
-      "generated": ""
-    },
-    {
-      "name": "is_new_source",
-      "type": "boolean",
-      "table": "multisport_cutover_template_audits",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 6,
       "generated": ""
     },
     {
@@ -6648,7 +6492,7 @@
     {
       "name": "activity_segments_effort_category_unique",
       "table": "activity_segments",
-      "definition": "CREATE UNIQUE INDEX activity_segments_effort_category_unique ON public.activity_segments USING btree (id, activity_id, profile_id, category)"
+      "definition": "CREATE UNIQUE INDEX activity_segments_effort_category_unique ON public.activity_segments USING btree (id, activity_id, profile_id, activity_category)"
     },
     {
       "name": "activity_segments_id_activity_profile_unique",
@@ -6668,7 +6512,7 @@
     {
       "name": "idx_activity_segments_category",
       "table": "activity_segments",
-      "definition": "CREATE INDEX idx_activity_segments_category ON public.activity_segments USING btree (category) WHERE (category IS NOT NULL)"
+      "definition": "CREATE INDEX idx_activity_segments_category ON public.activity_segments USING btree (activity_category) WHERE (activity_category IS NOT NULL)"
     },
     {
       "name": "activity_session_rpe_evidence_id_activity_profile_unique",
@@ -6849,6 +6693,11 @@
       "name": "idx_events_linked_activity_id",
       "table": "events",
       "definition": "CREATE INDEX idx_events_linked_activity_id ON public.events USING btree (linked_activity_id) WHERE (linked_activity_id IS NOT NULL)"
+    },
+    {
+      "name": "idx_events_planned_day_summary",
+      "table": "events",
+      "definition": "CREATE INDEX idx_events_planned_day_summary ON public.events USING btree (profile_id, scheduled_date, starts_at, id, activity_plan_id) WHERE ((event_type = 'planned'::event_type) AND (status = ANY (ARRAY['scheduled'::event_status, 'completed'::event_status])))"
     },
     {
       "name": "idx_events_profile_starts_at",
@@ -7124,16 +6973,6 @@
       "name": "messages_pkey",
       "table": "messages",
       "definition": "CREATE UNIQUE INDEX messages_pkey ON public.messages USING btree (id)"
-    },
-    {
-      "name": "multisport_cutover_audits_pkey",
-      "table": "multisport_cutover_audits",
-      "definition": "CREATE UNIQUE INDEX multisport_cutover_audits_pkey ON public.multisport_cutover_audits USING btree (run_id)"
-    },
-    {
-      "name": "multisport_cutover_template_audits_pkey",
-      "table": "multisport_cutover_template_audits",
-      "definition": "CREATE UNIQUE INDEX multisport_cutover_template_audits_pkey ON public.multisport_cutover_template_audits USING btree (run_id, activity_plan_id)"
     },
     {
       "name": "idx_notifications_actor_id",
@@ -7537,6 +7376,78 @@
     },
     {
       "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "activity_plan_duration_is_canonical(jsonb,boolean)",
+      "language": "sql",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_duration_is_canonical(input jsonb, rest_only boolean DEFAULT false)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\n  select case input ->> 'type'\n    when 'time' then public.activity_plan_jsonb_has_exact_keys(input, array['type', 'seconds'])\n      and public.activity_plan_jsonb_is_integer_between(input -> 'seconds', 1, 86400)\n    when 'distance' then not rest_only and public.activity_plan_jsonb_has_exact_keys(input, array['type', 'meters'])\n      and public.activity_plan_jsonb_is_integer_between(input -> 'meters', 1, 1000000)\n    when 'repetitions' then not rest_only and public.activity_plan_jsonb_has_exact_keys(input, array['type', 'count'])\n      and public.activity_plan_jsonb_is_integer_between(input -> 'count', 1, 10000)\n    when 'untilFinished' then not rest_only and public.activity_plan_jsonb_has_exact_keys(input, array['type'])\n    else false\n  end\n$function$\n",
+      "volatility": "i",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "activity_plan_jsonb_has_exact_keys(jsonb,text[],text[])",
+      "language": "sql",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_jsonb_has_exact_keys(input jsonb, required_keys text[], optional_keys text[] DEFAULT '{}'::text[])\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\n  select pg_catalog.jsonb_typeof(input) = 'object'\n    and required_keys <@ array(select pg_catalog.jsonb_object_keys(input))\n    and array(select pg_catalog.jsonb_object_keys(input)) <@ (required_keys || optional_keys)\n$function$\n",
+      "volatility": "i",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "activity_plan_jsonb_is_integer_between(jsonb,numeric,numeric)",
+      "language": "sql",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_jsonb_is_integer_between(input jsonb, minimum numeric, maximum numeric)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\n  select pg_catalog.jsonb_typeof(input) = 'number'\n    and (input #>> '{}')::numeric = pg_catalog.trunc((input #>> '{}')::numeric)\n    and (input #>> '{}')::numeric between minimum and maximum\n$function$\n",
+      "volatility": "i",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "activity_plan_jsonb_is_string(jsonb,integer,integer)",
+      "language": "sql",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_jsonb_is_string(input jsonb, minimum integer, maximum integer)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\n  select pg_catalog.jsonb_typeof(input) = 'string'\n    and pg_catalog.char_length(input #>> '{}') between minimum and maximum\n$function$\n",
+      "volatility": "i",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "activity_plan_jsonb_is_uuid(jsonb)",
+      "language": "sql",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_jsonb_is_uuid(input jsonb)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\n  select pg_catalog.jsonb_typeof(input) = 'string'\n    and input #>> '{}' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'\n$function$\n",
+      "volatility": "i",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "activity_plan_segment_is_canonical(jsonb)",
+      "language": "sql",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_segment_is_canonical(input jsonb)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\n  select case input ->> 'role'\n    when 'rest' then public.activity_plan_jsonb_has_exact_keys(input, array['id', 'name', 'role', 'duration'], array['notes'])\n      and public.activity_plan_jsonb_is_uuid(input -> 'id')\n      and public.activity_plan_jsonb_is_string(input -> 'name', 1, 100)\n      and (input -> 'notes' is null or public.activity_plan_jsonb_is_string(input -> 'notes', 0, 1000))\n      and public.activity_plan_duration_is_canonical(input -> 'duration', true)\n    when 'activity' then public.activity_plan_jsonb_has_exact_keys(input, array['id', 'name', 'role', 'activity_category', 'intervals'], array['notes'])\n      and public.activity_plan_jsonb_is_uuid(input -> 'id')\n      and public.activity_plan_jsonb_is_string(input -> 'name', 1, 100)\n      and (input -> 'notes' is null or public.activity_plan_jsonb_is_string(input -> 'notes', 0, 1000))\n      and input ->> 'activity_category' in ('run', 'bike', 'swim', 'strength', 'other')\n      and pg_catalog.jsonb_typeof(input -> 'intervals') = 'array'\n      and pg_catalog.jsonb_array_length(input -> 'intervals') between 1 and 50\n      and not exists (\n        select 1 from pg_catalog.jsonb_array_elements(input -> 'intervals') interval_value\n        where not public.activity_plan_jsonb_has_exact_keys(interval_value, array['id', 'name', 'repetitions', 'steps'], array['notes'])\n          or not public.activity_plan_jsonb_is_uuid(interval_value -> 'id')\n          or not public.activity_plan_jsonb_is_string(interval_value -> 'name', 1, 100)\n          or not public.activity_plan_jsonb_is_integer_between(interval_value -> 'repetitions', 1, 50)\n          or (interval_value -> 'notes' is not null and not public.activity_plan_jsonb_is_string(interval_value -> 'notes', 0, 1000))\n          or pg_catalog.jsonb_typeof(interval_value -> 'steps') <> 'array'\n          or pg_catalog.jsonb_array_length(interval_value -> 'steps') not between 1 and 20\n          or exists (\n            select 1 from pg_catalog.jsonb_array_elements(interval_value -> 'steps') step_value\n            where not public.activity_plan_jsonb_has_exact_keys(step_value, array['id', 'name', 'duration', 'targets'], array['description', 'notes'])\n              or not public.activity_plan_jsonb_is_uuid(step_value -> 'id')\n              or not public.activity_plan_jsonb_is_string(step_value -> 'name', 1, 100)\n              or (step_value -> 'description' is not null and not public.activity_plan_jsonb_is_string(step_value -> 'description', 0, 500))\n              or (step_value -> 'notes' is not null and not public.activity_plan_jsonb_is_string(step_value -> 'notes', 0, 1000))\n              or not public.activity_plan_duration_is_canonical(step_value -> 'duration')\n              or pg_catalog.jsonb_typeof(step_value -> 'targets') <> 'array'\n              or pg_catalog.jsonb_array_length(step_value -> 'targets') not between 1 and 3\n              or exists (\n                select 1 from pg_catalog.jsonb_array_elements(step_value -> 'targets') target_value\n                where not public.activity_plan_target_is_canonical(target_value, input ->> 'activity_category')\n              )\n          )\n      )\n    else false\n  end\n$function$\n",
+      "volatility": "i",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "activity_plan_structure_is_canonical(jsonb)",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_structure_is_canonical(input jsonb)\n RETURNS boolean\n LANGUAGE plpgsql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\ndeclare\n  segment_value jsonb;\n  interval_value jsonb;\n  step_value jsonb;\n  seen_ids text[] := '{}'::text[];\n  activity_category text;\n  activity_category_value text;\n  prior_was_rest boolean := false;\n  activity_count integer := 0;\n  expanded_occurrences numeric := 0;\n  explicit_timed_seconds numeric := 0;\n  id_value text;\nbegin\n  -- jsonb::text inserts canonical whitespace that JSON.stringify does not. Core's\n  -- 1 MiB UTF-8 limit remains exact; this coarser database guard leaves bounded\n  -- serialization headroom so a Core-valid document is not rejected here.\n  if input is null\n    or pg_catalog.octet_length(input::text) > 1200000\n    or not public.activity_plan_jsonb_has_exact_keys(input, array['version', 'segments'])\n    or input -> 'version' <> '3'::jsonb\n    or pg_catalog.jsonb_typeof(input -> 'segments') <> 'array'\n    or pg_catalog.jsonb_array_length(input -> 'segments') not between 1 and 64 then return false; end if;\n  for segment_value in select value from pg_catalog.jsonb_array_elements(input -> 'segments') loop\n    if not public.activity_plan_segment_is_canonical(segment_value) then return false; end if;\n    id_value := segment_value ->> 'id';\n    if id_value = any(seen_ids) then return false; end if;\n    seen_ids := array_append(seen_ids, id_value);\n    if segment_value ->> 'role' = 'rest' then\n      if prior_was_rest then return false; end if;\n      prior_was_rest := true;\n      explicit_timed_seconds := explicit_timed_seconds + (segment_value -> 'duration' ->> 'seconds')::numeric;\n    else\n      prior_was_rest := false;\n      activity_count := activity_count + 1;\n      activity_category_value := segment_value ->> 'activity_category';\n      if activity_category is null then activity_category := activity_category_value; elsif activity_category <> activity_category_value then return false; end if;\n      for interval_value in select value from pg_catalog.jsonb_array_elements(segment_value -> 'intervals') loop\n        id_value := interval_value ->> 'id';\n        if id_value = any(seen_ids) then return false; end if;\n        seen_ids := array_append(seen_ids, id_value);\n        expanded_occurrences := expanded_occurrences + pg_catalog.jsonb_array_length(interval_value -> 'steps') * (interval_value ->> 'repetitions')::numeric;\n        for step_value in select value from pg_catalog.jsonb_array_elements(interval_value -> 'steps') loop\n          id_value := step_value ->> 'id';\n          if id_value = any(seen_ids) then return false; end if;\n          seen_ids := array_append(seen_ids, id_value);\n          if step_value -> 'duration' ->> 'type' = 'time' then\n            explicit_timed_seconds := explicit_timed_seconds + (step_value -> 'duration' ->> 'seconds')::numeric * (interval_value ->> 'repetitions')::numeric;\n          end if;\n        end loop;\n      end loop;\n    end if;\n  end loop;\n  return activity_count > 0 and expanded_occurrences <= 1000 and explicit_timed_seconds <= 604800;\nend\n$function$\n",
+      "volatility": "i",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "activity_plan_target_is_canonical(jsonb,text)",
+      "language": "sql",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_target_is_canonical(input jsonb, activity_category text)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\n  select public.activity_plan_jsonb_has_exact_keys(input, array['type', 'intensity'])\n    and pg_catalog.jsonb_typeof(input -> 'type') = 'string'\n    and pg_catalog.jsonb_typeof(input -> 'intensity') = 'number'\n    and case input ->> 'type'\n      when '%FTP' then (input ->> 'intensity')::numeric > 0 and (input ->> 'intensity')::numeric <= 300 and activity_category = 'bike'\n      when '%MaxHR' then (input ->> 'intensity')::numeric > 0 and (input ->> 'intensity')::numeric <= 200 and activity_category in ('run', 'bike', 'swim', 'other')\n      when '%ThresholdHR' then (input ->> 'intensity')::numeric > 0 and (input ->> 'intensity')::numeric <= 200 and activity_category in ('run', 'bike', 'swim')\n      when 'watts' then (input ->> 'intensity')::numeric between 0 and 3000 and activity_category = 'bike'\n      when 'bpm' then (input ->> 'intensity')::numeric between 30 and 250 and activity_category in ('run', 'bike', 'swim', 'other')\n      when 'speed' then (input ->> 'intensity')::numeric between 0 and 100 and activity_category = 'run'\n      when 'cadence' then (input ->> 'intensity')::numeric between 0 and 300 and activity_category in ('run', 'bike')\n      when 'RPE' then (input ->> 'intensity')::numeric between 1 and 10\n      else false\n    end\n$function$\n",
+      "volatility": "i",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
       "config": ["search_path=\"\""],
       "identity": "activity_segment_set_constraint_trigger()",
       "language": "plpgsql",
@@ -7621,7 +7532,7 @@
       "config": ["search_path=\"\""],
       "identity": "validate_activity_effort_segment_range()",
       "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.validate_activity_effort_segment_range()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\ndeclare segment_record record;\nbegin\n  if new.activity_id is null then return new; end if;\n  select start_offset_ms,end_offset_ms,category into segment_record from public.activity_segments\n    where id=new.segment_id and activity_id=new.activity_id and profile_id=new.profile_id;\n  if not found or segment_record.category<>new.activity_category\n    or new.start_offset is null or new.start_offset*1000<segment_record.start_offset_ms\n    or (new.start_offset+new.duration_seconds)*1000>segment_record.end_offset_ms then\n    raise exception 'activity effort must be contained by its matching-category segment';\n  end if;\n  return new;\nend $function$\n",
+      "definition": "CREATE OR REPLACE FUNCTION public.validate_activity_effort_segment_range()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\ndeclare segment_record record;\nbegin\n  if new.activity_id is null then return new; end if;\n  select start_offset_ms,end_offset_ms,activity_category into segment_record from public.activity_segments\n    where id=new.segment_id and activity_id=new.activity_id and profile_id=new.profile_id;\n  if not found or segment_record.activity_category<>new.activity_category\n    or new.start_offset is null or new.start_offset*1000<segment_record.start_offset_ms\n    or (new.start_offset+new.duration_seconds)*1000>segment_record.end_offset_ms then\n    raise exception 'activity effort must be contained by its matching-category segment';\n  end if;\n  return new;\nend $function$\n",
       "volatility": "v",
       "securityDefiner": false
     },
@@ -8011,7 +7922,7 @@
       "name": "activity_efforts_segment_activity_profile_category_fkey",
       "table": "activity_efforts",
       "validated": true,
-      "definition": "FOREIGN KEY (segment_id, activity_id, profile_id, activity_category) REFERENCES activity_segments(id, activity_id, profile_id, category) ON DELETE CASCADE"
+      "definition": "FOREIGN KEY (segment_id, activity_id, profile_id, activity_category) REFERENCES activity_segments(id, activity_id, profile_id, activity_category) ON DELETE CASCADE"
     },
     {
       "kind": "c",
@@ -8204,6 +8115,13 @@
     },
     {
       "kind": "c",
+      "name": "activity_plans_structure_canonical_check",
+      "table": "activity_plans",
+      "validated": true,
+      "definition": "CHECK (activity_plan_structure_is_canonical(structure))"
+    },
+    {
+      "kind": "c",
       "name": "activity_plans_structure_hash_check",
       "table": "activity_plans",
       "validated": true,
@@ -8312,14 +8230,14 @@
       "name": "activity_segments_category_fkey",
       "table": "activity_segments",
       "validated": true,
-      "definition": "FOREIGN KEY (category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
+      "definition": "FOREIGN KEY (activity_category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
     },
     {
       "kind": "u",
       "name": "activity_segments_effort_category_unique",
       "table": "activity_segments",
       "validated": true,
-      "definition": "UNIQUE (id, activity_id, profile_id, category)"
+      "definition": "UNIQUE (id, activity_id, profile_id, activity_category)"
     },
     {
       "kind": "u",
@@ -8358,6 +8276,20 @@
     },
     {
       "kind": "c",
+      "name": "activity_segments_raw_source_string_bounds_check",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "CHECK ((raw_type_string IS NULL OR char_length(raw_type_string) >= 1 AND char_length(raw_type_string) <= 128) AND (raw_sport_string IS NULL OR char_length(raw_sport_string) >= 1 AND char_length(raw_sport_string) <= 128) AND (raw_sub_sport_string IS NULL OR char_length(raw_sub_sport_string) >= 1 AND char_length(raw_sub_sport_string) <= 128))"
+    },
+    {
+      "kind": "c",
+      "name": "activity_segments_raw_sub_sport_type_check",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "CHECK (num_nonnulls(raw_sub_sport_string, raw_sub_sport_integer) <= 1)"
+    },
+    {
+      "kind": "c",
       "name": "activity_segments_revision_check",
       "table": "activity_segments",
       "validated": true,
@@ -8368,7 +8300,7 @@
       "name": "activity_segments_role_category_check",
       "table": "activity_segments",
       "validated": true,
-      "definition": "CHECK (role = 'activity'::text AND category IS NOT NULL OR role <> 'activity'::text AND category IS NULL)"
+      "definition": "CHECK (role = 'activity'::text AND activity_category IS NOT NULL OR role <> 'activity'::text AND activity_category IS NULL)"
     },
     {
       "kind": "c",
@@ -8424,7 +8356,7 @@
       "name": "activity_segments_unknown_source_check",
       "table": "activity_segments",
       "validated": true,
-      "definition": "CHECK (role <> 'unknown'::text OR num_nonnulls(raw_type_string, raw_type_integer, raw_sport_string, raw_sport_integer) > 0)"
+      "definition": "CHECK (role <> 'unknown'::text OR num_nonnulls(raw_type_string, raw_type_integer, raw_sport_string, raw_sport_integer, raw_sub_sport_string, raw_sub_sport_integer) > 0)"
     },
     {
       "kind": "f",
@@ -8523,6 +8455,13 @@
       "table": "api_rate_limit_windows",
       "validated": true,
       "definition": "PRIMARY KEY (key_hash, window_started_at)"
+    },
+    {
+      "kind": "c",
+      "name": "canonical_activity_categories_code_check",
+      "table": "canonical_activity_categories",
+      "validated": true,
+      "definition": "CHECK (code = ANY (ARRAY['run'::text, 'bike'::text, 'swim'::text, 'strength'::text, 'other'::text]))"
     },
     {
       "kind": "p",
@@ -9258,27 +9197,6 @@
       "table": "messages",
       "validated": true,
       "definition": "FOREIGN KEY (sender_id) REFERENCES profiles(id) ON DELETE CASCADE"
-    },
-    {
-      "kind": "p",
-      "name": "multisport_cutover_audits_pkey",
-      "table": "multisport_cutover_audits",
-      "validated": true,
-      "definition": "PRIMARY KEY (run_id)"
-    },
-    {
-      "kind": "p",
-      "name": "multisport_cutover_template_audits_pkey",
-      "table": "multisport_cutover_template_audits",
-      "validated": true,
-      "definition": "PRIMARY KEY (run_id, activity_plan_id)"
-    },
-    {
-      "kind": "f",
-      "name": "multisport_cutover_template_audits_run_id_fkey",
-      "table": "multisport_cutover_template_audits",
-      "validated": true,
-      "definition": "FOREIGN KEY (run_id) REFERENCES multisport_cutover_audits(run_id) ON DELETE RESTRICT"
     },
     {
       "kind": "f",
@@ -10132,22 +10050,6 @@
       "rls": true,
       "kind": "r",
       "name": "messages",
-      "managed": true,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
-      "rls": true,
-      "kind": "r",
-      "name": "multisport_cutover_audits",
-      "managed": true,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
-      "rls": true,
-      "kind": "r",
-      "name": "multisport_cutover_template_audits",
       "managed": true,
       "forceRls": false
     },

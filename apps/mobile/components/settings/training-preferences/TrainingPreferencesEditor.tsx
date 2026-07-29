@@ -20,7 +20,7 @@ import {
   getAvailabilityWindowValidation,
   type WeekdayKey,
 } from "@/components/settings/training-preferences/sections/AvailabilitySection";
-import type { SportOverrideKey } from "@/components/settings/training-preferences/sections/ScheduleSection";
+import type { ActivityCategoryOverrideKey } from "@/components/settings/training-preferences/sections/ScheduleSection";
 import { TrainingPreferencesBottomSheet } from "@/components/settings/training-preferences/TrainingPreferencesBottomSheet";
 import { TrainingPreferencesSurface } from "@/components/settings/training-preferences/TrainingPreferencesSurface";
 import type { PreferencesTabKey } from "@/components/settings/training-preferences/TrainingPreferencesTabs";
@@ -57,7 +57,7 @@ function normalizeAvailability(
   };
 }
 
-const defaultSportDoseOverride = {
+const defaultActivityCategoryDoseOverride = {
   min_sessions_per_week: 0,
   max_sessions_per_week: 3,
   max_single_session_duration_minutes: 120,
@@ -338,16 +338,16 @@ export function TrainingPreferencesEditor({
     },
     [form],
   );
-  const toggleSportDoseOverride = useCallback(
-    (sport: SportOverrideKey) => {
-      const currentOverrides = form.getValues("dose_limits.sport_overrides") ?? {};
+  const toggleActivityCategoryDoseOverride = useCallback(
+    (activity_category: ActivityCategoryOverrideKey) => {
+      const currentOverrides = form.getValues("dose_limits.activity_category_overrides") ?? {};
       const nextOverrides = { ...currentOverrides };
-      if (nextOverrides[sport]) {
-        delete nextOverrides[sport];
+      if (nextOverrides[activity_category]) {
+        delete nextOverrides[activity_category];
       } else {
-        nextOverrides[sport] = defaultSportDoseOverride;
+        nextOverrides[activity_category] = defaultActivityCategoryDoseOverride;
       }
-      form.setValue("dose_limits.sport_overrides", nextOverrides, {
+      form.setValue("dose_limits.activity_category_overrides", nextOverrides, {
         shouldDirty: true,
         shouldTouch: true,
         shouldValidate: true,
@@ -400,7 +400,7 @@ export function TrainingPreferencesEditor({
           }
           onToggleAvailabilityDay={toggleAvailabilityDay}
           onToggleHardRestDay={toggleHardRestDay}
-          onToggleSportDoseOverride={toggleSportDoseOverride}
+          onToggleActivityCategoryDoseOverride={toggleActivityCategoryDoseOverride}
           scheduleValidation={scheduleValidation}
           showAdvancedBaselineControls={showAdvancedBaselineControls}
           visibleTabs={visibleTabs}

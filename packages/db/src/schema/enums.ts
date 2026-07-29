@@ -43,6 +43,7 @@ export const integrationResourceKindEnum = pgEnum("integration_resource_kind", [
   "event",
   "activity_plan",
   "activity_route",
+  "group_event_route_delivery",
   "activity",
 ]);
 

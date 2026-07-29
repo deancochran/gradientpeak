@@ -25,7 +25,7 @@ import {
 } from "./index.native";
 
 const profileSchema = z.object({
-  activity_type: z.string(),
+  activity_category: z.string(),
   bio: z.string().nullable(),
   dob: z.string().nullable(),
   duration: z.string(),
@@ -64,7 +64,7 @@ function FormFieldsHarness() {
   const methods = useZodForm({
     schema: profileSchema,
     defaultValues: {
-      activity_type: "run",
+      activity_category: "run",
       bio: null,
       dob: null,
       duration: "0:20:00",
@@ -117,13 +117,13 @@ function FormFieldsHarness() {
       />
       <FormSegmentedSelectField
         control={methods.control}
-        label="Activity Type"
-        name="activity_type"
+        label="Activity Category"
+        name="activity_category"
         options={[
           { label: "Run", value: "run" },
           { label: "Ride", value: "bike" },
         ]}
-        testId="activity-type-field"
+        testId="activity-category-field"
       />
       <FormTimeInputField
         control={methods.control}
@@ -162,7 +162,7 @@ function DetachedFormLabelHarness() {
   const methods = useZodForm({
     schema: profileSchema,
     defaultValues: {
-      activity_type: "run",
+      activity_category: "run",
       bio: null,
       dob: null,
       duration: "0:20:00",
@@ -281,7 +281,7 @@ describe("Form fields native", () => {
     const recordedTimePicker = getPickerByMode(getAllByTypeName("DateTimePicker"), "time");
     fireEvent(recordedTimePicker, "change", {}, new Date(2026, 2, 24, 4, 15));
     fireEvent.press(getLastNode(getAllByText("Done"), "Done button"));
-    fireEvent.press(getByTestId("activity-type-field-bike"));
+    fireEvent.press(getByTestId("activity-category-field-bike"));
     fireEvent(getByLabelText("FTP"), "changeText", "300");
     fireEvent(getByLabelText("FTP"), "blur");
     fireEvent(getByLabelText("Pace"), "changeText", "04:05");
@@ -297,7 +297,7 @@ describe("Form fields native", () => {
     expect(getByText(/"duration":"0:45:00"/)).toBeTruthy();
     expect(getByText(/"max_sessions":4/)).toBeTruthy();
     expect(getByText(/"recorded_at":"2026-03-24T04:15"/)).toBeTruthy();
-    expect(getByText(/"activity_type":"bike"/)).toBeTruthy();
+    expect(getByText(/"activity_category":"bike"/)).toBeTruthy();
     expect(getByText(/"ftp":300/)).toBeTruthy();
     expect(getByText(/"pace":"4:05"/)).toBeTruthy();
     expect(getByText(/"recovery_priority":0.75/)).toBeTruthy();

@@ -31,7 +31,7 @@ const canonicalProfile = athletePreferenceProfileSchema.parse({
     max_sessions_per_week: 5,
     max_single_session_duration_minutes: 120,
     max_weekly_duration_minutes: 420,
-    sport_overrides: {
+    activity_category_overrides: {
       run: {
         max_weekly_duration_minutes: 480,
       },
@@ -61,8 +61,15 @@ const canonicalProfile = athletePreferenceProfileSchema.parse({
   },
 });
 
+describe("Wahoo event-route delivery preference", () => {
+  it("defaults missing persisted preferences to disabled", () => {
+    expect(canonicalProfile.wahooEventRouteDeliveryEnabled).toBe(false);
+    expect(defaultAthletePreferenceProfile.wahooEventRouteDeliveryEnabled).toBe(false);
+  });
+});
+
 const capabilitySnapshot = athleteCapabilitySnapshotSchema.parse({
-  sport_slices: {
+  activity_category_slices: {
     run: {
       aerobic_base: 0.6,
       threshold_capacity: 0.55,
@@ -120,6 +127,7 @@ describe("athletePreferenceProfileSchema", () => {
     expect(parsed.training_style.strength_integration_priority).toBe(0.45);
     expect(parsed.recovery_preferences.systemic_fatigue_tolerance).toBe(0.65);
     expect(Object.keys(parsed)).toEqual([
+      "wahooEventRouteDeliveryEnabled",
       "availability",
       "dose_limits",
       "training_style",
@@ -127,7 +135,7 @@ describe("athletePreferenceProfileSchema", () => {
       "adaptation_preferences",
       "goal_strategy_preferences",
     ]);
-    expect(defaultAthletePreferenceProfile.dose_limits.sport_overrides).toEqual({});
+    expect(defaultAthletePreferenceProfile.dose_limits.activity_category_overrides).toEqual({});
   });
 
   it("roundtrips optional onboarding personalization intents", () => {
@@ -168,7 +176,7 @@ describe("athletePreferenceProfileSchema", () => {
         target_surplus_preference: 0.5,
       },
       dose_limits: {
-        sport_overrides: {
+        activity_category_overrides: {
           bike: {
             max_sessions_per_week: 6,
           },
@@ -193,7 +201,7 @@ describe("athletePreferenceProfileSchema", () => {
       fallback_depth: 2,
       fallback_mode: "conservative_priors",
       confidence: 0.42,
-      rationale_codes: ["weak_same_sport_evidence"],
+      rationale_codes: ["weak_same_activity_category_evidence"],
     });
 
     expect(overrideResult.success).toBe(true);
@@ -201,7 +209,7 @@ describe("athletePreferenceProfileSchema", () => {
     expect(diagnosticsResult.success).toBe(true);
     expect(invalidOverrideResult.success).toBe(false);
     if (overrideResult.success) {
-      expect(overrideResult.data.dose_limits?.sport_overrides?.bike).toEqual({
+      expect(overrideResult.data.dose_limits?.activity_category_overrides?.bike).toEqual({
         max_sessions_per_week: 6,
       });
     }
@@ -306,10 +314,10 @@ describe("resolveEffectivePreferences", () => {
     expect(resolved.availability.hard_rest_days).toEqual(["saturday"]);
   });
 
-  it("merges per-sport dose overrides additively", () => {
+  it("merges per-activity_category dose overrides additively", () => {
     const resolved = resolveEffectivePreferences(canonicalProfile, {
       dose_limits: {
-        sport_overrides: {
+        activity_category_overrides: {
           bike: {
             max_sessions_per_week: 6,
           },
@@ -317,7 +325,7 @@ describe("resolveEffectivePreferences", () => {
       },
     });
 
-    expect(resolved.dose_limits.sport_overrides).toEqual({
+    expect(resolved.dose_limits.activity_category_overrides).toEqual({
       run: {
         max_weekly_duration_minutes: 480,
       },

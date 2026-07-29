@@ -3,6 +3,7 @@ import { Pressable, Text, TextInput, View } from "react-native";
 import { publishTrainingPlanGoalCreation } from "@/lib/training-plan-creation/goalCreationHandoff";
 import { act, fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 import { TrainingPlanBuilderScreen } from "../TrainingPlanBuilderScreen";
+import { getBuilderSheetPresentation } from "../TrainingPlanBuilderSheets";
 
 const activityPlanCardProps: Array<{
   activity?: { name?: string };
@@ -300,7 +301,7 @@ jest.mock("../BuilderSessionEditorSheetContent", () => ({
   }) => (
     <View testID="builder-session-editor-modal">
       <Pressable
-        testID="builder-session-assign-workout"
+        testID="builder-session-assign-activity"
         onPress={() => onOpenActivityPicker(session.localId)}
       >
         <Text>Assign</Text>
@@ -316,6 +317,11 @@ jest.mock("../BuilderSchedulePreviewSheetContent", () => ({
 
 jest.mock("@/components/shared/AppBottomSheet", () => ({
   __esModule: true,
+  APP_BOTTOM_SHEET_PRESENTATIONS: {
+    filter: { initialSnapIndex: 0, snapPoints: ["78%"] },
+    inspector: { initialSnapIndex: 0, snapPoints: ["82%", "96%"] },
+    browser: { initialSnapIndex: 1, snapPoints: ["88%", "96%"] },
+  },
   AppBottomSheet: ({
     children,
     headerAction,
@@ -345,7 +351,7 @@ jest.mock("../BuilderStrategyComposer", () => ({
   __esModule: true,
   BuilderStrategyComposer: ({
     canUseStructureProposal,
-    onAddWorkout,
+    onAddActivity,
     onApplyStructureProposal,
     onEditMetadata,
     onOpenAthleteContext,
@@ -357,7 +363,7 @@ jest.mock("../BuilderStrategyComposer", () => ({
     state,
   }: {
     canUseStructureProposal: boolean;
-    onAddWorkout: () => void;
+    onAddActivity: () => void;
     onApplyStructureProposal: () => void;
     onEditMetadata?: () => void;
     onOpenAthleteContext?: () => void;
@@ -389,8 +395,8 @@ jest.mock("../BuilderStrategyComposer", () => ({
           <View key={row.key} accessibilityLabel={`${row.label}: ${row.value}`} />
         ))}
       </View>
-      <Pressable onPress={onAddWorkout}>
-        <Text>Add workout</Text>
+      <Pressable onPress={onAddActivity}>
+        <Text>Add activity</Text>
       </Pressable>
       {canUseStructureProposal ? (
         <Pressable onPress={onApplyStructureProposal}>
@@ -411,7 +417,7 @@ jest.mock("../BuilderScheduleEditor", () => ({
   }) => (
     <View testID="builder-sessions-workspace">
       <Pressable onPress={() => onAddSessionAtOffset(0)} testID="builder-sessions-workspace-add">
-        <Text>Workout</Text>
+        <Text>Activity</Text>
       </Pressable>
     </View>
   ),
@@ -567,6 +573,21 @@ describe("TrainingPlanBuilderScreen", () => {
 
   afterEach(() => {
     jest.useRealTimers();
+  });
+
+  it("maps builder sheets to shared presentation presets", () => {
+    expect(getBuilderSheetPresentation("activityFilters")).toEqual({
+      initialSnapIndex: 0,
+      snapPoints: ["78%"],
+    });
+    expect(getBuilderSheetPresentation("activityAssignment")).toEqual({
+      initialSnapIndex: 1,
+      snapPoints: ["88%", "96%"],
+    });
+    expect(getBuilderSheetPresentation("preferences")).toEqual({
+      initialSnapIndex: 0,
+      snapPoints: ["82%", "96%"],
+    });
   });
 
   it("opens plan metadata editing from the main composer", () => {

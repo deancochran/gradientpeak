@@ -36,7 +36,7 @@ const profileSchema = z.object({
   bio: z.string().nullable(),
   dob: z.string().nullable(),
   recorded_at: z.string(),
-  activity_type: z.string(),
+  activity_category: z.string(),
   duration: z.string(),
   ftp: z.number().optional(),
   max_sessions: z.number(),
@@ -56,7 +56,7 @@ function FormFieldsHarness() {
       bio: null,
       dob: null,
       recorded_at: "2026-03-23T06:30",
-      activity_type: "run",
+      activity_category: "run",
       duration: "0:20:00",
       ftp: 250,
       max_sessions: 3,
@@ -86,8 +86,8 @@ function FormFieldsHarness() {
         <FormDateTimeField control={methods.control} label="Recorded At" name="recorded_at" />
         <FormSegmentedSelectField
           control={methods.control}
-          label="Activity Type"
-          name="activity_type"
+          label="Activity Category"
+          name="activity_category"
           options={[
             { label: "Run", value: "run" },
             { label: "Ride", value: "bike" },
@@ -136,7 +136,7 @@ function DetachedFormLabelHarness() {
       bio: null,
       dob: null,
       recorded_at: "2026-03-23T06:30",
-      activity_type: "run",
+      activity_category: "run",
       duration: "0:20:00",
       ftp: 250,
       max_sessions: 3,
@@ -299,7 +299,7 @@ describe("Form fields web", () => {
     expect(screen.getByTestId("values").textContent).toContain('"dob":"1990-05-01"');
     expect(screen.getByTestId("values").textContent).toContain('"wake_time":"06:45"');
     expect(screen.getByTestId("values").textContent).toContain('"recorded_at":"2026-03-23T07:30"');
-    expect(screen.getByTestId("values").textContent).toContain('"activity_type":"bike"');
+    expect(screen.getByTestId("values").textContent).toContain('"activity_category":"bike"');
     expect(screen.getByTestId("values").textContent).toContain('"duration":"0:45:00"');
     expect(screen.getByTestId("values").textContent).toContain('"max_sessions":4');
     expect(screen.getByTestId("values").textContent).toContain('"is_public":true');

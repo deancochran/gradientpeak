@@ -1,18 +1,23 @@
+import { activityPlanStructureSchemaV3, SYSTEM_TEMPLATES } from "@repo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { deleteEventUseCase } from "../../application/events/deleteEventUseCase";
+import {
+  EventCurrentPlanUpdateConflict,
+  EventPlanReplacementCompletionConflict,
+} from "../../infrastructure/repositories/drizzle-event-write-repository";
 
-const { drainDueWahooPlannedWorkoutJobs, enqueuePlannedWorkoutSyncAfterCalendarMutation } =
+const { drainDueWahooPlannedActivityJobs, enqueuePlannedActivitySyncAfterCalendarMutation } =
   vi.hoisted(() => ({
-    drainDueWahooPlannedWorkoutJobs: vi.fn(),
-    enqueuePlannedWorkoutSyncAfterCalendarMutation: vi.fn(),
+    drainDueWahooPlannedActivityJobs: vi.fn(),
+    enqueuePlannedActivitySyncAfterCalendarMutation: vi.fn(),
   }));
 
-vi.mock("../../lib/provider-sync/planned-workouts/calendar-mutation-sync", () => ({
-  enqueuePlannedWorkoutSyncAfterCalendarMutation,
+vi.mock("../../lib/provider-sync/planned-activities/calendar-mutation-sync", () => ({
+  enqueuePlannedActivitySyncAfterCalendarMutation,
 }));
 
-vi.mock("../../lib/provider-sync/wahoo-planned-workout-drain", () => ({
-  drainDueWahooPlannedWorkoutJobs,
+vi.mock("../../lib/provider-sync/wahoo-planned-activity-drain", () => ({
+  drainDueWahooPlannedActivityJobs,
 }));
 
 vi.mock("../../utils/estimation-helpers", () => ({
@@ -141,6 +146,33 @@ function createEventRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function createActivityPlanStructure(activity_categories: Array<"bike" | "run">) {
+  return {
+    version: 3,
+    segments: activity_categories.map((activity_category, index) => ({
+      id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      role: "activity" as const,
+      activity_category,
+      name: `${activity_category} segment`,
+      intervals: [
+        {
+          id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+          name: "Main",
+          repetitions: 1,
+          steps: [
+            {
+              id: `20000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+              name: "Step",
+              duration: { type: "time" as const, seconds: 600 },
+              targets: [{ type: "RPE" as const, intensity: 5 }],
+            },
+          ],
+        },
+      ],
+    })),
+  };
+}
+
 function createMockDb(queryMap: QueryMap): MockDb {
   const callLog: QueryCall[] = [];
   const counters = new Map<string, number>();
@@ -245,6 +277,12 @@ function createReadRepository(params: {
     async listPlannedEventDatesInRange() {
       return params.nextResult("events").data ?? [];
     },
+    async listOwnedPlannedEventsForDay(input: { date: string; limit: number; profileId: string }) {
+      params.logFilter("events", "eq", "scheduled_date", input.date);
+      params.logFilter("events", "eq", "profile_id", input.profileId);
+      params.logFilter("events", "limit", "limit", input.limit);
+      return params.nextResult("events").data ?? [];
+    },
   };
 }
 
@@ -305,7 +343,12 @@ function createWriteRepository(params: {
       return createdEvents;
     },
     async getAccessibleActivityPlan() {
-      return params.nextResult("activity_plans").data ?? null;
+      const plan = params.nextResult("activity_plans").data as { structure?: unknown } | null;
+      return plan ? { ...plan, structure: plan.structure ?? SYSTEM_TEMPLATES[0]?.structure } : null;
+    },
+    async getActivityPlanById() {
+      const plan = params.nextResult("activity_plans").data as { structure?: unknown } | null;
+      return plan ? { ...plan, structure: plan.structure ?? SYSTEM_TEMPLATES[0]?.structure } : null;
     },
     async getAccessibleActivityRoute() {
       return params.nextResult("activity_routes").data ?? null;
@@ -316,12 +359,46 @@ function createWriteRepository(params: {
     async listOwnedEventsForSeries() {
       return params.nextResult("event_series").data ?? [];
     },
-    async updateOwnedEventsForScope(input: { eventUpdates: Record<string, unknown> }) {
+    async updateOwnedEventsForScope(input: {
+      eventUpdates: Record<string, unknown>;
+      rejectPlanReplacementWithCompletion?: boolean;
+      scope: "single" | "future" | "series";
+    }) {
+      const scopedEvents = params.nextResult("scoped_events").data as Array<
+        Record<string, unknown>
+      >;
+      if (
+        input.rejectPlanReplacementWithCompletion &&
+        scopedEvents.some(
+          (event) =>
+            event.activity_plan_id !== input.eventUpdates.activity_plan_id &&
+            (event.linked_activity_id !== null || event.status === "completed"),
+        )
+      ) {
+        throw new EventPlanReplacementCompletionConflict();
+      }
+      if (
+        scopedEvents.some(
+          (event) =>
+            event.activity_plan_id !== null &&
+            (("activity_plan_structure" in event &&
+              !activityPlanStructureSchemaV3.safeParse(event.activity_plan_structure).success) ||
+              event.activity_plan_unavailable === true),
+        )
+      ) {
+        throw new EventCurrentPlanUpdateConflict();
+      }
       params.callLog.push({
         table: "events",
         operation: "update",
         payload: input.eventUpdates,
       });
+      if (scopedEvents.length > 0) {
+        for (const event of scopedEvents) {
+          Object.assign(event, input.eventUpdates);
+        }
+        return scopedEvents;
+      }
       return params.nextResult("events").data ?? [];
     },
   };
@@ -403,7 +480,7 @@ describe("eventsRouter generalization", () => {
     expect(callLog.find((call) => call.operation === "update")?.payload).toMatchObject({
       notes: "steady",
     });
-    expect(enqueuePlannedWorkoutSyncAfterCalendarMutation).not.toHaveBeenCalled();
+    expect(enqueuePlannedActivitySyncAfterCalendarMutation).not.toHaveBeenCalled();
   });
 
   it("unsyncs when a combined planned event detaches its plan but retains its route", async () => {
@@ -420,12 +497,12 @@ describe("eventsRouter generalization", () => {
     expect(callLog.find((call) => call.operation === "update")?.payload).toMatchObject({
       activity_plan_id: null,
     });
-    expect(enqueuePlannedWorkoutSyncAfterCalendarMutation).toHaveBeenCalledWith(
+    expect(enqueuePlannedActivitySyncAfterCalendarMutation).toHaveBeenCalledWith(
       expect.objectContaining({ eventIds: [existing.id], operation: "unsync" }),
     );
   });
 
-  it("publishes when a route-only planned event receives a plan", async () => {
+  it("does not publish when a route-only planned event receives a plan", async () => {
     const existing = createEventRow({ route_id: "route-1" });
     const planId = "11111111-1111-4111-8111-111111111111";
     const updated = createEventRow({ activity_plan_id: planId, route_id: "route-1" });
@@ -438,8 +515,24 @@ describe("eventsRouter generalization", () => {
     });
 
     await caller.update({ id: existing.id, patch: { activity_plan_id: planId } });
-    expect(enqueuePlannedWorkoutSyncAfterCalendarMutation).toHaveBeenCalledWith(
-      expect.objectContaining({ eventIds: [existing.id], operation: "publish" }),
+    expect(enqueuePlannedActivitySyncAfterCalendarMutation).not.toHaveBeenCalled();
+  });
+
+  it("unsyncs an existing plan-only delivery when a route is attached", async () => {
+    const routeId = "22222222-2222-4222-8222-222222222222";
+    const existing = createEventRow({ activity_plan_id: "plan-1", route_id: null });
+    const updated = createEventRow({ activity_plan_id: "plan-1", route_id: routeId });
+    const { caller } = createCaller({
+      events: [
+        { data: existing, error: null },
+        { data: [updated], error: null },
+      ],
+      activity_routes: { data: { id: routeId }, error: null },
+    });
+
+    await caller.update({ id: existing.id, patch: { route_id: routeId } });
+    expect(enqueuePlannedActivitySyncAfterCalendarMutation).toHaveBeenCalledWith(
+      expect.objectContaining({ eventIds: [existing.id], operation: "unsync" }),
     );
   });
 
@@ -501,7 +594,6 @@ describe("eventsRouter generalization", () => {
     expect(enqueueProviderPlannedActivityJobs).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        drainDueJobs: false,
         eventIds: ["planned-1"],
         operation: "unsync",
         transaction: { id: "tx-1" },
@@ -706,7 +798,7 @@ describe("eventsRouter generalization", () => {
             id: "11111111-1111-4111-8111-111111111111",
             name: "Tempo Builder",
             activity_category: "run",
-            structure: { intervals: [{ repetitions: 1, steps: [{}, {}] }] },
+            structure: createActivityPlanStructure(["run"]),
             route_id: "route-1",
             profile_id: "profile-1",
             updated_at: "2026-03-01T00:00:00.000Z",
@@ -731,6 +823,7 @@ describe("eventsRouter generalization", () => {
       },
       updated_at: "2026-03-01T00:00:00.000Z",
       owner: expect.objectContaining({ username: "user-prof" }),
+      activity_category: "run",
     });
   });
 
@@ -747,7 +840,7 @@ describe("eventsRouter generalization", () => {
               name: "Threshold Ride",
               activity_category: "bike",
               route_id: "route-2",
-              structure: { intervals: [{ repetitions: 1, steps: [{}, {}, {}] }] },
+              structure: createActivityPlanStructure(["bike", "bike"]),
               profile_id: "profile-2",
               updated_at: "2026-03-02T00:00:00.000Z",
             },
@@ -776,6 +869,7 @@ describe("eventsRouter generalization", () => {
       },
       updated_at: "2026-03-02T00:00:00.000Z",
       owner: expect.objectContaining({ username: "user-prof" }),
+      activity_category: "bike",
     });
   });
 
@@ -817,6 +911,54 @@ describe("eventsRouter generalization", () => {
         column: "starts_at",
         value: "2026-03-13T04:00:00.000Z",
       },
+    });
+  });
+
+  it("getToday omits mixed nested plans", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-12T15:00:00.000Z"));
+    const { caller } = createCaller({
+      events: {
+        data: [
+          createEventRow({
+            activity_plan_id: "11111111-1111-4111-8111-111111111111",
+            activity_plan: {
+              id: "11111111-1111-4111-8111-111111111111",
+              profile_id: "profile-1",
+              structure: createActivityPlanStructure(["bike", "run"]),
+            },
+          }),
+        ],
+        error: null,
+      },
+    });
+
+    await expect(caller.getToday()).resolves.toMatchObject([
+      {
+        activity_plan: null,
+      },
+    ]);
+  });
+
+  it("returns the safe stored-plan error for invalid direct event relations", async () => {
+    const { caller } = createCaller({
+      events: {
+        data: createEventRow({
+          activity_plan_id: "11111111-1111-4111-8111-111111111111",
+          activity_plan: {
+            id: "11111111-1111-4111-8111-111111111111",
+            structure: { version: 3, segments: [] },
+          },
+        }),
+        error: null,
+      },
+    });
+
+    await expect(
+      caller.getById({ id: "00000000-0000-4000-8000-000000000001" }),
+    ).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Stored activity plan is not valid V3",
     });
   });
 
@@ -953,7 +1095,7 @@ describe("eventsRouter generalization", () => {
 
     await caller.create({
       event_type: "planned",
-      title: "Route workout",
+      title: "Route activity",
       scheduled_date: "2026-03-12",
       activity_plan_id: activityPlanId,
       route_id: routeId,
@@ -976,7 +1118,7 @@ describe("eventsRouter generalization", () => {
     await expect(
       caller.create({
         event_type: "planned",
-        title: "Private route workout",
+        title: "Private route activity",
         scheduled_date: "2026-03-12",
         activity_plan_id: activityPlanId,
         route_id: "22222222-2222-4222-8222-222222222222",
@@ -1109,7 +1251,7 @@ describe("eventsRouter generalization", () => {
     await expect(
       caller.create({
         event_type: "planned",
-        title: "Recurring workout",
+        title: "Recurring activity",
         activity_plan_id: "11111111-1111-4111-8111-111111111111",
         scheduled_date: "2026-03-12",
         all_day: true,
@@ -1307,6 +1449,118 @@ describe("eventsRouter generalization", () => {
       "00000000-0000-4000-8000-000000000020",
       "00000000-0000-4000-8000-000000000021",
     ]);
+  });
+
+  it.each([
+    ["date", { scheduled_date: "2026-05-03" }],
+    ["title", { patch: { title: "Moved legacy session" } }],
+    ["route", { patch: { route_id: "22222222-2222-4222-8222-222222222222" } }],
+    ["detach", { patch: { activity_plan_id: null } }],
+    ["replacement", { patch: { activity_plan_id: "33333333-3333-4333-8333-333333333333" } }],
+  ])("rejects a mixed current plan for this-scope %s updates before writes or provider work", async (kind, input) => {
+    const event = createEventRow({
+      activity_plan_id: "11111111-1111-4111-8111-111111111111",
+      activity_plan_structure: createActivityPlanStructure(["bike", "run"]),
+      route_id: "route-1",
+    });
+    const { caller, callLog } = createCaller({
+      activity_plans: { data: { id: "33333333-3333-4333-8333-333333333333" }, error: null },
+      activity_routes: { data: { id: "22222222-2222-4222-8222-222222222222" }, error: null },
+      events: { data: event, error: null },
+      scoped_events: { data: [event], error: null },
+    });
+
+    await expect(caller.update({ id: event.id, ...input } as any)).rejects.toMatchObject({
+      code: kind === "date" ? "BAD_REQUEST" : "CONFLICT",
+    });
+
+    expect(callLog.some((call) => call.operation === "update")).toBe(false);
+    expect(enqueuePlannedActivitySyncAfterCalendarMutation).not.toHaveBeenCalled();
+  });
+
+  it("rejects strict-invalid and unavailable current plans safely", async () => {
+    for (const currentPlan of [
+      { activity_plan_structure: { version: 3, segments: [{ role: "activity" }] } },
+      { activity_plan_unavailable: true },
+    ]) {
+      const event = createEventRow({
+        activity_plan_id: "11111111-1111-4111-8111-111111111111",
+        ...currentPlan,
+      });
+      const { caller, callLog } = createCaller({
+        events: { data: event, error: null },
+        scoped_events: { data: [event], error: null },
+      });
+
+      await expect(
+        caller.update({ id: event.id, patch: { title: "Do not update" } }),
+      ).rejects.toMatchObject({ code: "CONFLICT" });
+      expect(callLog.some((call) => call.operation === "update")).toBe(false);
+    }
+    expect(enqueuePlannedActivitySyncAfterCalendarMutation).not.toHaveBeenCalled();
+  });
+
+  it("allows unlinked and repeated-same single-activity-category plan updates", async () => {
+    const singleActivityCategoryStructure = createActivityPlanStructure(["run"]);
+    const unlinked = createEventRow({ event_type: "custom" });
+    const linked = createEventRow({
+      activity_plan_id: "11111111-1111-4111-8111-111111111111",
+      activity_plan_structure: singleActivityCategoryStructure,
+      route_id: "route-1",
+    });
+    const unlinkedCaller = createCaller({
+      events: { data: unlinked, error: null },
+      scoped_events: { data: [unlinked], error: null },
+    });
+    const linkedCaller = createCaller({
+      activity_plans: { data: { id: linked.activity_plan_id }, error: null },
+      events: { data: linked, error: null },
+      scoped_events: { data: [linked], error: null },
+    });
+
+    await expect(
+      unlinkedCaller.caller.update({ id: unlinked.id, patch: { title: "Updated custom event" } }),
+    ).resolves.toMatchObject({ id: unlinked.id });
+    await expect(
+      linkedCaller.caller.update({
+        id: linked.id,
+        patch: { activity_plan_id: linked.activity_plan_id },
+      }),
+    ).resolves.toMatchObject({ id: linked.id });
+
+    expect(unlinkedCaller.callLog.some((call) => call.operation === "update")).toBe(true);
+    expect(linkedCaller.callLog.some((call) => call.operation === "update")).toBe(true);
+  });
+
+  it.each([
+    "future",
+    "series",
+  ] as const)("rejects %s scope atomically when a non-anchor target has a legacy plan", async (scope) => {
+    const anchor = createEventRow({
+      activity_plan_id: "11111111-1111-4111-8111-111111111111",
+      activity_plan_structure: createActivityPlanStructure(["run"]),
+      id: "00000000-0000-4000-8000-000000000070",
+      series_id: "00000000-0000-4000-8000-000000000071",
+    });
+    const legacyTarget = createEventRow({
+      activity_plan_id: "22222222-2222-4222-8222-222222222222",
+      activity_plan_structure: createActivityPlanStructure(["bike", "run"]),
+      id: "00000000-0000-4000-8000-000000000072",
+      series_id: anchor.series_id,
+    });
+    const { caller, callLog } = createCaller({
+      events: { data: anchor, error: null },
+      scoped_events: { data: [anchor, legacyTarget], error: null },
+    });
+
+    await expect(
+      caller.update({ id: anchor.id, scope, patch: { title: "No partial update" } }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+
+    expect(callLog.some((call) => call.operation === "update")).toBe(false);
+    expect(anchor.title).toBe("Planned Activity");
+    expect(legacyTarget.title).toBe("Planned Activity");
+    expect(enqueuePlannedActivitySyncAfterCalendarMutation).not.toHaveBeenCalled();
   });
 
   it("update persists an accessible event-owned route", async () => {
@@ -1531,23 +1785,73 @@ describe("eventsRouter generalization", () => {
       },
     });
 
-    const result = await caller.update({
-      id: eventId,
-      scheduled_date: "2026-05-03",
+    await expect(
+      caller.update({ id: eventId, scheduled_date: "2026-05-03" } as never),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(callLog.some((call) => call.table === "events" && call.operation === "update")).toBe(
+      false,
+    );
+  });
+
+  it("requires explicit completion unlink before replacing a linked activity plan", async () => {
+    const event = createEventRow({
+      activity_plan_id: "22222222-2222-4222-8222-222222222222",
+      linked_activity_id: "33333333-3333-4333-8333-333333333333",
+      status: "completed",
+    });
+    const { caller, callLog } = createCaller({
+      events: { data: event, error: null },
+      activity_plans: {
+        data: { id: "44444444-4444-4444-8444-444444444444" },
+        error: null,
+      },
     });
 
-    const updateCall = callLog.find(
-      (call) => call.table === "events" && call.operation === "update",
-    );
+    await expect(
+      caller.update({
+        id: event.id,
+        patch: { activity_plan_id: "44444444-4444-4444-8444-444444444444" },
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(callLog.some((call) => call.operation === "update")).toBe(false);
+  });
 
-    expect((updateCall?.payload as any).starts_at).toBe("2026-05-03T00:00:00.000Z");
-    expect((updateCall?.payload as any).ends_at).toBe("2026-05-04T00:00:00.000Z");
-    expect((updateCall?.payload as any).linked_activity_id).toBeNull();
-    expect((updateCall?.payload as any).status).toBe("scheduled");
-    expect((updateCall?.payload as any).activity_plan_id).toBeUndefined();
-    expect(result.linked_activity_id).toBeNull();
-    expect(result.status).toBe("scheduled");
-    expect(result.activity_plan_id).toBe("22222222-2222-4222-8222-222222222222");
+  it("rejects a future plan replacement before mutating a completed non-anchor occurrence", async () => {
+    const existingPlanId = "22222222-2222-4222-8222-222222222222";
+    const replacementPlanId = "44444444-4444-4444-8444-444444444444";
+    const anchor = createEventRow({
+      activity_plan_id: existingPlanId,
+      id: "00000000-0000-4000-8000-000000000024",
+      series_id: "00000000-0000-4000-8000-000000000025",
+      starts_at: "2026-05-01T00:00:00.000Z",
+    });
+    const completedTarget = createEventRow({
+      activity_plan_id: existingPlanId,
+      id: "00000000-0000-4000-8000-000000000026",
+      linked_activity_id: "33333333-3333-4333-8333-333333333333",
+      series_id: anchor.series_id,
+      starts_at: "2026-05-08T00:00:00.000Z",
+      status: "completed",
+    });
+    const { caller, callLog } = createCaller({
+      activity_plans: { data: { id: replacementPlanId }, error: null },
+      events: { data: anchor, error: null },
+      scoped_events: { data: [anchor, completedTarget], error: null },
+    });
+
+    await expect(
+      caller.update({
+        id: anchor.id,
+        scope: "future",
+        patch: { activity_plan_id: replacementPlanId },
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+
+    expect(callLog.some((call) => call.operation === "update")).toBe(false);
+    expect(completedTarget.activity_plan_id).toBe(existingPlanId);
+    expect(completedTarget.linked_activity_id).not.toBeNull();
+    expect(completedTarget.status).toBe("completed");
   });
 
   it("non-move updates keep completion linkage and status unchanged", async () => {
@@ -1705,7 +2009,7 @@ describe("eventsRouter generalization", () => {
     expect(result.affected_count).toBe(2);
   });
 
-  it("queues unsync only for planned candidates with an activity plan before deleting", async () => {
+  it("removes legacy planned events and queues their unsync before deleting", async () => {
     const eventId = "00000000-0000-4000-8000-000000000061";
     const plannedId = "00000000-0000-4000-8000-000000000062";
     const { caller, callLog } = createCaller({
@@ -1713,7 +2017,12 @@ describe("eventsRouter generalization", () => {
         { data: createEventRow({ id: eventId, event_type: "planned" }), error: null },
         {
           data: [
-            createEventRow({ id: plannedId, event_type: "planned", activity_plan_id: "plan-1" }),
+            createEventRow({
+              id: plannedId,
+              event_type: "planned",
+              activity_plan_id: "plan-1",
+              activity_plan_structure: createActivityPlanStructure(["bike", "run"]),
+            }),
             createEventRow({ id: "custom-1", event_type: "custom", activity_plan_id: "plan-2" }),
             createEventRow({ id: "unplanned-1", event_type: "planned", activity_plan_id: null }),
           ],
@@ -1724,9 +2033,8 @@ describe("eventsRouter generalization", () => {
 
     const result = await caller.delete({ id: eventId, scope: "series" });
 
-    expect(enqueuePlannedWorkoutSyncAfterCalendarMutation).toHaveBeenCalledWith(
+    expect(enqueuePlannedActivitySyncAfterCalendarMutation).toHaveBeenCalledWith(
       expect.objectContaining({
-        drainDueJobs: false,
         eventIds: [plannedId],
         operation: "unsync",
         transaction: {},
@@ -1737,7 +2045,7 @@ describe("eventsRouter generalization", () => {
   });
 
   it("maps unsync enqueue failure to a stable client-safe delete error before deletion", async () => {
-    enqueuePlannedWorkoutSyncAfterCalendarMutation.mockResolvedValueOnce({
+    enqueuePlannedActivitySyncAfterCalendarMutation.mockResolvedValueOnce({
       error: "queue unavailable",
       queued: false,
       success: false,
@@ -1758,7 +2066,7 @@ describe("eventsRouter generalization", () => {
     expect(callLog.some((call) => call.operation === "delete")).toBe(false);
   });
 
-  it("does not inline-drain disabled Wahoo planned-workout work after deletion", async () => {
+  it("does not inline-drain disabled Wahoo planned-activity work after deletion", async () => {
     const eventId = "00000000-0000-4000-8000-000000000064";
     const { caller } = createCaller({
       events: [
@@ -1768,7 +2076,7 @@ describe("eventsRouter generalization", () => {
     });
 
     await expect(caller.delete({ id: eventId })).resolves.toMatchObject({ success: true });
-    expect(drainDueWahooPlannedWorkoutJobs).not.toHaveBeenCalled();
+    expect(drainDueWahooPlannedActivityJobs).not.toHaveBeenCalled();
   });
 
   it("blocks mutable update for imported events", async () => {
@@ -1961,6 +2269,56 @@ describe("eventsRouter generalization", () => {
     ).rejects.toThrow("Imported events are read-only");
   });
 
+  it.each([
+    ["legacy", createActivityPlanStructure(["bike", "run"])],
+    ["strict-invalid", { version: 3, segments: [{ role: "activity" }] }],
+    ["unavailable", null],
+  ])("blocks completion linking for a %s current plan", async (_label, structure) => {
+    const eventId = "00000000-0000-4000-8000-000000000057";
+    const activityId = "11111111-1111-4111-8111-111111111157";
+    const { caller, callLog } = createCaller({
+      events: {
+        data: createEventRow({
+          id: eventId,
+          activity_plan_id: "22222222-2222-4222-8222-222222222257",
+          activity_plan: structure === null ? null : { structure },
+        }),
+        error: null,
+      },
+      activities: { data: { id: activityId }, error: null },
+    });
+
+    await expect(
+      caller.linkCompletion({ event_id: eventId, activity_id: activityId }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "Events linked to unavailable or non-executable activity plans are read-only",
+    });
+    expect(callLog.some((call) => call.operation === "update")).toBe(false);
+  });
+
+  it("blocks completion unlinking for a legacy current plan", async () => {
+    const eventId = "00000000-0000-4000-8000-000000000058";
+    const { caller, callLog } = createCaller({
+      events: {
+        data: createEventRow({
+          id: eventId,
+          activity_plan_id: "22222222-2222-4222-8222-222222222258",
+          activity_plan: { structure: createActivityPlanStructure(["bike", "run"]) },
+          linked_activity_id: "11111111-1111-4111-8111-111111111158",
+          status: "completed",
+        }),
+        error: null,
+      },
+    });
+
+    await expect(caller.unlinkCompletion({ event_id: eventId })).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "Events linked to unavailable or non-executable activity plans are read-only",
+    });
+    expect(callLog.some((call) => call.operation === "update")).toBe(false);
+  });
+
   it("status resolution prefers explicit linkage when present", async () => {
     const { caller } = createCaller({
       events: {
@@ -2105,7 +2463,7 @@ describe("eventsRouter generalization", () => {
     await expect(
       caller.create({
         event_type: "planned",
-        title: "Recurring workout",
+        title: "Recurring activity",
         activity_plan_id: "11111111-1111-4111-8111-111111111111",
         scheduled_date: "2026-06-01",
         all_day: true,
@@ -2188,7 +2546,7 @@ describe("eventsRouter generalization", () => {
 
     const result = await caller.create({
       event_type: "planned",
-      title: "Recurring workout",
+      title: "Recurring activity",
       activity_plan_id: activityPlanId,
       scheduled_date: "2026-06-02",
       all_day: true,
@@ -2236,7 +2594,7 @@ describe("eventsRouter generalization", () => {
     await expect(
       caller.create({
         event_type: "planned",
-        title: "Recurring workout",
+        title: "Recurring activity",
         activity_plan_id: "11111111-1111-4111-8111-111111111111",
         scheduled_date: "2026-06-02",
         all_day: true,
@@ -2341,6 +2699,7 @@ describe("eventsRouter generalization", () => {
             id: eventId,
             starts_at: "2026-01-05T00:00:00.000Z",
             activity_plan_id: "22222222-2222-4222-8222-222222222222",
+            activity_plan_structure: createActivityPlanStructure(["bike"]),
             linked_activity_id: null,
             status: "scheduled",
           }),
@@ -2389,6 +2748,7 @@ describe("eventsRouter generalization", () => {
               id: eventId,
               starts_at: "2026-01-06T00:00:00.000Z",
               activity_plan_id: "33333333-3333-4333-8333-333333333333",
+              activity_plan_structure: createActivityPlanStructure(["bike"]),
               linked_activity_id: null,
               status: "scheduled",
             }),
@@ -2439,6 +2799,48 @@ describe("eventsRouter generalization", () => {
     expect(result.sample_ids.updated_event_ids).toContain(eventId);
   });
 
+  it("reconcileHistoricalCompletions skips legacy and unavailable current plans", async () => {
+    const activityId = "11111111-1111-4111-8111-111111111162";
+    const events = [
+      createEventRow({
+        id: "00000000-0000-4000-8000-000000000062",
+        starts_at: "2026-01-07T00:00:00.000Z",
+        activity_plan_id: "33333333-3333-4333-8333-333333333362",
+        activity_plan_structure: createActivityPlanStructure(["bike", "run"]),
+      }),
+      createEventRow({
+        id: "00000000-0000-4000-8000-000000000063",
+        starts_at: "2026-01-07T00:00:00.000Z",
+        activity_plan_id: "33333333-3333-4333-8333-333333333363",
+        activity_plan_structure: null,
+      }),
+    ];
+    const { caller, callLog } = createCaller({
+      events: { data: events, error: null },
+      activities: {
+        data: [
+          {
+            id: activityId,
+            started_at: "2026-01-07T20:00:00.000Z",
+            activity_plan_id: events[0]?.activity_plan_id,
+          },
+        ],
+        error: null,
+      },
+    });
+
+    const result = await caller.reconcileHistoricalCompletions({
+      date_from: "2026-01-01",
+      date_to: "2026-01-31",
+      limit: 50,
+      dry_run: false,
+    });
+
+    expect(result.counts).toEqual({ scanned: 2, matched: 0, updated: 0, skipped: 2 });
+    expect(result.sample_ids.skipped_event_ids).toEqual(events.map((event) => event.id));
+    expect(callLog.some((call) => call.operation === "update")).toBe(false);
+  });
+
   it("reconcileHistoricalCompletions leaves already-linked events untouched", async () => {
     const { caller, callLog } = createCaller({
       events: {
@@ -2481,5 +2883,45 @@ describe("eventsRouter generalization", () => {
         (call.payload as any)?.value === null,
     );
     expect(linkedFilter).toBe(true);
+  });
+
+  it("plannedDaySummary returns the profile planning timezone and canonical date boundary", async () => {
+    const { caller, callLog } = createCaller({ events: { data: [], error: null } });
+
+    await expect(caller.plannedDaySummary({ date: "2026-07-27" })).resolves.toEqual({
+      date: "2026-07-27",
+      timezone: "America/New_York",
+      summary: {
+        eventCount: 0,
+        activity_categories: [],
+        totalDurationSeconds: 0,
+        totalTss: 0,
+      },
+      source: {
+        complete: true,
+        eventCount: 0,
+        unavailableEstimateCount: 0,
+        unavailablePlanCount: 0,
+        unlinkedPlanCount: 0,
+      },
+    });
+    expect(callLog).toContainEqual({
+      table: "events",
+      operation: "filter",
+      payload: { type: "eq", column: "scheduled_date", value: "2026-07-27" },
+    });
+    expect(callLog).toContainEqual({
+      table: "events",
+      operation: "filter",
+      payload: { type: "eq", column: "profile_id", value: "profile-123" },
+    });
+  });
+
+  it("plannedDaySummary rejects non-canonical calendar dates", async () => {
+    const { caller } = createCaller({ events: { data: [], error: null } });
+
+    await expect(caller.plannedDaySummary({ date: "2026-02-30" })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
   });
 });

@@ -1,21 +1,88 @@
-import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
 
-describe("activity plan scheduling", () => {
-  it("keeps detail presentation structure-only", () => {
-    const source = readFileSync("src/routes/_protected/activity-plans/$activityPlanId.tsx", "utf8");
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Route } from "./$activityPlanId";
 
-    expect(source).not.toContain("routes.list");
-    expect(source).not.toContain("routeOptions");
-    expect(source).not.toContain("plan.route");
-  });
+const mocks = vi.hoisted(() => ({
+  plan: undefined as unknown,
+}));
 
-  it("creates planned events with the current activity plan name", () => {
-    const source = readFileSync("src/routes/_protected/activity-plans/$activityPlanId.tsx", "utf8");
+vi.mock("@tanstack/react-router", () => ({
+  createFileRoute: () => (options: object) => ({
+    ...options,
+    useNavigate: () => vi.fn(),
+    useParams: () => ({ activityPlanId: "invalid-plan" }),
+  }),
+}));
+vi.mock("../../../components/activity-plan/activity-plan-comments", () => ({
+  ActivityPlanComments: () => null,
+}));
+vi.mock("../../../components/activity-plan/activity-plan-structure", () => ({
+  ActivityPlanStructure: () => <p>Read-only structure</p>,
+}));
+vi.mock("../../../components/protected/activity-route-primitives", () => ({
+  DetailPageIntro: ({ actions, title }: { actions: React.ReactNode; title: string }) => (
+    <>
+      <h1>{title}</h1>
+      {actions}
+    </>
+  ),
+  LikeToggleButton: () => null,
+  OwnerSummary: () => null,
+}));
+vi.mock("../../../components/providers/auth-provider", () => ({
+  useAuth: () => ({ user: { id: "owner-1" } }),
+}));
+vi.mock("../../../lib/api/client", () => ({
+  api: {
+    activityPlans: {
+      getById: { useQuery: () => ({ data: mocks.plan, isLoading: false }) },
+      update: { useMutation: () => ({ isPending: false, mutateAsync: vi.fn() }) },
+      duplicate: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
+      delete: { useMutation: () => ({ isPending: false, mutateAsync: vi.fn() }) },
+    },
+    events: {
+      create: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
+      delete: { useMutation: () => ({ isPending: false, mutate: vi.fn(), mutateAsync: vi.fn() }) },
+      list: { useQuery: () => ({ data: { items: [] }, isLoading: false, isError: false }) },
+      update: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
+    },
+    social: { toggleLike: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) } },
+    useUtils: () => ({ activityPlans: { invalidate: vi.fn() }, events: { invalidate: vi.fn() } }),
+  },
+}));
+vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
-    expect(source).toContain("activity_plan_id: plan.id");
-    expect(source).toContain('event_type: "planned"');
-    expect(source).toContain("scheduled_date: scheduledDate");
-    expect(source).toContain("title: plan.name");
+beforeEach(() => {
+  mocks.plan = {
+    authoritative_metrics: null,
+    content_visibility: "private",
+    created_at: "2026-07-01T00:00:00.000Z",
+    description: "Malformed activity",
+    gps_recording_enabled: true,
+    has_liked: false,
+    id: "invalid-plan",
+    likes_count: 0,
+    name: "Invalid activity",
+    notes: null,
+    owner: null,
+    profile_id: "owner-1",
+    activity_category: "run",
+    structure: { version: 3, segments: [] },
+    structure_hash: "hash-1",
+  };
+});
+afterEach(cleanup);
+
+describe("ActivityPlanDetailPage invalid plan", () => {
+  it("treats a noncanonical structure as an unavailable API result", () => {
+    const ActivityPlanDetailPage = (Route as unknown as { component: React.ComponentType })
+      .component;
+    render(<ActivityPlanDetailPage />);
+
+    expect(screen.getByText("Activity plan unavailable")).toBeTruthy();
+    expect(screen.queryByText("Read-only structure")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
   });
 });

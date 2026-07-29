@@ -103,7 +103,7 @@ describe("record activity screen", () => {
     fireEvent.press(screen.getByTestId("record-activity-save-button"));
 
     expect(service.selectActivityFromPayload).toHaveBeenCalledWith({
-      category: "run",
+      activity_category: "run",
       gpsRecordingEnabled: false,
     });
     expect(backMock).toHaveBeenCalled();
@@ -121,7 +121,7 @@ describe("record activity screen", () => {
     fireEvent.press(screen.getByTestId("record-activity-save-button"));
 
     expect(service.selectActivityFromPayload).toHaveBeenCalledWith({
-      category: "run",
+      activity_category: "run",
       gpsRecordingEnabled: false,
     });
   });

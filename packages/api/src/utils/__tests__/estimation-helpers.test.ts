@@ -53,7 +53,7 @@ import {
 } from "../estimation-helpers";
 
 function activityPlanStructure(
-  category: "bike" | "run" = "bike",
+  activity_category: "bike" | "run" = "bike",
   metadata: Record<string, unknown> = {},
 ) {
   return {
@@ -62,8 +62,8 @@ function activityPlanStructure(
       {
         id: "22222222-2222-4222-8222-222222222222",
         role: "activity",
-        category,
-        name: metadata.partial ? "Partial" : category === "bike" ? "Bike" : "Run",
+        activity_category,
+        name: metadata.partial ? "Partial" : activity_category === "bike" ? "Bike" : "Run",
         intervals: [
           {
             id: "33333333-3333-4333-8333-333333333333",
@@ -72,9 +72,10 @@ function activityPlanStructure(
             steps: [
               {
                 id: "44444444-4444-4444-8444-444444444444",
+                name: "Step",
                 duration: { type: "time", seconds: 1800 },
                 targets:
-                  category === "bike"
+                  activity_category === "bike"
                     ? [{ type: "%FTP", intensity: 75 }]
                     : [{ type: "%MaxHR", intensity: 70 }],
               },
@@ -138,7 +139,7 @@ afterEach(() => {
 });
 
 describe("estimation-helpers", () => {
-  it("derives estimation category from authoritative V3 segments", () => {
+  it("derives estimation activity_category from authoritative V3 segments", () => {
     expect(toEstimationActivityPlan({ structure: activityPlanStructure("run") })).toMatchObject({
       activity_category: "run",
     });

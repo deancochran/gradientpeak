@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { loadSeriesIdentitySchema, sameLoadSeriesIdentity } from "../load/load-series";
+import { canonicalActivityCategorySchema } from "../schemas/activity-category";
 import { canonicalGoalObjectiveSchema } from "../schemas/goals/profile_goals";
-import { canonicalSportSchema } from "../schemas/sport";
 import {
   athleteMetricRoleByType,
   athleteMetricRoleSchema,
@@ -181,7 +181,7 @@ export const activityObservationInputSchema = z
     lineageGroupId: lineageGroupIdSchema,
     startedAt: dateTimeSchema,
     endedAt: dateTimeSchema.nullable(),
-    sport: canonicalSportSchema,
+    activity_category: canonicalActivityCategorySchema,
     metrics: activityMetricsSchema,
     zonesAndCurves: z.array(boundedSeriesSchema).max(MAX_NESTED_OBSERVATIONS),
     laps: z.array(lapSchema).max(MAX_NESTED_OBSERVATIONS),
@@ -189,11 +189,11 @@ export const activityObservationInputSchema = z
   .strict()
   .superRefine((activity, context) => {
     const identity = activity.metrics.trainingLoad.identity;
-    if (identity != null && identity.sport !== activity.sport) {
+    if (identity != null && identity.activity_category !== activity.activity_category) {
       context.addIssue({
         code: "custom",
-        path: ["metrics", "trainingLoad", "identity", "sport"],
-        message: "Training-load identity sport must match the activity sport",
+        path: ["metrics", "trainingLoad", "identity", "activity_category"],
+        message: "Training-load identity activity_category must match the activity category",
       });
     }
   })
@@ -209,7 +209,7 @@ const effortBaseSchema = z.object({
   lineageGroupId: lineageGroupIdSchema,
   activitySourceId: sourceIdSchema.nullable(),
   observedAt: dateTimeSchema,
-  sport: canonicalSportSchema,
+  activity_category: canonicalActivityCategorySchema,
   startOffsetSeconds: evidencedValue(z.number().finite().nonnegative(), "seconds").nullable(),
   endOffsetSeconds: evidencedValue(z.number().finite().nonnegative(), "seconds").nullable(),
   durationSeconds: z.number().finite().positive(),
@@ -242,8 +242,8 @@ export const goalInputSchema = z
     lineageGroupId: lineageGroupIdSchema,
     targetDate: z.string().date().nullable(),
     priority: z.number().int().min(0).max(10),
-    /** Canonical persisted goal header sport, independent of objective payload shape. */
-    goalSport: canonicalSportSchema.nullable().default(null),
+    /** Canonical persisted goal header activity_category, independent of objective payload shape. */
+    goalActivityCategory: canonicalActivityCategorySchema.nullable().default(null),
     objective: canonicalGoalObjectiveSchema,
     evidenceSourceIds: evidenceSourceIdsSchema,
   })
@@ -269,9 +269,9 @@ const timeWindowSchema = z
     message: "Availability window must have positive duration",
   });
 
-const sportDoseLimitSchema = z
+const activityCategoryDoseLimitSchema = z
   .object({
-    sport: canonicalSportSchema,
+    activity_category: canonicalActivityCategorySchema,
     maximumWeeklyMinutes: evidencedValue(nullableNonnegativeNumberSchema, "minutes"),
     maximumSessionsPerWeek: evidencedValue(z.number().int().nonnegative().nullable(), "count"),
     maximumSessionDurationMinutes: evidencedValue(nullableNonnegativeNumberSchema, "minutes"),
@@ -284,14 +284,14 @@ export const trainingContextInputSchema = z
     athleteId: z.string().min(1),
     lineageGroupId: lineageGroupIdSchema,
     evidenceSourceIds: evidenceSourceIdsSchema,
-    preferredSports: z.array(canonicalSportSchema).max(5),
+    preferredActivityCategories: z.array(canonicalActivityCategorySchema).max(5),
     weeklyTimeWindows: z.array(timeWindowSchema).max(35),
     hardRestDays: z.array(daySchema).max(7),
     maximumWeeklyMinutes: evidencedValue(nullableNonnegativeNumberSchema, "minutes"),
     maximumDailyMinutes: evidencedValue(nullableNonnegativeNumberSchema, "minutes"),
     maximumSessionsPerDay: evidencedValue(z.number().int().min(1).max(4).nullable(), "count"),
     maximumSessionDurationMinutes: evidencedValue(nullableNonnegativeNumberSchema, "minutes"),
-    sportDoseLimits: z.array(sportDoseLimitSchema).max(5),
+    activityCategoryDoseLimits: z.array(activityCategoryDoseLimitSchema).max(5),
     allowDoubleDays: z.boolean().nullable(),
     minimumRecoveryHours: evidencedValue(nullableNonnegativeNumberSchema, "hours"),
     maximumConsecutiveTrainingDays: evidencedValue(
@@ -336,7 +336,7 @@ export const plannedScheduleObservationSchema = z
     allDay: z.boolean(),
     lifecycle: z.enum(["planned", "confirmed", "completed", "cancelled"]),
     eventType: z.enum(["training", "race", "rest", "other"]),
-    sport: canonicalSportSchema.nullable(),
+    activity_category: canonicalActivityCategorySchema.nullable(),
     recurrence: z
       .object({
         frequency: z.enum(["daily", "weekly", "monthly"]),
@@ -512,17 +512,19 @@ export const athleteIntelligenceModelInputSchema = z
         lineageGroupId: string;
       },
       expectedSourceType: "activity" | "activity_effort" | "goal" | "manual_observation",
-      sport: string | null,
+      activity_category: string | null,
     ) => {
       const source = input.evidenceRegistry[record.sourceId];
       if (
         source &&
         (source.athleteId !== record.athleteId ||
           source.lineageGroupId !== record.lineageGroupId ||
-          source.sport !== sport ||
+          source.activity_category !== activity_category ||
           source.sourceType !== expectedSourceType)
       )
-        issue("Record source must preserve athlete, lineage, applicable sport, and source type");
+        issue(
+          "Record source must preserve athlete, lineage, applicable activity_category, and source type",
+        );
     };
     const rawMatches = (ids: string[], value: number, unit: string): boolean =>
       ids.some((id) => {
@@ -530,7 +532,7 @@ export const athleteIntelligenceModelInputSchema = z
         return raw?.value === value && raw.unit === unit;
       });
     for (const activity of input.activities) {
-      validateRecordSource(activity, "activity", activity.sport);
+      validateRecordSource(activity, "activity", activity.activity_category);
       for (const series of activity.zonesAndCurves) {
         if (
           series.durationSeconds !== null &&
@@ -560,7 +562,7 @@ export const athleteIntelligenceModelInputSchema = z
       }
     }
     for (const effort of input.efforts) {
-      validateRecordSource(effort, "activity_effort", effort.sport);
+      validateRecordSource(effort, "activity_effort", effort.activity_category);
       if (!rawMatches(effort.evidenceSourceIds, effort.durationSeconds, "seconds"))
         issue("Effort duration must match referenced evidence");
       const measuredValue =
@@ -582,9 +584,9 @@ export const athleteIntelligenceModelInputSchema = z
       if (
         linked.athleteId !== effort.athleteId ||
         linked.lineageGroupId !== effort.lineageGroupId ||
-        linked.sport !== effort.sport
+        linked.activity_category !== effort.activity_category
       )
-        issue("Activity-derived efforts must preserve athlete, lineage, and sport");
+        issue("Activity-derived efforts must preserve athlete, lineage, and activity_category");
       const activityStart = Date.parse(linked.startedAt);
       const activityEnd = linked.endedAt === null ? null : Date.parse(linked.endedAt);
       const observedAt = Date.parse(effort.observedAt);
@@ -602,7 +604,7 @@ export const athleteIntelligenceModelInputSchema = z
         issue("Activity-derived effort offsets must be within activity duration");
     }
 
-    for (const goal of input.goals) validateRecordSource(goal, "goal", goal.goalSport);
+    for (const goal of input.goals) validateRecordSource(goal, "goal", goal.goalActivityCategory);
     validateRecordSource(input.trainingContext, "manual_observation", null);
 
     for (const event of input.plannedSchedule) {
@@ -610,7 +612,7 @@ export const athleteIntelligenceModelInputSchema = z
       validateRecordSource(
         event,
         event.eventType === "race" ? "goal" : "manual_observation",
-        event.sport,
+        event.activity_category,
       );
       if (event.planSourceId !== null && !sourceIds.has(event.planSourceId))
         issue("Schedule plan references must resolve to the evidence registry");
@@ -620,10 +622,13 @@ export const athleteIntelligenceModelInputSchema = z
         planSource &&
         (planSource.athleteId !== event.athleteId ||
           planSource.lineageGroupId !== event.lineageGroupId ||
-          (planSource.sport !== null && planSource.sport !== event.sport) ||
+          (planSource.activity_category !== null &&
+            planSource.activity_category !== event.activity_category) ||
           !["goal", "manual_observation"].includes(planSource.sourceType))
       )
-        issue("Schedule plan source must preserve athlete, lineage, sport, and plan source type");
+        issue(
+          "Schedule plan source must preserve athlete, lineage, activity_category, and plan source type",
+        );
       if (event.lifecycle !== "completed" && event.completionActivitySourceId !== null)
         issue("Non-completed schedule events must not contain completion activities");
       if (event.lifecycle === "completed" && event.completionActivitySourceId === null) {
@@ -641,20 +646,21 @@ export const athleteIntelligenceModelInputSchema = z
         !completionSource ||
         completionSource.athleteId !== event.athleteId ||
         completionSource.lineageGroupId !== completion.lineageGroupId ||
-        completionSource.sport !== completion.sport ||
+        completionSource.activity_category !== completion.activity_category ||
         completionSource.sourceType !== "activity"
       )
         issue(
-          "Schedule completion source must preserve athlete, lineage, sport, and activity type",
+          "Schedule completion source must preserve athlete, lineage, activity_category, and category metadata",
         );
       const completionTime = Date.parse(completion.startedAt);
       if (
         completion.athleteId !== event.athleteId ||
-        (event.sport !== null && completion.sport !== event.sport) ||
+        (event.activity_category !== null &&
+          completion.activity_category !== event.activity_category) ||
         completionTime < Date.parse(event.startAt) ||
         completionTime > Date.parse(event.endAt)
       )
-        issue("Schedule completion must preserve athlete, sport, and scheduled time");
+        issue("Schedule completion must preserve athlete, activity_category, and scheduled time");
     }
     if (
       input.plannedSchedule.some(

@@ -1,4 +1,4 @@
-import type { CanonicalSport } from "../schemas/sport";
+import type { CanonicalActivityCategory } from "../schemas/activity-category";
 import type { MinimalTrainingPlanCreate } from "../schemas/training-plan-structure";
 import {
   parseDateOnly,
@@ -10,7 +10,7 @@ import { canonicalizeMinimalTrainingPlanCreate } from "./canonicalization";
 
 export type PreviewGoalTargetInput = {
   targetType: "race_performance" | "pace_threshold" | "power_threshold" | "hr_threshold";
-  activityCategory?: CanonicalSport;
+  activityCategory?: CanonicalActivityCategory;
   distanceKm?: string;
   completionTimeHms?: string;
   paceMmSs?: string;

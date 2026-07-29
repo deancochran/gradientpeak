@@ -29,7 +29,7 @@ type BuilderScheduleEditorProps = {
 type BuilderSelectedDayPlanningPanelProps = {
   dateLabel: string | null;
   estimateBySessionId: Map<string, ActivityPlanPlanningEstimate>;
-  onAddWorkout: () => void;
+  onAddActivity: () => void;
   onDuplicateSession: (sessionId: string) => void;
   onMoveSessionByDays: (sessionId: string, days: number) => void;
   onPressSession: (sessionId: string) => void;
@@ -71,7 +71,7 @@ export function BuilderScheduleEditor({
     <BuilderSelectedDayPlanningPanel
       dateLabel={selectedDayLabel}
       estimateBySessionId={estimateBySessionId}
-      onAddWorkout={() => onAddSessionAtOffset(selectedDayOffset)}
+      onAddActivity={() => onAddSessionAtOffset(selectedDayOffset)}
       onDuplicateSession={onDuplicateSession}
       onMoveSessionByDays={onMoveSessionByDays}
       onPressSession={onPressSession}
@@ -104,7 +104,7 @@ export function BuilderScheduleEditor({
 function BuilderSelectedDayPlanningPanel({
   dateLabel,
   estimateBySessionId,
-  onAddWorkout,
+  onAddActivity,
   onDuplicateSession,
   onMoveSessionByDays,
   onPressSession,
@@ -122,19 +122,19 @@ function BuilderSelectedDayPlanningPanel({
         <Button
           size="sm"
           variant="outline"
-          onPress={onAddWorkout}
+          onPress={onAddActivity}
           className="min-h-11 shrink-0"
           testID="builder-sessions-workspace-add"
         >
           <Plus size={14} className="text-foreground" />
-          <Text className="text-sm font-medium text-foreground">Workout</Text>
+          <Text className="text-sm font-medium text-foreground">Activity</Text>
         </Button>
       }
-      emptyState="This day is ready to plan. Add a workout when this day should carry training load."
+      emptyState="This day is ready to plan. Add a activity when this day should carry training load."
       eventCount={sessions.length}
       metadata={[
         `Week ${weekIndex + 1}`,
-        `${sessions.length} workout${sessions.length === 1 ? "" : "s"}`,
+        `${sessions.length} activity${sessions.length === 1 ? "" : "s"}`,
       ]}
       metrics={buildTrainingPathLoadMetrics(point, { includeCompleted: false })}
       testID="builder-selected-day-panel"
@@ -151,7 +151,7 @@ function BuilderSelectedDayPlanningPanel({
                 This day is ready to plan
               </Text>
               <Text className="text-xs text-muted-foreground" numberOfLines={2}>
-                Add a workout when this day should carry training load.
+                Add a activity when this day should carry training load.
               </Text>
             </View>
           </View>

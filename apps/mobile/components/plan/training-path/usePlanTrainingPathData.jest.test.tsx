@@ -8,7 +8,7 @@ const mockCommonLoad = {
   status: "available" as const,
   model: "gradientpeak_relative_load" as const,
   version: "1" as const,
-  sport: "bike" as const,
+  activity_category: "bike" as const,
   method: "power_threshold" as const,
   load: 50,
   intensity: Math.SQRT1_2,
@@ -100,6 +100,7 @@ let mockDailyCommonLoadObservations: Array<
     }
 > = [];
 const mockDailyTssRefetch = jest.fn(async () => undefined);
+const mockCommonLoadHistoryRefetch = jest.fn(async () => undefined);
 const mockActivePlanRefetch = jest.fn(async () => undefined);
 const mockExpandedActualCurveRefetch = jest.fn(async () => undefined);
 const mockEffectivePlanLoadRefetch = jest.fn(async () => undefined);
@@ -131,6 +132,7 @@ const mockEffectiveLoadResponseUnavailable = {
 function buildAvailableEffectiveLoadResponse(input?: {
   firmItems?: Array<Record<string, unknown>>;
   firmStatus?: "complete" | "partial";
+  recommendation?: Record<string, unknown>;
 }) {
   const firmStatus = input?.firmStatus ?? "complete";
   const firm = {
@@ -166,9 +168,20 @@ function buildAvailableEffectiveLoadResponse(input?: {
       activities: { startDate: "2026-03-30", endDate: "2026-04-12", status: firmStatus },
       scheduledItems: { startDate: "2026-03-30", endDate: "2026-04-12", status: firmStatus },
     },
+    ...(input?.recommendation ? { recommendation: input.recommendation } : {}),
   };
 }
 let mockEffectivePlanLoadResponse: Record<string, unknown> = mockEffectiveLoadResponseUnavailable;
+let mockCommonLoadHistoryResponse: Record<string, unknown> = {
+  status: "unavailable",
+  policyVersion: "common_load_history_v1",
+  reason: "insufficient_history",
+};
+const mockCommonLoadHistoryUseQuery = jest.fn((_input?: unknown, _options?: unknown) => ({
+  ...queryResult,
+  data: mockCommonLoadHistoryResponse,
+  refetch: mockCommonLoadHistoryRefetch,
+}));
 const mockEffectivePlanLoadUseQuery = jest.fn((_input?: unknown, _options?: unknown) => ({
   ...queryResult,
   data: mockEffectivePlanLoadResponse,
@@ -240,6 +253,10 @@ jest.mock("@/lib/api", () => ({
     },
     activityPlans: { getManyByIds: { useQuery: () => queryResult } },
     activities: {
+      commonLoadHistory: {
+        useQuery: (input: unknown, options: unknown) =>
+          mockCommonLoadHistoryUseQuery(input, options),
+      },
       dailyCommonLoadObservations: {
         useQuery: (input: unknown, options: unknown) => mockDailyTssUseQuery(input, options),
       },
@@ -442,6 +459,11 @@ describe("usePlanTrainingPathData", () => {
     mockResolvedWeekWindow = { start: "2026-03-30", end: "2026-04-12" };
     mockSelectedWeekSummary = null;
     mockDailyCommonLoadObservations = [];
+    mockCommonLoadHistoryResponse = {
+      status: "unavailable",
+      policyVersion: "common_load_history_v1",
+      reason: "insufficient_history",
+    };
     mockEffectivePlanLoadResponse = mockEffectiveLoadResponseUnavailable;
     queryResult = buildQueryResult();
     paginatedQueryResult = buildPaginatedQueryResult();
@@ -526,6 +548,213 @@ describe("usePlanTrainingPathData", () => {
     ]);
   });
 
+  it("projects fitness from common history through authoritative planned Load", () => {
+    mockCommonLoadHistoryResponse = {
+      status: "available",
+      points: [
+        {
+          date: "2026-04-05",
+          dailyLoad: 0,
+          longTermLoad: 40,
+          recentLoad: 50,
+          loadBalance: -10,
+          coverageStatus: "complete",
+        },
+      ],
+    };
+    mockBuildTrainingPreferencesLoadTimeline.mockReturnValue([
+      {
+        date: "2026-04-06",
+        completed_load_tss: 0,
+        recommended_load_tss: 70,
+        scheduled_load_tss: 60,
+      },
+    ]);
+    mockEffectivePlanLoadResponse = buildAvailableEffectiveLoadResponse({
+      firmItems: [
+        {
+          id: "event-1",
+          date: "2026-04-06",
+          kind: "scheduled",
+          commonLoad: { ...mockCommonLoad, contributingDurationSeconds: 3600 },
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => usePlanTrainingPathData());
+
+    expect(result.current.dailyTrainingPathPoints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          date: "2026-04-06",
+          effectiveRemainingLoad: 50,
+          scheduledFitnessCtl: expect.any(Number),
+        }),
+      ]),
+    );
+    const trainingPathInput = (
+      result.current.trainingPath as unknown as {
+        input: { fitnessHistory: unknown[]; projectedFitness: unknown[] };
+      }
+    ).input;
+    expect(trainingPathInput).toEqual(
+      expect.objectContaining({
+        fitnessHistory: [expect.objectContaining({ date: "2026-04-05", ctl: 40 })],
+        projectedFitness: [
+          expect.objectContaining({ date: "2026-04-05", ctl: 40 }),
+          expect.objectContaining({ date: "2026-04-06" }),
+        ],
+      }),
+    );
+  });
+
+  it("wires versioned recommended Load and its projected fitness without using legacy TSS", () => {
+    mockCommonLoadHistoryResponse = {
+      status: "available",
+      points: [
+        {
+          date: "2026-04-05",
+          dailyLoad: 0,
+          longTermLoad: 40,
+          recentLoad: 50,
+          loadBalance: -10,
+          coverageStatus: "complete",
+        },
+      ],
+    };
+    mockBuildTrainingPreferencesLoadTimeline.mockReturnValue([
+      {
+        date: "2026-04-06",
+        completed_load_tss: 0,
+        recommended_load_tss: 1_000,
+        scheduled_load_tss: 0,
+      },
+      {
+        date: "2026-04-07",
+        completed_load_tss: 0,
+        recommended_load_tss: 1_000,
+        scheduled_load_tss: 0,
+      },
+    ]);
+    mockEffectivePlanLoadResponse = buildAvailableEffectiveLoadResponse({
+      recommendation: {
+        status: "complete",
+        policyVersion: "common_load_recommendation_v1",
+        model: "gradientpeak_relative_load",
+        version: "1",
+        source: "applied_training_plan_prescription",
+        computedAsOf: "2026-04-06T12:00:00.000Z",
+        planningTimezone: "America/Los_Angeles",
+        trainingPlanId: "11111111-1111-4111-8111-111111111111",
+        scheduleBatchId: null,
+        sourceItemCount: 1,
+        coverage: { startDate: "2026-04-06", endDate: "2026-04-07" },
+        points: [
+          {
+            date: "2026-04-06",
+            state: "complete",
+            load: 80,
+            intensity: 0.8,
+            aggregate: mockEffectiveLoadAggregate,
+            sourceScheduledItemIds: ["22222222-2222-4222-8222-222222222222"],
+          },
+          {
+            date: "2026-04-07",
+            state: "known_zero",
+            load: 0,
+            intensity: null,
+            sourceScheduledItemIds: [],
+          },
+        ],
+      },
+    });
+
+    const { result } = renderHook(() => usePlanTrainingPathData());
+
+    expect(
+      result.current.dailyTrainingPathPoints.find((point) => point.date === "2026-04-06"),
+    ).toEqual(
+      expect.objectContaining({
+        recommendedLoadStatus: "complete",
+        recommendedLoad: 80,
+        targetFitnessCtl: expect.any(Number),
+      }),
+    );
+    expect(
+      result.current.dailyTrainingPathPoints.find((point) => point.date === "2026-04-07"),
+    ).toEqual(
+      expect.objectContaining({
+        recommendedLoadStatus: "known_zero",
+        recommendedLoad: 0,
+        targetFitnessCtl: expect.any(Number),
+      }),
+    );
+    const trainingPathInput = (
+      result.current.trainingPath as unknown as {
+        input: { idealFitnessCurve: Array<{ date: string }> };
+      }
+    ).input;
+    expect(trainingPathInput.idealFitnessCurve.map((point) => point.date)).toEqual([
+      "2026-04-05",
+      "2026-04-06",
+      "2026-04-07",
+    ]);
+  });
+
+  it("stops projected fitness before an unqueried effective-Load day", () => {
+    mockCommonLoadHistoryResponse = {
+      status: "available",
+      points: [
+        {
+          date: "2026-04-05",
+          dailyLoad: 0,
+          longTermLoad: 40,
+          recentLoad: 50,
+          loadBalance: -10,
+          coverageStatus: "complete",
+        },
+      ],
+    };
+    mockBuildTrainingPreferencesLoadTimeline.mockReturnValue(
+      Array.from({ length: 8 }, (_, index) => ({
+        date: `2026-04-${String(index + 6).padStart(2, "0")}`,
+        completed_load_tss: 0,
+        recommended_load_tss: 0,
+        scheduled_load_tss: index === 0 ? 60 : 0,
+      })),
+    );
+    mockEffectivePlanLoadResponse = buildAvailableEffectiveLoadResponse({
+      firmItems: [
+        {
+          id: "event-1",
+          date: "2026-04-06",
+          kind: "scheduled",
+          commonLoad: { ...mockCommonLoad, contributingDurationSeconds: 3600 },
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => usePlanTrainingPathData());
+
+    expect(
+      result.current.dailyTrainingPathPoints.find((point) => point.date === "2026-04-12"),
+    ).toEqual(expect.objectContaining({ scheduledFitnessCtl: expect.any(Number) }));
+    expect(
+      result.current.dailyTrainingPathPoints.find((point) => point.date === "2026-04-13"),
+    ).toEqual(
+      expect.objectContaining({
+        effectiveLoadStatus: "unavailable",
+        scheduledFitnessCtl: null,
+      }),
+    );
+    const trainingPathInput = (
+      result.current.trainingPath as unknown as {
+        input: { projectedFitness: Array<{ date: string }> };
+      }
+    ).input;
+    expect(trainingPathInput.projectedFitness.at(-1)?.date).toBe("2026-04-12");
+  });
+
   it("wires effective common Load and Intensity into selected day and week summaries", () => {
     mockSelectedWeekSummary = {
       weekStart: "2026-04-06",
@@ -560,13 +789,13 @@ describe("usePlanTrainingPathData", () => {
               {
                 id: "activity-1",
                 started_at: "2026-04-07T16:00:00.000Z",
-                activity_type: "bike",
+                activity_category: "bike",
                 derived: { stress: { common_load: mockCommonLoad } },
               },
               {
                 id: "activity-2",
                 started_at: "2026-04-07T18:00:00.000Z",
-                activity_type: "bike",
+                activity_category: "bike",
                 derived: { stress: { common_load: mockCommonLoad } },
               },
             ],
@@ -1208,6 +1437,7 @@ describe("usePlanTrainingPathData", () => {
         expect.objectContaining({
           date: "2026-04-03",
           completedLoadTss: 42,
+          effectiveCompletedLoad: 42,
           completedObservationState: "observed",
           completedCommonLoadIdentity: mockCommonLoadIdentity,
           hasTargetLoad: false,

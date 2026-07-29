@@ -1,4 +1,4 @@
-import type { CanonicalSport } from "@repo/core";
+import type { CanonicalActivityCategory } from "@repo/core";
 import { Activity, Bike, Dumbbell, Footprints, Waves } from "lucide-react-native";
 
 /**
@@ -42,7 +42,7 @@ export const ACTIVITY_CATEGORY_CONFIGS = {
     borderColor: "border-gray-200",
   },
 } as const satisfies Record<
-  CanonicalSport,
+  CanonicalActivityCategory,
   {
     name: string;
     icon: typeof Activity;
@@ -56,7 +56,10 @@ export const ACTIVITY_CATEGORY_CONFIGS = {
  * Get activity configuration for category + location
  */
 export function getActivityCategoryConfig(category: string) {
-  return ACTIVITY_CATEGORY_CONFIGS[category as CanonicalSport] || ACTIVITY_CATEGORY_CONFIGS.other;
+  return (
+    ACTIVITY_CATEGORY_CONFIGS[category as CanonicalActivityCategory] ||
+    ACTIVITY_CATEGORY_CONFIGS.other
+  );
 }
 
 export function getUniqueActivityCategoryConfigs(
@@ -76,7 +79,7 @@ export function getUniqueActivityCategoryConfigs(
  * Get display name for category + location combination
  */
 export function getActivityDisplayName(
-  category: CanonicalSport,
+  category: CanonicalActivityCategory,
   gpsRecordingEnabled: boolean,
 ): string {
   const categoryConfig = getActivityCategoryConfig(category);
@@ -94,7 +97,7 @@ export function getActivityDisplayName(
 }
 
 /**
- * Activity type options for filters and selectors
+ * Activity category options for filters and selectors
  */
 export const ACTIVITY_FILTER_OPTIONS = [
   { value: "all" as const, label: "All", icon: Activity },
@@ -104,7 +107,7 @@ export const ACTIVITY_FILTER_OPTIONS = [
 ] as const;
 
 /**
- * All activity type options for creation and editing
+ * All activity category options for creation and editing
  */
 export const ACTIVITY_CATEGORY_OPTIONS = [
   { value: "outdoor_run", label: "Outdoor Run", icon: Footprints },

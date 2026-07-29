@@ -13,7 +13,7 @@ import {
 
 function createStructure(
   targets: ActivityTarget[],
-  category: "run" | "bike" | "swim" = "run",
+  activity_category: "run" | "bike" | "swim" = "run",
 ): ActivityPlanStructureV3 {
   return activityPlanStructureSchemaV3.parse({
     version: 3,
@@ -21,7 +21,7 @@ function createStructure(
       {
         id: "00000000-0000-4000-8000-000000000001",
         role: "activity",
-        category,
+        activity_category,
         name: "Activity",
         intervals: [
           {
@@ -77,7 +77,7 @@ describe("activity target capabilities", () => {
             {
               id: "00000000-0000-4000-8000-000000000001",
               role: "activity",
-              category: "run",
+              activity_category: "run",
               name: "Run",
               intervals: [
                 {
@@ -120,7 +120,7 @@ describe("activity target capabilities", () => {
     ).toBe(false);
   });
 
-  it("validates update schemas from segment-owned category authority", () => {
+  it("validates update schemas from segment-owned activity_category authority", () => {
     const result = activityPlanUpdateSchema.safeParse({
       structure: {
         version: 3,

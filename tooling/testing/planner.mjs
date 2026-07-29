@@ -17,7 +17,7 @@ const RUNTIME_KINDS = new Set(["live-db", "playwright", "maestro"]);
 const IGNORED_DIRECTORIES = new Set([".git", ".turbo", "coverage", "dist", "node_modules"]);
 const ROOT_VERIFICATION_CAPSULES = {
   "biome.json": ["tooling/architecture", "tooling/testing"],
-  "package.json": ["tooling/architecture", "tooling/testing", "tests/parity"],
+  "package.json": ["tooling/architecture", "tooling/multisport", "tooling/testing", "tests/parity"],
   "pnpm-workspace.yaml": ["tooling/architecture", "tooling/testing", "tests/parity"],
   "turbo.json": ["tooling/architecture", "tooling/testing"],
   "vitest.parity.config.ts": ["tests/parity"],
@@ -137,6 +137,7 @@ function testExtensionPattern(suffix) {
 export function classifyTest(relativePath) {
   const normalized = toPosix(relativePath);
   if (/^tooling\/.*\/fixtures\//.test(normalized)) return null;
+  if (/^tooling\/[^/]+\/[^/]+\.self-test\.mjs$/.test(normalized)) return "unit";
   if (
     /^apps\/mobile\/\.maestro\/features\/[^/]+\.yaml$/.test(normalized) ||
     /^apps\/mobile\/\.maestro\/flows\/(?:smoke|performance)\/.+\.yaml$/.test(normalized)
@@ -361,7 +362,10 @@ function ownerFor(relativePath) {
 
 function commandIdentity(test) {
   const owner = ownerFor(test.path);
-  if (/^tooling\/(?:architecture|testing)\/[^/]+\.test\.mjs$/.test(test.path)) {
+  if (
+    /^tooling\/(?:architecture|testing)\/[^/]+\.test\.mjs$/.test(test.path) ||
+    /^tooling\/[^/]+\/[^/]+\.self-test\.mjs$/.test(test.path)
+  ) {
     return { owner, script: "node:test", runner: "node:test" };
   }
   if (test.path.startsWith("tests/parity/")) {

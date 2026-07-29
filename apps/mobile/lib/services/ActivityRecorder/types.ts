@@ -1,4 +1,3 @@
-import type { ControlMode, FtmsAvailableMode, FtmsControlMode } from "@deancochran/ftms";
 import type {
   CompiledActivityPlanOccurrence,
   CurrentMetricValue as CoreCurrentMetricValue,
@@ -10,6 +9,7 @@ import type {
   RecordingSessionOverrideState as CoreRecordingSessionOverrideState,
   RecordingSessionSnapshot as CoreRecordingSessionSnapshot,
   RecordingSourceChangeEvent as CoreRecordingSourceChangeEvent,
+  FtmsControlMode,
   PublicActivityMetric,
   PublicActivityMetricDataType,
   RecordingActivityCategory,
@@ -20,6 +20,50 @@ import type {
   RecordingTrainerMachineType,
 } from "@repo/core";
 import type { RecordingActivityPlanV3Input, RecordingPlanOccurrence } from "./plan";
+
+/** Recorder-owned control state; these values are not FTMS protocol opcodes. */
+export type FtmsControllerMode =
+  | "erg"
+  | "sim"
+  | "resistance"
+  | "speed"
+  | "inclination"
+  | "heart_rate"
+  | "cadence";
+
+export interface FtmsControlEvent {
+  timestamp: number;
+  controlType:
+    | "power_target"
+    | "simulation"
+    | "resistance"
+    | "speed"
+    | "inclination"
+    | "heart_rate"
+    | "cadence";
+  targetValue: number;
+  actualValue?: number;
+  success: boolean;
+  errorMessage?: string;
+}
+
+export type FtmsSafetyLevel = "none" | "confirm" | "strong_confirm" | "blocked";
+
+export interface FtmsAvailableModeRange {
+  min: number;
+  max: number;
+  increment: number;
+  unit: string;
+}
+
+export interface FtmsAvailableMode {
+  id: FtmsControlMode;
+  label: string;
+  enabled: boolean;
+  disabledReason?: string;
+  range?: FtmsAvailableModeRange;
+  safetyLevel: FtmsSafetyLevel;
+}
 
 export interface RecorderProfileRef {
   id: string;
@@ -326,7 +370,7 @@ export interface TierMetrics {
 // === Event Payload Types ===
 export interface RecordingStartedPayload {
   timestamp: number;
-  activityType: string;
+  activityCategory: string;
   profile: ProfileMetrics;
 }
 
@@ -409,7 +453,7 @@ export interface RecordingPlanView {
   hasPlan: boolean;
   name?: string;
   description?: string | null;
-  activityType?: RecordingActivityCategory | null;
+  activityCategory?: RecordingActivityCategory | null;
   stepIndex: number;
   stepCount: number;
   currentStep?: RecordingPlanOccurrence;
@@ -417,12 +461,12 @@ export interface RecordingPlanView {
   currentSegment: {
     id: string;
     role: CompiledActivityPlanOccurrence["role"];
-    category: RecordingActivityCategory | null;
+    activity_category: RecordingActivityCategory | null;
   } | null;
   nextSegment: {
     id: string;
     role: CompiledActivityPlanOccurrence["role"];
-    category: RecordingActivityCategory | null;
+    activity_category: RecordingActivityCategory | null;
   } | null;
   progress: {
     movingTime: number;
@@ -453,7 +497,7 @@ export interface RecordingTrainerCommandStatus {
     | "set_incline"
     | "set_heart_rate"
     | "set_cadence";
-  controlMode: ControlMode | null;
+  controlMode: FtmsControllerMode | null;
   outcome:
     | "success"
     | "control_unavailable"
@@ -535,7 +579,7 @@ export interface RecordingTrainerView {
   connectionState: RecordingTrainerConnectionState;
   dataFlowState: RecordingTrainerDataFlowState;
   controlState: RecordingTrainerControlState;
-  currentControlMode: ControlMode | null;
+  currentControlMode: FtmsControllerMode | null;
   selectedMode?: FtmsControlMode | null;
   availableModes?: FtmsAvailableMode[];
   recoveryState: RecordingTrainerRecoveryState;

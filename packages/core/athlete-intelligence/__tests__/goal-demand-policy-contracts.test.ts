@@ -18,7 +18,7 @@ describe("goalDemandPolicyInputSchema", () => {
     athleteId: "athlete-1",
     goalSourceId,
     goalType: "race",
-    sport: "cycling",
+    activity_category: "cycling",
     distanceMeters: 160_934,
     targetDurationSeconds: null,
     targetPowerWatts: null,

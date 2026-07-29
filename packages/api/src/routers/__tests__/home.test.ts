@@ -91,6 +91,7 @@ vi.mock("../../utils/workload", () => ({
   buildWorkloadEnvelopes: homeMocks.buildWorkloadEnvelopes,
 }));
 
+import { listPlannedActivitiesInRange } from "../../application/home/plannedActivities";
 import { homeRouter } from "../home";
 
 type TableName = "activities" | "events" | "profiles" | "profileTrainingSettings";
@@ -167,7 +168,7 @@ function createCaller(plan: DbPlan = {}) {
   };
 }
 
-function buildActivityPlan(id: string, name: string, category: "bike" | "run") {
+function buildActivityPlan(id: string, name: string, activity_category: "bike" | "run") {
   return {
     id,
     name,
@@ -180,7 +181,7 @@ function buildActivityPlan(id: string, name: string, category: "bike" | "run") {
           id: "10000000-0000-4000-8000-000000000001",
           name,
           role: "activity" as const,
-          category,
+          activity_category,
           intervals: [
             {
               id: "20000000-0000-4000-8000-000000000001",
@@ -221,6 +222,54 @@ function completeCommonLoad(load: number, contributingDurationSeconds: number) {
   };
 }
 
+describe("planned Home activity rows", () => {
+  it("parses the selected Event shape, including an unavailable linked plan", async () => {
+    const db = createDbMock({
+      select: {
+        events: [
+          [
+            {
+              id: "planned-with-plan",
+              starts_at: new Date("2026-04-03T08:00:00.000Z"),
+              scheduled_date: "2026-04-03",
+              notes: null,
+              activity_plan_id: "11111111-1111-4111-8111-111111111111",
+              activity_plan: buildActivityPlan("plan-1", "Threshold Ride", "bike"),
+            },
+            {
+              id: "planned-unavailable",
+              starts_at: new Date("2026-04-04T08:00:00.000Z"),
+              scheduled_date: "2026-04-04",
+              notes: null,
+              activity_plan_id: "22222222-2222-4222-8222-222222222222",
+              activity_plan: null,
+            },
+          ],
+        ],
+      },
+    });
+
+    await expect(
+      listPlannedActivitiesInRange(db as never, {
+        profileId: "11111111-1111-4111-8111-111111111111",
+        scheduledDateGte: "2026-04-03",
+        scheduledDateLt: "2026-04-05",
+      }),
+    ).resolves.toMatchObject([
+      {
+        id: "planned-with-plan",
+        activity_plan_id: "11111111-1111-4111-8111-111111111111",
+        activity_plan: { activity_category: "bike" },
+      },
+      {
+        id: "planned-unavailable",
+        activity_plan_id: "22222222-2222-4222-8222-222222222222",
+        activity_plan: null,
+      },
+    ]);
+  });
+});
+
 describe("homeRouter", () => {
   beforeEach(() => {
     homeMocks.readCurrentProfileCommonLoadHistory.mockResolvedValue({
@@ -250,7 +299,7 @@ describe("homeRouter", () => {
               {
                 id: `${activityId}-segment`,
                 role: "activity",
-                category: "bike",
+                activity_category: "bike",
                 ordinal: 0,
                 summary: {
                   version: 1,
@@ -304,7 +353,7 @@ describe("homeRouter", () => {
       ],
       complete: true,
       seriesIdentity: {
-        sport: "bike",
+        activity_category: "bike",
         method: "power_threshold",
         source: "activity_analysis",
         version: "1",
@@ -339,6 +388,7 @@ describe("homeRouter", () => {
           [
             {
               id: "planned-today",
+              activity_plan_id: "11111111-1111-4111-8111-111111111111",
               starts_at: new Date("2026-04-03T08:00:00.000Z"),
               notes: null,
               scheduled_date: "2026-04-03",
@@ -346,6 +396,7 @@ describe("homeRouter", () => {
             },
             {
               id: "planned-tomorrow",
+              activity_plan_id: "22222222-2222-4222-8222-222222222222",
               starts_at: new Date("2026-04-04T08:00:00.000Z"),
               notes: null,
               scheduled_date: "2026-04-04",
@@ -355,6 +406,7 @@ describe("homeRouter", () => {
           [
             {
               id: "planned-today",
+              activity_plan_id: "11111111-1111-4111-8111-111111111111",
               starts_at: new Date("2026-04-03T08:00:00.000Z"),
               notes: null,
               scheduled_date: "2026-04-03",
@@ -362,6 +414,7 @@ describe("homeRouter", () => {
             },
             {
               id: "planned-tomorrow",
+              activity_plan_id: "22222222-2222-4222-8222-222222222222",
               starts_at: new Date("2026-04-04T08:00:00.000Z"),
               notes: null,
               scheduled_date: "2026-04-04",
@@ -498,9 +551,7 @@ describe("homeRouter", () => {
         isToday: true,
         isCompleted: true,
         activityName: "Threshold Ride",
-        activityType: "bike",
-        activityKind: "single",
-        activityCategories: ["bike"],
+        activity_category: "bike",
         estimatedDuration: 3600,
         estimatedDistance: 20000,
         load: null,
@@ -512,9 +563,7 @@ describe("homeRouter", () => {
         isToday: false,
         isCompleted: false,
         activityName: "Recovery Run",
-        activityType: "run",
-        activityKind: "single",
-        activityCategories: ["run"],
+        activity_category: "run",
         estimatedDuration: 2400,
         estimatedDistance: 12000,
         load: null,
@@ -528,15 +577,16 @@ describe("homeRouter", () => {
         isToday: true,
         isCompleted: true,
         activityName: "Threshold Ride",
-        activityType: "bike",
-        activityKind: "single",
-        activityCategories: ["bike"],
+        activity_category: "bike",
         estimatedDuration: 3600,
         estimatedDistance: 20000,
         load: null,
         intensity: null,
       }),
     );
+    expect(result.schedule[0]).not.toHaveProperty("activityCategory");
+    expect(result.schedule[0]).not.toHaveProperty("activityCategories");
+    expect(result.schedule[0]).not.toHaveProperty("activityKind");
     expect(result.projectedLoad).toEqual([]);
     expect(homeMocks.replayTrainingLoadByDate).not.toHaveBeenCalled();
     expect(result).not.toHaveProperty("projectedFitness");
@@ -612,7 +662,7 @@ describe("homeRouter", () => {
         },
       ],
       complete: true,
-      seriesIdentity: { sport: "bike", method: "power_threshold" },
+      seriesIdentity: { activity_category: "bike", method: "power_threshold" },
     });
     homeMocks.buildWorkloadEnvelopes.mockReturnValue({ acwr: {}, monotony: {} });
     homeMocks.getActivityPlansDerivedMetrics.mockImplementation(async (plans: Array<any>) => plans);
@@ -625,6 +675,7 @@ describe("homeRouter", () => {
           [
             {
               id: "planned-local-today",
+              activity_plan_id: "11111111-1111-4111-8111-111111111111",
               starts_at: new Date("2026-04-03T15:00:00.000Z"),
               notes: null,
               scheduled_date: "2026-04-04",
@@ -750,6 +801,7 @@ describe("homeRouter", () => {
           [
             {
               id: "planned-today",
+              activity_plan_id: "11111111-1111-4111-8111-111111111111",
               starts_at: new Date("2026-04-03T08:00:00.000Z"),
               notes: null,
               scheduled_date: "2026-04-03",
@@ -759,6 +811,7 @@ describe("homeRouter", () => {
           [
             {
               id: "planned-today",
+              activity_plan_id: "11111111-1111-4111-8111-111111111111",
               starts_at: new Date("2026-04-03T08:00:00.000Z"),
               notes: null,
               scheduled_date: "2026-04-03",

@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { compileActivityPlanV3 } from "../compile";
-import { type ActivityPlanActivitySegment, activityPlanStructureSchemaV3 } from "../v3-schema";
+import {
+  type ActivityPlanActivitySegment,
+  activityPlanStructureSchemaV3,
+  validateActivityPlanStructureV3,
+} from "../v3-schema";
 import {
   ACTIVITY_PLAN_V3_LIMITS,
   isActivityPlanEncodedByteLengthWithinLimit,
@@ -11,7 +15,7 @@ const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padSta
 
 const activitySegment = (input: {
   id: number;
-  category: "run" | "bike" | "swim";
+  activity_category: "run" | "bike" | "swim";
   intervalId: number;
   stepId: number;
   repetitions?: number;
@@ -19,8 +23,8 @@ const activitySegment = (input: {
 }): ActivityPlanActivitySegment => ({
   id: id(input.id),
   role: "activity" as const,
-  category: input.category,
-  name: input.category,
+  activity_category: input.activity_category,
+  name: input.activity_category,
   intervals: [
     {
       id: id(input.intervalId),
@@ -39,7 +43,7 @@ const activitySegment = (input: {
 });
 
 describe("activity plan V3", () => {
-  it("accepts arbitrary order and repeated categories with valid transitions and rests", () => {
+  it("accepts repeated same-category activity segments and rests", () => {
     const structure = {
       version: 3 as const,
       segments: [
@@ -49,48 +53,92 @@ describe("activity plan V3", () => {
           name: "Prepare",
           duration: { type: "time" as const, seconds: 30 },
         },
-        activitySegment({ id: 2, category: "run", intervalId: 3, stepId: 4 }),
-        {
-          id: id(5),
-          role: "transition" as const,
-          name: "T1",
-          duration: { type: "time" as const, seconds: 90 },
-        },
-        activitySegment({ id: 6, category: "bike", intervalId: 7, stepId: 8 }),
+        activitySegment({ id: 2, activity_category: "run", intervalId: 3, stepId: 4 }),
+        activitySegment({ id: 6, activity_category: "run", intervalId: 7, stepId: 8 }),
         {
           id: id(9),
           role: "rest" as const,
           name: "Reset",
           duration: { type: "time" as const, seconds: 20 },
         },
-        activitySegment({ id: 10, category: "run", intervalId: 11, stepId: 12 }),
+        activitySegment({ id: 10, activity_category: "run", intervalId: 11, stepId: 12 }),
       ],
     };
 
     expect(activityPlanStructureSchemaV3.parse(structure)).toEqual(structure);
   });
 
-  it("rejects transition grammar, consecutive rests, and missing activity", () => {
+  it("requires persisted step names and interval repetitions during strict parsing and preflight", () => {
+    const validStructure = {
+      version: 3 as const,
+      segments: [
+        activitySegment({
+          id: 1,
+          activity_category: "run",
+          intervalId: 2,
+          stepId: 3,
+          repetitions: 2,
+        }),
+        activitySegment({
+          id: 4,
+          activity_category: "run",
+          intervalId: 5,
+          stepId: 6,
+          repetitions: 1,
+        }),
+      ],
+    };
+    expect(activityPlanStructureSchemaV3.parse(validStructure)).toEqual(validStructure);
+    expect(validateActivityPlanStructureV3(validStructure).success).toBe(true);
+
+    const withoutStepName = structuredClone(validStructure);
+    Reflect.deleteProperty(withoutStepName.segments[0]!.intervals[0]!.steps[0]!, "name");
+    const withoutIntervalRepetitions = structuredClone(validStructure);
+    Reflect.deleteProperty(withoutIntervalRepetitions.segments[0]!.intervals[0]!, "repetitions");
+
+    for (const invalidStructure of [withoutStepName, withoutIntervalRepetitions]) {
+      expect(activityPlanStructureSchemaV3.safeParse(invalidStructure).success).toBe(false);
+      expect(validateActivityPlanStructureV3(invalidStructure).success).toBe(false);
+    }
+  });
+
+  it("rejects top-level transitions, mixed activity activity_categories, consecutive rests, and missing activity", () => {
     const result = activityPlanStructureSchemaV3.safeParse({
       version: 3,
       segments: [
-        { id: id(1), role: "transition", name: "Bad", duration: { type: "time", seconds: 1 } },
+        { id: id(1), role: "rest", name: "Rest", duration: { type: "time", seconds: 1 } },
         { id: id(2), role: "rest", name: "Rest", duration: { type: "time", seconds: 1 } },
-        { id: id(3), role: "rest", name: "Rest", duration: { type: "time", seconds: 1 } },
       ],
     });
 
     expect(result.success).toBe(false);
     if (!result.success) {
       const messages = result.error.issues.map((issue) => issue.message).join(" ");
-      expect(messages).toContain("ACTIVITY_PLAN_TRANSITION_GRAMMAR");
       expect(messages).toContain("ACTIVITY_PLAN_CONSECUTIVE_RESTS");
       expect(messages).toContain("ACTIVITY_PLAN_MISSING_ACTIVITY");
     }
+    expect(
+      activityPlanStructureSchemaV3.safeParse({
+        version: 3,
+        segments: [
+          activitySegment({ id: 10, activity_category: "run", intervalId: 11, stepId: 12 }),
+          activitySegment({ id: 13, activity_category: "bike", intervalId: 14, stepId: 15 }),
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      activityPlanStructureSchemaV3.safeParse({
+        version: 3,
+        segments: [
+          activitySegment({ id: 20, activity_category: "run", intervalId: 21, stepId: 22 }),
+          { id: id(23), role: "transition", name: "Bad", duration: { type: "time", seconds: 1 } },
+        ],
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects unknown fields instead of stripping them", () => {
-    const segment = activitySegment({ id: 1, category: "run", intervalId: 2, stepId: 3 });
+    const segment = activitySegment({ id: 1, activity_category: "run", intervalId: 2, stepId: 3 });
     expect(
       activityPlanStructureSchemaV3.safeParse({ version: 3, segments: [segment], unknown: true })
         .success,
@@ -114,7 +162,7 @@ describe("activity plan V3", () => {
   it("enforces global UUID identity and expanded occurrence bounds", () => {
     const segment = activitySegment({
       id: 1,
-      category: "run",
+      activity_category: "run",
       intervalId: 2,
       stepId: 1,
       repetitions: 50,
@@ -138,10 +186,63 @@ describe("activity plan V3", () => {
     }
   });
 
+  it("rejects nil UUID identities at every authored level", () => {
+    const segment = activitySegment({
+      id: 1,
+      activity_category: "run",
+      intervalId: 2,
+      stepId: 3,
+    });
+    const nilId = "00000000-0000-0000-0000-000000000000";
+    const interval = segment.intervals[0];
+    const step = interval?.steps[0];
+    if (!interval || !step) throw new Error("Fixture requires an interval step.");
+    const candidates = [
+      { ...segment, id: nilId },
+      { ...segment, intervals: [{ ...interval, id: nilId }] },
+      {
+        ...segment,
+        intervals: [
+          {
+            ...interval,
+            steps: [{ ...step, id: nilId }],
+          },
+        ],
+      },
+    ];
+
+    for (const candidate of candidates) {
+      expect(
+        activityPlanStructureSchemaV3.safeParse({ version: 3, segments: [candidate] }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("counts authored string bounds by Unicode code point", () => {
+    const segment = activitySegment({
+      id: 1,
+      activity_category: "run",
+      intervalId: 2,
+      stepId: 3,
+    });
+    expect(
+      activityPlanStructureSchemaV3.safeParse({
+        version: 3,
+        segments: [{ ...segment, name: "😀".repeat(100) }],
+      }).success,
+    ).toBe(true);
+    expect(
+      activityPlanStructureSchemaV3.safeParse({
+        version: 3,
+        segments: [{ ...segment, name: "😀".repeat(101) }],
+      }).success,
+    ).toBe(false);
+  });
+
   it("enforces the seven-day explicit timed-duration budget", () => {
     const segment = activitySegment({
       id: 1,
-      category: "run",
+      activity_category: "run",
       intervalId: 2,
       stepId: 3,
       repetitions: 8,
@@ -161,7 +262,7 @@ describe("activity plan V3", () => {
     const segments = Array.from({ length: 64 }, () =>
       activitySegment({
         id: nextId++,
-        category: "run",
+        activity_category: "run",
         intervalId: nextId++,
         stepId: nextId++,
       }),
@@ -174,7 +275,7 @@ describe("activity plan V3", () => {
           ...segments,
           activitySegment({
             id: nextId++,
-            category: "run",
+            activity_category: "run",
             intervalId: nextId++,
             stepId: nextId++,
           }),
@@ -184,7 +285,7 @@ describe("activity plan V3", () => {
 
     const occurrenceSegment = activitySegment({
       id: 500,
-      category: "run",
+      activity_category: "run",
       intervalId: 501,
       stepId: 502,
     });
@@ -204,7 +305,7 @@ describe("activity plan V3", () => {
 
     const timed = activitySegment({
       id: 700,
-      category: "run",
+      activity_category: "run",
       intervalId: 701,
       stepId: 702,
       repetitions: 7,
@@ -219,7 +320,7 @@ describe("activity plan V3", () => {
     let nextId = 2;
     const segment = activitySegment({
       id: 1,
-      category: "run",
+      activity_category: "run",
       intervalId: nextId++,
       stepId: nextId++,
     });
@@ -256,25 +357,25 @@ describe("activity plan V3", () => {
     ).toBe(false);
   });
 
-  it("compiles deterministic, stable occurrences and derived category summaries", () => {
+  it("compiles deterministic, stable occurrences for repeated single-activity-category segments", () => {
     const structure = {
       version: 3 as const,
       segments: [
-        activitySegment({ id: 1, category: "run", intervalId: 2, stepId: 3, repetitions: 2 }),
-        {
-          id: id(4),
-          role: "transition" as const,
-          name: "T1",
-          duration: { type: "time" as const, seconds: 30 },
-        },
-        activitySegment({ id: 5, category: "bike", intervalId: 6, stepId: 7 }),
+        activitySegment({
+          id: 1,
+          activity_category: "run",
+          intervalId: 2,
+          stepId: 3,
+          repetitions: 2,
+        }),
+        activitySegment({ id: 5, activity_category: "run", intervalId: 6, stepId: 7 }),
         {
           id: id(8),
           role: "rest" as const,
           name: "Rest",
           duration: { type: "time" as const, seconds: 15 },
         },
-        activitySegment({ id: 9, category: "run", intervalId: 10, stepId: 11 }),
+        activitySegment({ id: 9, activity_category: "run", intervalId: 10, stepId: 11 }),
       ],
     };
 
@@ -282,19 +383,17 @@ describe("activity plan V3", () => {
     const second = compileActivityPlanV3(structure);
 
     expect(first).toEqual(second);
-    expect(first.primaryCategory).toBe("run");
-    expect(first.categories).toEqual(["run", "bike"]);
+    expect(first.activity_category).toBe("run");
     expect(first.occurrences.map((occurrence) => occurrence.globalOrdinal)).toEqual([
-      0, 1, 2, 3, 4, 5,
+      0, 1, 2, 3, 4,
     ]);
     expect(first.occurrences[0]?.occurrenceId).toBe(`activity:${id(1)}:${id(2)}:0:${id(3)}`);
     expect(first.occurrences[1]?.occurrenceId).toBe(`activity:${id(1)}:${id(2)}:1:${id(3)}`);
-    expect(first.occurrences[2]?.occurrenceId).toBe(`boundary:${id(4)}`);
-    expect(first.explicitTimedDurationSeconds).toBe(60 * 2 + 30 + 60 + 15 + 60);
+    expect(first.explicitTimedDurationSeconds).toBe(60 * 2 + 60 + 15 + 60);
   });
 
   it("requires targets and preserves open/manual completion", () => {
-    const segment = activitySegment({ id: 1, category: "run", intervalId: 2, stepId: 3 });
+    const segment = activitySegment({ id: 1, activity_category: "run", intervalId: 2, stepId: 3 });
     const step = segment.intervals[0]?.steps[0];
     if (!step) throw new Error("Fixture requires a step.");
     const withoutTargets = { ...step } as Record<string, unknown>;
@@ -329,8 +428,8 @@ describe("activity plan V3", () => {
     expect(compiled.explicitTimedDurationSeconds).toBe(0);
   });
 
-  it("uses the existing category capability policy for targets", () => {
-    const segment = activitySegment({ id: 1, category: "run", intervalId: 2, stepId: 3 });
+  it("uses the existing activity_category capability policy for targets", () => {
+    const segment = activitySegment({ id: 1, activity_category: "run", intervalId: 2, stepId: 3 });
     const step = segment.intervals[0]?.steps[0];
     if (!step) throw new Error("Fixture requires a step.");
     const result = activityPlanStructureSchemaV3.safeParse({

@@ -1,6 +1,6 @@
 import {
   buildGoalCreatePayload,
-  type CanonicalSport,
+  type CanonicalActivityCategory,
   createEmptyGoalDraft,
   type GoalEditorDraft,
 } from "@repo/core";
@@ -23,7 +23,7 @@ export interface BuilderGoalProfileGoal {
   title: string;
   target_date?: string | null;
   priority?: number | null;
-  activity_category?: CanonicalSport | null;
+  activity_category?: CanonicalActivityCategory | null;
   objective?: TrainingPlanBuilderGoalBlueprint["objective"];
 }
 
@@ -90,7 +90,7 @@ export function BuilderGoalEditorContent({
       >
         <Text className="text-sm font-semibold text-foreground">No goal</Text>
         <Text className="text-xs leading-4 text-muted-foreground">
-          Build a reusable plan from workouts and preferences only.
+          Build a reusable plan from activities and preferences only.
         </Text>
       </Pressable>
       <View className="gap-3">

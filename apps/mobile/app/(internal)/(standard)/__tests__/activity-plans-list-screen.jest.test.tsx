@@ -163,24 +163,24 @@ describe("activity plans list screen", () => {
     activityPlansListUseQueryMock.mockClear();
   });
 
-  it("applies and resets the multisport composition filter", () => {
+  it("queries canonical plans without compatibility filters", () => {
     renderNative(<ActivityPlansListScreen />);
     expect(activityPlansListUseQueryMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({ compositionMode: "include_multisport" }),
+      expect.objectContaining({ ownerScope: "own" }),
     );
 
     fireEvent.press(screen.getByTestId("activity-plans-list-filter-button"));
-    fireEvent.press(screen.getByTestId("activity-plans-list-filter-include-multisport"));
+    fireEvent.press(screen.getByTestId("activity-plans-list-filter-activity_category-run"));
     fireEvent.press(screen.getByTestId("activity-plans-list-filter-sheet-apply"));
     expect(activityPlansListUseQueryMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({ compositionMode: "single_only" }),
+      expect.objectContaining({ activityCategories: ["run"] }),
     );
 
     fireEvent.press(screen.getByTestId("activity-plans-list-filter-button"));
     fireEvent.press(screen.getByTestId("activity-plans-list-filter-sheet-reset"));
     fireEvent.press(screen.getByTestId("activity-plans-list-filter-sheet-apply"));
     expect(activityPlansListUseQueryMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({ compositionMode: "include_multisport" }),
+      expect.objectContaining({ activityCategories: undefined }),
     );
   });
 

@@ -5,6 +5,7 @@ import { Buffer } from "buffer";
 import {
   activityArtifactSemanticsSchema,
   decodedActivityArtifactSchema,
+  FIT_ROUND_TRIP_TOLERANCES,
   type ActivityArtifactSemantics,
   type DecodedActivityArtifact,
   type DecodedArtifactExtensions,
@@ -477,15 +478,15 @@ function boundedMilliseconds(seconds: number | undefined, maximumMs: number): nu
 }
 
 function segmentIdentity(rawSport: RawSourceValue | undefined):
-  | { role: "activity"; category: "run" | "bike" | "swim" | "strength" | "other" }
+  | { role: "activity"; activity_category: "run" | "bike" | "swim" | "strength" | "other" }
   | { role: "transition" }
   | { role: "unknown" } {
   if (rawSport === 3 || rawSport === "transition") return { role: "transition" };
-  if (rawSport === 1 || rawSport === "running") return { role: "activity", category: "run" };
-  if (rawSport === 2 || rawSport === "cycling") return { role: "activity", category: "bike" };
-  if (rawSport === 5 || rawSport === "swimming") return { role: "activity", category: "swim" };
-  if (rawSport === 10 || rawSport === "training") return { role: "activity", category: "strength" };
-  if (profileLabel("sport", rawSport) !== undefined) return { role: "activity", category: "other" };
+  if (rawSport === 1 || rawSport === "running") return { role: "activity", activity_category: "run" };
+  if (rawSport === 2 || rawSport === "cycling") return { role: "activity", activity_category: "bike" };
+  if (rawSport === 5 || rawSport === "swimming") return { role: "activity", activity_category: "swim" };
+  if (rawSport === 10 || rawSport === "training") return { role: "activity", activity_category: "strength" };
+  if (profileLabel("sport", rawSport) !== undefined) return { role: "activity", activity_category: "other" };
   return { role: "unknown" };
 }
 
@@ -564,16 +565,36 @@ export function projectFitArtifactSemantics(artifactInput: unknown): ActivityArt
       (identities[index - 1]?.role !== "activity" || identities[index + 1]?.role !== "activity")
         ? ({ role: "unknown" } as const)
         : sourceIdentity;
-    const activeMs = boundedMilliseconds(
+    const timer = timerEvidence(artifact, session.messageIndex, startOffsetMs, endOffsetMs);
+    const timerDerivedActiveMs = timer.timerEvents
+      ? durationMs -
+        (timer.pauseRanges ?? []).reduce(
+          (total, pause) => total + (pause.endOffsetMs - pause.startOffsetMs),
+          0,
+        )
+      : undefined;
+    const candidateActiveMs = boundedMilliseconds(
       extensionNumber(session.extensions, "totalTimerTime"),
       durationMs,
     );
+    const activeContradictsTimer =
+      candidateActiveMs !== undefined &&
+      timerDerivedActiveMs !== undefined &&
+      Math.abs(candidateActiveMs - timerDerivedActiveMs) > FIT_ROUND_TRIP_TOLERANCES.durationMs;
+    const activeMs = activeContradictsTimer ? undefined : candidateActiveMs;
     const candidateMovingMs = boundedMilliseconds(
       extensionNumber(session.extensions, "totalMovingTime"),
       durationMs,
     );
+    const movingContradictsTimer =
+      candidateMovingMs !== undefined &&
+      timerDerivedActiveMs !== undefined &&
+      candidateMovingMs - timerDerivedActiveMs > FIT_ROUND_TRIP_TOLERANCES.durationMs;
     const movingMs =
-      candidateMovingMs !== undefined && (activeMs === undefined || candidateMovingMs <= activeMs)
+      !activeContradictsTimer &&
+      !movingContradictsTimer &&
+      candidateMovingMs !== undefined &&
+      (activeMs === undefined || candidateMovingMs <= activeMs)
         ? candidateMovingMs
         : undefined;
     const distanceMeters = extensionNumber(session.extensions, "totalDistance");
@@ -586,7 +607,7 @@ export function projectFitArtifactSemantics(artifactInput: unknown): ActivityArt
       ...(activeMs === undefined ? {} : { activeMs }),
       ...(movingMs === undefined ? {} : { movingMs }),
       ...(distanceMeters === undefined || distanceMeters < 0 ? {} : { distanceMeters }),
-      ...timerEvidence(artifact, session.messageIndex, startOffsetMs, endOffsetMs),
+      ...timer,
     };
   });
   const allActive = segments.every((segment) => segment.activeMs !== undefined);
@@ -702,17 +723,21 @@ export function parseFitFileWithSDK(buffer: Buffer | Uint8Array): StandardActivi
       };
     },
   );
-  const sessions: ActivitySession[] = artifact.sessions.map((session) => {
+  const sessions: ActivitySession[] = artifact.sessions.map((session, index) => {
     if (session.startTimeMs === undefined || session.endTimeMs === undefined) throw new Error("Decoded FIT session bounds are missing.");
+    const semanticSegment = semantics.segments[index];
+    if (!semanticSegment) throw new Error(`Decoded FIT session ${session.messageIndex} has no semantic segment.`);
     return {
       messageIndex: session.messageIndex,
       rawSport: session.rawSport,
       rawSubSport: session.rawSubSport,
       startTime: new Date(session.startTimeMs),
       endTime: new Date(session.endTimeMs),
-      totalElapsedTime: extensionNumber(session.extensions, "totalElapsedTime") ?? (session.endTimeMs - session.startTimeMs) / 1000,
-      totalTimerTime: extensionNumber(session.extensions, "totalTimerTime"),
-      totalMovingTime: extensionNumber(session.extensions, "totalMovingTime"),
+      totalElapsedTime: (session.endTimeMs - session.startTimeMs) / 1000,
+      totalTimerTime:
+        semanticSegment.activeMs === undefined ? undefined : semanticSegment.activeMs / 1000,
+      totalMovingTime:
+        semanticSegment.movingMs === undefined ? undefined : semanticSegment.movingMs / 1000,
       totalDistance: extensionNumber(session.extensions, "totalDistance"),
       laps: allLaps.filter((lap) => lap.sessionMessageIndex === session.messageIndex),
       records: allRecords.filter((record) => record.sessionMessageIndex === session.messageIndex),
@@ -726,7 +751,7 @@ export function parseFitFileWithSDK(buffer: Buffer | Uint8Array): StandardActivi
     return {
       sessionMessageIndex: artifactSession.messageIndex,
       role: segment.role,
-      ...(segment.role === "activity" ? { category: segment.category } : {}),
+      ...(segment.role === "activity" ? { activity_category: segment.activity_category } : {}),
       rawSport: segment.rawSport,
       rawSubSport: segment.rawSubSport,
       startTime: new Date((artifact.activity.startTimeMs ?? 0) + segment.startOffsetMs),
@@ -758,7 +783,7 @@ export function parseFitFileWithSDK(buffer: Buffer | Uint8Array): StandardActivi
       product: fileExtensions?.["fit.product"] === undefined ? undefined : String(fileExtensions["fit.product"]),
     },
     summary: {
-      totalTime: extensionNumber(activityExtensions, "totalTimerTime") ?? (semantics.totals.activeMs ?? semantics.totals.elapsedMs) / 1000,
+      totalTime: semantics.totals.elapsedMs / 1000,
       totalDistance,
       ...(sessions.length === 1
         ? {

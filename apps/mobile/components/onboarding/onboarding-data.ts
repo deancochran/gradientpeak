@@ -72,7 +72,7 @@ export const INITIAL_ONBOARDING_DATA: OnboardingData = {
   weight_kg: null,
   weight_unit: "kg",
   gender: null,
-  sport_interests: [],
+  activity_category_interests: [],
   max_hr: null,
   resting_hr: null,
   lthr: null,
@@ -98,7 +98,7 @@ export const INITIAL_ONBOARDING_DATA: OnboardingData = {
   social_action_statuses: {},
 };
 
-export const PRIMARY_SPORT_OPTIONS = [
+export const PRIMARY_ACTIVITY_CATEGORY_OPTIONS = [
   "cycling",
   "running",
   "swimming",

@@ -117,7 +117,7 @@ export function sanitizeTelemetryContext(context) {
       case "provider":
         result[key] = allowedEnum(value, PROVIDERS);
         break;
-      case "category":
+      case "activity_category":
         result[key] = allowedEnum(value, CATEGORIES);
         break;
       case "status":

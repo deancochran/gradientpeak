@@ -27,7 +27,7 @@ export interface OnboardingData {
   weight_kg: number | null;
   weight_unit: "kg" | "lbs";
   gender: "male" | "female" | "other" | null;
-  sport_interests: Array<"cycling" | "running" | "swimming" | "strength" | "other">;
+  activity_category_interests: Array<"cycling" | "running" | "swimming" | "strength" | "other">;
   max_hr: number | null;
   resting_hr: number | null;
   lthr: number | null;

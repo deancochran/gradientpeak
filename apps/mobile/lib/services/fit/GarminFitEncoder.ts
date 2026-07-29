@@ -109,7 +109,7 @@ export interface FitSessionData {
   calories?: number;
   sport: string | number;
   subSport: string | number;
-  /** FIT cannot represent a rest segment as a sport session. */
+  /** FIT cannot represent a rest segment as a FIT sport session. */
   role?: "activity" | "transition" | "unknown" | "rest";
   movingTime?: number;
   poolLength?: number;
@@ -127,7 +127,7 @@ export interface FitSessionTimerEvent {
 }
 
 export interface FitFinalizeOptions {
-  /** Manual means user-controlled sport changes; automatic emits autoMultiSport semantics. */
+  /** Manual means user-controlled FIT sport changes; automatic emits autoMultiSport semantics. */
   multisportMode?: "manual" | "automatic";
 }
 
@@ -724,7 +724,7 @@ export class GarminFitEncoder {
   }
 
   /**
-   * Map sport string to FIT SDK enum value
+   * Map the source value to a FIT SDK sport enum value
    */
   private mapSport(sport: string | number): number {
     if (typeof sport === "number") {
@@ -878,7 +878,9 @@ export class GarminFitEncoder {
       }
       previousSessionEnd = endedAt;
       if (session.role === "rest") {
-        throw new Error("FIT activity files cannot represent a rest segment as a sport session.");
+        throw new Error(
+          "FIT activity files cannot represent a rest segment as a FIT sport session.",
+        );
       }
       const sport = session.role === "transition" ? 3 : this.mapSport(session.sport);
       const subSport = this.mapSubSport(session.subSport);
@@ -1122,7 +1124,9 @@ export class GarminFitEncoder {
     this.validateModernInputs(sessions, multisportMode);
     const ordered = sessions.map((session, index) => {
       if (session.role === "rest") {
-        throw new Error("FIT activity files cannot represent a rest segment as a sport session.");
+        throw new Error(
+          "FIT activity files cannot represent a rest segment as a FIT sport session.",
+        );
       }
       const endedAt = session.endedAt ?? session.startTime + session.totalTime;
       const elapsedMs = endedAt - session.startTime;

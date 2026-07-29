@@ -19,14 +19,14 @@ const base = {
   normalizedGradedSpeed: null,
 };
 
-function rowsFor(activityType: string) {
+function rowsFor(activityCategory: string) {
   return buildActivityFileBestEffortRows({
     ...base,
-    activityType,
+    activityCategory,
     streamMetadata: {
       timestamps,
       powerStream: timestamps.map(() => 250),
-      speedStream: timestamps.map(() => 4),
+      speedStream: timestamps.map(() => (activityCategory === "swim" ? 2 : 4)),
       altitudeStream: timestamps.map(() => 0),
     },
   });
@@ -38,10 +38,10 @@ describe("buildActivityFileBestEffortRows", () => {
     ["run", ["speed"]],
     ["swim", ["speed"]],
     ["strength", []],
-  ])("enforces the %s stream-derived effort matrix", (activityType, effortTypes) => {
-    const rows = rowsFor(activityType);
+  ])("enforces the %s stream-derived effort matrix", (activityCategory, effortTypes) => {
+    const rows = rowsFor(activityCategory);
     expect([...new Set(rows.map((row) => row.effort_type))]).toEqual(effortTypes);
-    expect(rows.every((row) => row.activity_category === activityType)).toBe(true);
+    expect(rows.every((row) => row.activity_category === activityCategory)).toBe(true);
   });
 
   it("persists canonical units and import provenance", () => {
@@ -62,7 +62,7 @@ describe("buildActivityFileBestEffortRows", () => {
     const longTimestamps = Array.from({ length: 1801 }, (_, index) => index);
     const rows = buildActivityFileBestEffortRows({
       ...base,
-      activityType: "bike",
+      activityCategory: "bike",
       streamMetadata: {
         timestamps: longTimestamps,
         powerStream: [],
@@ -88,7 +88,7 @@ describe("buildActivityFileBestEffortRows", () => {
   it("does not promote sparse HR samples into sustained curve evidence", () => {
     const rows = buildActivityFileBestEffortRows({
       ...base,
-      activityType: "bike",
+      activityCategory: "bike",
       streamMetadata: {
         timestamps: [0, 2000],
         powerStream: [],
@@ -105,17 +105,19 @@ describe("buildActivityFileBestEffortRows", () => {
   it.each([
     ["bike", "power"],
     ["swim", "speed"],
-  ] as const)("uses sparse %s stream timestamps for best-effort offsets", (activityType, metric) => {
+  ] as const)("uses sparse %s stream timestamps for best-effort offsets", (activityCategory, metric) => {
+    const lowSpeed = activityCategory === "swim" ? 1 : 2;
+    const highSpeed = activityCategory === "swim" ? 2.5 : 6;
     const records = Array.from({ length: 11 }, (_, second) => ({
       timestamp: new Date(second * 1000),
       power: second === 1 ? undefined : second < 5 ? 100 : 300,
-      speed: second === 1 ? undefined : second < 5 ? 2 : 6,
+      speed: second === 1 ? undefined : second < 5 ? lowSpeed : highSpeed,
       altitude: 0,
     }));
     const metadata = collectActivityFileStreamMetadata(records);
     const rows = buildActivityFileBestEffortRows({
       ...base,
-      activityType,
+      activityCategory,
       streamMetadata: {
         timestamps: metadata.timestamps,
         powerStream: metadata.powerStream,
@@ -135,7 +137,7 @@ describe("buildActivityFileBestEffortRows", () => {
   it("retains exact fractional effort boundaries in provenance when the offset column quantizes", () => {
     const rows = buildActivityFileBestEffortRows({
       ...base,
-      activityType: "bike",
+      activityCategory: "bike",
       streamMetadata: {
         timestamps: [0, 1, 2.5, 4, 5.5],
         powerStream: [0, 100, 100, 100, 0],
@@ -153,6 +155,23 @@ describe("buildActivityFileBestEffortRows", () => {
         persisted_start_offset_quantization: "floor_seconds_v1",
       },
     });
+  });
+
+  it("omits hard-invalid speed efforts without clamping valid stream evidence", () => {
+    const rows = buildActivityFileBestEffortRows({
+      ...base,
+      activityCategory: "run",
+      streamMetadata: {
+        timestamps,
+        powerStream: [],
+        speedStream: timestamps.map((second) => (second === 30 ? 100 : 4)),
+        altitudeStream: [],
+      },
+    });
+
+    expect(rows.map((row) => row.duration_seconds)).toEqual([30, 60]);
+    expect(rows.every((row) => row.value >= 0.3 && row.value <= 13)).toBe(true);
+    expect(rows.some((row) => row.value === 13)).toBe(false);
   });
 });
 
@@ -181,7 +200,7 @@ describe("sparse activity-file stream calculations", () => {
     expect(metadata.hrTimestamps).toEqual([0, 2, 3, 4]);
 
     const metrics = calculateActivityFileStreamDerivedMetrics({
-      activityType: "bike",
+      activityCategory: "bike",
       distance: 0,
       duration: 4,
       streamMetadata: metadata,
@@ -208,7 +227,7 @@ describe("sparse activity-file stream calculations", () => {
     const graded = calculateGradedSpeedStream([4, 5, 6, 7], [0, 2, 4, 5], [0, 2, 4, 5]);
 
     const metrics = calculateActivityFileStreamDerivedMetrics({
-      activityType: "run",
+      activityCategory: "run",
       distance: 25,
       duration: 5,
       streamMetadata: metadata,

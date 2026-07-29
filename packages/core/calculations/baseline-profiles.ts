@@ -2,7 +2,7 @@
  * Baseline Profiles
  *
  * Functions for generating complete baseline performance profiles based on
- * athlete characteristics (experience level, weight, gender, age, sport).
+ * athlete characteristics (experience level, weight, gender, age, activity_category).
  *
  * Used during onboarding to provide comprehensive baseline metrics when users
  * don't know their exact performance values. Supports:
@@ -10,7 +10,7 @@
  * - Intermediate: Typical values for regular training
  * - Advanced: Competitive athlete values
  *
- * Creates complete profiles including heart rate metrics, sport-specific
+ * Creates complete profiles including heart rate metrics, activity-category-specific
  * performance metrics, and confidence levels.
  */
 import type { ExperienceLevel } from "../estimators/types";
@@ -23,9 +23,9 @@ import {
 } from "./performance-estimates";
 
 /**
- * Sport type for baseline profile generation.
+ * ActivityCategory type for baseline profile generation.
  */
-export type Sport = "cycling" | "running" | "swimming" | "triathlon" | "other";
+export type ActivityCategory = "cycling" | "running" | "swimming" | "triathlon" | "other";
 
 /**
  * Complete baseline profile with all metrics.
@@ -37,7 +37,7 @@ export interface BaselineProfile {
   lthr: number;
   vo2_max: number;
 
-  // Performance metrics (sport-specific)
+  // Performance metrics (activity-category-specific)
   ftp?: number; // cycling/triathlon
   threshold_pace_seconds_per_km?: number; // running/triathlon
   css_seconds_per_hundred_meters?: number; // swimming/triathlon
@@ -52,7 +52,7 @@ export interface BaselineProfile {
  *
  * Generates conservative, realistic baseline values for:
  * - Heart rate metrics (max HR, resting HR, LTHR, VO2max)
- * - Sport-specific performance metrics (FTP, threshold pace, CSS)
+ * - ActivityCategory-specific performance metrics (FTP, threshold pace, CSS)
  * - Confidence and source metadata
  *
  * Returns null for 'skip' or 'advanced' experience levels (no baseline needed).
@@ -61,7 +61,7 @@ export interface BaselineProfile {
  * @param weightKg - Athlete weight in kg
  * @param gender - Athlete gender
  * @param age - Athlete age in years
- * @param sport - Primary sport
+ * @param activity_category - Primary activity_category
  * @returns Complete baseline profile or null if not applicable
  *
  * @example
@@ -97,7 +97,7 @@ export function getBaselineProfile(
   weightKg: number,
   gender: "male" | "female" | "other",
   age: number,
-  sport: Sport,
+  activity_category: ActivityCategory,
 ): BaselineProfile | null {
   // No baseline needed for skip or advanced (user will enter their own values)
   if (experienceLevel === "skip" || experienceLevel === "advanced") {
@@ -134,18 +134,18 @@ export function getBaselineProfile(
   const lthr = estimateLTHR(max_hr);
   const vo2_max = calculateVO2MaxFromHR(max_hr, resting_hr);
 
-  // Calculate sport-specific performance metrics
+  // Calculate activity-category-specific performance metrics
   let ftp: number | undefined;
   let threshold_pace_seconds_per_km: number | undefined;
   let css_seconds_per_hundred_meters: number | undefined;
 
   // Cycling or triathlon: include FTP
-  if (sport === "cycling" || sport === "triathlon") {
+  if (activity_category === "cycling" || activity_category === "triathlon") {
     ftp = estimateFTPFromWeight(weightKg, gender, resolvedExperienceLevel);
   }
 
   // Running or triathlon: include threshold pace
-  if (sport === "running" || sport === "triathlon") {
+  if (activity_category === "running" || activity_category === "triathlon") {
     threshold_pace_seconds_per_km = estimateThresholdPaceFromGender(
       gender,
       resolvedExperienceLevel,
@@ -153,7 +153,7 @@ export function getBaselineProfile(
   }
 
   // Swimming or triathlon: include CSS
-  if (sport === "swimming" || sport === "triathlon") {
+  if (activity_category === "swimming" || activity_category === "triathlon") {
     css_seconds_per_hundred_meters = estimateCSSFromGender(gender, resolvedExperienceLevel);
   }
 

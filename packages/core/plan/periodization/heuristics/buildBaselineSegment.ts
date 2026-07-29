@@ -1,6 +1,6 @@
+import type { CanonicalActivityCategory } from "../../../schemas/activity-category";
 import { referenceTrajectoryPointSchema, type TrajectoryPhase } from "../../../schemas/planning";
-import type { CanonicalSport } from "../../../schemas/sport";
-import { getSportModelConfig } from "../sports";
+import { getActivityCategoryModelConfig } from "../activity-categories";
 
 export interface BuildBaselineSegmentInput {
   startDate: string;
@@ -8,7 +8,7 @@ export interface BuildBaselineSegmentInput {
   startCtl: number;
   endCtl: number;
   phase: TrajectoryPhase;
-  sport: CanonicalSport;
+  activity_category: CanonicalActivityCategory;
   goalIdsInEffect?: string[];
   rationaleCodes?: string[];
   excludeStart?: boolean;
@@ -44,7 +44,7 @@ export function buildBaselineSegment(input: BuildBaselineSegmentInput) {
   }
 
   const totalDays = diffDays(input.startDate, input.endDate);
-  const config = getSportModelConfig(input.sport);
+  const config = getActivityCategoryModelConfig(input.activity_category);
   const points = [];
 
   for (let index = input.excludeStart ? 1 : 0; index <= totalDays; index += 1) {

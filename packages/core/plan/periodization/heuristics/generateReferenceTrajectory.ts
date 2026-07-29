@@ -1,3 +1,4 @@
+import type { PlanningActivityCategory } from "../../../schemas/activity-category";
 import {
   type EventDemand,
   type FeasibilityAssessment,
@@ -8,7 +9,6 @@ import {
   type TrajectoryMode,
 } from "../../../schemas/planning";
 import type { AthletePreferenceProfile } from "../../../schemas/settings/profile_settings";
-import type { PlanningSport } from "../../../schemas/sport";
 import { buildBaselineSegment } from "./buildBaselineSegment";
 import { computeTaperWindow } from "./computeTaperWindow";
 import {
@@ -62,14 +62,14 @@ function clampDate(date: string, startDate: string, endDate: string): string {
   return date;
 }
 
-function resolvePlanningSport(demands: EventDemand[]): PlanningSport {
+function resolvePlanningActivityCategory(demands: EventDemand[]): PlanningActivityCategory {
   if (demands.length === 0) {
     return "mixed";
   }
 
-  const firstSport = demands[0]?.sport;
-  if (demands.every((demand) => demand.sport === firstSport)) {
-    return firstSport ?? "mixed";
+  const firstActivityCategory = demands[0]?.activity_category;
+  if (demands.every((demand) => demand.activity_category === firstActivityCategory)) {
+    return firstActivityCategory ?? "mixed";
   }
 
   return "mixed";
@@ -106,7 +106,7 @@ function pushEventPoint(
   points: ReferenceTrajectoryPoint[],
   eventDate: string,
   targetCtl: number,
-  sport: Exclude<PlanningSport, "mixed">,
+  activity_category: Exclude<PlanningActivityCategory, "mixed">,
   goalIds: string[],
   rationaleCodes: string[],
 ) {
@@ -116,7 +116,7 @@ function pushEventPoint(
     startCtl: targetCtl,
     endCtl: targetCtl,
     phase: "event",
-    sport,
+    activity_category,
     goalIdsInEffect: goalIds,
     rationaleCodes,
   })[0];
@@ -140,7 +140,7 @@ function buildCandidates(input: GenerateReferenceTrajectoryInput): GoalTrajector
       {
         goal,
         demand,
-        sport: demand.sport,
+        activity_category: demand.activity_category,
         targetCtl: resolveGoalPeakCtl(
           input.currentCtl,
           input.startDate,
@@ -161,7 +161,7 @@ function addRecoveryTail(
   currentDate: string,
   endDate: string,
   currentCtl: number,
-  sport: Exclude<PlanningSport, "mixed">,
+  activity_category: Exclude<PlanningActivityCategory, "mixed">,
 ) {
   if (currentDate > endDate) {
     return;
@@ -176,7 +176,7 @@ function addRecoveryTail(
       startCtl: currentCtl,
       endCtl: round(currentCtl * 0.92),
       phase: "recovery",
-      sport,
+      activity_category,
       excludeStart: points.length > 0,
       rationaleCodes: ["post_goal_recovery_segment"],
     }),
@@ -191,7 +191,7 @@ function addRecoveryTail(
         startCtl: round(currentCtl * 0.92),
         endCtl: round(currentCtl * 0.92),
         phase: "maintenance",
-        sport,
+        activity_category,
         excludeStart: true,
         rationaleCodes: ["post_goal_maintenance_segment"],
       }),
@@ -206,7 +206,7 @@ function renderMergedGoalWindow(
   currentCtl: number,
   endDate: string,
 ): { nextDate: string; nextCtl: number } {
-  const sport = window.sport;
+  const activity_category = window.activity_category;
   const taperStart = clampDate(addDays(window.goalDate, -window.taperDays), currentDate, endDate);
 
   appendPoints(
@@ -217,7 +217,7 @@ function renderMergedGoalWindow(
       startCtl: currentCtl,
       endCtl: window.targetCtl,
       phase: currentDate === taperStart ? "build" : "build",
-      sport,
+      activity_category,
       excludeStart: points.length > 0,
       rationaleCodes: [...window.rationale_codes, "reverse_peak_anchor_applied"],
     }),
@@ -233,13 +233,13 @@ function renderMergedGoalWindow(
         startCtl: window.targetCtl,
         endCtl: firstEventCtl,
         phase: "taper",
-        sport,
+        activity_category,
         excludeStart: true,
         goalIdsInEffect: window.goalIds,
         rationaleCodes: [...window.rationale_codes, "sustained_peak_first_taper"],
       }),
     );
-    pushEventPoint(points, window.goalDate, firstEventCtl, sport, window.goalIds, [
+    pushEventPoint(points, window.goalDate, firstEventCtl, activity_category, window.goalIds, [
       ...window.rationale_codes,
       "sustained_peak_first_event",
     ]);
@@ -261,7 +261,7 @@ function renderMergedGoalWindow(
           startCtl: Math.max(firstEventCtl, sustainedFloor),
           endCtl: Math.max(window.secondaryTargetCtl ?? window.targetCtl, sustainedFloor),
           phase: "maintenance",
-          sport,
+          activity_category,
           excludeStart: false,
           goalIdsInEffect: window.goalIds,
           rationaleCodes: [...window.rationale_codes, "sustained_peak_bridge_segment"],
@@ -278,16 +278,20 @@ function renderMergedGoalWindow(
         startCtl: Math.max(window.secondaryTargetCtl ?? window.targetCtl, sustainedFloor),
         endCtl: secondTargetCtl,
         phase: "taper",
-        sport,
+        activity_category,
         excludeStart: true,
         goalIdsInEffect: window.goalIds,
         rationaleCodes: [...window.rationale_codes, "sustained_peak_second_taper"],
       }),
     );
-    pushEventPoint(points, window.secondaryGoalDate, secondTargetCtl, sport, window.goalIds, [
-      ...window.rationale_codes,
-      "sustained_peak_second_event",
-    ]);
+    pushEventPoint(
+      points,
+      window.secondaryGoalDate,
+      secondTargetCtl,
+      activity_category,
+      window.goalIds,
+      [...window.rationale_codes, "sustained_peak_second_event"],
+    );
 
     return {
       nextDate: addDays(window.secondaryGoalDate, 1),
@@ -305,13 +309,13 @@ function renderMergedGoalWindow(
       startCtl: window.targetCtl,
       endCtl: taperEndCtl,
       phase: "taper",
-      sport,
+      activity_category,
       excludeStart: true,
       goalIdsInEffect: window.goalIds,
       rationaleCodes: [...window.rationale_codes, `${window.strategy}_taper_segment`],
     }),
   );
-  pushEventPoint(points, window.goalDate, taperEndCtl, sport, window.goalIds, [
+  pushEventPoint(points, window.goalDate, taperEndCtl, activity_category, window.goalIds, [
     ...window.rationale_codes,
     `${window.strategy}_event_point`,
   ]);
@@ -325,7 +329,7 @@ function renderMergedGoalWindow(
 export function generateReferenceTrajectory(
   input: GenerateReferenceTrajectoryInput,
 ): ReferenceTrajectory {
-  const sport = resolvePlanningSport(input.resolvedDemands);
+  const activity_category = resolvePlanningActivityCategory(input.resolvedDemands);
   const candidates = buildCandidates(input);
   const mergedGoals = mergeGoalTrajectories(candidates, input.mode);
   const calculatedParameters = {
@@ -341,14 +345,14 @@ export function generateReferenceTrajectory(
   if (mergedGoals.length === 0) {
     return referenceTrajectorySchema.parse({
       mode: input.mode,
-      sport,
+      activity_category,
       points: buildBaselineSegment({
         startDate: input.startDate,
         endDate: input.endDate,
         startCtl: input.currentCtl,
         endCtl: input.currentCtl,
         phase: "maintenance",
-        sport: sport === "mixed" ? "other" : sport,
+        activity_category: activity_category === "mixed" ? "other" : activity_category,
         rationaleCodes: [...input.feasibility.rationale_codes, "no_goal_maintenance_baseline"],
       }),
       feasibility: input.feasibility,
@@ -381,12 +385,12 @@ export function generateReferenceTrajectory(
     cursorDate,
     input.endDate,
     cursorCtl,
-    sport === "mixed" ? "other" : sport,
+    activity_category === "mixed" ? "other" : activity_category,
   );
 
   return referenceTrajectorySchema.parse({
     mode: input.mode,
-    sport,
+    activity_category,
     points,
     feasibility: input.feasibility,
     calculated_parameters: calculatedParameters,

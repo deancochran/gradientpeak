@@ -38,7 +38,7 @@ function model(
       lineageGroupId: `activity:${observation.activityId}`,
       activitySourceId: `activity:${observation.activityId}:record`,
       observedAt: observation.observedAt ?? "2026-07-09T12:00:00.000Z",
-      sport: "bike",
+      activity_category: "bike",
       startOffsetSeconds: null,
       endOffsetSeconds: null,
       durationSeconds: observation.durationSeconds,
@@ -57,7 +57,7 @@ function model(
           lineageGroupId: effort.lineageGroupId,
           observedAt: effort.observedAt,
           rawObservation: { value: effort.durationSeconds, unit: "seconds" },
-          sport: "bike" as const,
+          activity_category: "bike" as const,
           modality: "duration",
           sourceType: "activity_effort" as const,
           qualityState: "known" as const,
@@ -73,7 +73,7 @@ function model(
           lineageGroupId: effort.lineageGroupId,
           observedAt: effort.observedAt,
           rawObservation: { value: effort.powerWatts, unit: "watts" },
-          sport: "bike" as const,
+          activity_category: "bike" as const,
           modality: input.modeled ? "value-modeled" : "value",
           sourceType: "activity_effort" as const,
           qualityState: "known" as const,
@@ -221,7 +221,10 @@ describe("critical power capability", () => {
   });
 
   it("returns unsupported outside cycling without relabeling CP as FTP", () => {
-    const result = calculateCriticalPowerCapability({ model: model(), targetSport: "run" });
+    const result = calculateCriticalPowerCapability({
+      model: model(),
+      targetActivityCategory: "run",
+    });
     expect(result.criticalPowerWatts).toMatchObject({
       state: "unsupported",
       reasonCodes: ["critical_power_only_supported_for_bike"],

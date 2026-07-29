@@ -315,7 +315,7 @@ export async function getProfilePerformanceSnapshot(db: DbClient, profileId: str
         ? []
         : [
             {
-              sport: "bike" as const,
+              activity_category: "bike" as const,
               metric: "power" as const,
               value: Number(effort.value),
               durationSeconds: 1200,

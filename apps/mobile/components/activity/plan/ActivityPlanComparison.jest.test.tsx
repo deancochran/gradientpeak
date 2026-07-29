@@ -21,7 +21,7 @@ jest.mock("lucide-react-native", () => ({
   CheckCircle: createHost("CheckCircle"),
   XCircle: createHost("XCircle"),
 }));
-jest.mock("@/components/activity-plan/workout/TimelineChart", () => ({
+jest.mock("@/components/activity-plan/activity/TimelineChart", () => ({
   __esModule: true,
   TimelineChart: createHost("TimelineChart"),
 }));
@@ -31,7 +31,7 @@ function commonLoad(load: number, intensity: number, estimated: boolean) {
     status: "available" as const,
     model: "gradientpeak_relative_load" as const,
     version: "1" as const,
-    sport: "bike" as const,
+    activity_category: "bike" as const,
     method: "power_threshold" as const,
     load,
     intensity,

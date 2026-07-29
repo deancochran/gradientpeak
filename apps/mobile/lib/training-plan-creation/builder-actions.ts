@@ -1,7 +1,7 @@
 import type {
   AthletePlanningContextFieldKey,
   AthletePlanningContextFieldOverride,
-  CanonicalSport,
+  CanonicalActivityCategory,
 } from "@repo/core";
 import { addDaysDateOnlyUtc } from "@repo/core";
 import type { Dispatch } from "react";
@@ -43,7 +43,7 @@ export function createTrainingPlanBuilderActions(input: {
     title: string;
     target_date?: string | null;
     priority?: number | null;
-    activity_category?: CanonicalSport | null;
+    activity_category?: CanonicalActivityCategory | null;
     objective?: TrainingPlanBuilderGoalBlueprint["objective"];
   }) => TrainingPlanBuilderGoalBlueprint;
 }) {

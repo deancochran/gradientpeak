@@ -56,7 +56,9 @@
       "outputs": []
     },
     "dev:e2e": {
+      "dependsOn": ["@repo/db#dev:setup"],
       "cache": false,
+      "passThroughEnv": ["EXPO_PORT", "PORT"],
       "persistent": true
     },
     "test": {

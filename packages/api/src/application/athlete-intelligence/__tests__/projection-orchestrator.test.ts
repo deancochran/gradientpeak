@@ -41,7 +41,7 @@ function canonicalModel(): AthleteIntelligenceModelInput {
         | "activity"
         | "activity_effort"
         | "goal";
-      sport?: "bike" | null;
+      activity_category?: "bike" | null;
       compatibilityState?: "compatible" | "incompatible_unit";
       modality?: string;
     } = {},
@@ -53,7 +53,7 @@ function canonicalModel(): AthleteIntelligenceModelInput {
       lineageGroupId: options.lineageGroupId ?? `manual-test:value-${sequence}`,
       observedAt: asOf.toISOString(),
       rawObservation: { value, unit },
-      sport: options.sport ?? null,
+      activity_category: options.activity_category ?? null,
       modality: options.modality ?? "manual",
       sourceType: options.sourceType ?? "manual_observation",
       qualityState: "known",
@@ -75,23 +75,23 @@ function canonicalModel(): AthleteIntelligenceModelInput {
     sourceId: "activity:ride:record",
     lineageGroupId: "activity:ride",
     sourceType: "activity",
-    sport: "bike",
+    activity_category: "bike",
   });
   const effortSource = evidence(null, null, {
     sourceId: "effort:hour:record",
     lineageGroupId: "activity:effort-hour",
     sourceType: "activity_effort",
-    sport: "bike",
+    activity_category: "bike",
   });
   const goalSource = evidence(null, null, {
     sourceId: `goal:${goalId}:record`,
     lineageGroupId: `manual-test:goal-${goalId}`,
     sourceType: "goal",
-    sport: "bike",
+    activity_category: "bike",
   });
   const nullMetric = (unit: string) => measured(null, unit);
   const bikeLoadIdentity = {
-    sport: "bike",
+    activity_category: "bike",
     family: "tss" as const,
     method: "normalized_power",
     version: "1",
@@ -121,7 +121,7 @@ function canonicalModel(): AthleteIntelligenceModelInput {
   for (const metric of Object.values(activityMetrics)) {
     for (const sourceId of metric.evidenceSourceIds) {
       const item = evidenceRegistry[sourceId];
-      if (item) evidenceRegistry[sourceId] = { ...item, sport: "bike" };
+      if (item) evidenceRegistry[sourceId] = { ...item, activity_category: "bike" };
     }
   }
 
@@ -167,7 +167,7 @@ function canonicalModel(): AthleteIntelligenceModelInput {
         lineageGroupId: "activity:ride",
         startedAt: "2026-07-08T08:00:00.000Z",
         endedAt: "2026-07-08T10:00:00.000Z",
-        sport: "bike",
+        activity_category: "bike",
         metrics: activityMetrics,
         zonesAndCurves: [],
         laps: [],
@@ -180,7 +180,7 @@ function canonicalModel(): AthleteIntelligenceModelInput {
         lineageGroupId: "activity:effort-hour",
         activitySourceId: null,
         observedAt: "2026-07-08T09:00:00.000Z",
-        sport: "bike",
+        activity_category: "bike",
         startOffsetSeconds: null,
         endOffsetSeconds: null,
         durationSeconds: 3600,
@@ -188,13 +188,13 @@ function canonicalModel(): AthleteIntelligenceModelInput {
           evidence(3600, "seconds", {
             lineageGroupId: "activity:effort-hour",
             sourceType: "activity_effort",
-            sport: "bike",
+            activity_category: "bike",
             modality: "duration",
           }),
           evidence(280, "watts", {
             lineageGroupId: "activity:effort-hour",
             sourceType: "activity_effort",
-            sport: "bike",
+            activity_category: "bike",
             modality: "value",
           }),
         ],
@@ -206,13 +206,13 @@ function canonicalModel(): AthleteIntelligenceModelInput {
           sourceId: "effort:hour-2:record",
           lineageGroupId: "activity:effort-hour-2",
           sourceType: "activity_effort",
-          sport: "bike",
+          activity_category: "bike",
         }),
         athleteId: profileId,
         lineageGroupId: "activity:effort-hour-2",
         activitySourceId: null,
         observedAt: "2026-07-07T09:00:00.000Z",
-        sport: "bike",
+        activity_category: "bike",
         startOffsetSeconds: null,
         endOffsetSeconds: null,
         durationSeconds: 3600,
@@ -220,13 +220,13 @@ function canonicalModel(): AthleteIntelligenceModelInput {
           evidence(3600, "seconds", {
             lineageGroupId: "activity:effort-hour-2",
             sourceType: "activity_effort",
-            sport: "bike",
+            activity_category: "bike",
             modality: "duration",
           }),
           evidence(260, "watts", {
             lineageGroupId: "activity:effort-hour-2",
             sourceType: "activity_effort",
-            sport: "bike",
+            activity_category: "bike",
             modality: "value",
           }),
         ],
@@ -241,7 +241,7 @@ function canonicalModel(): AthleteIntelligenceModelInput {
         lineageGroupId: `manual-test:goal-${goalId}`,
         targetDate: "2026-09-01",
         priority: 8,
-        goalSport: "bike",
+        goalActivityCategory: "bike",
         objective: {
           type: "threshold",
           metric: "power",
@@ -257,14 +257,14 @@ function canonicalModel(): AthleteIntelligenceModelInput {
       athleteId: profileId,
       lineageGroupId: "manual-test:profile",
       evidenceSourceIds: [profileSource],
-      preferredSports: ["bike"],
+      preferredActivityCategories: ["bike"],
       weeklyTimeWindows: [{ day: "monday", startMinuteLocal: 360, endMinuteLocal: 480 }],
       hardRestDays: [],
       maximumWeeklyMinutes: measured(600, "minutes"),
       maximumDailyMinutes: measured(180, "minutes"),
       maximumSessionsPerDay: measured(2, "count"),
       maximumSessionDurationMinutes: measured(180, "minutes"),
-      sportDoseLimits: [],
+      activityCategoryDoseLimits: [],
       allowDoubleDays: true,
       minimumRecoveryHours: measured(12, "hours"),
       maximumConsecutiveTrainingDays: measured(6, "days"),
@@ -281,7 +281,7 @@ function canonicalModel(): AthleteIntelligenceModelInput {
         sourceId: evidence(null, null, {
           sourceId: "manual:event",
           lineageGroupId: "manual-test:event",
-          sport: "bike",
+          activity_category: "bike",
         }),
         athleteId: profileId,
         lineageGroupId: "manual-test:event",
@@ -291,7 +291,7 @@ function canonicalModel(): AthleteIntelligenceModelInput {
         allDay: false,
         lifecycle: "planned",
         eventType: "training",
-        sport: "bike",
+        activity_category: "bike",
         recurrence: null,
         completionActivitySourceId: null,
         planSourceId: null,
@@ -441,7 +441,7 @@ describe("projectAthleteIntelligence", () => {
     const goal = first(swim.goals, "Goal");
     swim.goals[0] = {
       ...goal,
-      goalSport: "swim",
+      goalActivityCategory: "swim",
       objective: {
         type: "threshold",
         metric: "pace",
@@ -451,7 +451,8 @@ describe("projectAthleteIntelligence", () => {
       },
     };
     const goalEvidence = swim.evidenceRegistry[goal.sourceId];
-    if (goalEvidence) swim.evidenceRegistry[goal.sourceId] = { ...goalEvidence, sport: "swim" };
+    if (goalEvidence)
+      swim.evidenceRegistry[goal.sourceId] = { ...goalEvidence, activity_category: "swim" };
     swim.efforts = [
       { duration: 300, pace: 90, id: "short" },
       { duration: 1_200, pace: 105, id: "long" },
@@ -466,7 +467,7 @@ describe("projectAthleteIntelligence", () => {
         lineageGroupId,
         observedAt: "2026-07-08T09:00:00.000Z",
         rawObservation: { value: null, unit: null },
-        sport: "swim",
+        activity_category: "swim",
         modality: "record",
         sourceType: "activity_effort",
         qualityState: "known",
@@ -479,7 +480,7 @@ describe("projectAthleteIntelligence", () => {
         lineageGroupId,
         observedAt: "2026-07-08T09:00:00.000Z",
         rawObservation: { value: duration, unit: "seconds" },
-        sport: "swim",
+        activity_category: "swim",
         modality: "duration",
         sourceType: "activity_effort",
         qualityState: "known",
@@ -492,7 +493,7 @@ describe("projectAthleteIntelligence", () => {
         lineageGroupId,
         observedAt: "2026-07-08T09:00:00.000Z",
         rawObservation: { value: 100 / pace, unit: "meters_per_second" },
-        sport: "swim",
+        activity_category: "swim",
         modality: "value",
         sourceType: "activity_effort",
         qualityState: "known",
@@ -505,7 +506,7 @@ describe("projectAthleteIntelligence", () => {
         lineageGroupId,
         activitySourceId: null,
         observedAt: "2026-07-08T09:00:00.000Z",
-        sport: "swim" as const,
+        activity_category: "swim" as const,
         startOffsetSeconds: null,
         endOffsetSeconds: null,
         durationSeconds: duration,
@@ -594,7 +595,7 @@ describe("projectAthleteIntelligence", () => {
       lineageGroupId: "activity:effort-unsupported",
       observedAt: asOf.toISOString(),
       rawObservation: { value: 10, unit: "horsepower" },
-      sport: "bike",
+      activity_category: "bike",
       modality: "value-raw",
       sourceType: "activity_effort",
       qualityState: "known",
@@ -696,7 +697,7 @@ describe("projectAthleteIntelligence", () => {
     const goal = first(runGoal.goals, "Goal");
     runGoal.goals[0] = {
       ...goal,
-      goalSport: "run",
+      goalActivityCategory: "run",
       objective: {
         type: "threshold",
         metric: "pace",
@@ -709,7 +710,7 @@ describe("projectAthleteIntelligence", () => {
     if (!goalEvidence) throw new Error("Goal evidence fixture missing");
     runGoal.evidenceRegistry[goal.sourceId] = {
       ...goalEvidence,
-      sport: "run",
+      activity_category: "run",
     };
     const event = first(runGoal.plannedSchedule, "Planned event");
     const eventEvidence = runGoal.evidenceRegistry[event.sourceId];
@@ -718,17 +719,17 @@ describe("projectAthleteIntelligence", () => {
       ...eventEvidence,
       sourceId: "manual:event-strength",
       lineageGroupId: "manual-test:event-strength",
-      sport: "strength",
+      activity_category: "strength",
     };
     runGoal.plannedSchedule = [
-      { ...event, sport: "bike" },
+      { ...event, activity_category: "bike" },
       {
         ...event,
         sourceId: "manual:event-strength",
         lineageGroupId: "manual-test:event-strength",
         startAt: "2026-07-13T07:00:00.000Z",
         endAt: "2026-07-13T08:00:00.000Z",
-        sport: "strength",
+        activity_category: "strength",
       },
     ];
     runGoal.trainingContext.hardRestDays = ["monday"];
@@ -751,7 +752,7 @@ describe("projectAthleteIntelligence", () => {
       90,
     );
     calculateTrainingFeasibilityMock.mockImplementationOnce((input: TrainingFeasibilityInput) => {
-      expect(input.targetGoalSport).toBe("run");
+      expect(input.targetGoalActivityCategory).toBe("run");
       return coreFeasibility.calculate({ ...input, requiredWeeklySessions: 2 });
     });
 
@@ -764,31 +765,31 @@ describe("projectAthleteIntelligence", () => {
     expect(projection.feasibility.constraints.weeklyDurationExcesses.estimate).toBe(1);
   });
 
-  it("reports missing selected-goal sport instead of borrowing scheduled-session credit", async () => {
-    const noSport = canonicalModel();
-    const goal = first(noSport.goals, "Goal");
-    noSport.goals[0] = {
+  it("reports missing selected-goal activity_category instead of borrowing scheduled-session credit", async () => {
+    const noActivityCategory = canonicalModel();
+    const goal = first(noActivityCategory.goals, "Goal");
+    noActivityCategory.goals[0] = {
       ...goal,
-      goalSport: null,
+      goalActivityCategory: null,
       objective: { type: "threshold", metric: "power", value: 320, test_duration_s: 3600 },
     };
-    const goalEvidence = noSport.evidenceRegistry[goal.sourceId];
+    const goalEvidence = noActivityCategory.evidenceRegistry[goal.sourceId];
     if (!goalEvidence) throw new Error("Goal evidence fixture missing");
-    noSport.evidenceRegistry[goal.sourceId] = {
+    noActivityCategory.evidenceRegistry[goal.sourceId] = {
       ...goalEvidence,
-      sport: null,
+      activity_category: null,
     };
     calculateTrainingFeasibilityMock.mockImplementationOnce((input: TrainingFeasibilityInput) => {
-      expect(input.targetGoalSport).toBeNull();
+      expect(input.targetGoalActivityCategory).toBeNull();
       return coreFeasibility.calculate({ ...input, requiredWeeklySessions: 2 });
     });
 
-    const projection = await project(athleteIntelligenceModelInputSchema.parse(noSport));
+    const projection = await project(athleteIntelligenceModelInputSchema.parse(noActivityCategory));
 
     expect(projection.feasibility.requiredSessionCoverage).toMatchObject({
       state: "unsupported",
       missingDataState: "unsupported_input",
-      reasonCodes: ["target_goal_sport_required_for_session_coverage"],
+      reasonCodes: ["target_goal_activity_category_required_for_session_coverage"],
     });
     expect(projection.explainability.limits).toEqual(
       expect.arrayContaining([
@@ -805,7 +806,7 @@ describe("projectAthleteIntelligence", () => {
     const goal = first(consistency.goals, "Goal");
     consistency.goals[0] = {
       ...goal,
-      goalSport: "bike",
+      goalActivityCategory: "bike",
       objective: { type: "consistency", target_sessions_per_week: 2, target_weeks: 8 },
     };
 
@@ -904,7 +905,9 @@ describe("projectAthleteIntelligence", () => {
     expect(projection.runtimeContext.stateVector.wellnessContext.coverage.sourceIds).toContain(
       "metric:hrv",
     );
-    expect(projection.runtimeContext.stateVector.externalWork[0]).toMatchObject({ sport: "bike" });
+    expect(projection.runtimeContext.stateVector.externalWork[0]).toMatchObject({
+      activity_category: "bike",
+    });
     expect(projection.runtimeContext.stateVector.externalWork[0]?.loadIdentity).toBeTruthy();
     expect(projection.runtimeContext.stateVector.mechanicalExposure.result.state).toBe(
       "unsupported",
@@ -915,7 +918,7 @@ describe("projectAthleteIntelligence", () => {
     });
   });
 
-  it("emits one external-work channel per represented sport and exact load identity", async () => {
+  it("emits one external-work channel per represented activity_category and exact load identity", async () => {
     const model = canonicalModel();
     const bike = first(model.activities, "Bike activity");
     const runSourceId = "activity:run-load";
@@ -923,13 +926,13 @@ describe("projectAthleteIntelligence", () => {
       ...bike,
       sourceId: runSourceId,
       lineageGroupId: "activity:run-load",
-      sport: "run" as const,
+      activity_category: "run" as const,
       metrics: {
         ...bike.metrics,
         trainingLoad: {
           ...bike.metrics.trainingLoad,
           identity: {
-            sport: "run",
+            activity_category: "run",
             family: "trimp" as const,
             method: "heart_rate",
             version: "1",
@@ -946,14 +949,16 @@ describe("projectAthleteIntelligence", () => {
           ...model.evidenceRegistry[bike.sourceId],
           sourceId: runSourceId,
           lineageGroupId: "activity:run-load",
-          sport: "run",
+          activity_category: "run",
         },
       },
       activities: [run, bike],
     });
     const projection = await project(parsed);
     expect(
-      projection.runtimeContext.stateVector.externalWork.map(({ sport }) => sport).sort(),
+      projection.runtimeContext.stateVector.externalWork
+        .map(({ activity_category }) => activity_category)
+        .sort(),
     ).toEqual(["bike", "run"]);
 
     const reordered = await project(

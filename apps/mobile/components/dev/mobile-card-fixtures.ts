@@ -19,8 +19,7 @@ export const mobileCardFixtures = {
     id: "fixture-activity-plan",
     name: "Progressive tempo builder",
     description: "Warm up, build through three efforts, and finish easy.",
-    categories: ["run"],
-    primary_category: "run",
+    activity_category: "run",
     created_at: "2026-07-19T12:00:00.000Z",
     authoritative_metrics: {
       estimated_duration: 3_600,
@@ -33,7 +32,7 @@ export const mobileCardFixtures = {
         {
           id: id(1),
           role: "activity",
-          category: "run",
+          activity_category: "run",
           name: "Tempo run",
           intervals: [
             {
@@ -72,7 +71,7 @@ export const mobileCardFixtures = {
     description: "A balanced progression from aerobic support to race-specific work.",
     durationWeeks: { recommended: 8 },
     sessions_per_week_target: 5,
-    sport: "run",
+    activity_category: "run",
     experienceLevel: "intermediate",
     created_at: "2026-07-19T12:00:00.000Z",
     likes_count: 24,
@@ -162,10 +161,10 @@ export const mobileCardFixtures = {
   },
   calendarEvent: {
     activity_plan: {
-      activity_category: "run",
       authoritative_metrics: { estimated_duration: 3_600, estimated_tss: 72 },
       id: "fixture-activity-plan",
       name: "Progressive tempo builder",
+      activity_category: "run",
       structure: null,
     },
     event_type: "planned",

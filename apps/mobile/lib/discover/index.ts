@@ -10,7 +10,7 @@ export const ACTIVITY_CATEGORY_OPTIONS = [
   { id: "other", label: "Other" },
 ] as const;
 
-export const TRAINING_PLAN_SPORT_OPTIONS = [
+export const TRAINING_PLAN_ACTIVITY_CATEGORY_OPTIONS = [
   { id: "run", label: "Running" },
   { id: "bike", label: "Cycling" },
   { id: "swim", label: "Swimming" },
@@ -57,7 +57,7 @@ export type ActivityPlanFilters = {
 };
 
 export type TrainingPlanFilters = {
-  sport: DiscoverCategoryId | null;
+  activity_category: DiscoverCategoryId | null;
   experienceLevel: "beginner" | "intermediate" | "advanced" | null;
   minWeeks: number | null;
   maxWeeks: number | null;
@@ -81,8 +81,7 @@ export type DiscoverActivityPlanItem = {
   id: string;
   name: string;
   description?: string | null;
-  categories: readonly string[];
-  primary_category: string;
+  activity_category: string;
   structure?: unknown;
   created_at?: string;
   updated_at?: string;
@@ -97,7 +96,7 @@ export type DiscoverTrainingPlanItem = {
   id: string;
   name: string;
   description?: string | null;
-  sport?: string[] | string | null;
+  activity_category?: string[] | string | null;
   experienceLevel?: string[] | string | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -158,7 +157,7 @@ export const DEFAULT_ACTIVITY_PLAN_FILTERS: ActivityPlanFilters = {
 };
 
 export const DEFAULT_TRAINING_PLAN_FILTERS: TrainingPlanFilters = {
-  sport: null,
+  activity_category: null,
   experienceLevel: null,
   minWeeks: null,
   maxWeeks: null,
@@ -212,7 +211,7 @@ export function hasActivityPlanFilters(filters: ActivityPlanFilters) {
 
 export function hasTrainingPlanFilters(filters: TrainingPlanFilters) {
   return Boolean(
-    filters.sport ||
+    filters.activity_category ||
       filters.experienceLevel ||
       filters.minWeeks !== null ||
       filters.maxWeeks !== null ||
@@ -320,13 +319,15 @@ function scoreActivityPlanSearch(query: string, item: DiscoverActivityPlanItem) 
   return (
     scoreSearchTextMatch(query, item.name) +
     scoreSearchTextMatch(query, item.description) * 0.65 +
-    scoreSearchTextMatch(query, item.categories.join(" ")) * 0.4 +
+    scoreSearchTextMatch(query, item.activity_category) * 0.4 +
     TYPE_WEIGHT.activityPlans
   );
 }
 
 function scoreTrainingPlanSearch(query: string, item: DiscoverTrainingPlanItem) {
-  const sportText = Array.isArray(item.sport) ? item.sport.join(" ") : item.sport;
+  const activityCategoryText = Array.isArray(item.activity_category)
+    ? item.activity_category.join(" ")
+    : item.activity_category;
   const experienceText = Array.isArray(item.experienceLevel)
     ? item.experienceLevel.join(" ")
     : item.experienceLevel;
@@ -334,7 +335,7 @@ function scoreTrainingPlanSearch(query: string, item: DiscoverTrainingPlanItem) 
   return (
     scoreSearchTextMatch(query, item.name) +
     scoreSearchTextMatch(query, item.description) * 0.65 +
-    scoreSearchTextMatch(query, sportText) * 0.4 +
+    scoreSearchTextMatch(query, activityCategoryText) * 0.4 +
     scoreSearchTextMatch(query, experienceText) * 0.25 +
     TYPE_WEIGHT.trainingPlans
   );
@@ -440,7 +441,7 @@ export function matchesActivityPlanDerivedFilters(
 
   if (
     filters.categoryIds.length > 0 &&
-    !filters.categoryIds.includes(item.primary_category as DiscoverCategoryId)
+    !filters.categoryIds.includes(item.activity_category as DiscoverCategoryId)
   ) {
     return false;
   }

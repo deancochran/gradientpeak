@@ -8,7 +8,7 @@ import {
 import { estimateFromStructure } from "../strategies";
 
 describe("estimation guardrails", () => {
-  it("uses segment category and preserves the single-bike golden", () => {
+  it("uses segment activity category and preserves the single-bike golden", () => {
     const structure = activityPlanStructureSchemaV3.parse({
       version: 3,
       segments: [
@@ -16,7 +16,7 @@ describe("estimation guardrails", () => {
           role: "activity",
           id: "30000000-0000-4000-8000-000000000001",
           name: "Bike",
-          category: "bike",
+          activity_category: "bike",
           intervals: [
             {
               id: "30000000-0000-4000-8000-000000000002",
@@ -44,7 +44,7 @@ describe("estimation guardrails", () => {
       duration: 4800,
       tss: 75,
       intensityFactor: 0.75,
-      categoryDoses: [{ category: "bike", tss: 75 }],
+      categoryDoses: [{ activity_category: "bike", tss: 75 }],
     });
   });
 
@@ -77,7 +77,7 @@ describe("estimation guardrails", () => {
           role: "activity",
           id: "30000000-0000-4000-8000-000000000011",
           name: "Run",
-          category: "run",
+          activity_category: "run",
           intervals: [
             {
               id: "30000000-0000-4000-8000-000000000012",

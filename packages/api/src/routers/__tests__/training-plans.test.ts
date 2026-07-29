@@ -150,7 +150,7 @@ function createTrainingPlansCaller(results: QueryMap = {}) {
         activity_id: activity.id,
         ordinal: 0,
         role: "activity",
-        category: "bike",
+        activity_category: "bike",
         start_offset_ms: 0,
         end_offset_ms: activity.elapsed_ms,
         timing_coverage: activity.timing_coverage,
@@ -1479,7 +1479,7 @@ describe("trainingPlansRouter analytics endpoints", () => {
           structure: {
             id: planId,
             version: 1,
-            sport: ["run"],
+            activity_category: ["run"],
             goal_blueprints: [{ title: "Spring goal", priority: 8, target_offset_days: 120 }],
             builder_planning_snapshot: {
               version: 1,
@@ -1925,7 +1925,7 @@ describe("trainingPlansRouter analytics endpoints", () => {
           structure: {
             id: planId,
             version: 1,
-            sport: ["run", "bike"],
+            activity_category: ["run", "bike"],
             goal_blueprints: [{ title: "Spring A race", priority: 8, target_offset_days: 78 }],
             sessions: [{ offset_days: 0, activity_plan_id: systemActivityPlanId }],
           },
@@ -1972,7 +1972,7 @@ describe("trainingPlansRouter analytics endpoints", () => {
         reasons: expect.any(Array),
       },
       capability: {
-        category: expect.any(String),
+        activity_category: expect.any(String),
         confidence: expect.any(Number),
       },
       projection: {

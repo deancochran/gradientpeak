@@ -1,14 +1,14 @@
+import type { CanonicalActivityCategory } from "../../../schemas/activity-category";
 import type { CalculatedParameter } from "../../../schemas/planning";
 import {
   type AthletePreferenceProfile,
   defaultAthletePreferenceProfile,
 } from "../../../schemas/settings/profile_settings";
-import type { CanonicalSport } from "../../../schemas/sport";
 import {
   getProjectionProfileDefaults,
   type OptimizationProfile,
 } from "../../projection/safety-caps";
-import { getSportModelConfig } from "../sports";
+import { getActivityCategoryModelConfig } from "../activity-categories";
 import {
   applyProgressionPaceModifier,
   applyStrengthIntegrationModifier,
@@ -18,12 +18,12 @@ import {
 export interface ConstraintProfileInput {
   optimizationProfile: OptimizationProfile;
   preferenceProfile: AthletePreferenceProfile;
-  sport: CanonicalSport;
+  activity_category: CanonicalActivityCategory;
 }
 
 export interface ResolvedConstraintProfile {
   optimization_profile: OptimizationProfile;
-  sport: CanonicalSport;
+  activity_category: CanonicalActivityCategory;
   effective_max_weekly_tss_ramp_pct: number;
   effective_max_ctl_ramp_per_week: number;
   effective_acwr_ceiling: number;
@@ -45,9 +45,9 @@ function withPreferenceDefaults(profile: AthletePreferenceProfile): AthletePrefe
     dose_limits: {
       ...defaultAthletePreferenceProfile.dose_limits,
       ...profile.dose_limits,
-      sport_overrides: {
-        ...defaultAthletePreferenceProfile.dose_limits.sport_overrides,
-        ...profile.dose_limits.sport_overrides,
+      activity_category_overrides: {
+        ...defaultAthletePreferenceProfile.dose_limits.activity_category_overrides,
+        ...profile.dose_limits.activity_category_overrides,
       },
     },
     training_style: {
@@ -78,16 +78,16 @@ function withPreferenceDefaults(profile: AthletePreferenceProfile): AthletePrefe
 export function resolveConstraintProfile(input: ConstraintProfileInput): ResolvedConstraintProfile {
   const preferenceProfile = withPreferenceDefaults(input.preferenceProfile);
   const defaults = getProjectionProfileDefaults(input.optimizationProfile);
-  const sportBaseline = getSportModelConfig(input.sport);
+  const activityCategoryBaseline = getActivityCategoryModelConfig(input.activity_category);
   const progressionParameter = applyProgressionPaceModifier(
     1,
     preferenceProfile.training_style.progression_pace,
     1.15,
   );
   const fatigueToleranceParameter = applySystemicFatigueToleranceModifier(
-    sportBaseline.acwr_ceiling,
+    activityCategoryBaseline.acwr_ceiling,
     preferenceProfile.recovery_preferences.systemic_fatigue_tolerance,
-    sportBaseline.acwr_ceiling,
+    activityCategoryBaseline.acwr_ceiling,
   );
   const strengthParameter = applyStrengthIntegrationModifier(
     1,
@@ -104,7 +104,7 @@ export function resolveConstraintProfile(input: ConstraintProfileInput): Resolve
 
   return {
     optimization_profile: input.optimizationProfile,
-    sport: input.sport,
+    activity_category: input.activity_category,
     effective_max_weekly_tss_ramp_pct: Math.round(weeklyRamp * 100) / 100,
     effective_max_ctl_ramp_per_week: Math.round(ctlRamp * 100) / 100,
     effective_acwr_ceiling: Math.round(fatigueToleranceParameter.effective * 1000) / 1000,
@@ -121,7 +121,7 @@ export function resolveConstraintProfile(input: ConstraintProfileInput): Resolve
     },
     rationale_codes: [
       `optimization_profile_${input.optimizationProfile}`,
-      `sport_${input.sport}_constraint_profile`,
+      `activity_category_${input.activity_category}_constraint_profile`,
     ],
   };
 }

@@ -31,7 +31,7 @@ jest.mock("@/lib/utils/plan/dateGrouping", () => ({
 const provenance = {
   model: "gradientpeak_relative_load" as const,
   version: "1" as const,
-  sport: "run" as const,
+  activity_category: "run" as const,
   method: "run_pace_threshold" as const,
   quality: {
     source: "validated_test" as const,
@@ -118,7 +118,7 @@ describe("CalendarEventCard common Load", () => {
       status: "unavailable",
       model: "gradientpeak_relative_load",
       version: "1",
-      sport: "run",
+      activity_category: "run",
       method: null,
       quality: null,
       thresholdEvidence: null,
@@ -136,7 +136,7 @@ describe("CalendarEventCard common Load", () => {
       status: "unavailable",
       model: "gradientpeak_relative_load",
       version: "1",
-      sport: "other",
+      activity_category: "other",
       method: null,
       quality: null,
       thresholdEvidence: null,

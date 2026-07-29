@@ -22,7 +22,7 @@ const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padSta
 const commonLoadProvenance = {
   model: "gradientpeak_relative_load" as const,
   version: "1" as const,
-  sport: "run" as const,
+  activity_category: "run" as const,
   method: "run_pace_threshold" as const,
   quality: {
     source: "validated_test" as const,
@@ -66,7 +66,7 @@ describe("ActivityPlanSummary", () => {
             {
               id: id(1),
               role: "activity",
-              category: "run",
+              activity_category: "run",
               name: "Run",
               intervals: [
                 {
@@ -164,7 +164,7 @@ describe("ActivityPlanSummary", () => {
           status: "unavailable",
           model: "gradientpeak_relative_load",
           version: "1",
-          sport: "other",
+          activity_category: "other",
           method: null,
           quality: null,
           thresholdEvidence: null,

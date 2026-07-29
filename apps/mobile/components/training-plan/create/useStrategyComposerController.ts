@@ -13,7 +13,7 @@ export function useStrategyComposerController(controller: TrainingPlanBuilderCon
       state: strategy.state,
       planningBriefRows: strategy.viewModel.planningBriefRows,
       canUseStructureProposal: strategy.canUseStructureProposal,
-      onAddWorkout: controller.actions.addSession,
+      onAddActivity: controller.actions.addSession,
       onApplyStructureProposal: controller.actions.applyStructureProposal,
       onEditMetadata: () => openSheet("metadata"),
       onOpenAthleteContext: () => openSheet("athleteContext"),

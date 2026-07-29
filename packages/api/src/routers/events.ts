@@ -1,4 +1,5 @@
 import {
+  activityPlanStructureSchemaV3,
   addDaysDateOnlyUtc,
   type EventLifecycle,
   type EventRecurrence,
@@ -11,7 +12,6 @@ import {
   ianaTimezoneSchema,
   materializeRecurrenceOccurrences,
   parseDateOnlyUtc,
-  plannedActivityUpdateSchema,
   scheduledDateTimeToIsoInstant,
 } from "@repo/core";
 import type {
@@ -30,16 +30,25 @@ import {
   deleteEventUseCase,
   enqueueProviderPlannedActivityJobs,
   listVisibleOwnedEvents,
+  MAX_PLANNED_DAY_SUMMARY_EVENTS,
+  PlannedDaySummaryLimitExceededError,
+  plannedDaySummaryUseCase,
   updateEventUseCase,
 } from "../application/events";
 import type { Context } from "../context";
 import { type DrizzleTransactionClient, getRequiredDb } from "../db";
 import {
+  type ActivityPlanExecutionDto,
+  hasActivityPlanExecutionDto,
+  InvalidStoredActivityPlanError,
+  toActivityPlanExecutionDto,
+} from "../dto/activity-plan";
+import {
   createEventCompletionRepository,
   createEventReadRepository,
   createEventWriteRepository,
 } from "../infrastructure/repositories";
-import { getEventPlannedWorkoutProviderStatuses } from "../lib/provider-sync/planned-workouts";
+import { getEventPlannedActivityProviderStatuses } from "../lib/provider-sync/planned-activities";
 import { createContentAccessPermissions } from "../permissions/content-access";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import {
@@ -200,23 +209,24 @@ type PlannedEventRecord = Omit<
   } | null;
 };
 
+type EventActivityPlan = PublicActivityPlansRow &
+  ActivityPlanExecutionDto & {
+    owner?: ProfileIdentity | null;
+    updated_at?: Date | string | null;
+  };
+
 type MappedEvent<T extends PlannedEventRecord = PlannedEventRecord> = Omit<
   T,
   "event_type" | "activity_plan"
 > & {
   scheduled_date: string;
   event_type: CoreEventType;
-  activity_plan:
-    | (PublicActivityPlansRow & {
-        owner?: ProfileIdentity | null;
-        updated_at?: Date | string | null;
-      })
-    | null;
+  activity_plan: EventActivityPlan | null;
 };
 
 function flattenActivityPlanRelation(
-  activityPlan: PlannedEventRecord["activity_plan"] | PublicActivityPlansRow | null | undefined,
-): PublicActivityPlansRow | null {
+  activityPlan: PlannedEventRecord["activity_plan"] | EventActivityPlan | null | undefined,
+): PublicActivityPlansRow | EventActivityPlan | null {
   if (Array.isArray(activityPlan)) return activityPlan[0] ?? null;
   return activityPlan ?? null;
 }
@@ -233,38 +243,7 @@ const validateConstraintsSchema = z
 
 const eventCreateInputSchema = eventCreateSchema;
 
-const plannedActivityUpdateWithIdInputSchema = plannedActivityUpdateSchema
-  .extend({
-    id: z.string().uuid(),
-    scope: eventMutationScopeSchema.optional(),
-  })
-  .strict();
-
-type LegacyPlannedUpdateInput = z.infer<typeof plannedActivityUpdateWithIdInputSchema>;
-type EventUpdateMutationInput = LegacyPlannedUpdateInput | EventUpdateInput;
-
-const eventUpdateInputSchema = z.unknown().transform((value, ctx): EventUpdateMutationInput => {
-  const schema =
-    typeof value === "object" && value !== null && !Array.isArray(value) && "patch" in value
-      ? eventUpdateSchema
-      : plannedActivityUpdateWithIdInputSchema;
-
-  const parsed = schema.safeParse(value);
-  if (parsed.success) return parsed.data;
-
-  ctx.addIssue({
-    code: "custom",
-    message: parsed.error.issues[0]?.message ?? "Invalid event update payload",
-  });
-
-  return z.NEVER;
-});
-
-function isLegacyPlannedUpdateInput(
-  input: EventUpdateMutationInput,
-): input is LegacyPlannedUpdateInput {
-  return !("patch" in input);
-}
+const eventUpdateInputSchema = eventUpdateSchema;
 
 type NormalizedEventUpdatePatch = {
   activity_plan_id?: string | null;
@@ -283,24 +262,10 @@ type NormalizedEventUpdatePatch = {
   scheduled_date?: string;
 };
 
-function normalizeEventUpdatePatch(input: EventUpdateMutationInput): {
+function normalizeEventUpdatePatch(input: EventUpdateInput): {
   patch: NormalizedEventUpdatePatch;
   scheduledDate: string | undefined;
 } {
-  if (isLegacyPlannedUpdateInput(input)) {
-    return {
-      patch: {
-        activity_plan_id: input.activity_plan_id,
-        route_id: input.route_id,
-        notes: input.notes,
-        event_type: input.event_type,
-        recurrence: input.recurrence,
-        lifecycle: input.lifecycle,
-      },
-      scheduledDate: input.scheduled_date,
-    };
-  }
-
   return {
     patch: input.patch as NormalizedEventUpdatePatch,
     scheduledDate: "scheduled_date" in input.patch ? input.patch.scheduled_date : undefined,
@@ -351,6 +316,18 @@ const eventListSchema = z
     limit: z.number().min(1).max(500).default(20),
     cursor: z.string().optional(),
     direction: z.enum(["forward", "backward"]).optional(),
+  })
+  .strict();
+
+const plannedDaySummaryInputSchema = z
+  .object({
+    date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must use YYYY-MM-DD")
+      .refine((value) => {
+        const parsed = parseDateOnlyUtc(value);
+        return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+      }, "Date must be a valid calendar date"),
   })
   .strict();
 
@@ -540,9 +517,12 @@ function hasInstantChanged(
 }
 
 function mapEvent<T extends PlannedEventRecord>(event: T): MappedEvent<T> {
-  const activityPlan = flattenActivityPlanRelation(
-    event.activity_plan,
-  ) as MappedEvent<T>["activity_plan"];
+  const rawActivityPlan = flattenActivityPlanRelation(event.activity_plan);
+  const activityPlan: EventActivityPlan | null = rawActivityPlan
+    ? hasActivityPlanExecutionDto(rawActivityPlan)
+      ? rawActivityPlan
+      : toActivityPlanExecutionDto(rawActivityPlan)
+    : null;
 
   return {
     ...event,
@@ -552,8 +532,46 @@ function mapEvent<T extends PlannedEventRecord>(event: T): MappedEvent<T> {
   };
 }
 
+function mapEventWithoutAvailablePlan<T extends PlannedEventRecord>(event: T): MappedEvent<T> {
+  return {
+    ...event,
+    activity_plan: null,
+    event_type: toCoreEventType(event.event_type),
+    scheduled_date: event.scheduled_date,
+  };
+}
+
+function toSafeStoredActivityPlanError(error: unknown): never {
+  if (error instanceof InvalidStoredActivityPlanError) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Stored activity plan is not valid V3",
+    });
+  }
+  throw error;
+}
+
+function mapEventSafely<T extends PlannedEventRecord>(event: T): MappedEvent<T> {
+  try {
+    return mapEvent(event);
+  } catch (error) {
+    return toSafeStoredActivityPlanError(error);
+  }
+}
+
 function mapEvents<T extends PlannedEventRecord>(events: T[] | null): Array<MappedEvent<T>> {
-  return (events || []).map((event) => mapEvent(event));
+  return (events || []).map((event) => {
+    try {
+      return mapEvent(event);
+    } catch (error) {
+      if (error instanceof InvalidStoredActivityPlanError) {
+        // Collection reads retain the Event and its activity_plan_id while making
+        // the unusable relation explicit as unavailable.
+        return mapEventWithoutAvailablePlan(event);
+      }
+      throw error;
+    }
+  });
 }
 
 function assertRestDayWritesBlocked(_eventType: CoreEventType, _action: "create" | "update"): void {
@@ -562,7 +580,7 @@ function assertRestDayWritesBlocked(_eventType: CoreEventType, _action: "create"
 
 async function enrichEventsWithActivityPlanIdentity<
   T extends {
-    activity_plan: (PublicActivityPlansRow & { updated_at?: Date | string | null }) | null;
+    activity_plan: EventActivityPlan | null;
   },
 >(db: any, events: T[]) {
   const profileIdentityMap = await loadProfileIdentityMap(
@@ -843,6 +861,29 @@ type ReconciliationActivityCandidate = Pick<ActivityRow, "id" | "activity_plan_i
   started_at: string;
 };
 
+function isEventPlanWritableForCompletion(
+  activityPlanId: string | null,
+  activityPlanStructure: unknown | null,
+) {
+  return (
+    activityPlanId === null ||
+    (activityPlanStructure !== null &&
+      activityPlanStructureSchemaV3.safeParse(activityPlanStructure).success)
+  );
+}
+
+function assertEventPlanWritableForCompletion(input: {
+  activityPlanId: string | null;
+  activityPlanStructure: unknown | null;
+}) {
+  if (isEventPlanWritableForCompletion(input.activityPlanId, input.activityPlanStructure)) return;
+
+  throw new TRPCError({
+    code: "CONFLICT",
+    message: "Events linked to unavailable or non-executable activity plans are read-only",
+  });
+}
+
 function compareActivitiesForReconciliation(
   a: ReconciliationActivityCandidate,
   b: ReconciliationActivityCandidate,
@@ -870,10 +911,15 @@ export const eventsRouter = createTRPCRouter({
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
       const eventReadRepository = getEventReadRepository(ctx);
-      const data = await eventReadRepository.getOwnedEventById({
-        eventId: input.id,
-        profileId: ctx.session.user.id,
-      });
+      let data;
+      try {
+        data = await eventReadRepository.getOwnedEventById({
+          eventId: input.id,
+          profileId: ctx.session.user.id,
+        });
+      } catch (error) {
+        toSafeStoredActivityPlanError(error);
+      }
 
       if (!data) {
         throw new TRPCError({
@@ -882,7 +928,7 @@ export const eventsRouter = createTRPCRouter({
         });
       }
 
-      const event = mapEvent(data as PlannedEventRecord);
+      const event = mapEventSafely(data as PlannedEventRecord);
 
       if (event.activity_plan) {
         const planWithEstimation = await getActivityPlanDerivedMetrics(
@@ -912,10 +958,15 @@ export const eventsRouter = createTRPCRouter({
     .input(z.object({ eventId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
       const eventReadRepository = getEventReadRepository(ctx);
-      const event = await eventReadRepository.getOwnedEventById({
-        eventId: input.eventId,
-        profileId: ctx.session.user.id,
-      });
+      let event;
+      try {
+        event = await eventReadRepository.getOwnedEventById({
+          eventId: input.eventId,
+          profileId: ctx.session.user.id,
+        });
+      } catch (error) {
+        toSafeStoredActivityPlanError(error);
+      }
 
       if (!event) {
         throw new TRPCError({
@@ -926,7 +977,7 @@ export const eventsRouter = createTRPCRouter({
 
       return {
         eventId: input.eventId,
-        plannedWorkoutSync: await getEventPlannedWorkoutProviderStatuses({
+        plannedActivitySync: await getEventPlannedActivityProviderStatuses({
           db: getRequiredDb(ctx),
           eventId: input.eventId,
           profileId: ctx.session.user.id,
@@ -940,13 +991,18 @@ export const eventsRouter = createTRPCRouter({
     const today = formatDateOnlyInTimeZone(new Date(), planningTimezone);
     const tomorrow = addDaysDateOnlyUtc(today, 1);
 
-    const data = await eventReadRepository.listOwnedEvents({
-      profileId: ctx.session.user.id,
-      dateFrom: toDayStartIso(today, planningTimezone),
-      dateTo: toDayStartIso(tomorrow, planningTimezone),
-      includeAdhoc: true,
-      limit: 500,
-    });
+    let data;
+    try {
+      data = await eventReadRepository.listOwnedEvents({
+        profileId: ctx.session.user.id,
+        dateFrom: toDayStartIso(today, planningTimezone),
+        dateTo: toDayStartIso(tomorrow, planningTimezone),
+        includeAdhoc: true,
+        limit: 500,
+      });
+    } catch (error) {
+      toSafeStoredActivityPlanError(error);
+    }
 
     const events = mapEvents(data as PlannedEventRecord[] | null);
 
@@ -1065,7 +1121,7 @@ export const eventsRouter = createTRPCRouter({
         });
       }
 
-      const existingEvent = existingEventRow as PlannedEventRecord;
+      const existingEvent = existingEventRow;
       const existingEventType = toCoreEventType(existingEvent.event_type);
 
       if (existingEventType === "imported") {
@@ -1074,6 +1130,11 @@ export const eventsRouter = createTRPCRouter({
           message: "Imported events are read-only",
         });
       }
+
+      assertEventPlanWritableForCompletion({
+        activityPlanId: existingEvent.activity_plan_id,
+        activityPlanStructure: existingEvent.activity_plan?.structure ?? null,
+      });
 
       const activity = await completionRepository.getOwnedActivityForCompletion({
         activityId: input.activity_id,
@@ -1097,6 +1158,7 @@ export const eventsRouter = createTRPCRouter({
 
       const linkedEventRow = await completionRepository.updateEventCompletionLink({
         eventId: input.event_id,
+        expectedActivityPlanId: existingEvent.activity_plan_id,
         profileId: ctx.session.user.id,
         linkedActivityId: input.activity_id,
         status: "completed",
@@ -1137,7 +1199,7 @@ export const eventsRouter = createTRPCRouter({
         });
       }
 
-      const existingEvent = existingEventRow as PlannedEventRecord;
+      const existingEvent = existingEventRow;
       const existingEventType = toCoreEventType(existingEvent.event_type);
 
       if (existingEventType === "imported") {
@@ -1147,6 +1209,11 @@ export const eventsRouter = createTRPCRouter({
         });
       }
 
+      assertEventPlanWritableForCompletion({
+        activityPlanId: existingEvent.activity_plan_id,
+        activityPlanStructure: existingEvent.activity_plan?.structure ?? null,
+      });
+
       const eventUpdates: Record<string, unknown> = {
         linked_activity_id: null,
         status: existingEvent.status === "completed" ? "scheduled" : existingEvent.status,
@@ -1154,6 +1221,7 @@ export const eventsRouter = createTRPCRouter({
 
       const unlinkedEventRow = await completionRepository.updateEventCompletionLink({
         eventId: input.event_id,
+        expectedActivityPlanId: existingEvent.activity_plan_id,
         profileId: ctx.session.user.id,
         linkedActivityId: null,
         status: eventUpdates.status as PublicEventStatus,
@@ -1298,6 +1366,13 @@ export const eventsRouter = createTRPCRouter({
       const insightRefreshHints: InsightRefreshHint[] = [];
 
       for (const event of scannedEvents) {
+        if (
+          !isEventPlanWritableForCompletion(event.activity_plan_id, event.activity_plan_structure)
+        ) {
+          skippedEventIds.push(event.id);
+          continue;
+        }
+
         const dateKey = toDateKey(event.starts_at);
         const pool = event.activity_plan_id
           ? activitiesByDateAndPlan.get(buildCompletedSignature(dateKey, event.activity_plan_id))
@@ -1321,6 +1396,7 @@ export const eventsRouter = createTRPCRouter({
         const updatedEvent = await completionRepository.linkHistoricalCompletionIfEligible({
           activityId: candidate.id,
           eventId: event.id,
+          expectedActivityPlanId: event.activity_plan_id,
           profileId: ctx.session.user.id,
         });
 
@@ -1380,38 +1456,46 @@ export const eventsRouter = createTRPCRouter({
         ? await getRequiredProfilePlanningTimezone(ctx, ctx.session.user.id)
         : undefined;
 
-    const { rows, hasMore } = await listVisibleOwnedEvents({
-      repository: eventReadRepository,
-      query: {
-        profileId: ctx.session.user.id,
-        limit,
-        includeAdhoc: input.include_adhoc,
-        trainingPlanId: input.training_plan_id,
-        activityPlanId: input.activity_plan_id,
-        activityCategory: input.activity_category as
-          | "run"
-          | "bike"
-          | "swim"
-          | "strength"
-          | "other"
-          | undefined,
-        dateFrom: input.date_from ? toRangeStartIso(input.date_from, planningTimezone) : undefined,
-        dateTo: input.date_to ? toRangeEndIso(input.date_to, planningTimezone) : undefined,
-        eventTypes:
-          input.event_types && input.event_types.length > 0
-            ? [...new Set(input.event_types.map((eventType) => toDbEventType(eventType)))]
+    let listedEvents;
+    try {
+      listedEvents = await listVisibleOwnedEvents({
+        repository: eventReadRepository,
+        query: {
+          profileId: ctx.session.user.id,
+          limit,
+          includeAdhoc: input.include_adhoc,
+          trainingPlanId: input.training_plan_id,
+          activityPlanId: input.activity_plan_id,
+          activityCategory: input.activity_category as
+            | "run"
+            | "bike"
+            | "swim"
+            | "strength"
+            | "other"
+            | undefined,
+          dateFrom: input.date_from
+            ? toRangeStartIso(input.date_from, planningTimezone)
             : undefined,
-        cursor:
-          cursorDate && cursorId
-            ? { startsAt: toCanonicalInstantIso(cursorDate), id: cursorId }
-            : undefined,
-      },
-      isVisible: () => true,
-      buildCursor: (row) => ({
-        startsAt: toCanonicalInstantIso(row.starts_at),
-        id: row.id,
-      }),
-    });
+          dateTo: input.date_to ? toRangeEndIso(input.date_to, planningTimezone) : undefined,
+          eventTypes:
+            input.event_types && input.event_types.length > 0
+              ? [...new Set(input.event_types.map((eventType) => toDbEventType(eventType)))]
+              : undefined,
+          cursor:
+            cursorDate && cursorId
+              ? { startsAt: toCanonicalInstantIso(cursorDate), id: cursorId }
+              : undefined,
+        },
+        isVisible: () => true,
+        buildCursor: (row) => ({
+          startsAt: toCanonicalInstantIso(row.starts_at),
+          id: row.id,
+        }),
+      });
+    } catch (error) {
+      toSafeStoredActivityPlanError(error);
+    }
+    const { rows, hasMore } = listedEvents;
 
     const events = mapEvents((hasMore ? rows.slice(0, limit) : rows) as PlannedEventRecord[]);
 
@@ -1464,6 +1548,35 @@ export const eventsRouter = createTRPCRouter({
       nextCursor,
     };
   }),
+
+  plannedDaySummary: protectedProcedure
+    .input(plannedDaySummaryInputSchema)
+    .query(async ({ ctx, input }) => {
+      const planningTimezone = await getRequiredProfilePlanningTimezone(ctx, ctx.session.user.id);
+      try {
+        const result = await plannedDaySummaryUseCase({
+          date: input.date,
+          profileId: ctx.session.user.id,
+          repository: getEventReadRepository(ctx),
+          deriveMetrics: async (plans) =>
+            getActivityPlansDerivedMetrics(
+              plans,
+              getRequiredDb(ctx),
+              getEventReadRepository(ctx),
+              ctx.session.user.id,
+            ),
+        });
+        return { date: input.date, timezone: planningTimezone, ...result };
+      } catch (error) {
+        if (error instanceof PlannedDaySummaryLimitExceededError) {
+          throw new TRPCError({
+            code: "PAYLOAD_TOO_LARGE",
+            message: `Day summary exceeds the ${MAX_PLANNED_DAY_SUMMARY_EVENTS}-event limit`,
+          });
+        }
+        throw error;
+      }
+    }),
 
   validateConstraints: protectedProcedure
     .input(validateConstraintsSchema)
@@ -1534,7 +1647,13 @@ export const eventsRouter = createTRPCRouter({
         limit: 500,
       });
 
-      const plannedThisWeekMapped = mapEvents(plannedThisWeek as PlannedEventRecord[] | null);
+      // This is an internal estimation input, not a public Event DTO. Preserve legacy
+      // rows here so constraint evaluation remains independent of presentation mapping.
+      const plannedThisWeekMapped =
+        (plannedThisWeek as PlannedEventRecord[] | null)?.map((event) => ({
+          ...event,
+          activity_plan: flattenActivityPlanRelation(event.activity_plan),
+        })) ?? [];
 
       const currentWeekPlans = plannedThisWeekMapped
         .map((event) => event.activity_plan)
@@ -1686,13 +1805,18 @@ export const eventsRouter = createTRPCRouter({
     )
     .query(async ({ ctx, input }) => {
       const eventReadRepository = getEventReadRepository(ctx);
-      const data = await eventReadRepository.listOwnedEvents({
-        profileId: ctx.session.user.id,
-        dateFrom: toDayStartIso(input.weekStart),
-        dateTo: toNextDayStartIso(input.weekEnd),
-        includeAdhoc: true,
-        limit: 500,
-      });
+      let data;
+      try {
+        data = await eventReadRepository.listOwnedEvents({
+          profileId: ctx.session.user.id,
+          dateFrom: toDayStartIso(input.weekStart),
+          dateTo: toNextDayStartIso(input.weekEnd),
+          includeAdhoc: true,
+          limit: 500,
+        });
+      } catch (error) {
+        toSafeStoredActivityPlanError(error);
+      }
 
       const events = mapEvents(data as PlannedEventRecord[] | null);
       if (events.length > 0) {

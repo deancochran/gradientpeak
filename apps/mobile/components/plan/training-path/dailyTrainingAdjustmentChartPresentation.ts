@@ -52,12 +52,41 @@ function valueOrZero(value: number | null | undefined) {
   return valueOrNull(value) ?? 0;
 }
 
+function positiveValue(value: number | null | undefined) {
+  const finiteValue = valueOrNull(value);
+  return finiteValue !== null && finiteValue > 0;
+}
+
+function hasCompleteRecommendation(
+  point: Pick<DailyTrainingAdjustmentPoint, "recommendedLoadStatus">,
+) {
+  return point.recommendedLoadStatus === "complete" || point.recommendedLoadStatus === "known_zero";
+}
+
 export function hasCompletedActivityWithoutLoad(
   point: Pick<DailyTrainingAdjustmentPoint, "hasCompletedActivityWithoutLoad"> & {
     date?: string;
   },
 ) {
   return point.hasCompletedActivityWithoutLoad === true;
+}
+
+export function hasRenderableDailyTrainingAdjustmentData(
+  points: readonly DailyTrainingAdjustmentPoint[] | null | undefined,
+) {
+  return (
+    points?.some(
+      (point) =>
+        hasCompletedActivityWithoutLoad(point) ||
+        positiveValue(point.effectiveCompletedLoad) ||
+        positiveValue(point.effectiveRemainingLoad) ||
+        positiveValue(point.effectiveTentativeLoad) ||
+        (point.recommendedLoadStatus === "complete" && positiveValue(point.recommendedLoad)) ||
+        valueOrNull(point.fitnessCtl) !== null ||
+        valueOrNull(point.scheduledFitnessCtl) !== null ||
+        (hasCompleteRecommendation(point) && valueOrNull(point.targetFitnessCtl) !== null),
+    ) === true
+  );
 }
 
 function formatMetric(label: string, value: number | null | undefined, unit = "") {
@@ -82,11 +111,18 @@ export function buildDailyTrainingAdjustmentAccessibilityValue(
         ? "Intensity unavailable"
         : `Intensity ${point.effectiveIntensity.toFixed(2)}${incomplete}`;
   const completedLoad = formatMetric("Completed load", point.effectiveCompletedLoad);
-  const remainingLoad = formatMetric("Remaining load", point.effectiveRemainingLoad);
+  const plannedLoad = formatMetric("Planned load", point.effectiveRemainingLoad);
   const tentativeLoad = formatMetric("Tentative load", point.effectiveTentativeLoad);
   const actualFitness = formatMetric("Actual fitness", point.fitnessCtl);
   const projectedFitness = formatMetric("Projected fitness", point.scheduledFitnessCtl);
-  const targetFitness = formatMetric("Target fitness", point.targetFitnessCtl);
+  const targetFitness = hasCompleteRecommendation(point)
+    ? formatMetric("Target fitness", point.targetFitnessCtl)
+    : null;
+  const recommendedLoad = point.recommendedLoadStatus
+    ? point.recommendedLoadStatus === "unavailable" || point.recommendedLoad == null
+      ? "Recommended load unavailable"
+      : `Recommended load ${Math.round(point.recommendedLoad)}${point.recommendedLoadStatus === "partial" ? " incomplete" : ""}`
+    : null;
   const completedState = hasCompletedActivityWithoutLoad(point)
     ? "Completed activity, load unavailable"
     : null;
@@ -97,8 +133,9 @@ export function buildDailyTrainingAdjustmentAccessibilityValue(
     intensity,
     completedLoad,
     completedState,
-    remainingLoad,
+    plannedLoad,
     tentativeLoad,
+    recommendedLoad,
     actualFitness,
     projectedFitness,
     targetFitness,
@@ -125,6 +162,29 @@ function expandDomain(
   return [Math.max(0, minValue - span * paddingRatio), maxValue + span * paddingRatio];
 }
 
+export function buildDailyTrainingAdjustmentChartData(points: DailyTrainingAdjustmentPoint[]) {
+  return points.map((point, index) => {
+    const planned = valueOrNull(point.effectiveRemainingLoad);
+    const tentative = valueOrNull(point.effectiveTentativeLoad);
+    return {
+      index,
+      completedLoad: valueOrNull(point.effectiveCompletedLoad),
+      plannedLoad: planned,
+      plannedLoadWithTentative: planned !== null && tentative !== null ? planned + tentative : null,
+      // Only the explicit versioned common-Load recommendation may share this axis.
+      targetLoad:
+        point.recommendedLoadStatus === "complete" || point.recommendedLoadStatus === "known_zero"
+          ? valueOrNull(point.recommendedLoad)
+          : null,
+      actualFitness: valueOrNull(point.fitnessCtl),
+      projectedFitness: valueOrNull(point.scheduledFitnessCtl),
+      recommendedFitness: hasCompleteRecommendation(point)
+        ? valueOrNull(point.targetFitnessCtl)
+        : null,
+    } satisfies DailyTrainingAdjustmentChartDatum;
+  });
+}
+
 export function useDailyTrainingAdjustmentChartPresentation({
   formatDateLabel,
   points,
@@ -132,24 +192,7 @@ export function useDailyTrainingAdjustmentChartPresentation({
   formatDateLabel?: (dateKey: string, index: number) => string;
   points: DailyTrainingAdjustmentPoint[];
 }) {
-  const chartData = useMemo<DailyTrainingAdjustmentChartDatum[]>(
-    () =>
-      points.map((point, index) => {
-        const load = valueOrNull(point.effectiveLoad);
-        const tentative = valueOrNull(point.effectiveTentativeLoad);
-        return {
-          index,
-          completedLoad: valueOrNull(point.effectiveCompletedLoad),
-          plannedLoad: load,
-          plannedLoadWithTentative: load !== null && tentative !== null ? load + tentative : load,
-          targetLoad: null,
-          actualFitness: valueOrNull(point.fitnessCtl),
-          projectedFitness: valueOrNull(point.scheduledFitnessCtl),
-          recommendedFitness: valueOrNull(point.targetFitnessCtl),
-        };
-      }),
-    [points],
-  );
+  const chartData = useMemo(() => buildDailyTrainingAdjustmentChartData(points), [points]);
 
   const loadDomain = useMemo(
     () =>

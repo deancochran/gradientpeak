@@ -1,4 +1,8 @@
-import { SYSTEM_TEMPLATES, type SystemTemplate } from "../../samples";
+import {
+  deriveSystemActivityTemplateActivityCategory,
+  SYSTEM_TEMPLATES,
+  type SystemTemplate,
+} from "../../samples";
 import {
   classifySystemActivityTemplate,
   type SystemActivityTemplateArchetype,
@@ -22,7 +26,7 @@ export type SystemActivityTemplateLoadBand = "low" | "moderate" | "high" | "very
 export interface NormalizedSystemActivityTemplateCatalogEntry {
   template_id: string;
   template_name: string;
-  sport: SystemTemplate["activity_category"];
+  activity_category: ReturnType<typeof deriveSystemActivityTemplateActivityCategory>;
   source_file: string;
   execution_context: SystemActivityTemplateExecutionContext;
   session_archetype: SystemActivityTemplateArchetype;
@@ -33,7 +37,6 @@ export interface NormalizedSystemActivityTemplateCatalogEntry {
   duration_band: SystemActivityTemplateDurationBand;
   load_band: SystemActivityTemplateLoadBand;
   recovery_cost_band: SystemActivityTemplateRecoveryCostBand;
-  category_composition: SystemTemplate["activity_category"][];
   normalized_structure: unknown;
   structure_signature: string;
   primary_work_signature: string;
@@ -122,13 +125,13 @@ function buildPrimaryWorkSignature(structure: SystemTemplate["structure"]): stri
 }
 
 function deriveDurationBand(
-  sport: SystemTemplate["activity_category"],
+  activity_category: ReturnType<typeof deriveSystemActivityTemplateActivityCategory>,
   durationSeconds: number | null,
 ): SystemActivityTemplateDurationBand {
   if (durationSeconds === null) return "unknown";
-  const mediumThreshold = sport === "bike" ? 3600 : 2700;
-  const longThreshold = sport === "bike" ? 7200 : 5400;
-  const extraLongThreshold = sport === "bike" ? 10800 : 7200;
+  const mediumThreshold = activity_category === "bike" ? 3600 : 2700;
+  const longThreshold = activity_category === "bike" ? 7200 : 5400;
+  const extraLongThreshold = activity_category === "bike" ? 10800 : 7200;
 
   if (durationSeconds >= extraLongThreshold) {
     return "extra-long";
@@ -190,13 +193,14 @@ export function buildSystemActivityTemplateCatalog(
     .map((template) => {
       const taxonomy = classifySystemActivityTemplate(template);
       const durationSeconds = calculateSystemTemplateDurationSeconds(template);
-      const durationBand = deriveDurationBand(template.activity_category, durationSeconds);
+      const activity_category = deriveSystemActivityTemplateActivityCategory(template.structure);
+      const durationBand = deriveDurationBand(activity_category, durationSeconds);
       const normalizedStructure = normalizeActivityTemplateStructureForAudit(template.structure);
 
       return {
         template_id: template.id,
         template_name: template.name,
-        sport: template.activity_category,
+        activity_category,
         source_file: taxonomy.source_file,
         execution_context: taxonomy.execution_context,
         session_archetype: taxonomy.session_archetype,
@@ -211,9 +215,6 @@ export function buildSystemActivityTemplateCatalog(
           recoveryCostBand: taxonomy.recovery_cost_band,
         }),
         recovery_cost_band: taxonomy.recovery_cost_band,
-        category_composition: template.structure.segments.flatMap((segment) =>
-          segment.role === "activity" ? [segment.category] : [],
-        ),
         normalized_structure: normalizedStructure,
         structure_signature: JSON.stringify(normalizedStructure),
         primary_work_signature: buildPrimaryWorkSignature(template.structure),

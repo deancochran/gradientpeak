@@ -70,7 +70,10 @@ function parseTcxActivity(tcxContent: string): StandardActivity {
   }
 
   const activity = doc.getElementsByTagName("Activity")[0];
-  const type = activity?.getAttribute("Sport")?.toLowerCase() || "generic";
+  const type =
+    (
+      activity?.getAttribute("Sport") ?? activity?.getAttribute("ActivityCategory")
+    )?.toLowerCase() || "generic";
 
   return buildXmlActivity({
     calories: parseNumberText(doc, "Calories"),

@@ -19,10 +19,8 @@ const createPlan = createSystemActivityPlanBuilderFactory("bike", [
  */
 export const EASY_ENDURANCE_RIDE: RecordingServiceActivityPlan = {
   id: "8c1d2e3f-4a5b-6c7d-8e9f-0a1b2c3d4e5f",
-  version: "3.0",
   name: "Easy Endurance Ride",
   description: "Comfortable outdoor ride focusing on aerobic base building",
-  activity_category: "bike",
   gps_recording_enabled: true,
   structure: createPlan()
     .step({
@@ -41,10 +39,8 @@ export const EASY_ENDURANCE_RIDE: RecordingServiceActivityPlan = {
  */
 export const SWEET_SPOT_OUTDOOR_RIDE: RecordingServiceActivityPlan = {
   id: "9d2e3f4a-5b6c-7d8e-9f0a-1b2c3d4e5f6a",
-  version: "3.0",
   name: "Sweet Spot Intervals",
   description: "Outdoor ride with sweet spot power intervals",
-  activity_category: "bike",
   gps_recording_enabled: true,
   structure: createPlan()
     .step({
@@ -86,10 +82,8 @@ export const SWEET_SPOT_OUTDOOR_RIDE: RecordingServiceActivityPlan = {
  */
 export const TEMPO_INTERVALS_RIDE: RecordingServiceActivityPlan = {
   id: "0e3f4a5b-6c7d-8e9f-0a1b-2c3d4e5f6a7b",
-  version: "3.0",
   name: "Tempo Intervals",
   description: "Outdoor ride with sustained tempo efforts",
-  activity_category: "bike",
   gps_recording_enabled: true,
   structure: createPlan()
     .step({
@@ -132,10 +126,8 @@ export const TEMPO_INTERVALS_RIDE: RecordingServiceActivityPlan = {
  */
 export const CLIMBING_INTERVALS_RIDE: RecordingServiceActivityPlan = {
   id: "1f4a5b6c-7d8e-9f0a-1b2c-3d4e5f6a7b8c",
-  version: "3.0",
   name: "Climbing Intervals",
   description: "High-intensity climbing intervals for outdoor terrain",
-  activity_category: "bike",
   gps_recording_enabled: true,
   structure: createPlan()
     .step({
@@ -177,10 +169,8 @@ export const CLIMBING_INTERVALS_RIDE: RecordingServiceActivityPlan = {
  */
 export const GROUP_RIDE_SIMULATION: RecordingServiceActivityPlan = {
   id: "2a5b6c7d-8e9f-0a1b-2c3d-4e5f6a7b8c9d",
-  version: "3.0",
   name: "Group Ride Simulation",
   description: "Variable intensity ride simulating group ride dynamics",
-  activity_category: "bike",
   gps_recording_enabled: true,
   structure: createPlan()
     .step({
@@ -229,10 +219,8 @@ export const GROUP_RIDE_SIMULATION: RecordingServiceActivityPlan = {
 
 export const SYSTEM_LONG_ENDURANCE_RIDE: RecordingServiceActivityPlan = {
   id: "a5f1b4c3-8e2b-7a6d-1c0f-2e9d5b4a3c1e",
-  version: "3.0",
   name: "Long Endurance Ride",
   description: "2 hour Zone 2 endurance ride at 70% FTP - Build aerobic base",
-  activity_category: "bike",
   gps_recording_enabled: true,
   structure: createPlan()
     .warmup({
@@ -255,10 +243,8 @@ export const SYSTEM_LONG_ENDURANCE_RIDE: RecordingServiceActivityPlan = {
 
 export const SYSTEM_PROGRESSIVE_LONG_ENDURANCE_RIDE: RecordingServiceActivityPlan = {
   id: "6f2a4c8e-1b3d-4f6a-8c9e-2d4b6f8a1c3e",
-  version: "3.0",
   name: "Progressive Long Endurance Ride",
   description: "Long endurance ride with steady tempo lifts to build late-ride durability.",
-  activity_category: "bike",
   gps_recording_enabled: true,
   structure: createPlan()
     .warmup({

@@ -1045,7 +1045,9 @@ function buildRecommendedLoadPoints(
     );
     rows.forEach((row, index) => {
       const sessions = sessionsByDate.get(row.date) ?? [];
-      const hasExplicitSport = sessions.some((session) => Boolean(session.activityCategory));
+      const hasExplicitActivityCategory = sessions.some((session) =>
+        Boolean(session.activityCategory),
+      );
       const boundedSessionTss = sessions.reduce(
         (sum, session) => sum + toFinitePositive(session.estimatedTss),
         0,
@@ -1057,7 +1059,7 @@ function buildRecommendedLoadPoints(
       const recommendationState: DailyLoadRecommendationPoint["recommendationState"] =
         row.focus === "rest"
           ? "abstain"
-          : !hasExplicitSport
+          : !hasExplicitActivityCategory
             ? "clarification_required"
             : boundedSessionTss > 0 || boundedSessionDuration > 0
               ? "maintenance_only"
@@ -1238,11 +1240,11 @@ function buildDistributionPoints(
       (trainingDate, index): DailyLoadRecommendationPoint["recommendationState"] => {
         const assignment = categoryAssignments[index];
         const planned = plannedSessionByDate.get(trainingDate.date);
-        const hasExplicitSport = Boolean(
+        const hasExplicitActivityCategory = Boolean(
           planned?.activityCategory ??
             (assignment?.budget.role !== "fallback" ? assignment?.budget.activityCategory : null),
         );
-        if (!hasExplicitSport) return "clarification_required";
+        if (!hasExplicitActivityCategory) return "clarification_required";
         if (hasExplicitAllocation && athleteCapacityCap !== null) return "recommendation";
         const hasBoundedContext =
           (planned?.estimatedTss ?? 0) > 0 ||

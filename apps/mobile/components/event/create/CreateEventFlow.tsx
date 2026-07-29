@@ -13,7 +13,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { type Control, useWatch } from "react-hook-form";
+import { useWatch } from "react-hook-form";
 import { AccessibilityInfo } from "react-native";
 import { z } from "zod";
 import { AppFormModal } from "@/components/shared/AppFormModal";
@@ -28,8 +28,8 @@ import {
   parseRecurrenceFrequency,
 } from "../EventEditorCard";
 import {
-  type CreateEventMainFormValues,
   CreateEventMainStep,
+  type EventFormValues,
   type EventRouteSummary,
 } from "./CreateEventMainStep";
 import {
@@ -40,6 +40,7 @@ import {
   createDefaultEventDraft,
   removeActivityPlanFromDraft,
 } from "./createEventDraft";
+import { isExistingEventActivityPlanEditable } from "./eventEditability";
 import { RepeatStep } from "./RepeatStep";
 
 type CreateEventStep = "main" | "repeat";
@@ -54,10 +55,6 @@ const createEventMainFormSchema = z.object({
   recurrenceEndDate: z.string().nullable(),
   title: z.string(),
 });
-
-type CreateEventFormValues = CreateEventMainFormValues & {
-  recurrenceEndDate: string | null;
-};
 
 export type CreateEventDefaults = {
   createEventType?: CreateEventMode | null;
@@ -155,7 +152,7 @@ function applyDateOnlyToDate(current: Date, dateOnly: string) {
   return next;
 }
 
-function toMainFormValues(draft: CreateEventDraft): CreateEventFormValues {
+function toMainFormValues(draft: CreateEventDraft): EventFormValues {
   if (draft.mode === "planned") {
     return {
       allDay: true,
@@ -179,10 +176,7 @@ function toMainFormValues(draft: CreateEventDraft): CreateEventFormValues {
   };
 }
 
-function applyMainFormValues(
-  draft: CreateEventDraft,
-  values: CreateEventFormValues,
-): CreateEventDraft {
+function applyMainFormValues(draft: CreateEventDraft, values: EventFormValues): CreateEventDraft {
   if (draft.mode === "planned") {
     return {
       ...draft,
@@ -212,7 +206,7 @@ function applyMainFormValues(
   };
 }
 
-function areMainFormValuesEqual(left: CreateEventFormValues, right: CreateEventFormValues) {
+function areMainFormValuesEqual(left: EventFormValues, right: EventFormValues) {
   return (
     left.allDay === right.allDay &&
     left.customDate === right.customDate &&
@@ -282,11 +276,11 @@ export const CreateEventFlow = forwardRef<
   const [routePickerOpen, setRoutePickerOpen] = useState(false);
   const [saveScopeModalVisible, setSaveScopeModalVisible] = useState(false);
   const [pendingUpdateDraft, setPendingUpdateDraft] = useState<CreateEventDraft | null>(null);
-  const form = useZodForm<CreateEventFormValues>({
+  const form = useZodForm<EventFormValues>({
     schema: createEventMainFormSchema,
     defaultValues: toMainFormValues(draft),
   });
-  const watchedFormValues = useWatch({ control: form.control }) as CreateEventFormValues;
+  const watchedFormValues = useWatch({ control: form.control }) as EventFormValues;
   const syncingFormFromDraftRef = useRef(false);
 
   const createMutation = api.events.create.useMutation({
@@ -325,6 +319,9 @@ export const CreateEventFlow = forwardRef<
     () => knownRoutes.find((route) => route.id === draft.routeId) ?? null,
     [draft.routeId, knownRoutes],
   );
+  const existingEventReadOnly = Boolean(
+    updateEvent && !isExistingEventActivityPlanEditable(updateEvent),
+  );
 
   useEffect(() => {
     const plans = (activityPlansData?.items ?? []) as ActivityPlanListItem[];
@@ -340,22 +337,26 @@ export const CreateEventFlow = forwardRef<
     });
   }, [activityPlansData?.items]);
 
-  const handleSelectPlan = useCallback((plan: ActivityPlanListItem) => {
-    setKnownActivityPlans((current) =>
-      current.some((item) => item.id === plan.id) ? current : [...current, plan],
-    );
-    setDraft((current) => {
-      if (current.mode !== "planned") return current;
-      return {
-        ...current,
-        activityPlanId: plan.id,
-        activityPlanName: plan.name,
-        title: plan.name,
-      };
-    });
-    setFormErrorMessage(null);
-    AccessibilityInfo?.announceForAccessibility?.(`Selected activity plan ${plan.name}`);
-  }, []);
+  const handleSelectPlan = useCallback(
+    (plan: ActivityPlanListItem) => {
+      if (existingEventReadOnly) return;
+      setKnownActivityPlans((current) =>
+        current.some((item) => item.id === plan.id) ? current : [...current, plan],
+      );
+      setDraft((current) => {
+        if (current.mode !== "planned") return current;
+        return {
+          ...current,
+          activityPlanId: plan.id,
+          activityPlanName: plan.name,
+          title: plan.name,
+        };
+      });
+      setFormErrorMessage(null);
+      AccessibilityInfo?.announceForAccessibility?.(`Selected activity plan ${plan.name}`);
+    },
+    [existingEventReadOnly],
+  );
 
   useEffect(() => {
     if (!preselectedActivityPlan) return;
@@ -454,6 +455,7 @@ export const CreateEventFlow = forwardRef<
   }, [draft, form, watchedFormValues]);
 
   const handleChangeMode = (mode: CreateEventMode) => {
+    if (existingEventReadOnly) return;
     setFormErrorMessage(null);
     setTitleErrorMessage(null);
     setRecurrenceErrorMessage(null);
@@ -498,6 +500,7 @@ export const CreateEventFlow = forwardRef<
   };
 
   const handleRemoveActivityPlan = () => {
+    if (existingEventReadOnly) return;
     setFormErrorMessage(null);
     setDraft(removeActivityPlanFromDraft);
   };
@@ -520,14 +523,14 @@ export const CreateEventFlow = forwardRef<
   };
 
   const handleSelectPlanResource = (item: ResourcePickerItem) => {
+    if (existingEventReadOnly) return;
     handleSelectPlan({
-      categories: item.activityCategory ? [item.activityCategory] : ["other"],
-      primary_category: item.activityCategory ?? "other",
       authoritative_metrics: {
         estimated_duration: item.estimatedDuration ?? null,
         estimated_tss: item.estimatedTss ?? null,
       },
       description: item.description ?? null,
+      activity_category: item.activityCategory ?? "other",
       id: item.id,
       name: item.name,
     });
@@ -558,6 +561,7 @@ export const CreateEventFlow = forwardRef<
   };
 
   const runUpdate = (nextDraft: CreateEventDraft, scope: EventMutationScope = "single") => {
+    if (existingEventReadOnly) return;
     if (!updateEvent?.id || !validateDraft(nextDraft)) return;
     try {
       updateMutation.mutate({
@@ -575,6 +579,7 @@ export const CreateEventFlow = forwardRef<
   };
 
   const submitCreate = () => {
+    if (existingEventReadOnly) return;
     if (updateEvent) {
       if (isRecurringEvent(updateEvent)) {
         if (!validateDraft(draft)) return;
@@ -615,6 +620,26 @@ export const CreateEventFlow = forwardRef<
     [pending],
   );
 
+  if (existingEventReadOnly) {
+    return (
+      <CreateEventMainStep
+        control={form.control}
+        draft={draft}
+        isPending={pending}
+        isReadOnly
+        onCancel={onCancel}
+        onChangeMode={handleChangeMode}
+        onOpenActivityPlan={() => {}}
+        onOpenRoute={() => {}}
+        onOpenRepeat={() => {}}
+        onSubmit={submitCreate}
+        selectedActivityPlan={selectedCreateActivityPlan}
+        selectedRoute={selectedRoute}
+        testIDPrefix={testIDPrefix}
+      />
+    );
+  }
+
   if (step === "repeat") {
     return (
       <RepeatStep
@@ -639,7 +664,7 @@ export const CreateEventFlow = forwardRef<
     <>
       <Form {...form}>
         <CreateEventMainStep
-          control={form.control as unknown as Control<CreateEventMainFormValues>}
+          control={form.control}
           draft={draft}
           formErrorMessage={formErrorMessage}
           helperText={
@@ -650,7 +675,9 @@ export const CreateEventFlow = forwardRef<
           isPending={pending}
           onCancel={onCancel}
           onChangeMode={handleChangeMode}
-          onOpenActivityPlan={() => setActivityPlanPickerOpen(true)}
+          onOpenActivityPlan={() => {
+            if (!existingEventReadOnly) setActivityPlanPickerOpen(true);
+          }}
           onOpenRoute={() => setRoutePickerOpen(true)}
           onRemoveActivityPlan={handleRemoveActivityPlan}
           onRemoveRoute={handleRemoveRoute}
@@ -664,7 +691,7 @@ export const CreateEventFlow = forwardRef<
         />
       </Form>
       <ResourcePickerModal
-        visible={activityPlanPickerOpen}
+        visible={activityPlanPickerOpen && !existingEventReadOnly}
         scope="activityPlans"
         selectedId={draft.mode === "planned" ? draft.activityPlanId : null}
         title="Choose Activity Plan"

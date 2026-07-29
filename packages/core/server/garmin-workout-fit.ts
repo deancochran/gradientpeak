@@ -1,9 +1,9 @@
 import { Encoder, Profile } from "@garmin/fitsdk";
 import type {
-  PlannedWorkoutExportDocument,
-  PlannedWorkoutExportTarget,
-} from "../plan/plannedWorkoutExportDocument";
-import { plannedWorkoutExportDocumentSchema } from "../plan/plannedWorkoutExportDocument";
+  PlannedActivityExportDocument,
+  PlannedActivityExportTarget,
+} from "../plan/plannedActivityExportDocument";
+import { plannedActivityExportDocumentSchema } from "../plan/plannedActivityExportDocument";
 
 const FIT_FILE_TYPE_WORKOUT = "workout";
 const FIT_MANUFACTURER_DEVELOPMENT = "development";
@@ -60,10 +60,21 @@ type FitWorkoutStepMessage = {
   notes?: string;
 };
 
-type FitTarget = Pick<
-  FitWorkoutStepMessage,
-  "customTargetValueHigh" | "customTargetValueLow" | "targetType" | "targetValue"
->;
+type FitTarget =
+  | { targetType: "open" }
+  | {
+      targetType: Exclude<FitWorkoutStepMessage["targetType"], "open">;
+      targetValue: number;
+      customTargetValueLow: number;
+      customTargetValueHigh: number;
+    };
+
+type FitStepDuration =
+  | { durationType: "open" }
+  | {
+      durationType: Exclude<FitWorkoutStepMessage["durationType"], "open">;
+      durationValue: number;
+    };
 
 function fitStringByteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength;
@@ -84,14 +95,14 @@ function addFitStringReason(
 }
 
 function stepNotes(
-  step: PlannedWorkoutExportDocument["blocks"][number]["steps"][number],
+  step: PlannedActivityExportDocument["blocks"][number]["steps"][number],
 ): string | undefined {
   const parts = [step.description, step.notes].filter((part): part is string => part != null);
   return parts.length === 0 ? undefined : parts.join("\n");
 }
 
 function inspectTarget(
-  target: PlannedWorkoutExportTarget,
+  target: PlannedActivityExportTarget,
   path: Array<string | number>,
 ): GarminWorkoutFitUnsupportedReason[] {
   const reasons: GarminWorkoutFitUnsupportedReason[] = [];
@@ -149,11 +160,11 @@ function inspectTarget(
   return reasons;
 }
 
-/** Reports every known reason a provider-neutral workout cannot be represented safely in FIT. */
+/** Reports every known reason a provider-neutral activity cannot be represented safely in FIT. */
 export function getGarminWorkoutFitUnsupportedReasons(
-  document: PlannedWorkoutExportDocument,
+  document: PlannedActivityExportDocument,
 ): GarminWorkoutFitUnsupportedReason[] {
-  const parsed = plannedWorkoutExportDocumentSchema.safeParse(document);
+  const parsed = plannedActivityExportDocumentSchema.safeParse(document);
   if (!parsed.success) {
     return parsed.error.issues.map((issue) => ({
       code: "invalid_document" as const,
@@ -163,34 +174,23 @@ export function getGarminWorkoutFitUnsupportedReasons(
   }
 
   const reasons: GarminWorkoutFitUnsupportedReason[] = [];
-  if (!parsed.data.segments || !parsed.data.categories || !parsed.data.legacyProjection) {
+  if (!parsed.data.segments) {
     reasons.push({
       code: "lossy_projection",
-      message:
-        "Garmin FIT encoding requires segments, categories, and explicit lossless projection evidence.",
+      message: "Garmin FIT encoding requires the lossless canonical segment representation.",
       path: ["segments"],
-    });
-  }
-  if (parsed.data.legacyProjection?.lossless === false) {
-    reasons.push({
-      code: "lossy_projection",
-      message: "Garmin FIT encoding requires a lossless legacy workout projection.",
-      path: ["legacyProjection", "lossless"],
     });
   }
   const segmentActivityCategories =
     parsed.data.segments
       ?.filter((segment) => segment.kind === "activity")
-      .map((segment) => segment.category) ?? [];
+      .map((segment) => segment.activity_category) ?? [];
   const actualCategories = new Set(segmentActivityCategories);
-  if (
-    actualCategories.size > 1 ||
-    new Set(parsed.data.categories ?? [parsed.data.sport]).size > 1
-  ) {
+  if (actualCategories.size > 1) {
     reasons.push({
       code: "lossy_projection",
       message: "Garmin FIT workouts cannot preserve multiple activity categories.",
-      path: ["categories"],
+      path: ["segments"],
     });
   }
   parsed.data.segments?.forEach((segment, segmentIndex) => {
@@ -206,49 +206,30 @@ export function getGarminWorkoutFitUnsupportedReasons(
     const segmentBlocks = parsed.data.segments.flatMap((segment) =>
       segment.kind === "activity" ? segment.blocks : [],
     );
-    const declaredCategories = parsed.data.categories ?? [];
     const actualCategoryList = [...actualCategories];
     if (
-      declaredCategories.length !== actualCategoryList.length ||
-      declaredCategories.some((category) => !actualCategories.has(category))
+      actualCategoryList.length !== 1 ||
+      actualCategoryList[0] !== parsed.data.activity_category
     ) {
       reasons.push({
         code: "lossy_projection",
-        message: "Declared categories do not match activity segment categories.",
-        path: ["categories"],
-      });
-    }
-    if (actualCategoryList.length !== 1 || actualCategoryList[0] !== parsed.data.sport) {
-      reasons.push({
-        code: "lossy_projection",
-        message: "Root sport does not match the single activity segment category.",
-        path: ["sport"],
+        message: "Root activity_category does not match the single activity segment category.",
+        path: ["activity_category"],
       });
     }
     if (JSON.stringify(segmentBlocks) !== JSON.stringify(parsed.data.blocks)) {
       reasons.push({
         code: "lossy_projection",
-        message: "Root workout blocks do not match activity segment contents.",
+        message: "Root activity blocks do not match activity segment contents.",
         path: ["blocks"],
       });
     }
   }
-  if (
-    parsed.data.legacyProjection &&
-    (parsed.data.legacyProjection.sport !== parsed.data.sport ||
-      JSON.stringify(parsed.data.legacyProjection.blocks) !== JSON.stringify(parsed.data.blocks))
-  ) {
-    reasons.push({
-      code: "lossy_projection",
-      message: "Legacy projection does not match the root workout projection.",
-      path: ["legacyProjection"],
-    });
-  }
-  if (parsed.data.sport !== "run" && parsed.data.sport !== "bike") {
+  if (parsed.data.activity_category !== "run" && parsed.data.activity_category !== "bike") {
     reasons.push({
       code: "unsupported_sport",
-      message: `Garmin FIT workout diagnostics support run and bike, not ${parsed.data.sport}.`,
-      path: ["sport"],
+      message: `Garmin FIT workout diagnostics support run and bike, not ${parsed.data.activity_category}.`,
+      path: ["activity_category"],
     });
   }
 
@@ -277,7 +258,7 @@ export function getGarminWorkoutFitUnsupportedReasons(
   return reasons;
 }
 
-function targetRawValue(target: PlannedWorkoutExportTarget): number {
+function targetRawValue(target: PlannedActivityExportTarget): number {
   if (target.kind === "relative") {
     return Math.round(target.value);
   }
@@ -295,7 +276,7 @@ function targetRawValue(target: PlannedWorkoutExportTarget): number {
   }
 }
 
-function encodeTarget(target: PlannedWorkoutExportTarget | undefined): FitTarget {
+function encodeTarget(target: PlannedActivityExportTarget | undefined): FitTarget {
   if (target == null) {
     return { targetType: "open" };
   }
@@ -323,8 +304,8 @@ function encodeTarget(target: PlannedWorkoutExportTarget | undefined): FitTarget
 }
 
 function encodeStepDuration(
-  duration: PlannedWorkoutExportDocument["blocks"][number]["steps"][number]["duration"],
-): Pick<FitWorkoutStepMessage, "durationType" | "durationValue"> {
+  duration: PlannedActivityExportDocument["blocks"][number]["steps"][number]["duration"],
+): FitStepDuration {
   switch (duration.kind) {
     case "time":
       return { durationType: "time", durationValue: Math.round(duration.value * 1000) };
@@ -337,18 +318,19 @@ function encodeStepDuration(
   }
 }
 
-function buildFitWorkoutSteps(document: PlannedWorkoutExportDocument): FitWorkoutStepMessage[] {
+function buildFitWorkoutSteps(document: PlannedActivityExportDocument): FitWorkoutStepMessage[] {
   const messages: FitWorkoutStepMessage[] = [];
 
   document.blocks.forEach((block) => {
     const firstStepIndex = messages.length;
     block.steps.forEach((step) => {
+      const notes = stepNotes(step);
       messages.push({
         messageIndex: messages.length,
         wktStepName: step.name,
         ...encodeStepDuration(step.duration),
         ...encodeTarget(step.targets[0]),
-        ...(stepNotes(step) == null ? {} : { notes: stepNotes(step) }),
+        ...(notes === undefined ? {} : { notes }),
       });
     });
 
@@ -366,7 +348,7 @@ function buildFitWorkoutSteps(document: PlannedWorkoutExportDocument): FitWorkou
   return messages;
 }
 
-function workoutCapabilities(document: PlannedWorkoutExportDocument): number {
+function workoutCapabilities(document: PlannedActivityExportDocument): number {
   let capabilities = WORKOUT_CAPABILITY.interval | WORKOUT_CAPABILITY.custom;
   document.blocks.forEach((block) => {
     block.steps.forEach((step) => {
@@ -383,14 +365,14 @@ function workoutCapabilities(document: PlannedWorkoutExportDocument): number {
 
 /** Encodes a diagnostic FIT workout; this does not imply Garmin delivery readiness. */
 export function encodeGarminWorkoutFitDiagnostic(
-  document: PlannedWorkoutExportDocument,
+  document: PlannedActivityExportDocument,
 ): GarminWorkoutFitEncodingResult {
   const reasons = getGarminWorkoutFitUnsupportedReasons(document);
   if (reasons.length > 0) return { ok: false, reasons };
 
-  const parsedDocument = plannedWorkoutExportDocumentSchema.parse(document);
+  const parsedDocument = plannedActivityExportDocumentSchema.parse(document);
   const steps = buildFitWorkoutSteps(parsedDocument);
-  const fitSport = parsedDocument.sport === "run" ? FIT_SPORT.run : FIT_SPORT.bike;
+  const fitSport = parsedDocument.activity_category === "run" ? FIT_SPORT.run : FIT_SPORT.bike;
 
   try {
     const encoder = new Encoder();
@@ -421,7 +403,7 @@ export function encodeGarminWorkoutFitDiagnostic(
       reasons: [
         {
           code: "encoding_failed",
-          message: "The Garmin FIT SDK rejected the validated workout messages.",
+          message: "The Garmin FIT SDK rejected the validated FIT workout messages.",
           path: [],
         },
       ],

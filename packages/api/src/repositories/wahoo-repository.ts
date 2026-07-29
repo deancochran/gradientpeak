@@ -17,11 +17,13 @@ export type WahooIntegrationRecord = {
   profileId: string;
   reconnectRequiredAt: string | null;
   refreshToken: string | null;
+  scope?: string | null;
 };
 
 export type WahooEventResourceProviderMetadata = {
   wahoo?: {
     planId?: number;
+    providerAccountExternalId?: string;
     projectionHash?: string;
     routeId?: number;
     sourcePlanId?: string;
@@ -36,18 +38,68 @@ export type WahooEventResourceLinkRecord = {
   updatedAt: string | null;
 };
 
+export type WahooRouteResourceLinkRecord = {
+  externalId: string;
+  id: string;
+  integrationId: string;
+  payloadHash: string | null;
+  providerMetadata: WahooEventResourceProviderMetadata | null;
+  providerUpdatedAt: string | null;
+  updatedAt: string | null;
+};
+
+export type WahooGroupEventRouteDeliveryResourceLinkRecord = WahooRouteResourceLinkRecord;
+
+export type WahooEventResourceLinkGenerationGuard = {
+  expectedIntegrationGeneration: number;
+  integrationId: string;
+  profileId: string;
+};
+
 export interface WahooRepository {
   createEventResourceLink(input: {
     eventId: string;
     externalId: string;
     integrationId: string;
+    expectedIntegrationGeneration: number;
     profileId: string;
     provider: "wahoo";
     providerMetadata?: WahooEventResourceProviderMetadata | null;
     syncedAt: string;
     updatedAt: string;
   }): Promise<void>;
-  deleteEventResourceLink(id: string): Promise<void>;
+  deleteEventResourceLink(
+    input: WahooEventResourceLinkGenerationGuard & { id: string },
+  ): Promise<void>;
+  createRouteResourceLink(input: {
+    expectedIntegrationGeneration: number;
+    externalId: string;
+    integrationId: string;
+    payloadHash: string;
+    profileId: string;
+    providerMetadata: WahooEventResourceProviderMetadata;
+    providerUpdatedAt: string;
+    routeId: string;
+    syncedAt: string;
+  }): Promise<void>;
+  createGroupEventRouteDeliveryResourceLink(input: {
+    eventId: string;
+    expectedIntegrationGeneration: number;
+    externalId: string;
+    integrationId: string;
+    payloadHash: string;
+    profileId: string;
+    providerMetadata: WahooEventResourceProviderMetadata;
+    providerUpdatedAt: string;
+    sourceRouteId: string;
+    syncedAt: string;
+  }): Promise<void>;
+  deleteRouteResourceLink(
+    input: WahooEventResourceLinkGenerationGuard & { id: string },
+  ): Promise<void>;
+  deleteGroupEventRouteDeliveryResourceLink(
+    input: WahooEventResourceLinkGenerationGuard & { eventId: string; id: string },
+  ): Promise<void>;
   findWahooIntegrationByProfileId(profileId: string): Promise<WahooIntegrationRecord | null>;
   findWahooIntegrationByExternalId(
     externalId: string,
@@ -99,7 +151,6 @@ export interface WahooRepository {
   }): Promise<WahooEventResourceLinkRecord | null>;
   getPlannedEventForSync(input: { eventId: string; profileId: string }): Promise<{
     activityPlan: {
-      activityCategory: string;
       description: string | null;
       id: string;
       name: string;
@@ -124,7 +175,31 @@ export interface WahooRepository {
     }>;
     maxHr: number | null;
     thresholdHr: number | null;
-    thresholdHrBySport?: Partial<Record<"bike" | "run" | "swim", number>>;
+    thresholdHrByActivityCategory?: Partial<Record<"bike" | "run" | "swim", number>>;
+  } | null>;
+  getOwnedRouteForMirror(input: { profileId: string; routeId: string }): Promise<{
+    description: string | null;
+    filePath: string;
+    id: string;
+    name: string;
+    totalAscent: number | null;
+    totalDescent: number | null;
+    totalDistance: number;
+    updatedAt: string;
+  } | null>;
+  getGroupEventRouteForDelivery(input: {
+    groupEventId: string;
+    profileId: string;
+    sourceRouteId: string;
+  }): Promise<{
+    description: string | null;
+    filePath: string;
+    id: string;
+    name: string;
+    totalAscent: number | null;
+    totalDescent: number | null;
+    totalDistance: number;
+    updatedAt: string;
   } | null>;
   getRouteForSync(input: { profileId: string; routeId: string }): Promise<{
     description: string | null;
@@ -135,6 +210,16 @@ export interface WahooRepository {
     totalDescent: number | null;
     totalDistance: number;
   } | null>;
+  getRouteResourceLink(input: {
+    profileId: string;
+    provider: "wahoo";
+    routeId: string;
+  }): Promise<WahooRouteResourceLinkRecord | null>;
+  getGroupEventRouteDeliveryResourceLink(input: {
+    eventId: string;
+    profileId: string;
+    provider: "wahoo";
+  }): Promise<WahooGroupEventRouteDeliveryResourceLinkRecord | null>;
   listEventResourceLinks(input: { eventId: string; profileId: string }): Promise<
     Array<{
       externalId: string;
@@ -144,11 +229,66 @@ export interface WahooRepository {
       updatedAt: string | null;
     }>
   >;
+  listOwnedRoutesForMirror(input: {
+    afterId?: string;
+    limit: number;
+    profileId: string;
+  }): Promise<Array<{ id: string; updatedAt: string }>>;
+  listEligibleGroupEventRouteDeliveries(input: {
+    after?: { eventId: string; startsAt: string };
+    limit: number;
+    profileId: string;
+  }): Promise<
+    Array<{
+      eventId: string;
+      eventUpdatedAt: string;
+      routeUpdatedAt: string;
+      sourceRouteId: string;
+      startsAt: string;
+    }>
+  >;
+  listGroupEventRouteDeliveryResourceLinks(input: {
+    afterEventId?: string;
+    limit: number;
+    profileId: string;
+  }): Promise<Array<{ eventId: string; sourceRouteId: string | null }>>;
+  isWahooPlanReferencedByOtherEvent(input: {
+    excludeLinkId: string;
+    integrationId: string;
+    planId: number;
+    profileId: string;
+  }): Promise<boolean>;
   updateEventResourceLink(input: {
     externalId?: string;
+    expectedIntegrationGeneration: number;
     id: string;
+    integrationId: string;
+    profileId: string;
     providerMetadata?: WahooEventResourceProviderMetadata | null;
     updatedAt: string;
+  }): Promise<void>;
+  updateRouteResourceLink(input: {
+    expectedIntegrationGeneration: number;
+    externalId: string;
+    id: string;
+    integrationId: string;
+    payloadHash: string;
+    profileId: string;
+    providerMetadata: WahooEventResourceProviderMetadata;
+    providerUpdatedAt: string;
+    syncedAt: string;
+  }): Promise<void>;
+  updateGroupEventRouteDeliveryResourceLink(input: {
+    eventId: string;
+    expectedIntegrationGeneration: number;
+    externalId: string;
+    id: string;
+    integrationId: string;
+    payloadHash: string;
+    profileId: string;
+    providerMetadata: WahooEventResourceProviderMetadata;
+    providerUpdatedAt: string;
+    syncedAt: string;
   }): Promise<void>;
   updateWahooIntegrationTokens(input: {
     accessToken: string;

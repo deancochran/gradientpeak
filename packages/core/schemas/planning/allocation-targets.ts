@@ -1,12 +1,12 @@
 import { z } from "zod";
-import { canonicalSportSchema } from "../sport";
+import { canonicalActivityCategorySchema } from "../activity-category";
 
 const nonNegativeFiniteNumberSchema = z.number().finite().min(0);
 
 export const dailyAllocationTargetSchema = z
   .object({
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    sport: canonicalSportSchema,
+    activity_category: canonicalActivityCategorySchema,
     target_tss: nonNegativeFiniteNumberSchema,
     max_duration_minutes: nonNegativeFiniteNumberSchema.optional(),
     rationale_codes: z.array(z.string().min(1)).default([]),
@@ -16,7 +16,7 @@ export const dailyAllocationTargetSchema = z
 export const weeklyAllocationBudgetSchema = z
   .object({
     week_start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    sport: canonicalSportSchema,
+    activity_category: canonicalActivityCategorySchema,
     target_tss: nonNegativeFiniteNumberSchema,
     max_tss: nonNegativeFiniteNumberSchema.optional(),
     min_tss: nonNegativeFiniteNumberSchema.optional(),

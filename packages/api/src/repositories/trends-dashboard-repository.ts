@@ -2,7 +2,7 @@ import type { ActivityRow, ActivitySegmentRow, publicActivityCategorySchema } fr
 import type { z } from "zod";
 
 export const MAX_TRENDS_DASHBOARD_ROWS = 10_000;
-// A dashboard may include multiple sport segments per activity, but this still
+// A dashboard may include multiple activity_category segments per activity, but this still
 // bounds the in-memory projection to a conservative five segments per activity.
 export const MAX_TRENDS_DASHBOARD_SEGMENTS = MAX_TRENDS_DASHBOARD_ROWS * 5;
 
@@ -28,7 +28,7 @@ export type TrendsDashboardActivityRow = Pick<
       | "activity_id"
       | "ordinal"
       | "role"
-      | "category"
+      | "activity_category"
       | "start_offset_ms"
       | "end_offset_ms"
       | "timing_coverage"

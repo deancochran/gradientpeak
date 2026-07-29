@@ -76,11 +76,35 @@ test("source-file selection covers the containing capsule recursively", async ()
   );
 });
 
+test("tooling self-tests are selected for their source capsule and use node:test", async () => {
+  const root = await fixture([
+    "tooling/multisport/legacy-denylist-lib.mjs",
+    "tooling/multisport/legacy-denylist.self-test.mjs",
+  ]);
+  const plan = await createPlan({
+    root,
+    selector: { path: "tooling/multisport/legacy-denylist-lib.mjs" },
+  });
+
+  assert.deepEqual(
+    plan.tests.map(({ kind, path: testPath }) => [kind, testPath]),
+    [["unit", "tooling/multisport/legacy-denylist.self-test.mjs"]],
+  );
+  assert.deepEqual(plan.commands, [
+    {
+      command: "node",
+      args: ["--test", "tooling/multisport/legacy-denylist.self-test.mjs"],
+      tests: ["tooling/multisport/legacy-denylist.self-test.mjs"],
+    },
+  ]);
+});
+
 test("repository-root config files do not expand into the entire repository", async () => {
   const root = await fixture([
     "package.json",
     "apps/web/src/unrelated.test.ts",
     "tooling/architecture/check-architecture.test.mjs",
+    "tooling/multisport/legacy-denylist.self-test.mjs",
     "tooling/testing/planner.test.mjs",
     "tooling/architecture/fixtures/example/missing.test.ts",
     "tests/parity/web-mobile-parity.test.ts",
@@ -92,6 +116,7 @@ test("repository-root config files do not expand into the entire repository", as
     [
       "tests/parity/web-mobile-parity.test.ts",
       "tooling/architecture/check-architecture.test.mjs",
+      "tooling/multisport/legacy-denylist.self-test.mjs",
       "tooling/testing/planner.test.mjs",
     ],
   );
@@ -163,23 +188,23 @@ test("arbitrary repository-root files remain an explicit empty plan", async () =
 
 test("feature selection joins canonical roots and defers runtime tests", async () => {
   const root = await fixture([
-    "packages/core/src/features/workouts/calculate.test.ts",
-    "packages/core/src/features/workouts/feature.contract.ts",
-    "packages/api/src/features/workouts/save.live-db.test.ts",
-    "apps/web/src/features/workouts/card.web.test.tsx",
-    "apps/mobile/features/workouts/card.native.test.tsx",
-    "apps/web/e2e/features/workouts.spec.ts",
-    "apps/mobile/.maestro/features/workouts.yaml",
+    "packages/core/src/features/activities/calculate.test.ts",
+    "packages/core/src/features/activities/feature.contract.ts",
+    "packages/api/src/features/activities/save.live-db.test.ts",
+    "apps/web/src/features/activities/card.web.test.tsx",
+    "apps/mobile/features/activities/card.native.test.tsx",
+    "apps/web/e2e/features/activities.spec.ts",
+    "apps/mobile/.maestro/features/activities.yaml",
   ]);
-  const plan = await createPlan({ root, selector: { feature: "workouts" } });
+  const plan = await createPlan({ root, selector: { feature: "activities" } });
 
-  assert.deepEqual(plan.featureIds, ["workouts"]);
+  assert.deepEqual(plan.featureIds, ["activities"]);
   assert.equal(plan.tests.length, 6);
-  assert.deepEqual(plan.intentFiles, ["packages/core/src/features/workouts/feature.contract.ts"]);
+  assert.deepEqual(plan.intentFiles, ["packages/core/src/features/activities/feature.contract.ts"]);
   assert.deepEqual(plan.deferredRuntime, [
-    "apps/mobile/.maestro/features/workouts.yaml",
-    "apps/web/e2e/features/workouts.spec.ts",
-    "packages/api/src/features/workouts/save.live-db.test.ts",
+    "apps/mobile/.maestro/features/activities.yaml",
+    "apps/web/e2e/features/activities.spec.ts",
+    "packages/api/src/features/activities/save.live-db.test.ts",
   ]);
 });
 

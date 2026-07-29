@@ -8,14 +8,14 @@ const allDates = Array.from(
   (_, index) => `2026-02-${String(index + 1).padStart(2, "0")}`,
 );
 const bikeIdentity = {
-  sport: "bike" as const,
+  activity_category: "bike" as const,
   method: "power_threshold" as const,
   source: "activity_analysis" as const,
   version: "1" as const,
   calibration: { type: "ftp_watts" as const, value: 250 },
 };
 const runIdentity = {
-  sport: "run" as const,
+  activity_category: "run" as const,
   method: "run_pace_threshold" as const,
   source: "activity_analysis" as const,
   version: "1" as const,
@@ -28,7 +28,7 @@ describe("workload utils", () => {
       [
         {
           started_at: "2026-02-01T12:00:00.000Z",
-          sport: "cycling",
+          activity_category: "cycling",
           trimp: 100,
           tss: 50,
           tss_identity: bikeIdentity,
@@ -63,7 +63,7 @@ describe("workload utils", () => {
     ]);
   });
 
-  it("returns unavailable rather than numeric workload for mixed sports", () => {
+  it("returns unavailable rather than numeric workload for mixed activity_categories", () => {
     const activities = allDates.flatMap((date) => [
       { started_at: `${date}T06:00:00.000Z`, tss: 50, tss_identity: bikeIdentity },
       { started_at: `${date}T18:00:00.000Z`, tss: 25, tss_identity: runIdentity },
@@ -111,7 +111,7 @@ describe("workload utils", () => {
     const workload = buildWorkloadEnvelopes(activities, start, end);
     expect(workload.acwr.value).toBeTypeOf("number");
     expect(workload.acwr.identity).toMatchObject({
-      sport: "bike",
+      activity_category: "bike",
       family: "tss",
       method: "power_threshold",
       sourceDefinition: "activity_analysis",
@@ -136,7 +136,7 @@ describe("workload utils", () => {
     expect(covered.acwr.reasonCode).not.toBe("unknown_days");
     expect(covered.acwr.coverageDays).toBe(28);
     expect(covered.acwr.identity).toMatchObject({
-      sport: "bike",
+      activity_category: "bike",
       family: "tss",
       method: "power_threshold",
       version: "1",
@@ -147,7 +147,7 @@ describe("workload utils", () => {
   it("computes a fully identified TRIMP series without requiring a TSS identity", () => {
     const activities = allDates.map((date, index) => ({
       started_at: `${date}T06:00:00.000Z`,
-      sport: "run",
+      activity_category: "run",
       trimp: 40 + index,
       load_method: "heart_rate_reserve",
       load_version: "1",
@@ -157,7 +157,7 @@ describe("workload utils", () => {
 
     expect(workload.acwr.value).toBeTypeOf("number");
     expect(workload.acwr.identity).toMatchObject({
-      sport: "run",
+      activity_category: "run",
       family: "trimp",
       method: "heart_rate_reserve",
       version: "1",

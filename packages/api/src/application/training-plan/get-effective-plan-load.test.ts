@@ -1,14 +1,23 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getEffectivePlanLoad, getEffectivePlanLoadInputSchema } from "./get-effective-plan-load";
 
 const activityAnalysis = vi.hoisted(() => ({
   buildActivityDerivedSummaries: vi.fn(),
   loadActivitySegmentsByActivityId: vi.fn(),
 }));
+const activityPlanMetrics = vi.hoisted(() => ({
+  getActivityPlansDerivedMetrics: vi.fn(async (): Promise<unknown[]> => []),
+}));
 
 vi.mock("../../lib/activity-analysis", () => activityAnalysis);
+vi.mock("../../utils/activity-plan-derived-metrics", () => activityPlanMetrics);
 
 describe("getEffectivePlanLoad", () => {
+  beforeEach(() => {
+    activityPlanMetrics.getActivityPlansDerivedMetrics.mockReset();
+    activityPlanMetrics.getActivityPlansDerivedMetrics.mockResolvedValue([]);
+  });
+
   it("accepts a server-derived current week or a bounded date range and tentative server-item overlay", () => {
     expect(getEffectivePlanLoadInputSchema.safeParse({}).success).toBe(true);
     expect(
@@ -34,6 +43,8 @@ describe("getEffectivePlanLoad", () => {
     const getEffectivePlanLoadInputs = vi.fn().mockResolvedValue({
       activities: [],
       events: [],
+      recommendationEvents: [],
+      recommendationSource: { scheduleBatchId: null, status: "complete", trainingPlanId: null },
       planningTimezone: null,
       resolvedRange: { startDate: null, endDate: null },
       sourceCounts: { activities: 0, events: 0 },
@@ -59,6 +70,8 @@ describe("getEffectivePlanLoad", () => {
     const getEffectivePlanLoadInputs = vi.fn().mockResolvedValue({
       activities: [{ id: "activity-1", started_at: new Date("2026-07-20T12:00:00.000Z") }],
       events: [],
+      recommendationEvents: [],
+      recommendationSource: { scheduleBatchId: null, status: "complete", trainingPlanId: null },
       planningTimezone: "UTC",
       resolvedRange: { startDate: "2026-07-20", endDate: "2026-07-26" },
       sourceCounts: { activities: 1, events: 0 },
@@ -77,7 +90,7 @@ describe("getEffectivePlanLoad", () => {
               status: "unavailable",
               model: "gradientpeak_relative_load",
               version: "1",
-              sport: "bike",
+              activity_category: "bike",
               method: null,
               quality: null,
               thresholdEvidence: null,
@@ -129,6 +142,8 @@ describe("getEffectivePlanLoad", () => {
           status: "scheduled",
         },
       ],
+      recommendationEvents: [],
+      recommendationSource: { scheduleBatchId: null, status: "complete", trainingPlanId: null },
       planningTimezone: "America/Los_Angeles",
       resolvedRange: { startDate: "2026-07-19", endDate: "2026-07-25" },
       sourceCounts: { activities: 0, events: 1 },
@@ -155,6 +170,94 @@ describe("getEffectivePlanLoad", () => {
       status: "available",
       effective: {
         firmItems: [{ kind: "scheduled", scheduledItemId: "event-1", date: "2026-07-21" }],
+      },
+    });
+  });
+
+  it("keeps a cancelled execution in the original versioned recommendation target", async () => {
+    const eventId = "11111111-1111-4111-8111-111111111111";
+    const activityPlanId = "22222222-2222-4222-8222-222222222222";
+    const trainingPlanId = "33333333-3333-4333-8333-333333333333";
+    const activityPlan = { id: activityPlanId };
+    const commonLoad = {
+      status: "complete",
+      model: "gradientpeak_relative_load",
+      version: "1",
+      load: 50,
+      intensity: 1,
+      contributingDurationSeconds: 1800,
+      knownDurationSeconds: 1800,
+      contributingActivityCount: 1,
+      partialActivityCount: 0,
+      unavailableActivityCount: 0,
+      totalActivityCount: 1,
+      activityCountCoverage: 1,
+      knownDurationCoverage: 1,
+      unknownDurationActivityCount: 0,
+    } as const;
+    const recommendationEvent = {
+      id: eventId,
+      activity_plan: activityPlan,
+      activity_plan_id: activityPlanId,
+      linked_activity_id: null,
+      original_starts_at: "2026-07-22T07:00:00.000Z",
+      scheduled_date: "2026-07-24",
+      starts_at: "2026-07-24T07:00:00.000Z",
+      status: "cancelled",
+      training_plan_id: trainingPlanId,
+    };
+    const getEffectivePlanLoadInputs = vi.fn().mockResolvedValue({
+      activities: [],
+      events: [],
+      recommendationEvents: [recommendationEvent],
+      recommendationSource: {
+        scheduleBatchId: null,
+        status: "complete",
+        trainingPlanId,
+      },
+      planningTimezone: "UTC",
+      resolvedRange: { startDate: "2026-07-20", endDate: "2026-07-26" },
+      sourceCounts: { activities: 0, events: 0 },
+      sourceCoverage: {
+        activities: { startDate: "2026-07-20", endDate: "2026-07-26", status: "complete" },
+        scheduledItems: {
+          startDate: "2026-07-20",
+          endDate: "2026-07-26",
+          status: "complete",
+        },
+      },
+    });
+    activityAnalysis.loadActivitySegmentsByActivityId.mockResolvedValue(new Map());
+    activityAnalysis.buildActivityDerivedSummaries.mockResolvedValue({
+      parent: new Map(),
+      segments: [],
+    });
+    activityPlanMetrics.getActivityPlansDerivedMetrics.mockResolvedValue([
+      { id: activityPlanId, common_load: commonLoad },
+    ]);
+
+    const result = await getEffectivePlanLoad({
+      asOf: new Date("2026-07-20T12:00:00.000Z"),
+      db: {} as never,
+      profileId: "profile-1",
+      repository: { getEffectivePlanLoadInputs } as never,
+      request: { startDate: "2026-07-20", endDate: "2026-07-26" },
+    });
+
+    expect(result).toMatchObject({
+      status: "available",
+      recommendation: {
+        status: "complete",
+        policyVersion: "common_load_recommendation_v1",
+        model: "gradientpeak_relative_load",
+        version: "1",
+        trainingPlanId,
+        coverage: { startDate: "2026-07-20", endDate: "2026-07-22" },
+        points: [
+          { date: "2026-07-20", state: "known_zero", load: 0 },
+          { date: "2026-07-21", state: "known_zero", load: 0 },
+          { date: "2026-07-22", state: "complete", load: 50 },
+        ],
       },
     });
   });

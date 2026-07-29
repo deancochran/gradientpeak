@@ -51,7 +51,7 @@ export const capabilityProjectionSchema = z
     effortCurves: z.array(effortCapabilitySchema).max(32),
     enduranceRecencyWeightedMinutes: boundedResultSchema,
     durabilityBaselineRatio: boundedResultSchema,
-    sportSpecificity: boundedResultSchema,
+    activityCategorySpecificity: boundedResultSchema,
   })
   .strict();
 

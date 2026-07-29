@@ -1,10 +1,10 @@
 import type { z } from "zod";
+import { canonicalActivityCategoryValues } from "../schemas/activity-category";
 import {
   completionTimeHmsToSecondsSchema,
   distanceKmToMetersSchema,
   paceMmSsToMpsSchema,
 } from "../schemas/form-schemas";
-import { canonicalSportValues } from "../schemas/sport";
 import {
   type TrainingPlanGoal,
   type TrainingPlanGoalTarget,
@@ -352,7 +352,7 @@ export function deriveActivityCategoriesFromGoalTargets(
     return ["run"];
   }
 
-  const order = canonicalSportValues;
+  const order = canonicalActivityCategoryValues;
   return Array.from(categories).sort(
     (a, b) =>
       order.indexOf(a as (typeof order)[number]) - order.indexOf(b as (typeof order)[number]),

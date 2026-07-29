@@ -19,7 +19,7 @@ export function deriveScheduleInspectorBackendInsight({
       riskLabel: firstConflict.severity,
       recommendation:
         activeProjection.feasibilityReasons[0] ??
-        "Adjust workout placement or reduce load before saving.",
+        "Adjust activity placement or reduce load before saving.",
       outcome: "Too fatigued",
     };
   }
@@ -71,7 +71,7 @@ export function deriveScheduleInspectorBackendInsight({
       detail: `Projected readiness is ${Math.round(activeProjection.readinessScore)}.`,
       riskLabel: null,
       recommendation:
-        "Use workout placement and recovery weeks to improve support without adding excess fatigue.",
+        "Use activity placement and recovery weeks to improve support without adding excess fatigue.",
       outcome: "Better prepared",
     };
   }

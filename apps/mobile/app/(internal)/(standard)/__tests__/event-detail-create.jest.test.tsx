@@ -21,7 +21,12 @@ const mockActivityPlanGetByIdUseQuery: jest.Mock = jest.fn(() => ({
 }));
 let paramsState: Record<string, string | undefined> = { mode: "create", date: "2026-03-24" };
 
-type ActivityPlanFixture = { id: string; name: string };
+type ActivityPlanFixture = {
+  activity_categories?: string[];
+  id: string;
+  name: string;
+  activity_category?: string;
+};
 type RecurrenceFixture = { recurrence?: { endDate?: string | null; frequency?: string } } | null;
 type StackScreenProps = Record<string, unknown> & {
   options?: { headerRight?: () => React.ReactNode };
@@ -397,6 +402,7 @@ describe("event detail create mode", () => {
       data: {
         items: [
           {
+            activity_categories: ["run"],
             id: "plan-1",
             name: "Tempo Run",
             activity_category: "run",
@@ -478,12 +484,14 @@ describe("event detail create mode", () => {
       data: {
         items: [
           {
+            activity_categories: ["run"],
             id: "plan-1",
             name: "Tempo Run",
             activity_category: "run",
             authoritative_metrics: { estimated_duration: 3600, estimated_tss: 78 },
           },
           {
+            activity_categories: ["bike"],
             id: "plan-2",
             name: "Recovery Ride",
             activity_category: "bike",
@@ -532,6 +540,7 @@ describe("event detail create mode", () => {
     };
     mockActivityPlanGetByIdUseQuery.mockReturnValue({
       data: {
+        activity_categories: ["run"],
         id: "plan-tempo",
         name: "Tempo Run",
         activity_category: "run",
@@ -581,12 +590,14 @@ describe("event detail create mode", () => {
       data: {
         items: [
           {
+            activity_categories: ["run"],
             id: "plan-easy",
             name: "Easy Run",
             activity_category: "run",
             authoritative_metrics: { estimated_duration: 2400, estimated_tss: 35 },
           },
           {
+            activity_categories: ["run"],
             id: "plan-tempo",
             name: "Tempo Run",
             activity_category: "run",

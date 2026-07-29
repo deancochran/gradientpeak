@@ -14,7 +14,7 @@ function formObject(data: unknown) {
 }
 
 export const changePasswordAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => changePasswordFormSchema.parse(formObject(data)))
+  .validator((data) => changePasswordFormSchema.parse(formObject(data)))
   .handler(async ({ data }) => {
     try {
       await getGradientPeakAuth().api.changePassword({
@@ -55,7 +55,7 @@ export const revokeOtherSessionsAction = createServerFn({ method: "POST" }).hand
 });
 
 export const resendVerificationFromSettingsAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => z.object({ email: authEmailSchema }).strict().parse(formObject(data)))
+  .validator((data) => z.object({ email: authEmailSchema }).strict().parse(formObject(data)))
   .handler(async ({ data }) => {
     try {
       await getGradientPeakAuth().api.sendVerificationEmail({

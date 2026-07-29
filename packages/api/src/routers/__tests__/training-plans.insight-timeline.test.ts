@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildBaselineDailyRecommendedTssByDate } from "../planning/training-plans/base";
 
 describe("baseline daily recommendation safety", () => {
-  it("does not populate target maps when plan sessions omit sport", () => {
+  it("does not populate target maps when plan sessions omit activity_category", () => {
     const targets = buildBaselineDailyRecommendedTssByDate({
       startDate: "2026-01-05",
       endDate: "2026-01-11",

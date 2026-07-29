@@ -132,7 +132,7 @@ export async function getTrendsDashboard({
         .map((activity) => ({
           ...activity,
           segments: activity.segments.filter(
-            (segment) => segment.role === "activity" && segment.category === type,
+            (segment) => segment.role === "activity" && segment.activity_category === type,
           ),
         }))
         .filter((activity) => activity.segments.length > 0)

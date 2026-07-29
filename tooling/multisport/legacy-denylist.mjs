@@ -1,6 +1,9 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { scanProductionProcessActivityTypeCallers } from "./legacy-denylist-lib.mjs";
+import {
+  scanCanonicalDomainTerminology,
+  scanProductionProcessActivityTypeCallers,
+} from "./legacy-denylist-lib.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const violations = [];
@@ -100,6 +103,12 @@ for (const path of sourceFiles(resolve(root, "packages"))) {
 for (const violation of scanProductionProcessActivityTypeCallers(root)) {
   violations.push(
     `${violation.path}:${violation.line}:${violation.column}: removed processActivityFile activityType transport field in caller`,
+  );
+}
+
+for (const violation of scanCanonicalDomainTerminology(root)) {
+  violations.push(
+    `${violation.path}:${violation.line}:${violation.column}: ${violation.description}`,
   );
 }
 

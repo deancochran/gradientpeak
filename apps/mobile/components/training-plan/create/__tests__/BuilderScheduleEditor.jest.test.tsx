@@ -137,7 +137,7 @@ describe("BuilderScheduleEditor selected day planning", () => {
   beforeEach(() => {
     mockScrollViewCount = 0;
   });
-  it("adds a workout at the selected week start offset", () => {
+  it("adds a activity at the selected week start offset", () => {
     const props = renderEditor(2);
 
     fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
@@ -146,7 +146,7 @@ describe("BuilderScheduleEditor selected day planning", () => {
     expect(props.onAddSessionAtOffset).toHaveBeenCalledWith(14);
   });
 
-  it("adds a workout at the selected day offset when the chart has a selected day", () => {
+  it("adds a activity at the selected day offset when the chart has a selected day", () => {
     const props = renderEditor(1, {
       chartReview: {
         chart: { weeks: makeWeeks() },

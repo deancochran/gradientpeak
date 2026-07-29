@@ -98,7 +98,31 @@ const executionManifest = {
   version: 1 as const,
   compilerVersion: 1,
   planHash: "0".repeat(64),
-  occurrences: [],
+  occurrences: [
+    {
+      occurrenceId:
+        "activity:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000002:0:00000000-0000-4000-8000-000000000003",
+      globalOrdinal: 0,
+      segmentId: "00000000-0000-4000-8000-000000000001",
+      role: "activity" as const,
+      activity_category: "bike" as const,
+      startedAt: "2026-01-01T10:00:00.000Z",
+      completedAt: "2026-01-01T11:00:00.000Z",
+      activeSeconds: 3500,
+      movingSeconds: 3500,
+      distanceMeters: 25000,
+      timerEvents: [],
+      laps: [
+        {
+          lapNumber: 1,
+          startedAt: "2026-01-01T10:00:00.000Z",
+          endedAt: "2026-01-01T11:00:00.000Z",
+          activeSeconds: 3500,
+          distanceMeters: 25000,
+        },
+      ],
+    },
+  ],
 };
 
 const artifact = {
@@ -107,7 +131,7 @@ const artifact = {
   profileId: "profile-1",
   snapshot: {
     identity: { startedAt: "2026-01-01T10:00:00.000Z" },
-    activity: { category: "bike", gpsMode: "off", activityPlanId: null },
+    activity: { activity_category: "bike", gpsMode: "off", activityPlanId: null },
   },
   overrides: [],
   finalStats: {
@@ -157,7 +181,7 @@ describe("useActivitySubmission", () => {
 
   afterEach(() => queueStorage.setActivitySubmissionQueueJobsForTests());
 
-  it("queues a finalized artifact, creates the backend activity, and continues upload processing", async () => {
+  it("queues an unplanned finalized artifact with its canonical segment and reaches submission preparation", async () => {
     const { result } = renderHook(() =>
       useActivitySubmission(service as unknown as ActivityRecorderService),
     );
@@ -185,6 +209,7 @@ describe("useActivitySubmission", () => {
           name: "Queued ride",
           notes: "felt good",
           content_visibility: "followers",
+          activity_category: "bike",
         }),
       }),
     );
@@ -197,6 +222,12 @@ describe("useActivitySubmission", () => {
         source: "mobile_recording",
       }),
     );
+    expect(executionManifest.occurrences).toHaveLength(1);
+    expect(executionManifest.occurrences[0]).toMatchObject({
+      role: "activity",
+      activity_category: "bike",
+      globalOrdinal: 0,
+    });
     expect(uploadToSignedUrlMock).toHaveBeenCalledWith(
       "file:///activity.fit",
       "https://storage.example/upload",
@@ -207,7 +238,7 @@ describe("useActivitySubmission", () => {
 
   it("continues a persisted failed job without rebuilding completed progress", async () => {
     await queueStorage.upsertActivitySubmissionQueueJob({
-      schemaVersion: 2,
+      schemaVersion: 3,
       id: "session-1",
       artifactId: "session-1",
       sessionId: "session-1",
@@ -221,7 +252,7 @@ describe("useActivitySubmission", () => {
         startedAt: "2026-01-01T10:00:00.000Z",
         finishedAt: "2026-01-01T11:00:00.000Z",
         name: "Persisted ride",
-        activityType: "bike",
+        activity_category: "bike",
         durationSeconds: 3600,
         movingSeconds: 3500,
         distanceMeters: 25000,
@@ -256,7 +287,7 @@ describe("useActivitySubmission", () => {
 
   it("keeps finalized artifact files when continuation fails", async () => {
     await queueStorage.upsertActivitySubmissionQueueJob({
-      schemaVersion: 2,
+      schemaVersion: 3,
       id: "session-1",
       artifactId: "session-1",
       sessionId: "session-1",
@@ -270,7 +301,7 @@ describe("useActivitySubmission", () => {
         startedAt: "2026-01-01T10:00:00.000Z",
         finishedAt: "2026-01-01T11:00:00.000Z",
         name: "Persisted ride",
-        activityType: "bike",
+        activity_category: "bike",
         durationSeconds: 3600,
         movingSeconds: 3500,
         distanceMeters: 25000,

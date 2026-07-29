@@ -6,11 +6,15 @@ import type { TrainingPathRange } from "./trainingPathTypes";
 export function TrainingPathLegend({
   mode = "weekly",
   range,
+  showTargetFitness = true,
+  showTargetLoad = false,
   showUnavailableLoad = false,
   variant = "full",
 }: {
   mode?: "daily" | "weekly";
   range: TrainingPathRange;
+  showTargetFitness?: boolean;
+  showTargetLoad?: boolean;
   showUnavailableLoad?: boolean;
   variant?: "full" | "primary";
 }) {
@@ -22,8 +26,9 @@ export function TrainingPathLegend({
     planned: isDark ? "rgba(59, 130, 246, 0.74)" : "rgba(37, 99, 235, 0.68)",
     projectedFitness: isDark ? "rgba(96, 165, 250, 0.95)" : "rgba(37, 99, 235, 0.95)",
     selected: isDark ? "rgba(248, 250, 252, 0.12)" : "rgba(15, 23, 42, 0.08)",
-    target: isDark ? "rgba(148, 163, 184, 0.34)" : "rgba(100, 116, 139, 0.24)",
     targetFitness: isDark ? "rgba(248, 250, 252, 0.5)" : "rgba(15, 23, 42, 0.42)",
+    tentative: isDark ? "rgba(96, 165, 250, 0.9)" : "rgba(37, 99, 235, 0.88)",
+    target: isDark ? "rgba(148, 163, 184, 0.34)" : "rgba(100, 116, 139, 0.24)",
   };
   const unavailableItem = {
     label: "Completed, load unavailable",
@@ -31,14 +36,17 @@ export function TrainingPathLegend({
     shape: "check",
   };
   const loadItems = [
-    { label: "Load", color: colors.planned, shape: "fill" },
+    ...(showTargetLoad ? [{ label: "Recommended", color: colors.target, shape: "fill" }] : []),
+    { label: "Planned", color: colors.planned, shape: "fill" },
     { label: "Completed", color: colors.completed, shape: "fill" },
-    { label: "Tentative", color: colors.target, shape: "fill" },
+    { label: "Tentative", color: colors.tentative, shape: "fill" },
   ];
   const pathItems = [
     { label: "Actual fitness", color: colors.completed, shape: "line" },
     { label: "Projected fitness", color: colors.projectedFitness, shape: "line" },
-    { label: "Target fitness", color: colors.targetFitness, shape: "dotted" },
+    ...(showTargetFitness
+      ? [{ label: "Target fitness", color: colors.targetFitness, shape: "dotted" }]
+      : []),
   ];
   const detailItems = [
     { label: "Today", color: colors.marker, shape: "today" },
@@ -46,12 +54,11 @@ export function TrainingPathLegend({
     { label: "Selected week", color: colors.selected, shape: "fill" },
   ];
   const dailyDetailItems = [{ label: "Selected day", color: colors.selected, shape: "fill" }];
-  const primaryItems = [
-    ...(range === "all" ? loadItems.slice(0, 1) : loadItems),
-    ...(showUnavailableLoad ? [unavailableItem] : []),
-  ];
+  const visibleLoadItems =
+    range === "all" ? loadItems.filter((item) => item.label === "Completed") : loadItems;
+  const primaryItems = [...visibleLoadItems, ...(showUnavailableLoad ? [unavailableItem] : [])];
   const fullItems = [
-    ...(range === "all" ? loadItems.slice(0, 1) : loadItems),
+    ...visibleLoadItems,
     unavailableItem,
     ...pathItems,
     ...(mode === "daily" ? dailyDetailItems : detailItems),

@@ -92,7 +92,7 @@ describe("materializePlanToEvents", () => {
     expect(() => materializePlanToEvents(structure, "2026-04-06", "UTC")).toThrow();
   });
 
-  it("keeps opaque activity plan ids without deriving a session sport category", () => {
+  it("keeps opaque activity plan ids without deriving a session activity_category activity_category", () => {
     const events = materializePlanToEvents(
       {
         version: 1,
@@ -103,5 +103,22 @@ describe("materializePlanToEvents", () => {
     );
 
     expect(events[0]?.activity_plan_id).toBe(activityPlanIdB);
+  });
+
+  it("preserves canonical array order for 11 same-day all-day sessions", () => {
+    const sessions = Array.from({ length: 11 }, (_, index) => ({
+      offset_days: 0,
+      activity_plan_id: `${String(index + 1).padStart(8, "0")}-0000-4000-8000-000000000000`,
+      event_overrides: { title: `Session ${index}` },
+    }));
+
+    const events = materializePlanToEvents({ version: 1, sessions }, "2026-04-06", "UTC");
+
+    expect(events.map((event) => event.event_title_override)).toEqual(
+      sessions.map((session) => session.event_overrides.title),
+    );
+    expect(events.map((event) => event.source_path)).toEqual(
+      sessions.map((_, index) => `sessions.${index}`),
+    );
   });
 });

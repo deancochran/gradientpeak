@@ -897,8 +897,8 @@ describe("activity-importer", () => {
   });
 
   it.each([
-    { label: "unknown workout type", workout: { id: 456, workout_type_id: 999 } },
-    { label: "missing workout type", workout: { id: 456 } },
+    { label: "unknown Wahoo workout type", workout: { id: 456, workout_type_id: 999 } },
+    { label: "missing Wahoo workout type", workout: { id: 456 } },
   ])("prefers the parsed artifact type for $label", async ({ workout }) => {
     const repository = createRepositoryMock();
     const activityFileStorage = { uploadActivityFile: vi.fn() };

@@ -41,14 +41,14 @@ import {
 
 function unplannedCheckpoint(sessionId: string, profileId: string) {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     variant: "unplanned",
     sessionId,
     profileId,
     lifecycle: "recording",
     revision: 1,
     start: { startedAt: "2026-01-01T10:00:00.000Z", updatedAt: "2026-01-01T10:00:01.000Z" },
-    draft: { activityCategory: "run", gpsMode: "off" },
+    draft: { activity_category: "run", gpsMode: "off" },
     summary: { elapsedSeconds: 1, movingSeconds: 1, distanceMeters: 0 },
     executionState: { timerEvents: [] },
     streamArtifactPaths: ["file:///streams/checkpoint"],
@@ -258,7 +258,7 @@ describe("recording evidence native SQLite migrations", () => {
       sessionId,
     );
     const job = activitySubmissionQueueJobSchema.parse({
-      schemaVersion: 2,
+      schemaVersion: 3,
       id: sessionId,
       artifactId: sessionId,
       sessionId,
@@ -276,7 +276,7 @@ describe("recording evidence native SQLite migrations", () => {
         startedAt: "2026-01-01T00:00:00.000Z",
         finishedAt: "2026-01-01T01:00:00.000Z",
         name: "Ride",
-        activityType: "bike",
+        activity_category: "bike",
         durationSeconds: 1,
         movingSeconds: 1,
         distanceMeters: 1,
@@ -379,7 +379,7 @@ describe("recording evidence native SQLite migrations", () => {
       sessionId,
     );
     const job = activitySubmissionQueueJobSchema.parse({
-      schemaVersion: 2,
+      schemaVersion: 3,
       id: sessionId,
       artifactId: sessionId,
       sessionId,
@@ -397,7 +397,7 @@ describe("recording evidence native SQLite migrations", () => {
         startedAt: "2026-01-01T00:00:00.000Z",
         finishedAt: "2026-01-01T01:00:00.000Z",
         name: "Ride",
-        activityType: "bike",
+        activity_category: "bike",
         durationSeconds: 1,
         movingSeconds: 1,
         distanceMeters: 1,
@@ -475,6 +475,7 @@ describe("recording evidence native SQLite migrations", () => {
       profileId,
       activityFilePath: "file:///pending.fit",
       streamArtifactPaths: [],
+      now,
     });
     await native.executor.runAsync(
       "UPDATE recording_evidence_quarantine SET quarantined_at = ? WHERE session_id = ?",
@@ -744,7 +745,7 @@ describe("recording evidence native SQLite migrations", () => {
     await initializeRecordingEvidenceDatabase(native.executor);
     setRecordingEvidenceDatabaseForTests(native.executor);
     for (const [sessionId, checkpoint] of [
-      ["schema-invalid", JSON.stringify({ schemaVersion: 3, variant: "unplanned" })],
+      ["schema-invalid", JSON.stringify({ schemaVersion: 4, variant: "unplanned" })],
       ["owner-mismatch", JSON.stringify(unplannedCheckpoint("other-session", "other-profile"))],
     ] as const) {
       await allocateRecordingEvidenceSession({ sessionId, profileId: "profile" });
@@ -772,7 +773,7 @@ describe("recording evidence native SQLite migrations", () => {
     await initializeRecordingEvidenceDatabase(native.executor);
     setRecordingEvidenceDatabaseForTests(native.executor);
     await allocateRecordingEvidenceSession({ sessionId: "orphan", profileId: "profile" });
-    const malformed = JSON.stringify({ schemaVersion: 3, variant: "unplanned" });
+    const malformed = JSON.stringify({ schemaVersion: 4, variant: "unplanned" });
     await native.executor.runAsync(
       "UPDATE recording_evidence_sessions SET checkpoint_json = ?, checkpoint_digest = ? WHERE session_id = ?",
       malformed,

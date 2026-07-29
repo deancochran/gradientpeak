@@ -77,18 +77,18 @@ export function BuilderActivityAssignmentSheetContent({
   return (
     <SearchableBottomSheetList
       data={activityPlanItemsWithEstimates}
-      emptyMessage="No matching workouts."
+      emptyMessage="No matching activities."
       hasNextPage={hasNextPage}
       headerInLayout
       isFetchingNextPage={isFetchingNextPage}
       isLoading={isLoading}
       keyExtractor={(item) => item.id}
-      loadingMessage="Loading workouts..."
+      loadingMessage="Loading activities..."
       onFetchNextPage={onFetchNextPage}
-      pluralLabel="workouts"
+      pluralLabel="activities"
       renderItem={renderActivityPlan}
       sectionLabel="Tap to assign"
-      singularLabel="workout"
+      singularLabel="activity"
     />
   );
 }
@@ -112,7 +112,7 @@ export function BuilderActivityAssignmentSheetHeader({
   return (
     <IndexSearchBar
       value={searchQuery}
-      placeholder="Search workouts"
+      placeholder="Search activities"
       hasActiveFilters={categoryFilter !== null || activityPlanSort !== "newest"}
       onChangeText={onSearchChange}
       onClear={onClearSearch}
@@ -170,7 +170,7 @@ export function BuilderActivityFiltersSheetContent({
         </View>
       </View>
       <View className="gap-3">
-        <Text className="text-sm font-semibold text-foreground">Workout type</Text>
+        <Text className="text-sm font-semibold text-foreground">Activity category</Text>
         <View className="flex-row flex-wrap gap-2">
           {ACTIVITY_CATEGORY_OPTIONS.map((option) => (
             <FilterChip
@@ -180,7 +180,7 @@ export function BuilderActivityFiltersSheetContent({
               onPress={() =>
                 onChangeCategoryFilter(draftCategoryFilter === option.id ? null : option.id)
               }
-              testID={`training-plan-builder-activity-filter-category-${option.id}`}
+              testID={`training-plan-builder-activity-filter-activity_category-${option.id}`}
             />
           ))}
         </View>

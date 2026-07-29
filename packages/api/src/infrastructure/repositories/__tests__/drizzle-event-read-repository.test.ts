@@ -1,3 +1,4 @@
+import { schema } from "@repo/db";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import { activityPlanStructureHash } from "../../../application/activity-plans/structure-hash";
@@ -42,7 +43,7 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
       {
         id: "22222222-2222-4222-8222-222222222222",
         role: "activity",
-        category: "bike",
+        activity_category: "bike",
         name: "Bike",
         intervals: [
           {
@@ -52,6 +53,7 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
             steps: [
               {
                 id: "44444444-4444-4444-8444-444444444444",
+                name: "Step",
                 duration: { type: "time", seconds: 1800 },
                 targets: [{ type: "%FTP", intensity: 75 }],
               },
@@ -146,6 +148,14 @@ function createSelectCaptureDb(rowsByTable: Record<string, unknown[]>) {
   }> = [];
 
   const db: any = {
+    $with: () => ({
+      as: () => ({
+        activity_plan_id: schema.events.activity_plan_id,
+        id: schema.events.id,
+        starts_at: schema.events.starts_at,
+      }),
+    }),
+    with: () => db,
     select: () => {
       const captured = {
         table: "unknown",
@@ -259,11 +269,35 @@ describe("drizzle-event-read-repository", () => {
         starts_at: "2026-07-18T00:00:00.000Z",
       },
     ]);
-    const eventQuery = toQuery(selects.find((select) => select.table === "events")?.whereArg);
+    expect(result.recommendationEvents).toMatchObject([
+      {
+        id: "event-1",
+        original_starts_at: "2026-04-15T06:45:00.000Z",
+        training_plan_id: "training-plan-1",
+      },
+    ]);
+    expect(result.recommendationSource).toEqual({
+      scheduleBatchId: null,
+      status: "complete",
+      trainingPlanId: "training-plan-1",
+    });
+    const eventQuery = toQuery(
+      selects
+        .filter((select) => select.table === "events")
+        .find((select) => toQuery(select.whereArg).params.includes("2026-07-25"))?.whereArg,
+    );
     expect(eventQuery.params).toEqual(
       expect.arrayContaining(["profile-1", "planned", "2026-07-19", "2026-07-25"]),
     );
     expect(eventQuery.params).not.toContain("2026-07-18T07:00:00.000Z");
+    const recommendationQuery = [...selects]
+      .filter((select) => select.table === "events")
+      .map((select) => toQuery(select.whereArg))
+      .find((query) => query.params.includes("training-plan-1"));
+    expect(recommendationQuery?.params).toEqual(
+      expect.arrayContaining(["profile-1", "planned", "training-plan-1"]),
+    );
+    expect(recommendationQuery?.params).not.toEqual(expect.arrayContaining(["2026-07-25"]));
   });
 
   it("uses supplied asOf for route access-grant expiry while reading current route facts", async () => {
@@ -498,7 +532,7 @@ describe("drizzle-event-read-repository", () => {
             activity_id: "activity-1",
             ordinal: 0,
             role: "activity",
-            category: "bike",
+            activity_category: "bike",
             start_offset_ms: 0,
             end_offset_ms: 4_080_000,
             timing_coverage: "complete",
@@ -661,8 +695,7 @@ describe("drizzle-event-read-repository", () => {
         updated_at: "2026-04-02T11:00:00.000Z",
         activity_plan: {
           ...activityPlan,
-          categories: ["bike"],
-          primary_category: "bike",
+          activity_category: "bike",
           created_at: "2026-04-01T00:00:00.000Z",
           updated_at: "2026-04-01T00:00:00.000Z",
         },
@@ -685,13 +718,122 @@ describe("drizzle-event-read-repository", () => {
       updated_at: "2026-04-02T11:00:00.000Z",
       activity_plan: {
         ...activityPlan,
-        categories: ["bike"],
-        primary_category: "bike",
+        activity_category: "bike",
         created_at: "2026-04-01T00:00:00.000Z",
         updated_at: "2026-04-01T00:00:00.000Z",
       },
       route,
     });
+  });
+
+  it("keeps repeated same-category plans and omits mixed plans in repository-backed events", async () => {
+    const baseStructure = createActivityPlanRow().structure;
+    const baseSegment = baseStructure.segments[0]!;
+    const repeatedBike = createActivityPlanRow({
+      id: "repeated-bike",
+      structure: {
+        ...baseStructure,
+        segments: [
+          ...baseStructure.segments,
+          {
+            ...baseSegment,
+            id: "55555555-5555-4555-8555-555555555555",
+            intervals: baseSegment.intervals.map((interval) => ({
+              ...interval,
+              id: "77777777-7777-4777-8777-777777777777",
+              steps: interval.steps.map((step) => ({
+                ...step,
+                id: "88888888-8888-4888-8888-888888888888",
+              })),
+            })),
+          },
+        ],
+      },
+    });
+    const legacyMixed = createActivityPlanRow({
+      id: "legacy-mixed",
+      structure: {
+        ...baseStructure,
+        segments: [
+          ...baseStructure.segments,
+          {
+            ...baseSegment,
+            id: "66666666-6666-4666-8666-666666666666",
+            activity_category: "run",
+            intervals: baseSegment.intervals.map((interval) => ({
+              ...interval,
+              id: "77777777-7777-4777-8777-777777777777",
+              steps: interval.steps.map((step) => ({
+                ...step,
+                id: "88888888-8888-4888-8888-888888888888",
+                targets: [{ type: "RPE", intensity: 5 }],
+              })),
+            })),
+          },
+        ],
+      },
+    });
+    const repository = createEventReadRepository(
+      createQueryMapDbMock({
+        events: {
+          data: [
+            {
+              ...createEventRow({ id: "repeated" }),
+              activity_plan: repeatedBike,
+              activity_route: null,
+            },
+            {
+              ...createEventRow({ id: "legacy" }),
+              activity_plan: legacyMixed,
+              activity_route: null,
+            },
+          ],
+          error: null,
+        },
+      }).db,
+    );
+
+    await expect(
+      repository.listOwnedEvents({ profileId: "profile-1", limit: 10, includeAdhoc: true }),
+    ).resolves.toMatchObject([
+      {
+        id: "repeated",
+        activity_plan: {
+          activity_category: "bike",
+        },
+      },
+      {
+        id: "legacy",
+        activity_plan: null,
+      },
+    ]);
+  });
+
+  it("keeps collection events when a nested activity plan is invalid", async () => {
+    const repository = createEventReadRepository(
+      createQueryMapDbMock({
+        events: {
+          data: [
+            {
+              ...createEventRow(),
+              activity_plan: createActivityPlanRow({ structure: { version: 3, segments: [] } }),
+              activity_route: null,
+            },
+          ],
+          error: null,
+        },
+      }).db,
+    );
+
+    await expect(
+      repository.listOwnedEvents({ profileId: "profile-1", limit: 10, includeAdhoc: true }),
+    ).resolves.toMatchObject([
+      {
+        id: "event-1",
+        activity_plan_id: "activity-plan-1",
+        activity_plan: null,
+      },
+    ]);
   });
 
   it("preserves persisted schedule dates", async () => {
@@ -788,5 +930,40 @@ describe("drizzle-event-read-repository", () => {
     expect(whereSql).toContain('"events"."starts_at" >');
     expect(whereSql).toContain('"events"."id" >');
     expect(whereSql).toContain('"activity_plans"."structure" @>');
+  });
+
+  it("scopes planned-day summaries to active/completed planned work before ordering and bounding", async () => {
+    const { db, selects } = createSelectCaptureDb({ events: [createEventRow()] });
+    const repository = createEventReadRepository(db);
+
+    await repository.listOwnedPlannedEventsForDay({
+      profileId: "profile-1",
+      date: "2026-04-15",
+      limit: 1001,
+    });
+
+    expect(selects).toHaveLength(2);
+    expect(selects[0]?.limitArg).toBe(1001);
+    expect(selects[0]?.orderByArgs.map(toSql)).toEqual([
+      '"events"."starts_at" asc',
+      '"events"."id" asc',
+    ]);
+    const whereSql = toSql(selects[0]?.whereArg);
+    expect(whereSql).toContain('"events"."profile_id" = $1');
+    expect(whereSql).toContain('"events"."event_type" = $2');
+    expect(whereSql).toContain('"events"."scheduled_date" = $3');
+    expect(whereSql).toContain('"events"."status" in ($4, $5)');
+    expect(toQuery(selects[0]?.whereArg).params).toEqual([
+      "profile-1",
+      "planned",
+      "2026-04-15",
+      "scheduled",
+      "completed",
+    ]);
+    expect(selects[1]?.leftJoinArgs).toHaveLength(1);
+    expect(selects[1]?.orderByArgs.map(toSql)).toEqual([
+      '"events"."starts_at" asc',
+      '"events"."id" asc',
+    ]);
   });
 });

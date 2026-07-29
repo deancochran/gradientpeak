@@ -17,10 +17,8 @@ const createPlan = createSystemActivityPlanBuilderFactory("run", [
  */
 export const THRESHOLD_RUN_WORKOUT_1: RecordingServiceActivityPlan = {
   id: "8e1f2a3b-4c5d-6e7f-8a9b-0c1d2e3f4a5b",
-  version: "3.0",
   name: "Threshold Run Development 1",
   description: "Indoor treadmill session focusing on threshold heart rate intervals",
-  activity_category: "run",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({
@@ -62,10 +60,8 @@ export const THRESHOLD_RUN_WORKOUT_1: RecordingServiceActivityPlan = {
  */
 export const THRESHOLD_RUN_WORKOUT_2: RecordingServiceActivityPlan = {
   id: "9f2a3b4c-5d6e-7f8a-9b0c-1d2e3f4a5b6c",
-  version: "3.0",
   name: "Threshold Run Development 2",
   description: "Longer indoor treadmill threshold session with progressive intervals",
-  activity_category: "run",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({
@@ -113,10 +109,8 @@ export const THRESHOLD_RUN_WORKOUT_2: RecordingServiceActivityPlan = {
  */
 export const SPEED_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
   id: "0a3b4c5d-6e7f-8a9b-0c1d-2e3f4a5b6c7d",
-  version: "3.0",
   name: "Speed Intervals",
   description: "High-intensity speed intervals for VO2 max development",
-  activity_category: "run",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({
@@ -158,10 +152,8 @@ export const SPEED_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
  */
 export const EASY_RECOVERY_RUN: RecordingServiceActivityPlan = {
   id: "1b4c5d6e-7f8a-9b0c-1d2e-3f4a5b6c7d8e",
-  version: "3.0",
   name: "Easy Recovery Run",
   description: "Low-intensity recovery run for active recovery",
-  activity_category: "run",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({
@@ -180,10 +172,8 @@ export const EASY_RECOVERY_RUN: RecordingServiceActivityPlan = {
  */
 export const HILL_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
   id: "2c5d6e7f-8a9b-0c1d-2e3f-4a5b6c7d8e9f",
-  version: "3.0",
   name: "Hill Intervals",
   description: "Incline-based intervals for strength and power development",
-  activity_category: "run",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({

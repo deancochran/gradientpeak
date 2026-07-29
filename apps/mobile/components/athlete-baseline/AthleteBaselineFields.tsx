@@ -11,7 +11,7 @@ import { WeightInputField } from "@repo/ui/components/weight-input-field";
 import { Check } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
 
-export type AthleteBaselineSport = "cycling" | "running" | "swimming";
+export type AthleteBaselineActivityCategory = "cycling" | "running" | "swimming";
 export type AthleteBaselineSourceKind = "imported" | "estimated" | "manual" | "cleared";
 
 export type AthleteBaselineFieldSource = {
@@ -47,7 +47,7 @@ export type AthleteBaselineChange = {
 export interface AthleteBaselineFieldsProps {
   value: AthleteBaselineValue;
   onChange: (change: AthleteBaselineChange) => void;
-  visibleSports: readonly AthleteBaselineSport[];
+  visibleActivityCategories: readonly AthleteBaselineActivityCategory[];
   sources?: AthleteBaselineFieldSources;
   estimates?: Partial<Pick<AthleteBaselineValue, "maxHr" | "ftp">>;
 }

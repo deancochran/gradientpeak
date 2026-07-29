@@ -70,7 +70,7 @@ describe("ResourcePickerResultRow", () => {
         isSelected
         item={{
           activityPlanCardData: {
-            activityType: "outdoor_run",
+            activity_category: "run",
             id: "plan-1",
             name: "Tempo Builder",
             structure: { version: 3, segments: [] },
@@ -86,7 +86,7 @@ describe("ResourcePickerResultRow", () => {
 
     const activityPlanCard = screen.getByTestId("resource-picker-activity-plan-card");
     expect(activityPlanCard.props.variant).toBe("compact");
-    expect(activityPlanCard.props.activity.structure).toEqual({ version: 3, segments: [] });
+    expect(activityPlanCard.props.cardData.structure).toEqual({ version: 3, segments: [] });
     expect(screen.getByTestId("resource-picker-result-selected-plan-1")).toBeTruthy();
     fireEvent.press(screen.getByTestId("resource-picker-result-plan-1"));
     expect(onPress).toHaveBeenCalledTimes(1);
@@ -160,14 +160,13 @@ describe("ResourcePickerResultRow", () => {
       mapActivityPlanToResourcePickerItem({
         id: "plan-2",
         name: "Endurance",
-        categories: ["bike", "run"],
-        primary_category: "bike",
+        activity_category: "bike",
         common_load: { status: "unavailable" },
         structure: { version: 3, segments: [] },
       }),
     ).toMatchObject({
       activityPlanCardData: {
-        activityCategories: ["bike", "run"],
+        activity_category: "bike",
         commonLoad: { status: "unavailable" },
         id: "plan-2",
         name: "Endurance",

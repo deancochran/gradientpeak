@@ -1,6 +1,8 @@
+import { SYSTEM_TEMPLATES } from "@repo/core";
 import { groupEventRsvps, groupEventSeriesRsvps, groupEvents, notifications } from "@repo/db";
 import type { TRPCError } from "@trpc/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as wahooRouteDelivery from "../../lib/provider-sync/event-delivery/wahoo-group-event-route-delivery";
 import {
   buildGroupEventRow,
   buildGroupEventRsvpRow,
@@ -24,11 +26,11 @@ function buildActivityPlanRow(overrides: Record<string, unknown> = {}) {
     created_at: NOW,
     updated_at: NOW,
     profile_id: VIEWER_ID,
-    name: "Workout Option",
+    name: "Activity Option",
     description: null,
     notes: null,
     activity_category: "ride",
-    structure: null,
+    structure: SYSTEM_TEMPLATES[0]?.structure,
     version: "1.0",
     template_visibility: "private",
     import_provider: null,
@@ -783,9 +785,8 @@ describe("groups.events router", () => {
 
     expect(result.event).toMatchObject({ id: EVENT_ID, cancelled_at: NOW.toISOString() });
     expect(mock.transactionCount).toBe(1);
-    expect(mock.updateCalls).toHaveLength(2);
+    expect(mock.updateCalls).toHaveLength(1);
     expect(mock.updateCalls[0]).toMatchObject({ table: groupEvents });
-    expect(mock.updateCalls[1]).toMatchObject({ table: groupEvents });
     expect(mock.insertCalls[0]).toMatchObject({ table: notifications });
     expect(mock.insertCalls[0]?.values).toEqual([
       expect.objectContaining({
@@ -795,6 +796,86 @@ describe("groups.events router", () => {
         user_id: "99999999-9999-4999-8999-999999999999",
       }),
     ]);
+  });
+
+  it("rolls back cancellation side effects when the target disappears concurrently", async () => {
+    const mock = createDbMock({
+      select: [
+        [{ id: VIEWER_ID }],
+        [{ event: buildGroupEventRow(), group: buildGroupRow() }],
+        [{ role: "admin", status: "active" }],
+      ],
+      updateReturning: [[]],
+    });
+    const caller = createCaller(mock.db);
+
+    await expect(
+      caller.events.cancel({ groupEventId: EVENT_ID, scope: "single" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Group event not found" });
+    expect(mock.insertCalls).toHaveLength(0);
+  });
+
+  it("enqueues cancellation convergence for every routed series occurrence", async () => {
+    const seriesId = "88888888-8888-4888-8888-888888888888";
+    const overrideEventId = "99999999-9999-4999-8999-999999999998";
+    const overrideRouteId = "99999999-9999-4999-8999-999999999997";
+    const occurrence = buildGroupEventRow({
+      series_id: seriesId,
+      occurrence_key: "2026-05-21",
+    });
+    const cancelledSeries = buildGroupEventRow({
+      id: seriesId,
+      recurrence_rule: "FREQ=WEEKLY;COUNT=3",
+      route_id: ROUTE_ID,
+      cancelled_at: NOW,
+    });
+    const cancelledOccurrence = buildGroupEventRow({
+      series_id: seriesId,
+      occurrence_key: "2026-05-21",
+      cancelled_at: NOW,
+    });
+    const cancelledOverride = buildGroupEventRow({
+      id: overrideEventId,
+      series_id: seriesId,
+      occurrence_key: "2026-05-28",
+      route_id: overrideRouteId,
+      cancelled_at: NOW,
+    });
+    const enqueue = vi
+      .spyOn(wahooRouteDelivery, "enqueueWahooGroupEventRouteDeliveryForAcceptedRecipients")
+      .mockResolvedValue(0);
+    const mock = createDbMock({
+      select: [
+        [{ id: VIEWER_ID }],
+        [{ event: occurrence, group: buildGroupRow() }],
+        [{ role: "admin", status: "active" }],
+        [],
+        [],
+        [],
+      ],
+      updateReturning: [[cancelledSeries, cancelledOccurrence, cancelledOverride]],
+    });
+    const caller = createCaller(mock.db);
+
+    try {
+      await caller.events.cancel({ groupEventId: EVENT_ID, scope: "series" });
+
+      expect(enqueue).toHaveBeenCalledTimes(3);
+      expect(enqueue).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ eventId: seriesId, sourceRouteId: ROUTE_ID }),
+      );
+      expect(enqueue).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ eventId: EVENT_ID, sourceRouteId: ROUTE_ID }),
+      );
+      expect(enqueue).toHaveBeenNthCalledWith(
+        3,
+        expect.objectContaining({ eventId: overrideEventId, sourceRouteId: overrideRouteId }),
+      );
+    } finally {
+      enqueue.mockRestore();
+    }
   });
 
   it("rejects occurrence override updates against recurring series roots", async () => {

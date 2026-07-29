@@ -109,7 +109,7 @@ const segmentSet = {
       id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       ordinal: 0,
       role: "activity" as const,
-      category: "bike" as const,
+      activity_category: "bike" as const,
       startOffsetMs: 0,
       endOffsetMs: 3_600_000,
       summary: { version: 1 as const, timing: { timingCoverage: "unavailable" as const } },
@@ -402,7 +402,7 @@ describe("submitActivity", () => {
           id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
           ordinal: 0,
           role: "activity",
-          category: "bike",
+          activity_category: "bike",
           startOffsetMs: 0,
           endOffsetMs: 3_600_000,
           summary: {
@@ -438,6 +438,127 @@ describe("submitActivity", () => {
     expect(
       enriched.updatedValues.find(({ table }) => table === activities)?.values,
     ).not.toHaveProperty("normalized_power");
+  });
+
+  it("round-trips FIT string and numeric raw sub-activity-category identity through segment insertion", async () => {
+    const sourceArtifactId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const multisportSegmentSet: NonNullable<ActivitySubmission["segmentSet"]> = {
+      version: 1,
+      elapsedMs: 3_600_000,
+      segments: [
+        {
+          id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+          ordinal: 0,
+          role: "activity",
+          activity_category: "bike",
+          startOffsetMs: 0,
+          endOffsetMs: 1_500_000,
+          source: {
+            kind: "artifact",
+            artifactId: sourceArtifactId,
+            source: { standard: "fit", format: "fit" },
+            sessionMessageIndex: 2,
+            messageIndex: 8,
+            rawType: "session",
+            rawSport: 2,
+            rawSubSport: "road",
+          },
+          summary: { version: 1, timing: { timingCoverage: "unavailable" } },
+        },
+        {
+          id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2",
+          ordinal: 1,
+          role: "unknown",
+          startOffsetMs: 1_500_000,
+          endOffsetMs: 1_800_000,
+          source: {
+            kind: "artifact",
+            artifactId: sourceArtifactId,
+            source: { standard: "fit", format: "fit" },
+            sessionMessageIndex: 3,
+            messageIndex: 9,
+            rawType: 99,
+            rawSport: "transition",
+            rawSubSport: 17,
+          },
+          summary: { version: 1, timing: { timingCoverage: "unavailable" } },
+        },
+        {
+          id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
+          ordinal: 2,
+          role: "activity",
+          activity_category: "run",
+          startOffsetMs: 1_800_000,
+          endOffsetMs: 3_600_000,
+          source: {
+            kind: "artifact",
+            artifactId: sourceArtifactId,
+            source: { standard: "fit", format: "fit" },
+            sessionMessageIndex: 4,
+            messageIndex: 10,
+            rawType: "lap",
+            rawSport: "running",
+          },
+          summary: { version: 1, timing: { timingCoverage: "unavailable" } },
+        },
+      ],
+    };
+    const created = createDb();
+
+    await submitActivity(created.db, {
+      kind: "enrich",
+      activityId: "activity-1",
+      profileId: "profile-1",
+      deviceManufacturer: null,
+      deviceProduct: null,
+      summaryValues: {},
+      segmentSet: multisportSegmentSet,
+      efforts: [],
+      detectedLTHR: null,
+      activityCompletedAt: new Date("2026-01-01T11:00:00Z"),
+    });
+
+    expect(created.insertedValues.find(({ table }) => table === activitySegments)?.values).toEqual([
+      expect.objectContaining({
+        ordinal: 0,
+        role: "activity",
+        source_artifact_id: sourceArtifactId,
+        source_session_index: 2,
+        source_message_index: 8,
+        raw_type_string: "session",
+        raw_type_integer: null,
+        raw_sport_string: null,
+        raw_sport_integer: 2,
+        raw_sub_sport_string: "road",
+        raw_sub_sport_integer: null,
+      }),
+      expect.objectContaining({
+        ordinal: 1,
+        role: "unknown",
+        source_artifact_id: sourceArtifactId,
+        source_session_index: 3,
+        source_message_index: 9,
+        raw_type_string: null,
+        raw_type_integer: 99,
+        raw_sport_string: "transition",
+        raw_sport_integer: null,
+        raw_sub_sport_string: null,
+        raw_sub_sport_integer: 17,
+      }),
+      expect.objectContaining({
+        ordinal: 2,
+        role: "activity",
+        source_artifact_id: sourceArtifactId,
+        source_session_index: 4,
+        source_message_index: 10,
+        raw_type_string: "lap",
+        raw_type_integer: null,
+        raw_sport_string: "running",
+        raw_sport_integer: null,
+        raw_sub_sport_string: null,
+        raw_sub_sport_integer: null,
+      }),
+    ]);
   });
 
   it("upserts an existing activity enrichment in one transaction", async () => {

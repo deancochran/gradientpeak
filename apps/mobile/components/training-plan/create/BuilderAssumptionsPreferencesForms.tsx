@@ -45,7 +45,7 @@ interface SelectOption<TValue extends string> {
 
 export interface BuilderProfileAssumptionsValues {
   displayName?: string;
-  primarySport?: BuilderActivityCategory;
+  primaryActivityCategory?: BuilderActivityCategory;
   experienceLevel?: BuilderExperienceLevel;
   trainingAgeYears?: string;
   birthYear?: string;
@@ -310,12 +310,12 @@ export function BuilderProfileAssumptionsForm({
         helperText="Use this only to identify the scenario inside the builder."
       />
       <LocalSelect
-        label="Primary sport"
-        value={values.primarySport}
-        onChange={(primarySport) => update({ primarySport })}
-        onClear={() => update({ primarySport: undefined })}
+        label="Primary activity category"
+        value={values.primaryActivityCategory}
+        onChange={(primaryActivityCategory) => update({ primaryActivityCategory })}
+        onClear={() => update({ primaryActivityCategory: undefined })}
         options={activityCategoryOptions}
-        placeholder="Select sport"
+        placeholder="Select activity category"
       />
       <NumberField
         label="Birth year"

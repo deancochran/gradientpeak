@@ -1,6 +1,12 @@
 #!/usr/bin/env tsx
 
-import { getTemplatesByCategory, SYSTEM_TEMPLATES, type SystemTemplate } from "@repo/core";
+import {
+  type CanonicalActivityCategory,
+  canonicalActivityCategorySchema,
+  getTemplatesByCategory,
+  SYSTEM_TEMPLATES,
+  type SystemTemplate,
+} from "@repo/core";
 import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -13,12 +19,12 @@ const args = process.argv.slice(2);
 const isDryRun = args.includes("--dry-run");
 const isValidateOnly = args.includes("--validate-only");
 const noDelete = args.includes("--no-delete") || args.includes("--no-clear");
-const categoryArg = args.find((arg) => arg.startsWith("--category="));
-const category = categoryArg
-  ? (categoryArg.slice("--category=".length) as SystemTemplate["activity_category"])
+const categoryArg = args.find((arg) => arg.startsWith("--activity_category="));
+const activity_category: CanonicalActivityCategory | undefined = categoryArg
+  ? canonicalActivityCategorySchema.parse(categoryArg.slice("--activity_category=".length))
   : undefined;
 
-const templates = category ? getTemplatesByCategory(category) : SYSTEM_TEMPLATES;
+const templates = activity_category ? getTemplatesByCategory(activity_category) : SYSTEM_TEMPLATES;
 let pool: Pool | undefined;
 
 type ExistingActivityTemplate = typeof activityPlans.$inferSelect;
@@ -53,7 +59,7 @@ async function seedTemplates() {
 
   console.log("🌱 Starting template sync...");
   console.log(`   Mode: ${isDryRun ? "DRY RUN" : "LIVE"}`);
-  console.log(`   Filter: ${category ? `${category} only` : "all"}`);
+  console.log(`   Filter: ${activity_category ? `${activity_category} only` : "all"}`);
   console.log(`   Local Templates: ${templates.length}\n`);
 
   const existingTemplates = await db

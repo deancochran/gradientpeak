@@ -1,8 +1,7 @@
 import type { ActivityPlanStructureV3 } from "../activity-plan";
-import type { CanonicalSport } from "../schemas/sport";
+import type { CanonicalActivityCategory } from "../schemas/activity-category";
 
 export interface SystemActivityPlanTemplate {
-  activity_category: CanonicalSport;
   description?: string | null;
   gps_recording_enabled?: boolean;
   id?: string;
@@ -12,5 +11,15 @@ export interface SystemActivityPlanTemplate {
   name: string;
   notes?: string | null;
   structure: ActivityPlanStructureV3;
-  version: "3.0";
+}
+
+/** Derives the sole activity_category from a validated canonical ActivityPlan structure. */
+export function deriveSystemActivityTemplateActivityCategory(
+  structure: ActivityPlanStructureV3,
+): CanonicalActivityCategory {
+  const activitySegment = structure.segments.find((segment) => segment.role === "activity");
+  if (!activitySegment) {
+    throw new Error("System activity template structure must contain an activity segment.");
+  }
+  return activitySegment.activity_category;
 }

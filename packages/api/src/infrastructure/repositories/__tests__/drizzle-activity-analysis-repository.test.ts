@@ -1,3 +1,4 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import { createActivityAnalysisStore } from "../drizzle-activity-analysis-repository";
 
@@ -43,5 +44,21 @@ describe("createActivityAnalysisStore", () => {
       new Map(),
     );
     expect(select).not.toHaveBeenCalled();
+  });
+
+  it("projects reference activity categories from the canonical segment column", async () => {
+    const { db, select } = createDbMock();
+
+    await getBulkLoader(createActivityAnalysisStore(db))({
+      requests: [{ profileId: "profile-1", asOf: new Date("2026-01-01T00:00:00.000Z") }],
+    });
+
+    const projection = select.mock.calls
+      .map(([fields]) => fields)
+      .find((fields) => "reference_activity_category" in fields)?.reference_activity_category;
+    const query = new PgDialect().sqlToQuery(projection as never);
+
+    expect(query.sql).toContain("reference_segment.activity_category");
+    expect(query.sql).not.toContain("reference_segment.category");
   });
 });

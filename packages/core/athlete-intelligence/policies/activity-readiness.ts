@@ -1,5 +1,5 @@
 import { type LoadSeriesIdentity, sameLoadSeriesIdentity } from "../../load/load-series";
-import type { CanonicalSport } from "../../schemas/sport";
+import type { CanonicalActivityCategory } from "../../schemas/activity-category";
 import {
   type CalculationResult,
   estimatedResult,
@@ -29,7 +29,7 @@ export interface ActivityHistoryObservation {
   sourceId: SourceId;
   lineageGroupId: LineageGroupId;
   startedAt: string;
-  sport: CanonicalSport;
+  activity_category: CanonicalActivityCategory;
   durationSeconds: number | null;
   trainingLoad?: number | null;
   trainingLoadIdentity?: LoadSeriesIdentity | null;
@@ -51,7 +51,10 @@ export type ActivityEvidenceField =
   | "efficiencyFactor"
   | "decouplingPercent";
 
-export type ActivityEvidenceInput = Omit<FieldEvidenceEligibilityInput, "asOf" | "requiredSport">;
+export type ActivityEvidenceInput = Omit<
+  FieldEvidenceEligibilityInput,
+  "asOf" | "requiredActivityCategory"
+>;
 
 export type ReadinessContextMetric =
   | "hrv_rmssd"
@@ -71,7 +74,7 @@ export interface ReadinessContextObservation {
 
 export interface ActivityReadinessInput {
   assessmentAt: string;
-  targetSport: CanonicalSport;
+  targetActivityCategory: CanonicalActivityCategory;
   activities: readonly ActivityHistoryObservation[];
   readinessContext?: readonly ReadinessContextObservation[];
 }
@@ -80,7 +83,7 @@ export interface ActivityReadinessResults {
   policyVersion: typeof ACTIVITY_READINESS_POLICY_VERSION;
   endurance: CalculationResult;
   durability: CalculationResult;
-  sportSpecificity: CalculationResult;
+  activityCategorySpecificity: CalculationResult;
   volumeTrend: CalculationResult;
   frequencyTrend: CalculationResult;
   readinessContext: CalculationResult;
@@ -142,11 +145,15 @@ function unavailable(
 function fieldEligibility(
   evidence: ActivityEvidenceInput | undefined,
   asOf: string,
-  sport?: CanonicalSport,
+  activity_category?: CanonicalActivityCategory,
 ): FieldEvidenceEligibility | undefined {
   return evidence === undefined
     ? undefined
-    : resolveFieldEvidenceEligibility({ ...evidence, asOf, requiredSport: sport });
+    : resolveFieldEvidenceEligibility({
+        ...evidence,
+        asOf,
+        requiredActivityCategory: activity_category,
+      });
 }
 
 function uniqueRejections(
@@ -197,7 +204,7 @@ export function calculateActivityReadinessV1(
       const eligibility = fieldEligibility(
         activity.evidence?.[field] ?? activity.eligibility,
         input.assessmentAt,
-        activity.sport,
+        activity.activity_category,
       );
       if (eligibility !== undefined && !eligibility.eligible) {
         activityRejections.push(eligibility);
@@ -227,7 +234,7 @@ export function calculateActivityReadinessV1(
     .filter(({ ageDays }) => ageDays >= 0 && ageDays <= ACTIVITY_READINESS_CONSTANTS.historyDays);
   const durationEligible = eligible.filter(
     ({ activity }) =>
-      activity.sport === input.targetSport &&
+      activity.activity_category === input.targetActivityCategory &&
       activity.durationSeconds !== null &&
       activity.durationSeconds > 0,
   );
@@ -265,28 +272,28 @@ export function calculateActivityReadinessV1(
   const matchingWeightedDuration = allDurationEligible.reduce(
     (sum, { activity, ageDays }, index) =>
       sum +
-      (activity.sport === input.targetSport
+      (activity.activity_category === input.targetActivityCategory
         ? (robustAllDurations[index] ?? 0) * weight(ageDays)
         : 0),
     0,
   );
-  const sportSpecificity =
+  const activityCategorySpecificity =
     totalWeightedDuration === 0
       ? unavailable("activity_duration_history_missing", [], activityRejections)
       : estimate(
           matchingWeightedDuration / totalWeightedDuration,
           "ratio",
-          "sport_duration_share_recency_weighted",
+          "activity_category_duration_share_recency_weighted",
           allDurationEligible.map(({ activity }) => activity),
           1 / Math.sqrt(allDurationEligible.length + 1),
         );
 
   const durabilityEligible = eligible
-    .filter(({ activity }) => activity.sport === input.targetSport)
+    .filter(({ activity }) => activity.activity_category === input.targetActivityCategory)
     .map(({ activity, ageDays }) => {
       const efficiency =
         activity.efficiencyFactor ??
-        (activity.sport === "bike" &&
+        (activity.activity_category === "bike" &&
         activity.averagePowerWatts !== null &&
         activity.averagePowerWatts !== undefined &&
         activity.averagePowerWatts > 0 &&
@@ -358,7 +365,7 @@ export function calculateActivityReadinessV1(
         activity.trainingLoad !== undefined &&
         activity.trainingLoadIdentity !== null &&
         activity.trainingLoadIdentity !== undefined &&
-        activity.trainingLoadIdentity.sport === activity.sport &&
+        activity.trainingLoadIdentity.activity_category === activity.activity_category &&
         sameLoadSeriesIdentity(firstLoadIdentity, activity.trainingLoadIdentity),
     );
   const recentVolume = compatibleLoadTrend
@@ -482,7 +489,7 @@ export function calculateActivityReadinessV1(
     policyVersion: ACTIVITY_READINESS_POLICY_VERSION,
     endurance,
     durability,
-    sportSpecificity,
+    activityCategorySpecificity,
     volumeTrend,
     frequencyTrend,
     readinessContext,

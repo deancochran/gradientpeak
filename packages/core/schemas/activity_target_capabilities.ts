@@ -6,7 +6,7 @@ import {
   getPermissibleTargetTypes,
   isTargetTypePermittedForActivity,
 } from "../targets";
-import { canonicalSportValues } from "./sport";
+import { canonicalActivityCategoryValues } from "./activity-category";
 
 export {
   type ActivityTargetCapability,
@@ -21,7 +21,7 @@ export {
   sortTargetsByActivityPreference,
 } from "../targets";
 
-export const activityTargetCategorySchemaValues = canonicalSportValues;
+export const activityTargetCategorySchemaValues = canonicalActivityCategoryValues;
 
 export type ActivityTargetCompatibilityIssue = {
   activityCategory: ActivityTargetCategory;
@@ -44,7 +44,7 @@ export function getActivityTargetCompatibilityIssues(input: {
         step.targets.forEach((target, targetIndex) => {
           if (
             isTargetTypePermittedForActivity({
-              activityCategory: segment.category,
+              activityCategory: segment.activity_category,
               targetType: target.type,
             })
           ) {
@@ -52,7 +52,7 @@ export function getActivityTargetCompatibilityIssues(input: {
           }
 
           issues.push({
-            activityCategory: segment.category,
+            activityCategory: segment.activity_category,
             targetType: target.type,
             path: [
               ...pathPrefix,
@@ -66,7 +66,7 @@ export function getActivityTargetCompatibilityIssues(input: {
               targetIndex,
               "type",
             ],
-            message: `Target type ${target.type} is not permitted for ${segment.category} activity plans. Allowed targets: ${getPermissibleTargetTypes(segment.category).join(", ")}.`,
+            message: `Target type ${target.type} is not permitted for ${segment.activity_category} activity plans. Allowed targets: ${getPermissibleTargetTypes(segment.activity_category).join(", ")}.`,
           });
         });
       });

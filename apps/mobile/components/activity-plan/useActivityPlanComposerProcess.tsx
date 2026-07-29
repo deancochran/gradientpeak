@@ -11,6 +11,7 @@ type ActivityPlanComposerProcessParams = {
   canSubmit: boolean;
   description: string;
   isEditMode: boolean;
+  isEditBlocked: boolean;
   isLoading: boolean;
   isSubmitting: boolean;
   name: string;
@@ -33,6 +34,7 @@ export function useActivityPlanComposerProcess({
   canSubmit,
   description,
   isEditMode,
+  isEditBlocked,
   isLoading,
   isSubmitting,
   name,
@@ -92,21 +94,22 @@ export function useActivityPlanComposerProcess({
   useEffect(() => {
     navigation.setOptions({
       title: isEditMode ? "Edit Activity Plan" : "Create Activity Plan",
-      headerRight: () => (
-        <LoadingButton
-          variant="ghost"
-          size="sm"
-          onPress={() => submitRef.current()}
-          disabled={!canSubmit || isLoading || isSubmitting}
-          loading={isSubmitting}
-          loadingLabel="Saving..."
-          loadingTextClassName="text-primary"
-        >
-          <Text className="text-primary font-semibold">Save</Text>
-        </LoadingButton>
-      ),
+      headerRight: () =>
+        isEditBlocked ? null : (
+          <LoadingButton
+            variant="ghost"
+            size="sm"
+            onPress={() => submitRef.current()}
+            disabled={!canSubmit || isLoading || isSubmitting}
+            loading={isSubmitting}
+            loadingLabel="Saving..."
+            loadingTextClassName="text-primary"
+          >
+            <Text className="text-primary font-semibold">Save</Text>
+          </LoadingButton>
+        ),
     });
-  }, [navigation, isEditMode, canSubmit, isLoading, isSubmitting]);
+  }, [navigation, isEditMode, isEditBlocked, canSubmit, isLoading, isSubmitting]);
 
   return {
     isDirty,

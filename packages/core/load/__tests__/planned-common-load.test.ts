@@ -4,14 +4,14 @@ import { adaptPlannedCommonLoadDoses, type PlannedCommonLoadDose } from "../plan
 const computedAsOf = "2026-07-23T12:00:00.000Z";
 
 function dose(
-  sport: "bike" | "run" | "swim",
+  activity_category: "bike" | "run" | "swim",
   method: "power_threshold" | "run_pace_threshold" | "swim_pace_threshold",
   thresholdType: "ftp_watts" | "threshold_speed_mps" | "swim_threshold_speed_mps",
   target: PlannedCommonLoadDose["target"],
 ): PlannedCommonLoadDose {
   const speed = thresholdType !== "ftp_watts";
   return {
-    sport,
+    activity_category,
     durationSeconds: 1_200,
     target,
     method,
@@ -23,7 +23,7 @@ function dose(
       stale: false,
       estimate: false,
       calculation_version: null,
-      evidence_fingerprint: `${sport}-threshold`,
+      evidence_fingerprint: `${activity_category}-threshold`,
     },
     thresholdEvidence: {
       type: thresholdType,
@@ -34,9 +34,9 @@ function dose(
       validAt: "2026-07-01T00:00:00.000Z",
       freshness: "current",
       calculationVersion: null,
-      sourceFingerprint: `${sport}-threshold`,
+      sourceFingerprint: `${activity_category}-threshold`,
     } as PlannedCommonLoadDose["thresholdEvidence"],
-    evidenceFingerprint: `${sport}-planned-dose`,
+    evidenceFingerprint: `${activity_category}-planned-dose`,
   };
 }
 

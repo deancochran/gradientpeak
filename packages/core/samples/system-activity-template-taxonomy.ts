@@ -14,7 +14,7 @@ import {
   THRESHOLD_RUN_WORKOUT_1,
   THRESHOLD_RUN_WORKOUT_2,
 } from "./indoor-treadmill";
-import { SAMPLE_MULTISPORT_ACTIVITIES } from "./multisport";
+import { SAMPLE_MULTISPORT_COMPONENT_ACTIVITIES } from "./multisport";
 import {
   OTHER_LONG_ENDURANCE_ELLIPTICAL,
   OTHER_THRESHOLD_ROW,
@@ -35,6 +35,7 @@ import {
 } from "./outdoor-run";
 import { normalizeSystemActivityTemplateId } from "./template-ids";
 import type { SystemActivityPlanTemplate as RecordingServiceActivityPlan } from "./types";
+import { deriveSystemActivityTemplateActivityCategory } from "./types";
 
 export type SystemActivityTemplateExecutionContext = "indoor" | "outdoor";
 
@@ -112,7 +113,7 @@ export const SYSTEM_ACTIVITY_TEMPLATE_TAXONOMY_STRATEGY = "hybrid-derived-plus-s
 function toNormalizedTemplateId(template: RecordingServiceActivityPlan): string {
   return normalizeSystemActivityTemplateId({
     id: template.id ?? undefined,
-    activityCategory: template.activity_category ?? "other",
+    activityCategory: deriveSystemActivityTemplateActivityCategory(template.structure),
     name: template.name ?? "template",
   });
 }
@@ -209,10 +210,11 @@ function deriveOtherArchetype(
   template: RecordingServiceActivityPlan,
   name: string,
 ): SystemActivityTemplateArchetype {
-  if (template.activity_category === "strength") {
+  const activity_category = deriveSystemActivityTemplateActivityCategory(template.structure);
+  if (activity_category === "strength") {
     return "strength_support";
   }
-  if (template.activity_category === "swim") {
+  if (activity_category === "swim") {
     return includesAny(name, ["technique", "drill"]) ? "swim_technique" : "swim_endurance";
   }
   if (includesAny(name, ["mobility", "walk", "recovery"])) {
@@ -233,10 +235,11 @@ function deriveTemplateArchetype(
 ): SystemActivityTemplateArchetype {
   const name = template.name.toLowerCase();
 
-  if (template.activity_category === "run") {
+  const activity_category = deriveSystemActivityTemplateActivityCategory(template.structure);
+  if (activity_category === "run") {
     return deriveRunArchetype(name);
   }
-  if (template.activity_category === "bike") {
+  if (activity_category === "bike") {
     return deriveBikeArchetype(name);
   }
 
@@ -410,7 +413,7 @@ const SYSTEM_TEMPLATE_SOURCE_GROUPS = [
   {
     source_file: "multisport.ts",
     execution_context: "outdoor" as const,
-    templates: SAMPLE_MULTISPORT_ACTIVITIES,
+    templates: SAMPLE_MULTISPORT_COMPONENT_ACTIVITIES,
   },
 ] as const;
 

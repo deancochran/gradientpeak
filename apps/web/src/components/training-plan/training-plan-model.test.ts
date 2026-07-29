@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildActivityReorderInput,
   buildTrainingPlanStructure,
-  buildWorkoutReorderInput,
-  moveScheduledWorkout,
+  moveScheduledActivity,
   summarizeTrainingPlan,
 } from "./training-plan-model";
 
@@ -30,19 +30,19 @@ describe("training plan web model", () => {
     ).toThrow();
   });
 
-  it("returns a new optimistic workout snapshot without mutating rollback data", () => {
-    const workouts = [
+  it("returns a new optimistic activity snapshot without mutating rollback data", () => {
+    const activities = [
       { id: "a", scheduled_date: "2026-07-20" },
       { id: "b", scheduled_date: "2026-07-21" },
     ];
 
-    const moved = moveScheduledWorkout(workouts, "a", 1);
+    const moved = moveScheduledActivity(activities, "a", 1);
 
     expect(moved).toEqual([
       { id: "a", scheduled_date: "2026-07-21" },
       { id: "b", scheduled_date: "2026-07-21" },
     ]);
-    expect(workouts[0]?.scheduled_date).toBe("2026-07-20");
+    expect(activities[0]?.scheduled_date).toBe("2026-07-20");
   });
 
   it("builds one atomic reorder request with expected and requested dates", () => {
@@ -55,7 +55,7 @@ describe("training plan web model", () => {
       { id: "b", scheduled_date: "2026-07-23", training_plan_id: activityPlanId },
     ];
 
-    expect(buildWorkoutReorderInput(original, next)).toEqual({
+    expect(buildActivityReorderInput(original, next)).toEqual({
       training_plan_id: activityPlanId,
       changes: [
         {

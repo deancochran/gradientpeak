@@ -11,7 +11,7 @@ export type TrainingPlanVisualSegment = {
   relativeLoad: number;
   relativeRecovery: number;
   relativeSpecificity: number;
-  sportMix: Record<string, number>;
+  activityCategoryMix: Record<string, number>;
   phase: TrainingPlanVisualPhase;
   isGoalSegment?: boolean;
 };
@@ -106,7 +106,10 @@ function getLegacyWeekCount(plan: UnknownRecord, structure: UnknownRecord | null
   return maxOffset > 0 ? Math.ceil((maxOffset + 1) / 7) : null;
 }
 
-function getSportMix(plan: UnknownRecord, structure: UnknownRecord | null): Record<string, number> {
+function getActivityCategoryMix(
+  plan: UnknownRecord,
+  structure: UnknownRecord | null,
+): Record<string, number> {
   const distribution =
     asRecord(plan.activity_distribution) ?? asRecord(structure?.activity_distribution);
   if (distribution) {
@@ -124,10 +127,14 @@ function getSportMix(plan: UnknownRecord, structure: UnknownRecord | null): Reco
     }
   }
 
-  const sports = readStringArray(plan.sport ?? structure?.sport);
-  if (sports.length > 0) {
-    const weight = 1 / sports.length;
-    return Object.fromEntries(sports.map((sport) => [sport, weight]));
+  const activity_categories = readStringArray(
+    plan.activity_category ?? structure?.activity_category,
+  );
+  if (activity_categories.length > 0) {
+    const weight = 1 / activity_categories.length;
+    return Object.fromEntries(
+      activity_categories.map((activity_category) => [activity_category, weight]),
+    );
   }
 
   return { mixed: 1 };
@@ -186,7 +193,7 @@ function buildLegacyModel(
   totalSegments: number,
 ): TrainingPlanVisualModel {
   const weekCount = getLegacyWeekCount(plan, structure) ?? totalSegments;
-  const sportMix = getSportMix(plan, structure);
+  const activityCategoryMix = getActivityCategoryMix(plan, structure);
   const targetDate = readText(asRecord(structure?.periodization_template)?.target_date);
   const weeklyTssMidpoint =
     midpoint(asRecord(structure?.target_weekly_tss_range)) ??
@@ -226,7 +233,7 @@ function buildLegacyModel(
         relativeLoad: clampUnit(load),
         relativeRecovery,
         relativeSpecificity,
-        sportMix,
+        activityCategoryMix,
       };
     },
   );
@@ -255,7 +262,7 @@ function buildPeriodizedModel(
     return null;
   }
 
-  const sportMix = getSportMix(plan, null);
+  const activityCategoryMix = getActivityCategoryMix(plan, null);
   const weightedBlocks = blocks.map((block, index) => {
     const startDate = readText(block.start_date);
     const endDate = readText(block.end_date);
@@ -304,7 +311,7 @@ function buildPeriodizedModel(
         relativeLoad,
         relativeRecovery,
         relativeSpecificity: block.specific,
-        sportMix,
+        activityCategoryMix,
       };
     },
   );
@@ -346,7 +353,9 @@ export function deriveTrainingPlanSummaryMetrics(plan: unknown) {
     readNumber(record.sessions_per_week_target) ??
     readNumber(record.sessionsPerWeek) ??
     readNumber(structure?.target_activities_per_week);
-  const sports = readStringArray(record.sport ?? structure?.sport);
+  const activity_categories = readStringArray(
+    record.activity_category ?? structure?.activity_category,
+  );
   const experienceLevels = readStringArray(record.experienceLevel ?? structure?.experienceLevel);
 
   return {
@@ -355,7 +364,8 @@ export function deriveTrainingPlanSummaryMetrics(plan: unknown) {
         ? `${durationWeeks} week${durationWeeks === 1 ? "" : "s"}`
         : "--",
     experienceLabel: experienceLevels[0] ?? "All levels",
-    sportLabel: sports.length > 0 ? sports.slice(0, 2).join(" / ") : "Mixed",
+    activityCategoryLabel:
+      activity_categories.length > 0 ? activity_categories.slice(0, 2).join(" / ") : "Mixed",
     sessionsLabel:
       sessionsPerWeek !== null && sessionsPerWeek > 0 ? `${sessionsPerWeek}/week` : "--",
   };

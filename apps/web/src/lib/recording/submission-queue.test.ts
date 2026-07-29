@@ -26,7 +26,7 @@ const artifact = portableWebRecordingArtifactSchema.parse({
       startedAt: "2026-07-20T10:00:00.000Z",
     },
     activity: {
-      category: "run",
+      activity_category: "run",
       mode: "free",
       gpsMode: "off",
       eventId: null,

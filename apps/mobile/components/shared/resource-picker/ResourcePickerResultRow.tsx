@@ -14,9 +14,8 @@ import type { ResourcePickerItem, ResourcePickerScope } from "./resourcePickerTy
 type ActivityPlanPickerSource = NonNullable<
   Parameters<typeof getAuthoritativeActivityPlanMetrics>[0]
 > & {
-  categories?: readonly string[];
   common_load?: unknown;
-  primary_category?: string | null;
+  activity_category: string;
   structure?: unknown;
   created_at?: string | null;
   description?: string | null;
@@ -69,9 +68,8 @@ export function ResourcePickerResultRow({
   const card =
     item.presentation === "canonical" && isActivityPlan && "activityPlanCardData" in item ? (
       <ActivityPlanCard
-        activity={{
-          activityCategories: item.activityPlanCardData.activityCategories,
-          activityType: item.activityPlanCardData.activityType,
+        cardData={{
+          activity_category: item.activityPlanCardData.activity_category,
           createdAt: item.activityPlanCardData.createdAt ?? undefined,
           description: item.activityPlanCardData.description ?? undefined,
           commonLoad: item.activityPlanCardData.commonLoad,
@@ -185,12 +183,11 @@ export function mapActivityPlanToResourcePickerItem(
   plan: ActivityPlanPickerSource,
 ): ResourcePickerItem {
   const metrics = getAuthoritativeActivityPlanMetrics(plan);
-  const primaryCategory = plan.primary_category ?? plan.categories?.[0] ?? "other";
+  const activity_category = plan.activity_category;
   return {
-    activityCategory: primaryCategory,
+    activityCategory: activity_category,
     activityPlanCardData: {
-      activityCategories: plan.categories,
-      activityType: primaryCategory,
+      activity_category,
       createdAt: plan.created_at,
       description: plan.description,
       commonLoad: plan.common_load,

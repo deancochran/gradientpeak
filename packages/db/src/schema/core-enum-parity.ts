@@ -3,7 +3,7 @@ import {
   socialCommentEntityTypeValues,
   socialLikeEntityTypeValues,
 } from "@repo/core";
-import { canonicalActivityCategoryDbValues } from "./canonical-categories";
+import { canonicalActivityCategoryDbValues } from "./canonical-activity-categories";
 import { integrationProviderEnum, likeEntityTypeEnum } from "./enums";
 
 /**

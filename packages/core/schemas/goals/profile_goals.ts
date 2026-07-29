@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { canonicalSportSchema } from "../sport";
+import { canonicalActivityCategorySchema } from "../activity-category";
 
 const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const uuidSchema = z.string().uuid();
@@ -8,7 +8,7 @@ const positiveIntegerSchema = z.number().int().positive();
 const boundedDemandSchema = z.number().min(0).max(1);
 const tolerancePctSchema = z.number().min(0).max(1).optional();
 
-export const canonicalGoalActivityCategorySchema = canonicalSportSchema;
+export const canonicalGoalActivityCategorySchema = canonicalActivityCategorySchema;
 
 export const canonicalGoalThresholdMetricSchema = z.enum(["pace", "power", "hr"]);
 

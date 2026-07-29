@@ -640,7 +640,7 @@ describe("training plan creation domain", () => {
             {
               id: "00000000-0000-4000-8000-000000000001",
               role: "activity",
-              category: "bike",
+              activity_category: "bike",
               name: "Tempo ride",
               intervals: [
                 {
@@ -1183,7 +1183,9 @@ describe("training plan creation domain", () => {
       projection_feasibility: { state: "feasible", reasons: [] },
       conflicts: {
         is_blocking: false,
-        items: [{ code: "cluster", severity: "warning", message: "Hard workouts are clustered." }],
+        items: [
+          { code: "cluster", severity: "warning", message: "Hard activities are clustered." },
+        ],
       },
       projection_chart: { readiness_score: 80 },
       preview_snapshot: { token: "token" },
@@ -1198,7 +1200,7 @@ describe("training plan creation domain", () => {
     ).toMatchObject({
       source: "backend",
       headline: "Backend projection flags a planning risk",
-      detail: "Threshold Intervals: Hard workouts are clustered.",
+      detail: "Threshold Intervals: Hard activities are clustered.",
       riskLabel: "warning",
       outcome: "Too fatigued",
     });
@@ -2182,7 +2184,7 @@ describe("training plan creation domain", () => {
     expect(viewModel.totalEstimatedTss).toBe(120);
     expect(viewModel.totalEstimatedDurationSeconds).toBe(5400);
     expect(viewModel.nextBestAction).toMatchObject({
-      text: "Assign a workout for Week 1 · Saturday.",
+      text: "Assign a activity for Week 1 · Saturday.",
       target: { type: "session", sessionId: "session-3" },
       needsAttention: true,
     });
@@ -2282,7 +2284,7 @@ describe("training plan creation domain", () => {
     ).toBe(true);
   });
 
-  it("does not populate mobile schedule targets when every goal is missing a sport", () => {
+  it("does not populate mobile schedule targets when every goal is missing a activity_category", () => {
     const fixtures = createTrainingPlanBuilderFixtures();
     const state = {
       ...fixtures.readyState,

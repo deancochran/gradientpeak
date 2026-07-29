@@ -23,8 +23,8 @@ import {
   type RouteSortField,
   type SortDirection,
   type SortState,
+  TRAINING_PLAN_ACTIVITY_CATEGORY_OPTIONS,
   TRAINING_PLAN_EXPERIENCE_OPTIONS,
-  TRAINING_PLAN_SPORT_OPTIONS,
   type TrainingPlanFilters,
   type TrainingPlanSortField,
 } from "@/lib/discover";
@@ -188,20 +188,22 @@ export function DiscoverFilterSheet({
 
           <FilterSection title="Activity plan type">
             <View className="flex-row flex-wrap gap-2">
-              {ACTIVITY_CATEGORY_OPTIONS.map((category) => (
+              {ACTIVITY_CATEGORY_OPTIONS.map((activity_category) => (
                 <FilterChip
-                  key={category.id}
-                  label={category.label}
-                  isActive={activityPlanFilters.categoryIds.includes(category.id)}
+                  key={activity_category.id}
+                  label={activity_category.label}
+                  isActive={activityPlanFilters.categoryIds.includes(activity_category.id)}
                   onPress={() =>
                     onActivityPlanFiltersChange({
                       ...activityPlanFilters,
-                      categoryIds: activityPlanFilters.categoryIds.includes(category.id)
-                        ? activityPlanFilters.categoryIds.filter((id) => id !== category.id)
-                        : [...activityPlanFilters.categoryIds, category.id],
+                      categoryIds: activityPlanFilters.categoryIds.includes(activity_category.id)
+                        ? activityPlanFilters.categoryIds.filter(
+                            (id) => id !== activity_category.id,
+                          )
+                        : [...activityPlanFilters.categoryIds, activity_category.id],
                     })
                   }
-                  testID={`discover-filter-activityPlans-category-${category.id}`}
+                  testID={`discover-filter-activityPlans-activity_category-${activity_category.id}`}
                 />
               ))}
             </View>
@@ -314,20 +316,21 @@ export function DiscoverFilterSheet({
             />
           </FilterSection>
 
-          <FilterSection title="Training plan sport">
+          <FilterSection title="Training plan activity category">
             <View className="flex-row flex-wrap gap-2">
-              {TRAINING_PLAN_SPORT_OPTIONS.map((option) => (
+              {TRAINING_PLAN_ACTIVITY_CATEGORY_OPTIONS.map((option) => (
                 <FilterChip
                   key={option.id}
                   label={option.label}
-                  isActive={trainingPlanFilters.sport === option.id}
+                  isActive={trainingPlanFilters.activity_category === option.id}
                   onPress={() =>
                     onTrainingPlanFiltersChange({
                       ...trainingPlanFilters,
-                      sport: trainingPlanFilters.sport === option.id ? null : option.id,
+                      activity_category:
+                        trainingPlanFilters.activity_category === option.id ? null : option.id,
                     })
                   }
-                  testID={`discover-filter-trainingPlans-sport-${option.id}`}
+                  testID={`discover-filter-trainingPlans-activity_category-${option.id}`}
                 />
               ))}
             </View>

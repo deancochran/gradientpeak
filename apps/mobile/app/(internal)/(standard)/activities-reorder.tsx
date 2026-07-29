@@ -17,7 +17,7 @@ import { useAuthStore } from "@/lib/stores/auth-store";
 import { useTheme } from "@/lib/stores/theme-store";
 import { normalizeDate } from "@/lib/utils/plan/dateGrouping";
 
-export default function WorkoutsReorder() {
+export default function ActivitiesReorder() {
   const { resolvedTheme } = useTheme();
   const router = useRouter();
   const utils = api.useUtils();
@@ -148,7 +148,7 @@ export default function WorkoutsReorder() {
         .map((activity) =>
           updateMutation.mutateAsync({
             id: activity.id,
-            scheduled_date: activity.scheduled_date,
+            patch: { scheduled_date: activity.scheduled_date },
           }),
         );
 

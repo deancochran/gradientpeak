@@ -1,19 +1,14 @@
+import { deriveSystemActivityTemplateActivityCategory, SYSTEM_TEMPLATES } from "@repo/core";
 import { describe, expect, it, vi } from "vitest";
 import { createQueryMapDbMock, type QueryMap, type QueryResult } from "../../test/mock-query-db";
 import { trainingPlansRouter } from "../planning/training-plans";
 
-const { drainDueWahooPlannedWorkoutJobs, enqueuePlannedWorkoutSyncAfterCalendarMutation } =
-  vi.hoisted(() => ({
-    drainDueWahooPlannedWorkoutJobs: vi.fn(),
-    enqueuePlannedWorkoutSyncAfterCalendarMutation: vi.fn(),
-  }));
-
-vi.mock("../../lib/provider-sync/planned-workouts/calendar-mutation-sync", () => ({
-  enqueuePlannedWorkoutSyncAfterCalendarMutation,
+const { enqueuePlannedActivitySyncAfterCalendarMutation } = vi.hoisted(() => ({
+  enqueuePlannedActivitySyncAfterCalendarMutation: vi.fn(),
 }));
 
-vi.mock("../../lib/provider-sync/wahoo-planned-workout-drain", () => ({
-  drainDueWahooPlannedWorkoutJobs,
+vi.mock("../../lib/provider-sync/planned-activities/calendar-mutation-sync", () => ({
+  enqueuePlannedActivitySyncAfterCalendarMutation,
 }));
 
 function createCaller(queryMap: QueryMap) {
@@ -46,6 +41,30 @@ function createCaller(queryMap: QueryMap) {
   const { db, callLog } = createQueryMapDbMock({
     profiles: { data: { planningTimezone: "UTC" }, error: null },
     ...queryMap,
+    ...(queryMap.activity_plans
+      ? {
+          activity_plans: (Array.isArray(queryMap.activity_plans)
+            ? queryMap.activity_plans
+            : [queryMap.activity_plans]
+          ).map((result) => ({
+            ...result,
+            data: Array.isArray(result.data)
+              ? result.data.map((row) => ({
+                  ...(row as Record<string, unknown>),
+                  structure:
+                    (row as { structure?: unknown }).structure ?? SYSTEM_TEMPLATES[0]?.structure,
+                }))
+              : result.data
+                ? {
+                    ...(result.data as Record<string, unknown>),
+                    structure:
+                      (result.data as { structure?: unknown }).structure ??
+                      SYSTEM_TEMPLATES[0]?.structure,
+                  }
+                : result.data,
+          })),
+        }
+      : {}),
     ...(trainingPlanResults
       ? {
           training_plans: Array.isArray(trainingPlanResults)
@@ -313,6 +332,78 @@ describe("trainingPlansRouter.applyTemplate", () => {
     expect(createdPlanInsert).toBeUndefined();
   });
 
+  it("materializes same-day Swim, Bike, and Run sessions as independently ordered Events", async () => {
+    const swimPlanId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const bikePlanId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const runPlanId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    const structureFor = (activity_category: "swim" | "bike" | "run") =>
+      SYSTEM_TEMPLATES.find(
+        (template) =>
+          deriveSystemActivityTemplateActivityCategory(template.structure) === activity_category,
+      )?.structure;
+    const { caller, callLog } = createCaller({
+      events: [
+        { data: [], error: null },
+        { data: [{ id: "swim-event" }, { id: "bike-event" }, { id: "run-event" }], error: null },
+      ],
+      training_plans: {
+        data: {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "Tri day",
+          description: null,
+          profile_id: "template-owner",
+          is_system_template: false,
+          template_visibility: "public",
+          sessions_per_week_target: 3,
+          duration_hours: 4,
+          structure: {
+            sessions: [
+              { offset_days: 0, activity_plan_id: swimPlanId, title: "Swim" },
+              { offset_days: 0, activity_plan_id: bikePlanId, title: "Bike" },
+              { offset_days: 0, activity_plan_id: runPlanId, title: "Run" },
+            ],
+          },
+        },
+        error: null,
+      },
+      activity_plans: {
+        data: [
+          { id: swimPlanId, name: "Swim plan", structure: structureFor("swim") },
+          { id: bikePlanId, name: "Bike plan", structure: structureFor("bike") },
+          { id: runPlanId, name: "Run plan", structure: structureFor("run") },
+        ],
+        error: null,
+      },
+    });
+
+    await caller.applyTemplate({
+      template_type: "training_plan",
+      template_id: "11111111-1111-4111-8111-111111111111",
+      start_date: "2026-03-10",
+    });
+
+    const insertedRows =
+      (callLog.find((call) => call.table === "events" && call.operation === "insert")
+        ?.payload as Array<Record<string, unknown>>) ?? [];
+    expect(insertedRows.map((row) => row.activity_plan_id)).toEqual([
+      swimPlanId,
+      bikePlanId,
+      runPlanId,
+    ]);
+    expect(insertedRows.map((row) => row.id)).toEqual([
+      expect.any(String),
+      expect.any(String),
+      expect.any(String),
+    ]);
+    expect(new Set(insertedRows.map((row) => row.id)).size).toBe(3);
+    expect(enqueuePlannedActivitySyncAfterCalendarMutation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventIds: ["swim-event", "bike-event", "run-event"],
+        operation: "publish",
+      }),
+    );
+  });
+
   it("returns explicit scheduled-session removal counts when abandoning an active scheduled set", async () => {
     const { caller } = createCaller({
       events: {
@@ -323,6 +414,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
 
     const result = await caller.removeAppliedSchedule({
       schedule_batch_id: "33333333-3333-4333-8333-333333333333",
+      training_plan_id: "22222222-2222-4222-8222-222222222222",
     });
 
     expect(result.scheduled_sessions_removed).toBe(2);
@@ -737,13 +829,14 @@ describe("trainingPlansRouter.applyTemplate", () => {
 
     const result = await caller.removeAppliedSchedule({
       schedule_batch_id: "33333333-3333-4333-8333-333333333333",
+      training_plan_id: "22222222-2222-4222-8222-222222222222",
     });
 
     expect(result.scheduled_sessions_removed).toBe(2);
   });
 
   it("does not delete a schedule batch when the transactional unsync enqueue fails", async () => {
-    enqueuePlannedWorkoutSyncAfterCalendarMutation.mockResolvedValueOnce({
+    enqueuePlannedActivitySyncAfterCalendarMutation.mockResolvedValueOnce({
       error: "queue unavailable",
       queued: false,
       success: false,
@@ -755,12 +848,12 @@ describe("trainingPlansRouter.applyTemplate", () => {
     await expect(
       caller.removeAppliedSchedule({
         schedule_batch_id: "33333333-3333-4333-8333-333333333333",
+        training_plan_id: "22222222-2222-4222-8222-222222222222",
       }),
-    ).rejects.toThrow("Failed to enqueue planned workout unsync jobs");
+    ).rejects.toThrow("Failed to enqueue planned activity unsync jobs");
 
-    expect(enqueuePlannedWorkoutSyncAfterCalendarMutation).toHaveBeenCalledWith(
+    expect(enqueuePlannedActivitySyncAfterCalendarMutation).toHaveBeenCalledWith(
       expect.objectContaining({
-        drainDueJobs: false,
         eventIds: ["event-1"],
         operation: "unsync",
         transaction: expect.anything(),
@@ -769,19 +862,5 @@ describe("trainingPlansRouter.applyTemplate", () => {
     expect(callLog.some((call) => call.table === "events" && call.operation === "delete")).toBe(
       false,
     );
-  });
-
-  it("does not inline-drain disabled Wahoo planned-workout work after schedule removal", async () => {
-    const { caller } = createCaller({
-      events: { data: [{ id: "event-1" }], error: null },
-    });
-
-    await expect(
-      caller.removeAppliedSchedule({
-        schedule_batch_id: "33333333-3333-4333-8333-333333333333",
-      }),
-    ).resolves.toMatchObject({ scheduled_sessions_removed: 1, success: true });
-
-    expect(drainDueWahooPlannedWorkoutJobs).not.toHaveBeenCalled();
   });
 });

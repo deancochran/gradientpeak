@@ -223,7 +223,9 @@ export function TrainingPlanBuilderSheetDraftsProvider({
 
   const setPlanningPreferencesDraft = useCallback(
     (preferences: TrainingPlanBuilderPlanPreferences) => {
-      planningPreferencesForm.reset(trainingPlanBuilderPlanPreferencesSchema.parse(preferences));
+      planningPreferencesForm.reset(trainingPlanBuilderPlanPreferencesSchema.parse(preferences), {
+        keepDefaultValues: true,
+      });
     },
     [planningPreferencesForm],
   );

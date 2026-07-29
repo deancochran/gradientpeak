@@ -6,6 +6,7 @@ import { memo, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, TouchableOpacity, View } from "react-native";
 import { AppFormModal } from "@/components/shared/AppFormModal";
 import { DailyTrainingAdjustmentChart } from "./DailyTrainingAdjustmentChart";
+import { hasRenderableDailyTrainingAdjustmentData } from "./dailyTrainingAdjustmentChartPresentation";
 import { TrainingPathChart } from "./TrainingPathChart";
 import { TrainingPathLegend } from "./TrainingPathLegend";
 import {
@@ -68,6 +69,28 @@ const modelEmptyStateCopy: Record<NonNullable<TrainingPathViewModel["emptyState"
   noProjection: "Training path is still being calculated.",
 };
 
+function positiveValue(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function hasRenderableWeeklyTrainingPathData(model: TrainingPathViewModel | null | undefined) {
+  return (
+    model?.weeks.some(
+      (week) =>
+        week.completedLoadUnavailable === true ||
+        positiveValue(week.effectiveCompletedLoad) ||
+        positiveValue(week.effectiveRemainingLoad) ||
+        positiveValue(week.effectiveTentativeLoad) ||
+        (typeof week.fitness === "number" && Number.isFinite(week.fitness)) ||
+        (typeof week.scheduledFitness === "number" && Number.isFinite(week.scheduledFitness)) ||
+        ((week.recommendedLoadStatus === "complete" ||
+          week.recommendedLoadStatus === "known_zero") &&
+          typeof week.targetFitness === "number" &&
+          Number.isFinite(week.targetFitness)),
+    ) === true
+  );
+}
+
 export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartSection({
   chartHeight = 300,
   dailyDensity = "standard",
@@ -98,10 +121,40 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
 }: TrainingPathLoadChartSectionProps) {
   const [legendOpen, setLegendOpen] = useState(false);
   const [previewSelectedDate, setPreviewSelectedDate] = useState<string | null>(null);
-  const canRenderDailyChart = preferDailyChart && !!dailyPoints?.length;
-  const canRenderWeeklyChart = !!model && !model.emptyState && !!onSelectedWeekChange;
+  const canRenderDailyChart =
+    preferDailyChart && hasRenderableDailyTrainingAdjustmentData(dailyPoints);
+  const canRenderWeeklyChart =
+    !!model && !!onSelectedWeekChange && hasRenderableWeeklyTrainingPathData(model);
   const hasRenderableChart = canRenderDailyChart || canRenderWeeklyChart;
-  const modelEmptyState = loading && !hasRenderableChart ? null : (model?.emptyState ?? null);
+  const modelEmptyState = loading || hasRenderableChart ? null : (model?.emptyState ?? null);
+  const showTargetFitness =
+    dailyPoints?.some(
+      (point) =>
+        (point.recommendedLoadStatus === "complete" ||
+          point.recommendedLoadStatus === "known_zero") &&
+        typeof point.targetFitnessCtl === "number" &&
+        Number.isFinite(point.targetFitnessCtl),
+    ) === true ||
+    model?.weeks.some(
+      (week) =>
+        (week.recommendedLoadStatus === "complete" ||
+          week.recommendedLoadStatus === "known_zero") &&
+        typeof week.targetFitness === "number" &&
+        Number.isFinite(week.targetFitness),
+    ) === true;
+  const showTargetLoad =
+    dailyPoints?.some(
+      (point) =>
+        point.recommendedLoadStatus === "complete" ||
+        point.recommendedLoadStatus === "partial" ||
+        point.recommendedLoadStatus === "known_zero",
+    ) === true ||
+    model?.weeks.some(
+      (week) =>
+        week.recommendedLoadStatus === "complete" ||
+        week.recommendedLoadStatus === "partial" ||
+        week.recommendedLoadStatus === "known_zero",
+    ) === true;
   const resolvedEmptyState =
     loading && !hasRenderableChart
       ? { title: "Loading training path…", tone: "loading" as const }
@@ -197,7 +250,7 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
             density={dailyDensity}
             height={chartHeight}
             formatDateLabel={dailyDateLabelFormatter}
-            points={dailyPoints}
+            points={dailyPoints ?? []}
             selectedDate={selectedDate ?? model?.todayKey}
             showSelectedPointTray={showSelectedPointTray}
             onPreviewSelectedDateChange={setPreviewSelectedDate}
@@ -236,6 +289,8 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
               dailyPoints?.some((point) => point.hasCompletedActivityWithoutLoad === true) ?? false
             }
             variant="primary"
+            showTargetFitness={showTargetFitness}
+            showTargetLoad={showTargetLoad}
           />
         ) : null}
       </View>
@@ -250,7 +305,12 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
           title="Chart Legend"
         >
           <View className="gap-4 px-1 py-2">
-            <TrainingPathLegend mode={canRenderDailyChart ? "daily" : "weekly"} range="season" />
+            <TrainingPathLegend
+              mode={canRenderDailyChart ? "daily" : "weekly"}
+              range="season"
+              showTargetFitness={showTargetFitness}
+              showTargetLoad={showTargetLoad}
+            />
           </View>
         </AppFormModal>
       ) : null}

@@ -4,6 +4,7 @@ import {
   type CompiledActivityPlan,
   type CompiledActivityPlanOccurrence,
   compileValidatedActivityPlanV3,
+  type RecordingActivityCategory,
 } from "@repo/core";
 
 export interface RecordingActivityPlanV3Input {
@@ -14,6 +15,52 @@ export interface RecordingActivityPlanV3Input {
   gps_recording_enabled?: boolean;
   /** Untrusted transport input; compileRecordingPlan performs strict V3 parsing. */
   structure: unknown;
+}
+
+const FREE_RECORDING_SEGMENT_ID = "00000000-0000-4000-8000-000000000001";
+const FREE_RECORDING_INTERVAL_ID = "00000000-0000-4000-8000-000000000002";
+const FREE_RECORDING_STEP_ID = "00000000-0000-4000-8000-000000000003";
+
+/**
+ * Creates the canonical execution-only structure for a free recording.
+ *
+ * This is deliberately not an ActivityPlan: it has no plan id and callers must
+ * keep it outside selected-plan state. Stable structure ids make the compiled
+ * occurrence identity and hash deterministic for a selected activity_category.
+ */
+export function createFreeRecordingExecutionPlan(
+  activity_category: RecordingActivityCategory,
+): RecordingActivityPlanV3Input {
+  const name = `${activity_category} free recording`;
+  return {
+    name,
+    structure: {
+      version: 3,
+      segments: [
+        {
+          id: FREE_RECORDING_SEGMENT_ID,
+          role: "activity",
+          name,
+          activity_category,
+          intervals: [
+            {
+              id: FREE_RECORDING_INTERVAL_ID,
+              name,
+              repetitions: 1,
+              steps: [
+                {
+                  id: FREE_RECORDING_STEP_ID,
+                  name,
+                  duration: { type: "untilFinished" },
+                  targets: [{ type: "RPE", intensity: 1 }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  };
 }
 
 type PresentableOccurrence<T extends CompiledActivityPlanOccurrence> = T extends unknown

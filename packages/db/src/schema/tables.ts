@@ -23,7 +23,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { users } from "../auth-schema";
-import { canonicalActivityCategoryDbValues } from "./canonical-categories";
+import { canonicalActivityCategoryDbValues } from "./canonical-activity-categories";
 
 import {
   activityFileIngestionSourceEnum,
@@ -458,6 +458,10 @@ export const activityPlans = pgTable(
       sql`jsonb_typeof(${table.structure}) = 'object' and ${table.structure}->>'version' = '3' and jsonb_typeof(${table.structure}->'segments') = 'array' and jsonb_array_length(${table.structure}->'segments') between 1 and 64 and pg_column_size(${table.structure}) <= 1048576`,
     ),
     check(
+      "activity_plans_structure_canonical_check",
+      sql`public.activity_plan_structure_is_canonical(${table.structure})`,
+    ),
+    check(
       "activity_plans_structure_hash_check",
       sql`${table.structure_hash} ~ '^v1:sha256:[0-9a-f]{64}$'`,
     ),
@@ -861,6 +865,11 @@ export const events = pgTable(
       table.status,
       table.starts_at,
     ),
+    index("idx_events_planned_day_summary")
+      .on(table.profile_id, table.scheduled_date, table.starts_at, table.id, table.activity_plan_id)
+      .where(
+        sql`${table.event_type} = 'planned' and ${table.status} in ('scheduled', 'completed')`,
+      ),
   ],
 );
 
@@ -1045,41 +1054,19 @@ export const activities = pgTable(
   ],
 );
 
-export const canonicalActivityCategories = pgTable("canonical_activity_categories", {
-  code: text("code").primaryKey(),
-  display_name: text("display_name").notNull(),
-  enabled: boolean("enabled").notNull().default(true),
-});
-
-export const multisportCutoverAudits = pgTable("multisport_cutover_audits", {
-  run_id: uuid("run_id").primaryKey(),
-  manifest_checksum: text("manifest_checksum").notNull(),
-  final_manifest_checksum: text("final_manifest_checksum").notNull(),
-  snapshot_hash: text("snapshot_hash").notNull(),
-  staging_hash: text("staging_hash").notNull(),
-  backup_hash: text("backup_hash").notNull(),
-  storage_archive_hash: text("storage_archive_hash").notNull(),
-  storage_inventory_hash: text("storage_inventory_hash").notNull(),
-  status: text("status").notNull(),
-  migrated_at: timestamp("migrated_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-  audited_at: timestamp("audited_at", { withTimezone: true, mode: "date" }),
-});
-
-export const multisportCutoverTemplateAudits = pgTable(
-  "multisport_cutover_template_audits",
+export const canonicalActivityCategories = pgTable(
+  "canonical_activity_categories",
   {
-    run_id: uuid("run_id")
-      .notNull()
-      .references(() => multisportCutoverAudits.run_id, { onDelete: "restrict" }),
-    activity_plan_id: uuid("activity_plan_id").notNull(),
-    before_semantic_hash: text("before_semantic_hash"),
-    after_semantic_hash: text("after_semantic_hash").notNull(),
-    source_semantic_hash: text("source_semantic_hash"),
-    is_new_source: boolean("is_new_source").notNull(),
+    code: text("code").primaryKey(),
+    display_name: text("display_name").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
   },
-  (table) => [primaryKey({ columns: [table.run_id, table.activity_plan_id] })],
+  (table) => [
+    check(
+      "canonical_activity_categories_code_check",
+      sql`${table.code} in ('run', 'bike', 'swim', 'strength', 'other')`,
+    ),
+  ],
 );
 
 export const activityArtifacts = pgTable(
@@ -1201,12 +1188,11 @@ export const activitySegments = pgTable(
     profile_id: uuid("profile_id").notNull(),
     ordinal: integer("ordinal").notNull(),
     role: text("role", { enum: ["activity", "transition", "rest", "unknown"] }).notNull(),
-    category: text("category", { enum: canonicalActivityCategoryDbValues }).references(
-      () => canonicalActivityCategories.code,
-      {
-        onDelete: "restrict",
-      },
-    ),
+    activity_category: text("activity_category", {
+      enum: canonicalActivityCategoryDbValues,
+    }).references(() => canonicalActivityCategories.code, {
+      onDelete: "restrict",
+    }),
     start_offset_ms: bigint("start_offset_ms", { mode: "number" }).notNull(),
     end_offset_ms: bigint("end_offset_ms", { mode: "number" }).notNull(),
     source_artifact_id: uuid("source_artifact_id"),
@@ -1216,6 +1202,8 @@ export const activitySegments = pgTable(
     raw_type_integer: integer("raw_type_integer"),
     raw_sport_string: text("raw_sport_string"),
     raw_sport_integer: integer("raw_sport_integer"),
+    raw_sub_sport_string: text("raw_sub_sport_string"),
+    raw_sub_sport_integer: integer("raw_sub_sport_integer"),
     summary: jsonb("summary").notNull(),
     summary_version: integer("summary_version").notNull().default(1),
     timing_coverage: text("timing_coverage", {
@@ -1254,7 +1242,7 @@ export const activitySegments = pgTable(
       table.id,
       table.activity_id,
       table.profile_id,
-      table.category,
+      table.activity_category,
     ),
     unique("activity_segments_activity_ordinal_unique").on(table.activity_id, table.ordinal),
     check("activity_segments_ordinal_check", sql`${table.ordinal} >= 0`),
@@ -1264,11 +1252,19 @@ export const activitySegments = pgTable(
     ),
     check(
       "activity_segments_role_category_check",
-      sql`(${table.role} = 'activity' and ${table.category} is not null) or (${table.role} <> 'activity' and ${table.category} is null)`,
+      sql`(${table.role} = 'activity' and ${table.activity_category} is not null) or (${table.role} <> 'activity' and ${table.activity_category} is null)`,
     ),
     check(
       "activity_segments_unknown_source_check",
-      sql`${table.role} <> 'unknown' or num_nonnulls(${table.raw_type_string}, ${table.raw_type_integer}, ${table.raw_sport_string}, ${table.raw_sport_integer}) > 0`,
+      sql`${table.role} <> 'unknown' or num_nonnulls(${table.raw_type_string}, ${table.raw_type_integer}, ${table.raw_sport_string}, ${table.raw_sport_integer}, ${table.raw_sub_sport_string}, ${table.raw_sub_sport_integer}) > 0`,
+    ),
+    check(
+      "activity_segments_raw_sub_sport_type_check",
+      sql`num_nonnulls(${table.raw_sub_sport_string}, ${table.raw_sub_sport_integer}) <= 1`,
+    ),
+    check(
+      "activity_segments_raw_source_string_bounds_check",
+      sql`(${table.raw_type_string} is null or char_length(${table.raw_type_string}) between 1 and 128) and (${table.raw_sport_string} is null or char_length(${table.raw_sport_string}) between 1 and 128) and (${table.raw_sub_sport_string} is null or char_length(${table.raw_sub_sport_string}) between 1 and 128)`,
     ),
     check(
       "activity_segments_source_indexes_check",
@@ -1292,8 +1288,8 @@ export const activitySegments = pgTable(
     ),
     index("idx_activity_segments_activity").on(table.activity_id, table.ordinal),
     index("idx_activity_segments_category")
-      .on(table.category)
-      .where(sql`${table.category} is not null`),
+      .on(table.activity_category)
+      .where(sql`${table.activity_category} is not null`),
   ],
 );
 
@@ -1463,7 +1459,7 @@ export const activityEfforts = pgTable(
         activitySegments.id,
         activitySegments.activity_id,
         activitySegments.profile_id,
-        activitySegments.category,
+        activitySegments.activity_category,
       ],
       name: "activity_efforts_segment_activity_profile_category_fkey",
     }).onDelete("cascade"),

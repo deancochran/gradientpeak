@@ -24,9 +24,9 @@ export const activityPlanV3IssueCodes = {
   explicitTimedBudgetExceeded: "ACTIVITY_PLAN_EXPLICIT_TIMED_BUDGET_EXCEEDED",
   missingActivity: "ACTIVITY_PLAN_MISSING_ACTIVITY",
   payloadTooLarge: "ACTIVITY_PLAN_PAYLOAD_TOO_LARGE",
-  transitionGrammar: "ACTIVITY_PLAN_TRANSITION_GRAMMAR",
   consecutiveRests: "ACTIVITY_PLAN_CONSECUTIVE_RESTS",
   incompatibleTarget: "ACTIVITY_PLAN_INCOMPATIBLE_TARGET",
+  mixedActivityCategories: "ACTIVITY_PLAN_MIXED_ACTIVITY_CATEGORIES",
 } as const;
 
 export type ActivityPlanV3IssueCode =
@@ -65,6 +65,7 @@ export function getActivityPlanV3DocumentIssues(
   const issues: ValidationIssue[] = [];
   const ids = new Map<string, PropertyKey[]>();
   let activityCount = 0;
+  const activityCategories = new Set<string>();
   let expandedOccurrences = 0;
   let explicitTimedSeconds = 0;
 
@@ -102,6 +103,7 @@ export function getActivityPlanV3DocumentIssues(
     }
 
     activityCount += 1;
+    activityCategories.add(segment.activity_category);
     segment.intervals.forEach((interval, intervalIndex) => {
       const intervalPath = [...segmentPath, "intervals", intervalIndex];
       registerId(interval.id, [...intervalPath, "id"]);
@@ -115,7 +117,7 @@ export function getActivityPlanV3DocumentIssues(
         step.targets.forEach((target, targetIndex) => {
           if (
             !isTargetTypePermittedForActivity({
-              activityCategory: segment.category,
+              activityCategory: segment.activity_category,
               targetType: target.type,
             })
           ) {
@@ -123,7 +125,7 @@ export function getActivityPlanV3DocumentIssues(
               issue(
                 activityPlanV3IssueCodes.incompatibleTarget,
                 [...intervalPath, "steps", stepIndex, "targets", targetIndex, "type"],
-                `Target type ${target.type} is not permitted for ${segment.category}.`,
+                `Target type ${target.type} is not permitted for ${segment.activity_category}.`,
               ),
             );
           }
@@ -132,27 +134,21 @@ export function getActivityPlanV3DocumentIssues(
     });
   });
 
-  structure.segments.forEach((segment, segmentIndex) => {
-    if (segment.role !== "transition") return;
-    const previous = structure.segments[segmentIndex - 1];
-    const next = structure.segments[segmentIndex + 1];
-    if (previous?.role !== "activity" || next?.role !== "activity") {
-      issues.push(
-        issue(
-          activityPlanV3IssueCodes.transitionGrammar,
-          ["segments", segmentIndex, "role"],
-          "A transition must be immediately between two activity segments.",
-        ),
-      );
-    }
-  });
-
   if (activityCount === 0) {
     issues.push(
       issue(
         activityPlanV3IssueCodes.missingActivity,
         ["segments"],
         "A plan must contain at least one activity segment.",
+      ),
+    );
+  }
+  if (activityCategories.size > 1) {
+    issues.push(
+      issue(
+        activityPlanV3IssueCodes.mixedActivityCategories,
+        ["segments"],
+        "A plan must contain activity segments for exactly one activity_category.",
       ),
     );
   }

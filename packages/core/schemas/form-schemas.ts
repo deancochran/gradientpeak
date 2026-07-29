@@ -11,6 +11,7 @@
 
 import { z } from "zod";
 import { activityPlanStructureSchemaV3 } from "../activity-plan";
+import { canonicalActivityCategorySchema } from "./activity-category";
 import { contentVisibilitySchema } from "./content_visibility";
 import {
   completionTimeHmsSchema,
@@ -59,7 +60,6 @@ import {
   eventTypeInputSchema,
   importedEventSourceMetadataSchema,
 } from "./planned_activity";
-import { canonicalSportSchema } from "./sport";
 import {
   creationProvenanceSchema,
   creationRecentInfluenceActionEnum,
@@ -323,9 +323,9 @@ export const optionalEstimatedTssSchema = z.preprocess(
 export const gpsRecordingEnabledSchema = z.boolean();
 
 /**
- * Activity category validation
+ * Activity activity_category validation
  */
-export const activityCategorySchema = canonicalSportSchema;
+export const activityCategorySchema = canonicalActivityCategorySchema;
 
 /**
  * Activity Plan Create Form Schema
@@ -601,7 +601,7 @@ export type TrainingPlanBasicInfoFormData = z.infer<typeof trainingPlanBasicInfo
 export const trainingPlanWeeklyTargetsFormSchema = z.object({
   weekly_tss_target: weeklyTssTargetSchema,
   weekly_duration_target: optionalEstimatedDurationSchema,
-  workouts_per_week: z.preprocess(
+  activities_per_week: z.preprocess(
     stringToNumber,
     z
       .number()

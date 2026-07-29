@@ -32,7 +32,7 @@ export type ActivityCardActivity = {
   name?: string | null;
   activity_kind?: "single" | "multisport" | "unknown";
   activity_categories?: readonly string[];
-  segments?: Array<{ role?: string; category?: string | null }>;
+  segments?: Array<{ role?: string; activity_category?: string | null }>;
   started_at?: string | Date | null;
   distance_meters?: number | null;
   elapsed_ms?: number | null;
@@ -69,7 +69,7 @@ export type ActivityCardActivity = {
   } | null;
   segment_loads?: Array<{
     segment_id: string;
-    category: string;
+    activity_category: string;
     tss?: number | null;
     intensity_factor?: number | null;
     method?: string | null;
@@ -151,8 +151,8 @@ function getActivityCategories(activity: ActivityCardActivity): string[] {
     ? activity.activity_categories
     : activity.segments
         ?.filter((segment) => segment.role === "activity")
-        .map((segment) => segment.category)
-        .filter((category): category is string => !!category);
+        .map((segment) => segment.activity_category)
+        .filter((activityCategory): activityCategory is string => !!activityCategory);
   return [...new Set(categories?.length ? categories : ["other"])];
 }
 

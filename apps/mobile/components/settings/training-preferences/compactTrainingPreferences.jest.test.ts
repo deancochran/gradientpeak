@@ -36,7 +36,7 @@ describe("compact training preferences", () => {
       },
       dose_limits: {
         ...defaultAthletePreferenceProfile.dose_limits,
-        sport_overrides: {
+        activity_category_overrides: {
           run: { min_sessions_per_week: 2, max_sessions_per_week: 4 },
         },
       },
@@ -56,7 +56,9 @@ describe("compact training preferences", () => {
     });
 
     expect(result.availability).toEqual(base.availability);
-    expect(result.dose_limits.sport_overrides).toEqual(base.dose_limits.sport_overrides);
+    expect(result.dose_limits.activity_category_overrides).toEqual(
+      base.dose_limits.activity_category_overrides,
+    );
     expect(result.recovery_preferences).toEqual(base.recovery_preferences);
     expect(result.onboarding_intents).toEqual(base.onboarding_intents);
     expect(result.training_style).toEqual({
@@ -69,7 +71,7 @@ describe("compact training preferences", () => {
     const base = {
       ...defaultAthletePreferenceProfile,
       dose_limits: {
-        sport_overrides: {},
+        activity_category_overrides: {},
       },
       training_style: {
         ...defaultAthletePreferenceProfile.training_style,
@@ -81,7 +83,7 @@ describe("compact training preferences", () => {
 
     expect(result.training_style.progression_pace).toBe(0.6);
     expect(result.dose_limits).toEqual({
-      sport_overrides: {},
+      activity_category_overrides: {},
       max_weekly_duration_minutes: 480,
     });
   });

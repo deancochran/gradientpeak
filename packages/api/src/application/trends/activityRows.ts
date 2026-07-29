@@ -59,7 +59,7 @@ export function normalizeTrendActivityRows(rows: TrendActivityRow[]): Normalized
         return {
           id: segment.id,
           name: activity.name,
-          type: segment.category,
+          type: segment.activity_category,
           started_at: new Date(activity.started_at.getTime() + segment.start_offset_ms),
           distance_meters: summary.distanceMeters ?? null,
           moving_seconds: movingMs === null ? null : movingMs / 1_000,

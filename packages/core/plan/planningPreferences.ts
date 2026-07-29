@@ -88,7 +88,7 @@ export const PLANNING_PREFERENCE_FIELD_METADATA: Record<
     min: 1,
     max: 14,
     step: 1,
-    helperText: "Target workout frequency for this plan only.",
+    helperText: "Target activity frequency for this plan only.",
     requiredDefault: 3,
   },
   targetWeeklyHours: {
@@ -177,7 +177,7 @@ export const PLANNING_PREFERENCE_FIELD_METADATA: Record<
     min: 0,
     max: 1,
     step: 0.05,
-    helperText: "Higher values allow more same-day workout stacking.",
+    helperText: "Higher values allow more same-day activity stacking.",
     requiredDefault: 0.25,
   },
   longSessionFatigueTolerance: {

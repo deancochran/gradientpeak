@@ -2,7 +2,7 @@
  * Recording Configuration System
  *
  * Defines what features are available and should be shown based on:
- * - Activity type (run, bike, etc.)
+ * - Activity category (run, bike, etc.)
  * - Recording mode (planned vs unplanned)
  * - Connected devices (FTMS trainer, sensors)
  * - Plan structure (has steps, route, etc.)
@@ -13,7 +13,7 @@ import type { FTMSFeatures } from "@deancochran/ftms";
 import { z } from "zod";
 
 import type { ActivityPlanStructureV3 } from "../activity-plan";
-import type { CanonicalSport } from "./sport";
+import type { CanonicalActivityCategory } from "./activity-category";
 
 export const recordingPrimaryMetricSchema = z.enum(["time", "distance", "reps", "power"]);
 export const recordingAutoFollowPrioritySchema = z.enum([
@@ -44,7 +44,7 @@ export type RecordingBackdropMode =
 
 export type RecordingInsightCard =
   | "metrics"
-  | "workout_interval"
+  | "activity_interval"
   | "trainer"
   | "route_progress"
   | "climb";
@@ -83,7 +83,7 @@ export interface RecordingConfigInput {
   launchSource?: RecordingLaunchSource;
 
   // Core activity details
-  activityCategory: CanonicalSport;
+  activityCategory: CanonicalActivityCategory;
   gpsRecordingEnabled: boolean;
   mode: "planned" | "unplanned";
   eventId?: string | null;
@@ -157,7 +157,7 @@ export interface RecordingCapabilities {
 }
 
 export interface RecordingSessionAuthority {
-  category: "user" | "plan";
+  activity_category: "user" | "plan";
   structure: "none" | "plan";
   spatial: "none" | "route";
   locationCapture: "gps";

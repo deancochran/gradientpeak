@@ -6,9 +6,11 @@ import {
   contentVisibilitySchema,
   ianaTimezoneSchema,
 } from "@repo/core";
+import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
 import { commonLoadAggregateSchema, commonLoadHistoryResultSchema } from "@repo/core/load";
 import {
   activities,
+  activityPlans,
   events,
   profiles,
   publicActivitiesRowSchema,
@@ -123,9 +125,18 @@ const activitySegmentReadSchema = publicActivitySegmentsRowSchema
     activity_id: true,
     ordinal: true,
     role: true,
-    category: true,
+    activity_category: true,
     start_offset_ms: true,
     end_offset_ms: true,
+    source_artifact_id: true,
+    source_session_index: true,
+    source_message_index: true,
+    raw_type_string: true,
+    raw_type_integer: true,
+    raw_sport_string: true,
+    raw_sport_integer: true,
+    raw_sub_sport_string: true,
+    raw_sub_sport_integer: true,
     timing_coverage: true,
     active_ms: true,
     moving_ms: true,
@@ -136,7 +147,7 @@ const activitySegmentReadSchema = publicActivitySegmentsRowSchema
 const activitySegmentLoadSchema = activityListDerivedSummarySchema
   .extend({
     segment_id: z.string().uuid(),
-    category: publicActivityCategorySchema,
+    activity_category: publicActivityCategorySchema,
   })
   .strict();
 
@@ -509,8 +520,12 @@ export const activitiesRouter = createTRPCRouter({
     let linkedActivityPlanId: string | null = null;
     if (input.eventId) {
       const [linkedEvent] = await db
-        .select({ activity_plan_id: events.activity_plan_id })
+        .select({
+          activity_plan_id: events.activity_plan_id,
+          activity_plan: activityPlans,
+        })
         .from(events)
+        .leftJoin(activityPlans, eq(events.activity_plan_id, activityPlans.id))
         .where(
           and(
             eq(events.id, input.eventId),
@@ -525,6 +540,18 @@ export const activitiesRouter = createTRPCRouter({
           code: "NOT_FOUND",
           message: "Linked event not found.",
         });
+      }
+
+      if (linkedEvent.activity_plan_id) {
+        const parsedPlan = linkedEvent.activity_plan
+          ? activityPlanStructureSchemaV3.safeParse(linkedEvent.activity_plan.structure)
+          : null;
+        if (!parsedPlan?.success) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Linked event plan is not available for recording",
+          });
+        }
       }
 
       linkedActivityPlanId = linkedEvent.activity_plan_id;

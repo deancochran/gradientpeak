@@ -81,7 +81,7 @@ jest.mock("react-native-maps", () => ({
   PROVIDER_DEFAULT: "default",
 }));
 
-jest.mock("@/components/activity-plan/workout/TimelineChart", () => ({
+jest.mock("@/components/activity-plan/activity/TimelineChart", () => ({
   __esModule: true,
   TimelineChart: createHost("TimelineChart"),
 }));
@@ -313,6 +313,7 @@ describe("activity plan detail scheduling", () => {
       id: "11111111-1111-1111-1111-111111111111",
       name: "Tempo Builder",
       activity_category: "run",
+      activity_categories: ["run"],
       profile_id: "profile-1",
       structure: { intervals: [] },
     });
@@ -337,6 +338,7 @@ describe("activity plan detail scheduling", () => {
     localSearchParamsMock.template = JSON.stringify({
       name: "Draft Template",
       activity_category: "run",
+      activity_categories: ["run"],
       profile_id: "profile-1",
       structure: { intervals: [] },
     });
@@ -359,6 +361,7 @@ describe("activity plan detail scheduling", () => {
       id: "11111111-1111-1111-1111-111111111111",
       name: "Shared Builder",
       activity_category: "run",
+      activity_categories: ["run"],
       profile_id: "another-profile",
       structure: { intervals: [] },
     });
@@ -385,6 +388,7 @@ describe("activity plan detail scheduling", () => {
       id: "11111111-1111-1111-1111-111111111111",
       name: "Tempo Builder",
       activity_category: "run",
+      activity_categories: ["run"],
       profile_id: "template-owner",
       structure: { intervals: [] },
     });
@@ -426,6 +430,7 @@ describe("activity plan detail scheduling", () => {
       id: "owned-plan-1",
       name: "Owned Builder",
       activity_category: "run",
+      activity_categories: ["run"],
       profile_id: "profile-1",
       structure: { intervals: [] },
     };
@@ -451,6 +456,7 @@ describe("activity plan detail scheduling", () => {
       id: "owned-plan-1",
       name: "Owned Builder",
       activity_category: "run",
+      activity_categories: ["run"],
       profile_id: "profile-1",
       structure: { intervals: [] },
     };
@@ -472,6 +478,7 @@ describe("activity plan detail scheduling", () => {
       id: "owned-plan-1",
       name: "Owned Builder",
       activity_category: "run",
+      activity_categories: ["run"],
       profile_id: "profile-1",
       structure: { intervals: [] },
     };
@@ -496,6 +503,7 @@ describe("activity plan detail scheduling", () => {
       id: "owned-plan-1",
       name: "Owned Builder",
       activity_category: "run",
+      activity_categories: ["run"],
       profile_id: "profile-1",
       structure: { intervals: [] },
     };

@@ -1,7 +1,7 @@
 import { invalidatePostActivityIngestionQueries } from "@repo/api/client";
 import {
   buildManualActivityImportProvenance,
-  type CanonicalSport,
+  type CanonicalActivityCategory,
   deriveActivityNameFromFileName,
   getSupportedActivityFileExtension,
   type ManualActivityImportOutput,
@@ -30,13 +30,13 @@ import { ROUTES } from "@/lib/constants/routes";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { ActivityFileUploader } from "@/lib/services/fit/ActivityFileUploader";
 
-const ACTIVITY_TYPES = [
+const ACTIVITY_CATEGORIES = [
   { value: "run", label: "Run" },
   { value: "bike", label: "Ride" },
   { value: "swim", label: "Swim" },
   { value: "strength", label: "Strength" },
   { value: "other", label: "Other" },
-] as const satisfies readonly { value: CanonicalSport; label: string }[];
+] as const satisfies readonly { value: CanonicalActivityCategory; label: string }[];
 
 const ACTIVITY_FILE_MIME_TYPES = [
   "application/vnd.ant.fit",
@@ -95,7 +95,7 @@ export default function ActivityImportScreen() {
     schema: manualActivityImportFormSchema,
     defaultValues: {
       files: [],
-      sport: "bike",
+      activity_category: "bike",
       name: "",
       notes: null,
     },
@@ -215,7 +215,7 @@ export default function ActivityImportScreen() {
       setImportPhase("idle");
       form.reset({
         files: [],
-        sport: "bike",
+        activity_category: "bike",
         name: "",
         notes: null,
       });
@@ -325,10 +325,10 @@ export default function ActivityImportScreen() {
                 <FormSegmentedSelectField
                   control={form.control}
                   disabled={isFormDisabled}
-                  label="Activity type"
-                  name="sport"
-                  options={ACTIVITY_TYPES.map((activityType) =>
-                    createOption(activityType.value, activityType.label),
+                  label="Activity category"
+                  name="activity_category"
+                  options={ACTIVITY_CATEGORIES.map((activityCategory) =>
+                    createOption(activityCategory.value, activityCategory.label),
                   )}
                   testId="activity-import-type-select"
                 />

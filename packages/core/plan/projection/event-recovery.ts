@@ -11,7 +11,7 @@
  * - ATL overload increases recovery time
  */
 
-import type { CanonicalSport } from "../../schemas/sport";
+import type { CanonicalActivityCategory } from "../../schemas/activity-category";
 import type { TrainingPlanGoalTarget } from "../../schemas/training-plan-structure";
 import { getGenderAdjustedRecoveryLoadMultiplier } from "../calibration-constants";
 import type { ProjectionPointReadinessInput } from "./readiness";
@@ -89,7 +89,7 @@ export interface PostEventFatigueInput {
 }
 
 /**
- * Estimates race intensity based on duration and activity type.
+ * Estimates race intensity based on duration and activity category.
  *
  * Intensity scale:
  * - 95-100: Short races (<1 hour) - very high intensity
@@ -110,12 +110,12 @@ export interface PostEventFatigueInput {
 function estimateRaceIntensity(input: {
   distance_m: number;
   duration_s: number;
-  activity: CanonicalSport;
+  activity: CanonicalActivityCategory;
 }): number {
   const durationHours = input.duration_s / 3600;
   const baseIntensity = clamp(96 - Math.log1p(Math.max(0.1, durationHours)) * 7.5, 70, 96);
 
-  // Adjust for activity type
+  // Adjust for activity category
   const activityFactor =
     input.activity === "run"
       ? 1.0
@@ -189,7 +189,7 @@ export function computeEventRecoveryProfile(input: EventRecoveryInput): EventRec
     //   100-mile (24hr): 28 days (capped)
     const baseDays = Math.min(28, Math.max(2, durationHours * 3.5));
 
-    // Estimate intensity based on duration and activity type
+    // Estimate intensity based on duration and activity category
     const intensity = estimateRaceIntensity({
       distance_m: target.distance_m,
       duration_s: target.target_time_s,

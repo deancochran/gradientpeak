@@ -18,10 +18,8 @@ const createPlan = createSystemActivityPlanBuilderFactory("swim", [
  */
 export const EASY_SWIM: RecordingServiceActivityPlan = {
   id: "3f6a7b8c-9d0e-1f2a-3b4c-5d6e7f8a9b0c",
-  version: "3.0",
   name: "Easy Swim",
   description: "Comfortable continuous swim focusing on technique and aerobic base",
-  activity_category: "swim",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({
@@ -52,10 +50,8 @@ export const EASY_SWIM: RecordingServiceActivityPlan = {
  */
 export const SPRINT_INTERVALS_SWIM: RecordingServiceActivityPlan = {
   id: "4a7b8c9d-0e1f-2a3b-4c5d-6e7f8a9b0c1d",
-  version: "3.0",
   name: "Sprint Intervals",
   description: "High-intensity sprint intervals for speed development",
-  activity_category: "swim",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({
@@ -114,10 +110,8 @@ export const SPRINT_INTERVALS_SWIM: RecordingServiceActivityPlan = {
  */
 export const THRESHOLD_SWIM: RecordingServiceActivityPlan = {
   id: "5b8c9d0e-1f2a-3b4c-5d6e-7f8a9b0c1d2e",
-  version: "3.0",
   name: "Threshold Set",
   description: "Sustained threshold efforts for lactate tolerance",
-  activity_category: "swim",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({
@@ -159,10 +153,8 @@ export const THRESHOLD_SWIM: RecordingServiceActivityPlan = {
  */
 export const TECHNIQUE_SWIM: RecordingServiceActivityPlan = {
   id: "6c9d0e1f-2a3b-4c5d-6e7f-8a9b0c1d2e3f",
-  version: "3.0",
   name: "Technique Focus",
   description: "Technical swimming session focusing on stroke mechanics",
-  activity_category: "swim",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({
@@ -216,10 +208,8 @@ export const TECHNIQUE_SWIM: RecordingServiceActivityPlan = {
  */
 export const ENDURANCE_SWIM: RecordingServiceActivityPlan = {
   id: "7d0e1f2a-3b4c-5d6e-7f8a-9b0c1d2e3f4a",
-  version: "3.0",
   name: "Endurance Set",
   description: "Long aerobic swim for endurance base building",
-  activity_category: "swim",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({
@@ -267,10 +257,8 @@ export const ENDURANCE_SWIM: RecordingServiceActivityPlan = {
  */
 export const OPTION_1_FAVORITE_SWIM: RecordingServiceActivityPlan = {
   id: "8d5e1b64-9b22-4f74-a5e2-5cf05d85cc50",
-  version: "3.0",
   name: "Option 1 (My favorite – 4,400 m)",
   description: "A 4,400 m swim with Zone 3 endurance work and alternating threshold efforts.",
-  activity_category: "swim",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({

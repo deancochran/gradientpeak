@@ -27,7 +27,7 @@ const TIME_PRESETS = [
   { label: "Evening", value: "18:00" },
 ] as const;
 
-const workoutTitleSchema = z.object({
+const activityTitleSchema = z.object({
   title: z.string(),
 });
 
@@ -50,7 +50,7 @@ type TrainingPlanBuilderEventEditorProps = {
 };
 
 function getEventTitle(event: TrainingPlanBuilderSession) {
-  return event.eventOverrides?.title || event.activityPlan?.name || "Unassigned workout";
+  return event.eventOverrides?.title || event.activityPlan?.name || "Unassigned activity";
 }
 
 function getEventMeta(
@@ -182,13 +182,13 @@ export function TrainingPlanBuilderEventCard({
         metrics={metrics}
         onPress={onEdit}
         scheduleLabel={scheduleLabel}
-        statusLabel={!event.activityPlan ? "Needs workout" : null}
+        statusLabel={!event.activityPlan ? "Needs activity" : null}
         subtitle={meta || null}
-        testID={`builder-timeline-workout-${event.localId}`}
+        testID={`builder-timeline-activity-${event.localId}`}
         title={getEventTitle(event)}
       />
       {event.activityPlan ? (
-        <View className="gap-2" testID={`builder-workout-actions-${event.localId}`}>
+        <View className="gap-2" testID={`builder-activity-actions-${event.localId}`}>
           <View className={useVerticalLayout ? "gap-2" : "flex-row gap-2"}>
             <EventAction label="Edit" onPress={onEdit} />
             <EventAction label="Duplicate" onPress={onDuplicate} />
@@ -276,22 +276,22 @@ export function TrainingPlanBuilderEventEditor({
         BUILDER_WEEKDAY_NAMES.slice(6),
       ]
     : [BUILDER_WEEKDAY_NAMES];
-  const titlePlaceholder = event.activityPlan?.name ?? "Unassigned workout";
+  const titlePlaceholder = event.activityPlan?.name ?? "Unassigned activity";
   const title = event.eventOverrides?.title ?? "";
-  const workoutTitleForm = useZodForm({
-    schema: workoutTitleSchema,
+  const activityTitleForm = useZodForm({
+    schema: activityTitleSchema,
     values: { title },
   });
-  const workoutTitle = useWatch({
-    control: workoutTitleForm.control,
+  const activityTitle = useWatch({
+    control: activityTitleForm.control,
     name: "title",
   });
 
   useEffect(() => {
-    if (workoutTitle !== title) {
-      updateOverride("title", workoutTitle);
+    if (activityTitle !== title) {
+      updateOverride("title", activityTitle);
     }
-  }, [title, updateOverride, workoutTitle]);
+  }, [title, updateOverride, activityTitle]);
 
   const setWeekday = (weekdayIndex: number) => {
     updateEvent({ offsetDays: weekOffset + weekdayIndex });
@@ -303,7 +303,7 @@ export function TrainingPlanBuilderEventEditor({
     ? {
         id: event.activityPlan.id,
         name: event.activityPlan.name,
-        activityType: "other" as const,
+        activity_category: "other" as const,
         estimatedDuration: event.activityPlan.estimatedDurationSeconds ?? undefined,
         estimatedTss: event.activityPlan.estimatedTss ?? undefined,
       }
@@ -311,11 +311,11 @@ export function TrainingPlanBuilderEventEditor({
 
   return (
     <View className="gap-4 pb-1" testID="builder-session-editor-modal">
-      <Form {...workoutTitleForm}>
+      <Form {...activityTitleForm}>
         <FormTextField
           className="border-0 bg-transparent px-0 text-2xl font-semibold text-foreground"
-          control={workoutTitleForm.control}
-          label="Workout title"
+          control={activityTitleForm.control}
+          label="Activity title"
           name="title"
           placeholder={titlePlaceholder}
           testId="builder-session-editor-title"
@@ -330,41 +330,41 @@ export function TrainingPlanBuilderEventEditor({
             variant="compact"
           />
           <Pressable
-            accessibilityLabel="Reassign workout"
+            accessibilityLabel="Reassign activity"
             accessibilityRole="button"
             className="min-h-11 justify-center self-start rounded-full px-2 py-1"
             onPress={() => onOpenActivityPicker(event.localId)}
-            testID="builder-session-reassign-workout"
+            testID="builder-session-reassign-activity"
           >
-            <Text className="text-xs font-semibold text-primary">Reassign workout</Text>
+            <Text className="text-xs font-semibold text-primary">Reassign activity</Text>
           </Pressable>
         </View>
       ) : fallbackActivity ? (
         <View className="gap-2">
           <ActivityPlanCard
-            activity={fallbackActivity}
+            cardData={fallbackActivity}
             testID="builder-session-editor-activity"
             variant="compact"
           />
           <Pressable
-            accessibilityLabel="Reassign workout"
+            accessibilityLabel="Reassign activity"
             accessibilityRole="button"
             className="min-h-11 justify-center self-start rounded-full px-2 py-1"
             onPress={() => onOpenActivityPicker(event.localId)}
-            testID="builder-session-reassign-workout"
+            testID="builder-session-reassign-activity"
           >
-            <Text className="text-xs font-semibold text-primary">Reassign workout</Text>
+            <Text className="text-xs font-semibold text-primary">Reassign activity</Text>
           </Pressable>
         </View>
       ) : (
         <Pressable
-          accessibilityLabel="Choose workout"
+          accessibilityLabel="Choose activity"
           accessibilityRole="button"
           className="min-h-11 rounded-2xl border border-dashed border-border px-4 py-3"
           onPress={() => onOpenActivityPicker(event.localId)}
-          testID="builder-session-assign-workout"
+          testID="builder-session-assign-activity"
         >
-          <Text className="text-sm font-medium text-foreground">Choose workout</Text>
+          <Text className="text-sm font-medium text-foreground">Choose activity</Text>
         </Pressable>
       )}
 
@@ -373,7 +373,7 @@ export function TrainingPlanBuilderEventEditor({
           <Text className="text-sm font-semibold text-muted-foreground">Week</Text>
           <View className="flex-row items-center gap-3">
             <Pressable
-              accessibilityLabel="Move workout to previous week"
+              accessibilityLabel="Move activity to previous week"
               accessibilityRole="button"
               accessibilityState={{ disabled: weekIndex <= 0 }}
               className="h-11 w-11 items-center justify-center rounded-full bg-muted/60 disabled:opacity-40"
@@ -386,7 +386,7 @@ export function TrainingPlanBuilderEventEditor({
               Week {weekIndex + 1}
             </Text>
             <Pressable
-              accessibilityLabel="Move workout to next week"
+              accessibilityLabel="Move activity to next week"
               accessibilityRole="button"
               className="h-11 w-11 items-center justify-center rounded-full bg-muted/60"
               onPress={() => moveWeek(1)}
@@ -398,7 +398,7 @@ export function TrainingPlanBuilderEventEditor({
 
         <View className="gap-2">
           <Text className="text-sm font-semibold text-muted-foreground">Day</Text>
-          <View accessibilityLabel="Workout day" accessibilityRole="radiogroup" className="gap-1">
+          <View accessibilityLabel="Activity day" accessibilityRole="radiogroup" className="gap-1">
             {weekdayRows.map((weekdays) => (
               <View className="flex-row gap-1" key={weekdays.join("-")}>
                 {weekdays.map((weekday) => {
@@ -423,7 +423,7 @@ export function TrainingPlanBuilderEventEditor({
 
         <View className="gap-2">
           <Text className="text-sm font-semibold text-muted-foreground">Time</Text>
-          <View accessibilityLabel="Workout time" accessibilityRole="radiogroup" className="gap-2">
+          <View accessibilityLabel="Activity time" accessibilityRole="radiogroup" className="gap-2">
             <View className={useVerticalLayout ? "gap-2" : "flex-row gap-2"}>
               <ChoicePill
                 allowTextWrap={useVerticalLayout}
@@ -460,7 +460,7 @@ export function TrainingPlanBuilderEventEditor({
       </View>
       {event.activityPlan ? (
         <View className="gap-2">
-          <Text className="text-sm font-semibold text-muted-foreground">Workout actions</Text>
+          <Text className="text-sm font-semibold text-muted-foreground">Activity actions</Text>
           <View className={useVerticalLayout ? "gap-2" : "flex-row gap-2"}>
             <EventAction label="Duplicate" onPress={() => onDuplicate(event.localId)} />
             <EventAction

@@ -9,7 +9,7 @@ describe("buildAthleteIntelligenceModel", () => {
 
     expect(athleteIntelligenceModelInputSchema.safeParse(model).success).toBe(true);
     expect(model.metricEvidence[0]?.value.evidenceSourceIds).toEqual(["metric:ftp"]);
-    expect(model.goals[0]?.goalSport).toBe("run");
+    expect(model.goals[0]?.goalActivityCategory).toBe("run");
     expect(model.readCoverage).toEqual({
       metrics: { state: "complete", reason: null },
       activities: { state: "complete", reason: null },

@@ -62,7 +62,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private isActive = false;
   private gpsRecordingEnabled = true;
   private gpsSpeedFallbackEnabled = true;
-  private activityCategory?: RecordingActivityCategory; // Track activity type for calorie calculation
+  private activityCategory?: RecordingActivityCategory; // Track activity category for calorie calculation
 
   // === Core Components ===
   private buffer: DataBuffer; // 60-second rolling window for calculations
@@ -1165,7 +1165,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       return;
     }
 
-    // TIER 3: Heart Rate + Activity Type
+    // TIER 3: Heart Rate + Activity Category
     if (this.metrics.avgHeartRate > 0 && this.activityCategory) {
       const _age = this.profile.age || 35;
 
@@ -1203,7 +1203,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       return;
     }
 
-    // TIER 4: Heart Rate only (no activity type)
+    // TIER 4: Heart Rate only (no activity category)
     if (this.metrics.avgHeartRate > 0) {
       const age = this.profile.age || 35;
 
@@ -1217,11 +1217,11 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       return;
     }
 
-    // TIER 5: Distance + Activity Type
+    // TIER 5: Distance + Activity Category
     if (this.totalDistance > 0 && this.activityCategory) {
       const distanceKm = this.totalDistance / 1000;
 
-      // Calories per km by activity type
+      // Calories per km by activity category
       const caloriesPerKm: Record<string, number> = {
         run: weight * 1.0, // ~1 kcal/kg/km
         walk: weight * 0.5, // ~0.5 kcal/kg/km
@@ -1236,7 +1236,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       return;
     }
 
-    // TIER 6: Time + Activity Type fallback
+    // TIER 6: Time + Activity Category fallback
     if (this.activityCategory) {
       // Use moderate MET values as fallback
       const fallbackMETs: Record<string, number> = {

@@ -6,8 +6,7 @@ import {
   ALL_SAMPLE_PLANS,
   OTHER_LONG_ENDURANCE_ELLIPTICAL,
   OTHER_THRESHOLD_ROW,
-  RUN_BIKE_RUN_TRANSITION_PRACTICE,
-  SPRINT_TRIATHLON_BRICK,
+  SAMPLE_MULTISPORT_COMPONENT_ACTIVITIES,
   SYSTEM_TEMPLATES,
   SYSTEM_TRACK_RUN_WORKOUTS,
   type SystemTrainingPlanTemplate,
@@ -78,11 +77,11 @@ describe("system activity-template catalog", () => {
       const structure = plan.structure as {
         durationWeeks?: { recommended?: number };
         experienceLevel?: string[];
-        sport?: string[];
+        activity_category?: string[];
       };
 
-      expect(Array.isArray(structure.sport)).toBe(true);
-      expect(structure.sport?.length).toBeGreaterThan(0);
+      expect(Array.isArray(structure.activity_category)).toBe(true);
+      expect(structure.activity_category?.length).toBeGreaterThan(0);
       expect(Array.isArray(structure.experienceLevel)).toBe(true);
       expect(structure.experienceLevel?.length).toBeGreaterThan(0);
       expect(structure.durationWeeks?.recommended).toBeGreaterThan(0);
@@ -97,7 +96,6 @@ describe("system activity-template catalog", () => {
 
   it("keeps every shipped system activity template current-schema compatible", () => {
     for (const template of SYSTEM_TEMPLATES) {
-      expect(template.version).toBe("3.0");
       expect(() => activityPlanStructureSchemaV3.parse(template.structure)).not.toThrow();
     }
   });
@@ -121,7 +119,7 @@ describe("system activity-template catalog", () => {
       .update(JSON.stringify(identityManifest))
       .digest("hex");
 
-    expect(identityHash).toBe("b81df7b23209d366345aa0520678321d24f53c203fd8599c69fd6efe294e33c3");
+    expect(identityHash).toBe("abc3165d6a456b90ef0fa85146c41e667d5f4c257e54fe74b9c9e1bb2eb9149c");
   });
 
   it("does not derive nested IDs from editable display names", () => {
@@ -148,44 +146,53 @@ describe("system activity-template catalog", () => {
     );
   });
 
-  it("ships canonical multisport composition and exact other projection coverage", () => {
+  it("ships single-activity-category replacement components and exact other projection coverage", () => {
     const catalog = buildSystemActivityTemplateCatalog();
     const byId = new Map(catalog.map((entry) => [entry.template_id, entry]));
 
+    expect(SAMPLE_MULTISPORT_COMPONENT_ACTIVITIES).toHaveLength(6);
     expect(
-      byId.get(required(SPRINT_TRIATHLON_BRICK.id, "missing sprint triathlon brick id"))
-        ?.category_composition,
-    ).toEqual(["swim", "bike", "run"]);
-    expect(
-      byId.get(required(RUN_BIKE_RUN_TRANSITION_PRACTICE.id, "missing duathlon brick id"))
-        ?.category_composition,
-    ).toEqual(["run", "bike", "run"]);
+      SAMPLE_MULTISPORT_COMPONENT_ACTIVITIES.every(
+        (template) => activityPlanStructureSchemaV3.safeParse(template.structure).success,
+      ),
+    ).toBe(true);
     expect(byId.get(required(OTHER_THRESHOLD_ROW.id, "missing other threshold id"))).toMatchObject({
-      sport: "other",
+      activity_category: "other",
       session_archetype: "threshold",
       training_intent: "threshold_development",
     });
     expect(
       byId.get(required(OTHER_LONG_ENDURANCE_ELLIPTICAL.id, "missing other long endurance id")),
     ).toMatchObject({
-      sport: "other",
+      activity_category: "other",
       session_archetype: "long_endurance",
       training_intent: "durable_endurance",
     });
   });
 
-  it("uses the new multisport IDs for the full weekly brick progression", () => {
+  it("schedules independent single-activity-category components on each same-day base session", () => {
     const triathlon = ALL_SAMPLE_PLANS.find((plan) => plan.name.startsWith("Sprint Triathlon"));
-    const brickSessions = triathlon?.structure.sessions.filter((session) =>
-      [SPRINT_TRIATHLON_BRICK.id, RUN_BIKE_RUN_TRANSITION_PRACTICE.id].includes(
-        session.activity_plan_id,
-      ),
+    const componentIds = new Set(SAMPLE_MULTISPORT_COMPONENT_ACTIVITIES.map((plan) => plan.id));
+    const componentSessions = triathlon?.structure.sessions.filter((session) =>
+      componentIds.has(session.activity_plan_id),
     );
-    expect(brickSessions).toHaveLength(10);
-    expect(brickSessions?.every((session) => session.offset_days % 7 === 6)).toBe(true);
+    expect(componentSessions).toHaveLength(30);
+    expect(componentSessions?.every((session) => session.offset_days % 7 === 6)).toBe(true);
+    expect(
+      componentSessions?.reduce((counts, session) => {
+        counts.set(session.offset_days, (counts.get(session.offset_days) ?? 0) + 1);
+        return counts;
+      }, new Map<number, number>()),
+    ).toEqual(new Map(Array.from({ length: 10 }, (_, week) => [week * 7 + 6, 3])));
   });
 
-  it("keeps shipped track run workouts distance-based", () => {
+  it("keeps every shipped system activity template executable", () => {
+    for (const template of SYSTEM_TEMPLATES) {
+      expect(activityPlanStructureSchemaV3.safeParse(template.structure).success).toBe(true);
+    }
+  });
+
+  it("keeps shipped track run activities distance-based", () => {
     expect(SYSTEM_TRACK_RUN_WORKOUTS.length).toBeGreaterThan(0);
 
     for (const template of SYSTEM_TRACK_RUN_WORKOUTS) {

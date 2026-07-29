@@ -18,22 +18,24 @@ type Story = StoryObj<typeof meta>;
 
 export const Playground: Story = {
   render: () => {
-    const [value, setValue] = useState<string>(radioGroupFixtures.sport.value);
+    const [value, setValue] = useState<string>(radioGroupFixtures.activityCategory.value);
 
     return (
       <RadioGroup
-        id={radioGroupFixtures.sport.id}
+        id={radioGroupFixtures.activityCategory.id}
         onValueChange={(nextValue) => setValue(nextValue)}
-        testId={radioGroupFixtures.sport.testId}
+        testId={radioGroupFixtures.activityCategory.testId}
         value={value}
       >
-        {radioGroupFixtures.sport.options.map((option) => (
+        {radioGroupFixtures.activityCategory.options.map((option) => (
           <div key={option.value} className="flex items-center gap-2">
             <RadioGroupItem
-              id={`${radioGroupFixtures.sport.id}-${option.value}`}
+              id={`${radioGroupFixtures.activityCategory.id}-${option.value}`}
               value={option.value}
             />
-            <Label htmlFor={`${radioGroupFixtures.sport.id}-${option.value}`}>{option.label}</Label>
+            <Label htmlFor={`${radioGroupFixtures.activityCategory.id}-${option.value}`}>
+              {option.label}
+            </Label>
           </div>
         ))}
       </RadioGroup>
@@ -42,7 +44,7 @@ export const Playground: Story = {
   play: async ({ canvasElement }) => {
     await exerciseRadioGroupStory({
       canvasElement,
-      nextOptionLabel: radioGroupFixtures.sport.options[0].label,
+      nextOptionLabel: radioGroupFixtures.activityCategory.options[0].label,
     });
   },
 };

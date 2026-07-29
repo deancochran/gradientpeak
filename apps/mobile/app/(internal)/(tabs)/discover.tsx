@@ -185,7 +185,7 @@ export default function DiscoverPage() {
   const trainingPlansInfiniteQuery = api.trainingPlans.listTemplates.useInfiniteQuery(
     {
       search: validatedSearchQuery || undefined,
-      sport: trainingPlanFilters.sport || undefined,
+      activity_category: trainingPlanFilters.activity_category || undefined,
       experience_level: trainingPlanFilters.experienceLevel || undefined,
       min_weeks: trainingPlanFilters.minWeeks || undefined,
       max_weeks: trainingPlanFilters.maxWeeks || undefined,

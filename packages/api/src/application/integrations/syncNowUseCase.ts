@@ -1,12 +1,23 @@
 import { providerHasCapability } from "@repo/core";
-import type { DrizzleDbClient, PublicIntegrationProvider } from "@repo/db";
+import { type DrizzleDbClient, type PublicIntegrationProvider, schema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
+import { and, asc, eq, gte, isNotNull, lte } from "drizzle-orm";
 import type { DrizzleTransactionClient } from "../../db";
 import {
   createIntegrationsRepositories,
   createProviderSyncRepository,
 } from "../../infrastructure/repositories";
+import {
+  hasWahooPlannedActivityScopes,
+  hasWahooRouteMirrorScopes,
+} from "../../lib/integrations/wahoo/planned-activity-scopes";
 import { logger } from "../../lib/logger";
+import { enqueueWahooGroupEventRouteDeliveryReconcile } from "../../lib/provider-sync/event-delivery/wahoo-group-event-route-delivery";
+import { enqueueWahooOwnedRouteReconcile } from "../../lib/provider-sync/owned-routes";
+import {
+  enqueuePlannedActivitySyncAfterCalendarMutation,
+  type PlannedActivityQueueResult,
+} from "../../lib/provider-sync/planned-activities";
 import type { ProviderSyncRepository } from "../../repositories/provider-sync-repository";
 import { OnboardingProviderEnrichmentService } from "../onboarding-provider-enrichment";
 import { supportsActivityHistorySync } from "./syncOverviewUseCase";
@@ -123,5 +134,68 @@ export async function syncIntegrationNow(input: {
     trigger: "manual",
   });
 
-  return { ...historySync, setupRefresh };
+  let plannedActivitySync: PlannedActivityQueueResult | null = null;
+  let groupEventRouteDeliverySync: { jobId: string; queued: boolean } | null = null;
+  let ownedRouteSync: { jobId: string; queued: boolean } | null = null;
+  if (input.provider === "wahoo") {
+    if (hasWahooRouteMirrorScopes(grant?.scope)) {
+      ownedRouteSync = await enqueueWahooOwnedRouteReconcile({
+        integrationGeneration: integration.generation,
+        integrationId: integration.id,
+        profileId: input.profileId,
+        providerSyncRepository: createProviderSyncRepository({ db: input.db }),
+        trigger: "manual",
+      });
+      groupEventRouteDeliverySync = await enqueueWahooGroupEventRouteDeliveryReconcile({
+        integrationGeneration: integration.generation,
+        integrationId: integration.id,
+        profileId: input.profileId,
+        providerSyncRepository: createProviderSyncRepository({ db: input.db }),
+        trigger: "manual",
+      });
+    }
+    if (!hasWahooPlannedActivityScopes(grant?.scope)) {
+      plannedActivitySync = {
+        affectedCount: 0,
+        error: "Reconnect Wahoo to grant planned activity permissions",
+        operation: "publish",
+        queued: false,
+        success: false,
+      };
+    } else {
+      const windowStart = new Date();
+      windowStart.setUTCHours(0, 0, 0, 0);
+      const windowEnd = new Date(windowStart);
+      windowEnd.setUTCDate(windowEnd.getUTCDate() + 7);
+      windowEnd.setUTCMilliseconds(windowEnd.getUTCMilliseconds() - 1);
+      const events = await input.db
+        .select({ id: schema.events.id })
+        .from(schema.events)
+        .where(
+          and(
+            eq(schema.events.profile_id, input.profileId),
+            eq(schema.events.event_type, "planned"),
+            eq(schema.events.status, "scheduled"),
+            isNotNull(schema.events.activity_plan_id),
+            gte(schema.events.starts_at, windowStart),
+            lte(schema.events.starts_at, windowEnd),
+          ),
+        )
+        .orderBy(asc(schema.events.starts_at), asc(schema.events.id))
+        .limit(100);
+      plannedActivitySync = await enqueuePlannedActivitySyncAfterCalendarMutation({
+        db: input.db,
+        eventIds: events.map((event) => event.id),
+        operation: "publish",
+        profileId: input.profileId,
+      });
+    }
+  }
+  return {
+    ...historySync,
+    groupEventRouteDeliverySync,
+    ownedRouteSync,
+    setupRefresh,
+    plannedActivitySync,
+  };
 }

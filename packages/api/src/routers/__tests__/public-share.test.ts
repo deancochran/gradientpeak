@@ -63,7 +63,7 @@ describe("publicShareRouter", () => {
             id: "00000000-0000-4000-8000-000000000004",
             ordinal: 0,
             role: "activity",
-            category: "bike",
+            activity_category: "bike",
             startOffsetMs: 0,
             endOffsetMs: 4_500_000,
             summary: {
@@ -106,7 +106,7 @@ describe("publicShareRouter", () => {
     expect(activity?.current_artifact).not.toHaveProperty("path");
   });
 
-  it("returns only modern V3 public workout fields", async () => {
+  it("returns only modern V3 public activity-plan fields", async () => {
     const id = "00000000-0000-4000-8000-000000000010";
     const structure = activityPlanStructureSchemaV3.parse({
       version: 3,
@@ -114,7 +114,7 @@ describe("publicShareRouter", () => {
         {
           id: "00000000-0000-4000-8000-000000000011",
           role: "activity",
-          category: "run",
+          activity_category: "run",
           name: "Run",
           intervals: [
             {
@@ -156,10 +156,14 @@ describe("publicShareRouter", () => {
       },
     ]);
 
-    const workout = await caller.workout({ id });
+    const activityPlan = await caller.activityPlan({ id });
 
-    expect(workout).toMatchObject({ id, structure, structure_hash: `v1:sha256:${"a".repeat(64)}` });
-    expect(workout).not.toHaveProperty("activity_category");
-    expect(workout).not.toHaveProperty("version");
+    expect(activityPlan).toMatchObject({
+      id,
+      structure,
+      structure_hash: `v1:sha256:${"a".repeat(64)}`,
+    });
+    expect(activityPlan).not.toHaveProperty("activity_category");
+    expect(activityPlan).not.toHaveProperty("version");
   });
 });

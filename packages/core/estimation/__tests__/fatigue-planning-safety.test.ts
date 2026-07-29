@@ -17,7 +17,7 @@ describe("fatigue planning language", () => {
     expect(prediction.weeklyProjection.isSafe).toBeNull();
     expect(prediction.recoveryPlan).toEqual({
       daysToRecover: null,
-      nextHardWorkoutDate: null,
+      nextHardActivityDate: null,
       suggestedRestDays: null,
     });
     expect(userFacingText).not.toMatch(

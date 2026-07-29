@@ -21,7 +21,7 @@ describe("mapAthletePreferencesToCreationDefaults", () => {
         max_sessions_per_week: 5,
         max_single_session_duration_minutes: 100,
         max_weekly_duration_minutes: 420,
-        sport_overrides: {
+        activity_category_overrides: {
           strength: { max_sessions_per_week: 2, max_weekly_duration_minutes: 90 },
         },
       },
@@ -55,7 +55,7 @@ describe("mapAthletePreferencesToCreationDefaults", () => {
       max_sessions_per_week: 5,
       max_single_session_duration_minutes: 100,
       max_weekly_duration_minutes: 420,
-      sport_overrides: {
+      activity_category_overrides: {
         strength: { max_sessions_per_week: 2, max_weekly_duration_minutes: 90 },
       },
     });

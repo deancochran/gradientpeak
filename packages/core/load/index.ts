@@ -1,4 +1,6 @@
 export * from "./common-load-history";
+export * from "./common-load-projection";
+export * from "./common-load-recommendation";
 export * from "./common-relative-load";
 export * from "./form";
 export * from "./heart-rate-zone-stress";

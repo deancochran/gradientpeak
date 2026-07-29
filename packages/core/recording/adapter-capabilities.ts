@@ -1,5 +1,20 @@
-import type { FTMSFeatures, FtmsControlMode, FtmsMachineType } from "@deancochran/ftms";
+import type { FTMSFeatures, FtmsMachineType } from "@deancochran/ftms";
 import type { MetricFamily, MetricSourceType } from "../schemas/recording-session";
+
+/** Product-facing trainer modes; these are application policy, not FTMS wire values. */
+export type FtmsControlMode =
+  | "status"
+  | "erg"
+  | "free_ride"
+  | "grade"
+  | "inclination"
+  | "resistance"
+  | "speed"
+  | "target_heart_rate"
+  | "target_cadence"
+  | "workout_goal"
+  | "calibration"
+  | "machine_state";
 
 export type RecorderHardwareTransport =
   | "native_mobile"

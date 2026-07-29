@@ -10,7 +10,7 @@ describe("activity load presentation", () => {
   const provenance = {
     model: "gradientpeak_relative_load" as const,
     version: "1" as const,
-    sport: "run" as const,
+    activity_category: "run" as const,
     method: "run_pace_threshold" as const,
     quality: {
       source: "validated_test" as const,
@@ -63,7 +63,7 @@ describe("activity load presentation", () => {
     ).toContain("Multi-ride Critical Power estimate");
   });
 
-  it("shows stale estimate provenance and sport guidance", () => {
+  it("shows stale estimate provenance and activity_category guidance", () => {
     expect(
       formatCalibrationQuality(
         {
@@ -122,7 +122,7 @@ describe("activity load presentation", () => {
       status: "unavailable" as const,
       model: "gradientpeak_relative_load" as const,
       version: "1" as const,
-      sport: "other" as const,
+      activity_category: "other" as const,
       method: null,
       quality: null,
       thresholdEvidence: null,
@@ -144,7 +144,7 @@ describe("activity load presentation", () => {
       status: "unavailable" as const,
       model: "gradientpeak_relative_load" as const,
       version: "1" as const,
-      sport: "run" as const,
+      activity_category: "run" as const,
       method: "heart_rate_zones" as const,
       quality: {
         source: "validated_test" as const,
@@ -196,7 +196,7 @@ describe("activity load presentation", () => {
         evidenceFingerprint: null,
         reason: "threshold_missing",
       })?.diagnostic?.summary,
-    ).toContain("sport-specific LTHR is missing");
+    ).toContain("activity-category-specific LTHR is missing");
   });
 
   it("uses a canonical unavailable HR segment for an unavailable parent aggregate", () => {
@@ -204,7 +204,7 @@ describe("activity load presentation", () => {
       status: "unavailable" as const,
       model: "gradientpeak_relative_load" as const,
       version: "1" as const,
-      sport: "run" as const,
+      activity_category: "run" as const,
       method: "heart_rate_zones" as const,
       quality: null,
       thresholdEvidence: null,
@@ -231,6 +231,6 @@ describe("activity load presentation", () => {
     };
     expect(
       getCommonLoadPresentation(aggregate, { segmentCommonLoads: [segment] })?.diagnostic?.summary,
-    ).toContain("sport-specific LTHR is missing");
+    ).toContain("activity-category-specific LTHR is missing");
   });
 });

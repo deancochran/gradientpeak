@@ -12,6 +12,7 @@ import {
 import { renderNative, screen } from "../../../test/render-native";
 
 const settingsFixture: AthleteTrainingSettings = {
+  wahooEventRouteDeliveryEnabled: false,
   availability: { weekly_windows: [], hard_rest_days: [] },
   dose_limits: {
     min_sessions_per_week: 2,

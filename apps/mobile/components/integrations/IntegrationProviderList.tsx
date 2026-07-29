@@ -30,6 +30,7 @@ function getStatusTone(health: IntegrationOverviewItem["summary"]["health"]) {
       };
     case "queued":
     case "syncing":
+    case "disconnecting":
       return {
         container: "border-info/30 bg-info-subtle",
         text: "text-info-subtle-foreground",
@@ -47,7 +48,7 @@ function getProviderError(overview: IntegrationOverviewItem) {
     overview.providerHealth.lastError ??
     overview.activityHistory.lastError ??
     overview.setupData.lastError ??
-    overview.plannedWorkouts.lastError ??
+    overview.plannedActivities.lastError ??
     null
   );
 }
@@ -114,7 +115,8 @@ export function IntegrationProviderList({
       <View className="gap-2">
         {visibleIntegrations.map((integration) => {
           const pendingAction = pendingByProvider[integration.provider];
-          const isPending = pendingAction !== undefined;
+          const isDisconnecting = integration.providerHealth.status === "disconnecting";
+          const isPending = pendingAction !== undefined || isDisconnecting;
           const error = getProviderError(integration);
           const statusTone = getStatusTone(integration.summary.health);
 

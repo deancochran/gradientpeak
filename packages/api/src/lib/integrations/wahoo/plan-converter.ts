@@ -100,7 +100,7 @@ export interface ConvertOptions {
 }
 
 /**
- * Calculate total workout duration in seconds from structure
+ * Calculate total activity-plan duration in seconds from structure
  */
 export function calculateWorkoutDuration(structure: ActivityPlanStructureV3): number {
   return compileActivityPlanV3(structure).occurrences.reduce(
@@ -137,12 +137,12 @@ export function convertToWahooPlan(
   options: ConvertOptions,
 ): WahooPlanJson {
   const activityTypeMapping = toWahooTypes(options.activityType, {
-    hasRoute: options.hasRoute,
+    ...(options.hasRoute !== undefined ? { hasRoute: options.hasRoute } : {}),
   });
 
   if (!activityTypeMapping) {
     throw new Error(
-      `Activity type '${options.activityType}' is not supported by Wahoo. Only cycling and running activities can be synced.`,
+      `Activity category '${options.activityType}' is not supported by Wahoo. Only cycling and running activities can be synced.`,
     );
   }
 
@@ -174,7 +174,7 @@ export function convertToWahooPlan(
 
   if (requiresFtpHeader && !hasValidFtp) {
     throw new Error(
-      "A positive FTP is required to sync a workout with FTP-relative targets to Wahoo.",
+      "A positive FTP is required to sync a Wahoo workout resource with FTP-relative targets.",
     );
   }
 
@@ -190,14 +190,14 @@ export function convertToWahooPlan(
   };
 
   // Include only anchors consumed by the selected provider-visible targets.
-  if (hasValidFtp && requiresFtpHeader) {
-    plan.header.ftp = options.ftp;
+  if (hasValidFtp && requiresFtpHeader && options.ftp !== undefined) {
+    plan.header = { ...plan.header, ftp: options.ftp };
   }
-  if (hasValidMaxHr && requiresMaxHrHeader) {
-    plan.header.max_hr = options.max_hr;
+  if (hasValidMaxHr && requiresMaxHrHeader && options.max_hr !== undefined) {
+    plan.header = { ...plan.header, max_hr: options.max_hr };
   }
-  if (hasValidThresholdHr && requiresThresholdHrHeader) {
-    plan.header.threshold_hr = options.threshold_hr;
+  if (hasValidThresholdHr && requiresThresholdHrHeader && options.threshold_hr !== undefined) {
+    plan.header = { ...plan.header, threshold_hr: options.threshold_hr };
   }
 
   const stepNames = new Map(
@@ -287,7 +287,7 @@ function getTargetIncompatibility(
   ) {
     return {
       code: "unsupported_target",
-      message: `${target.type} targets are not supported for ${options.activityType} workouts`,
+      message: `${target.type} targets are not supported for Wahoo activity category '${options.activityType}'`,
     };
   }
 
@@ -475,7 +475,7 @@ function inferIntensityType(target: ActivityPlanTarget): WahooInterval["intensit
 
 /**
  * Validate that the plan structure is compatible with Wahoo
- * Note: This assumes activity type has already been validated with isWahooSupported
+ * Note: This assumes the Wahoo activity type has already been validated with isWahooSupported
  */
 export function validateWahooCompatibility(
   structure: ActivityPlanStructureV3,
@@ -483,9 +483,11 @@ export function validateWahooCompatibility(
 ): WahooCompatibilityResult {
   const readiness = getActivityPlanProviderReadiness({
     anchors: {
-      ftpWatts: options.ftp,
-      maxHeartRateBpm: options.max_hr,
-      thresholdHeartRateBpm: options.threshold_hr,
+      ...(options.ftp !== undefined ? { ftpWatts: options.ftp } : {}),
+      ...(options.max_hr !== undefined ? { maxHeartRateBpm: options.max_hr } : {}),
+      ...(options.threshold_hr !== undefined
+        ? { thresholdHeartRateBpm: options.threshold_hr }
+        : {}),
     },
     provider: "wahoo",
     structure,
@@ -507,15 +509,17 @@ export function validateWahooCompatibility(
     path: finding.path,
     reasonCode: finding.reasonCode,
     semantic: finding.semantic,
-    targetProjection: finding.targetProjection,
-    targetType: finding.targetType,
+    ...(finding.targetProjection !== undefined
+      ? { targetProjection: finding.targetProjection }
+      : {}),
+    ...(finding.targetType !== undefined ? { targetType: finding.targetType } : {}),
   }));
   const compiled = compileActivityPlanV3(structure);
   if (compiled.occurrences.length > 100) {
     findings.push({
       code: "invalid_plan",
       disposition: "unsupported",
-      message: `Workout has ${compiled.occurrences.length} compiled occurrences; Wahoo supports at most 100.`,
+      message: `Activity plan has ${compiled.occurrences.length} compiled occurrences; Wahoo supports at most 100.`,
       path: ["structure", "segments"],
       reasonCode: "provider_occurrence_limit_exceeded",
       semantic: "provider",

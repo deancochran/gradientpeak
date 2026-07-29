@@ -10,7 +10,7 @@ import {
 } from "../load-series";
 
 const tssIdentity = {
-  sport: "cycling",
+  activity_category: "cycling",
   family: "tss" as const,
   method: "normalized_power",
   version: "1",
@@ -20,14 +20,14 @@ const tssIdentity = {
 describe("load-series contracts", () => {
   it("keeps threshold calibration out of stable TSS series identity", () => {
     const first = loadSeriesIdentityForActivityTss({
-      sport: "bike",
+      activity_category: "bike",
       method: "power_threshold",
       source: "activity_analysis",
       version: "1",
       calibration: { type: "ftp_watts", value: 250 },
     });
     const recalibrated = loadSeriesIdentityForActivityTss({
-      sport: "bike",
+      activity_category: "bike",
       method: "power_threshold",
       source: "activity_analysis",
       version: "1",
@@ -35,7 +35,7 @@ describe("load-series contracts", () => {
     });
 
     expect(first).toEqual({
-      sport: "bike",
+      activity_category: "bike",
       family: "tss",
       method: "power_threshold",
       sourceDefinition: "activity_analysis",
@@ -47,15 +47,15 @@ describe("load-series contracts", () => {
   it("parses a complete exact identity", () => {
     expect(loadSeriesIdentitySchema.parse(tssIdentity)).toEqual(tssIdentity);
     expect(loadSeriesIdentitySchema.safeParse({ ...tssIdentity, version: "" }).success).toBe(false);
-    expect(loadSeriesIdentitySchema.safeParse({ ...tssIdentity, sport: "all" }).success).toBe(
-      false,
-    );
+    expect(
+      loadSeriesIdentitySchema.safeParse({ ...tssIdentity, activity_category: "all" }).success,
+    ).toBe(false);
   });
 
   it.each([
     [{ ...tssIdentity, family: "trimp" as const }, "family"],
     [{ ...tssIdentity, family: "external_work_kj" as const }, "family"],
-    [{ ...tssIdentity, sport: "running" }, "sport"],
+    [{ ...tssIdentity, activity_category: "running" }, "activity_category"],
     [{ ...tssIdentity, method: "provider_tss" }, "method"],
     [{ ...tssIdentity, version: "2" }, "version"],
     [{ ...tssIdentity, sourceDefinition: "provider:threshold-250" }, "source"],

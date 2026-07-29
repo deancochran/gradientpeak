@@ -1429,8 +1429,11 @@ export async function discardFinalizedRecordingEvidence(input: {
   profileId: string;
   activityFilePath: string | null;
   streamArtifactPaths: string[];
+  now?: number;
 }): Promise<void> {
   if (!input.sessionId || !input.profileId) throw new Error("Recording evidence owner is required");
+  const now = input.now ?? Date.now();
+  if (!Number.isFinite(now)) throw new Error("Recording evidence discard time is invalid");
   const db = await getRecordingEvidenceDatabase();
   await db.withExclusiveTransactionAsync(async (tx) => {
     const session = (
@@ -1464,7 +1467,7 @@ export async function discardFinalizedRecordingEvidence(input: {
         streamArtifactPaths: input.streamArtifactPaths,
         cleanupPending: true,
         cleanupAttempts: 0,
-        nextCleanupAt: Date.now(),
+        nextCleanupAt: now,
       });
       await tx.runAsync(
         "UPDATE recording_evidence_quarantine SET payload = ? WHERE id = (SELECT MAX(id) FROM recording_evidence_quarantine WHERE session_id = ? AND reason = 'user-discarded-finalized-recording')",
@@ -1490,11 +1493,11 @@ export async function discardFinalizedRecordingEvidence(input: {
           leaseOwner: null,
           leaseToken: null,
           leaseExpiresAt: null,
-          updatedAt: new Date().toISOString(),
+          updatedAt: new Date(now).toISOString(),
         });
         await tx.runAsync(
           "UPDATE activity_submission_queue_jobs SET status = 'failed', retry_class = 'permanent', next_attempt_at = NULL, error_category = 'discarded', lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL, updated_at = ?, job_json = ? WHERE id = ?",
-          Date.now(),
+          now,
           JSON.stringify(discarded),
           row.id,
         );

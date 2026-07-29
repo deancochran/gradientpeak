@@ -11,12 +11,13 @@ export const loadFamilySchema = z.enum([
 ]);
 
 export const loadSeriesIdentitySchema = z.object({
-  sport: z
+  activity_category: z
     .string()
     .trim()
     .min(1)
-    .refine((sport) => sport !== "all", {
-      message: "Load-series identity must name one sport, not an all-sports aggregate",
+    .refine((activity_category) => activity_category !== "all", {
+      message:
+        "Load-series identity must name one activity category, not an all-category aggregate",
     }),
   family: loadFamilySchema,
   method: z.string().trim().min(1),
@@ -31,7 +32,7 @@ export function loadSeriesIdentityForActivityTss(
   identity: ActivityTssIdentity,
 ): LoadSeriesIdentity {
   return loadSeriesIdentitySchema.parse({
-    sport: identity.sport,
+    activity_category: identity.activity_category,
     family: "tss",
     method: identity.method,
     version: identity.version,
@@ -97,7 +98,7 @@ export interface LoadSeriesEligibility {
 
 export function sameLoadSeriesIdentity(a: LoadSeriesIdentity, b: LoadSeriesIdentity): boolean {
   return (
-    a.sport === b.sport &&
+    a.activity_category === b.activity_category &&
     a.family === b.family &&
     a.method === b.method &&
     a.version === b.version &&

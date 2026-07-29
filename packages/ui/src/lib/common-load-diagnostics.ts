@@ -16,7 +16,7 @@ export type CommonLoadDiagnostic = {
 function thresholdLabel(method: UnavailableCommonLoad["method"]): string {
   switch (method) {
     case "heart_rate_zones":
-      return "sport-specific LTHR";
+      return "activity-category-specific LTHR";
     case "power_threshold":
       return "FTP";
     case "critical_power_threshold":
@@ -34,7 +34,7 @@ function thresholdAction(method: UnavailableCommonLoad["method"], stale: boolean
   const verb = stale ? "Update" : "Add";
   switch (method) {
     case "heart_rate_zones":
-      return `${verb} a current sport-specific LTHR.`;
+      return `${verb} a current activity-category-specific LTHR.`;
     case "power_threshold":
       return `${verb} a current FTP measurement.`;
     case "critical_power_threshold":
@@ -128,8 +128,8 @@ export function getCommonLoadDiagnostic(
       };
     case "unsupported_modality":
       return {
-        summary: "This activity type is not supported for canonical Load.",
-        action: "Canonical Load is not available for this activity type.",
+        summary: "This activity category is not supported for canonical Load.",
+        action: "Canonical Load is not available for this activity category.",
         coveragePercent: null,
       };
     case "intensity_out_of_range":

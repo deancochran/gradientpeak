@@ -1,4 +1,4 @@
-import type { CanonicalSport } from "../schemas/sport";
+import type { CanonicalActivityCategory } from "../schemas/activity-category";
 import type { ActivityTarget, ActivityTargetType } from "../targets/schema";
 import { type CompiledActivityPlan, compileValidatedActivityPlanV3 } from "./compile";
 import type { ActivityPlanDuration, ActivityPlanStructureV3 } from "./v3-schema";
@@ -11,7 +11,7 @@ export type ActivityPlanIntensityBasis =
   | "unavailable";
 
 export type ActivityPlanPresentationOccurrence = {
-  category: CanonicalSport | null;
+  activity_category: CanonicalActivityCategory | null;
   duration: ActivityPlanDuration;
   globalOrdinal: number;
   intensityBasis: ActivityPlanIntensityBasis;
@@ -19,13 +19,13 @@ export type ActivityPlanPresentationOccurrence = {
   intervalId: string | null;
   normalizedIntensity: number | null;
   occurrenceId: string;
-  role: "activity" | "rest" | "transition";
+  role: "activity" | "rest";
 };
 
 export type ActivityPlanPresentationModel = {
-  categories: readonly CanonicalSport[];
   compiled: CompiledActivityPlan;
   occurrences: readonly ActivityPlanPresentationOccurrence[];
+  activity_category: CanonicalActivityCategory;
   stepCount: number;
   structure: ActivityPlanStructureV3;
 };
@@ -45,7 +45,7 @@ const targetPriority: Record<ActivityTargetType, number> = {
 
 type TargetRange = { maximum: number; minimum: number };
 type RelativeTargetOccurrence = {
-  category: CanonicalSport | null;
+  activity_category: CanonicalActivityCategory | null;
   targets: readonly ActivityTarget[];
 };
 
@@ -65,8 +65,11 @@ function formatTarget(target: ActivityTarget): string {
   return `${target.type} ${target.intensity}`;
 }
 
-function relativeRangeKey(category: CanonicalSport | null, targetType: ActivityTargetType): string {
-  return `${category ?? "none"}:${targetType}`;
+function relativeRangeKey(
+  activity_category: CanonicalActivityCategory | null,
+  targetType: ActivityTargetType,
+): string {
+  return `${activity_category ?? "none"}:${targetType}`;
 }
 
 function collectRelativeRanges(
@@ -76,7 +79,7 @@ function collectRelativeRanges(
   for (const occurrence of occurrences) {
     const target = selectEffortTarget(occurrence.targets);
     if (!target || !relativeEffortTypes.has(target.type)) continue;
-    const key = relativeRangeKey(occurrence.category, target.type);
+    const key = relativeRangeKey(occurrence.activity_category, target.type);
     const current = ranges.get(key);
     ranges.set(key, {
       minimum: current ? Math.min(current.minimum, target.intensity) : target.intensity,
@@ -88,7 +91,7 @@ function collectRelativeRanges(
 
 function normalizeTarget(
   target: ActivityTarget | null,
-  category: CanonicalSport | null,
+  activity_category: CanonicalActivityCategory | null,
   ranges: ReadonlyMap<string, TargetRange>,
 ): Pick<
   ActivityPlanPresentationOccurrence,
@@ -114,7 +117,7 @@ function normalizeTarget(
     };
   }
 
-  const range = ranges.get(relativeRangeKey(category, target.type));
+  const range = ranges.get(relativeRangeKey(activity_category, target.type));
   if (!range) {
     return {
       intensityBasis: "unavailable",
@@ -149,11 +152,11 @@ export function deriveActivityPlanPresentation(
   const occurrences = compiled.occurrences.map<ActivityPlanPresentationOccurrence>((occurrence) => {
     const intensity = normalizeTarget(
       selectEffortTarget(occurrence.targets),
-      occurrence.category,
+      occurrence.activity_category,
       ranges,
     );
     return {
-      category: occurrence.category,
+      activity_category: occurrence.activity_category,
       duration: occurrence.duration,
       globalOrdinal: occurrence.globalOrdinal,
       intervalId: occurrence.intervalId,
@@ -164,9 +167,9 @@ export function deriveActivityPlanPresentation(
   });
 
   return {
-    categories: compiled.categories,
     compiled,
     occurrences,
+    activity_category: compiled.activity_category,
     stepCount: occurrences.length,
     structure: parsed.data,
   };

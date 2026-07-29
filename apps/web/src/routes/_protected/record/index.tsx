@@ -19,7 +19,6 @@ import {
   Route as RouteIcon,
   ShieldAlert,
 } from "lucide-react";
-
 import { api } from "../../../lib/api/client";
 import { useTimerOnlyRecording } from "../../../lib/recording/provider";
 import { useBrowserRecordingAdapters } from "../../../lib/recording/use-browser-recording-adapters";
@@ -41,7 +40,7 @@ function RecordPage() {
   const lockedSnapshot = recording.state.reducer.snapshot;
   const effectiveLauncher = lockedSnapshot
     ? {
-        category: lockedSnapshot.activity.category,
+        activity_category: lockedSnapshot.activity.activity_category,
         gps: launcher.gps,
         ...(lockedSnapshot.activity.eventId != null
           ? { eventId: lockedSnapshot.activity.eventId }
@@ -63,12 +62,18 @@ function RecordPage() {
     { enabled: Boolean(effectiveLauncher.routeId) },
   );
   const selectedActivityPlanId = selectedEventQuery.data?.activity_plan?.id;
+  const selectedPlan = selectedEventQuery.data?.activity_plan;
+  const selectedPlanIsCanonical = Boolean(selectedPlan?.activity_category);
+  const selectedPlanActivityCategory = selectedPlan?.activity_category ?? null;
+  const selectedPlanQueryFailed = Boolean(effectiveLauncher.eventId) && selectedEventQuery.isError;
+  const selectedPlanUnavailable =
+    Boolean(effectiveLauncher.eventId) && selectedEventQuery.isSuccess && !selectedPlanIsCanonical;
   const hasActiveTimerSession =
     recording.state.reducer.lifecycle === "recording" ||
     recording.state.reducer.lifecycle === "paused";
   const canOpenTimerSession =
     recording.hydrationStatus === "ready" &&
-    (hasActiveTimerSession || !effectiveLauncher.eventId || Boolean(selectedActivityPlanId));
+    (hasActiveTimerSession || !effectiveLauncher.eventId || selectedPlanIsCanonical);
 
   const updateLauncher = (updates: Partial<typeof launcher>) => {
     if (lockedSnapshot) return;
@@ -87,7 +92,7 @@ function RecordPage() {
 
     if (!hasActiveTimerSession) {
       const configured = recording.configure({
-        category: effectiveLauncher.category,
+        activity_category: selectedPlanActivityCategory ?? effectiveLauncher.activity_category,
         eventId: effectiveLauncher.eventId,
         activityPlanId: selectedActivityPlanId,
         routeId: effectiveLauncher.routeId,
@@ -131,8 +136,10 @@ function RecordPage() {
                     <Button
                       key={option.value}
                       disabled={Boolean(lockedSnapshot)}
-                      variant={effectiveLauncher.category === option.value ? "default" : "outline"}
-                      onClick={() => updateLauncher({ category: option.value })}
+                      variant={
+                        effectiveLauncher.activity_category === option.value ? "default" : "outline"
+                      }
+                      onClick={() => updateLauncher({ activity_category: option.value })}
                     >
                       {option.label}
                     </Button>
@@ -141,7 +148,7 @@ function RecordPage() {
                 <p className="text-sm text-muted-foreground">
                   {
                     recordingActivityOptions.find(
-                      (option) => option.value === effectiveLauncher.category,
+                      (option) => option.value === effectiveLauncher.activity_category,
                     )?.description
                   }
                 </p>
@@ -241,12 +248,49 @@ function RecordPage() {
                 </div>
               </div>
             ) : null}
-            <StateRow label="Activity" value={effectiveLauncher.category} />
+            <StateRow label="Activity" value={effectiveLauncher.activity_category} />
             <StateRow label="GPS" value="disabled" />
             <StateRow
               label="Plan"
-              value={selectedEventQuery.data?.activity_plan?.name ?? "No plan attached"}
+              value={
+                selectedPlanQueryFailed
+                  ? "Unable to load plan"
+                  : selectedPlanUnavailable
+                    ? "Unavailable plan"
+                    : (selectedEventQuery.data?.activity_plan?.name ?? "No plan attached")
+              }
             />
+            {selectedPlanQueryFailed ? (
+              <div className="space-y-2 rounded-lg border border-destructive/40 p-3" role="alert">
+                <p className="font-medium">Unable to load the selected plan</p>
+                <p className="text-muted-foreground">
+                  Check your connection and retry without detaching the scheduled activity.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void selectedEventQuery.refetch()}
+                >
+                  Retry
+                </Button>
+              </div>
+            ) : null}
+            {selectedPlanUnavailable ? (
+              <div className="space-y-2 rounded-lg border border-destructive/40 p-3" role="alert">
+                <p className="font-medium">Selected plan unavailable for recording</p>
+                <p className="text-muted-foreground">
+                  This link points to an unavailable or invalid plan. Choose another plan or detach
+                  it before recording.
+                </p>
+                {!lockedSnapshot ? (
+                  <Button asChild variant="outline">
+                    <Link to="/record/plan" search={effectiveLauncher}>
+                      Change or detach plan
+                    </Link>
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
             <StateRow label="Route" value={selectedRouteQuery.data?.name ?? "No route attached"} />
             {effectiveLauncher.routeId ? (
               <Button asChild variant="outline" className="w-full">
@@ -270,9 +314,13 @@ function RecordPage() {
                 ? "Checking for saved timer…"
                 : hasActiveTimerSession
                   ? "Return to timer session"
-                  : effectiveLauncher.eventId && !selectedActivityPlanId
-                    ? "Loading selected plan…"
-                    : "Configure timer session"}
+                  : selectedPlanQueryFailed
+                    ? "Unable to load selected plan"
+                    : selectedPlanUnavailable
+                      ? "Selected plan unavailable"
+                      : effectiveLauncher.eventId && !selectedActivityPlanId
+                        ? "Loading selected plan…"
+                        : "Configure timer session"}
             </Button>
           </CardContent>
         </Card>

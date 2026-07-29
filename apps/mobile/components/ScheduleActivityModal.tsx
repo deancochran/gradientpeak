@@ -105,6 +105,7 @@ import { api } from "@/lib/api";
 import { refreshScheduleWithCallbacks } from "@/lib/scheduling/refreshScheduleViews";
 import { useTheme } from "@/lib/stores/theme-store";
 import { applyServerFormErrors, getErrorMessage } from "@/lib/utils/formErrors";
+import { isExistingEventActivityPlanEditable } from "./event/create/eventEditability";
 import { ConstraintValidator } from "./training-plan/modals/components/ConstraintValidator";
 
 const scheduleActivityModalFormSchema = z.object({
@@ -351,6 +352,10 @@ export function ScheduleActivityModal({
 
   // Use template if provided, otherwise use fetched plan.
   const displayPlan = isTemplate ? activityPlan : planDetails;
+  const selectedPlanIsExecutable = Boolean(displayPlan);
+  const preservesExistingPlan =
+    isEditMode && existingActivity?.activity_plan?.id === currentActivityPlanId;
+  const existingPlanReadOnly = isEditMode && !isExistingEventActivityPlanEditable(existingActivity);
 
   // Validate constraints in real-time (when training plan provided)
   const {
@@ -423,6 +428,7 @@ export function ScheduleActivityModal({
   };
 
   const submitEditWithScope = async (data: ScheduleActivityModalFormOutput, scope: EditScope) => {
+    if (existingPlanReadOnly) return;
     if (!eventId) {
       setRootFormError(form, new Error("Missing event ID"), "Failed to update activity.");
       return;
@@ -443,6 +449,7 @@ export function ScheduleActivityModal({
 
   const onSubmit = async (data: ScheduleActivityModalFormOutput) => {
     if (isEditMode) {
+      if (existingPlanReadOnly) return;
       if (recurringEditRequiresScope && !resolvedEditScope) {
         const message = "Choose whether to update one event, future events, or the entire series.";
         setRootFormError(form, new Error(message), message);
@@ -458,6 +465,14 @@ export function ScheduleActivityModal({
         form,
         new Error("Activity plan is unavailable"),
         "Failed to schedule activity.",
+      );
+      return;
+    }
+    if (!selectedPlanIsExecutable && !preservesExistingPlan) {
+      setRootFormError(
+        form,
+        new Error("Only executable single-activity-category plans can be scheduled."),
+        "Only executable single-activity-category plans can be scheduled.",
       );
       return;
     }
@@ -499,6 +514,8 @@ export function ScheduleActivityModal({
     !!currentActivityPlanId &&
     !isValidationPending &&
     !isSubmitting &&
+    !existingPlanReadOnly &&
+    (selectedPlanIsExecutable || preservesExistingPlan) &&
     (!recurringEditRequiresScope || !!localEditScope);
   const validationSummary = !trainingPlanId
     ? null
@@ -549,6 +566,23 @@ export function ScheduleActivityModal({
 
   if (!visible) {
     return null;
+  }
+
+  if (existingPlanReadOnly) {
+    return (
+      <AppFormModal onClose={onClose} testID="schedule-modal" title="Scheduled activity">
+        <View
+          accessibilityRole="alert"
+          className="gap-2 rounded-xl border border-border bg-muted/30 p-4"
+        >
+          <Text className="font-semibold text-foreground">This event is read-only on mobile</Text>
+          <Text className="text-sm text-muted-foreground">
+            Its linked plan is legacy or unavailable. Close to view the event, or remove it through
+            the event removal action.
+          </Text>
+        </View>
+      </AppFormModal>
+    );
   }
 
   if (!activityPlanId && !activityPlan && !eventId) {
@@ -627,6 +661,19 @@ export function ScheduleActivityModal({
               <Text className="text-sm text-muted-foreground">
                 Review the session shape before you save the activity.
               </Text>
+              {!selectedPlanIsExecutable && !preservesExistingPlan ? (
+                <View
+                  accessibilityRole="alert"
+                  className="rounded-lg border border-destructive/20 bg-destructive/10 p-3"
+                >
+                  <Text className="font-medium text-destructive">
+                    This plan cannot be scheduled
+                  </Text>
+                  <Text className="mt-1 text-sm text-destructive/80">
+                    Only executable single-activity-category plans can be scheduled.
+                  </Text>
+                </View>
+              ) : null}
             </View>
 
             <Form {...form}>

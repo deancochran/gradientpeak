@@ -1,5 +1,4 @@
 import {
-  ControlMode,
   decodeFtmsControlResponse,
   decodeFtmsFeatures,
   decodeSupportedHeartRateRange,
@@ -11,7 +10,6 @@ import {
   FTMS_MACHINE_STATUS_OPCODES,
   FTMS_RESULT_CODES,
   FTMS_SERVICE_UUIDS,
-  type FTMSControlEvent,
   type FTMSFeatures,
   type FTMSResponse,
   type FtmsControlRequest,
@@ -24,10 +22,19 @@ import { Buffer } from "buffer";
 import type { Device } from "react-native-ble-plx";
 import { decodeBase64ToBytes } from "./ble-bytes";
 import { DeviceGattQueueRegistry } from "./DeviceGattQueue";
-import type { RecordingTrainerCommandStatus } from "./types";
+import type { FtmsControlEvent, FtmsControllerMode, RecordingTrainerCommandStatus } from "./types";
 
-export type { FTMSControlEvent, FTMSFeatures, FTMSResponse };
-export { ControlMode };
+export type { FTMSFeatures, FTMSResponse };
+
+const FTMS_CONTROLLER_MODES = {
+  ERG: "erg",
+  SIM: "sim",
+  RESISTANCE: "resistance",
+  SPEED: "speed",
+  INCLINATION: "inclination",
+  HEART_RATE: "heart_rate",
+  CADENCE: "cadence",
+} as const satisfies Record<string, FtmsControllerMode>;
 
 export interface SimulationParams {
   windSpeed: number;
@@ -54,9 +61,9 @@ interface FTMSQueuedCommand {
   buffer: Uint8Array;
   requestOpCode: number;
   commandType: RecordingTrainerCommandStatus["commandType"];
-  controlType: FTMSControlEvent["controlType"];
+  controlType: FtmsControlEvent["controlType"];
   targetValue: number | undefined;
-  targetMode: ControlMode | undefined;
+  targetMode: FtmsControllerMode | undefined;
   context: NormalizedFTMSCommandContext;
   resolve: (value: boolean) => void;
   invalidated?: boolean;
@@ -78,9 +85,9 @@ const FTMS_WRITE_ABORTED_MESSAGE = "Control point write aborted";
 
 export class FTMSController {
   private readonly deviceId: string;
-  private currentControlMode: ControlMode | undefined;
+  private currentControlMode: FtmsControllerMode | undefined;
   private features?: FTMSFeatures;
-  public controlEvents: FTMSControlEvent[] = [];
+  public controlEvents: FtmsControlEvent[] = [];
   private commandQueue: FTMSQueuedCommand[] = [];
   private activeCommand: FTMSQueuedCommand | undefined;
   private isProcessingQueue = false;
@@ -231,7 +238,7 @@ export class FTMSController {
     return this.setTarget(
       "set_power",
       "power_target",
-      ControlMode.ERG,
+      FTMS_CONTROLLER_MODES.ERG,
       watts,
       this.features?.powerTargetSettingSupported,
       this.features?.powerRange,
@@ -247,7 +254,7 @@ export class FTMSController {
     return this.setTarget(
       "set_resistance",
       "resistance",
-      ControlMode.RESISTANCE,
+      FTMS_CONTROLLER_MODES.RESISTANCE,
       level,
       this.features?.resistanceTargetSettingSupported,
       this.features?.resistanceRange,
@@ -263,7 +270,7 @@ export class FTMSController {
     return this.setTarget(
       "set_speed",
       "speed",
-      ControlMode.SPEED,
+      FTMS_CONTROLLER_MODES.SPEED,
       speedKph,
       this.features?.speedTargetSettingSupported,
       this.features?.speedRange,
@@ -279,7 +286,7 @@ export class FTMSController {
     return this.setTarget(
       "set_incline",
       "inclination",
-      ControlMode.INCLINATION,
+      FTMS_CONTROLLER_MODES.INCLINATION,
       percent,
       this.features?.inclinationTargetSettingSupported,
       this.features?.inclinationRange,
@@ -295,7 +302,7 @@ export class FTMSController {
     return this.setTarget(
       "set_heart_rate",
       "heart_rate",
-      ControlMode.HEART_RATE,
+      FTMS_CONTROLLER_MODES.HEART_RATE,
       bpm,
       this.features?.heartRateTargetSettingSupported,
       this.features?.heartRateRange,
@@ -311,7 +318,7 @@ export class FTMSController {
     return this.setTarget(
       "set_cadence",
       "cadence",
-      ControlMode.CADENCE,
+      FTMS_CONTROLLER_MODES.CADENCE,
       rpm,
       this.features?.targetedCadenceSupported,
       undefined,
@@ -329,7 +336,7 @@ export class FTMSController {
       return this.failWithoutQueue(
         "set_simulation",
         normalized,
-        ControlMode.SIM,
+        FTMS_CONTROLLER_MODES.SIM,
         params.grade,
         this.disposed ? "Controller disposed" : "Trainer does not support indoor bike simulation",
       );
@@ -337,7 +344,7 @@ export class FTMSController {
       return this.failWithoutQueue(
         "set_simulation",
         normalized,
-        ControlMode.SIM,
+        FTMS_CONTROLLER_MODES.SIM,
         params.grade,
         "Simulation parameters must be finite",
       );
@@ -352,15 +359,15 @@ export class FTMSController {
       "set_simulation",
       "simulation",
       params.grade,
-      ControlMode.SIM,
+      FTMS_CONTROLLER_MODES.SIM,
       normalized,
     );
   }
 
   private setTarget(
     commandType: RecordingTrainerCommandStatus["commandType"],
-    controlType: FTMSControlEvent["controlType"],
-    mode: ControlMode,
+    controlType: FtmsControlEvent["controlType"],
+    mode: FtmsControllerMode,
     value: number,
     supported: boolean | undefined,
     range: { min: number; max: number; increment: number } | undefined,
@@ -424,9 +431,9 @@ export class FTMSController {
   private enqueueRequest(
     request: FtmsControlRequest,
     commandType: RecordingTrainerCommandStatus["commandType"],
-    controlType: FTMSControlEvent["controlType"],
+    controlType: FtmsControlEvent["controlType"],
     targetValue: number | undefined,
-    targetMode: ControlMode | undefined,
+    targetMode: FtmsControllerMode | undefined,
     context: NormalizedFTMSCommandContext,
   ): Promise<boolean> {
     const encoded = tryEncodeFtmsControlRequest(request);
@@ -774,6 +781,8 @@ export class FTMSController {
       resultCode: FTMS_RESULT_CODES.OPERATION_FAILED,
       resultCodeName: message,
       success: false,
+      parameter: { kind: "none" },
+      issues: [],
     };
   }
   private mapResponseOutcome(response: FTMSResponse): RecordingTrainerCommandStatus["outcome"] {
@@ -788,7 +797,7 @@ export class FTMSController {
   private failWithoutQueue(
     commandType: RecordingTrainerCommandStatus["commandType"],
     context: NormalizedFTMSCommandContext,
-    mode: ControlMode | undefined,
+    mode: FtmsControllerMode | undefined,
     targetValue: number | undefined,
     message: string,
     outcome: RecordingTrainerCommandStatus["outcome"] = "operation_failed",
@@ -876,6 +885,8 @@ export class FTMSController {
       resultCode: FTMS_RESULT_CODES.CONTROL_NOT_PERMITTED,
       resultCodeName: "Control permission lost",
       success: false,
+      parameter: { kind: "none" },
+      issues: [],
     });
     command.resolve(false);
   }
@@ -900,13 +911,13 @@ export class FTMSController {
   getFeatures(): FTMSFeatures | undefined {
     return this.features;
   }
-  getCurrentMode(): ControlMode | undefined {
+  getCurrentMode(): FtmsControllerMode | undefined {
     return this.currentControlMode;
   }
   hasControlPermission(): boolean {
     return this.controlGranted && !this.disposed;
   }
-  getControlEvents(): FTMSControlEvent[] {
+  getControlEvents(): FtmsControlEvent[] {
     return this.controlEvents;
   }
   getLastCommandStatus(): RecordingTrainerCommandStatus | null {

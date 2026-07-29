@@ -12,7 +12,7 @@ const ACTIVITY_ID = "33333333-3333-4333-8333-333333333333";
 
 function segment(
   ordinal: number,
-  category: "run" | "bike",
+  activity_category: "run" | "bike",
   overrides: Record<string, unknown> = {},
 ) {
   return {
@@ -20,9 +20,18 @@ function segment(
     activity_id: ACTIVITY_ID,
     ordinal,
     role: "activity" as const,
-    category,
+    activity_category,
     start_offset_ms: ordinal * 1_000,
     end_offset_ms: (ordinal + 1) * 1_000,
+    source_artifact_id: null,
+    source_session_index: null,
+    source_message_index: null,
+    raw_type_string: null,
+    raw_type_integer: null,
+    raw_sport_string: null,
+    raw_sport_integer: null,
+    raw_sub_sport_string: null,
+    raw_sub_sport_integer: null,
     timing_coverage: "complete" as const,
     active_ms: 1_000,
     moving_ms: 900,
@@ -52,15 +61,18 @@ describe("activity discovery", () => {
     { mode: "single_only" as const, comparison: "= $2" },
     { mode: "include_multisport" as const, comparison: undefined },
     { mode: "multisport_only" as const, comparison: "> 1" },
-  ])("builds category containment with $mode segment cardinality", ({ mode, comparison }) => {
+  ])("builds activity_category containment with $mode segment cardinality", ({
+    mode,
+    comparison,
+  }) => {
     const condition = buildActivityCompositionCondition({
       activityId: activities.id,
-      category: "run",
+      activity_category: "run",
       mode,
     });
     const query = dialect.sqlToQuery(condition!).sql;
 
-    expect(query).toMatch(/"activity_segments"\."category" = \$\d+/);
+    expect(query).toMatch(/"activity_segments"\."activity_category" = \$\d+/);
     expect(query).toContain('"activity_segments"."role" = \'activity\'');
     if (comparison) expect(query).toContain(comparison);
     else expect(query).not.toContain("select count(*)");
@@ -68,7 +80,7 @@ describe("activity discovery", () => {
 
   it("sums only matching-category evidence and nulls incomplete totals", () => {
     const summary = summarizeMatchedCategory({
-      category: "run",
+      activity_category: "run",
       segments: [
         segment(0, "run"),
         segment(1, "bike", {
@@ -91,7 +103,7 @@ describe("activity discovery", () => {
   it("combines matching multisport TSS only for one complete compatible load stream", () => {
     const segments = [segment(0, "run"), segment(1, "bike"), segment(2, "run")];
     const identity = {
-      sport: "run",
+      activity_category: "run",
       method: "run_pace_threshold",
       source: "activity_analysis",
       version: "1",
@@ -103,7 +115,7 @@ describe("activity discovery", () => {
     ].map(({ segment: item, tss, stream }) => ({
       activity_id: ACTIVITY_ID,
       segment_id: item.id,
-      category: "run" as const,
+      activity_category: "run" as const,
       tss,
       tss_identity: identity,
       intensity_factor: 0.8,
@@ -118,7 +130,7 @@ describe("activity discovery", () => {
     expect(
       summarizeMatchedCategory({
         segments,
-        category: "run",
+        activity_category: "run",
         derivedSegments: derived,
       }),
     ).toMatchObject({
@@ -128,7 +140,7 @@ describe("activity discovery", () => {
     expect(
       summarizeMatchedCategory({
         segments,
-        category: "run",
+        activity_category: "run",
         derivedSegments: [{ ...derived[0]!, load_stream_key: "run:other" }, derived[1]!],
       }),
     ).toMatchObject({ tss: null, tss_identity: null });

@@ -9,7 +9,7 @@ import { deriveActivityPlanPresentation, formatDurationSec } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { useMemo } from "react";
 import { View } from "react-native";
-import { TimelineChart } from "@/components/activity-plan/workout/TimelineChart";
+import { TimelineChart } from "@/components/activity-plan/activity/TimelineChart";
 
 type ActivityPlanPreviewLike = {
   estimated_duration_minutes?: number | null;
@@ -166,7 +166,8 @@ export function ActivityPlanContentPreview({
           <View className="mt-2">
             {structure?.segments.map((segment, index) => {
               const segmentTitle = segment.name?.trim() || `Segment ${index + 1}`;
-              const semantic = segment.role === "activity" ? segment.category : segment.role;
+              const semantic =
+                segment.role === "activity" ? segment.activity_category : segment.role;
               const showSemantic = !labelContainsSemantic(segmentTitle, semantic);
 
               return (

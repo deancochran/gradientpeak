@@ -12,7 +12,7 @@ function evidence(overrides: Partial<EvidenceItem> = {}): EvidenceItem {
     lineageGroupId: "activity:provider:session-1",
     observedAt: "2026-07-09T12:00:00.000Z",
     rawObservation: { value: 3600, unit: "seconds" },
-    sport: "run",
+    activity_category: "run",
     modality: "duration",
     sourceType: "activity",
     qualityState: "known",
@@ -25,7 +25,11 @@ function evidence(overrides: Partial<EvidenceItem> = {}): EvidenceItem {
 describe("field evidence eligibility", () => {
   it("accepts only known, valid, compatible evidence at or before asOf without changing raw input", () => {
     const input = evidence();
-    const result = resolveFieldEvidenceEligibility({ evidence: input, asOf, requiredSport: "run" });
+    const result = resolveFieldEvidenceEligibility({
+      evidence: input,
+      asOf,
+      requiredActivityCategory: "run",
+    });
 
     expect(result).toMatchObject({
       eligible: true,
@@ -53,20 +57,20 @@ describe("field evidence eligibility", () => {
     });
   });
 
-  it("requires an exact sport match when a calculation has a sport boundary", () => {
+  it("requires an exact activity_category match when a calculation has a activity_category boundary", () => {
     expect(
       resolveFieldEvidenceEligibility({
-        evidence: evidence({ sport: "bike" }),
+        evidence: evidence({ activity_category: "bike" }),
         asOf,
-        requiredSport: "run",
+        requiredActivityCategory: "run",
       }),
     ).toMatchObject({ eligible: false, reasonCode: "evidence_incompatible_sport" });
     expect(
       resolveFieldEvidenceEligibility({
-        evidence: evidence({ sport: null }),
+        evidence: evidence({ activity_category: null }),
         asOf,
-        requiredSport: "run",
+        requiredActivityCategory: "run",
       }),
-    ).toMatchObject({ eligible: false, reasonCode: "evidence_sport_missing" });
+    ).toMatchObject({ eligible: false, reasonCode: "evidence_activity_category_missing" });
   });
 });

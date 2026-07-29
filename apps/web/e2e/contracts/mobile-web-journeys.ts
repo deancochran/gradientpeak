@@ -514,7 +514,7 @@ export const mobileWebJourneyDomains: MobileWebJourneyDomain[] = [
       ),
       executable(
         "activity-plans.search-filter-page",
-        "Search, category, multisport and pagination",
+        "Search, category, and pagination",
         "activity-plans.spec.ts",
         "22-plan matrix seed",
       ),
@@ -526,7 +526,7 @@ export const mobileWebJourneyDomains: MobileWebJourneyDomain[] = [
       ),
       blocked(
         "activity-plans.author",
-        "Create and edit structured workout",
+        "Create and edit structured activity plan",
         "needs-seed",
         "web activity-plan composer",
       ),
@@ -562,7 +562,7 @@ export const mobileWebJourneyDomains: MobileWebJourneyDomain[] = [
       ),
       blocked(
         "training-plans.detail",
-        "Structure, progress, insights and linked workouts",
+        "Structure, progress, insights and linked activity plans",
         "needs-seed",
         "protected detail route",
       ),
@@ -586,7 +586,7 @@ export const mobileWebJourneyDomains: MobileWebJourneyDomain[] = [
       ),
       blocked(
         "training-plans.reorder",
-        "Workout reorder and failure recovery",
+        "Activity reorder and failure recovery",
         "needs-seed",
         "web reorder surface",
       ),

@@ -1,37 +1,40 @@
+import {
+  getActivityCategoryStepDefaults,
+  getActivityCategoryStepName,
+} from "../activity-categories";
 import type { ActivityPlanDuration, ActivityPlanIntervalStep } from "../activity-plan";
-import type { CanonicalSport } from "../schemas";
-import { getSportStepDefaults, getSportStepName } from "../sports";
+import type { CanonicalActivityCategory } from "../schemas";
 import type { ActivityTarget } from "../targets";
 
 /**
  * Context for generating smart defaults for activity steps
  */
 export interface DefaultsContext {
-  activityCategory: CanonicalSport;
+  activityCategory: CanonicalActivityCategory;
   position: number; // 0 = first step, -1 = last step
   totalSteps: number;
 }
 
 /**
- * Generate a smart step name based on activity type and position
+ * Generate a smart step name based on activity category and position
  */
 export function generateStepName(ctx: DefaultsContext): string {
   const phase = getStepPhase(ctx);
-  return getSportStepName(ctx.activityCategory, phase, ctx.position);
+  return getActivityCategoryStepName(ctx.activityCategory, phase, ctx.position);
 }
 
 /**
- * Get default duration based on activity type and position
+ * Get default duration based on activity category and position
  */
 export function getDefaultDuration(ctx: DefaultsContext): ActivityPlanDuration {
-  return getSportStepDefaults(ctx.activityCategory, getStepPhase(ctx)).duration;
+  return getActivityCategoryStepDefaults(ctx.activityCategory, getStepPhase(ctx)).duration;
 }
 
 /**
- * Get default intensity target based on activity type and position
+ * Get default intensity target based on activity category and position
  */
 export function getDefaultTarget(ctx: DefaultsContext): ActivityTarget | undefined {
-  return getSportStepDefaults(ctx.activityCategory, getStepPhase(ctx)).target;
+  return getActivityCategoryStepDefaults(ctx.activityCategory, getStepPhase(ctx)).target;
 }
 
 /**

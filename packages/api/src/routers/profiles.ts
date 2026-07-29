@@ -272,7 +272,8 @@ export const profilesRouter = createTRPCRouter({
         }),
       ]);
 
-      const threshold_hr = activityContext.profileMetrics.lthr_by_sport?.bike ?? undefined;
+      const threshold_hr =
+        activityContext.profileMetrics.lthr_by_activity_category?.bike ?? undefined;
       const weight_kg = performance.weight_kg ?? undefined;
       const currentThresholdEfforts = filterSupersededProfileOverrides(
         thresholdEfforts,
@@ -314,7 +315,7 @@ export const profilesRouter = createTRPCRouter({
             if (effort.activity_category === "bike" && effort.effort_type === "power") {
               return [
                 {
-                  sport: "bike" as const,
+                  activity_category: "bike" as const,
                   metric: "power" as const,
                   value: Number(effort.value),
                   durationSeconds: 1200,
@@ -345,7 +346,7 @@ export const profilesRouter = createTRPCRouter({
               if (speed === null) return [];
               return [
                 {
-                  sport: "run" as const,
+                  activity_category: "run" as const,
                   metric: "speed" as const,
                   value: speed,
                   durationSeconds: 1200,

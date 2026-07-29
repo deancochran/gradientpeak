@@ -15,7 +15,7 @@ type TransactionClient = Parameters<Parameters<DbClient["transaction"]>[0]>[0];
 
 export interface ParsedActivityEvidenceReplayItem {
   activityId: string;
-  activityType: string;
+  activityCategory: string;
   parsedData: ParsedActivityFileForAnalysis;
 }
 
@@ -149,7 +149,7 @@ export async function reconcileParsedActivityFileEvidence(
   input: {
     activityId: string;
     profileId: string;
-    activityType: string;
+    activityCategory: string;
     parsedData: ParsedActivityFileForAnalysis;
     write: boolean;
   },

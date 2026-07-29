@@ -13,7 +13,15 @@
 import type { RecordingCheckpoint } from "@repo/core";
 import { router } from "expo-router";
 import type React from "react";
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Alert } from "react-native";
 import type { ActivityRecorderService } from "../services/ActivityRecorder";
 import {
@@ -25,11 +33,28 @@ import type { RecorderProfileRef } from "../services/ActivityRecorder/types";
 import { prepareMobileRecordingStartup } from "../services/mobileRecordingStartup";
 
 interface ActivityRecorderContextValue {
+  discardRecovery: () => Promise<void> | undefined;
   service: ActivityRecorderService | null;
   recoveryCheckpoint: RecordingCheckpoint | null;
+  resumeRecovery: () => Promise<void> | undefined;
 }
 
 const ActivityRecorderContext = createContext<ActivityRecorderContextValue | undefined>(undefined);
+
+const RECORDER_CLEANUP_ATTEMPTS = 2;
+
+async function cleanupRecorderService(service: ActivityRecorderService): Promise<void> {
+  let failure: unknown;
+  for (let attempt = 0; attempt < RECORDER_CLEANUP_ATTEMPTS; attempt += 1) {
+    try {
+      await service.cleanup({ dispose: true });
+      return;
+    } catch (error) {
+      failure = error;
+    }
+  }
+  throw failure;
+}
 
 /**
  * Provider that maintains a single, stable ActivityRecorderService instance
@@ -64,110 +89,316 @@ export function ActivityRecorderProvider({
   // Use refs to maintain service instance across renders
   const serviceRef = useRef<ActivityRecorderService | null>(null);
   const profileIdRef = useRef<string | null>(null);
+  const teardownRequiredServiceRef = useRef<ActivityRecorderService | null>(null);
+  const renderedProfileIdRef = useRef<string | null>(profile?.id ?? null);
+  renderedProfileIdRef.current = profile?.id ?? null;
+  if (serviceRef.current && profileIdRef.current !== renderedProfileIdRef.current) {
+    teardownRequiredServiceRef.current = serviceRef.current;
+  }
+  const desiredProfileIdRef = useRef<string | null>(profile?.id ?? null);
+  desiredProfileIdRef.current = profile?.id ?? null;
+  const mountedRef = useRef(true);
+  const lifecycleGenerationRef = useRef(0);
+  const serviceTransitionRef = useRef<Promise<void>>(Promise.resolve());
+  const recoveryTaskRef = useRef<{
+    profileId: string;
+    promise: Promise<void>;
+    service: ActivityRecorderService;
+  } | null>(null);
+  const claimedRecoveryRef = useRef<{
+    profileId: string;
+    service: ActivityRecorderService;
+    sessionId: string;
+  } | null>(null);
+  const [serviceTransitionRetry, setServiceTransitionRetry] = useState(0);
+  const [serviceState, setServiceState] = useState<ActivityRecorderService | null>(null);
   const [recoveryCheckpoint, setRecoveryCheckpoint] = useState<RecordingCheckpoint | null>(null);
   const recoveryCheckpointRef = useRef<RecordingCheckpoint | null>(null);
   recoveryCheckpointRef.current = recoveryCheckpoint;
   const promptedRecoverySessionRef = useRef<string | null>(null);
-  const protectedQuarantineRef = useRef(false);
 
-  // Create or reuse service based on profile ID (stable)
-  const service = useMemo(() => {
-    const currentProfileId = profile?.id || null;
+  const releaseClaimForService = useCallback((owner: ActivityRecorderService) => {
+    const claimed = claimedRecoveryRef.current;
+    if (!claimed || claimed.service !== owner) return;
+    releaseRecordingCheckpointClaim(claimed.sessionId);
+    claimedRecoveryRef.current = null;
+  }, []);
 
-    // Reuse existing service if profile ID hasn't changed
-    if (
-      serviceRef.current &&
-      profileIdRef.current === currentProfileId &&
-      currentProfileId !== null
-    ) {
-      console.log("[ActivityRecorderProvider] Reusing service for profile:", currentProfileId);
-      return serviceRef.current;
-    }
-
-    // Keep configured/active sessions alive until a higher-level flow explicitly resolves them.
-    if (serviceRef.current?.hasConfiguredRecordingSetup) {
-      console.warn(
-        "[ActivityRecorderProvider] Recorder setup is active; keeping existing service during profile change",
-      );
-      return serviceRef.current;
-    }
-
-    // Clean up old service if profile changed
-    if (serviceRef.current) {
-      console.log(
-        "[ActivityRecorderProvider] Profile changed, cleaning up old service:",
-        profileIdRef.current,
-        "→",
-        currentProfileId,
-      );
-      void serviceRef.current.cleanup({ dispose: true }).catch((error) => {
-        console.error("[ActivityRecorderProvider] Failed to dispose recorder service", error);
-      });
-      serviceRef.current = null;
-    }
-
-    // Create new service if profile exists
-    if (profile) {
-      const { ActivityRecorderService } =
-        require("../services/ActivityRecorder") as typeof import("../services/ActivityRecorder");
-      console.log("[ActivityRecorderProvider] Creating new service for profile:", profile.id);
-      serviceRef.current = new ActivityRecorderService(profile);
-      profileIdRef.current = profile.id;
-      return serviceRef.current;
-    }
-
-    // No profile, no service
-    profileIdRef.current = null;
-    return null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile?.id, profile]); // Only recreate when profile ID changes (intentionally not full profile object)
+  const trackRecoveryTask = useCallback(
+    (owner: ActivityRecorderService, profileId: string, promise: Promise<void>): Promise<void> => {
+      const trackedTask = { profileId, promise, service: owner };
+      recoveryTaskRef.current = trackedTask;
+      const clearTrackedTask = () => {
+        if (recoveryTaskRef.current === trackedTask) recoveryTaskRef.current = null;
+      };
+      void promise.then(clearTrackedTask, clearTrackedTask);
+      return promise;
+    },
+    [],
+  );
 
   useEffect(() => {
-    if (!service || !profile?.id) return;
+    void serviceTransitionRetry;
+    const targetProfileId = profile?.id ?? null;
+    const targetProfile: RecorderProfileRef | null = targetProfileId
+      ? { id: targetProfileId }
+      : null;
     let cancelled = false;
-    void prepareMobileRecordingStartup(profile.id)
-      .then(async ({ checkpoint }) => {
-        if (cancelled || checkpoint.status !== "recovered") return;
-        const claimed = await loadAndClaimRecordingCheckpoint(profile.id);
-        if (cancelled || claimed.status !== "recovered") return;
-        try {
-          await service.stageRecoveredCheckpoint(claimed.checkpoint);
-          if (!cancelled) setRecoveryCheckpoint(claimed.checkpoint);
-        } catch (error) {
-          const reason = error instanceof Error ? error.message : "Checkpoint replay failed";
-          await quarantineActiveRecordingCheckpoint(reason);
-          protectedQuarantineRef.current = true;
-          releaseRecordingCheckpointClaim(claimed.checkpoint.sessionId);
-          if (!cancelled) Alert.alert("Recording recovery unavailable", reason);
+    desiredProfileIdRef.current = targetProfileId;
+    const generation = lifecycleGenerationRef.current + 1;
+    lifecycleGenerationRef.current = generation;
+
+    // Hide profile-scoped state immediately. Promise callbacks from an old
+    // recovery prompt also consult the ref and become harmless after this reset.
+    if (profileIdRef.current !== targetProfileId) {
+      recoveryCheckpointRef.current = null;
+      setRecoveryCheckpoint(null);
+      promptedRecoverySessionRef.current = null;
+      setServiceState(null);
+    }
+
+    const transition = serviceTransitionRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        if (
+          cancelled ||
+          !mountedRef.current ||
+          lifecycleGenerationRef.current !== generation ||
+          desiredProfileIdRef.current !== targetProfileId
+        ) {
+          return;
         }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          Alert.alert(
-            "Recording recovery unavailable",
-            error instanceof Error ? error.message : "Unable to inspect the saved recording",
-          );
+        const existingService = serviceRef.current;
+        const serviceToDispose =
+          teardownRequiredServiceRef.current ??
+          (existingService && profileIdRef.current !== targetProfileId ? existingService : null);
+        if (serviceToDispose) {
+          const recoveryTask = recoveryTaskRef.current;
+          if (recoveryTask?.service === serviceToDispose) {
+            await recoveryTask.promise;
+          }
+          await cleanupRecorderService(serviceToDispose);
+          releaseClaimForService(serviceToDispose);
+          if (teardownRequiredServiceRef.current === serviceToDispose) {
+            teardownRequiredServiceRef.current = null;
+          }
+          if (serviceRef.current === serviceToDispose) {
+            serviceRef.current = null;
+            profileIdRef.current = null;
+          }
         }
+
+        if (
+          cancelled ||
+          !mountedRef.current ||
+          !targetProfile ||
+          lifecycleGenerationRef.current !== generation ||
+          desiredProfileIdRef.current !== targetProfileId
+        ) {
+          return;
+        }
+        if (serviceRef.current && profileIdRef.current === targetProfileId) {
+          setServiceState(serviceRef.current);
+          return;
+        }
+
+        const { ActivityRecorderService } =
+          require("../services/ActivityRecorder") as typeof import("../services/ActivityRecorder");
+        const nextService = new ActivityRecorderService(targetProfile);
+        if (
+          cancelled ||
+          !mountedRef.current ||
+          lifecycleGenerationRef.current !== generation ||
+          desiredProfileIdRef.current !== targetProfileId
+        ) {
+          await cleanupRecorderService(nextService);
+          return;
+        }
+        serviceRef.current = nextService;
+        profileIdRef.current = targetProfileId;
+        setServiceState(nextService);
       });
+    serviceTransitionRef.current = transition.catch((error) => {
+      console.error("[ActivityRecorderProvider] Failed to transition recorder service", error);
+      if (
+        mountedRef.current &&
+        lifecycleGenerationRef.current === generation &&
+        desiredProfileIdRef.current === targetProfileId
+      ) {
+        Alert.alert(
+          "Recording service unavailable",
+          "Recorder cleanup did not finish safely. Try again before starting another recording.",
+          [
+            {
+              text: "Try again",
+              onPress: () => {
+                if (mountedRef.current && desiredProfileIdRef.current === targetProfileId) {
+                  setServiceTransitionRetry((value) => value + 1);
+                }
+              },
+            },
+          ],
+          { cancelable: false },
+        );
+      }
+    });
+
     return () => {
       cancelled = true;
     };
-  }, [profile?.id, service]);
+  }, [profile?.id, releaseClaimForService, serviceTransitionRetry]);
+
+  const service = profile?.id && profileIdRef.current === profile.id ? serviceState : null;
+
+  const resumeRecoveryCommand = useCallback((): Promise<void> | undefined => {
+    const owner = serviceRef.current;
+    const checkpoint = recoveryCheckpointRef.current;
+    if (
+      !owner ||
+      !checkpoint ||
+      !mountedRef.current ||
+      desiredProfileIdRef.current !== checkpoint.profileId ||
+      profileIdRef.current !== checkpoint.profileId
+    ) {
+      return undefined;
+    }
+    const operation = owner.resumeRecoveredRecording().then(() => {
+      if (
+        mountedRef.current &&
+        desiredProfileIdRef.current === checkpoint.profileId &&
+        profileIdRef.current === checkpoint.profileId &&
+        serviceRef.current === owner &&
+        recoveryCheckpointRef.current?.sessionId === checkpoint.sessionId
+      ) {
+        recoveryCheckpointRef.current = null;
+        setRecoveryCheckpoint(null);
+      }
+    });
+    return trackRecoveryTask(owner, checkpoint.profileId, operation);
+  }, [trackRecoveryTask]);
+
+  const discardRecoveryCommand = useCallback((): Promise<void> | undefined => {
+    const owner = serviceRef.current;
+    const checkpoint = recoveryCheckpointRef.current;
+    if (
+      !owner ||
+      !checkpoint ||
+      !mountedRef.current ||
+      desiredProfileIdRef.current !== checkpoint.profileId ||
+      profileIdRef.current !== checkpoint.profileId
+    ) {
+      return undefined;
+    }
+    const operation = owner.discardRecoveredRecording().then(() => {
+      if (claimedRecoveryRef.current?.sessionId === checkpoint.sessionId) {
+        claimedRecoveryRef.current = null;
+      }
+      if (
+        mountedRef.current &&
+        desiredProfileIdRef.current === checkpoint.profileId &&
+        profileIdRef.current === checkpoint.profileId &&
+        serviceRef.current === owner &&
+        recoveryCheckpointRef.current?.sessionId === checkpoint.sessionId
+      ) {
+        recoveryCheckpointRef.current = null;
+        setRecoveryCheckpoint(null);
+        promptedRecoverySessionRef.current = null;
+      }
+    });
+    return trackRecoveryTask(owner, checkpoint.profileId, operation);
+  }, [trackRecoveryTask]);
+
+  useEffect(() => {
+    if (!service || !profile?.id) return;
+    const recoveryProfileId = profile.id;
+    let cancelled = false;
+    const isCurrentRecoveryOwner = () =>
+      !cancelled &&
+      mountedRef.current &&
+      desiredProfileIdRef.current === recoveryProfileId &&
+      profileIdRef.current === recoveryProfileId &&
+      serviceRef.current === service;
+    const task = (async () => {
+      try {
+        const { checkpoint } = await prepareMobileRecordingStartup(recoveryProfileId);
+        if (!isCurrentRecoveryOwner() || checkpoint.status !== "recovered") return;
+        const claimed = await loadAndClaimRecordingCheckpoint(recoveryProfileId);
+        if (claimed.status !== "recovered") return;
+        claimedRecoveryRef.current = {
+          profileId: recoveryProfileId,
+          service,
+          sessionId: claimed.checkpoint.sessionId,
+        };
+        if (!isCurrentRecoveryOwner()) {
+          releaseRecordingCheckpointClaim(claimed.checkpoint.sessionId);
+          claimedRecoveryRef.current = null;
+          return;
+        }
+        try {
+          await service.stageRecoveredCheckpoint(claimed.checkpoint);
+          if (isCurrentRecoveryOwner()) {
+            recoveryCheckpointRef.current = claimed.checkpoint;
+            setRecoveryCheckpoint(claimed.checkpoint);
+          } else {
+            releaseRecordingCheckpointClaim(claimed.checkpoint.sessionId);
+            claimedRecoveryRef.current = null;
+          }
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : "Checkpoint replay failed";
+          releaseRecordingCheckpointClaim(claimed.checkpoint.sessionId);
+          claimedRecoveryRef.current = null;
+          if (isCurrentRecoveryOwner()) {
+            await quarantineActiveRecordingCheckpoint(reason, claimed.checkpoint.profileId);
+            if (isCurrentRecoveryOwner()) {
+              Alert.alert("Recording recovery unavailable", reason);
+            }
+          }
+        }
+      } catch (error) {
+        if (isCurrentRecoveryOwner()) {
+          console.warn(
+            "[ActivityRecorderProvider] Unable to inspect saved recording recovery",
+            error,
+          );
+        }
+      }
+    })();
+    void trackRecoveryTask(service, recoveryProfileId, task);
+    return () => {
+      cancelled = true;
+    };
+  }, [profile?.id, service, trackRecoveryTask]);
 
   useEffect(() => {
     if (!service || !recoveryCheckpoint) return;
     if (promptedRecoverySessionRef.current === recoveryCheckpoint.sessionId) return;
     promptedRecoverySessionRef.current = recoveryCheckpoint.sessionId;
     const recoveryService = service;
+    const recoveryProfileId = recoveryCheckpoint.profileId;
+    const recoverySessionId = recoveryCheckpoint.sessionId;
+    const isCurrentRecovery = () =>
+      mountedRef.current &&
+      desiredProfileIdRef.current === recoveryProfileId &&
+      profileIdRef.current === recoveryProfileId &&
+      serviceRef.current === recoveryService &&
+      recoveryCheckpointRef.current?.sessionId === recoverySessionId;
+    const isCurrentRecoveryService = () =>
+      mountedRef.current &&
+      desiredProfileIdRef.current === recoveryProfileId &&
+      profileIdRef.current === recoveryProfileId &&
+      serviceRef.current === recoveryService;
 
     function discardRecovery() {
-      void recoveryService
-        .discardRecoveredRecording()
+      if (!isCurrentRecovery()) return;
+      const operation = discardRecoveryCommand();
+      if (!operation) return;
+      void operation
         .then(() => {
-          setRecoveryCheckpoint(null);
+          if (!isCurrentRecoveryService()) return;
           promptedRecoverySessionRef.current = null;
         })
         .catch((error) => {
+          if (!isCurrentRecovery()) return;
           promptedRecoverySessionRef.current = null;
           Alert.alert(
             "Unable to discard",
@@ -188,6 +419,7 @@ export function ActivityRecorderProvider({
           text: "Discard",
           style: "destructive",
           onPress: () => {
+            if (!isCurrentRecovery()) return;
             Alert.alert(
               "Discard recovered recording?",
               "This permanently removes the checkpoint and its recoverable stream files.",
@@ -205,13 +437,16 @@ export function ActivityRecorderProvider({
         {
           text: "Resume",
           onPress: () => {
-            void service
-              .resumeRecoveredRecording()
+            if (!isCurrentRecovery()) return;
+            const operation = resumeRecoveryCommand();
+            if (!operation) return;
+            void operation
               .then(() => {
-                setRecoveryCheckpoint(null);
+                if (!isCurrentRecoveryService()) return;
                 router.replace("/record");
               })
               .catch((error) => {
+                if (!isCurrentRecovery()) return;
                 promptedRecoverySessionRef.current = null;
                 Alert.alert(
                   "Unable to resume",
@@ -223,31 +458,55 @@ export function ActivityRecorderProvider({
       ],
       { cancelable: false },
     );
-  }, [recoveryCheckpoint, service]);
+  }, [discardRecoveryCommand, recoveryCheckpoint, resumeRecoveryCommand, service]);
 
   // Cleanup on unmount
   useEffect(() => {
+    mountedRef.current = true;
+    desiredProfileIdRef.current = renderedProfileIdRef.current;
     return () => {
-      if (serviceRef.current) {
-        if (recoveryCheckpointRef.current || protectedQuarantineRef.current) {
-          if (recoveryCheckpointRef.current) {
-            releaseRecordingCheckpointClaim(recoveryCheckpointRef.current.sessionId);
+      mountedRef.current = false;
+      desiredProfileIdRef.current = null;
+      const generation = lifecycleGenerationRef.current + 1;
+      lifecycleGenerationRef.current = generation;
+      recoveryCheckpointRef.current = null;
+      promptedRecoverySessionRef.current = null;
+      serviceTransitionRef.current = serviceTransitionRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          if (mountedRef.current || lifecycleGenerationRef.current !== generation) return;
+          const currentService = serviceRef.current;
+          if (!currentService) return;
+          const recoveryTask = recoveryTaskRef.current;
+          if (recoveryTask?.service === currentService) {
+            await recoveryTask.promise;
           }
-          serviceRef.current = null;
-          profileIdRef.current = null;
-          return;
-        }
-        console.log("[ActivityRecorderProvider] Provider unmounting - cleanup service");
-        void serviceRef.current.cleanup({ dispose: true }).catch((error) => {
+          if (mountedRef.current || lifecycleGenerationRef.current !== generation) return;
+          await cleanupRecorderService(currentService);
+          releaseClaimForService(currentService);
+          if (teardownRequiredServiceRef.current === currentService) {
+            teardownRequiredServiceRef.current = null;
+          }
+          if (serviceRef.current === currentService) {
+            serviceRef.current = null;
+            profileIdRef.current = null;
+          }
+        })
+        .catch((error) => {
           console.error("[ActivityRecorderProvider] Failed to dispose recorder service", error);
         });
-        serviceRef.current = null;
-        profileIdRef.current = null;
-      }
     };
-  }, []);
+  }, [releaseClaimForService]);
 
-  const value = useMemo(() => ({ service, recoveryCheckpoint }), [recoveryCheckpoint, service]);
+  const value = useMemo(
+    () => ({
+      discardRecovery: discardRecoveryCommand,
+      service,
+      recoveryCheckpoint,
+      resumeRecovery: resumeRecoveryCommand,
+    }),
+    [discardRecoveryCommand, recoveryCheckpoint, resumeRecoveryCommand, service],
+  );
 
   return (
     <ActivityRecorderContext.Provider value={value}>{children}</ActivityRecorderContext.Provider>
@@ -298,11 +557,11 @@ export function useOptionalSharedActivityRecorder(): ActivityRecorderService | n
 }
 
 export function useRecordingRecovery() {
-  const { service, recoveryCheckpoint } = useActivityRecorderService();
+  const { discardRecovery, recoveryCheckpoint, resumeRecovery } = useActivityRecorderService();
   return {
     checkpoint: recoveryCheckpoint,
     isRecoveryAvailable: recoveryCheckpoint !== null,
-    resume: () => service?.resumeRecoveredRecording(),
-    discard: () => service?.discardRecoveredRecording(),
+    resume: resumeRecovery,
+    discard: discardRecovery,
   };
 }

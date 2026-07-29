@@ -2,7 +2,7 @@ import type {
   ActivityPlanDuration,
   ActivityPlanIntervalStep,
   ActivityPlanSegmentV3,
-  CanonicalSport,
+  CanonicalActivityCategory,
   EditableActivityPlanStructure,
 } from "@repo/core";
 import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
@@ -10,26 +10,40 @@ import {
   type ActivityTargetType,
   activityTargetDefinitionByType,
   activityTargetTypes,
+  getPermissibleTargetTypes,
 } from "@repo/core/targets";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@repo/ui/components/alert-dialog";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Input } from "@repo/ui/components/input";
 import { Textarea } from "@repo/ui/components/textarea";
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import {
+  applyActivityPlanActivityCategory,
   createActivityPlanInterval,
   createActivityPlanSegment,
   createActivityPlanStep,
   createActivityPlanStructure,
+  getActivityPlanActivityCategory,
+  hasIncompatibleTargets,
   moveActivityPlanItem,
   updateActivityInterval,
   updateActivitySegment,
   updateActivityStep,
 } from "../../lib/activity-plan-authoring";
 
-const sports = ["run", "bike", "swim", "strength", "other"] as const;
+const activity_categories = ["run", "bike", "swim", "strength", "other"] as const;
 const visibilityOptions = ["private", "followers", "public"] as const;
 const selectClassName =
   "h-10 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -118,6 +132,13 @@ export function ActivityPlanComposer({
   const [structure, setStructure] = useState<EditableActivityPlanStructure>(() =>
     initial ? editableStructure(initial.structure) : createActivityPlanStructure(),
   );
+  const [activity_category, setActivityCategory] = useState<CanonicalActivityCategory>(() =>
+    getActivityPlanActivityCategory(structure),
+  );
+  const [pendingActivityCategory, setPendingActivityCategory] =
+    useState<CanonicalActivityCategory | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const saveButtonRef = useRef<HTMLButtonElement>(null);
   const parsed = useMemo(() => activityPlanStructureSchemaV3.safeParse(structure), [structure]);
   const firstIssue = parsed.success ? null : parsed.error.issues[0]?.message;
 
@@ -152,16 +173,26 @@ export function ActivityPlanComposer({
   };
 
   const save = async () => {
+    setSaveError(null);
     const validStructure = activityPlanStructureSchemaV3.safeParse(structure);
-    if (!name.trim() || !validStructure.success) return;
-    await onSave({
-      description: description.trim() || null,
-      gps_recording_enabled: gpsEnabled,
-      name: name.trim(),
-      notes: notes.trim() || null,
-      structure: validStructure.data,
-      template_visibility: visibility,
-    });
+    if (!name.trim() || !validStructure.success) {
+      setSaveError("Enter a plan name and correct the activity structure before saving.");
+      saveButtonRef.current?.focus();
+      return;
+    }
+    try {
+      await onSave({
+        description: description.trim() || null,
+        gps_recording_enabled: gpsEnabled,
+        name: name.trim(),
+        notes: notes.trim() || null,
+        structure: validStructure.data,
+        template_visibility: visibility,
+      });
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Activity plan could not be saved.");
+      saveButtonRef.current?.focus();
+    }
   };
 
   return (
@@ -210,6 +241,39 @@ export function ActivityPlanComposer({
               ))}
             </select>
           </div>
+          <div className="space-y-2">
+            <FieldLabel htmlFor="activity-plan-activity_category">
+              Plan activity category
+            </FieldLabel>
+            <select
+              aria-describedby="activity-plan-activity_category-help"
+              className={`${selectClassName} w-full`}
+              id="activity-plan-activity_category"
+              onChange={(event) => {
+                const nextActivityCategory = event.currentTarget.value as CanonicalActivityCategory;
+                if (nextActivityCategory === activity_category) return;
+                if (hasIncompatibleTargets(structure, nextActivityCategory)) {
+                  setPendingActivityCategory(nextActivityCategory);
+                  return;
+                }
+                setActivityCategory(nextActivityCategory);
+                setStructure((current) =>
+                  applyActivityPlanActivityCategory(current, nextActivityCategory),
+                );
+              }}
+              value={activity_category}
+            >
+              {activity_categories.map((option) => (
+                <option key={option} value={option}>
+                  {option[0]?.toUpperCase()}
+                  {option.slice(1)}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground" id="activity-plan-activity_category-help">
+              All activity segments use this activity category. Compatible targets are preserved.
+            </p>
+          </div>
           <label className="flex items-center gap-3 self-end rounded-lg border px-3 py-2 text-sm">
             <input
               checked={gpsEnabled}
@@ -232,19 +296,23 @@ export function ActivityPlanComposer({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold">Workout structure</h2>
+          <h2 className="text-xl font-semibold">Activity structure</h2>
           <p className="text-sm text-muted-foreground">
-            Build portable V3 activity, transition, and rest segments in execution order.
+            Build a single-activity-category V3 activity with activity and rest segments in
+            execution order.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {(["activity", "transition", "rest"] as const).map((role) => (
+          {(["activity", "rest"] as const).map((role) => (
             <Button
               key={role}
               onClick={() =>
                 setStructure((current) => ({
                   version: 3,
-                  segments: [...current.segments, createActivityPlanSegment(role)],
+                  segments: [
+                    ...current.segments,
+                    createActivityPlanSegment(role, activity_category),
+                  ],
                 }))
               }
               size="sm"
@@ -252,7 +320,7 @@ export function ActivityPlanComposer({
               variant="outline"
             >
               <Plus className="mr-1 h-4 w-4" />
-              {role === "activity" ? "Activity" : role === "transition" ? "Transition" : "Rest"}
+              {role === "activity" ? "Activity" : "Rest"}
             </Button>
           ))}
         </div>
@@ -288,6 +356,14 @@ export function ActivityPlanComposer({
           Structure needs attention: {firstIssue}
         </p>
       ) : null}
+      {saveError ? (
+        <p
+          className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+          role="alert"
+        >
+          {saveError}
+        </p>
+      ) : null}
 
       <div className="flex justify-end gap-2">
         <Button disabled={pending} onClick={onCancel} type="button" variant="outline">
@@ -296,11 +372,42 @@ export function ActivityPlanComposer({
         <Button
           disabled={pending || !name.trim() || !parsed.success}
           onClick={() => void save()}
+          ref={saveButtonRef}
           type="button"
         >
           {pending ? "Saving..." : mode === "edit" ? "Save changes" : "Create plan"}
         </Button>
       </div>
+      <AlertDialog
+        open={pendingActivityCategory !== null}
+        onOpenChange={(open) => !open && setPendingActivityCategory(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset incompatible targets?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Some current targets are not supported for {pendingActivityCategory ?? "this"}.
+              Continue to change the plan activity category and reset only those targets to RPE 5,
+              or cancel to keep the current activity category and targets.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep current activity category</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (!pendingActivityCategory) return;
+                setActivityCategory(pendingActivityCategory);
+                setStructure((current) =>
+                  applyActivityPlanActivityCategory(current, pendingActivityCategory, true),
+                );
+                setPendingActivityCategory(null);
+              }}
+            >
+              Change activity category and reset targets
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -378,26 +485,7 @@ function SegmentEditor({
               value={segment.name}
             />
           </div>
-          {segment.role === "activity" ? (
-            <div className="space-y-2">
-              <FieldLabel htmlFor={`segment-sport-${segment.id}`}>Sport</FieldLabel>
-              <select
-                className={`${selectClassName} w-full`}
-                id={`segment-sport-${segment.id}`}
-                onChange={(event) => {
-                  const category = event.currentTarget.value as CanonicalSport;
-                  onChange((item) => (item.role === "activity" ? { ...item, category } : item));
-                }}
-                value={segment.category}
-              >
-                {sports.map((sport) => (
-                  <option key={sport} value={sport}>
-                    {sport}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : (
+          {segment.role !== "activity" ? (
             <div className="space-y-2">
               <FieldLabel htmlFor={`segment-seconds-${segment.id}`}>Duration (seconds)</FieldLabel>
               <Input
@@ -418,7 +506,7 @@ function SegmentEditor({
                 value={segment.duration.seconds}
               />
             </div>
-          )}
+          ) : null}
         </div>
 
         {segment.role === "activity" ? (
@@ -474,6 +562,7 @@ function SegmentEditor({
 
                 {interval.steps.map((step, stepIndex) => (
                   <StepEditor
+                    activityCategory={segment.activity_category}
                     index={stepIndex}
                     intervalId={interval.id}
                     key={step.id}
@@ -532,12 +621,14 @@ function SegmentEditor({
 }
 
 function StepEditor({
+  activityCategory,
   index,
   intervalId,
   onRemove,
   setStructure,
   step,
 }: {
+  activityCategory: CanonicalActivityCategory;
   index: number;
   intervalId: string;
   onRemove: () => void;
@@ -615,11 +706,13 @@ function StepEditor({
           }}
           value={target.type}
         >
-          {activityTargetTypes.map((type) => (
-            <option key={type} value={type}>
-              {type}
-            </option>
-          ))}
+          {activityTargetTypes
+            .filter((type) => getPermissibleTargetTypes(activityCategory).includes(type))
+            .map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
         </select>
       </div>
       <div className="space-y-2">

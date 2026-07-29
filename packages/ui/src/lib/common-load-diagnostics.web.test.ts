@@ -15,8 +15,8 @@ function unavailable(
     (overrides.method === "heart_rate_zones" && overrides.reason !== "threshold_missing");
   const method =
     overrides.method === "heart_rate_zones" ? "heart_rate_zones" : "run_pace_threshold";
-  const sport =
-    overrides.sport ??
+  const activityCategory =
+    overrides.activity_category ??
     (overrides.method === "power_threshold" || overrides.method === "critical_power_threshold"
       ? "bike"
       : overrides.method === "swim_pace_threshold"
@@ -66,7 +66,7 @@ function unavailable(
     status: "unavailable",
     model: "gradientpeak_relative_load",
     version: "1",
-    sport,
+    activity_category: activityCategory,
     method: null,
     quality: null,
     thresholdEvidence: null,
@@ -88,7 +88,7 @@ describe("getCommonLoadDiagnostic", () => {
         unavailable({ reason: "threshold_missing", method: "heart_rate_zones" }),
       ),
     ).toMatchObject({
-      summary: expect.stringContaining("sport-specific LTHR is missing"),
+      summary: expect.stringContaining("activity-category-specific LTHR is missing"),
       action: expect.stringContaining("Add a current"),
     });
     expect(
@@ -150,7 +150,7 @@ describe("getCommonLoadDiagnostic", () => {
   it("identifies a stale method-specific threshold", () => {
     const stale = unavailable({
       reason: "stale_threshold",
-      sport: "bike",
+      activity_category: "bike",
       method: "power_threshold",
       quality: {
         source: "validated_test",

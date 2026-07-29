@@ -5,7 +5,7 @@ const profileId = "11111111-1111-4111-8111-111111111111";
 const activityId = "22222222-2222-4222-8222-222222222222";
 const segmentId = "33333333-3333-4333-8333-333333333333";
 
-function activity(category: "bike" | "run" = "bike") {
+function activity(activity_category: "bike" | "run" = "bike") {
   return {
     id: activityId,
     profile_id: profileId,
@@ -25,7 +25,7 @@ function activity(category: "bike" | "run" = "bike") {
         activity_id: activityId,
         ordinal: 0,
         role: "activity" as const,
-        category,
+        activity_category,
         start_offset_ms: 0,
         end_offset_ms: 3_600_000,
         timing_coverage: "complete" as const,

@@ -16,6 +16,8 @@ describe("feed activity projections", () => {
     expect(normalizedSql).toContain(
       "where ( a.profile_id = $1::uuid or a.content_visibility = 'public' or ( a.content_visibility = 'followers' and exists ( select 1 from follows f where f.follower_id = $2::uuid and f.following_id = a.profile_id and f.status = 'accepted' ) ) ) order by a.started_at desc, a.id desc",
     );
+    expect(normalizedSql).toContain("select s.activity_category from activity_segments s");
+    expect(normalizedSql).not.toContain("select s.category from activity_segments s");
     expect(query.params).toEqual([VIEWER_ID, VIEWER_ID, 21]);
   });
 

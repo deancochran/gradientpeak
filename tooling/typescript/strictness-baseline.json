@@ -54,7 +54,7 @@
       "project": "apps/mobile/tsconfig.json"
     }
   ],
-  "total": 1955,
+  "total": 1940,
   "buckets": [
     {
       "flag": "exactOptionalPropertyTypes",
@@ -327,20 +327,6 @@
       "project": "apps/mobile/tsconfig.json",
       "path": "apps/mobile/components/activity-plan/useActivityPlanSocialController.ts",
       "code": 2379,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/components/activity-plan/workout/StepEditorDialog.tsx",
-      "code": 2379,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/components/activity-plan/workout/TargetMetricsCard.tsx",
-      "code": 2375,
       "count": 1
     },
     {
@@ -1069,7 +1055,7 @@
       "project": "apps/mobile/tsconfig.json",
       "path": "apps/mobile/components/training-plan/create/TrainingPlanBuilderEventCard.tsx",
       "code": 2375,
-      "count": 2
+      "count": 1
     },
     {
       "flag": "exactOptionalPropertyTypes",
@@ -1202,7 +1188,7 @@
       "project": "apps/mobile/tsconfig.json",
       "path": "apps/mobile/lib/services/ActivityRecorder/index.ts",
       "code": 2375,
-      "count": 4
+      "count": 3
     },
     {
       "flag": "exactOptionalPropertyTypes",
@@ -1650,7 +1636,7 @@
       "project": "apps/mobile/tsconfig.json",
       "path": "packages/api/src/routers/events.ts",
       "code": 2375,
-      "count": 3
+      "count": 1
     },
     {
       "flag": "exactOptionalPropertyTypes",
@@ -2467,13 +2453,6 @@
     {
       "flag": "exactOptionalPropertyTypes",
       "project": "apps/web/tsconfig.json",
-      "path": "apps/web/playwright.config.ts",
-      "code": 2769,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/web/tsconfig.json",
       "path": "apps/web/src/components/charts/simple-trend-chart.tsx",
       "code": 2375,
       "count": 2
@@ -3015,7 +2994,7 @@
       "project": "apps/web/tsconfig.json",
       "path": "packages/api/src/routers/events.ts",
       "code": 2375,
-      "count": 3
+      "count": 1
     },
     {
       "flag": "exactOptionalPropertyTypes",
@@ -4056,13 +4035,6 @@
     {
       "flag": "exactOptionalPropertyTypes",
       "project": "packages/api/tsconfig.json",
-      "path": "packages/api/src/routers/__tests__/events.test.ts",
-      "code": 2339,
-      "count": 4
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "packages/api/tsconfig.json",
       "path": "packages/api/src/routers/activities.ts",
       "code": 2375,
       "count": 2
@@ -4100,7 +4072,7 @@
       "project": "packages/api/tsconfig.json",
       "path": "packages/api/src/routers/events.ts",
       "code": 2375,
-      "count": 3
+      "count": 1
     },
     {
       "flag": "exactOptionalPropertyTypes",

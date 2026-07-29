@@ -82,6 +82,7 @@ type PlanWithCardMetadata = NonNullable<CalendarEvent["activity_plan"]> & {
   common_load?: unknown;
   created_at?: string | null;
   owner?: ActivityPlanCardData["owner"];
+  activity_category?: string | null;
   updated_at?: string | null;
 };
 
@@ -133,7 +134,7 @@ function ScheduledRecordPlanCard({
       />
 
       <ActivityPlanSummary
-        activityCategory={activity.activityType}
+        activityCategory={activity.activity_category}
         commonLoad={activity.commonLoad}
         description={activity.description || activity.notes || null}
         estimatedDuration={activity.estimatedDuration}
@@ -178,7 +179,7 @@ function getScheduledActivityPlanCardData(event: CalendarEvent): ActivityPlanCar
   return {
     id: plan.id,
     name: plan.name?.trim() || event.title?.trim() || "Scheduled activity",
-    activityType: plan.activity_category || "other",
+    activity_category: plan.activity_category || "other",
     description: plan.description ?? event.description ?? undefined,
     estimatedDistance: metrics.estimated_distance ?? undefined,
     estimatedDuration: metrics.estimated_duration ?? undefined,
@@ -211,7 +212,7 @@ function getGroupEventActivityPlanCardData(event: CalendarGroupEvent): ActivityP
       event.selectedActivityPlanOptionLabel?.trim() ||
       event.title?.trim() ||
       "Group activity plan",
-    activityType: plan.activity_category || "other",
+    activity_category: plan.activity_category || "other",
     description: plan.description ?? undefined,
     estimatedDistance: metrics.estimated_distance ?? undefined,
     estimatedDuration: metrics.estimated_duration ?? undefined,

@@ -11,6 +11,7 @@ import { View } from "react-native";
 import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
 import { getUniqueActivityCategoryConfigs } from "@/lib/constants/activities";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
+import type { ActivityCategoryLoadMeasurement } from "./ActivityCategoryLoadBreakdown";
 import { ActivityPlanSummary } from "./ActivityPlanSummary";
 import type { EntityOwner } from "./EntityOwnerRow";
 import {
@@ -19,7 +20,6 @@ import {
   ResourceLikeButton,
   ResourceOwnerActionRow,
 } from "./ResourceCardPrimitives";
-import type { SportLoadMeasurement } from "./SportLoadBreakdown";
 
 // ============================================
 // TYPES
@@ -29,8 +29,7 @@ import type { SportLoadMeasurement } from "./SportLoadBreakdown";
 export interface ActivityPlan {
   id: string;
   name: string;
-  categories?: readonly string[];
-  primary_category?: string;
+  activity_category?: string | null;
   structure_hash?: string;
   description?: string | null;
   structure?: unknown;
@@ -41,7 +40,7 @@ export interface ActivityPlan {
     estimated_distance?: number | null;
   } | null;
   common_load?: unknown;
-  category_loads?: readonly SportLoadMeasurement[];
+  category_loads?: readonly ActivityCategoryLoadMeasurement[];
   notes?: string | null;
   profile_id?: string | null;
   template_visibility?: string | null;
@@ -65,19 +64,18 @@ export interface PlannedActivity {
   updated_at?: string;
 }
 
-// Legacy data interface (for backwards compatibility)
+/** Preformatted data for plan/card adapters that do not have a database object. */
 export interface ActivityPlanCardData {
   id: string;
   name: string;
-  activityType: string; // activity_category
-  activityCategories?: readonly string[];
+  activity_category: string;
   description?: string;
   structure?: unknown;
   estimatedDuration?: number; // in seconds
   estimatedTss?: number;
   intensityFactor?: number;
   commonLoad?: unknown;
-  categoryLoads?: readonly SportLoadMeasurement[];
+  categoryLoads?: readonly ActivityCategoryLoadMeasurement[];
   estimatedDistance?: number; // meters
   notes?: string;
   createdAt?: string;
@@ -97,8 +95,8 @@ interface ActivityPlanCardProps {
   activityPlan?: ActivityPlan;
   plannedActivity?: PlannedActivity;
 
-  // Legacy support: accepts pre-formatted data
-  activity?: ActivityPlanCardData;
+  // Accepts preformatted data from plan/card adapters.
+  cardData?: ActivityPlanCardData;
 
   onPress?: () => void;
   testID?: string;
@@ -113,27 +111,27 @@ interface ActivityPlanCardProps {
 export function ActivityPlanCard({
   activityPlan,
   plannedActivity,
-  activity: legacyActivity,
+  cardData: providedCardData,
   onPress,
   testID,
   variant = "default",
   showScheduleInfo = false,
 }: ActivityPlanCardProps) {
-  // Transform database objects to internal format
-  const activity = legacyActivity || transformToCardData(activityPlan, plannedActivity);
+  // Normalize database objects and adapter data to the card's presentation contract.
+  const cardData = providedCardData || transformToCardData(activityPlan, plannedActivity);
 
   // Determine card size based on variant
   const isCompact = variant === "compact";
   const presentation = useMemo(
-    () => deriveActivityPlanPresentation(activity.structure),
-    [activity.structure],
+    () => deriveActivityPlanPresentation(cardData.structure),
+    [cardData.structure],
   );
-  const categoryItems = getUniqueActivityCategoryConfigs(
-    presentation?.categories ?? activity.activityCategories ?? [activity.activityType],
-  ).map((category) => ({
-    icon: category.icon,
-    iconClassName: category.color,
-    label: category.name,
+  const categoryItems = getUniqueActivityCategoryConfigs([
+    presentation?.activity_category ?? cardData.activity_category,
+  ]).map((activity_category) => ({
+    icon: activity_category.icon,
+    iconClassName: activity_category.color,
+    label: activity_category.name,
   }));
 
   const {
@@ -142,16 +140,16 @@ export function ActivityPlanCard({
     likeCount,
     toggleLike,
   } = useResourceLike({
-    entityId: activity.id,
+    entityId: cardData.id,
     entityType: "activity_plan",
-    initialCount: activity.likes_count,
-    initialLiked: activity.has_liked,
+    initialCount: cardData.likes_count,
+    initialLiked: cardData.has_liked,
   });
 
   return (
     <ResourceCardShell
       accessibilityLabel={
-        onPress ? `Open activity plan ${activity.name || "Untitled activity plan"}` : undefined
+        onPress ? `Open activity plan ${cardData.name || "Untitled activity plan"}` : undefined
       }
       actionRegion={
         isCompact ? undefined : (
@@ -167,40 +165,40 @@ export function ActivityPlanCard({
             compact={isCompact}
             categoryItems={categoryItems}
             fallbackLabel="GradientPeak"
-            owner={activity.owner}
-            timestamp={activity.createdAt ?? activity.updatedAt}
+            owner={cardData.owner}
+            timestamp={cardData.createdAt ?? cardData.updatedAt}
           />
         )
       }
-      cardClassName={activity.isCompleted ? "opacity-60" : undefined}
+      cardClassName={cardData.isCompleted ? "opacity-60" : undefined}
       compact={isCompact}
       contentClassName={isCompact ? "gap-3 px-2" : "gap-3 px-3"}
       onPress={onPress}
-      testID={testID ?? `activity-plan-card-${activity.id}`}
+      testID={testID ?? `activity-plan-card-${cardData.id}`}
     >
       {isCompact ? <ResourceCategoryItems items={categoryItems} /> : null}
 
       <ActivityPlanSummary
-        activityCategory={activity.activityType}
-        categoryLoads={activity.categoryLoads}
-        description={activity.description || activity.notes || null}
-        estimatedDuration={activity.estimatedDuration}
-        estimatedTss={activity.estimatedTss}
-        intensityFactor={activity.intensityFactor}
-        commonLoad={activity.commonLoad}
-        owner={activity.owner}
+        activityCategory={cardData.activity_category}
+        categoryLoads={cardData.categoryLoads}
+        description={cardData.description || cardData.notes || null}
+        estimatedDuration={cardData.estimatedDuration}
+        estimatedTss={cardData.estimatedTss}
+        intensityFactor={cardData.intensityFactor}
+        commonLoad={cardData.commonLoad}
+        owner={cardData.owner}
         presentation={presentation}
-        structure={activity.structure}
-        title={activity.name}
+        structure={cardData.structure}
+        title={cardData.name}
         variant="standalone"
         showAttribution={false}
       />
 
-      {showScheduleInfo && activity.scheduledDate && (
+      {showScheduleInfo && cardData.scheduledDate && (
         <View className="mb-2 mt-3 flex-row items-center">
           <Icon as={Calendar} size={12} className="text-muted-foreground mr-1.5" />
           <Text className="text-xs text-muted-foreground">
-            {formatScheduledDateTime(activity.scheduledDate)}
+            {formatScheduledDateTime(cardData.scheduledDate)}
           </Text>
         </View>
       )}
@@ -210,15 +208,15 @@ export function ActivityPlanCard({
         size={isCompact ? "small" : "medium"}
         plan={{
           authoritative_metrics: {
-            estimated_duration: activity.estimatedDuration,
-            estimated_tss: activity.estimatedTss,
-            intensity_factor: activity.intensityFactor,
-            estimated_distance: activity.estimatedDistance,
+            estimated_duration: cardData.estimatedDuration,
+            estimated_tss: cardData.estimatedTss,
+            intensity_factor: cardData.intensityFactor,
+            estimated_distance: cardData.estimatedDistance,
           },
-          structure: activity.structure,
+          structure: cardData.structure,
         }}
         presentation={presentation}
-        testIDPrefix={`activity-plan-card-preview-${activity.id}`}
+        testIDPrefix={`activity-plan-card-preview-${cardData.id}`}
       />
     </ResourceCardShell>
   );
@@ -249,8 +247,7 @@ function transformToCardData(
   return {
     id: plannedActivity?.id || plan.id,
     name: plan.name,
-    activityType: plan.primary_category ?? plan.categories?.[0] ?? "other",
-    activityCategories: plan.categories,
+    activity_category: plan.activity_category ?? "other",
     description: plan.description || undefined,
     structure: plan.structure,
     estimatedDuration: authoritativeMetrics.estimated_duration ?? undefined,

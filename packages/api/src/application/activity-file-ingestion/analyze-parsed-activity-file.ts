@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import {
   type ActivitySegment,
   type ActivitySession,
-  type CanonicalSport,
-  canonicalSportSchema,
+  type CanonicalActivityCategory,
+  canonicalActivityCategorySchema,
   type DecodedActivityArtifact,
 } from "@repo/core";
 import { decodedActivityArtifactSchema } from "@repo/core/activity-artifacts";
@@ -154,11 +154,11 @@ export async function getLatestProfileMetricValue(
   return row && !isClearedProfileOverride(row) ? toNumberOrNull(row.value) : null;
 }
 
-export async function getLatestSportLthrValue(
+export async function getLatestActivityCategoryLthrValue(
   db: DbClient,
   input: {
     profileId: string;
-    activityType: CanonicalSport;
+    activityCategory: CanonicalActivityCategory;
     recordedAtLte: Date;
     excludeActivityId?: string;
   },
@@ -182,9 +182,9 @@ export async function getLatestSportLthrValue(
         eq(profileMetrics.metric_type, "lthr"),
         eq(profileMetrics.source, "derived"),
         eq(profileMetrics.method, "activity_file_lthr_detection"),
-        sql`${profileMetrics.provenance} ->> 'activity_id' = ${profileMetrics.reference_activity_id}`,
+        sql`${profileMetrics.provenance} ->> 'activity_id' = cast(${profileMetrics.reference_activity_id} as text)`,
         sql`${profileMetrics.provenance} ->> 'derived_from' = 'activity_file_stream'`,
-        eq(activitySegments.category, input.activityType),
+        eq(activitySegments.activity_category, input.activityCategory),
         lte(profileMetrics.recorded_at, input.recordedAtLte),
         input.excludeActivityId
           ? ne(profileMetrics.reference_activity_id, input.excludeActivityId)
@@ -228,27 +228,35 @@ function deterministicSegmentId(
 function sourceIdentity(rawSport: string | number | undefined) {
   if (rawSport === 3 || rawSport === "transition") return { role: "transition" as const };
   if (rawSport === 1 || rawSport === "running")
-    return { role: "activity" as const, category: "run" as const };
+    return { role: "activity" as const, activity_category: "run" as const };
   if (rawSport === 2 || rawSport === "cycling")
-    return { role: "activity" as const, category: "bike" as const };
+    return { role: "activity" as const, activity_category: "bike" as const };
   if (rawSport === 5 || rawSport === "swimming")
-    return { role: "activity" as const, category: "swim" as const };
+    return { role: "activity" as const, activity_category: "swim" as const };
   if (rawSport === 10 || rawSport === "training")
-    return { role: "activity" as const, category: "strength" as const };
+    return { role: "activity" as const, activity_category: "strength" as const };
   if (
     (typeof rawSport === "number" && rawSport >= 0 && rawSport <= 43) ||
     (typeof rawSport === "string" && rawSport.length > 0 && rawSport !== "unknown")
   ) {
-    return { role: "activity" as const, category: "other" as const };
+    return { role: "activity" as const, activity_category: "other" as const };
   }
   return { role: "unknown" as const };
 }
 
-function timingSummary(session: ActivitySession | undefined) {
-  const activeMs =
-    session?.totalTimerTime === undefined ? undefined : Math.round(session.totalTimerTime * 1000);
+function boundedTimingMilliseconds(seconds: number | undefined, elapsedMs: number) {
+  if (seconds === undefined || !Number.isFinite(seconds) || seconds < 0) return undefined;
+  const milliseconds = Math.round(seconds * 1000);
+  return milliseconds <= elapsedMs ? milliseconds : undefined;
+}
+
+function timingSummary(session: ActivitySession | undefined, elapsedMs: number) {
+  const activeMs = boundedTimingMilliseconds(session?.totalTimerTime, elapsedMs);
+  const candidateMovingMs = boundedTimingMilliseconds(session?.totalMovingTime, elapsedMs);
   const movingMs =
-    session?.totalMovingTime === undefined ? undefined : Math.round(session.totalMovingTime * 1000);
+    candidateMovingMs !== undefined && (activeMs === undefined || candidateMovingMs <= activeMs)
+      ? candidateMovingMs
+      : undefined;
   if (activeMs !== undefined && movingMs !== undefined) {
     return { timingCoverage: "complete" as const, activeMs, movingMs };
   }
@@ -270,7 +278,6 @@ function buildCompletedSegmentSet(input: {
   const decoded = input.parsedData.decodedArtifact
     ? decodedActivityArtifactSchema.parse(input.parsedData.decodedArtifact)
     : undefined;
-  const elapsedMs = Math.round(input.parsedData.summary.totalTime * 1000);
   const nativeSegments = input.parsedData.segments;
   let segments: ActivitySegment[];
   if (nativeSegments && nativeSegments.length > 0) {
@@ -314,6 +321,20 @@ function buildCompletedSegmentSet(input: {
     }
   }
   const startMs = input.parsedData.metadata.startTime.getTime();
+  const summaryElapsedMs = Math.round(input.parsedData.summary.totalTime * 1000);
+  const decodedElapsedMs =
+    decoded?.activity.endTimeMs === undefined ? 0 : decoded.activity.endTimeMs - startMs;
+  const elapsedMs = Math.max(
+    Number.isFinite(summaryElapsedMs) ? summaryElapsedMs : 0,
+    Number.isFinite(decodedElapsedMs) ? decodedElapsedMs : 0,
+    ...segments.map((segment) => segment.endTime.getTime() - startMs),
+  );
+  if (!Number.isFinite(elapsedMs) || elapsedMs <= 0) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Activity has zero duration and cannot be processed.",
+    });
+  }
 
   return completedActivitySegmentSetSchemaV1.parse({
     version: 1,
@@ -338,10 +359,11 @@ function buildCompletedSegmentSet(input: {
           }
         : undefined;
       const identity = sourceIdentity(segment.rawSport ?? session?.rawSport);
-      const role = segment.role === "activity" && !segment.category ? identity.role : segment.role;
+      const role =
+        segment.role === "activity" && !segment.activity_category ? identity.role : segment.role;
       const summary = {
         version: 1 as const,
-        timing: timingSummary(nativeSession),
+        timing: timingSummary(nativeSession, endOffsetMs - startOffsetMs),
         ...(nativeSession
           ? { distanceMeters: nativeSession.totalDistance }
           : segments.length === 1
@@ -367,8 +389,9 @@ function buildCompletedSegmentSet(input: {
         role,
         ...(role === "activity"
           ? {
-              category:
-                segment.category ?? (identity.role === "activity" ? identity.category : "other"),
+              activity_category:
+                segment.activity_category ??
+                (identity.role === "activity" ? identity.activity_category : "other"),
             }
           : {}),
         startOffsetMs,
@@ -415,7 +438,8 @@ export async function analyzeParsedActivityFile(
 ) {
   const { summary, records } = input.parsedData;
   const startTime = input.parsedData.metadata.startTime;
-  const duration = summary.totalTime;
+  const initialSegmentSet = buildCompletedSegmentSet(input);
+  const duration = initialSegmentSet.elapsedMs / 1000;
 
   if (duration <= 0) {
     throw new TRPCError({
@@ -427,7 +451,6 @@ export async function analyzeParsedActivityFile(
   const distance = summary.totalDistance || 0;
   const activityCompletedAt = new Date(startTime.getTime() + duration * 1000);
   const activityCompletedAtIso = activityCompletedAt.toISOString();
-  const initialSegmentSet = buildCompletedSegmentSet(input);
   const segmentSet = completedActivitySegmentSetSchemaV1.parse({
     ...initialSegmentSet,
     segments: initialSegmentSet.segments.map((segment) => {
@@ -498,7 +521,7 @@ export async function analyzeParsedActivityFile(
       const calculation = calculateActivityFileStreamDerivedCalculations({
         activityId: input.activityId,
         profileId: input.profileId,
-        activityType: segment.category,
+        activityCategory: segment.activity_category,
         distance: segment.summary.distanceMeters ?? 0,
         duration: (segment.endOffsetMs - segment.startOffsetMs) / 1000,
         avgHeartRate: segment.summary.averageHeartRateBpm,
@@ -573,12 +596,14 @@ export async function analyzeParsedActivityFile(
     );
   }
 
-  const canonicalSport = canonicalSportSchema.safeParse(soleActivityAnalysis?.segment.category);
-  const [currentSportLTHR, restingHR] = await Promise.all([
-    canonicalSport.success
-      ? getLatestSportLthrValue(db, {
+  const canonicalActivityCategoryResult = canonicalActivityCategorySchema.safeParse(
+    soleActivityAnalysis?.segment.activity_category,
+  );
+  const [currentActivityCategoryLthr, restingHR] = await Promise.all([
+    canonicalActivityCategoryResult.success
+      ? getLatestActivityCategoryLthrValue(db, {
           profileId: input.profileId,
-          activityType: canonicalSport.data,
+          activityCategory: canonicalActivityCategoryResult.data,
           recordedAtLte: activityCompletedAt,
           excludeActivityId: input.activityId,
         })
@@ -605,7 +630,8 @@ export async function analyzeParsedActivityFile(
     activityCompletedAt,
     activityCompletedAtIso,
     detectedLTHR:
-      detectedLTHR && (currentSportLTHR === null || detectedLTHR > currentSportLTHR)
+      detectedLTHR &&
+      (currentActivityCategoryLthr === null || detectedLTHR > currentActivityCategoryLthr)
         ? detectedLTHR
         : null,
     effortsToInsert,
@@ -613,7 +639,7 @@ export async function analyzeParsedActivityFile(
     summaryValues: {
       activity_id: input.activityId,
       profile_id: input.profileId,
-      elapsed_ms: Math.round(duration * 1000),
+      elapsed_ms: segmentSet.elapsedMs,
       active_ms: activeMs,
       moving_ms: movingMs,
       timing_coverage: unavailableTiming

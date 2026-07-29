@@ -27,10 +27,8 @@ const createPlan = createSystemActivityPlanBuilderFactory("bike", [
  */
 export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
   id: "8a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d",
-  version: "3.0",
   name: "VO2 Max Development",
   description: "75-minute activity with challenging VO2 max intervals",
-  activity_category: "bike",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({
@@ -95,10 +93,8 @@ export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
  */
 export const SAMPLE_RECOVERY_WORKOUT: RecordingServiceActivityPlan = {
   id: "9b2c3d4e-5f6a-7b8c-9d0e-1f2a3b4c5d6e",
-  version: "3.0",
   name: "Active Recovery Ride",
   description: "45-minute easy recovery ride to promote blood flow",
-  activity_category: "bike",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({
@@ -129,10 +125,8 @@ export const SAMPLE_RECOVERY_WORKOUT: RecordingServiceActivityPlan = {
  */
 export const SAMPLE_SPRINT_WORKOUT: RecordingServiceActivityPlan = {
   id: "0c3d4e5f-6a7b-8c9d-0e1f-2a3b4c5d6e7f",
-  version: "3.0",
   name: "Sprint Power Development",
   description: "Short activity focusing on neuromuscular power and sprint development",
-  activity_category: "bike",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({
@@ -186,11 +180,9 @@ export const SAMPLE_SPRINT_WORKOUT: RecordingServiceActivityPlan = {
 
 export const SAMPLE_THRESHOLD_HR_WORKOUT: RecordingServiceActivityPlan = {
   id: "1d4e5f6a-7b8c-9d0e-1f2a-3b4c5d6e7f8a",
-  version: "3.0",
   name: "Threshold Heart Rate Intervals",
   description:
     "45-minute indoor trainer activity focused on threshold heart rate intervals. Maintain steady cadence of 85-95 RPM and target threshold HR zones during main intervals.",
-  activity_category: "bike",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({
@@ -233,11 +225,9 @@ export const SAMPLE_THRESHOLD_HR_WORKOUT: RecordingServiceActivityPlan = {
 
 export const SAMPLE_TESTING_WORKOUT: RecordingServiceActivityPlan = {
   id: "2e5f6a7b-8c9d-0e1f-2a3b-4c5d6e7f8a9b",
-  version: "3.0",
   name: "Comprehensive 1-Minute Schema Test",
   description:
     "A short test activity containing every major step type and target style to validate parsing, UI rendering, and compliance scoring.",
-  activity_category: "bike",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({
@@ -292,10 +282,8 @@ export const SAMPLE_TESTING_WORKOUT: RecordingServiceActivityPlan = {
 
 export const SYSTEM_SWEET_SPOT_WORKOUT: RecordingServiceActivityPlan = {
   id: "d2c8f1a0-5b9e-4e3a-8f7d-9c6b4a2e1f0d",
-  version: "3.0",
   name: "Sweet Spot Intervals",
   description: "Classic sweet spot activity with 3x10min intervals at 90% FTP",
-  activity_category: "bike",
   gps_recording_enabled: false,
   structure: createPlan()
     .warmup({
@@ -337,11 +325,9 @@ export const SYSTEM_SWEET_SPOT_WORKOUT: RecordingServiceActivityPlan = {
 
 export const SYSTEM_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
   id: "e3d9a2b1-6c0f-5f4b-9a8e-0d7c5b3f2a1e",
-  version: "3.0",
   name: "VO2 Max Intervals",
   description:
     "5x3min at 120% FTP with 3min recovery - High intensity aerobic capacity development",
-  activity_category: "bike",
   gps_recording_enabled: false,
   structure: createPlan()
     .warmup({
@@ -375,10 +361,8 @@ export const SYSTEM_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
 
 export const SYSTEM_FTP_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
   id: "f4e0b3c2-7d1a-6a5c-0b9f-1e8d6c4a3b2f",
-  version: "3.0",
   name: "FTP Intervals",
   description: "4x8min at 95% FTP (threshold) - Build sustainable power at threshold",
-  activity_category: "bike",
   gps_recording_enabled: false,
   structure: createPlan()
     .warmup({

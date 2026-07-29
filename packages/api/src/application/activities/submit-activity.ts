@@ -152,7 +152,7 @@ function assignEffortSegments(
     const matches = segmentSet.segments.filter(
       (segment) =>
         segment.role === "activity" &&
-        segment.category === effort.activity_category &&
+        segment.activity_category === effort.activity_category &&
         startMs >= segment.startOffsetMs &&
         endMs <= segment.endOffsetMs,
     );
@@ -399,7 +399,7 @@ async function replaceSegments(
         profile_id: input.profileId,
         ordinal: segment.ordinal,
         role: segment.role,
-        category: segment.role === "activity" ? segment.category : null,
+        activity_category: segment.role === "activity" ? segment.activity_category : null,
         start_offset_ms: segment.startOffsetMs,
         end_offset_ms: segment.endOffsetMs,
         source_artifact_id:
@@ -411,6 +411,8 @@ async function replaceSegments(
         raw_type_integer: typeof source?.rawType === "number" ? source.rawType : null,
         raw_sport_string: typeof source?.rawSport === "string" ? source.rawSport : null,
         raw_sport_integer: typeof source?.rawSport === "number" ? source.rawSport : null,
+        raw_sub_sport_string: typeof source?.rawSubSport === "string" ? source.rawSubSport : null,
+        raw_sub_sport_integer: typeof source?.rawSubSport === "number" ? source.rawSubSport : null,
         summary: segment.summary,
         summary_version: 1,
         timing_coverage: timing.timingCoverage,

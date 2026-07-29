@@ -130,8 +130,8 @@ export function formatPace(
   return formatRunningPace(1000 / value, unitSystem);
 }
 
-export function getActivityBadgeLabel(activityType: string) {
-  switch (activityType) {
+export function getActivityBadgeLabel(activityCategory: string) {
+  switch (activityCategory) {
     case "run":
       return "Run";
     case "bike":
@@ -194,8 +194,8 @@ export function deriveCurrentArtifactLabel(
   return artifact.original_name?.trim() || `${artifact.format.toUpperCase()} activity file`;
 }
 
-export function getActivityEmoji(activityType: string) {
-  switch (activityType) {
+export function getActivityEmoji(activityCategory: string) {
+  switch (activityCategory) {
     case "run":
       return "🏃";
     case "bike":

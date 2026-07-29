@@ -1,6 +1,6 @@
 import { Decoder, Stream } from "@garmin/fitsdk";
 import { describe, expect, it } from "vitest";
-import type { PlannedWorkoutExportDocument } from "../plan/plannedWorkoutExportDocument";
+import type { PlannedActivityExportDocument } from "../plan/plannedActivityExportDocument";
 import {
   encodeGarminWorkoutFitDiagnostic,
   getGarminWorkoutFitUnsupportedReasons,
@@ -15,15 +15,15 @@ const STEP_IDS = [
   "00000000-0000-4000-8000-000000000006",
 ] as const;
 
-function supportedDocument(): PlannedWorkoutExportDocument {
-  const document: PlannedWorkoutExportDocument = {
-    version: 1,
+function supportedDocument(): PlannedActivityExportDocument {
+  const document: PlannedActivityExportDocument = {
+    version: 2,
     event: {
       id: "event-1",
       name: "Bike diagnostics",
       description: "FIT workout round trip",
     },
-    sport: "bike",
+    activity_category: "bike",
     blocks: [
       {
         kind: "repeat",
@@ -139,17 +139,15 @@ function supportedDocument(): PlannedWorkoutExportDocument {
       },
     ],
   };
-  document.categories = ["bike"];
   document.segments = [
     {
       kind: "activity",
       sourceSegmentId: "20000000-0000-4000-8000-000000000010",
       name: "Bike",
-      category: "bike",
+      activity_category: "bike",
       blocks: document.blocks,
     },
   ];
-  document.legacyProjection = { lossless: true, sport: "bike", blocks: document.blocks };
   return document;
 }
 
@@ -159,11 +157,11 @@ type DecodedMessages = {
   workoutStepMesgs: Array<Record<string, unknown>>;
 };
 
-describe("Garmin workout FIT diagnostic encoding", () => {
-  it("encodes a valid workout file and round-trips workout messages through the Garmin SDK", () => {
+describe("Garmin FIT workout diagnostic encoding", () => {
+  it("encodes a valid activity file and round-trips activity messages through the Garmin SDK", () => {
     const result = encodeGarminWorkoutFitDiagnostic(supportedDocument());
     expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error("Expected workout encoding to succeed");
+    if (!result.ok) throw new Error("Expected activity encoding to succeed");
 
     const stream = Stream.fromByteArray(result.bytes);
     expect(Decoder.isFIT(stream)).toBe(true);
@@ -241,11 +239,9 @@ describe("Garmin workout FIT diagnostic encoding", () => {
 
   it("returns explicit reasons instead of encoding structures FIT cannot preserve", () => {
     const document = supportedDocument();
-    document.sport = "swim";
-    document.categories = ["swim"];
+    document.activity_category = "swim";
     const activitySegment = document.segments?.[0];
-    if (activitySegment?.kind === "activity") activitySegment.category = "swim";
-    if (document.legacyProjection) document.legacyProjection.sport = "swim";
+    if (activitySegment?.kind === "activity") activitySegment.activity_category = "swim";
     document.event.description = "😀".repeat(64);
     const firstBlock = document.blocks[0];
     if (firstBlock == null) throw new Error("Expected fixture block");
@@ -292,50 +288,36 @@ describe("Garmin workout FIT diagnostic encoding", () => {
     expect(encodeGarminWorkoutFitDiagnostic(document)).toEqual({ ok: false, reasons });
   });
 
-  it("rejects multisport and boundary projections before FIT encoding", () => {
+  it("rejects rest boundaries before FIT encoding", () => {
     const document = supportedDocument();
-    document.categories = ["bike", "run"];
     document.segments = [
       {
         kind: "activity",
         sourceSegmentId: "20000000-0000-4000-8000-000000000001",
         name: "Bike",
-        category: "bike",
+        activity_category: "bike",
         blocks: document.blocks,
       },
       {
-        kind: "transition",
+        kind: "rest",
         sourceSegmentId: "20000000-0000-4000-8000-000000000002",
-        name: "Transition",
+        name: "Rest",
         duration: { kind: "time", value: 60, unit: "seconds" },
       },
     ];
-    document.legacyProjection = {
-      lossless: false,
-      sport: "bike",
-      blocks: document.blocks,
-    };
-
     const reasons = getGarminWorkoutFitUnsupportedReasons(document);
     expect(reasons).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({
-          code: "lossy_projection",
-          path: ["legacyProjection", "lossless"],
-        }),
-        expect.objectContaining({ code: "lossy_projection", path: ["categories"] }),
         expect.objectContaining({ code: "lossy_projection", path: ["segments", 1] }),
       ]),
     );
     expect(encodeGarminWorkoutFitDiagnostic(document)).toEqual({ ok: false, reasons });
   });
 
-  it("cannot bypass V2 consistency checks by omitting optional projection evidence", () => {
+  it("requires the canonical segment representation", () => {
     const document = supportedDocument();
     document.version = 2;
-    delete document.categories;
     delete document.segments;
-    delete document.legacyProjection;
 
     expect(getGarminWorkoutFitUnsupportedReasons(document)).toContainEqual(
       expect.objectContaining({ code: "lossy_projection", path: ["segments"] }),
@@ -346,17 +328,15 @@ describe("Garmin workout FIT diagnostic encoding", () => {
   it("rejects segment and root block mismatches", () => {
     const document = supportedDocument();
     document.version = 2;
-    document.categories = ["bike"];
     document.segments = [
       {
         kind: "activity",
         sourceSegmentId: "20000000-0000-4000-8000-000000000003",
         name: "Bike",
-        category: "bike",
+        activity_category: "bike",
         blocks: document.blocks.slice(0, 1),
       },
     ];
-    document.legacyProjection = { lossless: true, sport: "bike", blocks: document.blocks };
 
     expect(getGarminWorkoutFitUnsupportedReasons(document)).toContainEqual(
       expect.objectContaining({ code: "lossy_projection", path: ["blocks"] }),

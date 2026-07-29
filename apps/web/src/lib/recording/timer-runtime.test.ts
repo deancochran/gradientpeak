@@ -14,7 +14,7 @@ import {
 
 const configure = () =>
   configureTimerOnlyRecording(createInitialTimerOnlyRecordingState(), {
-    category: "run",
+    activity_category: "run",
     eventId: "00000000-0000-4000-8000-000000000001",
     activityPlanId: "00000000-0000-4000-8000-000000000003",
     routeId: "00000000-0000-4000-8000-000000000002",
@@ -28,7 +28,7 @@ describe("timer-only web recording runtime", () => {
     expect(result.state.reducer.lifecycle).toBe("pending");
     expect(result.state.reducer.snapshot).toBeNull();
     expect(result.state.configuration).toMatchObject({
-      category: "run",
+      activity_category: "run",
       eventId: "00000000-0000-4000-8000-000000000001",
       activityPlanId: "00000000-0000-4000-8000-000000000003",
       routeId: "00000000-0000-4000-8000-000000000002",
@@ -118,7 +118,7 @@ describe("timer-only web recording runtime", () => {
     expect(restored.reducer.lifecycle).toBe("finished");
     expect(restored.reducer.snapshot).toEqual(snapshot);
     expect(restored.configuration).toMatchObject({
-      category: "run",
+      activity_category: "run",
       eventId: "00000000-0000-4000-8000-000000000001",
       routeId: "00000000-0000-4000-8000-000000000002",
     });

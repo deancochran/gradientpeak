@@ -1,7 +1,20 @@
 import { randomUUID } from "node:crypto";
+import { activityPlanStructureSchemaV3 } from "@repo/core";
 import { type DrizzleDbClient, schema } from "@repo/db";
-import { and, eq, gte, or } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, or } from "drizzle-orm";
 import type { EventDeleteScope, EventWriteRepository } from "../../repositories";
+
+export class EventPlanReplacementCompletionConflict extends Error {
+  constructor() {
+    super("Unlink the completed activity before replacing an activity plan");
+  }
+}
+
+export class EventCurrentPlanUpdateConflict extends Error {
+  constructor() {
+    super("Events linked to unavailable or non-executable activity plans cannot be updated");
+  }
+}
 
 function serializeCreatedEvent(row: {
   activity_plan_id: string | null;
@@ -130,7 +143,7 @@ const splitEventReturningColumns = {
 
 type EventTransaction = Parameters<Parameters<DrizzleDbClient["transaction"]>[0]>[0];
 
-async function loadSplitEvent(db: any, eventId: string, profileId: string) {
+async function loadSplitEvent(db: EventTransaction, eventId: string, profileId: string) {
   const [row] = await db
     .select(splitEventReturningColumns)
     .from(schema.events)
@@ -142,6 +155,21 @@ async function loadSplitEvent(db: any, eventId: string, profileId: string) {
   }
 
   return serializeSplitEventRow(row);
+}
+
+async function loadSplitEvents(db: EventTransaction, eventIds: string[], profileId: string) {
+  if (eventIds.length === 0) return [];
+
+  const rows: Array<Parameters<typeof serializeSplitEventRow>[0]> = await db
+    .select(splitEventReturningColumns)
+    .from(schema.events)
+    .where(and(eq(schema.events.profile_id, profileId), inArray(schema.events.id, eventIds)));
+  const rowsById = new Map(rows.map((row) => [row.id, serializeSplitEventRow(row)]));
+
+  return eventIds.flatMap((eventId) => {
+    const row = rowsById.get(eventId);
+    return row ? [row] : [];
+  });
 }
 
 async function insertOwnedEvent(
@@ -189,7 +217,11 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
   return {
     async getAccessibleActivityPlan({ activityPlanId, profileId }) {
       const [row] = await db
-        .select({ id: schema.activityPlans.id })
+        .select({
+          id: schema.activityPlans.id,
+          name: schema.activityPlans.name,
+          structure: schema.activityPlans.structure,
+        })
         .from(schema.activityPlans)
         .where(
           and(
@@ -200,6 +232,20 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
             ),
           ),
         )
+        .limit(1);
+
+      return row ?? null;
+    },
+
+    async getActivityPlanById({ activityPlanId }) {
+      const [row] = await db
+        .select({
+          id: schema.activityPlans.id,
+          name: schema.activityPlans.name,
+          structure: schema.activityPlans.structure,
+        })
+        .from(schema.activityPlans)
+        .where(eq(schema.activityPlans.id, activityPlanId))
         .limit(1);
 
       return row ?? null;
@@ -276,7 +322,13 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
       return rows.map(serializeSplitEventRow);
     },
 
-    async updateOwnedEventsForScope({ anchorEvent, eventUpdates, profileId, scope }) {
+    async updateOwnedEventsForScope({
+      anchorEvent,
+      eventUpdates,
+      profileId,
+      rejectPlanReplacementWithCompletion,
+      scope,
+    }) {
       const now = new Date();
       const eventType = eventUpdates["event_type"];
       const notes = eventUpdates["notes"];
@@ -319,13 +371,71 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
       };
 
       const rows = await db.transaction(async (tx) => {
-        const updatedEvents = await tx
+        // Lock the exact mutation scope before examining its current plan links. The
+        // plan structures are intentionally read without a plan-row lock: the event
+        // lock serializes the FK ON DELETE SET NULL action and any plan-id mutation.
+        // Plan structures are canonical, so this avoids an Event -> Plan lock inversion with plan
+        // deletion's Plan -> Event FK lock without weakening this invariant.
+        const candidateQuery = tx
+          .select({
+            id: schema.events.id,
+            activity_plan_id: schema.events.activity_plan_id,
+            linked_activity_id: schema.events.linked_activity_id,
+            status: schema.events.status,
+          })
+          .from(schema.events)
+          .where(applyWriteScopeFilters({ anchorEvent, profileId, scope }))
+          .orderBy(asc(schema.events.id));
+        const lockableCandidateQuery = candidateQuery as typeof candidateQuery & {
+          for?: (strength: "update") => typeof candidateQuery;
+        };
+        const candidates = await (lockableCandidateQuery.for
+          ? lockableCandidateQuery.for("update")
+          : candidateQuery);
+
+        const currentPlanIds = candidates.flatMap((candidate) =>
+          candidate.activity_plan_id ? [candidate.activity_plan_id] : [],
+        );
+        if (currentPlanIds.length > 0) {
+          const planQuery = tx
+            .select({ id: schema.activityPlans.id, structure: schema.activityPlans.structure })
+            .from(schema.activityPlans)
+            .where(inArray(schema.activityPlans.id, [...new Set(currentPlanIds)]));
+          const currentPlans = await planQuery;
+          const plansById = new Map(currentPlans.map((plan) => [plan.id, plan]));
+
+          if (
+            currentPlanIds.some((planId) => {
+              const plan = plansById.get(planId);
+              return !plan || !activityPlanStructureSchemaV3.safeParse(plan.structure).success;
+            })
+          ) {
+            throw new EventCurrentPlanUpdateConflict();
+          }
+        }
+
+        if (rejectPlanReplacementWithCompletion) {
+          if (
+            candidates.some(
+              (candidate) =>
+                candidate.activity_plan_id !== activityPlanId &&
+                (candidate.linked_activity_id !== null || candidate.status === "completed"),
+            )
+          ) {
+            throw new EventPlanReplacementCompletionConflict();
+          }
+        }
+        await tx
           .update(schema.events)
           .set(eventUpdateValues)
           .where(applyWriteScopeFilters({ anchorEvent, profileId, scope }))
           .returning({ id: schema.events.id });
 
-        return Promise.all(updatedEvents.map((event) => loadSplitEvent(tx, event.id, profileId)));
+        return loadSplitEvents(
+          tx,
+          candidates.map((candidate) => candidate.id),
+          profileId,
+        );
       });
 
       return rows;

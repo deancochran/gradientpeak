@@ -46,7 +46,7 @@ function option(type: ProfileMetricType): ProfileMetricOption {
 export const profileMetricGroups = [
   {
     label: "Load Calibration",
-    description: "Thresholds that directly calibrate sport-specific training load.",
+    description: "Thresholds that directly calibrate activity-category-specific training load.",
     metrics: [
       option("ftp"),
       option("threshold_pace_seconds_per_km"),

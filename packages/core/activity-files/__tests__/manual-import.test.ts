@@ -17,7 +17,7 @@ const validFile = {
 
 const validForm = {
   files: [validFile],
-  sport: "bike",
+  activity_category: "bike",
   name: "Morning ride",
   notes: null,
 };
@@ -78,9 +78,10 @@ describe("manual activity import form contract", () => {
     ).toBe(false);
   });
 
-  it("requires a canonical sport", () => {
+  it("requires a canonical activity_category", () => {
     expect(
-      manualActivityImportFormSchema.safeParse({ ...validForm, sport: "pickleball" }).success,
+      manualActivityImportFormSchema.safeParse({ ...validForm, activity_category: "pickleball" })
+        .success,
     ).toBe(false);
   });
 

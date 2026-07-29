@@ -6,7 +6,7 @@ import {
   type TrajectoryMode,
 } from "../../../schemas/planning";
 import type { AthletePreferenceProfile } from "../../../schemas/settings/profile_settings";
-import { getSportModelConfig } from "../sports";
+import { getActivityCategoryModelConfig } from "../activity-categories";
 import {
   type ResolvedConstraintProfile,
   resolveConstraintProfile,
@@ -46,7 +46,8 @@ function assessAvailability(
   }
 
   const maxSupportedWeeklyLoad =
-    (maxDurationMinutes / 60) * getSportModelConfig(demand.sport).weekly_tss_per_hour;
+    (maxDurationMinutes / 60) *
+    getActivityCategoryModelConfig(demand.activity_category).weekly_tss_per_hour;
 
   return maxSupportedWeeklyLoad >= demand.required_weekly_load_floor;
 }
@@ -128,7 +129,7 @@ export function assessFeasibility(input: AssessFeasibilityInput): FeasibilityAss
     resolveConstraintProfile({
       optimizationProfile: "balanced",
       preferenceProfile: input.preferenceProfile,
-      sport: primaryDemand.sport,
+      activity_category: primaryDemand.activity_category,
     });
   const weeksToPeak = Math.max(finiteNumber(input.weeksToPeak, 1), 1);
   const requiredPeakCtl = finiteNumber(primaryDemand.required_peak_ctl, currentCtl);

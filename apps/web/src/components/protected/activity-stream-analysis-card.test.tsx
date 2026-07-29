@@ -34,13 +34,13 @@ const sufficient = {
 
 const analysis: ActivityStreamAnalysis = {
   version: "2",
-  sport: "run",
+  activity_category: "run",
   policy: { max_accepted_gap_seconds: 30, minimum_coverage_ratio: 0.7 },
   distributions: {
     heart_rate: sufficient,
     power: {
       ...sufficient,
-      quality: { ...quality, status: "insufficient", reason: "sport_mismatch" },
+      quality: { ...quality, status: "insufficient", reason: "activity_category_mismatch" },
       threshold: null,
       threshold_identity: null,
       zones: [],
@@ -48,7 +48,7 @@ const analysis: ActivityStreamAnalysis = {
     run_pace: { ...sufficient, threshold: 4.2 },
     swim_pace: {
       ...sufficient,
-      quality: { ...quality, status: "insufficient", reason: "sport_mismatch" },
+      quality: { ...quality, status: "insufficient", reason: "activity_category_mismatch" },
       threshold: null,
       threshold_identity: null,
       zones: [],
@@ -79,7 +79,7 @@ describe("ActivityStreamAnalysisCard", () => {
     expect(screen.getByText("Swim pace zones")).toBeTruthy();
     expect(screen.getAllByText(/100% coverage/).length).toBeGreaterThan(0);
     expect(
-      screen.getAllByText("Not applicable to this activity sport. 100% coverage.").length,
+      screen.getAllByText("Not applicable to this activity category. 100% coverage.").length,
     ).toBe(2);
   });
 

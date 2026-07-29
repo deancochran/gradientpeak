@@ -19,9 +19,18 @@ export type ActivitySegmentReadRow = Pick<
   | "activity_id"
   | "ordinal"
   | "role"
-  | "category"
+  | "activity_category"
   | "start_offset_ms"
   | "end_offset_ms"
+  | "source_artifact_id"
+  | "source_session_index"
+  | "source_message_index"
+  | "raw_type_string"
+  | "raw_type_integer"
+  | "raw_sport_string"
+  | "raw_sport_integer"
+  | "raw_sub_sport_string"
+  | "raw_sub_sport_integer"
   | "timing_coverage"
   | "active_ms"
   | "moving_ms"
@@ -46,7 +55,7 @@ export type ActivityWithSegments = Pick<
 export type SegmentDerivedSummary = ActivityListDerivedSummary & {
   activity_id: string;
   segment_id: string;
-  category: NonNullable<ActivitySegmentReadRow["category"]>;
+  activity_category: NonNullable<ActivitySegmentReadRow["activity_category"]>;
   dedupe_key: string;
   load_stream_key: string | null;
 };
@@ -71,14 +80,14 @@ export function orderedActivitySegments(segments: readonly ActivitySegmentReadRo
       (
         segment,
       ): segment is ActivitySegmentReadRow & {
-        category: NonNullable<ActivitySegmentReadRow["category"]>;
-      } => segment.role === "activity" && segment.category !== null,
+        activity_category: NonNullable<ActivitySegmentReadRow["activity_category"]>;
+      } => segment.role === "activity" && segment.activity_category !== null,
     )
     .sort((left, right) => left.ordinal - right.ordinal);
 }
 
 export function deriveActivityParentClassification(segments: readonly ActivitySegmentReadRow[]) {
-  const categories = orderedActivitySegments(segments).map((segment) => segment.category);
+  const categories = orderedActivitySegments(segments).map((segment) => segment.activity_category);
   return {
     kind:
       categories.length === 0
@@ -87,7 +96,7 @@ export function deriveActivityParentClassification(segments: readonly ActivitySe
           ? ("single" as const)
           : ("multisport" as const),
     categories,
-    category: categories.length === 1 ? (categories[0] ?? null) : null,
+    activity_category: categories.length === 1 ? (categories[0] ?? null) : null,
   };
 }
 
@@ -118,9 +127,18 @@ export async function loadActivitySegmentsByActivityId(
       activity_id: activitySegments.activity_id,
       ordinal: activitySegments.ordinal,
       role: activitySegments.role,
-      category: activitySegments.category,
+      activity_category: activitySegments.activity_category,
       start_offset_ms: activitySegments.start_offset_ms,
       end_offset_ms: activitySegments.end_offset_ms,
+      source_artifact_id: activitySegments.source_artifact_id,
+      source_session_index: activitySegments.source_session_index,
+      source_message_index: activitySegments.source_message_index,
+      raw_type_string: activitySegments.raw_type_string,
+      raw_type_integer: activitySegments.raw_type_integer,
+      raw_sport_string: activitySegments.raw_sport_string,
+      raw_sport_integer: activitySegments.raw_sport_integer,
+      raw_sub_sport_string: activitySegments.raw_sub_sport_string,
+      raw_sub_sport_integer: activitySegments.raw_sub_sport_integer,
       timing_coverage: activitySegments.timing_coverage,
       active_ms: activitySegments.active_ms,
       moving_ms: activitySegments.moving_ms,
@@ -151,7 +169,7 @@ function contextRequestKey(input: {
 function streamKey(summary: ActivityListDerivedSummary): string | null {
   const identity = summary.tss_identity;
   return identity
-    ? `${identity.sport}:${identity.method}:${identity.source}:${identity.version}`
+    ? `${identity.activity_category}:${identity.method}:${identity.source}:${identity.version}`
     : null;
 }
 
@@ -218,7 +236,7 @@ export async function buildActivitySegmentDerivedSummaries(input: {
         output.push({
           activity_id: activity.id,
           segment_id: segment.id,
-          category: segment.category,
+          activity_category: segment.activity_category,
           tss: null,
           tss_identity: null,
           intensity_factor: null,
@@ -229,7 +247,7 @@ export async function buildActivitySegmentDerivedSummaries(input: {
             status: "unavailable",
             model: COMMON_RELATIVE_LOAD_MODEL,
             version: COMMON_RELATIVE_LOAD_VERSION,
-            sport: segment.category,
+            activity_category: segment.activity_category,
             method: null,
             quality: null,
             thresholdEvidence: null,
@@ -252,7 +270,7 @@ export async function buildActivitySegmentDerivedSummaries(input: {
         output.push({
           activity_id: activity.id,
           segment_id: segment.id,
-          category: segment.category,
+          activity_category: segment.activity_category,
           tss: null,
           tss_identity: null,
           intensity_factor: null,
@@ -263,7 +281,7 @@ export async function buildActivitySegmentDerivedSummaries(input: {
             status: "unavailable",
             model: COMMON_RELATIVE_LOAD_MODEL,
             version: COMMON_RELATIVE_LOAD_VERSION,
-            sport: segment.category,
+            activity_category: segment.activity_category,
             method: null,
             quality: null,
             thresholdEvidence: null,
@@ -285,7 +303,7 @@ export async function buildActivitySegmentDerivedSummaries(input: {
       const derived = analyzeActivityDerivedMetrics({
         activity: {
           id: segment.id,
-          type: segment.category,
+          type: segment.activity_category,
           started_at: startedAt.toISOString(),
           finished_at: finishedAt.toISOString(),
           duration_seconds: durationSeconds,
@@ -321,7 +339,7 @@ export async function buildActivitySegmentDerivedSummaries(input: {
         ...compact,
         activity_id: activity.id,
         segment_id: segment.id,
-        category: segment.category,
+        activity_category: segment.activity_category,
         dedupe_key: `activity-segment:${activity.id}:${segment.id}:load:v1`,
         load_stream_key: streamKey(compact),
       });

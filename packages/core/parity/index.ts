@@ -452,7 +452,7 @@ export const parityRegistry = [
   {
     area: "training_plans",
     backendOperations: ["events.list", "events.update"],
-    id: "training_plans.reorder_workouts",
+    id: "training_plans.reorder_activities",
     mobileRoute: "/(internal)/(standard)/activities-reorder",
     policy: "required_on_web",
     title: "Training plan activity reorder",

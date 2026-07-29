@@ -36,9 +36,9 @@ const stateChannelFields = {
 };
 
 export const athleteStateChannelSchema = z.object(stateChannelFields).strict();
-export const sportSpecificExternalWorkChannelSchema = z
+export const activityCategorySpecificExternalWorkChannelSchema = z
   .object({
-    sport: z.string().trim().min(1).max(64),
+    activity_category: z.string().trim().min(1).max(64),
     loadIdentity: z.string().trim().min(1).max(128),
     ...stateChannelFields,
   })
@@ -50,7 +50,7 @@ export const athleteStateVectorSchema = z
     athleteId: z.string().min(1),
     assessmentAsOf: z.string().datetime({ offset: true }),
     internalResponse: athleteStateChannelSchema,
-    externalWork: z.array(sportSpecificExternalWorkChannelSchema).max(64),
+    externalWork: z.array(activityCategorySpecificExternalWorkChannelSchema).max(64),
     mechanicalExposure: athleteStateChannelSchema,
     strengthExposure: athleteStateChannelSchema,
     wellnessContext: athleteStateChannelSchema,
@@ -62,11 +62,13 @@ export const athleteStateVectorSchema = z
   })
   .strict()
   .superRefine((state, context) => {
-    const sports = state.externalWork.map(({ sport, loadIdentity }) => `${sport}:${loadIdentity}`);
-    if (new Set(sports).size !== sports.length)
+    const activity_categories = state.externalWork.map(
+      ({ activity_category, loadIdentity }) => `${activity_category}:${loadIdentity}`,
+    );
+    if (new Set(activity_categories).size !== activity_categories.length)
       context.addIssue({
         code: "custom",
-        message: "External-work sport/load identities must be unique",
+        message: "External-work activity_category/load identities must be unique",
       });
     const policies = state.policyVersions.map(({ policy }) => policy);
     if (new Set(policies).size !== policies.length)
@@ -83,7 +85,7 @@ const channelInputSchema = z
   .strict();
 const externalChannelInputSchema = channelInputSchema
   .extend({
-    sport: z.string().trim().min(1).max(64),
+    activity_category: z.string().trim().min(1).max(64),
     loadIdentity: z.string().trim().min(1).max(128),
   })
   .strict();
@@ -178,8 +180,8 @@ export function assembleAthleteState(input: AssembleAthleteStateInput): AthleteS
     athleteId: parsed.model.athleteId,
     assessmentAsOf: parsed.model.assessmentAsOf,
     internalResponse: channel(parsed.internalResponse),
-    externalWork: parsed.externalWork.map(({ sport, loadIdentity, ...value }) => ({
-      sport,
+    externalWork: parsed.externalWork.map(({ activity_category, loadIdentity, ...value }) => ({
+      activity_category,
       loadIdentity,
       ...channel(value),
     })),

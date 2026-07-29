@@ -78,6 +78,76 @@ export function createProviderSyncRepository({
   db,
 }: CreateProviderSyncRepositoryOptions): ProviderSyncRepository {
   return {
+    async failJobWithSyncState({
+      expectedIntegrationGeneration,
+      id,
+      integrationId,
+      lastError,
+      nextRunAt,
+      provider,
+      resource,
+      status,
+      workerId,
+    }) {
+      return db.transaction(async (tx) => {
+        const now = new Date();
+        const boundedError = toBoundedProviderSyncError(lastError);
+        const [updated] = await tx
+          .update(schema.providerSyncJobs)
+          .set({
+            last_error: boundedError,
+            lock_expires_at: null,
+            locked_at: null,
+            locked_by: null,
+            run_at: nextRunAt ? new Date(nextRunAt) : undefined,
+            status,
+            updated_at: now,
+          })
+          .where(
+            and(
+              eq(schema.providerSyncJobs.id, id),
+              eq(schema.providerSyncJobs.integration_id, integrationId),
+              eq(schema.providerSyncJobs.integration_generation, expectedIntegrationGeneration),
+              eq(schema.providerSyncJobs.provider, provider),
+              eq(schema.providerSyncJobs.status, "running"),
+              eq(schema.providerSyncJobs.locked_by, workerId),
+              gt(schema.providerSyncJobs.lock_expires_at, now),
+              sql`exists (
+                select 1 from integrations where integrations.id = ${schema.providerSyncJobs.integration_id}
+                  and integrations.lifecycle_status = 'active'
+                  and integrations.generation = ${expectedIntegrationGeneration}
+              )`,
+            ),
+          )
+          .returning({ id: schema.providerSyncJobs.id });
+        if (!updated) return false;
+
+        await tx
+          .insert(schema.providerSyncState)
+          .values({
+            integration_id: integrationId,
+            provider,
+            resource,
+            sync_mode: "push_windowed",
+            next_sync_at: nextRunAt ? new Date(nextRunAt) : null,
+            last_error: boundedError,
+            consecutive_failures: 1,
+            last_sync_failed_at: now,
+          })
+          .onConflictDoUpdate({
+            target: [schema.providerSyncState.integration_id, schema.providerSyncState.resource],
+            set: {
+              consecutive_failures: sql`${schema.providerSyncState.consecutive_failures} + 1`,
+              last_error: boundedError,
+              last_sync_failed_at: now,
+              next_sync_at: nextRunAt ? new Date(nextRunAt) : schema.providerSyncState.next_sync_at,
+              updated_at: now,
+            },
+          });
+        return true;
+      });
+    },
+
     async completeJobWithSyncState({
       highWatermark,
       expectedIntegrationGeneration,
@@ -237,6 +307,7 @@ export function createProviderSyncRepository({
           operation: input.operation ?? null,
           payload: input.payload,
           payload_hash: input.payloadHash ?? null,
+          priority: input.priority ?? 100,
           profile_id: input.profileId,
           provider: input.provider,
           resource_kind: input.resourceKind ?? null,
@@ -251,10 +322,12 @@ export function createProviderSyncRepository({
           const activeLaneJobs = await tx
             .select({
               id: schema.providerSyncJobs.id,
+              internalResourceId: schema.providerSyncJobs.internal_resource_id,
               jobType: schema.providerSyncJobs.job_type,
               operation: schema.providerSyncJobs.operation,
               payloadHash: schema.providerSyncJobs.payload_hash,
               payloadMatches: sql<boolean>`${schema.providerSyncJobs.payload} = ${JSON.stringify(input.payload)}::jsonb`,
+              resourceKind: schema.providerSyncJobs.resource_kind,
               status: schema.providerSyncJobs.status,
             })
             .from(schema.providerSyncJobs)
@@ -270,7 +343,12 @@ export function createProviderSyncRepository({
             .orderBy(asc(schema.providerSyncJobs.queue_sequence))
             .for("update");
           const queuedJobs = activeLaneJobs.filter((job) => job.status === "queued");
-          const queuedJob = queuedJobs[0];
+          const coalescibleQueuedJobs = queuedJobs.filter(
+            (job) =>
+              job.internalResourceId === (input.internalResourceId ?? null) &&
+              job.resourceKind === (input.resourceKind ?? null),
+          );
+          const queuedJob = coalescibleQueuedJobs[0];
 
           if (queuedJob) {
             await tx
@@ -278,7 +356,7 @@ export function createProviderSyncRepository({
               .set(desiredQueuedValues)
               .where(eq(schema.providerSyncJobs.id, queuedJob.id));
 
-            const redundantQueuedJobIds = queuedJobs.slice(1).map((job) => job.id);
+            const redundantQueuedJobIds = coalescibleQueuedJobs.slice(1).map((job) => job.id);
             if (redundantQueuedJobIds.length > 0) {
               await tx
                 .delete(schema.providerSyncJobs)
@@ -537,6 +615,7 @@ export function createProviderSyncRepository({
           integrationId: integration.id,
           jobType: "wahoo.disconnect",
           payload: { expectedGeneration: generation },
+          priority: 0,
           profileId,
           provider: "wahoo",
           runAt: now.toISOString(),

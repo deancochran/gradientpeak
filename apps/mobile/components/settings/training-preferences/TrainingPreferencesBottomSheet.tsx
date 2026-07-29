@@ -3,7 +3,7 @@ import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import type { ReactNode } from "react";
 import { View } from "react-native";
-import { AppBottomSheet } from "@/components/shared/AppBottomSheet";
+import { APP_BOTTOM_SHEET_PRESENTATIONS, AppBottomSheet } from "@/components/shared/AppBottomSheet";
 
 type TrainingPreferencesBottomSheetProps = {
   children: ReactNode;
@@ -49,7 +49,8 @@ export function TrainingPreferencesBottomSheet({
         contentKey ?? (visible ? "training-preferences-open" : "training-preferences-closed")
       }
       contentPaddingBottom={180}
-      snapPoints={["88%", "96%"]}
+      initialSnapIndex={APP_BOTTOM_SHEET_PRESENTATIONS.inspector.initialSnapIndex}
+      snapPoints={APP_BOTTOM_SHEET_PRESENTATIONS.inspector.snapPoints}
       footer={
         <View className="flex-row gap-3">
           <Button
@@ -59,7 +60,7 @@ export function TrainingPreferencesBottomSheet({
             testID="training-preferences-reset-button"
             variant="outline"
           >
-            <Text className="text-sm font-medium text-foreground">Reset</Text>
+            <Text className="text-sm font-medium text-foreground">Revert changes</Text>
           </Button>
           <LoadingButton
             className="min-h-11 flex-1"

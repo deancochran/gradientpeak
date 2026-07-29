@@ -14,8 +14,8 @@ import {
   type WeekdayKey,
 } from "@/components/settings/training-preferences/sections/AvailabilitySection";
 import { BaselineFitnessSection } from "@/components/settings/training-preferences/sections/BaselineFitnessSection";
-import type { SportOverrideKey } from "@/components/settings/training-preferences/sections/ScheduleSection";
-import { SportDoseOverridesSection } from "@/components/settings/training-preferences/sections/ScheduleSection";
+import type { ActivityCategoryOverrideKey } from "@/components/settings/training-preferences/sections/ScheduleSection";
+import { ActivityCategoryDoseOverridesSection } from "@/components/settings/training-preferences/sections/ScheduleSection";
 import { TrainingPreferenceFieldRenderer } from "@/components/settings/training-preferences/TrainingPreferenceFieldRenderer";
 
 export type ScheduleValidation = {
@@ -38,7 +38,7 @@ export type GlobalTrainingPreferenceCatalogSectionProps = {
   onToggleAdvancedBaselineControls: () => void;
   onToggleAvailabilityDay: (day: WeekdayKey) => void;
   onToggleHardRestDay: (day: WeekdayKey) => void;
-  onToggleSportDoseOverride: (sport: SportOverrideKey) => void;
+  onToggleActivityCategoryDoseOverride: (activity_category: ActivityCategoryOverrideKey) => void;
   scheduleValidation: ScheduleValidation;
   showAdvancedBaselineControls: boolean;
 };
@@ -149,7 +149,7 @@ export function GlobalTrainingPreferenceCatalogSection({
   onToggleAdvancedBaselineControls,
   onToggleAvailabilityDay,
   onToggleHardRestDay,
-  onToggleSportDoseOverride,
+  onToggleActivityCategoryDoseOverride,
   scheduleValidation,
   showAdvancedBaselineControls,
 }: GlobalTrainingPreferenceCatalogSectionProps) {
@@ -187,13 +187,13 @@ export function GlobalTrainingPreferenceCatalogSection({
           return null;
         }
 
-        if (field.control === "sport-overrides") {
+        if (field.control === "activity_category-overrides") {
           return (
-            <SportDoseOverridesSection
+            <ActivityCategoryDoseOverridesSection
               key={field.id}
               control={control}
               doseLimits={doseLimits}
-              onToggleSportDoseOverride={onToggleSportDoseOverride}
+              onToggleActivityCategoryDoseOverride={onToggleActivityCategoryDoseOverride}
             />
           );
         }

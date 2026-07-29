@@ -101,7 +101,7 @@ describe("WahooWebhookJobService", () => {
     expect(deps.providerSyncRepository.setWebhookReceiptJob).not.toHaveBeenCalled();
   });
 
-  it("processes queued workout summary receipts through the importer", async () => {
+  it("processes queued workout_summary receipts through the importer", async () => {
     const deps = createDeps();
     deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
       {

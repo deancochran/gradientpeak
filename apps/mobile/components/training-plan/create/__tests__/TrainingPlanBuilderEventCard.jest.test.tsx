@@ -40,7 +40,7 @@ const session = {
     accessible: true,
     estimatedDurationSeconds: null,
     estimatedTss: null,
-    id: "workout-1",
+    id: "activity-1",
     name: "Intervals",
     published: true,
   },
@@ -49,7 +49,7 @@ const session = {
 };
 
 describe("TrainingPlanBuilderEventCard actions", () => {
-  it("exposes assigned workout actions in a non-wrapping grid", () => {
+  it("exposes assigned activity actions in a non-wrapping grid", () => {
     const onDuplicate = jest.fn();
     const onMoveByDays = jest.fn();
     const onRemove = jest.fn();
@@ -74,7 +74,7 @@ describe("TrainingPlanBuilderEventCard actions", () => {
     expect(screen.getByLabelText("Move earlier").props.accessibilityState).toEqual({
       disabled: true,
     });
-    expect(screen.getByTestId("builder-workout-actions-session-1").props.className).not.toContain(
+    expect(screen.getByTestId("builder-activity-actions-session-1").props.className).not.toContain(
       "flex-wrap",
     );
   });
@@ -93,8 +93,8 @@ describe("TrainingPlanBuilderEventCard actions", () => {
     expect(screen.getByLabelText("Monday").props.accessibilityState).toEqual({ checked: true });
     expect(screen.getByLabelText("Tuesday").props.accessibilityState).toEqual({ checked: false });
     expect(screen.getByLabelText("No time").props.accessibilityState).toEqual({ checked: true });
-    expect(screen.getByLabelText("Workout day").props.accessibilityRole).toBe("radiogroup");
-    expect(screen.getByLabelText("Workout time").props.accessibilityRole).toBe("radiogroup");
+    expect(screen.getByLabelText("Activity day").props.accessibilityRole).toBe("radiogroup");
+    expect(screen.getByLabelText("Activity time").props.accessibilityRole).toBe("radiogroup");
     expect(screen.getByLabelText("Move earlier").props.accessibilityState).toEqual({
       disabled: true,
     });

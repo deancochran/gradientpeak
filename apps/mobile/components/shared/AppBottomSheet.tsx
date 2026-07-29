@@ -10,7 +10,7 @@ import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { ChevronLeft } from "lucide-react-native";
 import type { ReactNode } from "react";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useRef } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -20,6 +20,11 @@ import { getNativeBottomSheetVisualTokens } from "@/lib/theme/native-bottom-shee
 export const APP_BOTTOM_SHEET_CUSTOM_CONTENT_TOP_INSET = 88;
 export const APP_BOTTOM_SHEET_SEARCH_HEADER_CONTENT_TOP_INSET = 96;
 export const APP_BOTTOM_SHEET_ACTION_FOOTER_BOTTOM_INSET = 132;
+export const APP_BOTTOM_SHEET_PRESENTATIONS = {
+  filter: { initialSnapIndex: 0, snapPoints: ["78%"] },
+  inspector: { initialSnapIndex: 0, snapPoints: ["82%", "96%"] },
+  browser: { initialSnapIndex: 1, snapPoints: ["88%", "96%"] },
+};
 
 type AppBottomSheetProps = {
   children: ReactNode;
@@ -112,7 +117,7 @@ export function AppBottomSheet({
 }: AppBottomSheetProps) {
   const bottomSheetRef = useRef<BottomSheet>(null);
   const { bottom: bottomSafeAreaInset } = useSafeAreaInsets();
-  const defaultSnapPoints = useMemo(() => ["82%", "96%"], []);
+  const defaultSnapPoints = APP_BOTTOM_SHEET_PRESENTATIONS.inspector.snapPoints;
   const snapPoints = snapPointProp ?? defaultSnapPoints;
   const resolvedInitialSnapIndex = Math.min(
     Math.max(initialSnapIndex ?? snapPoints.length - 1, 0),

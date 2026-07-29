@@ -34,7 +34,7 @@ const distribution = {
 
 const analysis: ActivityStreamAnalysis = {
   version: "2",
-  sport: "run",
+  activity_category: "run",
   policy: { max_accepted_gap_seconds: 30, minimum_coverage_ratio: 0.7 },
   distributions: {
     heart_rate: distribution,
@@ -46,7 +46,7 @@ const analysis: ActivityStreamAnalysis = {
     run_pace: { ...distribution, threshold: 4.2 },
     swim_pace: {
       ...distribution,
-      quality: { ...quality, status: "insufficient", reason: "sport_mismatch" },
+      quality: { ...quality, status: "insufficient", reason: "activity_category_mismatch" },
       zones: [],
     },
   },

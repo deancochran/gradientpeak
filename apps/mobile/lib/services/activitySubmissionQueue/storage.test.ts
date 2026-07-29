@@ -36,7 +36,7 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
 }));
 
 const baseJob: ActivitySubmissionQueueJob = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   id: "job-1",
   artifactId: "artifact-1",
   sessionId: "session-1",
@@ -49,7 +49,7 @@ const baseJob: ActivitySubmissionQueueJob = {
     startedAt: "2026-01-01T10:00:00.000Z",
     finishedAt: "2026-01-01T11:00:00.000Z",
     name: "Morning ride",
-    activityType: "bike",
+    activity_category: "bike",
     durationSeconds: 3600,
     movingSeconds: 3500,
     distanceMeters: 25_000,

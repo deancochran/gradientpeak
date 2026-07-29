@@ -23,7 +23,7 @@ type TrainingPlanFixture = {
   template_visibility?: string;
   durationWeeks?: { recommended: number };
   sessions_per_week_target?: number;
-  sport?: string[];
+  activity_category?: string[];
   experienceLevel?: string[];
 };
 type ActivePlanFixture = { id: string; schedule_batch_id?: string };
@@ -254,7 +254,7 @@ jest.mock("@/components/training-plan/TrainingPlanSummaryHeader", () => ({
   __esModule: true,
   TrainingPlanSummaryHeader: createHost("TrainingPlanSummaryHeader"),
 }));
-jest.mock("@/components/activity-plan/workout/TimelineChart", () => ({
+jest.mock("@/components/activity-plan/activity/TimelineChart", () => ({
   __esModule: true,
   TimelineChart: createHost("TimelineChart"),
 }));
@@ -622,7 +622,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
       created_at: "2026-01-01T00:00:00.000Z",
       durationWeeks: { recommended: 8 },
       sessions_per_week_target: 4,
-      sport: ["run"],
+      activity_category: ["run"],
       experienceLevel: ["beginner"],
       structure_hash: "fixture-structure-hash",
       structure: {},
@@ -931,6 +931,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     });
 
     expect(mockRemoveAppliedScheduleMutate).toHaveBeenCalledWith({
+      training_plan_id: "active-plan-2",
       schedule_batch_id: "33333333-3333-4333-8333-333333333333",
     });
   });

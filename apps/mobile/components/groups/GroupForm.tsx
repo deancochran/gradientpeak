@@ -415,7 +415,7 @@ export const GroupForm = forwardRef<GroupFormHandle, GroupFormProps>(function Gr
             label="Description"
             name="description"
             numberOfLines={6}
-            placeholder="Describe the group, location, sport, and who it is for."
+            placeholder="Describe the group, location, activity category, and who it is for."
             className="min-h-[140px]"
           />
           <FormSegmentedSelectField

@@ -3,7 +3,7 @@ import { compileActivityPlanV3 } from "../../activity-plan";
 import { resolveActivityOccurrenceTrainerIntents } from "../recording-plan-target-resolver";
 
 function occurrence(
-  category: "run" | "bike",
+  activity_category: "run" | "bike",
   targets: Array<{ type: "%FTP" | "watts" | "speed" | "cadence"; intensity: number }>,
 ) {
   const compiled = compileActivityPlanV3({
@@ -13,7 +13,7 @@ function occurrence(
         role: "activity",
         id: "50000000-0000-4000-8000-000000000001",
         name: "Segment",
-        category,
+        activity_category,
         intervals: [
           {
             id: "50000000-0000-4000-8000-000000000002",
@@ -38,7 +38,7 @@ function occurrence(
 }
 
 describe("resolveActivityOccurrenceTrainerIntents", () => {
-  it("resolves cycling power against the occurrence category", () => {
+  it("resolves cycling power against the occurrence activity_category", () => {
     expect(
       resolveActivityOccurrenceTrainerIntents({
         occurrence: occurrence("bike", [{ type: "%FTP", intensity: 80 }]),

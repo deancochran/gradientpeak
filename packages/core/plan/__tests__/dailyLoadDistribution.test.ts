@@ -109,7 +109,7 @@ function profileWithSessionCount(sessionCount: number) {
 }
 
 describe("buildDailyLoadDistribution", () => {
-  it("requires sport clarification instead of falling back to run", () => {
+  it("requires activity-category clarification instead of falling back to run", () => {
     const points = buildDailyLoadRecommendation({
       mode: "distribution",
       startDate: "2026-01-05",
@@ -124,7 +124,7 @@ describe("buildDailyLoadDistribution", () => {
     );
   });
 
-  it("limits an explicit, bounded sport allocation to maintenance when capacity is sparse", () => {
+  it("limits an explicit, bounded activity-category allocation to maintenance when capacity is sparse", () => {
     const points = buildDailyLoadRecommendation({
       mode: "distribution",
       startDate: "2026-01-05",
@@ -140,7 +140,7 @@ describe("buildDailyLoadDistribution", () => {
     );
   });
 
-  it("issues performance recommendations only with explicit sport allocation and capacity", () => {
+  it("issues performance recommendations only with explicit activity-category allocation and capacity", () => {
     const points = buildDailyLoadRecommendation({
       mode: "distribution",
       startDate: "2026-01-05",
@@ -429,7 +429,7 @@ describe("buildDailyLoadDistribution", () => {
     expect(sumRecommendedLoad(points)).toBe(300);
   });
 
-  it("uses explicit deload templates without hard workout focus", () => {
+  it("uses explicit deload templates without hard activity focus", () => {
     const points = buildDailyLoadDistribution({
       startDate: "2026-01-05",
       endDate: "2026-01-11",

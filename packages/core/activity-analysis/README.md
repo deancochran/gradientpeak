@@ -1,19 +1,19 @@
 # Completed-activity load calculations
 
-`calculation-policy.ts` is the extension point for sport-specific IF/TSS method selection. Its registry uses `Record<CanonicalSport, ...>`, so adding a canonical sport without declaring a completed-activity policy fails type-checking.
+`calculation-policy.ts` is the extension point for activity-category-specific IF/TSS method selection. Its registry uses `Record<CanonicalActivityCategory, ...>`, so adding a canonical activity category without declaring a completed-activity policy fails type-checking.
 
 ## Adding an activity category
 
-1. Add the category to the canonical sport contract and database enum through the normal migration workflow.
-2. Add its curve, threshold, and ordered methods to `completedActivityCalculationPolicy`. Use only methods whose input and threshold semantics are valid for that sport; an empty policy is preferable to a fabricated score.
+1. Add the category to the canonical activity-category contract and database enum through the normal migration workflow.
+2. Add its curve, threshold, and ordered methods to `completedActivityCalculationPolicy`. Use only methods whose input and threshold semantics are valid for that activity category; an empty policy is preferable to a fabricated score.
 3. Add any new active method to `activityTssMethodValues`, add it to the append-only identity compatibility structures, pair it with a calibration in `activityTssIdentitySchema`, then implement it in `resolveTssMethod`. Removing a method from the active policy must not invalidate historical identities.
 4. Define ingestion and effort eligibility for the category. Do not cast arbitrary provider values into the canonical category type.
-5. Add a behavior test for primary data, sport-specific and generic LTHR fallback, missing evidence, and incompatible data rejection.
+5. Add a behavior test for primary data, activity-category-specific and generic LTHR fallback, missing evidence, and incompatible data rejection.
 6. Update API and UI availability reasons so users can see what evidence is missing.
 
-Power, pace, swim pace, and heart-rate calculations retain different method identities. They must not be silently combined into one historical load series when their sport, method, version, or calibration differs.
+Power, pace, swim pace, and heart-rate calculations retain different method identities. They must not be silently combined into one historical load series when their activity category, method, version, or calibration differs.
 
-Current heart-rate stress uses average heart rate relative to sport-compatible LTHR. `lthr_by_sport` takes precedence over generic `lthr`; historical heart-rate-reserve identities remain parseable but are not selectable by the active policy. Available stress results always carry a current `method`, while unavailable results carry exactly one `unavailable_reason`.
+Current heart-rate stress uses average heart rate relative to activity-category-compatible LTHR. `lthr_by_activity_category` takes precedence over generic `lthr`; historical heart-rate-reserve identities remain parseable but are not selectable by the active policy. Available stress results always carry a current `method`, while unavailable results carry exactly one `unavailable_reason`.
 
 ## Stream heart-rate load
 

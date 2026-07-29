@@ -27,7 +27,7 @@ function event(
     endAt,
     lifecycle,
     eventType: "training" as const,
-    sport: "cycling",
+    activity_category: "cycling",
     recurrence,
     timezone,
   };
@@ -52,11 +52,11 @@ function input(overrides: Partial<TrainingFeasibilityInput> = {}): TrainingFeasi
     maximumSessionsPerDay: 2,
     maximumSessionDurationMinutes: 120,
     allowDoubleDays: true,
-    sportOverrides: [],
+    activityCategoryOverrides: [],
     recoveryPreference: "balanced",
     requiredWeeklyMinutes: 300,
     requiredWeeklySessions: 3,
-    targetGoalSport: "cycling",
+    targetGoalActivityCategory: "cycling",
     scheduleComplete: true,
     plannedSchedule: [],
     ...overrides,
@@ -230,22 +230,22 @@ describe("calculateTrainingFeasibility", () => {
     expect(result.scheduleCoverage.estimate).toBe(0.4);
   });
 
-  it("requires a target sport when required session coverage is configured", () => {
-    const { targetGoalSport: _targetGoalSport, ...unscopedInput } = input({
+  it("requires a target activity_category when required session coverage is configured", () => {
+    const { targetGoalActivityCategory: _targetGoalActivityCategory, ...unscopedInput } = input({
       plannedSchedule: [event("unscoped", "2026-07-06T08:00:00Z", "2026-07-06T09:00:00Z")],
     });
     const result = calculateTrainingFeasibility(unscopedInput);
 
     expect(result.requiredSessionCoverage.state).toBe("unsupported");
     expect(result.requiredSessionCoverage.reasonCodes).toContain(
-      "target_goal_sport_required_for_session_coverage",
+      "target_goal_activity_category_required_for_session_coverage",
     );
   });
 
-  it("credits only the target sport toward sessions while all training affects constraints", () => {
+  it("credits only the target activity_category toward sessions while all training affects constraints", () => {
     const result = calculateTrainingFeasibility(
       input({
-        targetGoalSport: "running",
+        targetGoalActivityCategory: "running",
         hardRestDays: ["monday"],
         maximumDailyMinutes: 90,
         maximumSessionsPerDay: 1,
@@ -253,10 +253,13 @@ describe("calculateTrainingFeasibility", () => {
         maximumWeeklySessions: 1,
         allowDoubleDays: false,
         plannedSchedule: [
-          { ...event("bike", "2026-07-06T08:00:00Z", "2026-07-06T09:00:00Z"), sport: "cycling" },
+          {
+            ...event("bike", "2026-07-06T08:00:00Z", "2026-07-06T09:00:00Z"),
+            activity_category: "cycling",
+          },
           {
             ...event("strength", "2026-07-06T10:00:00Z", "2026-07-06T11:00:00Z"),
-            sport: "strength_training",
+            activity_category: "strength_training",
           },
         ],
       }),
@@ -420,7 +423,7 @@ describe("calculateTrainingFeasibility", () => {
     expect(result.constraints.weeklyDurationExcesses.estimate).toBe(0);
   });
 
-  it("counts an overnight event once per week for global and sport session caps", () => {
+  it("counts an overnight event once per week for global and activity_category session caps", () => {
     const overnight = event("overnight", "2026-07-07T23:00:00Z", "2026-07-08T01:00:00Z");
     const overrides = {
       timezone: "UTC",
@@ -428,9 +431,9 @@ describe("calculateTrainingFeasibility", () => {
       planningStart: "2026-07-06T00:00:00Z",
       goalDate: "2026-07-12",
       maximumWeeklySessions: 1,
-      sportOverrides: [
+      activityCategoryOverrides: [
         {
-          sport: "cycling",
+          activity_category: "cycling",
           caps: {
             maximumSessionDurationMinutes: null,
             maximumWeeklyMinutes: null,
@@ -453,9 +456,9 @@ describe("calculateTrainingFeasibility", () => {
     );
 
     expect(oneEvent.constraints.weeklySessionCapExcesses.estimate).toBe(0);
-    expect(oneEvent.constraints.sportOverrideExcesses.estimate).toBe(0);
+    expect(oneEvent.constraints.activityCategoryOverrideExcesses.estimate).toBe(0);
     expect(twoEvents.constraints.weeklySessionCapExcesses.estimate).toBe(1);
-    expect(twoEvents.constraints.sportOverrideExcesses.estimate).toBe(1);
+    expect(twoEvents.constraints.activityCategoryOverrideExcesses.estimate).toBe(1);
   });
 
   it("splits sessions at DST planning-local midnights", () => {

@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { activityPlanStructureSchemaV3 } from "../activity-plan";
-import { type CanonicalSport, canonicalSportSchema } from "./sport";
+import {
+  type CanonicalActivityCategory,
+  canonicalActivityCategorySchema,
+} from "./activity-category";
 
 export { Duration } from "./duration_helpers";
 export {
@@ -22,7 +25,7 @@ export {
   Target,
 } from "./target_helpers";
 
-/** Strict modern activity-plan domain input. Category authority lives in V3 segments. */
+/** Strict modern activity-plan domain input. ActivityCategory authority lives in V3 segments. */
 export const activityPlanInputSchema = z
   .object({
     name: z.string().min(1, "Plan name is required"),
@@ -38,13 +41,22 @@ export const activityPlanSchema = activityPlanInputSchema.safeExtend({
 });
 export type ActivityPlan = z.infer<typeof activityPlanSchema>;
 
-export const recordingServiceActivityPlanSchema = activityPlanInputSchema.safeExtend({
-  id: z.string().uuid().optional(),
-  gps_recording_enabled: z.boolean().optional(),
-  import_external_id: z.string().nullable().optional(),
-  import_provider: z.string().nullable().optional(),
-  is_system_template: z.boolean().optional(),
-});
+/** Recorded-session plan contract using the canonical V3 structure. */
+export const recordingServiceActivityPlanSchema = z
+  .object({
+    name: z.string().min(1, "Plan name is required"),
+    description: z.string().max(1000).nullable().optional(),
+    notes: z.string().max(2000).nullable().optional(),
+    structure: activityPlanStructureSchemaV3,
+  })
+  .strict()
+  .safeExtend({
+    id: z.string().uuid().optional(),
+    gps_recording_enabled: z.boolean().optional(),
+    import_external_id: z.string().nullable().optional(),
+    import_provider: z.string().nullable().optional(),
+    is_system_template: z.boolean().optional(),
+  });
 export type RecordingServiceActivityPlan = z.infer<typeof recordingServiceActivityPlanSchema>;
 
 // ==============================
@@ -142,7 +154,7 @@ export const ActivityUploadSchema = z
   .object({
     name: z.string().min(1),
     notes: z.string().optional().nullable(),
-    type: canonicalSportSchema,
+    type: canonicalActivityCategorySchema,
     startedAt: z.string(),
     finishedAt: z.string(),
     durationSeconds: z.number().int().min(0),
@@ -173,10 +185,10 @@ export const ActivityUploadSchema = z
 export type ActivityUpload = z.infer<typeof ActivityUploadSchema>;
 
 // ==============================
-// ACTIVITY TYPE SCHEMA
+// ACTIVITY CATEGORY SCHEMA
 // ==============================
 
-export type ActivityCategory = CanonicalSport;
+export type ActivityCategory = CanonicalActivityCategory;
 
 // ==============================
 // ACTIVITY PAYLOAD SCHEMA
@@ -184,7 +196,7 @@ export type ActivityCategory = CanonicalSport;
 
 export const ActivityPayloadSchema = z
   .object({
-    category: canonicalSportSchema,
+    activity_category: canonicalActivityCategorySchema,
     gpsRecordingEnabled: z.boolean(),
     eventId: z.string().optional(),
     plan: recordingServiceActivityPlanSchema.optional(),
@@ -194,21 +206,21 @@ export const ActivityPayloadSchema = z
 export type ActivityPayload = z.infer<typeof ActivityPayloadSchema>;
 
 // ==============================
-// ACTIVITY TYPE HELPERS
+// ACTIVITY CATEGORY HELPERS
 // ==============================
 
 /**
  * Check if activity is continuous (time/distance based)
  */
-export const isContinuousActivity = (category: ActivityCategory): boolean => {
-  return category === "run" || category === "bike";
+export const isContinuousActivity = (activity_category: ActivityCategory): boolean => {
+  return activity_category === "run" || activity_category === "bike";
 };
 
 /**
  * Check if activity is step-based (reps/sets based)
  */
-export const isStepBasedActivity = (category: ActivityCategory): boolean => {
-  return category === "strength";
+export const isStepBasedActivity = (activity_category: ActivityCategory): boolean => {
+  return activity_category === "strength";
 };
 
 /**
@@ -222,27 +234,27 @@ export const isGpsRecordingEnabled = (gpsRecordingEnabled: boolean): boolean => 
  * Get display name for activity
  */
 export const getActivityDisplayName = (
-  category: ActivityCategory,
+  activity_category: ActivityCategory,
   _gpsRecordingEnabled: boolean,
 ): string => {
-  if (category === "strength") return "Strength Training";
-  if (category === "swim") return "Swimming";
-  if (category === "other") return "Other Activity";
+  if (activity_category === "strength") return "Strength Training";
+  if (activity_category === "swim") return "Swimming";
+  if (activity_category === "other") return "Other Activity";
 
-  const categoryStr = category.charAt(0).toUpperCase() + category.slice(1);
+  const categoryStr = activity_category.charAt(0).toUpperCase() + activity_category.slice(1);
   return categoryStr;
 };
 
 /**
- * Get activity general category (for general categorization)
+ * Get activity general activity_category (for general categorization)
  */
 export const getActivityGeneralCategory = (
-  category: ActivityCategory,
+  activity_category: ActivityCategory,
 ): "cardio" | "strength" | "other" => {
-  if (["run", "bike", "swim"].includes(category)) {
+  if (["run", "bike", "swim"].includes(activity_category)) {
     return "cardio";
   }
-  if (category === "strength") {
+  if (activity_category === "strength") {
     return "strength";
   }
   return "other";
@@ -251,33 +263,35 @@ export const getActivityGeneralCategory = (
 /**
  * Check if activity supports structured activities
  */
-export const supportsStructuredActivities = (category: ActivityCategory): boolean => {
-  return category === "run" || category === "bike" || category === "strength";
+export const supportsStructuredActivities = (activity_category: ActivityCategory): boolean => {
+  return (
+    activity_category === "run" || activity_category === "bike" || activity_category === "strength"
+  );
 };
 
 /**
  * Get primary metrics for activity
  */
 export const getPrimaryMetrics = (
-  category: ActivityCategory,
+  activity_category: ActivityCategory,
   gpsRecordingEnabled: boolean,
 ): string[] => {
-  if (category === "run" && gpsRecordingEnabled) {
+  if (activity_category === "run" && gpsRecordingEnabled) {
     return ["pace", "heartRate", "distance", "elevation"];
   }
-  if (category === "run" && !gpsRecordingEnabled) {
+  if (activity_category === "run" && !gpsRecordingEnabled) {
     return ["pace", "heartRate", "incline"];
   }
-  if (category === "bike" && gpsRecordingEnabled) {
+  if (activity_category === "bike" && gpsRecordingEnabled) {
     return ["power", "speed", "heartRate", "cadence", "elevation"];
   }
-  if (category === "bike" && !gpsRecordingEnabled) {
+  if (activity_category === "bike" && !gpsRecordingEnabled) {
     return ["power", "heartRate", "cadence"];
   }
-  if (category === "strength") {
+  if (activity_category === "strength") {
     return ["weight", "reps", "sets", "restTime"];
   }
-  if (category === "swim") {
+  if (activity_category === "swim") {
     return ["pace", "distance", "strokes"];
   }
   return ["heartRate", "time"];
@@ -286,29 +300,31 @@ export const getPrimaryMetrics = (
 /**
  * Check if activity typically uses power data
  */
-export const usesPowerData = (category: ActivityCategory): boolean => {
-  return category === "bike";
+export const usesPowerData = (activity_category: ActivityCategory): boolean => {
+  return activity_category === "bike";
 };
 
 /**
  * Check if activity typically uses pace data
  */
-export const usesPaceData = (category: ActivityCategory): boolean => {
-  return category === "run" || category === "swim";
+export const usesPaceData = (activity_category: ActivityCategory): boolean => {
+  return activity_category === "run" || activity_category === "swim";
 };
 
 /**
  * Check if activity should use follow-along screen
  * Swim and other activities are mandatory to use follow-along
  */
-export const shouldUseFollowAlong = (category: ActivityCategory): boolean => {
-  return category === "swim" || category === "other";
+export const shouldUseFollowAlong = (activity_category: ActivityCategory): boolean => {
+  return activity_category === "swim" || activity_category === "other";
 };
 
 /**
  * Check if activity can be recorded on the phone
  * These activities support live metric tracking during recording
  */
-export const canRecordActivity = (category: ActivityCategory): boolean => {
-  return category === "run" || category === "bike" || category === "strength";
+export const canRecordActivity = (activity_category: ActivityCategory): boolean => {
+  return (
+    activity_category === "run" || activity_category === "bike" || activity_category === "strength"
+  );
 };

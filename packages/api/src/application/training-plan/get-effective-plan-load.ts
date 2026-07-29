@@ -1,10 +1,12 @@
 import {
   aggregateCommonLoadEnvelopes,
+  buildCommonLoadRecommendation,
   COMMON_RELATIVE_LOAD_MODEL,
   COMMON_RELATIVE_LOAD_VERSION,
   type CommonLoadAggregate,
   type CommonLoadResult,
   commonLoadAggregateSchema,
+  commonLoadRecommendationSchema,
   commonLoadResultSchema,
 } from "@repo/core/load";
 import { getScheduledDateKey } from "@repo/core/utils/schedule-date";
@@ -106,7 +108,7 @@ const unavailableSchema = z
   })
   .strict();
 export const effectivePlanLoadDtoSchema = z.discriminatedUnion("status", [
-  availableSchema,
+  availableSchema.extend({ recommendation: commonLoadRecommendationSchema }),
   unavailableSchema,
 ]);
 export type EffectivePlanLoadDto = z.infer<typeof effectivePlanLoadDtoSchema>;
@@ -120,7 +122,7 @@ function unavailableActivityLoad(asOf: string): CommonLoadResult {
     status: "unavailable",
     model: COMMON_RELATIVE_LOAD_MODEL,
     version: COMMON_RELATIVE_LOAD_VERSION,
-    sport: "other",
+    activity_category: "other",
     method: null,
     quality: null,
     thresholdEvidence: null,
@@ -210,8 +212,13 @@ export async function getEffectivePlanLoad(input: {
       .safeParse(summary.common_load);
     if (parsed.success) loadByActivity.set(activityId, parsed.data);
   }
+  const activityPlansById = new Map(
+    [...facts.events, ...facts.recommendationEvents].flatMap((event) =>
+      event.activity_plan ? [[event.activity_plan.id, event.activity_plan] as const] : [],
+    ),
+  );
   const plans = await getActivityPlansDerivedMetrics(
-    facts.events.map((event) => event.activity_plan),
+    [...activityPlansById.values()],
     input.db,
     input.repository,
     input.profileId,
@@ -299,11 +306,31 @@ export async function getEffectivePlanLoad(input: {
     composition.status === "available"
       ? aggregateCommonLoadEnvelopes(composition.tentativeItems.map((item) => item.commonLoad))
       : compositionUnavailable;
-  return availableSchema.parse({
+  const recommendation = buildCommonLoadRecommendation({
+    computedAsOf: asOf.toISOString(),
+    planningTimezone,
+    planningDate: localDate(asOf, planningTimezone),
+    startDate,
+    endDate,
+    sourceStatus: facts.recommendationSource.status,
+    trainingPlanId: facts.recommendationSource.trainingPlanId,
+    scheduleBatchId: facts.recommendationSource.scheduleBatchId,
+    items: facts.recommendationEvents.map((event) => ({
+      scheduledItemId: event.id,
+      recommendationDate: event.original_starts_at
+        ? localDate(new Date(event.original_starts_at), planningTimezone)
+        : event.scheduled_date,
+      commonLoad:
+        plannedLoadById.get(event.activity_plan_id ?? "") ??
+        unavailableActivityLoad(asOf.toISOString()),
+    })),
+  });
+  return effectivePlanLoadDtoSchema.parse({
     status: "available",
     completed,
     remaining,
     tentative,
+    recommendation,
     effective: composition,
     model: COMMON_RELATIVE_LOAD_MODEL,
     version: COMMON_RELATIVE_LOAD_VERSION,

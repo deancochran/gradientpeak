@@ -8,7 +8,7 @@ import type {
   ActivityAnalysisContextSnapshot,
   ActivityAnalysisMetricSnapshot,
 } from "../../../../repositories";
-import { normalizeSport } from "../../evidence-adapters";
+import { normalizeActivityCategory } from "../../evidence-adapters";
 
 type MetricRow = {
   id: string;
@@ -20,13 +20,13 @@ type MetricRow = {
   method?: string | null;
   provenance?: unknown;
   referenceActivityId: string | null;
-  referenceActivityType?: string | null;
+  referenceActivityCategory?: string | null;
 };
 
 type EffortRow = {
   id: string;
   activityId: string | null;
-  sport: string;
+  activity_category: string;
   kind: "power" | "speed" | "heart_rate";
   durationSeconds: number;
   unit: string;
@@ -78,12 +78,12 @@ export function adaptActivityTrainingLoads(input: {
       method: metric.method,
       provenance: metric.provenance,
       reference_activity_id: metric.referenceActivityId,
-      reference_activity_category: metric.referenceActivityType ?? null,
+      reference_activity_category: metric.referenceActivityCategory ?? null,
     })),
     recentEfforts: input.efforts.map((effort) => ({
       id: effort.id,
       activity_id: effort.activityId,
-      activity_category: normalizeSport(effort.sport),
+      activity_category: normalizeActivityCategory(effort.activity_category),
       effort_type: effort.kind,
       duration_seconds: effort.durationSeconds,
       recorded_at: effort.recordedAt,
@@ -98,7 +98,7 @@ export function adaptActivityTrainingLoads(input: {
   const result = new Map<string, AdaptedActivityTrainingLoad>();
 
   for (const activity of input.activities) {
-    const sport = normalizeSport(activity.type);
+    const activity_category = normalizeActivityCategory(activity.type);
     const context = resolveActivityContextFromEvidence({
       activityTimestamp: activity.startedAt,
       activityId: activity.id,
@@ -107,7 +107,7 @@ export function adaptActivityTrainingLoads(input: {
     const derived = analyzeActivityDerivedMetrics({
       activity: {
         id: activity.id,
-        type: sport,
+        type: activity_category,
         started_at: activity.startedAt.toISOString(),
         finished_at: activity.finishedAt.toISOString(),
         duration_seconds: activity.durationSeconds,
@@ -132,7 +132,7 @@ export function adaptActivityTrainingLoads(input: {
       identity === null ||
       derived.stress.method === null ||
       identity.method !== derived.stress.method ||
-      identity.sport !== sport
+      identity.activity_category !== activity_category
     ) {
       continue;
     }

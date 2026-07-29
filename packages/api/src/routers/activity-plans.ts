@@ -30,11 +30,6 @@ import {
 } from "../utils/activity-plan-derived-metrics";
 import { computePlanMetrics } from "../utils/estimation-helpers";
 import { loadProfileIdentityMap, type profileIdentitySchema } from "../utils/profile-identity";
-import {
-  activityPlanCompositionModeSchema,
-  buildActivityPlanCompositionCondition,
-  describeActivityPlanComposition,
-} from "./activity-plan-composition";
 
 // Input schemas for queries
 const uuidSchema = z.string().uuid();
@@ -72,7 +67,6 @@ const listActivityPlansSchema = z
     visibility: templateVisibilitySchema.optional(),
     activityCategory: activityCategoryFilterSchema.optional(),
     activityCategories: activityCategoryFiltersSchema.optional(),
-    compositionMode: activityPlanCompositionModeSchema.default("include_multisport"),
     search: z.string().optional(),
     sort_by: z.enum(["newest", "oldest"]).optional(),
     limit: z.number().min(1).max(100).default(20),
@@ -162,9 +156,18 @@ function serializeActivityPlanRow(row: ActivityPlanRow | unknown) {
 }
 
 function toPublicActivityPlan<T extends { structure: unknown }>(plan: T) {
+  const parsed = activityPlanStructureSchemaV3.safeParse(plan.structure);
+  const activitySegment = parsed.success
+    ? parsed.data.segments.find((segment) => segment.role === "activity")
+    : undefined;
+  if (!activitySegment)
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Stored activity plan is not valid V3",
+    });
   return {
     ...plan,
-    ...describeActivityPlanComposition(plan.structure),
+    activity_category: activitySegment.activity_category,
   };
 }
 
@@ -394,13 +397,15 @@ export const activityPlansRouter = createTRPCRouter({
       ...(input.activityCategories ?? []),
     ]);
 
-    const compositionCondition = buildActivityPlanCompositionCondition({
-      categories: [...requestedCategories],
-      mode: input.compositionMode,
-      structure: activityPlans.structure,
-    });
-    if (compositionCondition) {
-      conditions.push(compositionCondition);
+    if (requestedCategories.size > 0) {
+      conditions.push(
+        or(
+          ...[...requestedCategories].map(
+            (activity_category) =>
+              sql`${activityPlans.structure} @> ${JSON.stringify({ segments: [{ role: "activity", activity_category }] })}::jsonb`,
+          ),
+        ),
+      );
     }
 
     const trimmedSearch = input.search?.trim();
@@ -561,20 +566,22 @@ export const activityPlansRouter = createTRPCRouter({
       });
     }
 
-    const planRow = activityPlanRowSchema.parse(rawPlanRow);
+    const parsedPlanRow = activityPlanRowSchema.safeParse(rawPlanRow);
+    if (!parsedPlanRow.success) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Stored activity plan is not valid V3",
+      });
+    }
+    const planRow = parsedPlanRow.data;
 
     await requireActivityPlanReadForRow({ db, plan: planRow, userId });
 
     const plan = serializeActivityPlanRow(planRow);
-    try {
-      if (plan.structure) {
-        validateStructure(plan.structure);
-      }
-    } catch (validationError) {
+    if (!activityPlanStructureSchemaV3.safeParse(plan.structure).success) {
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
         message: "Stored activity plan is not valid V3",
-        cause: validationError,
       });
     }
 
@@ -615,7 +622,10 @@ export const activityPlansRouter = createTRPCRouter({
         .from(activityPlans)
         .where(and(inArray(activityPlans.id, ids), buildAccessiblePlanCondition(userId)));
 
-      const parsedPlanRows = z.array(activityPlanRowSchema).parse(planRows);
+      const parsedPlanRows = planRows.flatMap((row) => {
+        const parsed = activityPlanRowSchema.safeParse(row);
+        return parsed.success ? [parsed.data] : [];
+      });
 
       const planById = new Map(
         parsedPlanRows.map((plan) => [plan.id, serializeActivityPlanRow(plan)]),
@@ -718,7 +728,12 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
-      activityPlanRowSchema.parse(existingRow);
+      if (!activityPlanRowSchema.safeParse(existingRow).success) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Stored activity plan is not valid V3",
+        });
+      }
       if (existingRow.structure_hash !== expectedStructureHash) {
         throw new TRPCError({
           code: "CONFLICT",
@@ -792,7 +807,7 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
-      let plannedWorkoutSync = null;
+      let plannedActivitySync = null;
       const descriptionChanged =
         updates.description !== undefined && updateValues.description !== existingRow.description;
       const materialPlanChanged =
@@ -817,18 +832,18 @@ export const activityPlansRouter = createTRPCRouter({
 
         if (linkedEvents.length > 0) {
           try {
-            plannedWorkoutSync = await enqueueProviderPlannedActivityJobs(ctx, {
+            plannedActivitySync = await enqueueProviderPlannedActivityJobs(ctx, {
               eventIds: linkedEvents.map((event) => event.id),
               operation: "publish",
             });
           } catch (error) {
-            plannedWorkoutSync = {
+            plannedActivitySync = {
               affectedCount: linkedEvents.length,
               operation: "publish" as const,
               queued: false,
               success: false,
               error:
-                error instanceof Error ? error.message : "Unknown planned workout enqueue failure",
+                error instanceof Error ? error.message : "Unknown planned activity enqueue failure",
             };
           }
         }
@@ -843,8 +858,8 @@ export const activityPlansRouter = createTRPCRouter({
 
       return {
         ...toPublicActivityPlan(withIdentityFields(planWithEstimation)),
-        plannedWorkoutSync,
-        wahooSync: plannedWorkoutSync,
+        plannedActivitySync,
+        wahooSync: plannedActivitySync,
       };
     }),
 
@@ -877,25 +892,25 @@ export const activityPlansRouter = createTRPCRouter({
         ),
       );
 
-    let plannedWorkoutSync = null;
+    let plannedActivitySync = null;
     if (linkedEvents.length > 0) {
       try {
-        plannedWorkoutSync = await enqueueProviderPlannedActivityJobs(ctx, {
+        plannedActivitySync = await enqueueProviderPlannedActivityJobs(ctx, {
           eventIds: linkedEvents.map((event) => event.id),
           operation: "unsync",
         });
       } catch (error) {
         throw new TRPCError({
           code: "CONFLICT",
-          message: "Activity plan cannot be deleted until linked device workouts can be unsynced",
+          message: "Activity plan cannot be deleted until linked device activities can be unsynced",
           cause: error,
         });
       }
 
-      if (plannedWorkoutSync && !plannedWorkoutSync.success) {
+      if (plannedActivitySync && !plannedActivitySync.success) {
         throw new TRPCError({
           code: "CONFLICT",
-          message: "Activity plan cannot be deleted until linked device workouts can be unsynced",
+          message: "Activity plan cannot be deleted until linked device activities can be unsynced",
         });
       }
     }
@@ -914,8 +929,8 @@ export const activityPlansRouter = createTRPCRouter({
 
     return {
       success: true,
-      plannedWorkoutSync,
-      wahooSync: plannedWorkoutSync,
+      plannedActivitySync,
+      wahooSync: plannedActivitySync,
     };
   }),
 
@@ -942,15 +957,10 @@ export const activityPlansRouter = createTRPCRouter({
 
       const originalPlan = serializeActivityPlanRow(originalRow);
 
-      try {
-        if (originalPlan.structure) {
-          validateStructure(originalPlan.structure);
-        }
-      } catch (validationError) {
+      if (!activityPlanStructureSchemaV3.safeParse(originalPlan.structure).success) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Original plan has invalid structure (V3 required)",
-          cause: validationError,
+          message: "Original plan is not executable",
         });
       }
 

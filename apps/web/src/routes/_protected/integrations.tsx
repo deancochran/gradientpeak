@@ -51,7 +51,7 @@ function IntegrationsPage() {
     onSuccess: async () => {
       await utils.integrations.getSyncOverview.invalidate();
       await utils.integrations.list.invalidate();
-      toast.success("Integration disconnected");
+      toast.success("Disconnecting integration");
     },
     onError: () => toast.error("Unable to disconnect integration"),
   });
@@ -164,9 +164,9 @@ function IntegrationsPage() {
                         detail={`Last synced: ${formatSyncDate(integration.activityHistory.lastSucceededAt)}`}
                       />
                       <StatusBlock
-                        label="Planned workouts"
-                        status={integration.plannedWorkouts.status}
-                        detail={`Last synced: ${formatSyncDate(integration.plannedWorkouts.lastSucceededAt)}`}
+                        label="Planned activities"
+                        status={integration.plannedActivities.status}
+                        detail={`Last synced: ${formatSyncDate(integration.plannedActivities.lastSucceededAt)}`}
                       />
                       <StatusBlock
                         label="Setup data"
@@ -182,7 +182,12 @@ function IntegrationsPage() {
                     ) : null}
 
                     <div className="flex flex-wrap gap-2">
-                      {canConnect ? (
+                      {integration.providerHealth.status === "disconnecting" ? (
+                        <Button variant="outline" disabled>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Disconnecting
+                        </Button>
+                      ) : canConnect ? (
                         <Button
                           variant="outline"
                           disabled={isMutating}

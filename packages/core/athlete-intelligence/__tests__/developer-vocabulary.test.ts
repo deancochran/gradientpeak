@@ -43,35 +43,35 @@ describe("athlete intelligence developer vocabulary", () => {
       "activity-readiness": {
         id: "activity-readiness",
         version: ACTIVITY_READINESS_POLICY_VERSION,
-        supportedSports: "any",
+        supportedActivityCategories: "any",
         supportedModalities: ["activity", "readiness_context"],
         constants: ACTIVITY_READINESS_CONSTANTS,
       },
       "effort-curve": {
         id: "effort-curve",
         version: EFFORT_CURVE_POLICY_VERSION,
-        supportedSports: ["bike", "run"],
+        supportedActivityCategories: ["bike", "run"],
         supportedModalities: ["power", "pace"],
         constants: {},
       },
       "effort-curve-decision-uncertainty": {
         id: "effort-curve-decision-uncertainty",
         version: EFFORT_CURVE_DECISION_UNCERTAINTY_POLICY_VERSION,
-        supportedSports: ["bike", "run"],
+        supportedActivityCategories: ["bike", "run"],
         supportedModalities: ["power", "pace"],
         constants: EFFORT_CURVE_DECISION_UNCERTAINTY_POLICY,
       },
       "goal-demand": {
         id: "goal-demand",
         version: GOAL_DEMAND_POLICY_VERSION,
-        supportedSports: "any",
+        supportedActivityCategories: "any",
         supportedModalities: ["event_performance", "threshold", "completion", "consistency"],
         constants: {},
       },
       "physiology-metrics": {
         id: "physiology-metrics",
         version: PHYSIOLOGY_METRICS_POLICY_VERSION,
-        supportedSports: "any",
+        supportedActivityCategories: "any",
         supportedModalities: [
           "profile_metric",
           "manual_observation",
@@ -83,14 +83,14 @@ describe("athlete intelligence developer vocabulary", () => {
       "projection-decision-quality": {
         id: "projection-decision-quality",
         version: PROJECTION_DECISION_QUALITY_POLICY_VERSION,
-        supportedSports: "any",
+        supportedActivityCategories: "any",
         supportedModalities: ["projection"],
         constants: PROJECTION_DECISION_QUALITY_POLICY,
       },
       "training-feasibility": {
         id: "training-feasibility",
         version: TRAINING_FEASIBILITY_POLICY_VERSION,
-        supportedSports: "any",
+        supportedActivityCategories: "any",
         supportedModalities: ["schedule", "availability", "training_context"],
         constants: { maxRecurrenceOccurrences: MAX_RECURRENCE_OCCURRENCES },
       },
@@ -105,8 +105,8 @@ describe("athlete intelligence developer vocabulary", () => {
       expect(Object.isFrozen(descriptor)).toBe(true);
       expect(Object.isFrozen(descriptor.supportedModalities)).toBe(true);
       expect(Object.isFrozen(descriptor.constants)).toBe(true);
-      if (descriptor.supportedSports !== "any") {
-        expect(Object.isFrozen(descriptor.supportedSports)).toBe(true);
+      if (descriptor.supportedActivityCategories !== "any") {
+        expect(Object.isFrozen(descriptor.supportedActivityCategories)).toBe(true);
       }
     }
 

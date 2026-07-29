@@ -36,7 +36,7 @@ export function formatBuilderWeekLabel(weekIndex: number) {
 }
 
 export function formatBuilderSessionTitle(session: TrainingPlanBuilderSession) {
-  return session.eventOverrides?.title ?? session.activityPlan?.name ?? "Unassigned workout";
+  return session.eventOverrides?.title ?? session.activityPlan?.name ?? "Unassigned activity";
 }
 
 export function formatBuilderCompactDateLabel(dateKey: string) {

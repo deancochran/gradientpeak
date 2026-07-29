@@ -4,10 +4,10 @@ import {
   athleteMetricRoleByType,
   athleteMetricRoleSchema,
   athleteMetricTypeSchema,
+  evidenceActivityCategorySchema,
   evidenceEligibilitySchema,
   evidenceExclusionReasonCodeSchema,
   evidenceItemSchema,
-  evidenceSportSchema,
   rawObservationSchema,
   resolveEvidenceEligibility,
 } from "../evidence-contracts";
@@ -22,7 +22,7 @@ function evidence(overrides: Record<string, unknown> = {}) {
     lineageGroupId: "metric:ftp-history",
     observedAt,
     rawObservation: { value: 250, unit: "W" },
-    sport: "bike",
+    activity_category: "bike",
     modality: "power",
     sourceType: "profile_metric",
     qualityState: "known",
@@ -40,13 +40,13 @@ describe("evidence contracts", () => {
     "strength",
     "other",
     null,
-  ])("accepts canonical evidence sport %s", (sport) => {
-    expect(evidenceSportSchema.parse(sport)).toBe(sport);
-    expect(evidence({ sport }).sport).toBe(sport);
+  ])("accepts canonical evidence activity_category %s", (activity_category) => {
+    expect(evidenceActivityCategorySchema.parse(activity_category)).toBe(activity_category);
+    expect(evidence({ activity_category }).activity_category).toBe(activity_category);
   });
 
-  it("rejects non-canonical cycling as an evidence sport", () => {
-    expect(evidenceSportSchema.safeParse("cycling").success).toBe(false);
+  it("rejects non-canonical cycling as an evidence activity_category", () => {
+    expect(evidenceActivityCategorySchema.safeParse("cycling").success).toBe(false);
     expect(
       evidenceItemSchema.safeParse({
         athleteId: "athlete-1",
@@ -54,7 +54,7 @@ describe("evidence contracts", () => {
         lineageGroupId: "metric:ftp-history",
         observedAt,
         rawObservation: { value: 250, unit: "W" },
-        sport: "cycling",
+        activity_category: "cycling",
         modality: "power",
         sourceType: "profile_metric",
         qualityState: "known",

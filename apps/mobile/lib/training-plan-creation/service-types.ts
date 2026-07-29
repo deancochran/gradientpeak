@@ -1,4 +1,4 @@
-import type { CanonicalSport } from "@repo/core";
+import type { CanonicalActivityCategory } from "@repo/core";
 import type { api } from "@/lib/api";
 import type { TrainingPlanBuilderGoalBlueprint } from "./types";
 
@@ -11,7 +11,7 @@ export interface TrainingPlanCreationProfileGoalSnapshot {
   title: string;
   target_date?: string | null;
   priority?: number | null;
-  activity_category?: CanonicalSport | null;
+  activity_category?: CanonicalActivityCategory | null;
   objective?: TrainingPlanBuilderGoalBlueprint["objective"];
 }
 

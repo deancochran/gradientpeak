@@ -1,4 +1,3 @@
-import BottomSheet, { BottomSheetBackdrop } from "@gorhom/bottom-sheet";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   type ActivityPlanInterval,
@@ -9,7 +8,6 @@ import {
   activityPlanStructureSchemaV3,
   calculateActivityPlanStats,
   compileActivityPlanV3,
-  getActivityPlanDefaultTarget,
 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
@@ -19,13 +17,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, View } from "react-native";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
 import { ActivityPlanBasicsSection } from "@/components/activity-plan/ActivityPlanBasicsSection";
+import { StepEditorDialog } from "@/components/activity-plan/activity/StepEditorDialog";
 import { findActivitySegmentForInterval } from "@/components/activity-plan/activityPlanSelection";
 import { StructureBuilderCard } from "@/components/activity-plan/structure/StructureBuilderCard";
 import { StructureIntervalSheet } from "@/components/activity-plan/structure/StructureIntervalSheet";
 import { useActivityPlanBasicsForm } from "@/components/activity-plan/useActivityPlanBasicsForm";
 import { useActivityPlanComposerProcess } from "@/components/activity-plan/useActivityPlanComposerProcess";
-import { StepEditorDialog } from "@/components/activity-plan/workout/StepEditorDialog";
-import { AppBottomSheetContent } from "@/components/shared/AppBottomSheet";
+import { APP_BOTTOM_SHEET_PRESENTATIONS, AppBottomSheet } from "@/components/shared/AppBottomSheet";
+import { createDefaultActivityPlanStep } from "@/lib/activityPlanDefaults";
 import { api } from "@/lib/api";
 import { useActivityPlanForm } from "@/lib/hooks/forms/useActivityPlanForm";
 import { useAuth } from "@/lib/hooks/useAuth";
@@ -44,25 +43,15 @@ export type ActivityPlanComposerModeContract =
 type ActivityCategory = ActivityTargetCategory;
 const STRUCTURE_CHART_HINT_KEY = "activity-plan-structure-chart-hint-seen-v1";
 
-const createDefaultStep = (
-  category: ActivityCategory,
-  anchors: ActivityPlanTargetAnchors,
-): ActivityPlanIntervalStep => ({
-  id: randomUUID(),
-  name: "New Step",
-  duration: { type: "time", seconds: 300 },
-  targets: [getActivityPlanDefaultTarget({ activityCategory: category, anchors })],
-});
-
 const createDefaultInterval = (
-  category: ActivityCategory,
+  activity_category: ActivityCategory,
   index: number,
   anchors: ActivityPlanTargetAnchors,
 ): ActivityPlanInterval => ({
   id: randomUUID(),
   name: `Interval ${index + 1}`,
   repetitions: 1,
-  steps: [createDefaultStep(category, anchors)],
+  steps: [createDefaultActivityPlanStep({ activityCategory: activity_category, anchors })],
 });
 
 export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContract) {
@@ -71,7 +60,6 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   const navigation = useNavigation();
   const { profile } = useAuth();
   const allowNavigationRef = useRef(false);
-  const structureStepSheetRef = useRef<BottomSheet>(null);
 
   const [editingIntervalId, setEditingIntervalId] = useState<string | null>(null);
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
@@ -110,6 +98,8 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     canSubmit,
     isSubmitting,
     isLoading,
+    isEditBlocked,
+    editStatus,
   } = useActivityPlanForm({
     planId: isEditMode ? props.planId : undefined,
     onSuccess: (planId) => {
@@ -220,7 +210,10 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
       durationMs: Math.round((stats.duration.exactElapsedSeconds ?? 0) * 1000),
       stepCount: stats.occurrenceCount,
       estimatedTSS: 0,
-      distanceMeters: stats.duration.categories.reduce((sum, item) => sum + item.distanceMeters, 0),
+      distanceMeters: stats.duration.activity_categories.reduce(
+        (sum, item) => sum + item.distanceMeters,
+        0,
+      ),
     };
   }, [form.structure, profile?.ftp]);
 
@@ -230,7 +223,6 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   const selectedIntervalIndex = selectedInterval
     ? intervals.findIndex((interval) => interval.id === selectedInterval.id)
     : -1;
-  const structureStepSheetSnapPoints = useMemo(() => ["68%", "92%"], []);
 
   useActivityPlanComposerProcess({
     activityCategory: form.activityCategory,
@@ -238,6 +230,7 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     canSubmit,
     description: form.description,
     isEditMode,
+    isEditBlocked,
     isLoading,
     isSubmitting,
     name: form.name,
@@ -265,12 +258,6 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     };
   }, []);
 
-  useEffect(() => {
-    if (!selectedInterval) {
-      structureStepSheetRef.current?.close();
-    }
-  }, [selectedInterval]);
-
   const openIntervalSheet = (intervalId: string) => {
     const owningSegment = findActivitySegmentForInterval(activitySegments, intervalId);
     if (!owningSegment) return;
@@ -279,15 +266,16 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     }
     setSelectedSegmentId(owningSegment.id);
     setSelectedIntervalId(intervalId);
-    requestAnimationFrame(() => {
-      structureStepSheetRef.current?.snapToIndex(1);
-    });
   };
 
   const handleAddInterval = () => {
     if (!selectedActivitySegment) return;
     addInterval(
-      createDefaultInterval(selectedActivitySegment.category, intervals.length, targetAnchors),
+      createDefaultInterval(
+        selectedActivitySegment.activity_category,
+        intervals.length,
+        targetAnchors,
+      ),
       selectedActivitySegment.id,
     );
   };
@@ -300,14 +288,14 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
             id,
             role,
             name: `Activity ${activitySegments.length + 1}`,
-            category: form.activityCategory,
+            activity_category: form.activityCategory,
             intervals: [createDefaultInterval(form.activityCategory, 0, targetAnchors)],
           }
         : {
             id,
             role,
-            name: role === "transition" ? "Transition" : "Rest",
-            duration: { type: "time", seconds: role === "transition" ? 300 : 60 },
+            name: "Rest",
+            duration: { type: "time", seconds: 60 },
           };
     addSegment(segment);
     if (role === "activity") setSelectedSegmentId(id);
@@ -329,14 +317,10 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     removeInterval(intervalId);
     if (selectedIntervalId === intervalId) {
       setSelectedIntervalId(null);
-      structureStepSheetRef.current?.close();
     }
     showUndoToast("Interval deleted", () => {
       setStructure(previousStructure);
       setSelectedIntervalId(intervalId);
-      requestAnimationFrame(() => {
-        structureStepSheetRef.current?.snapToIndex(1);
-      });
     });
   };
 
@@ -346,9 +330,6 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     showUndoToast("Step deleted", () => {
       setStructure(previousStructure);
       setSelectedIntervalId(intervalId);
-      requestAnimationFrame(() => {
-        structureStepSheetRef.current?.snapToIndex(1);
-      });
     });
   };
 
@@ -392,6 +373,25 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
       <View className="flex-1 bg-background items-center justify-center">
         <ActivityIndicator size="large" />
         <Text className="text-muted-foreground mt-3">Loading plan...</Text>
+      </View>
+    );
+  }
+
+  if (isEditBlocked) {
+    const legacy = editStatus === "legacy_read_only";
+    return (
+      <View className="flex-1 items-center justify-center gap-3 bg-background p-6">
+        <Text accessibilityRole="header" className="text-lg font-semibold text-foreground">
+          {legacy ? "Legacy plan is read-only" : "Plan unavailable"}
+        </Text>
+        <Text className="text-center text-sm text-muted-foreground">
+          {legacy
+            ? "This multisport plan can be viewed but cannot be structurally edited on mobile."
+            : "This plan cannot be safely edited on mobile."}
+        </Text>
+        <Button onPress={() => router.back()}>
+          <Text>Back to plans</Text>
+        </Button>
       </View>
     );
   }
@@ -448,18 +448,24 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
       <NestableScrollContainer className="flex-1 p-4" showsVerticalScrollIndicator={false}>
         <View className="gap-4 pb-10">
           <ActivityPlanBasicsSection
-            activityCategory={selectedActivitySegment?.category ?? form.activityCategory}
+            activityCategory={form.activityCategory}
             activityCategoryError={validation.errors.activity_category}
             form={basicsForm}
-            onChangeActivityCategory={(category) => {
-              const nextCategory = category as ActivityCategory;
-              setActivityCategory(nextCategory);
-              if (selectedActivitySegment) {
-                updateSegment(selectedActivitySegment.id, {
-                  ...selectedActivitySegment,
-                  category: nextCategory,
-                });
-              }
+            onChangeActivityCategory={(activity_category) => {
+              const nextCategory = activity_category as ActivityCategory;
+              if (nextCategory === form.activityCategory) return;
+              Alert.alert(
+                "Change plan activity category?",
+                "Changing the activity category preserves your current targets. Review any activity-category-specific targets in each step before saving.",
+                [
+                  { text: "Keep current activity category", style: "cancel" },
+                  {
+                    text: "Change activity category",
+                    style: "destructive",
+                    onPress: () => setActivityCategory(nextCategory),
+                  },
+                ],
+              );
             }}
           />
 
@@ -469,6 +475,17 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
               <Pressable
                 key={segment.id}
                 onPress={() => segment.role === "activity" && setSelectedSegmentId(segment.id)}
+                accessibilityRole={segment.role === "activity" ? "button" : undefined}
+                accessibilityLabel={
+                  segment.role === "activity"
+                    ? `Select ${segment.name}, ${segment.activity_category}, ${segment.intervals.length} interval${segment.intervals.length === 1 ? "" : "s"}`
+                    : undefined
+                }
+                accessibilityState={
+                  segment.role === "activity"
+                    ? { selected: selectedActivitySegment?.id === segment.id }
+                    : undefined
+                }
                 className={`rounded-lg border p-3 ${selectedActivitySegment?.id === segment.id ? "border-primary bg-primary/5" : "border-border"}`}
               >
                 <View className="flex-row items-center justify-between gap-2">
@@ -476,7 +493,7 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
                     <Text className="font-medium text-foreground">{segment.name}</Text>
                     <Text className="text-xs text-muted-foreground">
                       {segment.role === "activity"
-                        ? `${segment.category} · ${segment.intervals.length} interval${segment.intervals.length === 1 ? "" : "s"}`
+                        ? `${segment.activity_category} · ${segment.intervals.length} interval${segment.intervals.length === 1 ? "" : "s"}`
                         : `${segment.role} · ${Math.round(segment.duration.seconds / 60)} min`}
                     </Text>
                   </View>
@@ -537,9 +554,6 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
               <Button variant="outline" size="sm" onPress={() => handleAddSegment("activity")}>
                 <Text>Add activity</Text>
               </Button>
-              <Button variant="outline" size="sm" onPress={() => handleAddSegment("transition")}>
-                <Text>Add transition</Text>
-              </Button>
               <Button variant="outline" size="sm" onPress={() => handleAddSegment("rest")}>
                 <Text>Add rest</Text>
               </Button>
@@ -566,73 +580,49 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
         open={editDialogOpen}
         onOpenChange={setEditDialogOpen}
         step={stepBeingEdited}
-        onSave={(step) =>
-          handleSaveStep({
-            ...step,
-            targets: step.targets ?? [
-              getActivityPlanDefaultTarget({
-                activityCategory: selectedActivitySegment?.category ?? form.activityCategory,
-                anchors: targetAnchors,
-              }),
-            ],
-          })
-        }
-        activityType={selectedActivitySegment?.category ?? form.activityCategory}
+        onSave={(step) => handleSaveStep(step)}
+        activityCategory={selectedActivitySegment?.activity_category ?? form.activityCategory}
         targetAnchors={targetAnchors}
       />
 
-      <BottomSheet
-        ref={structureStepSheetRef}
-        index={-1}
-        snapPoints={structureStepSheetSnapPoints}
-        enableDynamicSizing={false}
-        enablePanDownToClose
+      <AppBottomSheet
+        visible={Boolean(selectedInterval)}
+        title={selectedInterval ? `Interval ${selectedIntervalIndex + 1}` : "Interval"}
+        showCloseAction
+        initialSnapIndex={APP_BOTTOM_SHEET_PRESENTATIONS.inspector.initialSnapIndex}
+        snapPoints={APP_BOTTOM_SHEET_PRESENTATIONS.inspector.snapPoints}
         onClose={() => {
           setSelectedIntervalId(null);
         }}
-        backdropComponent={(props) => (
-          <BottomSheetBackdrop
-            {...props}
-            appearsOnIndex={0}
-            disappearsOnIndex={-1}
-            opacity={0.45}
-            pressBehavior="close"
-          />
-        )}
       >
         {selectedInterval ? (
-          <AppBottomSheetContent paddingHorizontal={0} paddingTop={0} paddingBottom={24}>
-            <StructureIntervalSheet
-              interval={selectedInterval}
-              intervalIndex={selectedIntervalIndex >= 0 ? selectedIntervalIndex : 0}
-              intervalIssue={issueMaps.intervalIssues[selectedInterval.id]}
-              stepIssueCounts={issueMaps.stepIssueCountsByInterval[selectedInterval.id] ?? {}}
-              onAdjustRepetitions={(delta) =>
-                handleChangeIntervalRepetitions(
-                  selectedInterval,
-                  selectedInterval.repetitions + delta,
-                )
-              }
-              onAddStep={() => {
-                openAddStep(selectedInterval.id);
-                structureStepSheetRef.current?.close();
-              }}
-              onDuplicateInterval={() => copyInterval(selectedInterval.id)}
-              onDeleteInterval={() => {
-                handleRemoveInterval(selectedInterval.id);
-                structureStepSheetRef.current?.close();
-              }}
-              onDeleteStep={(stepId) => {
-                handleDeleteStep(selectedInterval.id, stepId);
-              }}
-              onEditStep={(stepId) => {
-                openEditStep(selectedInterval.id, stepId);
-                structureStepSheetRef.current?.close();
-              }}
-            />
-          </AppBottomSheetContent>
+          <StructureIntervalSheet
+            interval={selectedInterval}
+            intervalIndex={selectedIntervalIndex >= 0 ? selectedIntervalIndex : 0}
+            intervalIssue={issueMaps.intervalIssues[selectedInterval.id]}
+            stepIssueCounts={issueMaps.stepIssueCountsByInterval[selectedInterval.id] ?? {}}
+            onAdjustRepetitions={(delta) =>
+              handleChangeIntervalRepetitions(
+                selectedInterval,
+                selectedInterval.repetitions + delta,
+              )
+            }
+            onAddStep={() => {
+              openAddStep(selectedInterval.id);
+              setSelectedIntervalId(null);
+            }}
+            onDuplicateInterval={() => copyInterval(selectedInterval.id)}
+            onDeleteInterval={() => handleRemoveInterval(selectedInterval.id)}
+            onDeleteStep={(stepId) => {
+              handleDeleteStep(selectedInterval.id, stepId);
+            }}
+            onEditStep={(stepId) => {
+              openEditStep(selectedInterval.id, stepId);
+              setSelectedIntervalId(null);
+            }}
+          />
         ) : null}
-      </BottomSheet>
+      </AppBottomSheet>
 
       {undoState ? (
         <View className="absolute bottom-4 left-4 right-4 rounded-lg border border-border bg-card px-3 py-2">

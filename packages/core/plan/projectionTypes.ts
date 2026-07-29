@@ -9,12 +9,12 @@ import type {
   DeterministicProjectionMicrocycle,
   DeterministicProjectionPayload,
   DeterministicProjectionPoint,
+  ProjectionActivityCategoryLoadState,
   ProjectionDiagnostics,
   ProjectionDoseRecommendation,
   ProjectionLoadResolutionSummary,
   ProjectionRecoverySegment,
   ProjectionSafetyConfig,
-  ProjectionSportLoadState,
 } from "./projectionCalculations";
 import type { TrainingPrescription } from "./trainingPrescription";
 import type { WeeklyAllocation } from "./weeklyAllocation";
@@ -212,7 +212,7 @@ export interface ProjectionChartPayload {
   reference_trajectory?: ReferenceTrajectory;
   trajectory_mode?: TrajectoryMode;
   feasibility_assessment?: FeasibilityAssessment;
-  sport_load_states?: ProjectionSportLoadState[];
+  activity_category_load_states?: ProjectionActivityCategoryLoadState[];
   dose_recommendation?: ProjectionDoseRecommendation;
   goal_assessments?: Array<{
     goal_id: string;
@@ -319,7 +319,7 @@ export function buildProjectionChartPayloadFromDeterministicProjection(input: {
     reference_trajectory: deterministicProjection.reference_trajectory,
     trajectory_mode: deterministicProjection.trajectory_mode,
     feasibility_assessment: deterministicProjection.feasibility_assessment,
-    sport_load_states: deterministicProjection.sport_load_states,
+    activity_category_load_states: deterministicProjection.activity_category_load_states,
     dose_recommendation: deterministicProjection.dose_recommendation,
     goal_assessments: deterministicProjection.goal_assessments,
   };

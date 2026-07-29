@@ -1,3 +1,4 @@
+import { isValidDateOnlyUtc } from "@repo/core";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -7,10 +8,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { useMemo } from "react";
 
+import { PlannedDaySummary } from "../../../../components/planning/planned-day-summary";
 import { api } from "../../../../lib/api/client";
 import {
   compareEventsByStart,
@@ -18,8 +20,6 @@ import {
   formatEventTimeRange,
   getEventTitle,
   getMonthKey,
-  getTodayDateKey,
-  isValidDateKey,
   isValidMonthKey,
   type PlanningEvent,
 } from "../../../../lib/planning";
@@ -32,20 +32,23 @@ export const Route = createFileRoute("/_protected/calendar/day/$date")({
         : getMonthKey(new Date()),
     view: search.view === "agenda" || search.view === "week" ? search.view : "month",
   }),
+  beforeLoad: ({ params }) => {
+    if (!isValidDateOnlyUtc(params.date)) throw notFound();
+  },
   component: CalendarDayPage,
 });
 
 function CalendarDayPage() {
-  const { date } = Route.useParams();
+  const { date: routeDate } = Route.useParams();
   const { month, view } = Route.useSearch();
-  const normalizedDate = isValidDateKey(date) ? date : getTodayDateKey();
   const profileQuery = api.profiles.get.useQuery();
   const eventsQuery = api.events.list.useQuery({
-    date_from: normalizedDate,
-    date_to: normalizedDate,
+    date_from: routeDate,
+    date_to: routeDate,
     include_adhoc: true,
     limit: 100,
   });
+  const plannedDaySummaryQuery = api.events.plannedDaySummary.useQuery({ date: routeDate });
   const goalsQuery = api.goals.list.useQuery(
     {
       profile_id: profileQuery.data?.id ?? "00000000-0000-0000-0000-000000000000",
@@ -59,8 +62,8 @@ function CalendarDayPage() {
     [eventsQuery.data?.items],
   );
   const goals = useMemo(
-    () => (goalsQuery.data?.items ?? []).filter((goal) => goal.target_date === normalizedDate),
-    [goalsQuery.data?.items, normalizedDate],
+    () => (goalsQuery.data?.items ?? []).filter((goal) => goal.target_date === routeDate),
+    [goalsQuery.data?.items, routeDate],
   );
 
   return (
@@ -79,9 +82,7 @@ function CalendarDayPage() {
           </Link>
         </Button>
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">
-            {formatDayLabel(normalizedDate)}
-          </h1>
+          <h1 className="text-3xl font-semibold tracking-tight">{formatDayLabel(routeDate)}</h1>
           <p className="mt-1 text-muted-foreground">Day agenda and goal anchors.</p>
         </div>
       </div>
@@ -107,6 +108,15 @@ function CalendarDayPage() {
           </CardContent>
         </Card>
       ) : null}
+
+      <PlannedDaySummary
+        {...(plannedDaySummaryQuery.data === undefined
+          ? {}
+          : { data: plannedDaySummaryQuery.data })}
+        error={plannedDaySummaryQuery.isError}
+        isLoading={plannedDaySummaryQuery.isLoading}
+        onRetry={() => plannedDaySummaryQuery.refetch()}
+      />
 
       {eventsQuery.isError || goalsQuery.isError ? (
         <div

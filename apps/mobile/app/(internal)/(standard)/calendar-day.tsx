@@ -2,13 +2,15 @@ import { Text } from "@repo/ui/components/text";
 import { keepPreviousData } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Stack, useLocalSearchParams } from "expo-router";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert, ScrollView, TouchableOpacity, View } from "react-native";
 import {
   EventAgendaCard,
   GoalAgendaCard,
   PlannedAgendaEventCard,
 } from "@/components/calendar/AgendaCards";
+import { PlannedDaySummary } from "@/components/calendar/PlannedDaySummary";
+import { announcePlannedDaySummaryRetryStatus } from "@/components/calendar/plannedDaySummaryAccessibility";
 import { GroupEventCard } from "@/components/groups/GroupEventCards";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
@@ -122,7 +124,9 @@ export default function CalendarDayScreen() {
       return null;
     }
   }, [planningTimezone]);
-  const requestedDateKey = typeof params.date === "string" ? params.date : todayKey;
+  // This is an explicit calendar-day route. Never substitute a device-local day
+  // when its parameter is absent or invalid, or queries could target another day.
+  const requestedDateKey = readParam(params.date);
   const planningDayReadiness = useMemo(
     () =>
       resolvePlanningDayQueryRange({
@@ -172,6 +176,18 @@ export default function CalendarDayScreen() {
       placeholderData: keepPreviousData,
     },
   );
+  const plannedDaySummaryQuery = api.events.plannedDaySummary.useQuery(
+    { date: dateKey ?? DORMANT_DATE_KEY },
+    {
+      ...scheduleAwareReadQueryOptions,
+      enabled: dayQueriesEnabled,
+    },
+  );
+  const plannedDaySummaryData =
+    plannedDaySummaryQuery.data?.date === dateKey ? plannedDaySummaryQuery.data : undefined;
+  const plannedDaySummaryLoading =
+    plannedDaySummaryQuery.isLoading ||
+    (dayQueriesEnabled && !plannedDaySummaryData && !plannedDaySummaryQuery.isError);
 
   const events = useMemo(() => (data?.items ?? []) as CalendarEvent[], [data?.items]);
   const groupEventsQuery = api.groups.events.myCalendarGroupEvents.useQuery(
@@ -314,6 +330,32 @@ export default function CalendarDayScreen() {
 
   const hasAgendaEvents = visibleEvents.length > 0 || visibleGroupEvents.length > 0;
   const agendaEventCount = visibleEvents.length + visibleGroupEvents.length;
+  const isAgendaInitiallyLoading =
+    (isLoading || groupEventsQuery.isLoading) && !data && !groupEventsQuery.data;
+  const hasAgendaInitialError =
+    (error || groupEventsQuery.error) && !data && !groupEventsQuery.data;
+  const [agendaRetryStatus, setAgendaRetryStatus] = useState<string | null>(null);
+  const [isRetryingAgenda, setIsRetryingAgenda] = useState(false);
+
+  const announceAgendaRetryStatus = (message: string) => {
+    setAgendaRetryStatus(message);
+    announcePlannedDaySummaryRetryStatus(message);
+  };
+
+  const handleRetryAgenda = async () => {
+    if (isRetryingAgenda || !dayQueriesEnabled) return;
+
+    setIsRetryingAgenda(true);
+    announceAgendaRetryStatus("Retrying day agenda.");
+    try {
+      await Promise.all([refetch(), groupEventsQuery.refetch()]);
+      announceAgendaRetryStatus("Day agenda retry finished.");
+    } catch {
+      announceAgendaRetryStatus("Day agenda retry failed. The error remains available.");
+    } finally {
+      setIsRetryingAgenda(false);
+    }
+  };
 
   return (
     <View className="flex-1 bg-background">
@@ -337,26 +379,6 @@ export default function CalendarDayScreen() {
       {!planningDayRange ? (
         <View className="flex-1 items-center justify-center px-6">
           <Text className="text-center text-sm text-muted-foreground">{unavailableMessage}</Text>
-        </View>
-      ) : (isLoading || groupEventsQuery.isLoading) && !data && !groupEventsQuery.data ? (
-        <View className="flex-1 items-center justify-center px-6">
-          <Text className="text-sm text-muted-foreground">Loading day agenda...</Text>
-        </View>
-      ) : (error || groupEventsQuery.error) && !data && !groupEventsQuery.data ? (
-        <View className="flex-1 items-center justify-center gap-3 px-6">
-          <Text className="text-center text-sm text-muted-foreground">
-            Unable to load this day right now.
-          </Text>
-          <Text
-            className="text-sm font-medium text-foreground"
-            onPress={() =>
-              void (dayQueriesEnabled
-                ? Promise.all([refetch(), groupEventsQuery.refetch()])
-                : Promise.resolve())
-            }
-          >
-            Retry
-          </Text>
         </View>
       ) : (
         <ScrollView className="flex-1 px-4 pb-6 pt-4" contentContainerStyle={{ gap: 12 }}>
@@ -387,83 +409,129 @@ export default function CalendarDayScreen() {
             </View>
           ) : null}
 
-          {isRestDay ? (
-            <View
-              className="rounded-3xl border border-border bg-card px-5 py-5"
-              testID={`calendar-rest-day-state-${dateKey}`}
-            >
-              <Text className="text-sm font-semibold text-foreground">Rest day</Text>
-              <Text className="mt-1 text-sm text-muted-foreground">
-                {visibleEvents.length > 0
-                  ? "No activity plan or goal is scheduled for this day, even if other events are on your calendar."
-                  : "Nothing scheduled."}
-              </Text>
-            </View>
-          ) : null}
+          <PlannedDaySummary
+            {...(plannedDaySummaryData === undefined ? {} : { data: plannedDaySummaryData })}
+            error={plannedDaySummaryQuery.isError}
+            isLoading={plannedDaySummaryLoading}
+            onRetry={() => plannedDaySummaryQuery.refetch()}
+          />
 
           {goalsOnDate.length > 0 ? (
             <GoalAgendaCard onPress={handleOpenGoal} title={goalsOnDate[0]?.title ?? "Goal"} />
           ) : null}
 
-          {hasAgendaEvents ? (
-            <>
-              <View className="rounded-3xl border border-border bg-card px-4 py-4">
-                <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Day agenda
-                </Text>
-                <Text className="mt-2 text-2xl font-semibold text-foreground">
-                  {agendaEventCount === 1 ? "1 event" : `${agendaEventCount} events`}
-                </Text>
-                <Text className="mt-1 text-sm text-muted-foreground">
-                  Events scheduled for this day, in chronological order.
-                </Text>
-              </View>
-
-              {visibleGroupEvents.map((event) => (
-                <GroupEventCard
-                  key={event.id}
-                  event={event}
-                  onGroupPress={(group) =>
-                    navigateTo({
-                      pathname: "/group-detail",
-                      params: { groupId: group.id },
-                    } as never)
-                  }
-                  onPress={() => handleOpenGroupEvent(event.id)}
-                  testID={`calendar-day-group-event-${event.id}`}
-                />
-              ))}
-
-              {visibleEvents.map((event) =>
-                event.event_type === "planned" && event.activity_plan ? (
-                  <PlannedAgendaEventCard
-                    key={event.id}
-                    event={event}
-                    onPress={() => handleOpenEvent(event)}
-                    scheduleLabel={formatTimeRange(event)}
-                  />
-                ) : (
-                  <EventAgendaCard
-                    key={event.id}
-                    event={event}
-                    onPress={() => handleOpenEvent(event)}
-                    place={readEventPlace(event)}
-                    scheduleLabel={formatTimeRange(event)}
-                  />
-                ),
-              )}
-            </>
-          ) : !isRestDay ? (
-            <View
-              className="rounded-3xl border border-border bg-card px-5 py-5"
-              testID={`calendar-no-events-state-${dateKey}`}
-            >
-              <Text className="text-sm font-semibold text-foreground">No events scheduled</Text>
-              <Text className="mt-1 text-sm text-muted-foreground">
-                Your goal target is marked above, but there are no calendar events on this date.
+          {isAgendaInitiallyLoading ? (
+            <View className="rounded-3xl border border-border bg-card px-5 py-5">
+              <Text accessibilityLiveRegion="polite" className="text-sm text-muted-foreground">
+                Loading day agenda...
               </Text>
             </View>
-          ) : null}
+          ) : hasAgendaInitialError ? (
+            <View
+              accessibilityRole="alert"
+              className="rounded-3xl border border-border bg-card px-5 py-5"
+            >
+              <Text className="text-sm text-foreground">Unable to load this day right now.</Text>
+              {agendaRetryStatus ? (
+                <Text
+                  accessibilityLiveRegion="polite"
+                  className="mt-2 text-sm text-muted-foreground"
+                >
+                  {agendaRetryStatus}
+                </Text>
+              ) : null}
+              <TouchableOpacity
+                accessibilityHint="Attempts to load the day agenda again."
+                accessibilityLabel="Retry loading day agenda"
+                accessibilityRole="button"
+                accessibilityState={{ busy: isRetryingAgenda, disabled: isRetryingAgenda }}
+                className="mt-3 self-start rounded-full border border-border px-4 py-3"
+                disabled={isRetryingAgenda}
+                onPress={() => void handleRetryAgenda()}
+                testID="calendar-day-agenda-retry"
+              >
+                <Text className="text-sm font-semibold text-foreground">
+                  {isRetryingAgenda ? "Retrying day agenda..." : "Retry day agenda"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              {isRestDay ? (
+                <View
+                  className="rounded-3xl border border-border bg-card px-5 py-5"
+                  testID={`calendar-rest-day-state-${dateKey}`}
+                >
+                  <Text className="text-sm font-semibold text-foreground">Rest day</Text>
+                  <Text className="mt-1 text-sm text-muted-foreground">
+                    {visibleEvents.length > 0
+                      ? "No activity plan or goal is scheduled for this day, even if other events are on your calendar."
+                      : "Nothing scheduled."}
+                  </Text>
+                </View>
+              ) : null}
+
+              {hasAgendaEvents ? (
+                <>
+                  <View className="rounded-3xl border border-border bg-card px-4 py-4">
+                    <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Day agenda
+                    </Text>
+                    <Text className="mt-2 text-2xl font-semibold text-foreground">
+                      {agendaEventCount === 1 ? "1 event" : `${agendaEventCount} events`}
+                    </Text>
+                    <Text className="mt-1 text-sm text-muted-foreground">
+                      Events scheduled for this day, in chronological order.
+                    </Text>
+                  </View>
+
+                  {visibleGroupEvents.map((event) => (
+                    <GroupEventCard
+                      key={event.id}
+                      event={event}
+                      onGroupPress={(group) =>
+                        navigateTo({
+                          pathname: "/group-detail",
+                          params: { groupId: group.id },
+                        } as never)
+                      }
+                      onPress={() => handleOpenGroupEvent(event.id)}
+                      testID={`calendar-day-group-event-${event.id}`}
+                    />
+                  ))}
+
+                  {visibleEvents.map((event) =>
+                    event.event_type === "planned" && event.activity_plan ? (
+                      <PlannedAgendaEventCard
+                        key={event.id}
+                        event={event}
+                        onPress={() => handleOpenEvent(event)}
+                        scheduleLabel={formatTimeRange(event)}
+                      />
+                    ) : (
+                      <EventAgendaCard
+                        key={event.id}
+                        event={event}
+                        onPress={() => handleOpenEvent(event)}
+                        place={readEventPlace(event)}
+                        scheduleLabel={formatTimeRange(event)}
+                      />
+                    ),
+                  )}
+                </>
+              ) : !isRestDay ? (
+                <View
+                  className="rounded-3xl border border-border bg-card px-5 py-5"
+                  testID={`calendar-no-events-state-${dateKey}`}
+                >
+                  <Text className="text-sm font-semibold text-foreground">No events scheduled</Text>
+                  <Text className="mt-1 text-sm text-muted-foreground">
+                    Your goal target is marked above, but there are no calendar events on this date.
+                  </Text>
+                </View>
+              ) : null}
+            </>
+          )}
         </ScrollView>
       )}
     </View>

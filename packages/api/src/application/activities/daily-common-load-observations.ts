@@ -89,7 +89,7 @@ export function aggregateDailyCommonLoadObservations(input: {
               status: "unavailable",
               model: COMMON_RELATIVE_LOAD_MODEL,
               version: COMMON_RELATIVE_LOAD_VERSION,
-              sport: "other",
+              activity_category: "other",
               method: null,
               quality: null,
               thresholdEvidence: null,

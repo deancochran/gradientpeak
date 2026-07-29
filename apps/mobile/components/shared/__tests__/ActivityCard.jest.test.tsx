@@ -90,7 +90,7 @@ const availableCommonLoad = {
   status: "available" as const,
   model: "gradientpeak_relative_load" as const,
   version: "1" as const,
-  sport: "run" as const,
+  activity_category: "run" as const,
   method: "run_pace_threshold" as const,
   load: 64,
   intensity: 0.8,
@@ -185,7 +185,7 @@ describe("ActivityCard", () => {
       <ActivityCard
         activity={{
           id: "activity-multisport",
-          name: "Brick workout",
+          name: "Brick activity",
           activity_kind: "multisport",
           activity_categories: ["run", "bike", "run"],
         }}
@@ -199,12 +199,12 @@ describe("ActivityCard", () => {
     expect(screen.getAllByText("Bike").length).toBeGreaterThan(0);
   });
 
-  it("does not show the legacy sport-specific breakdown for multisport activities", () => {
+  it("does not show the legacy activity-category-specific breakdown for multisport activities", () => {
     renderNative(
       <ActivityCard
         activity={{
           id: "activity-multisport-load",
-          name: "Brick workout",
+          name: "Brick activity",
           activity_kind: "multisport",
           activity_categories: ["bike", "run"],
           distance_meters: 20_000,
@@ -213,7 +213,7 @@ describe("ActivityCard", () => {
           segment_loads: [
             {
               segment_id: "segment-bike",
-              category: "bike",
+              activity_category: "bike",
               tss: 52,
               intensity_factor: 0.81,
               method: "power_threshold",
@@ -221,7 +221,7 @@ describe("ActivityCard", () => {
             },
             {
               segment_id: "segment-run",
-              category: "run",
+              activity_category: "run",
               tss: 38,
               intensity_factor: 0.76,
               method: "run_pace_threshold",
@@ -232,7 +232,7 @@ describe("ActivityCard", () => {
       />,
     );
 
-    expect(screen.queryByText("Sport-specific load")).toBeNull();
+    expect(screen.queryByText("ActivityCategory-specific load")).toBeNull();
     expect(screen.getByText("Load")).toBeTruthy();
     expect(screen.getByText("Unavailable")).toBeTruthy();
     expect(screen.queryByText(/TSS|IF/)).toBeNull();
@@ -305,12 +305,12 @@ describe("ActivityCard", () => {
           segment_loads: [
             {
               segment_id: "segment-hr",
-              category: "run",
+              activity_category: "run",
               common_load: {
                 status: "unavailable",
                 model: "gradientpeak_relative_load",
                 version: "1",
-                sport: "run",
+                activity_category: "run",
                 method: "heart_rate_zones",
                 quality: {
                   source: "validated_test",
@@ -431,7 +431,7 @@ describe("ActivityCard", () => {
               status: "unavailable",
               model: "gradientpeak_relative_load",
               version: "1",
-              sport: "strength",
+              activity_category: "strength",
               method: null,
               quality: null,
               thresholdEvidence: null,
@@ -453,10 +453,10 @@ describe("ActivityCard", () => {
     expect(screen.getByText("Unavailable")).toBeTruthy();
     expect(
       screen.getByText(
-        "This activity type is not supported for canonical Load. Canonical Load is not available for this activity type.",
+        "This activity category is not supported for canonical Load. Canonical Load is not available for this activity category.",
       ),
     ).toBeTruthy();
-    expect(screen.queryByText(/sport-specific LTHR/)).toBeNull();
+    expect(screen.queryByText(/activity-category-specific LTHR/)).toBeNull();
   });
 
   it("shows stale threshold source and age without claiming a tested threshold", () => {

@@ -301,13 +301,14 @@ export function TimerOnlyRecordingProvider({
       const now = Date.now();
       const finished = finishTimerOnlyRecording(recordingRef.current, now);
       if (finished.rejectedReason) throw new Error(finished.rejectedReason);
-      const category = finished.state.reducer.snapshot?.activity.category ?? "other";
+      const activityCategory =
+        finished.state.reducer.snapshot?.activity.activity_category ?? "other";
       const artifact = await finalizeTimerRecordingArtifact({
         state: finished.state,
         ownerId,
         segmentId: createSessionId(),
         review: {
-          name: `${category[0]?.toUpperCase() ?? ""}${category.slice(1)} recording`,
+          name: `${activityCategory[0]?.toUpperCase() ?? ""}${activityCategory.slice(1)} recording`,
           notes: null,
           perceivedEffort: null,
           distanceMeters: 0,

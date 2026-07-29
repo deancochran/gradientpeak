@@ -5,12 +5,12 @@ import {
   resolveCanonicalThresholds,
   type ThresholdMetricSource,
 } from "../athlete-inputs/canonical-thresholds";
-import { canonicalSportSchema } from "../schemas/sport";
+import { canonicalActivityCategorySchema } from "../schemas/activity-category";
 import { preferredUnitSystemSchema } from "../units";
 
 const dateLikeSchema = z.union([z.string(), z.date()]).nullable().optional();
 
-const activityCategorySchema = canonicalSportSchema;
+const activityCategorySchema = canonicalActivityCategorySchema;
 const effortTypeSchema = z.enum(["power", "speed"]);
 const genderSchema = z.enum(["male", "female", "other", "prefer_not_to_say"]);
 
@@ -750,7 +750,7 @@ function resolvedThresholdEvidenceValue(input: {
         });
         return [
           {
-            sport:
+            activity_category:
               effort.activity_category === "bike"
                 ? ("bike" as const)
                 : effort.activity_category === "run"

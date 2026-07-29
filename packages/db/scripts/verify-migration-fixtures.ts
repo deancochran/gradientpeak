@@ -8,40 +8,42 @@ import {
   withDisposableDatabase,
 } from "./_disposable-target";
 import { dbPackageRoot } from "./_helpers";
+import {
+  autocommitSettings,
+  type MigrationLedgerEntry,
+  type MigrationPolicy,
+} from "./_migration-plan";
 import { classifyLedger, type LedgerEntry } from "./check-migration-ledger";
 
 async function main() {
   const args = process.argv.slice(2);
   const policy = JSON.parse(
     readFileSync(resolve(dbPackageRoot, "migration-policy.json"), "utf8"),
-  ) as {
-    authorityDirectory: string;
-    baseline: { version: string; name: string };
-    activeLedgerFile: string;
-  };
+  ) as MigrationPolicy;
   const active = JSON.parse(
     readFileSync(resolve(dbPackageRoot, policy.activeLedgerFile), "utf8"),
-  ) as { entries: LedgerEntry[] };
-  if (classifyLedger(active.entries, active.entries) !== "generation-2")
+  ) as { entries: Array<LedgerEntry & MigrationLedgerEntry> };
+  const databaseLedger = active.entries.map(({ version, name }) => ({ version, name }));
+  if (classifyLedger(databaseLedger, active.entries) !== "generation-2")
     throw new Error("active generation 2 ledger rejected");
   for (const unsupported of [
     [],
     [{ version: "20260725225842", name: "drop_activity_plan_route" }],
-    [...active.entries, { version: "20260725225842", name: "drop_activity_plan_route" }],
+    [...databaseLedger, { version: "20260725225842", name: "drop_activity_plan_route" }],
   ]) {
     if (classifyLedger(unsupported, active.entries) !== "unsupported")
       throw new Error("old, partial, or mixed ledger was accepted");
   }
   await withDisposableDatabase(args, "generation_fixture", async (target) => {
     await bootstrapSupabaseSchemas(target);
-    await applySqlFile(
-      target,
-      resolve(
-        dbPackageRoot,
-        policy.authorityDirectory,
-        `${policy.baseline.version}_${policy.baseline.name}.sql`,
-      ),
-    );
+    for (const entry of active.entries) {
+      await applySqlFile(
+        target,
+        resolve(dbPackageRoot, policy.authorityDirectory, `${entry.version}_${entry.name}.sql`),
+        entry.executionMode,
+        autocommitSettings(policy, entry),
+      );
+    }
     const idx = await target.query<{ table_name: string }>(
       "select table_name from information_schema.columns where table_schema = 'public' and column_name = 'idx' order by table_name",
     );
@@ -63,10 +65,10 @@ async function main() {
       where n.nspname = 'public' and c.contype in ('c', 'f', 'u', 'p', 'x') and not c.convalidated
     `);
     if (unvalidated.rowCount !== 0)
-      throw new Error("fresh baseline has unvalidated public constraints");
+      throw new Error("fresh generation 2 target has unvalidated public constraints");
   });
   console.log(
-    "[db:migration:fixtures] generation 2 fresh baseline and hard-reset ledger rejection passed",
+    "[db:migration:fixtures] generation 2 fresh baseline plus forwards and ledger rejection passed",
   );
 }
 main().catch((error) => {

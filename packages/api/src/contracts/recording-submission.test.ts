@@ -29,7 +29,7 @@ const baseSubmission = {
         globalOrdinal: 0,
         segmentId: "22222222-2222-4222-8222-222222222222",
         role: "activity" as const,
-        category: "run" as const,
+        activity_category: "run" as const,
         startedAt: "2026-07-24T08:00:00.000Z",
         completedAt: "2026-07-24T09:00:00.000Z",
         activeSeconds: 3600,

@@ -1,4 +1,4 @@
-import type { CanonicalSport } from "../schemas/sport";
+import type { CanonicalActivityCategory } from "../schemas/activity-category";
 import {
   type AthleteMetricRole,
   type AthleteMetricType,
@@ -22,7 +22,7 @@ export type MetricDefinition = Readonly<{
   canonicalUnit: CanonicalMetricUnit;
   role: AthleteMetricRole;
   supportedPolicies: readonly CalculationPolicyId[];
-  supportedSports: readonly CanonicalSport[] | "any";
+  supportedActivityCategories: readonly CanonicalActivityCategory[] | "any";
 }>;
 
 /**
@@ -34,85 +34,85 @@ export const metricCatalog = Object.freeze({
     canonicalUnit: "watts",
     role: athleteMetricRoleByType.ftp,
     supportedPolicies: ["physiology-metrics"],
-    supportedSports: ["bike"],
+    supportedActivityCategories: ["bike"],
   },
   threshold_pace_seconds_per_km: {
     canonicalUnit: "seconds_per_km",
     role: athleteMetricRoleByType.threshold_pace_seconds_per_km,
     supportedPolicies: ["physiology-metrics"],
-    supportedSports: ["run"],
+    supportedActivityCategories: ["run"],
   },
   css_seconds_per_100m: {
     canonicalUnit: "seconds_per_100m",
     role: athleteMetricRoleByType.css_seconds_per_100m,
     supportedPolicies: ["physiology-metrics"],
-    supportedSports: ["swim"],
+    supportedActivityCategories: ["swim"],
   },
   lthr: {
     canonicalUnit: "beats_per_minute",
     role: athleteMetricRoleByType.lthr,
     supportedPolicies: ["physiology-metrics"],
-    supportedSports: "any",
+    supportedActivityCategories: "any",
   },
   max_hr: {
     canonicalUnit: "beats_per_minute",
     role: athleteMetricRoleByType.max_hr,
     supportedPolicies: ["physiology-metrics"],
-    supportedSports: "any",
+    supportedActivityCategories: "any",
   },
   resting_hr: {
     canonicalUnit: "beats_per_minute",
     role: athleteMetricRoleByType.resting_hr,
     supportedPolicies: ["physiology-metrics"],
-    supportedSports: "any",
+    supportedActivityCategories: "any",
   },
   vo2_max: {
     canonicalUnit: "milliliters_per_kilogram_per_minute",
     role: athleteMetricRoleByType.vo2_max,
     supportedPolicies: ["physiology-metrics"],
-    supportedSports: "any",
+    supportedActivityCategories: "any",
   },
   weight_kg: {
     canonicalUnit: "kilograms",
     role: athleteMetricRoleByType.weight_kg,
     supportedPolicies: ["physiology-metrics"],
-    supportedSports: "any",
+    supportedActivityCategories: "any",
   },
   hrv_rmssd: {
     canonicalUnit: "milliseconds",
     role: athleteMetricRoleByType.hrv_rmssd,
     supportedPolicies: ["physiology-metrics"],
-    supportedSports: "any",
+    supportedActivityCategories: "any",
   },
   sleep_hours: {
     canonicalUnit: "hours",
     role: athleteMetricRoleByType.sleep_hours,
     supportedPolicies: ["physiology-metrics"],
-    supportedSports: "any",
+    supportedActivityCategories: "any",
   },
   stress_score: {
     canonicalUnit: "score",
     role: athleteMetricRoleByType.stress_score,
     supportedPolicies: ["physiology-metrics"],
-    supportedSports: "any",
+    supportedActivityCategories: "any",
   },
   soreness_level: {
     canonicalUnit: "score",
     role: athleteMetricRoleByType.soreness_level,
     supportedPolicies: ["physiology-metrics"],
-    supportedSports: "any",
+    supportedActivityCategories: "any",
   },
   wellness_score: {
     canonicalUnit: "score",
     role: athleteMetricRoleByType.wellness_score,
     supportedPolicies: ["physiology-metrics"],
-    supportedSports: "any",
+    supportedActivityCategories: "any",
   },
   age_years: {
     canonicalUnit: "years",
     role: athleteMetricRoleByType.age_years,
     supportedPolicies: ["physiology-metrics"],
-    supportedSports: "any",
+    supportedActivityCategories: "any",
   },
 } as const satisfies Record<AthleteMetricType, MetricDefinition>);
 

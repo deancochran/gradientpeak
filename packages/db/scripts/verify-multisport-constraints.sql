@@ -29,7 +29,7 @@ begin
     or (select max(ordinal) from public.activity_artifact_links where activity_id=activity and role='source')<>1 then
     raise exception 'source revision history/current/ordinal contract failed';
   end if;
-  insert into public.activity_segments(id,activity_id,profile_id,ordinal,role,category,start_offset_ms,end_offset_ms,
+  insert into public.activity_segments(id,activity_id,profile_id,ordinal,role,activity_category,start_offset_ms,end_offset_ms,
     source_artifact_id,summary,summary_version,timing_coverage,active_ms,moving_ms,parser_version,materializer_version)
   values(segment,activity,profile,0,'activity','run',0,1000,artifact_two,
     '{"version":1,"timing":{"timingCoverage":"complete","activeMs":1000,"movingMs":1000}}',1,'complete',1000,1000,'fixture','fixture');

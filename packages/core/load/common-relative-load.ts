@@ -1,7 +1,10 @@
 import { z } from "zod";
 
 import { activityCalibrationQualitySchema } from "../activity-analysis/calibration-quality";
-import { type CanonicalSport, canonicalSportSchema } from "../schemas/sport";
+import {
+  type CanonicalActivityCategory,
+  canonicalActivityCategorySchema,
+} from "../schemas/activity-category";
 
 export const COMMON_RELATIVE_LOAD_MODEL = "gradientpeak_relative_load" as const;
 export const COMMON_RELATIVE_LOAD_VERSION = "1" as const;
@@ -99,7 +102,7 @@ const commonLoadIdentityShape = {
 
 const commonLoadProvenanceShape = {
   ...commonLoadIdentityShape,
-  sport: canonicalSportSchema,
+  activity_category: canonicalActivityCategorySchema,
   method: commonLoadMethodSchema.nullable(),
   quality: activityCalibrationQualitySchema.nullable(),
   thresholdEvidence: commonThresholdEvidenceSchema.nullable(),
@@ -292,13 +295,16 @@ const expectedThresholdTypeByMethod = {
   heart_rate_zones: "lthr_bpm",
 } as const;
 
-const allowedSportsByMethod = {
+const allowedActivityCategoriesByMethod = {
   power_threshold: ["bike"],
   critical_power_threshold: ["bike"],
   run_pace_threshold: ["run"],
   swim_pace_threshold: ["swim"],
   heart_rate_zones: ["run", "bike", "swim"],
-} as const satisfies Record<z.infer<typeof commonLoadMethodSchema>, readonly CanonicalSport[]>;
+} as const satisfies Record<
+  z.infer<typeof commonLoadMethodSchema>,
+  readonly CanonicalActivityCategory[]
+>;
 
 export const commonLoadResultSchema = z
   .discriminatedUnion("status", [
@@ -322,12 +328,14 @@ export const commonLoadResultSchema = z
     }
     if (
       result.method !== null &&
-      !allowedSportsByMethod[result.method].some((sport) => sport === result.sport)
+      !allowedActivityCategoriesByMethod[result.method].some(
+        (activity_category) => activity_category === result.activity_category,
+      )
     ) {
       context.addIssue({
         code: "custom",
         path: ["method"],
-        message: "Common Load method is not compatible with the activity sport",
+        message: "Common Load method is not compatible with the activity category",
       });
     }
     if (
@@ -728,7 +736,7 @@ export function aggregateCommonLoadEnvelopes(
   envelopes: readonly (CommonLoadResult | CommonLoadAggregate)[],
 ): CommonLoadAggregate {
   const normalized = envelopes.map((envelope) => {
-    if (!("sport" in envelope)) return envelope;
+    if (!("activity_category" in envelope)) return envelope;
     return aggregateCommonLoad([envelope]);
   });
   // Each envelope is one activity, even when that activity is itself a

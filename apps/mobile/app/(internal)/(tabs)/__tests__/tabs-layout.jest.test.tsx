@@ -126,7 +126,7 @@ jest.mock("@/lib/stores/activitySelectionStore", () => ({
   activitySelectionStore: { setSelection: setSelectionMock },
   defaultRecordLaunchPayload: () => ({
     launchSource: "record_tab",
-    category: "run",
+    activity_category: "run",
     gpsRecordingEnabled: true,
   }),
 }));

@@ -6,11 +6,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRecordingCommands, useSessionView } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import {
+  ActivityIntervalInsightCard,
   ClimbInsightCard,
   MetricsInsightCard,
   RouteProgressInsightCard,
   TrainerInsightCard,
-  WorkoutIntervalInsightCard,
 } from "./cards";
 import { buildRecordingFloatingPanelModel } from "./model/recordingCardModel";
 
@@ -348,8 +348,8 @@ function InsightCard({
   props: React.ComponentProps<typeof MetricsInsightCard>;
 }) {
   switch (card) {
-    case "workout_interval":
-      return <WorkoutIntervalInsightCard {...props} />;
+    case "activity_interval":
+      return <ActivityIntervalInsightCard {...props} />;
     case "route_progress":
       return <RouteProgressInsightCard {...props} />;
     case "climb":

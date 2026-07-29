@@ -43,7 +43,7 @@ describe("periodization benchmarks", () => {
   const constraintProfile = resolveConstraintProfile({
     optimizationProfile: "balanced",
     preferenceProfile: defaultAthletePreferenceProfile,
-    sport: "run",
+    activity_category: "run",
   });
   const feasibility = assessFeasibility({
     currentCtl: 45,

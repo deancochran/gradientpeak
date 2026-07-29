@@ -5,7 +5,7 @@ import { buildPeriodizedObjectiveComponents, evaluateReferenceTrackingWindow } f
 
 const taperReference = referenceTrajectorySchema.parse({
   mode: "target_seeking",
-  sport: "run",
+  activity_category: "run",
   feasibility: {
     status: "feasible",
     limiting_constraints: [],

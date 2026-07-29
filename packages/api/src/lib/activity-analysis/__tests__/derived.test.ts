@@ -11,7 +11,7 @@ const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
 function segment(
   id: string,
   ordinal: number,
-  category: "bike" | "run",
+  activity_category: "bike" | "run",
   start: number,
   end: number,
   heartRateDistribution?: {
@@ -24,18 +24,27 @@ function segment(
     activity_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     ordinal,
     role: "activity" as const,
-    category,
+    activity_category,
     start_offset_ms: start,
     end_offset_ms: end,
+    source_artifact_id: null,
+    source_session_index: null,
+    source_message_index: null,
+    raw_type_string: null,
+    raw_type_integer: null,
+    raw_sport_string: null,
+    raw_sport_integer: null,
+    raw_sub_sport_string: null,
+    raw_sub_sport_integer: null,
     timing_coverage: "complete" as const,
     active_ms: end - start,
     moving_ms: end - start,
     summary: {
       version: 1,
       timing: { timingCoverage: "complete", activeMs: end - start, movingMs: end - start },
-      distanceMeters: category === "bike" ? 20_000 : 5_000,
-      averagePowerWatts: category === "bike" ? 200 : undefined,
-      averageSpeedMetersPerSecond: category === "run" ? 3.5 : undefined,
+      distanceMeters: activity_category === "bike" ? 20_000 : 5_000,
+      averagePowerWatts: activity_category === "bike" ? 200 : undefined,
+      averageSpeedMetersPerSecond: activity_category === "run" ? 3.5 : undefined,
       averageHeartRateBpm: heartRateDistribution ? 150 : undefined,
       heartRateDistribution,
     },
@@ -242,7 +251,7 @@ describe("segment-derived activity analysis", () => {
     expect(deriveActivityParentClassification(segments)).toEqual({
       kind: "multisport",
       categories: ["run", "bike", "run"],
-      category: null,
+      activity_category: null,
     });
   });
 
@@ -256,7 +265,7 @@ describe("segment-derived activity analysis", () => {
       profileId: PROFILE_ID,
       activities: [input],
     });
-    expect(segments.map(({ category }) => category)).toEqual(["bike", "run"]);
+    expect(segments.map(({ activity_category }) => activity_category)).toEqual(["bike", "run"]);
     expect(segments[0]).toMatchObject({
       dedupe_key: `activity-segment:${input.id}:11111111-1111-4111-8111-111111111111:load:v1`,
       load_stream_key: "bike:power_threshold:activity_analysis:1",

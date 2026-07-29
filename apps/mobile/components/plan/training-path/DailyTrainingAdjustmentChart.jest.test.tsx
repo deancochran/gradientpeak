@@ -189,6 +189,28 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(screen.queryByText("On target")).toBeNull();
   });
 
+  it("shows the versioned common-Load recommendation in the selected-day tray", () => {
+    render(
+      <DailyTrainingAdjustmentChart
+        selectedDate="2026-06-02"
+        points={[
+          {
+            date: "2026-06-02",
+            effectiveLoadStatus: "complete",
+            effectiveLoad: 65,
+            recommendedLoadStatus: "complete",
+            recommendedLoad: 80,
+            targetLoadTss: 1_000,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Target")).toBeTruthy();
+    expect(screen.getByText("80")).toBeTruthy();
+    expect(screen.queryByText("1000")).toBeNull();
+  });
+
   it("centers the initial controlled date only after viewport and content readiness", () => {
     render(
       <DailyTrainingAdjustmentChart
@@ -479,6 +501,8 @@ describe("DailyTrainingAdjustmentChart", () => {
             effectiveCompletedLoad: 15,
             effectiveRemainingLoad: 25,
             effectiveTentativeLoad: 5,
+            recommendedLoadStatus: "complete",
+            recommendedLoad: 80,
             fitnessCtl: 31.4,
             scheduledFitnessCtl: 33.2,
             targetFitnessCtl: 35.1,
@@ -497,8 +521,9 @@ describe("DailyTrainingAdjustmentChart", () => {
         "Intensity 0.70 incomplete",
         "Completed load 15",
         "Completed activity, load unavailable",
-        "Remaining load 25",
+        "Planned load 25",
         "Tentative load 5",
+        "Recommended load 80",
         "Actual fitness 31",
         "Projected fitness 33",
         "Target fitness 35",

@@ -148,6 +148,6 @@ export const webParityManifest = {
     "training_plans.detail": "implemented-unverified",
     "training_plans.edit": "implemented-unverified",
     "training_plans.list": "implemented-unverified",
-    "training_plans.reorder_workouts": "implemented-unverified",
+    "training_plans.reorder_activities": "implemented-unverified",
   },
 } as const;

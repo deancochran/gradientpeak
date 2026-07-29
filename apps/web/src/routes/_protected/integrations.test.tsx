@@ -66,7 +66,7 @@ function integration(overrides: Record<string, unknown> = {}) {
     connected: false,
     integrationId: null,
     label: "Wahoo",
-    plannedWorkouts: {
+    plannedActivities: {
       lastError: null,
       lastFailedAt: null,
       lastSucceededAt: null,

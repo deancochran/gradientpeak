@@ -1,6 +1,10 @@
 import { addDaysDateOnlyUtc, materializePlanToEvents } from "../..";
 import { estimateActivity } from "../../estimation";
-import { ALL_SAMPLE_PLANS, SYSTEM_TEMPLATES } from "../../samples";
+import {
+  ALL_SAMPLE_PLANS,
+  deriveSystemActivityTemplateActivityCategory,
+  SYSTEM_TEMPLATES,
+} from "../../samples";
 import type { SystemTrainingPlanTemplate } from "../../samples/training-plans";
 import {
   type AthletePreferenceProfile,
@@ -273,14 +277,14 @@ export function materializeSystemPlanScenario(scenario: SystemPlanContractScenar
         ftp: estimationProfile.ftp,
         thresholdHr: estimationProfile.threshold_hr,
         thresholdPaceSecondsPerKm: estimationProfile.threshold_pace_seconds_per_km,
-        activityCategory: template.activity_category as never,
+        activityCategory: deriveSystemActivityTemplateActivityCategory(template.structure) as never,
         structure: validateSystemTemplateActivityPlanV3(template),
       });
 
       return {
         ...event,
         template_name: template.name,
-        activity_category: template.activity_category,
+        activity_category: deriveSystemActivityTemplateActivityCategory(template.structure),
         estimated_tss: estimation.tss,
         estimated_duration_seconds:
           estimation.duration ?? calculateSystemTemplateDurationSeconds(template),
@@ -365,11 +369,11 @@ export function buildReferenceTrajectoryForScenario(
   const resolvedDemands = normalizedGoals
     .map((goal) => resolveEventDemand(goal))
     .flatMap((result) => (result.status === "supported" ? [result.demand] : []));
-  const primarySport = resolvedDemands[0]?.sport ?? "run";
+  const primaryActivityCategory = resolvedDemands[0]?.activity_category ?? "run";
   const constraintProfile = resolveConstraintProfile({
     optimizationProfile: "balanced",
     preferenceProfile,
-    sport: primarySport,
+    activity_category: primaryActivityCategory,
   });
   const endGoalDate = normalizedGoals[normalizedGoals.length - 1]?.target_date ?? endDate;
   const weeksToPeak = Math.max(1, Math.ceil(diffDays(startDate, endGoalDate) / 7));

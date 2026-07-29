@@ -1,5 +1,5 @@
 import {
-  canonicalSportSchema,
+  canonicalActivityCategorySchema,
   createEmptyGoalDraft,
   type GoalEditorDraft,
   type GoalEditorGoalType,
@@ -316,7 +316,7 @@ const goalEditorFormSchema = z.object({
     "hr_threshold",
     "consistency",
   ]),
-  activityCategory: canonicalSportSchema,
+  activityCategory: canonicalActivityCategorySchema,
   raceDistanceKm: z.number().nullable().optional(),
   raceTargetMode: z.enum(["time", "pace"]).optional(),
   targetDuration: z.string().optional(),
@@ -548,7 +548,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
 
               {supportsActivityChoice(draft.goalType) ? (
                 <View className="flex-1 gap-2">
-                  <Text className="text-sm font-medium text-foreground">Sport</Text>
+                  <Text className="text-sm font-medium text-foreground">ActivityCategory</Text>
                   <Select
                     value={
                       activityOption
@@ -563,8 +563,11 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
                       }
                     }}
                   >
-                    <SelectTrigger accessibilityLabel="Sport" testID="goal-activity-select-trigger">
-                      <SelectValue placeholder="Sport" />
+                    <SelectTrigger
+                      accessibilityLabel="ActivityCategory"
+                      testID="goal-activity-select-trigger"
+                    >
+                      <SelectValue placeholder="ActivityCategory" />
                     </SelectTrigger>
                     <SelectContent>
                       <NativeSelectScrollView>

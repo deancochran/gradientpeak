@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { composeEffectivePlanDto } from "./effective-plan-composition";
 
 const commonLoad = calculateAvailableCommonLoad({
-  sport: "bike",
+  activity_category: "bike",
   method: "power_threshold",
   intensity: 1,
   contributingDurationSeconds: 3600,

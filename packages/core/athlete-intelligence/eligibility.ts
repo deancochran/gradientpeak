@@ -1,4 +1,4 @@
-import type { CanonicalSport } from "../schemas/sport";
+import type { CanonicalActivityCategory } from "../schemas/activity-category";
 import {
   type CalculationEligibleEvidence,
   type EvidenceExclusionReasonCode,
@@ -10,14 +10,14 @@ import type { LineageGroupId, SourceId } from "./lineage";
 
 export type EvidenceFieldEligibilityReasonCode =
   | EvidenceExclusionReasonCode
-  | "evidence_sport_missing"
+  | "evidence_activity_category_missing"
   | "evidence_incompatible_sport";
 
 /** Evidence metadata required to allow one raw numeric field into a calculation. */
 export interface FieldEvidenceEligibilityInput {
   evidence: EvidenceItem;
   asOf: string;
-  requiredSport?: CanonicalSport;
+  requiredActivityCategory?: CanonicalActivityCategory;
 }
 
 export type FieldEvidenceEligibility =
@@ -53,16 +53,19 @@ export function resolveFieldEvidenceEligibility(
     };
   }
 
-  if (input.requiredSport !== undefined && evidence.sport === null) {
+  if (input.requiredActivityCategory !== undefined && evidence.activity_category === null) {
     return {
       eligible: false,
       sourceId: evidence.sourceId,
       lineageGroupId: evidence.lineageGroupId,
-      reasonCode: "evidence_sport_missing",
+      reasonCode: "evidence_activity_category_missing",
     };
   }
 
-  if (input.requiredSport !== undefined && evidence.sport !== input.requiredSport) {
+  if (
+    input.requiredActivityCategory !== undefined &&
+    evidence.activity_category !== input.requiredActivityCategory
+  ) {
     return {
       eligible: false,
       sourceId: evidence.sourceId,

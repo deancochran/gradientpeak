@@ -1,6 +1,10 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import type { getRequiredDb } from "../../db";
-import { analyzeParsedActivityFile } from "./analyze-parsed-activity-file";
+import {
+  analyzeParsedActivityFile,
+  getLatestActivityCategoryLthrValue,
+} from "./analyze-parsed-activity-file";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
@@ -49,7 +53,7 @@ function explicitBikeSegment(startedAt: Date, seconds: number) {
     {
       sessionMessageIndex: 0,
       role: "activity" as const,
-      category: "bike" as const,
+      activity_category: "bike" as const,
       rawSport: "cycling",
       startTime: startedAt,
       endTime: new Date(startedAt.getTime() + seconds * 1000),
@@ -58,19 +62,47 @@ function explicitBikeSegment(startedAt: Date, seconds: number) {
 }
 
 describe("analyzeParsedActivityFile", () => {
-  it("isolates normalized metrics and efforts by ordered segment category and record slice", async () => {
+  it("compares JSON provenance with the UUID reference through an explicit text cast", async () => {
+    let whereCondition: unknown;
+    const tail = {
+      where: vi.fn((condition: unknown) => {
+        whereCondition = condition;
+        return {
+          orderBy: vi.fn(() => ({ limit: vi.fn().mockResolvedValue([]) })),
+        };
+      }),
+    };
+    const db = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({ innerJoin: vi.fn(() => tail) })),
+      })),
+    } as unknown as DbClient;
+
+    await getLatestActivityCategoryLthrValue(db, {
+      activityCategory: "run",
+      profileId: "profile-1",
+      recordedAtLte: new Date("2026-01-01T10:00:00Z"),
+    });
+
+    const query = new PgDialect().sqlToQuery(whereCondition as never).sql;
+    expect(query).toContain(
+      `"profile_metrics"."provenance" ->> 'activity_id' = cast("profile_metrics"."reference_activity_id" as text)`,
+    );
+  });
+
+  it("isolates normalized metrics and efforts by ordered segment activity category and record slice", async () => {
     const startedAt = new Date("2026-01-01T10:00:00Z");
     const segment = (
       sessionMessageIndex: number,
       role: "activity" | "transition" | "unknown",
       startSeconds: number,
       endSeconds: number,
-      category?: "run" | "bike",
-      rawSport: string | number = category === "run" ? "running" : "cycling",
+      activity_category?: "run" | "bike",
+      rawSport: string | number = activity_category === "run" ? "running" : "cycling",
     ) => ({
       sessionMessageIndex,
       role,
-      ...(role === "activity" && category ? { category } : {}),
+      ...(role === "activity" && activity_category ? { activity_category } : {}),
       rawSport,
       startTime: new Date(startedAt.getTime() + startSeconds * 1000),
       endTime: new Date(startedAt.getTime() + endSeconds * 1000),
@@ -138,13 +170,13 @@ describe("analyzeParsedActivityFile", () => {
       normalized_graded_speed_mps: null,
     });
     expect(result.segmentSet.segments[0]).toMatchObject({
-      category: "run",
+      activity_category: "run",
       summary: {
         averageSpeedMetersPerSecond: expect.any(Number),
       },
     });
     expect(result.segmentSet.segments[2]).toMatchObject({
-      category: "bike",
+      activity_category: "bike",
       summary: {
         averagePowerWatts: expect.any(Number),
         normalizedPowerWatts: expect.any(Number),
@@ -153,7 +185,7 @@ describe("analyzeParsedActivityFile", () => {
     expect(result.segmentSet.segments[3]).toMatchObject({ role: "unknown" });
   });
 
-  it("preserves every source session, unknown sport identity, and sparse timing", async () => {
+  it("preserves every source session, unknown activity-category identity, and sparse timing", async () => {
     const startedAt = new Date("2026-01-01T10:00:00Z");
     const result = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
       activityId: "activity-1",
@@ -167,7 +199,7 @@ describe("analyzeParsedActivityFile", () => {
           {
             sessionMessageIndex: 7,
             role: "activity",
-            category: "run",
+            activity_category: "run",
             rawSport: "running",
             startTime: startedAt,
             endTime: new Date(startedAt.getTime() + 50_000),
@@ -217,6 +249,121 @@ describe("analyzeParsedActivityFile", () => {
       active_ms: null,
       moving_ms: null,
       timing_coverage: "partial",
+    });
+  });
+
+  it("uses wall-clock segment bounds when an aggregate summary reports active time", async () => {
+    const startedAt = new Date("2026-01-01T10:00:00Z");
+    const result = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
+      activityId: "activity-1",
+      profileId: "profile-1",
+      refreshWeather: false,
+      parsedData: {
+        metadata: { startTime: startedAt, type: "multisport" },
+        summary: { totalTime: 100, totalDistance: 1_000 },
+        records: [],
+        segments: [
+          {
+            sessionMessageIndex: 1,
+            role: "activity",
+            activity_category: "run",
+            rawSport: "running",
+            startTime: startedAt,
+            endTime: new Date(startedAt.getTime() + 60_000),
+          },
+          {
+            sessionMessageIndex: 2,
+            role: "activity",
+            activity_category: "bike",
+            rawSport: "cycling",
+            startTime: new Date(startedAt.getTime() + 60_000),
+            endTime: new Date(startedAt.getTime() + 120_000),
+          },
+        ],
+        sessions: [
+          {
+            messageIndex: 1,
+            rawSport: "running",
+            startTime: startedAt,
+            endTime: new Date(startedAt.getTime() + 60_000),
+            totalElapsedTime: 60,
+            totalTimerTime: 50,
+            totalMovingTime: 45,
+            laps: [],
+            records: [],
+          },
+          {
+            messageIndex: 2,
+            rawSport: "cycling",
+            startTime: new Date(startedAt.getTime() + 60_000),
+            endTime: new Date(startedAt.getTime() + 120_000),
+            totalElapsedTime: 60,
+            totalTimerTime: 50,
+            totalMovingTime: 45,
+            laps: [],
+            records: [],
+          },
+        ],
+      },
+    });
+
+    expect(result.activityCompletedAt).toEqual(new Date(startedAt.getTime() + 120_000));
+    expect(result.segmentSet.elapsedMs).toBe(120_000);
+    expect(result.segmentSet.segments.map((segment) => segment.endOffsetMs)).toEqual([
+      60_000, 120_000,
+    ]);
+    expect(result.summaryValues).toMatchObject({
+      elapsed_ms: 120_000,
+      active_ms: 100_000,
+      moving_ms: 90_000,
+      timing_coverage: "complete",
+    });
+  });
+
+  it("omits contradictory source timing instead of exceeding segment bounds", async () => {
+    const startedAt = new Date("2026-01-01T10:00:00Z");
+    const result = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
+      activityId: "activity-1",
+      profileId: "profile-1",
+      refreshWeather: false,
+      parsedData: {
+        metadata: { startTime: startedAt, type: "running" },
+        summary: { totalTime: 60, totalDistance: 500 },
+        records: [],
+        segments: [
+          {
+            sessionMessageIndex: 1,
+            role: "activity",
+            activity_category: "run",
+            rawSport: "running",
+            startTime: startedAt,
+            endTime: new Date(startedAt.getTime() + 60_000),
+          },
+        ],
+        sessions: [
+          {
+            messageIndex: 1,
+            rawSport: "running",
+            startTime: startedAt,
+            endTime: new Date(startedAt.getTime() + 60_000),
+            totalElapsedTime: 60,
+            totalTimerTime: 61,
+            totalMovingTime: 62,
+            laps: [],
+            records: [],
+          },
+        ],
+      },
+    });
+
+    expect(result.segmentSet.segments[0]?.summary.timing).toEqual({
+      timingCoverage: "unavailable",
+    });
+    expect(result.summaryValues).toMatchObject({
+      elapsed_ms: 60_000,
+      active_ms: null,
+      moving_ms: null,
+      timing_coverage: "unavailable",
     });
   });
 
@@ -271,7 +418,7 @@ describe("analyzeParsedActivityFile", () => {
     expect(result.effortsToInsert).toEqual([]);
   });
 
-  it("promotes a bike LTHR even when another sport has a higher threshold", async () => {
+  it("promotes a bike LTHR even when another activity category has a higher threshold", async () => {
     const startedAt = new Date("2026-01-01T10:00:00Z");
     const result = await analyzeParsedActivityFile(dbWithMetricResults([[], []]), {
       activityId: "bike-activity",
@@ -302,7 +449,7 @@ describe("analyzeParsedActivityFile", () => {
     );
   });
 
-  it("keeps the same-sport LTHR high-water behavior", async () => {
+  it("keeps the same-category LTHR high-water behavior", async () => {
     const startedAt = new Date("2026-01-01T10:00:00Z");
     const result = await analyzeParsedActivityFile(
       dbWithMetricResults([

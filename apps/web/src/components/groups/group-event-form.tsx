@@ -48,7 +48,6 @@ export function GroupEventForm({
     includeSystemTemplates: true,
     includeEstimation: false,
     ownerScope: "all",
-    compositionMode: "include_multisport",
     limit: 50,
   });
   const [title, setTitle] = useState(event?.title ?? "");

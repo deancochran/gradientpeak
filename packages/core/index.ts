@@ -72,6 +72,7 @@ export * from "./recording";
 
 export * from "./activity-analysis"; // Shared dynamic activity analysis contracts/helpers
 export * from "./activity-artifacts"; // Thin decoded source-artifact contracts
+export * from "./activity-categories"; // Canonical activity_category registry and heuristics
 export * from "./activity-files"; // Runtime-neutral activity file ingestion contracts
 export * from "./activity-plan"; // Strict V3 plan contracts and compiler
 export * from "./activity-segments"; // Completed activity segment contracts
@@ -145,7 +146,6 @@ export * from "./samples"; // Sample data for testing and development
 export * from "./schemas"; // Shared Zod schemas and domain types
 export { addDays } from "./schemas/training-plan-structure/helpers";
 export * from "./social"; // Social engagement entity taxonomy
-export * from "./sports"; // Canonical sport registry and heuristics
 export * from "./training-timeline"; // Canonical training timeline read model
 export type {
   ActivityLap,
@@ -164,6 +164,7 @@ export * from "./zones"; // Canonical zones and threshold metadata
 // Allows consumers to import as: import { Calculations } from '@repo/core'
 // and use as: Calculations.calculateTSS(...)
 
+export * as ActivityCategories from "./activity-categories";
 export * as AthleteInputs from "./athlete-inputs";
 export * as Bluetooth from "./bluetooth";
 export * as Calculations from "./calculations";
@@ -179,7 +180,6 @@ export * as Profile from "./profile";
 export * as RecordingMetrics from "./recording-metrics";
 export * as Samples from "./samples";
 export * as Schemas from "./schemas";
-export * as Sports from "./sports";
 export * as TrainingTimeline from "./training-timeline";
 export * as Utils from "./utils";
 export * as Zones from "./zones";

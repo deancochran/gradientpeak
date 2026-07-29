@@ -10,7 +10,7 @@ import {
   buildProjectionChartPayloadFromDeterministicProjection,
   buildProjectionEngineInput,
   buildReadinessForecastTimeline,
-  type CanonicalSport,
+  type CanonicalActivityCategory,
   type CreationContextSummary,
   canonicalizeMinimalTrainingPlanCreate,
   classifyCreationFeasibility,
@@ -104,7 +104,7 @@ import {
   loadOwnedActivityPlansForScheduleGap,
   previewCreationConfigUseCase,
   removeAppliedScheduleUseCase,
-  reorderTrainingPlanWorkoutsUseCase,
+  reorderTrainingPlanActivitiesUseCase,
   resolveCanonicalTrainingPlan,
   resolveScheduleGapActivityPlanMatchTarget,
   type ScheduleRecommendation,
@@ -165,7 +165,7 @@ const applyQuickAdjustmentInputSchema = z
     adjustedStructure: trainingPlanSchema,
   })
   .strict();
-const reorderTrainingPlanWorkoutsInputSchema = z
+const reorderTrainingPlanActivitiesInputSchema = z
   .object({
     training_plan_id: z.string().uuid(),
     changes: z
@@ -178,7 +178,7 @@ const reorderTrainingPlanWorkoutsInputSchema = z
           })
           .strict()
           .refine((change) => change.expected_scheduled_date !== change.requested_scheduled_date, {
-            message: "Requested workout date must differ from the expected date",
+            message: "Requested activity date must differ from the expected date",
           }),
       )
       .min(1)
@@ -191,7 +191,7 @@ const reorderTrainingPlanWorkoutsInputSchema = z
       if (eventIds.has(change.event_id)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: "Workout event IDs must be unique",
+          message: "Activity event IDs must be unique",
           path: ["changes", index, "event_id"],
         });
       }
@@ -393,6 +393,7 @@ function _todayDateOnlyUtc(): string {
 const applicationScopedScheduleInputSchema = z
   .object({
     schedule_batch_id: z.string().uuid(),
+    training_plan_id: z.string().uuid(),
   })
   .strict();
 
@@ -1146,7 +1147,9 @@ function readStructureSessionsForDailyRecommendedLoad(
 ) {
   const parsed = trainingPlanSchema.safeParse(structure);
   if (!parsed.success) return [];
-  const activityCategory = readDailyRecommendedLoadActivityCategory(parsed.data.sport?.[0]);
+  const activityCategory = readDailyRecommendedLoadActivityCategory(
+    parsed.data.activity_category?.[0],
+  );
   return parsed.data.sessions.map((session) => ({
     offsetDays: session.offset_days,
     estimatedTss: null,
@@ -1432,7 +1435,7 @@ type ProjectionDashboardSummary = {
   caps_applied: string[];
   load_resolution_summary: ProjectionChartPayload["load_resolution_summary"] | null;
   dose_recommendation: ProjectionChartPayload["dose_recommendation"] | null;
-  sport_load_states: ProjectionChartPayload["sport_load_states"];
+  activity_category_load_states: ProjectionChartPayload["activity_category_load_states"];
   recovery_segments: ProjectionChartPayload["recovery_segments"];
   readiness_points: Array<{
     date: string;
@@ -1587,7 +1590,7 @@ function buildSafeHrThresholdFallbackTarget(input?: {
 }
 
 function inferFallbackRaceTargetSpeedMps(input: {
-  activityCategory: CanonicalSport;
+  activityCategory: CanonicalActivityCategory;
   distanceMeters: number;
 }): number {
   const distanceKm = input.distanceMeters / 1000;
@@ -1610,7 +1613,7 @@ function inferFallbackRaceTargetSpeedMps(input: {
 
 function buildRacePerformanceTarget(input: {
   distanceMeters: number;
-  activityCategory: CanonicalSport;
+  activityCategory: CanonicalActivityCategory;
   targetTimeSeconds?: number;
   targetSpeedMps?: number;
 }): MinimalTrainingPlanCreate["goals"][number]["targets"][number] {
@@ -1865,7 +1868,7 @@ function buildProjectionDashboardSummary(input: {
     caps_applied: input.projectionChart.caps_applied ?? [],
     load_resolution_summary: input.projectionChart.load_resolution_summary ?? null,
     dose_recommendation: input.projectionChart.dose_recommendation ?? null,
-    sport_load_states: input.projectionChart.sport_load_states ?? [],
+    activity_category_load_states: input.projectionChart.activity_category_load_states ?? [],
     recovery_segments: input.projectionChart.recovery_segments ?? [],
     readiness_points: (input.projectionChart.display_points ?? input.projectionChart.points).map(
       (point) => ({
@@ -2483,7 +2486,7 @@ export async function deriveProfileAwareCreationContext(input: {
         occurred_at: new Date(
           activity.started_at.getTime() + segment.start_offset_ms,
         ).toISOString(),
-        activity_category: segment.category,
+        activity_category: segment.activity_category,
         duration_seconds:
           (segment.active_ms ?? segment.end_offset_ms - segment.start_offset_ms) / 1_000,
         tss: derived?.tss ?? null,
@@ -2494,8 +2497,8 @@ export async function deriveProfileAwareCreationContext(input: {
 
   const activityCounts = completedActivities.reduce(
     (acc: Record<string, number>, activity: any) => {
-      const category = activity.activity_category ?? "other";
-      acc[category] = (acc[category] ?? 0) + 1;
+      const activity_category = activity.activity_category ?? "other";
+      acc[activity_category] = (acc[activity_category] ?? 0) + 1;
       return acc;
     },
     {},
@@ -2509,10 +2512,12 @@ export async function deriveProfileAwareCreationContext(input: {
   const categoryMix =
     totalActivityCount > 0
       ? Object.fromEntries(
-          (Object.entries(activityCounts) as Array<[string, number]>).map(([category, count]) => [
-            category,
-            Number((count / totalActivityCount).toFixed(3)),
-          ]),
+          (Object.entries(activityCounts) as Array<[string, number]>).map(
+            ([activity_category, count]) => [
+              activity_category,
+              Number((count / totalActivityCount).toFixed(3)),
+            ],
+          ),
         )
       : undefined;
 
@@ -2536,7 +2541,7 @@ export async function deriveProfileAwareCreationContext(input: {
     profileMetricsResult.data ?? [],
     (metric: any) => metric.metric_type,
   );
-  // Planning context uses the same cross-sport common Load history as Trends,
+  // Planning context uses the same cross-category common Load history as Trends,
   // rather than a nullable legacy TSS fitness snapshot.
   const commonLoadHistory = await readCurrentProfileCommonLoadHistory({
     db: input.db,
@@ -3236,7 +3241,7 @@ export async function getPlanTabProjectionService({
   ]);
 
   const primaryCategory = parsedStructure.success
-    ? (parsedStructure.data.sport?.[0] ?? "run")
+    ? (parsedStructure.data.activity_category?.[0] ?? "run")
     : "run";
 
   const adherenceAverage =
@@ -3375,7 +3380,7 @@ export async function getPlanTabProjectionService({
   const activityPlanMatches = buildScheduleGapActivityPlanMatches({
     targetDate: activityPlanMatchTarget.targetDate,
     targetTssDelta: activityPlanMatchTarget.targetTssDelta,
-    primaryCategory,
+    primaryActivityCategory: primaryCategory,
     plans: ownedActivityPlans,
     today,
   });
@@ -3408,7 +3413,7 @@ export async function getPlanTabProjectionService({
     },
     goal_safety: assessments.goalSafety,
     capability: {
-      category: primaryCategory,
+      activity_category: primaryCategory,
       cp_or_cs: null,
       confidence: capabilityConfidence,
     },
@@ -3599,6 +3604,7 @@ export const trainingPlansProcedures = {
         db,
         id: input.id,
         newName: input.newName,
+        planningTemplateRepository: createPlanningTemplateRepository(db),
         profileId: ctx.session.user.id,
         repository: createTrainingPlanRepository(db),
       });
@@ -4035,6 +4041,7 @@ export const trainingPlansProcedures = {
         db,
         expectedStructureHash: input.expectedStructureHash,
         id: input.id,
+        planningTemplateRepository: createPlanningTemplateRepository(db),
         profileId: ctx.session.user.id,
         repository: createTrainingPlanRepository(db),
       });
@@ -4325,7 +4332,7 @@ export const trainingPlansProcedures = {
     .input(
       z
         .object({
-          sport: z.string().optional(),
+          activity_category: z.string().optional(),
           experience_level: z.enum(["beginner", "intermediate", "advanced"]).optional(),
           min_weeks: z.number().int().min(1).max(52).optional(),
           max_weeks: z.number().int().min(1).max(52).optional(),
@@ -4398,14 +4405,15 @@ export const trainingPlansProcedures = {
         permissionsFactory: createContentAccessPermissions,
         profileId: ctx.session.user.id,
         scheduleBatchId: input.schedule_batch_id,
+        trainingPlanId: input.training_plan_id,
       });
     }),
 
-  reorderWorkouts: protectedProcedure
-    .input(reorderTrainingPlanWorkoutsInputSchema)
+  reorderActivities: protectedProcedure
+    .input(reorderTrainingPlanActivitiesInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      return reorderTrainingPlanWorkoutsUseCase({
+      return reorderTrainingPlanActivitiesUseCase({
         changes: input.changes,
         db,
         profileId: ctx.session.user.id,

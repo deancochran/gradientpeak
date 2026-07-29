@@ -1,8 +1,7 @@
 export type ResourcePickerScope = "activityPlans" | "routes";
 
 export type ResourcePickerActivityPlanCardData = {
-  activityCategories?: readonly string[];
-  activityType: string;
+  activity_category: string;
   createdAt?: string | null;
   commonLoad?: unknown;
   description?: string | null;

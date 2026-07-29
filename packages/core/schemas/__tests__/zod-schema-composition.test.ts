@@ -13,7 +13,7 @@ const structure = {
     {
       id: "00000000-0000-4000-8000-000000000001",
       role: "activity" as const,
-      category: "run" as const,
+      activity_category: "run" as const,
       name: "Run",
       intervals: [
         {
@@ -35,7 +35,7 @@ const structure = {
 };
 
 describe("activity plan schema composition", () => {
-  it("accepts strict V3 create input without top-level category authority", () => {
+  it("accepts strict V3 create input without top-level activity_category authority", () => {
     expect(activityPlanCreateSchema.safeParse({ name: "Tempo builder", structure }).success).toBe(
       true,
     );
@@ -51,6 +51,49 @@ describe("activity plan schema composition", () => {
     expect(activityPlanUpdateSchema.parse({ name: "Updated tempo builder" })).toEqual({
       name: "Updated tempo builder",
     });
+  });
+
+  it("rejects mixed-category structures for create and recording consumers", () => {
+    const firstSegment = structure.segments[0];
+    if (!firstSegment) throw new Error("missing activity segment fixture");
+    const firstInterval = firstSegment.intervals[0];
+    if (!firstInterval) throw new Error("missing interval fixture");
+    const firstStep = firstInterval.steps[0];
+    if (!firstStep) throw new Error("missing step fixture");
+
+    const legacyStructure = {
+      ...structure,
+      segments: [
+        ...structure.segments,
+        {
+          ...firstSegment,
+          id: "00000000-0000-4000-8000-000000000011",
+          activity_category: "bike" as const,
+          intervals: [
+            {
+              ...firstInterval,
+              id: "00000000-0000-4000-8000-000000000012",
+              steps: [
+                {
+                  ...firstStep,
+                  id: "00000000-0000-4000-8000-000000000013",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(
+      activityPlanCreateSchema.safeParse({ name: "New plan", structure: legacyStructure }).success,
+    ).toBe(false);
+    expect(
+      recordingServiceActivityPlanSchema.safeParse({
+        name: "Legacy checkpoint",
+        structure: legacyStructure,
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects plan-owned route linkage for create, update, and recording contracts", () => {
@@ -82,7 +125,7 @@ describe("activity plan form schema composition", () => {
     ).toBe(true);
     expect(
       activityPlanCreateFormSchema.safeParse({
-        name: "Old category input",
+        name: "Old activity_category input",
         activity_category: "run",
         notes: null,
         structure,

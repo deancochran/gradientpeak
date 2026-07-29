@@ -522,15 +522,24 @@ export function TrainingPathChart({
         index,
         completedLoad: week.effectiveCompletedLoad ?? null,
         plannedLoad:
-          week.effectiveLoadStatus === "unavailable" ? null : (week.effectiveLoad ?? null),
+          week.effectiveLoadStatus === "unavailable" ? null : (week.effectiveRemainingLoad ?? null),
         plannedLoadWithTentative:
-          week.effectiveLoadStatus !== "unavailable" && typeof week.effectiveLoad === "number"
-            ? week.effectiveLoad + (week.effectiveTentativeLoad ?? 0)
+          week.effectiveLoadStatus !== "unavailable" &&
+          typeof week.effectiveRemainingLoad === "number" &&
+          typeof week.effectiveTentativeLoad === "number"
+            ? week.effectiveRemainingLoad + week.effectiveTentativeLoad
             : null,
-        targetLoad: null,
+        // Only the explicit versioned common-Load recommendation may share this axis.
+        targetLoad:
+          week.recommendedLoadStatus === "complete" || week.recommendedLoadStatus === "known_zero"
+            ? (week.recommendedLoad ?? null)
+            : null,
         fitness: week.fitness,
         scheduledFitness: week.scheduledFitness,
-        targetFitness: week.targetFitness,
+        targetFitness:
+          week.recommendedLoadStatus === "complete" || week.recommendedLoadStatus === "known_zero"
+            ? week.targetFitness
+            : null,
       })),
     [model.weeks],
   );
@@ -738,13 +747,22 @@ export function TrainingPathChart({
         accessibilityWeek.completedLoadUnavailable ? "Completed activity load unavailable" : null,
         accessibilityWeek.effectiveRemainingLoad == null
           ? null
-          : formatAccessibleMetric("Remaining load", accessibilityWeek.effectiveRemainingLoad),
+          : formatAccessibleMetric("Planned load", accessibilityWeek.effectiveRemainingLoad),
         accessibilityWeek.effectiveTentativeLoad == null
           ? null
           : formatAccessibleMetric("Tentative load", accessibilityWeek.effectiveTentativeLoad),
+        !accessibilityWeek.recommendedLoadStatus
+          ? null
+          : accessibilityWeek.recommendedLoadStatus === "unavailable" ||
+              accessibilityWeek.recommendedLoad == null
+            ? "Recommended load unavailable"
+            : `${formatAccessibleMetric("Recommended load", accessibilityWeek.recommendedLoad)}${accessibilityWeek.recommendedLoadStatus === "partial" ? " incomplete" : ""}`,
         formatAccessibleMetric("Actual fitness", accessibilityWeek.fitness),
         formatAccessibleMetric("Projected fitness", accessibilityWeek.scheduledFitness),
-        formatAccessibleMetric("Target fitness", accessibilityWeek.targetFitness),
+        accessibilityWeek.recommendedLoadStatus === "complete" ||
+        accessibilityWeek.recommendedLoadStatus === "known_zero"
+          ? formatAccessibleMetric("Target fitness", accessibilityWeek.targetFitness)
+          : null,
       ]
         .filter((value): value is string => value !== null)
         .join(". ")
@@ -925,6 +943,7 @@ export function TrainingPathChart({
               return (
                 <Fragment key={`load-bars-${week.weekStart}`}>
                   {showPlanningLayers &&
+                  showPlannedLoad &&
                   typeof targetPoint?.yValue === "number" &&
                   typeof targetPoint.y === "number" ? (
                     shouldFocusScrolledBars ? (

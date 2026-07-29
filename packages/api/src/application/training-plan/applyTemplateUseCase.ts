@@ -1,4 +1,5 @@
 import {
+  activityPlanStructureSchemaV3,
   formatDateOnlyInTimeZone,
   ianaTimezoneSchema,
   persistedTrainingPlanStructureSchema,
@@ -8,9 +9,9 @@ import {
 import { type EventInsert, schema } from "@repo/db";
 import type { DrizzleDbClient } from "@repo/db/client";
 import { TRPCError } from "@trpc/server";
-import { and, eq, gte, ne, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, ne, sql } from "drizzle-orm";
 import type { z } from "zod";
-import { enqueuePlannedWorkoutSyncAfterCalendarMutation } from "../../lib/provider-sync/planned-workouts";
+import { enqueuePlannedActivitySyncAfterCalendarMutation } from "../../lib/provider-sync/planned-activities";
 import { needsContentGrantForRow } from "../../permissions/content-access";
 import type { TrainingPlanRepository } from "../../repositories";
 import { materializeAppliedTrainingPlan } from "./schedulingUtils";
@@ -173,6 +174,7 @@ export async function applyTrainingPlanTemplateUseCase(input: {
       isPublic: boolean | null;
       isSystem: boolean | null;
       routeId: string | null;
+      structure: unknown;
     }>`
       select
         id,
@@ -181,6 +183,7 @@ export async function applyTrainingPlanTemplateUseCase(input: {
         content_visibility = 'public' as "isPublic",
         is_system_template as "isSystem",
         route_id as "routeId"
+        , structure
       from activity_plans
       where id in (${sql.join(
         candidatePlanIds.map((id) => sql`${id}::uuid`),
@@ -219,8 +222,13 @@ export async function applyTrainingPlanTemplateUseCase(input: {
       isPublic?: boolean | null;
       isSystem?: boolean | null;
       routeId?: string | null;
+      structure: unknown;
     }>(accessiblePlans);
-    allowedPlanIds = new Set(accessiblePlanRows.map((row) => row.id));
+    allowedPlanIds = new Set(
+      accessiblePlanRows
+        .filter((row) => activityPlanStructureSchemaV3.safeParse(row.structure).success)
+        .map((row) => row.id),
+    );
     accessiblePlanRows.forEach((row) => {
       allowedPlanNameById.set(row.id, row.name);
       allowedPlanAccessById.set(row.id, {
@@ -306,6 +314,18 @@ export async function applyTrainingPlanTemplateUseCase(input: {
       const transactionDb: DrizzleDbClient = Object.assign(tx, { $client: db.$client });
       const transactionRepository = input.repositoryFactory?.(transactionDb) ?? repository;
       const activePlanLookup = await transactionRepository.getActivePlanFromFutureEvents(profileId);
+      const activeSchedule = (() => {
+        if (!activePlanLookup) return null;
+        const scheduleBatchId = activePlanLookup.scheduleBatchId;
+        if (!scheduleBatchId) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "The active training plan schedule is missing its generation ID and cannot be safely replaced. Remove or repair that schedule before applying a new plan.",
+          });
+        }
+        return { scheduleBatchId, trainingPlanId: activePlanLookup.trainingPlanId };
+      })();
       if (activePlanLookup && !input.values.replace_existing) {
         throw new TRPCError({
           code: "CONFLICT",
@@ -314,18 +334,52 @@ export async function applyTrainingPlanTemplateUseCase(input: {
         });
       }
 
-      const removedEvents = activePlanLookup
+      const candidates = activeSchedule
+        ? await ((): Promise<Array<{ id: string }>> => {
+            const candidateQuery = tx
+              .select({ id: schema.events.id })
+              .from(schema.events)
+              .where(
+                and(
+                  eq(schema.events.profile_id, profileId),
+                  eq(schema.events.event_type, plannedEventType),
+                  gte(schema.events.starts_at, new Date(todayStart)),
+                  ne(schema.events.status, "completed"),
+                  eq(schema.events.training_plan_id, activeSchedule.trainingPlanId),
+                  eq(schema.events.schedule_batch_id, activeSchedule.scheduleBatchId),
+                ),
+              )
+              .orderBy(asc(schema.events.id));
+            const lockableCandidateQuery = candidateQuery as typeof candidateQuery & {
+              for?: (strength: "update") => typeof candidateQuery;
+            };
+            return lockableCandidateQuery.for
+              ? lockableCandidateQuery.for("update")
+              : candidateQuery;
+          })()
+        : [];
+
+      const permissions = input.permissionsFactory?.(transactionDb) ?? input.permissions;
+      for (const event of candidates) {
+        await permissions.revokeEventGrants(event.id);
+      }
+      const unsyncResult = await enqueuePlannedActivitySyncAfterCalendarMutation({
+        db: transactionDb,
+        eventIds: candidates.map((event) => event.id),
+        operation: "unsync",
+        profileId,
+        transaction: tx,
+      });
+      if (unsyncResult && !unsyncResult.success) {
+        throw new Error("Failed to queue provider unsync for the replaced training plan schedule.");
+      }
+      const removedEvents = candidates.length
         ? await tx
             .delete(schema.events)
             .where(
-              and(
-                eq(schema.events.profile_id, profileId),
-                eq(schema.events.event_type, plannedEventType),
-                gte(schema.events.starts_at, new Date(todayStart)),
-                ne(schema.events.status, "completed"),
-                activePlanLookup.scheduleBatchId
-                  ? eq(schema.events.schedule_batch_id, activePlanLookup.scheduleBatchId)
-                  : eq(schema.events.training_plan_id, activePlanLookup.trainingPlanId),
+              inArray(
+                schema.events.id,
+                candidates.map((event) => event.id),
               ),
             )
             .returning({ id: schema.events.id })
@@ -346,21 +400,6 @@ export async function applyTrainingPlanTemplateUseCase(input: {
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to create the full scheduled training plan event set.",
         });
-      }
-
-      const permissions = input.permissionsFactory?.(transactionDb) ?? input.permissions;
-      for (const event of removedEvents) {
-        await permissions.revokeEventGrants(event.id);
-      }
-      const unsyncResult = await enqueuePlannedWorkoutSyncAfterCalendarMutation({
-        db: transactionDb,
-        drainDueJobs: false,
-        eventIds: removedEvents.map((event) => event.id),
-        operation: "unsync",
-        profileId,
-      });
-      if (unsyncResult && !unsyncResult.success) {
-        throw new Error("Failed to queue provider unsync for the replaced training plan schedule.");
       }
 
       for (const [index, event] of insertedEvents.entries()) {
@@ -396,9 +435,8 @@ export async function applyTrainingPlanTemplateUseCase(input: {
         });
       }
 
-      const publishResult = await enqueuePlannedWorkoutSyncAfterCalendarMutation({
+      const publishResult = await enqueuePlannedActivitySyncAfterCalendarMutation({
         db: transactionDb,
-        drainDueJobs: false,
         eventIds: insertedEvents
           .filter((_, index) => Boolean(eventRows[index]?.activity_plan_id))
           .map((event) => event.id),

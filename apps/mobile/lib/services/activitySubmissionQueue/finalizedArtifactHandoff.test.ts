@@ -21,7 +21,7 @@ const artifact = {
   profileId: "profile-1",
   snapshot: {
     identity: { sessionId: "profile-1:session-1", startedAt: "2026-01-01T10:00:00.000Z" },
-    activity: { category: "run", activityPlanId: null },
+    activity: { activity_category: "run", activityPlanId: null },
   },
   finalStats: { durationSeconds: 60, movingSeconds: 55, distanceMeters: 200 },
   activityFilePath: "file:///activity.fit",
@@ -37,7 +37,7 @@ const artifact = {
         globalOrdinal: 0,
         segmentId: "00000000-0000-4000-8000-000000000001",
         role: "activity",
-        category: "run",
+        activity_category: "run",
         startedAt: "2026-01-01T10:00:00.000Z",
         completedAt: "2026-01-01T10:01:00.000Z",
         activeSeconds: 55,
@@ -63,7 +63,12 @@ describe("finalized artifact queue handoff", () => {
     ]);
     expect(first).toEqual(second);
     expect(mocks.handoff).toHaveBeenCalledTimes(1);
-    expect(first).toMatchObject({ schemaVersion: 2, id: artifact.sessionId, status: "queued" });
+    expect(first).toMatchObject({
+      schemaVersion: 3,
+      id: artifact.sessionId,
+      status: "queued",
+      draft: { activity_category: "run" },
+    });
     expect(mocks.clearCheckpoint).toHaveBeenCalledWith(artifact.sessionId);
     const upsertOrder = mocks.handoff.mock.invocationCallOrder[0];
     const clearOrder = mocks.clearCheckpoint.mock.invocationCallOrder[0];

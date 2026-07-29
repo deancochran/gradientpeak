@@ -696,7 +696,7 @@ function deriveActionRecommendations({
     recommendations.push({
       key: "assign-session",
       label: "Assign activity plans",
-      detail: `${formatBuilderWeekdayWithWeek(firstUnassignedSession.offsetDays)} needs a workout before load can be counted accurately.`,
+      detail: `${formatBuilderWeekdayWithWeek(firstUnassignedSession.offsetDays)} needs a activity before load can be counted accurately.`,
       target: toSessionTarget(firstUnassignedSession.localId),
     });
   }
@@ -829,7 +829,7 @@ function deriveStrategyViewModel({
       severity: "warning",
       title: "Add goals to judge the strategy",
       detail:
-        "The builder can schedule workouts now, but goal support cannot be evaluated until a goal is selected.",
+        "The builder can schedule activities now, but goal support cannot be evaluated until a goal is selected.",
       target: { type: "goals" },
     });
   }
@@ -838,16 +838,17 @@ function deriveStrategyViewModel({
       key: "schedule-needed",
       severity: "info",
       title: "Create the first workload shape",
-      detail: "Add or propose workouts so the training path can show where the athlete is heading.",
+      detail:
+        "Add or propose activities so the training path can show where the athlete is heading.",
       target: { type: "addSession" },
     });
   }
   if (firstUnassignedSession) {
     insights.push({
-      key: "assign-workouts",
+      key: "assign-activities",
       severity: "warning",
-      title: "Some workouts need assignment",
-      detail: `${formatBuilderWeekdayWithWeek(firstUnassignedSession.offsetDays)} needs a workout before support and risk can be estimated accurately.`,
+      title: "Some activities need assignment",
+      detail: `${formatBuilderWeekdayWithWeek(firstUnassignedSession.offsetDays)} needs a activity before support and risk can be estimated accurately.`,
       target: toSessionTarget(firstUnassignedSession.localId),
     });
   }
@@ -922,7 +923,7 @@ function deriveStrategyViewModel({
               : "unknown",
       detail: recommendedLoad
         ? `Current strategy averages ${recommendedLoad.plannedAverageTss} Load/wk.`
-        : "Add goals and workouts to estimate readiness.",
+        : "Add goals and activities to estimate readiness.",
     },
   };
 }
@@ -950,7 +951,7 @@ function getGoalSupportDetail(
   if (supportLevel === "Moderate")
     return "The goal is supported, but recovery risk may be elevated.";
   if (supportLevel === "Weak") return "The schedule is likely under-supporting this goal.";
-  return "Add workouts before this goal can be evaluated.";
+  return "Add activities before this goal can be evaluated.";
 }
 
 function deriveCurrentBaseline(state: TrainingPlanBuilderState): BuilderCurrentBaselineViewModel {
@@ -1144,7 +1145,7 @@ function deriveNextBestAction({
 }): BuilderPlanCreationViewModel["nextBestAction"] {
   if (firstUnassignedSession) {
     return {
-      text: `Assign a workout for ${formatBuilderWeekdayWithWeek(firstUnassignedSession.offsetDays)}.`,
+      text: `Assign a activity for ${formatBuilderWeekdayWithWeek(firstUnassignedSession.offsetDays)}.`,
       target: toSessionTarget(firstUnassignedSession.localId),
       needsAttention: true,
     };

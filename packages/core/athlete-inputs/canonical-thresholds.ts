@@ -35,7 +35,7 @@ export interface DirectThresholdMetricObservation {
 
 /** A best-effort observation used to calculate a threshold when it is an actual effort. */
 export interface ThresholdActivityEffortObservation {
-  sport: "bike" | "run" | "swim";
+  activity_category: "bike" | "run" | "swim";
   metric: "power" | "speed";
   value: number;
   durationSeconds: number;
@@ -105,9 +105,9 @@ export function getEligibleThresholdValue(
 }
 
 const thresholdDefinitions = {
-  cycling_ftp: { unit: "W", sport: "bike", metric: "power" },
-  running_threshold_pace: { unit: "seconds_per_km", sport: "run", metric: "speed" },
-  swimming_css: { unit: "seconds_per_100m", sport: "swim", metric: "speed" },
+  cycling_ftp: { unit: "W", activity_category: "bike", metric: "power" },
+  running_threshold_pace: { unit: "seconds_per_km", activity_category: "run", metric: "speed" },
+  swimming_css: { unit: "seconds_per_100m", activity_category: "swim", metric: "speed" },
 } as const;
 
 function timestamp(value: string): number | null {
@@ -263,7 +263,7 @@ export function resolveCanonicalThresholds(
       const effort = strongest(
         activityEfforts.filter(
           (candidate) =>
-            candidate.sport === definition.sport &&
+            candidate.activity_category === definition.activity_category &&
             candidate.metric === definition.metric &&
             candidate.durationSeconds === 1200 &&
             candidate.observationKind === "actual" &&

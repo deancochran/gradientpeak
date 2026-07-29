@@ -18,7 +18,8 @@ type ExistingActivityData = {
   series_id?: string;
   occurrence_key?: string;
   recurrence_rule?: string;
-  activity_plan: { id: string };
+  activity_plan_id?: string | null;
+  activity_plan: { id: string } | null;
 };
 
 let existingActivityData: ExistingActivityData | null = null;
@@ -89,7 +90,7 @@ jest.mock("@repo/ui/hooks", () => {
   };
 });
 
-jest.mock("@/components/activity-plan/workout/TimelineChart", () => ({
+jest.mock("@/components/activity-plan/activity/TimelineChart", () => ({
   __esModule: true,
   TimelineChart: createHost("TimelineChart"),
 }));
@@ -195,7 +196,8 @@ jest.mock("@/lib/api", () => ({
             id: "plan-1",
             name: "Tempo Builder",
             description: "Progressive tempo session with structured intervals.",
-            activity_category: "outdoor_run",
+            activity_category: "run",
+            activity_categories: ["run"],
             estimated_duration: 3600,
             estimated_tss: 72,
             structure: { intervals: [{ id: "step-1" }] },
@@ -445,5 +447,25 @@ describe("ScheduleActivityModal", () => {
         scope: "series",
       }),
     );
+  });
+
+  it("does not expose update controls or mutate for a top-level plan ID with a null relation", () => {
+    existingActivityData = {
+      id: "event-1",
+      scheduled_date: "2026-03-23",
+      starts_at: "2026-03-23T09:00:00.000Z",
+      all_day: false,
+      notes: "Bring gels",
+      activity_plan_id: "plan-1",
+      activity_plan: null,
+    };
+
+    renderNative(<ScheduleActivityModal visible onClose={jest.fn()} eventId="event-1" />);
+
+    expect(screen.getByText("This event is read-only on mobile")).toBeTruthy();
+    expect(screen.queryByTestId("schedule-submit-button")).toBeNull();
+    expect(screen.queryByTestId("scheduled-date-button")).toBeNull();
+    expect(screen.queryByTestId("schedule-edit-scope-single")).toBeNull();
+    expect(updateMutateMock).not.toHaveBeenCalled();
   });
 });

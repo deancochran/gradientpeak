@@ -14,7 +14,7 @@ export type ActivityTssIdentity = CoreActivityTssIdentity;
 
 export interface CanonicalLoadActivity {
   started_at?: string | null;
-  sport?: string | null;
+  activity_category?: string | null;
   trimp?: number | null;
   tss?: number | null;
   training_stress_score?: number | null;
@@ -52,7 +52,7 @@ function dateKeys(startDate: Date, endDate: Date): string[] {
 
 function identityKey(identity: LoadSeriesIdentity): string {
   return [
-    identity.sport,
+    identity.activity_category,
     identity.family,
     identity.method,
     identity.version,
@@ -67,13 +67,13 @@ function identityFor(
   if (family === "tss" && activity.tss_identity) {
     return loadSeriesIdentityForActivityTss(activity.tss_identity);
   }
-  const sport = activity.sport?.trim();
+  const activity_category = activity.activity_category?.trim();
   const method = activity.load_method?.trim();
   const version = activity.load_version?.trim();
   const sourceDefinition = activity.load_source_definition?.trim();
-  if (!sport || !method || !version || !sourceDefinition) return null;
+  if (!activity_category || !method || !version || !sourceDefinition) return null;
   return {
-    sport,
+    activity_category,
     family,
     method,
     version,

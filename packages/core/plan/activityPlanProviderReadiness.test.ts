@@ -16,7 +16,7 @@ import {
 
 function structureWithTargets(
   targets: ActivityPlanTarget[],
-  category: "run" | "bike" | "swim" = "run",
+  activity_category: "run" | "bike" | "swim" = "run",
 ): ActivityPlanStructureV3 {
   return activityPlanStructureSchemaV3.parse({
     version: 3,
@@ -25,7 +25,7 @@ function structureWithTargets(
         id: "11111111-1111-4111-8111-111111111111",
         name: "Work",
         role: "activity",
-        category,
+        activity_category,
         intervals: [
           {
             id: "22222222-2222-4222-8222-222222222222",
@@ -86,7 +86,7 @@ describe("activity plan provider readiness", () => {
     ).toMatchObject({ status: "missing_anchor" });
   });
 
-  it("distinguishes ready, missing-anchor, unsupported-sport, and unsupported-provider results", () => {
+  it("distinguishes ready, missing-anchor, unsupported-activity_category, and unsupported-provider results", () => {
     const absoluteRun = structureWithTargets([{ type: "speed", intensity: 5 }]);
     const relativeRun = structureWithTargets([{ type: "%MaxHR", intensity: 80 }]);
 
@@ -96,21 +96,21 @@ describe("activity plan provider readiness", () => {
         provider: "wahoo",
         structure: absoluteRun,
       }).status,
-    ).toBe("unsupported_provider");
+    ).toBe("ready");
     expect(
       getActivityPlanProviderReadiness({
         activityCategory: "run",
         provider: "wahoo",
         structure: relativeRun,
       }).status,
-    ).toBe("unsupported_provider");
+    ).toBe("missing_anchor");
     expect(
       getActivityPlanProviderReadiness({
         activityCategory: "swim",
         provider: "wahoo",
         structure: structureWithTargets([{ type: "RPE", intensity: 5 }], "swim"),
       }).status,
-    ).toBe("unsupported_provider");
+    ).toBe("unsupported_activity_category");
     expect(
       getActivityPlanProviderReadiness({
         activityCategory: "run",
@@ -190,14 +190,14 @@ describe("activity plan provider readiness", () => {
       ]),
     });
 
-    expect(result.status).toBe("unsupported_provider");
+    expect(result.status).toBe("unsupported_target");
   });
 
   it("classifies every compiled occurrence semantic exactly once", () => {
     const structure = structureWithTargets([{ type: "speed", intensity: 5 }]);
     const result = getActivityPlanProviderReadiness({ provider: "wahoo", structure });
 
-    expect(result.projection.disposition).toBe("unsupported");
+    expect(result.projection.disposition).toBe("compatible");
   });
 
   it("continues exhaustive semantic inventory behind an evidence-gated provider blocker", () => {

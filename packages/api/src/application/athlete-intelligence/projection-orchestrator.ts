@@ -7,7 +7,7 @@ import {
   athleteIntelligenceProjectionSchema,
   athleteStateVectorSchema,
   type CalculationResult,
-  type CanonicalSport,
+  type CanonicalActivityCategory,
   calculateActivityReadinessV1,
   calculateCriticalPowerCapability,
   calculateDurationAwareEffortCurve,
@@ -44,9 +44,9 @@ const explainabilityReasonLabels: Readonly<Record<string, string>> = {
   capability_evidence_missing: "More compatible activity evidence is needed",
   distinct_high_intensity_requirement_missing: "A higher-intensity requirement is unavailable",
   goal_demand_incomplete: "Some goal details are incomplete",
-  goal_sport_incompatible_with_direct_capability:
-    "The selected activity type does not match available evidence",
-  goal_sport_missing: "The goal activity type is missing",
+  goal_activity_category_incompatible_with_direct_capability:
+    "The selected activity category does not match available evidence",
+  goal_activity_category_missing: "The goal activity category is missing",
   incompatible_physical_evidence_cannot_be_compared: "Some measurements cannot be compared",
   insufficient_evidence_for_guidance: "Evidence is not sufficient for this assessment",
   invalid_or_incompatible_metric_evidence: "A profile metric could not be used",
@@ -56,7 +56,8 @@ const explainabilityReasonLabels: Readonly<Record<string, string>> = {
   recovery_context_below_baseline: "Recent activity context is below the usual baseline",
   required_goal_data_missing: "Some goal details are missing",
   schedule_read_truncated: "Some calendar availability could not be read",
-  target_goal_sport_required_for_session_coverage: "The goal activity type is required",
+  target_goal_activity_category_required_for_session_coverage:
+    "The goal activity category is required",
 };
 
 function explainabilityReasonLabel(reasonCode: string) {
@@ -142,8 +143,10 @@ function goalIdFromSourceId(sourceId: string): string | null {
   return match?.[1] && UUID.test(match[1]) ? match[1] : null;
 }
 
-function goalSport(goal: AthleteIntelligenceModelInput["goals"][number]): CanonicalSport | null {
-  return goal.goalSport;
+function goalActivityCategory(
+  goal: AthleteIntelligenceModelInput["goals"][number],
+): CanonicalActivityCategory | null {
+  return goal.goalActivityCategory;
 }
 
 function fieldEligibility(model: AthleteIntelligenceModelInput, sourceIds: readonly string[]) {
@@ -165,13 +168,13 @@ function goalRelevantEffortCurve(input: {
   durationSeconds: number;
   modality: "pace" | "power";
   unit: "seconds_per_kilometer" | "seconds_per_100m" | "watts";
-  sport: CanonicalSport;
+  activity_category: CanonicalActivityCategory;
 }): DurationAwareEffortCurve {
   const target = {
     durationSeconds: input.durationSeconds,
     modality: input.modality,
     unit: input.unit,
-    sport: input.sport,
+    activity_category: input.activity_category,
   } as const;
   const calculated = calculateDurationAwareEffortCurve({
     model: input.model,
@@ -187,13 +190,14 @@ function goalRelevantEffortCurve(input: {
       (evidence) =>
         evidence.athleteId === input.model.athleteId &&
         evidence.sourceType === "activity_effort" &&
-        evidence.sport === input.sport &&
+        evidence.activity_category === input.activity_category &&
         evidence.modality === "value-raw" &&
         evidence.compatibilityState !== "compatible",
     )
     .map((evidence) => evidence.sourceId);
   for (const effort of input.model.efforts) {
-    if (effort.sport !== input.sport || effort.kind !== relevantKind) continue;
+    if (effort.activity_category !== input.activity_category || effort.kind !== relevantKind)
+      continue;
     for (const sourceId of effort.evidenceSourceIds) {
       if (input.model.evidenceRegistry[sourceId]?.compatibilityState !== "compatible") {
         incompatibleRelevantEffortSourceIds.push(sourceId);
@@ -232,7 +236,7 @@ function demandForGoal(goal: AthleteIntelligenceModelInput["goals"][number]) {
       target_date: goal.targetDate,
       title: "Athlete goal",
       priority: goal.priority,
-      activity_category: goalSport(goal),
+      activity_category: goalActivityCategory(goal),
       objective: goal.objective,
     },
   });
@@ -313,7 +317,7 @@ function curatedExplainability(input: {
     ]),
   );
   const results = [
-    input.projection.capability.sportSpecificity,
+    input.projection.capability.activityCategorySpecificity,
     input.projection.readiness.volumeTrend,
     input.projection.feasibility.scheduleCoverage,
     ...goalDimensions,
@@ -407,25 +411,29 @@ export async function projectAthleteIntelligence(input: {
   const selectedModel = { ...model, goals: [selectedGoal] };
   const demand = demandForGoal(selectedGoal);
   const durationSeconds = goalDurationSeconds(demand);
-  const sport = goalSport(selectedGoal);
-  const modality = sport === "bike" ? "power" : "pace";
+  const activity_category = goalActivityCategory(selectedGoal);
+  const modality = activity_category === "bike" ? "power" : "pace";
   const unit =
-    sport === "bike" ? "watts" : sport === "swim" ? "seconds_per_100m" : "seconds_per_kilometer";
+    activity_category === "bike"
+      ? "watts"
+      : activity_category === "swim"
+        ? "seconds_per_100m"
+        : "seconds_per_kilometer";
   const effortCurve =
-    sport !== null && durationSeconds && durationSeconds > 0
+    activity_category !== null && durationSeconds && durationSeconds > 0
       ? goalRelevantEffortCurve({
           model,
           durationSeconds,
           modality,
           unit,
-          sport,
+          activity_category,
         })
       : undefined;
   const policyActivities = model.activities.map((activity) => ({
     sourceId: activity.sourceId,
     lineageGroupId: activity.lineageGroupId,
     startedAt: activity.startedAt,
-    sport: activity.sport,
+    activity_category: activity.activity_category,
     durationSeconds: activity.metrics.elapsedDurationSeconds.value,
     trainingLoad: activity.metrics.trainingLoad.value,
     trainingLoadIdentity: activity.metrics.trainingLoad.identity,
@@ -453,8 +461,8 @@ export async function projectAthleteIntelligence(input: {
   }));
   const activityReadiness = calculateActivityReadinessV1({
     assessmentAt: model.assessmentAsOf,
-    // Missing goal sport must not borrow activity evidence from another sport.
-    targetSport: sport ?? "other",
+    // Missing goal activity_category must not borrow activity evidence from another activity category.
+    targetActivityCategory: activity_category ?? "other",
     activities: policyActivities,
     readinessContext: policyReadinessContext,
   });
@@ -478,8 +486,8 @@ export async function projectAthleteIntelligence(input: {
     maximumSessionsPerDay: model.trainingContext.maximumSessionsPerDay.value,
     maximumSessionDurationMinutes: model.trainingContext.maximumSessionDurationMinutes.value,
     allowDoubleDays: model.trainingContext.allowDoubleDays,
-    sportOverrides: model.trainingContext.sportDoseLimits.map((limit) => ({
-      sport: limit.sport,
+    activityCategoryOverrides: model.trainingContext.activityCategoryDoseLimits.map((limit) => ({
+      activity_category: limit.activity_category,
       caps: {
         maximumWeeklyMinutes: limit.maximumWeeklyMinutes.value,
         maximumSessionsPerWeek: limit.maximumSessionsPerWeek.value,
@@ -489,8 +497,8 @@ export async function projectAthleteIntelligence(input: {
     recoveryPreference: model.trainingContext.recoveryPreference,
     requiredWeeklyMinutes: null,
     requiredWeeklySessions,
-    // Session coverage must be scoped to the selected goal rather than every planned workout.
-    targetGoalSport: sport,
+    // Session coverage must be scoped to the selected goal rather than every planned activity.
+    targetGoalActivityCategory: activity_category,
     scheduleComplete: model.readCoverage?.schedules.state === "complete",
     plannedSchedule: model.plannedSchedule.map((event) => ({
       sourceId: event.sourceId,
@@ -498,7 +506,7 @@ export async function projectAthleteIntelligence(input: {
       endAt: event.endAt,
       lifecycle: event.lifecycle,
       eventType: event.eventType,
-      sport: event.sport,
+      activity_category: event.activity_category,
       timezone: event.timezone,
       recurrence: event.recurrence
         ? { ...event.recurrence, timezone: event.recurrence.timezone ?? undefined }
@@ -528,7 +536,7 @@ export async function projectAthleteIntelligence(input: {
         ) as typeof calculatedCalendarFeasibility.constraints,
       };
 
-  const physiology = evaluatePhysiologyMetrics(model, sport);
+  const physiology = evaluatePhysiologyMetrics(model, activity_category);
   const criticalPower = calculateCriticalPowerCapability({ model });
   const assembledProjection = athleteIntelligenceProjectionSchema.parse(
     assembleWholeAthleteProjectionV1({
@@ -610,7 +618,11 @@ export async function projectAthleteIntelligence(input: {
   const representedLoadGroups = new Map<string, typeof policyActivities>();
   for (const activity of policyActivities) {
     const identity = activity.trainingLoadIdentity;
-    if (activity.trainingLoad === null || identity == null || identity.sport !== activity.sport)
+    if (
+      activity.trainingLoad === null ||
+      identity == null ||
+      identity.activity_category !== activity.activity_category
+    )
       continue;
     const key = JSON.stringify(identity);
     representedLoadGroups.set(key, [...(representedLoadGroups.get(key) ?? []), activity]);
@@ -620,7 +632,7 @@ export async function projectAthleteIntelligence(input: {
       .map((activity) => ({
         sourceId: activity.sourceId,
         startedAt: activity.startedAt,
-        sport: activity.sport,
+        activity_category: activity.activity_category,
         durationSeconds: activity.durationSeconds,
         trainingLoad: activity.trainingLoad,
         trainingLoadIdentity: activity.trainingLoadIdentity,
@@ -637,14 +649,14 @@ export async function projectAthleteIntelligence(input: {
     externalWork: [...representedLoadGroups.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([loadIdentity, activities]) => {
-        const targetSport = activities[0]?.sport ?? "other";
+        const targetActivityCategory = activities[0]?.activity_category ?? "other";
         const groupReadiness = calculateActivityReadinessV1({
           assessmentAt: model.assessmentAsOf,
-          targetSport,
+          targetActivityCategory,
           activities,
         });
         return {
-          sport: targetSport,
+          activity_category: targetActivityCategory,
           loadIdentity,
           ...channel(groupReadiness.volumeTrend, "activities", readinessPolicy, {
             activities: calculationInputs(activities),

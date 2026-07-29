@@ -13,6 +13,7 @@ describe("UI ownership guardrails", () => {
 
     expect(actualFiles).toEqual([
       "ActivityCard.tsx",
+      "ActivityCategoryLoadBreakdown.tsx",
       "ActivityPlanAttributionRow.tsx",
       "ActivityPlanCard.tsx",
       "ActivityPlanSummary.tsx",
@@ -35,7 +36,6 @@ describe("UI ownership guardrails", () => {
       "ScreenState.tsx",
       "SearchField.tsx",
       "SearchableBottomSheetList.tsx",
-      "SportLoadBreakdown.tsx",
       "StaticRouteMapPreview.tsx",
       "TrainingPlanCard.tsx",
       "TrainingPlanPeriodizationPreview.tsx",
@@ -58,7 +58,6 @@ describe("UI ownership guardrails", () => {
 
     expect(actualFiles).toEqual([
       "activity-category-presentation.tsx",
-      "activity-plan/activity-plan-category-badges.tsx",
       "activity-plan/activity-plan-comments.tsx",
       "activity-plan/activity-plan-composer.tsx",
       "activity-plan/activity-plan-structure.tsx",
@@ -77,6 +76,7 @@ describe("UI ownership guardrails", () => {
       "login-form.tsx",
       "planning/agenda-create-form.tsx",
       "planning/goal-intelligence-card.tsx",
+      "planning/planned-day-summary.tsx",
       "planning/training-load-path.tsx",
       "protected/activity-effort-form.tsx",
       "protected/activity-import-form.tsx",
@@ -104,11 +104,11 @@ describe("UI ownership guardrails", () => {
       "routes/route-event-attachment.tsx",
       "routes/route-library-controls.tsx",
       "sign-up-form.tsx",
+      "training-plan/training-plan-activity-reorder.tsx",
       "training-plan/training-plan-detail.tsx",
       "training-plan/training-plan-editor.tsx",
       "training-plan/training-plan-library.tsx",
       "training-plan/training-plan-model.ts",
-      "training-plan/training-plan-workout-reorder.tsx",
       "training-plan/training-preferences-editor.tsx",
       "training-plan/training-preferences-form.ts",
       "trends/trends-dashboard.tsx",

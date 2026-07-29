@@ -1088,7 +1088,7 @@ describe("no-history anchor orchestration", () => {
     expect(delta).toBeLessThan(1);
   });
 
-  it("uses sport-specific no-history race demand instead of running assumptions", () => {
+  it("uses activity-category-specific no-history race demand instead of running assumptions", () => {
     const bike = deriveGoalDemandProfileFromTargets({
       goalTier: "medium",
       weeksToEvent: 18,
@@ -1115,8 +1115,8 @@ describe("no-history anchor orchestration", () => {
     });
 
     expect(bike.required_peak_weekly_tss.target).toBeLessThan(run.required_peak_weekly_tss.target);
-    expect(bike.rationale_codes).toContain("race_performance_sport_bike");
-    expect(run.rationale_codes).toContain("race_performance_sport_run");
+    expect(bike.rationale_codes).toContain("race_performance_activity_category_bike");
+    expect(run.rationale_codes).toContain("race_performance_activity_category_run");
   });
 
   it("keeps race demand monotonic with faster targets requiring at least as much demand", () => {
@@ -2195,7 +2195,7 @@ describe("phase 1 scoring integration", () => {
     expect(projection.no_history.capability_factors?.evidence_quality).toBeLessThanOrEqual(1);
   });
 
-  it("emits sport-specific load provenance and dose recommendations", () => {
+  it("emits activity-category-specific load provenance and dose recommendations", () => {
     const projection = buildDeterministicProjectionPayload({
       timeline: {
         start_date: "2026-01-05",
@@ -2244,8 +2244,12 @@ describe("phase 1 scoring integration", () => {
       preference_profile: defaultAthletePreferenceProfile,
     });
 
-    const runLoad = projection.sport_load_states?.find((state) => state.sport === "run");
-    const bikeLoad = projection.sport_load_states?.find((state) => state.sport === "bike");
+    const runLoad = projection.activity_category_load_states?.find(
+      (state) => state.activity_category === "run",
+    );
+    const bikeLoad = projection.activity_category_load_states?.find(
+      (state) => state.activity_category === "bike",
+    );
 
     expect(runLoad?.load_method).toBe("run_pace");
     expect(bikeLoad?.load_method).toBe("bike_power");
@@ -2341,9 +2345,11 @@ describe("phase 1 scoring integration", () => {
       far?.limiter_shares?.timeline_pressure,
     );
     expect(near?.interference_notes).toContain(
-      "cross_sport_goal_interference_requires_split_focus",
+      "cross_activity_category_goal_interference_requires_split_focus",
     );
-    expect(far?.interference_notes).toContain("cross_sport_goal_interference_requires_split_focus");
+    expect(far?.interference_notes).toContain(
+      "cross_activity_category_goal_interference_requires_split_focus",
+    );
   });
 });
 

@@ -3,10 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   activity: vi.fn(),
+  activityPlan: vi.fn(),
   createApiContext: vi.fn(),
   createCaller: vi.fn(),
   trainingPlan: vi.fn(),
-  workout: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-start", () => ({
@@ -33,8 +33,8 @@ vi.mock("@repo/db/client", () => ({ db: {} }));
 
 import {
   loadPublicActivity,
+  loadPublicActivityPlan,
   loadPublicTrainingPlan,
-  loadPublicWorkout,
   projectPublicTrainingPlanStructure,
 } from "./public-share";
 
@@ -58,18 +58,18 @@ describe("public share loaders", () => {
     mocks.createCaller.mockReturnValue({
       publicShare: {
         activity: mocks.activity,
+        activityPlan: mocks.activityPlan,
         trainingPlan: mocks.trainingPlan,
-        workout: mocks.workout,
       },
     });
     mocks.activity.mockResolvedValue(null);
+    mocks.activityPlan.mockResolvedValue(null);
     mocks.trainingPlan.mockResolvedValue(null);
-    mocks.workout.mockResolvedValue(null);
   });
 
   it.each([
     ["activity", loadPublicActivity],
-    ["workout", loadPublicWorkout],
+    ["activity plan", loadPublicActivityPlan],
     ["training plan", loadPublicTrainingPlan],
   ])("rejects malformed %s input before creating a caller", async (_name, load) => {
     await expect(load({ data: { id: "not-a-uuid" } as never })).rejects.toThrow();
@@ -80,11 +80,11 @@ describe("public share loaders", () => {
 
   it("passes valid UUID input to each public share procedure", async () => {
     await expect(loadPublicActivity({ data: { id: validId } })).resolves.toBeNull();
-    await expect(loadPublicWorkout({ data: { id: validId } })).resolves.toBeNull();
+    await expect(loadPublicActivityPlan({ data: { id: validId } })).resolves.toBeNull();
     await expect(loadPublicTrainingPlan({ data: { id: validId } })).resolves.toBeNull();
 
     expect(mocks.activity).toHaveBeenCalledWith({ id: validId });
-    expect(mocks.workout).toHaveBeenCalledWith({ id: validId });
+    expect(mocks.activityPlan).toHaveBeenCalledWith({ id: validId });
     expect(mocks.trainingPlan).toHaveBeenCalledWith({ id: validId });
     expect(mocks.createCaller).toHaveBeenCalledTimes(3);
   });

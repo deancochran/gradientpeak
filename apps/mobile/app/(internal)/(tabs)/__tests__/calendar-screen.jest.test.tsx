@@ -24,7 +24,7 @@ let mockTodayKey = today;
 const commonLoadProvenance = {
   model: "gradientpeak_relative_load",
   version: "1",
-  sport: "run",
+  activity_category: "run",
   method: "run_pace_threshold",
   quality: {
     source: "validated_test",
@@ -399,7 +399,7 @@ jest.mock("@/lib/api", () => ({
                         id: "plan-1",
                         name: "Tempo Builder",
                         description: "Progressive tempo with a strong finish.",
-                        activity_category: "outdoor_run",
+                        activity_category: "run",
                         authoritative_metrics: {
                           estimated_duration: 3600,
                           estimated_tss: 72,
@@ -412,7 +412,7 @@ jest.mock("@/lib/api", () => ({
                             {
                               id: "00000000-0000-4000-8000-000000000001",
                               role: "activity",
-                              category: "run",
+                              activity_category: "run",
                               name: "Track activity",
                               intervals: [
                                 {

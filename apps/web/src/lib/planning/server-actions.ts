@@ -1,4 +1,4 @@
-import { canonicalSportSchema, scheduledDateTimeToIsoInstant } from "@repo/core";
+import { canonicalActivityCategorySchema, scheduledDateTimeToIsoInstant } from "@repo/core";
 import { redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
@@ -13,7 +13,7 @@ import {
 import { createServerActionCaller } from "../server-action-api";
 
 const goalActionSchema = z.object({
-  activity_category: canonicalSportSchema,
+  activity_category: canonicalActivityCategorySchema,
   priority: z.coerce.number().int().min(0).max(10),
   profile_id: z.string().uuid(),
   redirectTo: z.string().optional(),

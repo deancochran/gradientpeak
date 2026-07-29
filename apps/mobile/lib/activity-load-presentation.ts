@@ -131,17 +131,17 @@ export function getCommonLoadPresentation(
   };
 }
 
-export function getThresholdNextAction(activityType?: string | null): string {
-  if (activityType === "bike") {
+export function getThresholdNextAction(activityCategory?: string | null): string {
+  if (activityCategory === "bike") {
     return "Record qualifying bike activities to build a reliable power curve or establish bike LTHR.";
   }
-  if (activityType === "run") {
+  if (activityCategory === "run") {
     return "Record a qualifying 20-minute run effort or activity-derived run LTHR.";
   }
-  if (activityType === "swim") {
+  if (activityCategory === "swim") {
     return "Record a qualifying 20-minute swim effort or activity-derived swim LTHR.";
   }
-  return "Establish a sport-specific LTHR.";
+  return "Establish an activity-category-specific LTHR.";
 }
 
 export function formatCalibrationQuality(

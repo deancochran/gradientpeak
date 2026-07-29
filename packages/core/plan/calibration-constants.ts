@@ -486,7 +486,7 @@ export function computeOptimalTsb(durationHours: number | undefined): number {
 /**
  * Helper function to get activity and distance-specific pace baseline
  *
- * @param activityCategory - Activity type (run, bike, swim)
+ * @param activityCategory - Activity category (run, bike, swim)
  * @param distanceKm - Event distance in kilometers
  * @returns Baseline speed in km/h
  */

@@ -7,8 +7,10 @@ import { dbPackageRoot } from "./_helpers";
 import { requireExplicitLocalTarget } from "./_target-safety";
 
 export type LedgerEntry = { version: string; name: string };
-export function classifyLedger(actual: LedgerEntry[], active: LedgerEntry[]) {
-  return JSON.stringify(actual) === JSON.stringify(active) ? "generation-2" : "unsupported";
+type ActiveLedgerEntry = LedgerEntry & { sha256: string };
+export function classifyLedger(actual: LedgerEntry[], active: ActiveLedgerEntry[]) {
+  const expected = active.map(({ version, name }) => ({ version, name }));
+  return JSON.stringify(actual) === JSON.stringify(expected) ? "generation-2" : "unsupported";
 }
 
 async function main() {
@@ -18,17 +20,15 @@ async function main() {
   ) as { activeLedgerFile: string };
   const active = JSON.parse(
     readFileSync(resolve(dbPackageRoot, policy.activeLedgerFile), "utf8"),
-  ) as { entries: LedgerEntry[] };
+  ) as { entries: ActiveLedgerEntry[] };
   const pool = new Pool({ connectionString });
   try {
     const result = await pool.query<LedgerEntry>(
       "select version, name from supabase_migrations.schema_migrations order by version",
     );
     if (classifyLedger(result.rows, active.entries) !== "generation-2")
-      throw new Error(
-        "ledger is unsupported; generation 2 is hard-reset-only and migration repair is forbidden",
-      );
-    console.log("[db:migration:ledger] exact generation 2 baseline ledger verified");
+      throw new Error("ledger is unsupported; repair and downgrade are forbidden");
+    console.log("[db:migration:ledger] exact generation 2 baseline plus forward chain verified");
   } finally {
     await pool.end();
   }

@@ -85,7 +85,7 @@ function job(
   overrides: Partial<ActivitySubmissionQueueJob> = {},
 ): ActivitySubmissionQueueJob {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     id,
     artifactId: `artifact-${id}`,
     sessionId: `session-${id}`,
@@ -98,7 +98,7 @@ function job(
       startedAt: "2026-01-01T10:00:00.000Z",
       finishedAt: "2026-01-01T11:00:00.000Z",
       name: "Native queue job",
-      activityType: "bike",
+      activity_category: "bike",
       durationSeconds: 3600,
       movingSeconds: 3500,
       distanceMeters: 25_000,
@@ -308,6 +308,29 @@ describe("activity submission queue native SQLite storage", () => {
       baseTime,
       baseTime,
       "{not json",
+      3,
+    );
+    const legacyJob = job("legacy") as unknown as {
+      schemaVersion: number;
+      draft: Record<string, unknown>;
+      [key: string]: unknown;
+    };
+    legacyJob.schemaVersion = 2;
+    legacyJob.draft.activityCategory = legacyJob.draft.activity_category;
+    delete legacyJob.draft.activity_category;
+    await native.executor.runAsync(
+      "INSERT INTO activity_submission_queue_jobs (id, operation_id, profile_id, session_id, artifact_id, status, attempts, retry_class, created_at, updated_at, job_json, schema_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "legacy",
+      "operation-legacy",
+      "profile",
+      "session-legacy",
+      "artifact-legacy",
+      "queued",
+      0,
+      "none",
+      baseTime,
+      baseTime,
+      JSON.stringify(legacyJob),
       2,
     );
     await expect(loadDueActivitySubmissionQueueJobs("profile", baseTime)).resolves.toEqual([
@@ -317,11 +340,20 @@ describe("activity submission queue native SQLite storage", () => {
       await native.executor.getAllAsync<{ job_id: string; reason: string }>(
         "SELECT job_id, reason FROM activity_submission_queue_quarantine",
       ),
-    ).toEqual([{ job_id: "corrupt", reason: "invalid-row" }]);
+    ).toEqual([
+      { job_id: "corrupt", reason: "invalid-row" },
+      { job_id: "legacy", reason: "invalid-row" },
+    ]);
     expect(
       await native.executor.getAllAsync<{ id: string }>(
         "SELECT id FROM activity_submission_queue_jobs WHERE id = ?",
         "corrupt",
+      ),
+    ).toEqual([]);
+    expect(
+      await native.executor.getAllAsync<{ id: string }>(
+        "SELECT id FROM activity_submission_queue_jobs WHERE id = ?",
+        "legacy",
       ),
     ).toEqual([]);
   });

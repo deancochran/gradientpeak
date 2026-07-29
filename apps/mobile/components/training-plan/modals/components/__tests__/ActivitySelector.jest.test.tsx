@@ -41,15 +41,13 @@ const activities: ActivityOption[] = [
   {
     id: "tempo",
     name: "Tempo Builder",
-    categories: ["run"],
-    primary_category: "run",
+    activity_category: "run",
     description: "Progressive tempo intervals.",
   },
   {
     id: "strength",
     name: "Strength Foundation",
-    categories: ["strength"],
-    primary_category: "strength",
+    activity_category: "strength",
   },
 ];
 

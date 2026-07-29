@@ -14,7 +14,7 @@ describe("periodization heuristics", () => {
     const profile = resolveConstraintProfile({
       optimizationProfile: "balanced",
       preferenceProfile: defaultAthletePreferenceProfile,
-      sport: "run",
+      activity_category: "run",
     });
 
     expect(profile.effective_max_ctl_ramp_per_week).toBe(3);
@@ -172,7 +172,7 @@ describe("periodization heuristics", () => {
       resolvedDemands: [
         {
           goal_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-          sport: "run",
+          activity_category: "run",
           demand_family: "race_performance",
           demand_duration_minutes: 90,
           required_peak_ctl: 50,

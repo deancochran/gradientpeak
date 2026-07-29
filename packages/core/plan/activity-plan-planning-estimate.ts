@@ -1,11 +1,11 @@
 import { compileActivityPlanV3 } from "../activity-plan";
 import { calculateActivityPlanStats } from "../activity-plan-calculations";
-import type { CanonicalSport } from "../schemas/sport";
+import type { CanonicalActivityCategory } from "../schemas/activity-category";
 
 export type PlanningEstimateConfidence = "high" | "medium" | "low";
 
 export type ActivityPlanCategoryPlanningDose = {
-  category: CanonicalSport;
+  activity_category: CanonicalActivityCategory;
   timedActiveSeconds: number;
   distanceMeters: number;
   repetitionCount: number;
@@ -20,13 +20,12 @@ export type ActivityPlanPlanningEstimate = {
   durationSeconds: number | null;
   activeSeconds?: number;
   restSeconds?: number;
-  transitionSeconds?: number;
   distanceMeters: number | null;
   hasOpenCompletion?: boolean;
   categoryDoses?: ActivityPlanCategoryPlanningDose[];
-  /** Present only for a single supported category; never aggregated across sports. */
+  /** Present only for a single supported activity_category; never aggregated across activity_categories. */
   intensityFactor: number | null;
-  /** Present only for a single supported category; never aggregated across sports. */
+  /** Present only for a single supported activity_category; never aggregated across activity_categories. */
   tss: number | null;
   confidence: PlanningEstimateConfidence;
   factors: string[];
@@ -35,7 +34,7 @@ export type ActivityPlanPlanningEstimate = {
 
 export type ActivityPlanPlanningEstimateInput = {
   structure?: unknown;
-  activityCategory?: CanonicalSport | null;
+  activityCategory?: CanonicalActivityCategory | null;
   authoritativeMetrics?: unknown;
   athleteContext?: {
     cyclingFtpWatts?: number | null;
@@ -45,7 +44,7 @@ export type ActivityPlanPlanningEstimateInput = {
   } | null;
 };
 
-/** Estimates only evidence supported by each activity segment's own sport domain. */
+/** Estimates only evidence supported by each activity segment's own activity_category domain. */
 export function estimateActivityPlanForTrainingContext({
   athleteContext,
   structure,
@@ -55,7 +54,6 @@ export function estimateActivityPlanForTrainingContext({
       durationSeconds: null,
       activeSeconds: 0,
       restSeconds: 0,
-      transitionSeconds: 0,
       distanceMeters: 0,
       hasOpenCompletion: false,
       categoryDoses: [],
@@ -73,9 +71,9 @@ export function estimateActivityPlanForTrainingContext({
   const warnings: string[] = [];
   const categoryDoses = stats.categoryDoses.map<ActivityPlanCategoryPlanningDose>((dose) => {
     if (!dose.cyclingPower) {
-      warnings.push(`No supported planning-load evidence for ${dose.category} segments.`);
+      warnings.push(`No supported planning-load evidence for ${dose.activity_category} segments.`);
       return {
-        category: dose.category,
+        activity_category: dose.activity_category,
         timedActiveSeconds: dose.timedActiveSeconds,
         distanceMeters: dose.distanceMeters,
         repetitionCount: dose.repetitionCount,
@@ -88,11 +86,11 @@ export function estimateActivityPlanForTrainingContext({
     }
     if (!dose.cyclingPower.complete) {
       warnings.push(
-        `Cycling power evidence covers ${Math.round(dose.cyclingPower.evidenceCoverage * 100)}% of eligible timed ${dose.category} dose; aggregate load is unavailable.`,
+        `Cycling power evidence covers ${Math.round(dose.cyclingPower.evidenceCoverage * 100)}% of eligible timed ${dose.activity_category} dose; aggregate load is unavailable.`,
       );
     }
     return {
-      category: dose.category,
+      activity_category: dose.activity_category,
       timedActiveSeconds: dose.timedActiveSeconds,
       distanceMeters: dose.distanceMeters,
       repetitionCount: dose.repetitionCount,
@@ -118,7 +116,6 @@ export function estimateActivityPlanForTrainingContext({
     durationSeconds: stats.duration.exactElapsedSeconds,
     activeSeconds: stats.duration.timedActiveSeconds,
     restSeconds: stats.duration.restSeconds,
-    transitionSeconds: stats.duration.transitionSeconds,
     distanceMeters: stats.duration.distanceMeters,
     hasOpenCompletion: stats.duration.openOccurrenceCount > 0,
     categoryDoses,

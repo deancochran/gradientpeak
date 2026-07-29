@@ -77,7 +77,7 @@ export interface UniversalTSSParams {
   thresholdPace?: number;
   distance?: number;
   weight?: number;
-  activityType?: "run" | "bike" | "swim" | "other";
+  activityCategory?: "run" | "bike" | "swim" | "other";
 }
 
 export type UniversalTSSResult =
@@ -311,7 +311,7 @@ export function calculateTSSFromAvailableData(
     thresholdPace,
     distance,
     weight,
-    activityType,
+    activityCategory,
   } = params;
 
   if (powerStream && powerStream.length > 0 && ftp) {
@@ -345,7 +345,7 @@ export function calculateTSSFromAvailableData(
 
   if (paceStream && paceStream.length > 0 && thresholdPace && distance) {
     try {
-      if (activityType === "swim") {
+      if (activityCategory === "swim") {
         const result = calculateSwimmingTSS({
           paceStream,
           timestamps,

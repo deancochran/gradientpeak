@@ -74,7 +74,7 @@ export function StructureIntervalSheet({
   const intervalSummary = `${interval.steps.length} steps over ${totalMinutes} min per repeat, repeated x${interval.repetitions}${summaryTarget ? ` around ${summaryTarget}` : ""}.`;
 
   return (
-    <View className="px-4 pt-2 pb-6 gap-3">
+    <View className="gap-3 pb-6">
       <View className="rounded-md border border-primary/40 bg-primary/5 px-3 py-2">
         <Text className="text-sm font-medium text-primary">
           Interval {intervalIndex + 1}: {interval.name || "Untitled interval"}

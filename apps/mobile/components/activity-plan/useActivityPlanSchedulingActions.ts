@@ -14,6 +14,7 @@ interface UseActivityPlanSchedulingActionsParams {
   plannedActivity: { id: string; scheduled_date?: string | null } | null | undefined;
   planId?: string;
   profileId?: string;
+  canCreateNewPlanWork?: boolean;
   queryClient: ReturnType<typeof import("@tanstack/react-query").useQueryClient>;
   router: Pick<Router, "back" | "navigate" | "replace">;
   utils: ReturnType<typeof api.useUtils>;
@@ -27,6 +28,7 @@ export function useActivityPlanSchedulingActions({
   plannedActivity,
   planId,
   profileId,
+  canCreateNewPlanWork = false,
   queryClient,
   router,
   utils,
@@ -69,6 +71,13 @@ export function useActivityPlanSchedulingActions({
   });
 
   const handleSchedule = () => {
+    if (!canCreateNewPlanWork) {
+      Alert.alert(
+        "Scheduling unavailable",
+        "Only executable single-activity-category plans can be scheduled.",
+      );
+      return;
+    }
     if (!activityPlan) return;
     if (!activityPlan.id) {
       Alert.alert(
@@ -108,6 +117,13 @@ export function useActivityPlanSchedulingActions({
   };
 
   const handleDuplicate = () => {
+    if (!canCreateNewPlanWork) {
+      Alert.alert(
+        "Duplicate unavailable",
+        "Only executable single-activity-category plans can be duplicated.",
+      );
+      return;
+    }
     const actualPlanId = planId || activityPlan?.id;
     if (!actualPlanId) {
       Alert.alert("Duplicate failed", "No activity plan ID was found.");
@@ -121,7 +137,7 @@ export function useActivityPlanSchedulingActions({
   };
 
   React.useEffect(() => {
-    if (action !== "schedule" || !activityPlan?.id) return;
+    if (action !== "schedule" || !activityPlan?.id || !canCreateNewPlanWork) return;
     if (eventId && !plannedActivity?.id) return;
     const scheduleKey = `${activityPlan.id}:${eventId ?? "none"}:${action}`;
     if (scheduleActionHandledRef.current === scheduleKey) return;
@@ -144,6 +160,7 @@ export function useActivityPlanSchedulingActions({
     eventId,
     plannedActivity?.id,
     profileId,
+    canCreateNewPlanWork,
     router,
   ]);
 

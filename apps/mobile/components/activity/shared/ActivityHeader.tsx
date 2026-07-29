@@ -33,7 +33,7 @@ interface ActivityHeaderProps {
   variant?: "card" | "embedded";
 }
 
-// Map activity types to Lucide icons
+// Map activity categories to Lucide icons
 const ACTIVITY_ICONS: Record<string, LucideIcon> = {
   run: Footprints,
   bike: Bike,

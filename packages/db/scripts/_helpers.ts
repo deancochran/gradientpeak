@@ -1,16 +1,17 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
 import { config } from "dotenv";
+import {
+  dbPackageRoot,
+  defaultLocalDatabaseUrl,
+  repoRoot,
+  supabaseCliRoot,
+} from "./_local-database-config";
+import { safeSupabaseCliEnvironment } from "./_supabase-cli-wrapper";
 
-const scriptDir = dirname(fileURLToPath(import.meta.url));
-
-export const dbPackageRoot = resolve(scriptDir, "..");
-export const repoRoot = resolve(dbPackageRoot, "../..");
-export const supabaseCliRoot = resolve(dbPackageRoot, "supabase");
-export const defaultLocalDatabaseUrl = "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+export { dbPackageRoot, defaultLocalDatabaseUrl, repoRoot, supabaseCliRoot };
 
 const defaultEnvFiles = [
   resolve(dbPackageRoot, ".env.local"),
@@ -39,11 +40,16 @@ export function prepareDbEnv() {
   return databaseUrl;
 }
 
-export function runSupabaseCli(args: string[], workdir = dbPackageRoot) {
-  execFileSync("pnpm", ["exec", "supabase", "--workdir", workdir, ...args], {
+export function runSupabaseCli(
+  args: string[],
+  workdir = dbPackageRoot,
+  encoding: "utf8" | undefined = undefined,
+) {
+  return execFileSync("pnpm", ["exec", "supabase", "--workdir", workdir, ...args], {
     cwd: supabaseCliRoot,
-    env: process.env,
-    stdio: "inherit",
+    env: safeSupabaseCliEnvironment(),
+    encoding,
+    stdio: encoding ? "pipe" : "inherit",
   });
 }
 

@@ -5,7 +5,7 @@ import type {
   RecordingAcceptedArtifact,
 } from "@repo/api/recording-submission";
 import {
-  canonicalSportSchema,
+  canonicalActivityCategorySchema,
   contentVisibilitySchema,
   recordingExecutionManifestSchema,
 } from "@repo/core";
@@ -36,7 +36,7 @@ export const activitySubmissionQueueDraftSchema = z
     startedAt: z.string().min(1),
     finishedAt: z.string().min(1),
     name: z.string().min(1),
-    activityType: canonicalSportSchema,
+    activity_category: canonicalActivityCategorySchema,
     durationSeconds: z.number().int().nonnegative(),
     movingSeconds: z.number().int().nonnegative(),
     distanceMeters: z.number().nonnegative(),
@@ -50,7 +50,7 @@ export type ActivitySubmissionQueueDraft = z.infer<typeof activitySubmissionQueu
 
 export const activitySubmissionQueueJobSchema = z
   .object({
-    schemaVersion: z.literal(2),
+    schemaVersion: z.literal(3),
     id: z.string().min(1),
     artifactId: z.string().min(1),
     sessionId: z.string().min(1),
@@ -69,7 +69,7 @@ export const activitySubmissionQueueJobSchema = z
     status: activitySubmissionQueueJobStatusSchema,
     attempts: z.number().int().nonnegative(),
     lastError: z.string().nullable().optional(),
-    /** Persisted scheduler/lease metadata. Error text is never used as a durable category. */
+    /** Persisted scheduler/lease metadata. Error text is never used as a durable activity_category. */
     retryClass: z.enum(["none", "transient", "permanent", "auth", "validation"]).optional(),
     nextAttemptAt: z.string().datetime({ offset: true }).nullable().optional(),
     errorCategory: z.string().max(80).nullable().optional(),

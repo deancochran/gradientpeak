@@ -21,7 +21,7 @@ export const profileMetricSections: readonly ProfileMetricSection[] = [
   {
     id: "load_calibration",
     title: "Load Calibration",
-    description: "Thresholds used to calculate sport-specific load and intensity.",
+    description: "Thresholds used to calculate activity_category-specific load and intensity.",
     metricTypes: ["ftp", "threshold_pace_seconds_per_km", "css_seconds_per_100m", "lthr"],
   },
   {

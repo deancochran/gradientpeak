@@ -113,6 +113,10 @@ function DraftHarness() {
         onPress={() => drafts.updatePlanningConstraintDraft("durationWeeks", 8)}
       />
       <Pressable
+        testID="preferences-clear-duration"
+        onPress={() => drafts.updatePlanningConstraintDraft("durationWeeks", null)}
+      />
+      <Pressable
         testID="preferences-set-impossible-frequency"
         onPress={() => {
           drafts.updatePlanningConstraintDraft("weeklySessionCount", 6);
@@ -120,6 +124,9 @@ function DraftHarness() {
         }}
       />
       <Text testID="preferences-can-save">{drafts.canSavePlanningPreferences ? "yes" : "no"}</Text>
+      <Text testID="preferences-can-revert">
+        {drafts.canResetPlanningPreferences ? "yes" : "no"}
+      </Text>
       <Pressable
         testID="preferences-cancel"
         onPress={() => drafts.cancelDraftForSheet("preferences")}
@@ -222,12 +229,23 @@ describe("TrainingPlanBuilderSheetDraftsProvider", () => {
   it("cancels planning preference drafts before apply and only commits explicit applies", async () => {
     const { onApplyPlanningPreferences } = renderDraftHarness({ activeSheet: "preferences" });
 
+    expect(screen.getByTestId("preferences-can-revert").props.children).toBe("no");
     fireEvent.press(screen.getByTestId("preferences-set-duration"));
     await waitFor(() => {
       expect(screen.getByTestId("preferences-draft").props.children).toContain("8");
+      expect(screen.getByTestId("preferences-can-revert").props.children).toBe("yes");
     });
 
+    fireEvent.press(screen.getByTestId("preferences-clear-duration"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preferences-can-revert").props.children).toBe("no");
+    });
+
+    fireEvent.press(screen.getByTestId("preferences-set-duration"));
     fireEvent.press(screen.getByTestId("preferences-cancel"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preferences-can-revert").props.children).toBe("no");
+    });
     fireEvent.press(screen.getByTestId("preferences-apply"));
     expect(onApplyPlanningPreferences).toHaveBeenLastCalledWith(basePlanPreferences);
 

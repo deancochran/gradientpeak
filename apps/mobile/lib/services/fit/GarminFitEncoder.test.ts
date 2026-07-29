@@ -175,7 +175,7 @@ describe("GarminFitEncoder semantic FIT round-trip", () => {
     await expect(validateFinalizedFitFile(encoder.getFilePath())).rejects.toThrow("decode");
   });
 
-  it("encodes ordered triathlon, repeated sport, transitions, laps, and pauses", async () => {
+  it("encodes ordered triathlon, repeated activity categories, transitions, laps, and pauses", async () => {
     const sessions = [
       session({
         startTime: ORIGIN,
@@ -249,7 +249,7 @@ describe("GarminFitEncoder semantic FIT round-trip", () => {
       segments: [
         {
           role: "activity" as const,
-          category: "swim" as const,
+          activity_category: "swim" as const,
           rawSport: 5,
           rawSubSport: 17,
           startOffsetMs: 0,
@@ -277,7 +277,7 @@ describe("GarminFitEncoder semantic FIT round-trip", () => {
         },
         {
           role: "activity" as const,
-          category: "bike" as const,
+          activity_category: "bike" as const,
           rawSport: 2,
           rawSubSport: 7,
           startOffsetMs: 35_000,
@@ -298,7 +298,7 @@ describe("GarminFitEncoder semantic FIT round-trip", () => {
         },
         {
           role: "activity" as const,
-          category: "run" as const,
+          activity_category: "run" as const,
           rawSport: 1,
           rawSubSport: 2,
           startOffsetMs: 70_000,
@@ -319,7 +319,7 @@ describe("GarminFitEncoder semantic FIT round-trip", () => {
         },
         {
           role: "activity" as const,
-          category: "run" as const,
+          activity_category: "run" as const,
           rawSport: 1,
           rawSubSport: 3,
           startOffsetMs: 95_000,
@@ -610,7 +610,7 @@ describe("GarminFitEncoder semantic FIT round-trip", () => {
     expect(parseFitFileWithSDK(await encoder.getFile()).records).toHaveLength(1);
   });
 
-  it("round-trips an unknown numeric sport without replacing the file format", async () => {
+  it("round-trips an unknown numeric FIT sport without replacing the file format", async () => {
     const bytes = await encode(
       [
         session({
@@ -632,7 +632,7 @@ describe("GarminFitEncoder semantic FIT round-trip", () => {
     );
   });
 
-  it("fails explicitly for rest sessions, unsupported sport strings, and invalid lap swims", async () => {
+  it("fails explicitly for rest sessions, unsupported FIT sport strings, and invalid lap swims", async () => {
     const rest = new GarminFitEncoder("rest", "athlete");
     await rest.initialize([], new Date(ORIGIN));
     await expect(

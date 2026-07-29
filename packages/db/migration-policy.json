@@ -7,6 +7,16 @@
     "name": "generation_2_baseline",
     "sha256": "84292946d4e61fd3dd46312ba31343471fb8248c7af644b06593b91d08e8d57c"
   },
+  "forwardMigrations": {
+    "filenamePattern": "^(\\d{14})_([a-z0-9]+(?:_[a-z0-9]+)*)\\.sql$",
+    "minimumVersionExclusive": "20260726005149",
+    "executionModes": ["transactional", "autocommit"],
+    "autocommitOperationKinds": ["create_index_concurrently"],
+    "autocommitSession": {
+      "lockTimeout": "5s",
+      "statementTimeout": "15min"
+    }
+  },
   "activeLedgerFile": "migration-ledger.json",
   "historicalEvidence": {
     "generation0PreLedger": "migration-ledger-generation-0-pre.json",

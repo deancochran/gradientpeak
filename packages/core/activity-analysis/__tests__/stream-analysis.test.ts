@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { analyzeActivityStreams } from "../stream-analysis";
 
 const thresholds = {
-  lthrBySport: { bike: 180, run: 180, swim: 180 },
+  lthrByActivityCategory: { bike: 180, run: 180, swim: 180 },
   ftpWatts: 300,
   runThresholdSpeedMps: 4,
   swimThresholdSpeedMps: 1.5,
@@ -25,7 +25,7 @@ describe("analyzeActivityStreams", () => {
   ])("rejects %s timestamps", (timestamps) => {
     const records = (timestamps as number[]).map((timestamp) => ({ timestamp, heartRate: 150 }));
 
-    const result = analyzeActivityStreams({ records, sport: "bike", thresholds });
+    const result = analyzeActivityStreams({ records, activity_category: "bike", thresholds });
 
     expect(result.distributions.heart_rate.quality).toMatchObject({
       status: "insufficient",
@@ -42,7 +42,7 @@ describe("analyzeActivityStreams", () => {
         { timestamp: 10, heartRate: 150 },
         { timestamp: 100, heartRate: 150 },
       ],
-      sport: "bike",
+      activity_category: "bike",
       thresholds,
       maxAcceptedGapSeconds: 30,
       minimumCoverageRatio: 0.8,
@@ -68,8 +68,8 @@ describe("analyzeActivityStreams", () => {
       { timestamp: 10, heartRate: 0, power: 0, speed: 0 },
       { timestamp: 20, heartRate: 150, power: 100, speed: 1 },
     ];
-    const bike = analyzeActivityStreams({ records, sport: "bike", thresholds });
-    const run = analyzeActivityStreams({ records, sport: "run", thresholds });
+    const bike = analyzeActivityStreams({ records, activity_category: "bike", thresholds });
+    const run = analyzeActivityStreams({ records, activity_category: "run", thresholds });
 
     expect(bike.distributions.heart_rate.quality).toMatchObject({
       status: "insufficient",
@@ -96,7 +96,7 @@ describe("analyzeActivityStreams", () => {
         { timestamp: 10, heartRate: 180 },
         { timestamp: 20, heartRate: 250 },
       ],
-      sport: "bike",
+      activity_category: "bike",
       thresholds,
     });
 
@@ -113,7 +113,7 @@ describe("analyzeActivityStreams", () => {
         { timestamp: 0, heartRate: 150 },
         { timestamp: 10, heartRate: 155 },
       ],
-      sport: "bike",
+      activity_category: "bike",
       thresholds: {},
     });
 
@@ -130,7 +130,7 @@ describe("analyzeActivityStreams", () => {
         timestamp: index * 10,
         heartRate,
       })),
-      sport: "bike",
+      activity_category: "bike",
       thresholds,
     });
 
@@ -145,14 +145,14 @@ describe("analyzeActivityStreams", () => {
         timestamp: index * 10,
         power,
       })),
-      sport: "bike",
+      activity_category: "bike",
       thresholds,
     });
 
     expect(result.distributions.power.zones.map(({ seconds }) => seconds)).toEqual([
       10, 10, 10, 10, 10, 10, 10,
     ]);
-    expect(result.distributions.run_pace.quality.reason).toBe("sport_mismatch");
+    expect(result.distributions.run_pace.quality.reason).toBe("activity_category_mismatch");
   });
 
   it("integrates all running pace zones against running threshold speed", () => {
@@ -161,14 +161,14 @@ describe("analyzeActivityStreams", () => {
         timestamp: index * 10,
         speed,
       })),
-      sport: "run",
+      activity_category: "run",
       thresholds,
     });
 
     expect(result.distributions.run_pace.zones.map(({ seconds }) => seconds)).toEqual([
       10, 10, 10, 10, 10,
     ]);
-    expect(result.distributions.swim_pace.quality.reason).toBe("sport_mismatch");
+    expect(result.distributions.swim_pace.quality.reason).toBe("activity_category_mismatch");
   });
 
   it("integrates all swimming pace zones against CSS speed", () => {
@@ -177,7 +177,7 @@ describe("analyzeActivityStreams", () => {
         timestamp: index * 10,
         speed,
       })),
-      sport: "swim",
+      activity_category: "swim",
       thresholds,
     });
 
@@ -192,7 +192,7 @@ describe("analyzeActivityStreams", () => {
         timestamp: index * 720,
         heartRate,
       })),
-      sport: "bike",
+      activity_category: "bike",
       thresholds,
       maxAcceptedGapSeconds: 720,
     });
@@ -214,7 +214,7 @@ describe("analyzeActivityStreams", () => {
           { timestamp: 0, heartRate },
           { timestamp: 3600, heartRate },
         ],
-        sport: "bike",
+        activity_category: "bike",
         thresholds,
         maxAcceptedGapSeconds: 3600,
       }).heart_rate_load.value;
@@ -229,7 +229,7 @@ describe("analyzeActivityStreams", () => {
         { timestamp: 0, heartRate: 300 },
         { timestamp: 3600, heartRate: 300 },
       ],
-      sport: "bike",
+      activity_category: "bike",
       thresholds,
       maxAcceptedGapSeconds: 3600,
     });

@@ -93,7 +93,7 @@ jest.mock("@/lib/api", () => ({
                       queuedJobId: null,
                       status: "unsupported",
                     },
-                    plannedWorkouts: {
+                    plannedActivities: {
                       lastError: null,
                       lastFailedAt: null,
                       lastSucceededAt: null,
@@ -132,7 +132,7 @@ jest.mock("@/lib/api", () => ({
                       queuedJobId: null,
                       status: "idle",
                     },
-                    plannedWorkouts: {
+                    plannedActivities: {
                       lastError: null,
                       lastFailedAt: null,
                       lastSucceededAt: null,
@@ -171,7 +171,7 @@ jest.mock("@/lib/api", () => ({
                       queuedJobId: null,
                       status: "failed",
                     },
-                    plannedWorkouts: {
+                    plannedActivities: {
                       lastError: null,
                       lastFailedAt: null,
                       lastSucceededAt: null,
@@ -294,6 +294,54 @@ describe("integrations screen", () => {
     expect(screen.queryByTestId("integration-sync-now-wahoo")).toBeNull();
     expect(screen.getByTestId("integration-disconnect-wahoo")).toBeTruthy();
     expect(screen.getByTestId("integration-reconnect-garmin")).toBeTruthy();
+  });
+
+  it("shows the durable disconnect transition without offering a false reconnect", () => {
+    integrationOverviewMock = [
+      {
+        actions: [],
+        configured: true,
+        activityHistory: {
+          lastError: null,
+          lastFailedAt: null,
+          lastSucceededAt: null,
+          queuedJobId: null,
+          status: "idle",
+        },
+        plannedActivities: {
+          lastError: null,
+          lastFailedAt: null,
+          lastSucceededAt: null,
+          queuedJobId: null,
+          status: "automatic",
+        },
+        providerHealth: { lastError: null, status: "disconnecting" },
+        setupData: {
+          lastError: null,
+          lastFailedAt: null,
+          lastSucceededAt: null,
+          status: "idle",
+        },
+        connected: false,
+        integrationId: null,
+        label: "Wahoo",
+        primaryAction: null,
+        provider: "wahoo",
+        summary: {
+          badge: "Disconnecting",
+          health: "disconnecting",
+          subtitle: "Revoking provider access",
+          title: "Wahoo",
+        },
+      },
+    ];
+
+    renderNative(<IntegrationsScreen />);
+
+    expect(screen.getByText("Disconnecting")).toBeTruthy();
+    expect(screen.getByText("Revoking provider access")).toBeTruthy();
+    expect(screen.queryByTestId("integration-connect-wahoo")).toBeNull();
+    expect(screen.queryByTestId("integration-disconnect-wahoo")).toBeNull();
   });
 
   it("navigates back from the custom header", () => {

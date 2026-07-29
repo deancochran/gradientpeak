@@ -47,9 +47,9 @@ export function DiscoveryExplorer({ initialQuery = "" }: { initialQuery?: string
   const [scope, setScope] = useState<WebDiscoverScope>("activityPlans");
   const [draftSearch, setDraftSearch] = useState(initialQuery);
   const [search, setSearch] = useState(initialQuery.trim());
-  const [category, setCategory] = useState("");
+  const [activityPlanCategory, setActivityPlanCategory] = useState("");
   const [activitySort, setActivitySort] = useState("newest");
-  const [sport, setSport] = useState("");
+  const [trainingPlanCategory, setTrainingPlanCategory] = useState("");
   const [experience, setExperience] = useState("");
   const [routeSort, setRouteSort] = useState("newest");
   const [profileSort, setProfileSort] = useState("newest");
@@ -64,8 +64,8 @@ export function DiscoveryExplorer({ initialQuery = "" }: { initialQuery?: string
       includeSystemTemplates: true,
       includeEstimation: true,
       search: search || undefined,
-      activityCategory: category
-        ? (category as "run" | "bike" | "swim" | "strength" | "other")
+      activityCategory: activityPlanCategory
+        ? (activityPlanCategory as "run" | "bike" | "swim" | "strength" | "other")
         : undefined,
       sort_by: activitySort as "newest" | "oldest",
       limit: 20,
@@ -75,7 +75,7 @@ export function DiscoveryExplorer({ initialQuery = "" }: { initialQuery?: string
   const trainingPlans = api.trainingPlans.listTemplates.useInfiniteQuery(
     {
       search: search || undefined,
-      sport: sport || undefined,
+      activity_category: trainingPlanCategory || undefined,
       experience_level: experience
         ? (experience as "beginner" | "intermediate" | "advanced")
         : undefined,
@@ -122,9 +122,9 @@ export function DiscoveryExplorer({ initialQuery = "" }: { initialQuery?: string
   const noun = SCOPES.find((item) => item.id === scope)?.label.toLowerCase() ?? "results";
 
   const resetScopeFilters = () => {
-    setCategory("");
+    setActivityPlanCategory("");
     setActivitySort("newest");
-    setSport("");
+    setTrainingPlanCategory("");
     setExperience("");
     setRouteSort("newest");
     setProfileSort("newest");
@@ -178,8 +178,8 @@ export function DiscoveryExplorer({ initialQuery = "" }: { initialQuery?: string
           <>
             <Select
               label="Activity category"
-              value={category}
-              onChange={setCategory}
+              value={activityPlanCategory}
+              onChange={setActivityPlanCategory}
               options={["run", "bike", "swim", "strength", "other"]}
             />
             <Select
@@ -194,9 +194,9 @@ export function DiscoveryExplorer({ initialQuery = "" }: { initialQuery?: string
         {scope === "trainingPlans" ? (
           <>
             <Select
-              label="Sport"
-              value={sport}
-              onChange={setSport}
+              label="Activity category"
+              value={trainingPlanCategory}
+              onChange={setTrainingPlanCategory}
               options={["run", "bike", "swim", "strength", "other"]}
             />
             <Select

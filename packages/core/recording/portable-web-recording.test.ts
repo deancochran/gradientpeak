@@ -14,7 +14,7 @@ const snapshot: RecordingSessionSnapshot = {
     startedAt: "2026-07-20T10:00:00.000Z",
   },
   activity: {
-    category: "bike",
+    activity_category: "bike",
     mode: "planned",
     gpsMode: "off",
     eventId: "22222222-2222-4222-8222-222222222222",

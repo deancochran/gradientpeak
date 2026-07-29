@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   process: vi.fn(),
   search: { from: undefined } as {
-    category?: "run" | "bike" | "swim" | "strength" | "other";
+    activity_category?: "run" | "bike" | "swim" | "strength" | "other";
     eventId?: string;
     from?: "record";
     gps?: "on" | "off";
@@ -258,7 +258,7 @@ describe("ActivityImportPage", () => {
     const eventId = "11111111-1111-4111-8111-111111111111";
     const routeId = "22222222-2222-4222-8222-222222222222";
     mocks.search = {
-      category: "run",
+      activity_category: "run",
       eventId,
       from: "record",
       gps: "off",
@@ -267,7 +267,7 @@ describe("ActivityImportPage", () => {
     const { unmount } = render(<ActivityImportPage />);
     mocks.formProps?.onCancel();
     expect(mocks.navigate).toHaveBeenCalledWith({
-      search: { category: "run", eventId, gps: "off", routeId },
+      search: { activity_category: "run", eventId, gps: "off", routeId },
       to: "/record",
     });
 
@@ -281,22 +281,24 @@ describe("ActivityImportPage", () => {
 });
 
 describe("activity import search and deduplication", () => {
-  it("keeps validated recording provenance without legacy activity type compatibility", () => {
-    expect(validateActivityImportSearch({ activityType: "swim", from: "record" })).toEqual({
-      category: "run",
+  it("keeps validated recording provenance without legacy classification compatibility", () => {
+    expect(validateActivityImportSearch({ activityCategory: "swim", from: "record" })).toEqual({
+      activity_category: "run",
       eventId: undefined,
       from: "record",
       gps: "on",
       routeId: undefined,
     });
-    expect(validateActivityImportSearch({ category: "run" })).toEqual({ from: undefined });
-    expect(validateActivityImportSearch({ activityType: "invalid" })).toEqual({ from: undefined });
+    expect(validateActivityImportSearch({ activity_category: "run" })).toEqual({ from: undefined });
+    expect(validateActivityImportSearch({ activityCategory: "invalid" })).toEqual({
+      from: undefined,
+    });
 
     const eventId = "11111111-1111-4111-8111-111111111111";
     const routeId = "22222222-2222-4222-8222-222222222222";
     expect(
       validateActivityImportSearch({
-        category: "bike",
+        activity_category: "bike",
         eventId,
         from: "record",
         gps: "off",
@@ -304,7 +306,7 @@ describe("activity import search and deduplication", () => {
         routeId,
       }),
     ).toEqual({
-      category: "bike",
+      activity_category: "bike",
       eventId,
       from: "record",
       gps: "off",

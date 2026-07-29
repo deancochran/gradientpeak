@@ -22,7 +22,7 @@ function candidate(overrides: Partial<EvidenceCandidate> = {}): EvidenceCandidat
     observedAt: policy.asOf,
     source: "test_adapter",
     sourceId: "candidate-1",
-    sport: "run",
+    activity_category: "run",
     correlationGroupId: null,
     reasons: ["Observed test value."],
     provenance: { policyVersion: "test-policy-1", adapterVersion: "test-adapter-1", lineage: [] },

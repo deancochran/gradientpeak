@@ -39,7 +39,7 @@ describe("resolveCanonicalThresholds", () => {
       ],
       activityEfforts: [
         {
-          sport: "bike",
+          activity_category: "bike",
           metric: "power",
           value: 300,
           durationSeconds: 1200,
@@ -66,7 +66,7 @@ describe("resolveCanonicalThresholds", () => {
       freshnessWindowMs,
       activityEfforts: [
         {
-          sport: "bike",
+          activity_category: "bike",
           metric: "power",
           value: 300,
           durationSeconds: 1200,
@@ -75,7 +75,7 @@ describe("resolveCanonicalThresholds", () => {
           evidence: "imported_activity_stream",
         },
         {
-          sport: "run",
+          activity_category: "run",
           metric: "speed",
           value: 4,
           durationSeconds: 1200,
@@ -84,7 +84,7 @@ describe("resolveCanonicalThresholds", () => {
           evidence: "imported_activity_stream",
         },
         {
-          sport: "swim",
+          activity_category: "swim",
           metric: "speed",
           value: 1.25,
           durationSeconds: 1200,
@@ -160,7 +160,7 @@ describe("resolveCanonicalThresholds", () => {
       ],
       activityEfforts: [
         {
-          sport: "bike",
+          activity_category: "bike",
           metric: "power",
           value: 300,
           durationSeconds: 1200,
@@ -189,7 +189,7 @@ describe("resolveCanonicalThresholds", () => {
       ],
       activityEfforts: [
         {
-          sport: "bike",
+          activity_category: "bike",
           metric: "power",
           value: 300,
           durationSeconds: 1200,
@@ -209,7 +209,7 @@ describe("resolveCanonicalThresholds", () => {
       freshnessWindowMs,
       activityEfforts: [
         {
-          sport: "bike",
+          activity_category: "bike",
           metric: "power",
           value: 300,
           durationSeconds: 1200,
@@ -217,7 +217,7 @@ describe("resolveCanonicalThresholds", () => {
           observationKind: "modeled",
         },
         {
-          sport: "run",
+          activity_category: "run",
           metric: "speed",
           value: 4,
           durationSeconds: 1200,
@@ -225,7 +225,7 @@ describe("resolveCanonicalThresholds", () => {
           observationKind: "derived",
         },
         {
-          sport: "swim",
+          activity_category: "swim",
           metric: "speed",
           value: 1.25,
           durationSeconds: 1200,
@@ -234,7 +234,7 @@ describe("resolveCanonicalThresholds", () => {
           evidence: "imported_activity_stream",
         },
         {
-          sport: "bike",
+          activity_category: "bike",
           metric: "power",
           value: 320,
           durationSeconds: 1199,
@@ -256,7 +256,7 @@ describe("resolveCanonicalThresholds", () => {
       freshnessWindowMs,
       activityEfforts: [
         {
-          sport: "bike",
+          activity_category: "bike",
           metric: "power",
           value: 300,
           durationSeconds: 1200,
@@ -291,7 +291,7 @@ describe("resolveCanonicalThresholds", () => {
       ],
       activityEfforts: [
         {
-          sport: "bike",
+          activity_category: "bike",
           metric: "power",
           value: 300,
           durationSeconds: 1200,
@@ -328,7 +328,7 @@ describe("resolveCanonicalThresholds", () => {
       },
       activityEfforts: [
         {
-          sport: "bike",
+          activity_category: "bike",
           metric: "power",
           value: 300,
           durationSeconds: 1200,
@@ -422,7 +422,7 @@ describe("resolveCanonicalThresholds", () => {
       freshnessWindowMs,
       activityEfforts: [
         {
-          sport: "bike",
+          activity_category: "bike",
           metric: "power",
           value: 300,
           durationSeconds: 1200,
@@ -431,7 +431,7 @@ describe("resolveCanonicalThresholds", () => {
           evidence: "imported_activity_stream",
         },
         {
-          sport: "bike",
+          activity_category: "bike",
           metric: "power",
           value: 280,
           durationSeconds: 1200,
@@ -460,7 +460,7 @@ describe("resolveCanonicalThresholds", () => {
       },
       activityEfforts: [
         {
-          sport: "bike",
+          activity_category: "bike",
           metric: "power",
           value: 300,
           durationSeconds: 1200,

@@ -28,7 +28,7 @@ export interface TrainingPlanCardPlan {
     min?: number | null;
     recommended?: number | null;
   } | null;
-  sport?: string[] | string | null;
+  activity_category?: string[] | string | null;
   experienceLevel?: string[] | string | null;
   likes_count?: number | null;
   has_liked?: boolean | null;
@@ -117,7 +117,7 @@ export function TrainingPlanCard({
             metrics={[
               { label: "Duration", value: summaryMetrics.durationLabel },
               { label: "Sessions", value: summaryMetrics.sessionsLabel },
-              { label: "Sport", value: summaryMetrics.sportLabel },
+              { label: "Activity category", value: summaryMetrics.activityCategoryLabel },
               { label: "Level", value: summaryMetrics.experienceLabel },
             ]}
           />
@@ -138,7 +138,7 @@ export function TrainingPlanCard({
             metrics={[
               { label: "Duration", value: summaryMetrics.durationLabel },
               { label: "Sessions", value: summaryMetrics.sessionsLabel },
-              { label: "Sport", value: summaryMetrics.sportLabel },
+              { label: "Activity category", value: summaryMetrics.activityCategoryLabel },
               { label: "Level", value: summaryMetrics.experienceLabel },
             ]}
           />

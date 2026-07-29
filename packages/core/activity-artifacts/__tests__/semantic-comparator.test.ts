@@ -9,7 +9,7 @@ const expected = {
   segments: [
     {
       role: "activity" as const,
-      category: "run" as const,
+      activity_category: "run" as const,
       rawSport: 1,
       rawSubSport: "road",
       startOffsetMs: 0,
@@ -34,7 +34,7 @@ const expected = {
     },
     {
       role: "activity" as const,
-      category: "bike" as const,
+      activity_category: "bike" as const,
       rawSport: 2,
       startOffsetMs: 70_000,
       endOffsetMs: 130_000,
@@ -67,11 +67,11 @@ describe("activity artifact semantic comparator", () => {
     });
   });
 
-  it("reports order/category and numeric differences outside tolerances", () => {
+  it("reports order/activity_category and numeric differences outside tolerances", () => {
     const actual = structuredClone(expected);
     const firstSegment = actual.segments[0];
     if (!firstSegment) throw new Error("Fixture requires a segment.");
-    firstSegment.category = "bike";
+    firstSegment.activity_category = "bike";
     firstSegment.timerEvents = [
       { type: "start", offsetMs: 0 },
       { type: "pause", offsetMs: 21_001 },
@@ -84,7 +84,7 @@ describe("activity artifact semantic comparator", () => {
     expect(comparison.differences.map((difference) => difference.path)).toContainEqual([
       "segments",
       0,
-      "category",
+      "activity_category",
     ]);
     expect(comparison.differences.map((difference) => difference.path)).toContainEqual([
       "segments",
@@ -122,7 +122,7 @@ describe("activity artifact semantic comparator", () => {
       segments: [
         {
           role: "activity" as const,
-          category: "swim" as const,
+          activity_category: "swim" as const,
           rawSport: 5,
           rawSubSport: "lap_swimming",
           startOffsetMs: 0,
@@ -149,7 +149,7 @@ describe("activity artifact semantic comparator", () => {
         },
         {
           role: "activity" as const,
-          category: "swim" as const,
+          activity_category: "swim" as const,
           rawSport: 5,
           rawSubSport: "open_water",
           startOffsetMs: 11_000,
@@ -210,7 +210,7 @@ describe("activity artifact semantic comparator", () => {
         totals: { elapsedMs: 10 },
       },
       {
-        segments: [{ role: "rest", category: "run", startOffsetMs: 0, endOffsetMs: 10 }],
+        segments: [{ role: "rest", activity_category: "run", startOffsetMs: 0, endOffsetMs: 10 }],
         totals: { elapsedMs: 10 },
       },
       {
@@ -221,7 +221,7 @@ describe("activity artifact semantic comparator", () => {
         segments: [
           {
             role: "activity",
-            category: "run",
+            activity_category: "run",
             startOffsetMs: 0,
             endOffsetMs: 100,
             pauseRanges: [
@@ -253,10 +253,30 @@ describe("activity artifact semantic comparator", () => {
     });
   });
 
+  it("uses persistence-safe raw source string and integer bounds", () => {
+    const semantics = (rawSubSport: string | number) => ({
+      segments: [{ role: "unknown", rawSubSport, startOffsetMs: 0, endOffsetMs: 1_000 }],
+      totals: { elapsedMs: 1_000 },
+    });
+    for (const value of ["😀".repeat(128), -2_147_483_648, 2_147_483_647]) {
+      const bounded = semantics(value);
+      expect(compareActivityArtifactSemantics({ expected: bounded, actual: bounded })).toEqual({
+        equivalent: true,
+        differences: [],
+      });
+    }
+    for (const value of ["", "😀".repeat(129), -2_147_483_649, 2_147_483_648]) {
+      const invalid = semantics(value);
+      expect(() =>
+        compareActivityArtifactSemantics({ expected: invalid, actual: invalid }),
+      ).toThrow();
+    }
+  });
+
   it("rejects identical documents with invalid document-level semantics", () => {
     const activity = (startOffsetMs: number, endOffsetMs: number) => ({
       role: "activity",
-      category: "run",
+      activity_category: "run",
       startOffsetMs,
       endOffsetMs,
     });

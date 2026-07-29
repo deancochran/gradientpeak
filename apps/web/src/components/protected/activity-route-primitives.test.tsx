@@ -17,7 +17,7 @@ describe("ActivityListCard", () => {
     status: "unavailable",
     model: "gradientpeak_relative_load",
     version: "1",
-    sport: "run",
+    activity_category: "run",
     method: "heart_rate_zones",
     quality: null,
     thresholdEvidence: null,
@@ -52,7 +52,7 @@ describe("ActivityListCard", () => {
             profile_id: "22222222-2222-4222-8222-222222222222",
             activity_categories: ["run", "bike", "run"],
             activity_kind: "multisport",
-            name: "Brick workout",
+            name: "Brick activity",
             notes: null,
             started_at: new Date("2026-07-17T10:00:00.000Z"),
             finished_at: new Date("2026-07-17T11:30:00.000Z"),
@@ -70,7 +70,7 @@ describe("ActivityListCard", () => {
       />,
     );
 
-    expect(screen.getByText("Brick workout")).toBeTruthy();
+    expect(screen.getByText("Brick activity")).toBeTruthy();
     expect(screen.getByText("Run • Ride")).toBeTruthy();
     expect(screen.getByText("Run, Ride")).toBeTruthy();
     expect(screen.getByText("1h 30m")).toBeTruthy();
@@ -80,7 +80,7 @@ describe("ActivityListCard", () => {
     expect(screen.getByText(/no current result was provided/i)).toBeTruthy();
   });
 
-  it("renders the canonical sport-specific LTHR diagnostic", () => {
+  it("renders the canonical activity-category-specific LTHR diagnostic", () => {
     render(
       <ActivityListCard
         activity={{
@@ -96,8 +96,10 @@ describe("ActivityListCard", () => {
       />,
     );
 
-    expect(screen.getByText(/sport-specific LTHR is missing for this activity/)).toBeTruthy();
-    expect(screen.getByText(/Add a current sport-specific LTHR/)).toBeTruthy();
+    expect(
+      screen.getByText(/activity-category-specific LTHR is missing for this activity/),
+    ).toBeTruthy();
+    expect(screen.getByText(/Add a current activity-category-specific LTHR/)).toBeTruthy();
   });
 });
 

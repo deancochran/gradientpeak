@@ -18,7 +18,7 @@ function createIntegration(
     connected: false,
     integrationId: null,
     label: "Strava",
-    plannedWorkouts: {
+    plannedActivities: {
       lastError: null,
       lastFailedAt: null,
       lastSucceededAt: null,

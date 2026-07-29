@@ -40,7 +40,7 @@ export interface AdvancedConfigData {
   } | null;
 
   // NEW: Activity Distribution
-  activity_type_distribution?: Record<PublicActivityCategory, number>;
+  activity_category_distribution?: Record<PublicActivityCategory, number>;
 }
 
 interface AdvancedConfigSheetProps {
@@ -125,9 +125,9 @@ export function AdvancedConfigSheet({
       }
     }
 
-    // Activity distribution validation (if multi-sport)
-    if (formData.activity_type_distribution) {
-      const sum = Object.values(formData.activity_type_distribution).reduce((a, b) => a + b, 0);
+    // Activity distribution validation (if multi-activity_category)
+    if (formData.activity_category_distribution) {
+      const sum = Object.values(formData.activity_category_distribution).reduce((a, b) => a + b, 0);
       if (Math.abs(sum - 1.0) > 0.01) {
         errors.activity_distribution = `Activity percentages must sum to 100% (currently ${Math.round(sum * 100)}%)`;
       }
@@ -244,9 +244,9 @@ export function AdvancedConfigSheet({
 
             <TabsContent value="activities" className="p-4">
               <ActivityDistributionForm
-                data={formData.activity_type_distribution || null}
+                data={formData.activity_category_distribution || null}
                 onChange={(distribution) =>
-                  updateFormData({ activity_type_distribution: distribution })
+                  updateFormData({ activity_category_distribution: distribution })
                 }
                 errors={validationErrors}
               />

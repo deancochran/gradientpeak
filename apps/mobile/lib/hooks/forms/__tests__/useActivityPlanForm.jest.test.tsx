@@ -42,7 +42,6 @@ const ids = {
   segment: "00000000-0000-4000-8000-000000000001",
   interval: "00000000-0000-4000-8000-000000000002",
   step: "00000000-0000-4000-8000-000000000003",
-  transition: "00000000-0000-4000-8000-000000000004",
   segment2: "00000000-0000-4000-8000-000000000005",
   interval2: "00000000-0000-4000-8000-000000000006",
   step2: "00000000-0000-4000-8000-000000000007",
@@ -56,7 +55,7 @@ function validStructure() {
         id: ids.segment,
         role: "activity" as const,
         name: "Bike",
-        category: "bike" as const,
+        activity_category: "bike" as const,
         intervals: [
           {
             id: ids.interval,
@@ -74,16 +73,10 @@ function validStructure() {
         ],
       },
       {
-        id: ids.transition,
-        role: "transition" as const,
-        name: "Change",
-        duration: { type: "time" as const, seconds: 60 },
-      },
-      {
         id: ids.segment2,
         role: "activity" as const,
         name: "Bike again",
-        category: "bike" as const,
+        activity_category: "bike" as const,
         intervals: [
           {
             id: ids.interval2,
@@ -125,14 +118,14 @@ describe("useActivityPlanForm V3", () => {
   it("counts compiled repeats and explicit boundary time", () => {
     useActivityPlanCreationStore.setState({ structure: validStructure() });
     const { result } = renderHook(() => useActivityPlanForm());
-    expect(result.current.metrics.stepCount).toBe(4);
-    expect(result.current.metrics.duration).toBe(16);
+    expect(result.current.metrics.stepCount).toBe(3);
+    expect(result.current.metrics.duration).toBe(15);
   });
 
   it("maps V3 segment paths to interval and step UI error keys", () => {
     const structure = validStructure();
     const firstActivity = structure.segments[0];
-    const secondActivity = structure.segments[2];
+    const secondActivity = structure.segments[1];
     if (!firstActivity || firstActivity.role !== "activity") throw new Error("missing activity");
     if (!secondActivity || secondActivity.role !== "activity") throw new Error("missing activity");
     const firstInterval = firstActivity.intervals[0];
@@ -153,7 +146,7 @@ describe("useActivityPlanForm V3", () => {
     ).toBeDefined();
   });
 
-  it("submits only strict V3 without a synthetic category field", async () => {
+  it("submits only strict V3 without a synthetic activity_category field", async () => {
     useActivityPlanCreationStore.setState({ structure: validStructure() });
     const { result } = renderHook(() => useActivityPlanForm());
     await act(async () => {
@@ -165,5 +158,31 @@ describe("useActivityPlanForm V3", () => {
     expect(createMock.mock.calls[0]?.[0]).not.toHaveProperty("activity_category");
     expect(createMock.mock.calls[0]?.[0]).not.toHaveProperty("route_id");
     expect(createMock.mock.calls[0]?.[0]).not.toHaveProperty("routeId");
+  });
+
+  it("keeps an existing canonical plan editable and submittable", async () => {
+    const structure = validStructure();
+    getByIdMock.mockReturnValue({
+      data: {
+        id: "plan-1",
+        name: "Existing plan",
+        description: null,
+        notes: null,
+        structure,
+        structure_hash: "a".repeat(64),
+      },
+      isLoading: false,
+    } as never);
+    const { result } = renderHook(() => useActivityPlanForm({ planId: "plan-1" }));
+    await act(async () => undefined);
+
+    expect(result.current.editStatus).toBe("editable");
+    expect(result.current.canSubmit).toBe(true);
+    await act(async () => {
+      await expect(result.current.submit()).resolves.toEqual({ id: "updated-1" });
+    });
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "plan-1", structure, expectedStructureHash: "a".repeat(64) }),
+    );
   });
 });

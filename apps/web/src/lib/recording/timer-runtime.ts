@@ -12,7 +12,7 @@ import {
 } from "@repo/core";
 
 export type TimerOnlyRecordingConfiguration = {
-  category: RecordingActivityCategory;
+  activity_category: RecordingActivityCategory;
   eventId?: string;
   activityPlanId?: string;
   routeId?: string;
@@ -235,7 +235,7 @@ export function recoverTimerOnlyRecording(
     state: {
       ...recovered.state,
       configuration: {
-        category: activity.category,
+        activity_category: activity.activity_category,
         ...(activity.eventId ? { eventId: activity.eventId } : {}),
         ...(activity.activityPlanId ? { activityPlanId: activity.activityPlanId } : {}),
         ...(activity.routeId ? { routeId: activity.routeId } : {}),
@@ -276,7 +276,7 @@ export function restoreFinishedTimerOnlyRecording(artifact: {
   return {
     ...state,
     configuration: {
-      category: activity.category,
+      activity_category: activity.activity_category,
       ...(activity.eventId ? { eventId: activity.eventId } : {}),
       ...(activity.activityPlanId ? { activityPlanId: activity.activityPlanId } : {}),
       ...(activity.routeId ? { routeId: activity.routeId } : {}),
@@ -330,7 +330,7 @@ function createTimerOnlySnapshot(
       startedAt: new Date(nowMs).toISOString(),
     },
     activity: {
-      category: configuration.category,
+      activity_category: configuration.activity_category,
       mode: configuration.eventId ? "planned" : "free",
       gpsMode: "off",
       eventId: configuration.eventId ?? null,

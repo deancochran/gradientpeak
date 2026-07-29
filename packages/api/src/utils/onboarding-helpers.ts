@@ -5,7 +5,7 @@
  * and improve maintainability. Provides abstraction layer for:
  * - Batch inserting profile metrics
  * - Batch inserting activity efforts
- * - Deriving efforts for different sports
+ * - Deriving efforts for different activity_categories
  * - Preparing metrics by merging user input with baseline
  */
 
@@ -109,7 +109,7 @@ export async function batchInsertProfileMetrics(
  * Batch insert activity efforts with consistent formatting.
  *
  * Handles formatting of timestamps, profile_id, and activity_id for all efforts,
- * reducing duplication across different sports.
+ * reducing duplication across different activity_categories.
  *
  * @param db - Drizzle database client
  * @param profileId - User's profile ID
@@ -149,25 +149,25 @@ export async function batchInsertActivityEfforts(
 }
 
 /**
- * Derive efforts for a specific sport from a single metric.
+ * Derive efforts for a specific activity_category from a single metric.
  *
- * Provides unified interface for deriving efforts across all sports,
+ * Provides unified interface for deriving efforts across all activity_categories,
  * reducing switch statements in the main procedure.
  *
- * @param sport - Sport type ('cycling', 'running', 'swimming')
+ * @param activity_category - ActivityCategory type ('cycling', 'running', 'swimming')
  * @param metric - Performance metric value (FTP, threshold pace, or CSS)
  * @returns Array of derived efforts for standard durations
  *
  * @example
- * const cyclingEfforts = deriveEffortsForSport('cycling', 250); // FTP = 250W
- * const runningEfforts = deriveEffortsForSport('running', 315); // 5:15/km
- * const swimmingEfforts = deriveEffortsForSport('swimming', 90); // 1:30/100m
+ * const cyclingEfforts = deriveEffortsForActivityCategory('cycling', 250); // FTP = 250W
+ * const runningEfforts = deriveEffortsForActivityCategory('running', 315); // 5:15/km
+ * const swimmingEfforts = deriveEffortsForActivityCategory('swimming', 90); // 1:30/100m
  */
-export function deriveEffortsForSport(
-  sport: "cycling" | "running" | "swimming",
+export function deriveEffortsForActivityCategory(
+  activity_category: "cycling" | "running" | "swimming",
   metric: number,
 ): DerivedEffort[] {
-  switch (sport) {
+  switch (activity_category) {
     case "cycling":
       return derivePowerCurveFromFTP(metric);
     case "running":

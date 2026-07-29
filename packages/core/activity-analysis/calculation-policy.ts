@@ -1,4 +1,4 @@
-import type { CanonicalSport } from "../schemas/sport";
+import type { CanonicalActivityCategory } from "../schemas/activity-category";
 
 export const activityTssMethodValues = [
   "power_threshold",
@@ -30,7 +30,7 @@ export type CompletedActivityCalculationPolicy = {
 };
 
 /** Append-only compatibility for parsing historical calculation identities. */
-export const activityTssCompatibleMethodsBySport = {
+export const activityTssCompatibleMethodsByActivityCategory = {
   run: ["run_pace_threshold", "heart_rate_threshold", "heart_rate_reserve"],
   bike: [
     "power_threshold",
@@ -41,9 +41,9 @@ export const activityTssCompatibleMethodsBySport = {
   swim: ["swim_pace_threshold", "heart_rate_threshold", "heart_rate_reserve"],
   strength: ["heart_rate_threshold", "heart_rate_reserve"],
   other: ["heart_rate_threshold", "heart_rate_reserve"],
-} as const satisfies Record<CanonicalSport, readonly ActivityTssIdentityMethod[]>;
+} as const satisfies Record<CanonicalActivityCategory, readonly ActivityTssIdentityMethod[]>;
 
-/** Curve, threshold, and ordered IF/TSS methods for every canonical sport. */
+/** Curve, threshold, and ordered IF/TSS methods for every canonical activity_category. */
 export const completedActivityCalculationPolicy = {
   run: {
     performanceCurve: "grade_adjusted_speed_duration",
@@ -70,4 +70,4 @@ export const completedActivityCalculationPolicy = {
     threshold: null,
     tssMethods: ["heart_rate_threshold"],
   },
-} as const satisfies Record<CanonicalSport, CompletedActivityCalculationPolicy>;
+} as const satisfies Record<CanonicalActivityCategory, CompletedActivityCalculationPolicy>;
