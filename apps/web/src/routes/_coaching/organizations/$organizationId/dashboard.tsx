@@ -19,9 +19,9 @@ function CoachDashboardPage() {
         <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-300">Dashboard</p>
         <h1 className="text-3xl font-semibold tracking-tight text-white">Coaching workspace</h1>
         <p className="max-w-3xl text-sm leading-6 text-slate-400">
-          This environment is separate from the standard profile app. Athlete information will
-          appear only after engagements, coach assignments, and scoped athlete consent are
-          implemented and verified.
+          This environment is separate from the standard profile app. Athlete views remain
+          unavailable until deployed authorization/RLS proves an effective coach role, exact
+          assignment, and matching scope consent.
         </p>
       </header>
 
@@ -29,17 +29,17 @@ function CoachDashboardPage() {
         <ReadinessCard
           icon={<Users className="h-5 w-5" />}
           title="Profiles"
-          description="Organization-authorized athlete profiles will appear here after the delegated-access foundation lands."
+          description="Read-only athlete profiles remain dormant until deployed authorization/RLS proves an effective coach role, exact assignment, and matching scope consent."
         />
         <ReadinessCard
           icon={<ClipboardCheck className="h-5 w-5" />}
           title="Weekly review"
-          description="Readiness, completion, and exceptions remain unavailable until athlete consent is active."
+          description="Read-only readiness, completion, and exceptions remain dormant until deployed authorization/RLS proves an effective coach role, exact assignment, and matching scope consent."
         />
         <ReadinessCard
           icon={<CalendarClock className="h-5 w-5" />}
           title="Upcoming events"
-          description="Calendar adjustments will require explicit assignment and audited write authority."
+          description="Read-only calendar views remain dormant until deployed authorization/RLS proves an effective coach role, exact assignment, and matching scope consent. Calendar writes remain unavailable."
         />
       </section>
     </div>

@@ -13,6 +13,7 @@ import { useServerFn } from "@tanstack/react-start";
 import {
   Activity,
   Bell,
+  Building2,
   CalendarDays,
   ClipboardList,
   Gauge,
@@ -54,6 +55,7 @@ export function UserNav() {
       | "/integrations"
       | "/messages"
       | "/notifications"
+      | "/organizations"
       | "/profile-metrics"
       | "/scheduled-activities"
       | "/training-plans"
@@ -63,6 +65,7 @@ export function UserNav() {
   };
   const accountLinks: AccountLink[] = [
     { to: "/", label: "Dashboard", icon: Home },
+    { to: "/organizations", label: "Coaching organizations", icon: Building2 },
     { to: "/messages", label: "Messages", icon: MessageSquare },
     { to: "/notifications", label: "Notifications", icon: Bell },
     { to: "/activity-plans", label: "Activity plans", icon: ClipboardList },

@@ -67,6 +67,7 @@ describe("UI ownership guardrails", () => {
       "charts/simple-trend-chart.tsx",
       "coaching/coach-access-denied.tsx",
       "coaching/coach-shell.tsx",
+      "coaching/organization-selector.tsx",
       "discover/discovery-explorer.tsx",
       "feed/activity-feed.tsx",
       "forgot-password-form.tsx",

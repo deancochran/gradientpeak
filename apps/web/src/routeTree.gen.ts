@@ -36,6 +36,7 @@ import { Route as AuthSignUpSuccessRouteImport } from './routes/auth/sign-up-suc
 import { Route as AuthUpdatePasswordRouteImport } from './routes/auth/update-password'
 import { Route as AuthVerificationSuccessRouteImport } from './routes/auth/verification-success'
 import { Route as AuthVerifyRouteImport } from './routes/auth/verify'
+import { Route as CoachingOrganizationsIndexRouteImport } from './routes/_coaching/organizations/index'
 import { Route as CoachingOrganizationsOrganizationIdRouteImport } from './routes/_coaching/organizations/$organizationId'
 import { Route as ProtectedActivitiesIndexRouteImport } from './routes/_protected/activities/index'
 import { Route as ProtectedActivitiesImportRouteImport } from './routes/_protected/activities/import'
@@ -230,6 +231,12 @@ const AuthVerifyRoute = AuthVerifyRouteImport.update({
   path: '/auth/verify',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CoachingOrganizationsIndexRoute =
+  CoachingOrganizationsIndexRouteImport.update({
+    id: '/organizations/',
+    path: '/organizations/',
+    getParentRoute: () => CoachingRoute,
+  } as any)
 const CoachingOrganizationsOrganizationIdRoute =
   CoachingOrganizationsOrganizationIdRouteImport.update({
     id: '/organizations/$organizationId',
@@ -610,6 +617,7 @@ export interface FileRoutesByFullPath {
   '/share/activities/$activityId': typeof ShareActivitiesActivityIdRoute
   '/share/activity-plans/$activityPlanId': typeof ShareActivityPlansActivityPlanIdRoute
   '/share/training-plans/$trainingPlanId': typeof ShareTrainingPlansTrainingPlanIdRoute
+  '/organizations/': typeof CoachingOrganizationsIndexRoute
   '/activities/': typeof ProtectedActivitiesIndexRoute
   '/activity-efforts/': typeof ProtectedActivityEffortsIndexRoute
   '/activity-plans/': typeof ProtectedActivityPlansIndexRoute
@@ -690,6 +698,7 @@ export interface FileRoutesByTo {
   '/share/activities/$activityId': typeof ShareActivitiesActivityIdRoute
   '/share/activity-plans/$activityPlanId': typeof ShareActivityPlansActivityPlanIdRoute
   '/share/training-plans/$trainingPlanId': typeof ShareTrainingPlansTrainingPlanIdRoute
+  '/organizations': typeof CoachingOrganizationsIndexRoute
   '/activities': typeof ProtectedActivitiesIndexRoute
   '/activity-efforts': typeof ProtectedActivityEffortsIndexRoute
   '/activity-plans': typeof ProtectedActivityPlansIndexRoute
@@ -778,6 +787,7 @@ export interface FileRoutesById {
   '/share/activities/$activityId': typeof ShareActivitiesActivityIdRoute
   '/share/activity-plans/$activityPlanId': typeof ShareActivityPlansActivityPlanIdRoute
   '/share/training-plans/$trainingPlanId': typeof ShareTrainingPlansTrainingPlanIdRoute
+  '/_coaching/organizations/': typeof CoachingOrganizationsIndexRoute
   '/_protected/activities/': typeof ProtectedActivitiesIndexRoute
   '/_protected/activity-efforts/': typeof ProtectedActivityEffortsIndexRoute
   '/_protected/activity-plans/': typeof ProtectedActivityPlansIndexRoute
@@ -865,6 +875,7 @@ export interface FileRouteTypes {
     | '/share/activities/$activityId'
     | '/share/activity-plans/$activityPlanId'
     | '/share/training-plans/$trainingPlanId'
+    | '/organizations/'
     | '/activities/'
     | '/activity-efforts/'
     | '/activity-plans/'
@@ -945,6 +956,7 @@ export interface FileRouteTypes {
     | '/share/activities/$activityId'
     | '/share/activity-plans/$activityPlanId'
     | '/share/training-plans/$trainingPlanId'
+    | '/organizations'
     | '/activities'
     | '/activity-efforts'
     | '/activity-plans'
@@ -1032,6 +1044,7 @@ export interface FileRouteTypes {
     | '/share/activities/$activityId'
     | '/share/activity-plans/$activityPlanId'
     | '/share/training-plans/$trainingPlanId'
+    | '/_coaching/organizations/'
     | '/_protected/activities/'
     | '/_protected/activity-efforts/'
     | '/_protected/activity-plans/'
@@ -1290,6 +1303,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/auth/verify'
       preLoaderRoute: typeof AuthVerifyRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_coaching/organizations/': {
+      id: '/_coaching/organizations/'
+      path: '/organizations'
+      fullPath: '/organizations/'
+      preLoaderRoute: typeof CoachingOrganizationsIndexRouteImport
+      parentRoute: typeof CoachingRoute
     }
     '/_coaching/organizations/$organizationId': {
       id: '/_coaching/organizations/$organizationId'
@@ -1720,11 +1740,13 @@ const CoachingOrganizationsOrganizationIdRouteWithChildren =
 
 interface CoachingRouteChildren {
   CoachingOrganizationsOrganizationIdRoute: typeof CoachingOrganizationsOrganizationIdRouteWithChildren
+  CoachingOrganizationsIndexRoute: typeof CoachingOrganizationsIndexRoute
 }
 
 const CoachingRouteChildren: CoachingRouteChildren = {
   CoachingOrganizationsOrganizationIdRoute:
     CoachingOrganizationsOrganizationIdRouteWithChildren,
+  CoachingOrganizationsIndexRoute: CoachingOrganizationsIndexRoute,
 }
 
 const CoachingRouteWithChildren = CoachingRoute._addFileChildren(

@@ -10,7 +10,7 @@ import {
   SheetTrigger,
 } from "@repo/ui/components/sheet";
 import { Link, Outlet, useLocation } from "@tanstack/react-router";
-import { LayoutDashboard, Menu } from "lucide-react";
+import { Building2, LayoutDashboard, Menu } from "lucide-react";
 
 type CoachShellProps = {
   organization: {
@@ -57,6 +57,14 @@ export function CoachShell({ organization }: CoachShellProps) {
             >
               <LayoutDashboard className="h-4 w-4" />
               Dashboard
+            </Link>
+            <Link
+              to="/organizations"
+              aria-current={location.pathname === "/organizations" ? "page" : undefined}
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-slate-900 hover:text-white aria-[current=page]:bg-slate-800 aria-[current=page]:text-white"
+            >
+              <Building2 className="h-4 w-4" />
+              Organizations
             </Link>
           </nav>
           <Button
@@ -109,6 +117,15 @@ function CoachMobileNavigation({
             >
               <LayoutDashboard className="h-4 w-4" />
               Dashboard
+            </Link>
+          </SheetClose>
+          <SheetClose asChild>
+            <Link
+              to="/organizations"
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-900 hover:text-white"
+            >
+              <Building2 className="h-4 w-4" />
+              Organizations
             </Link>
           </SheetClose>
         </nav>

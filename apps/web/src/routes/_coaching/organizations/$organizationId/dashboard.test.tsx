@@ -20,6 +20,9 @@ describe("coach dashboard", () => {
     expect(screen.getByText("Profiles")).toBeTruthy();
     expect(screen.getByText("Weekly review")).toBeTruthy();
     expect(screen.getByText("Upcoming events")).toBeTruthy();
-    expect(screen.getByText(/scoped athlete consent are implemented and verified/)).toBeTruthy();
+    expect(
+      screen.getAllByText(/authorization\/RLS proves an effective coach role, exact assignment/),
+    ).toHaveLength(4);
+    expect(screen.getByText(/Calendar writes remain unavailable/)).toBeTruthy();
   });
 });

@@ -13,10 +13,13 @@ export function CoachAccessDenied() {
           </div>
           <h1 className="font-semibold leading-none tracking-tight">Coaching access required</h1>
           <CardDescription className="text-slate-400">
-            Your authenticated profile does not have an active coaching role in this organization.
+            This organization is not available for this coaching session.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-wrap gap-3">
+          <Button asChild className="bg-cyan-400 text-slate-950 hover:bg-cyan-300">
+            <Link to="/organizations">Choose an organization</Link>
+          </Button>
           <Button
             asChild
             variant="outline"
