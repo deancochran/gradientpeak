@@ -1,71 +1,123 @@
-import type { OrganizationCapabilityCheck } from "@repo/core/organizations";
-import {
-  organizationMembershipRoleGrants,
-  organizationMemberships,
-  organizationRolePermissionGrants,
-  organizationRoles,
-  organizations,
-} from "@repo/db";
+import { organizationMembershipRoleGrants, organizationMemberships, organizations } from "@repo/db";
 import type { DrizzleDbClient } from "@repo/db/client";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, lte, or, sql } from "drizzle-orm";
 
-export type OrganizationIdentity = {
-  id: string;
+export type OrganizationListCursor = {
   name: string;
   slug: string;
+  organizationId: string;
+};
+
+export type OrganizationMembershipContextRow = {
+  organizationId: string;
+  rootOwnerMembershipId: string;
+  name: string;
+  slug: string;
+  timezone: string;
+  organizationSuspendedAt: Date | null;
+  organizationClosedAt: Date | null;
+  organizationCreatedAt: Date;
+  organizationUpdatedAt: Date;
+  membershipId: string;
+  profileId: string;
+  membershipSuspendedAt: Date | null;
+  membershipEndedAt: Date | null;
+  roleKeys: string[];
 };
 
 export type OrganizationAccessRepository = {
-  findOrganizationWithCapability(
-    check: OrganizationCapabilityCheck,
-  ): Promise<OrganizationIdentity | null>;
+  listActiveMembershipContexts(input: {
+    profileId: string;
+    limit: number;
+    cursor: OrganizationListCursor | null;
+  }): Promise<OrganizationMembershipContextRow[]>;
+  findActiveMembershipContext(input: {
+    organizationId: string;
+    profileId: string;
+  }): Promise<OrganizationMembershipContextRow | null>;
 };
 
 export function createOrganizationAccessRepository(
   db: DrizzleDbClient,
 ): OrganizationAccessRepository {
-  return {
-    async findOrganizationWithCapability(check) {
-      const rows = await db
-        .select({
-          id: organizations.id,
-          name: organizations.name,
-          slug: organizations.slug,
-        })
-        .from(organizations)
-        .innerJoin(
-          organizationMemberships,
-          eq(organizationMemberships.organization_id, organizations.id),
-        )
-        .innerJoin(
-          organizationMembershipRoleGrants,
-          and(
-            eq(organizationMembershipRoleGrants.membership_id, organizationMemberships.id),
-            eq(organizationMembershipRoleGrants.organization_id, organizations.id),
-          ),
-        )
-        .innerJoin(
-          organizationRoles,
-          and(
-            eq(organizationRoles.id, organizationMembershipRoleGrants.role_id),
-            eq(organizationRoles.organization_id, organizations.id),
-          ),
-        )
-        .innerJoin(
-          organizationRolePermissionGrants,
-          eq(organizationRolePermissionGrants.role_id, organizationRoles.id),
-        )
-        .where(
-          and(
-            eq(organizations.id, check.organizationId),
-            eq(organizationMemberships.profile_id, check.profileId),
-            eq(organizationMemberships.status, "active"),
-            eq(organizationMembershipRoleGrants.status, "active"),
-            eq(organizationRolePermissionGrants.permission_key, check.permission),
-          ),
-        )
-        .limit(1);
+  const selectContext = (
+    profileId: string,
+    organizationId?: string,
+    cursor?: OrganizationListCursor | null,
+  ) =>
+    db
+      .select({
+        organizationId: organizations.id,
+        rootOwnerMembershipId: organizations.root_owner_membership_id,
+        name: organizations.name,
+        slug: organizations.slug,
+        timezone: organizations.timezone,
+        organizationSuspendedAt: organizations.suspended_at,
+        organizationClosedAt: organizations.closed_at,
+        organizationCreatedAt: organizations.created_at,
+        organizationUpdatedAt: organizations.updated_at,
+        membershipId: organizationMemberships.id,
+        profileId: organizationMemberships.profile_id,
+        membershipSuspendedAt: organizationMemberships.suspended_at,
+        membershipEndedAt: organizationMemberships.ended_at,
+        roleKeys: sql<string[]>`array_agg(${organizationMembershipRoleGrants.role_key})`,
+      })
+      .from(organizationMemberships)
+      .innerJoin(organizations, eq(organizations.id, organizationMemberships.organization_id))
+      .innerJoin(
+        organizationMembershipRoleGrants,
+        and(
+          eq(organizationMembershipRoleGrants.organization_id, organizations.id),
+          eq(organizationMembershipRoleGrants.membership_id, organizationMemberships.id),
+          lte(organizationMembershipRoleGrants.granted_at, sql`transaction_timestamp()`),
+          isNull(organizationMembershipRoleGrants.revoked_at),
+        ),
+      )
+      .where(
+        and(
+          eq(organizationMemberships.profile_id, profileId),
+          isNull(organizationMemberships.suspended_at),
+          isNull(organizationMemberships.ended_at),
+          isNull(organizations.suspended_at),
+          isNull(organizations.closed_at),
+          ...(organizationId === undefined ? [] : [eq(organizations.id, organizationId)]),
+          ...(cursor
+            ? [
+                or(
+                  gt(organizations.name, cursor.name),
+                  and(eq(organizations.name, cursor.name), gt(organizations.slug, cursor.slug)),
+                  and(
+                    eq(organizations.name, cursor.name),
+                    eq(organizations.slug, cursor.slug),
+                    gt(organizations.id, cursor.organizationId),
+                  ),
+                ),
+              ]
+            : []),
+        ),
+      )
+      .groupBy(
+        organizations.id,
+        organizations.root_owner_membership_id,
+        organizations.name,
+        organizations.slug,
+        organizations.timezone,
+        organizations.suspended_at,
+        organizations.closed_at,
+        organizations.created_at,
+        organizations.updated_at,
+        organizationMemberships.id,
+        organizationMemberships.profile_id,
+        organizationMemberships.suspended_at,
+        organizationMemberships.ended_at,
+      )
+      .orderBy(asc(organizations.name), asc(organizations.slug), asc(organizations.id));
 
+  return {
+    listActiveMembershipContexts: ({ profileId, limit, cursor }) =>
+      selectContext(profileId, undefined, cursor).limit(limit + 1),
+    async findActiveMembershipContext({ organizationId, profileId }) {
+      const rows = await selectContext(profileId, organizationId).limit(1);
       return rows[0] ?? null;
     },
   };
