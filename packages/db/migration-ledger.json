@@ -44,6 +44,24 @@
       "name": "add_group_event_route_delivery_resource_kind",
       "sha256": "f84b182cc546ad6f436983710be0d511a79d2699c73a0c3a5532a0742d7bac6e",
       "executionMode": "transactional"
+    },
+    {
+      "version": "20260729100000",
+      "name": "expand_coaching_governance",
+      "sha256": "a2e16746267203405063c5d856b5fa65b15ba3becfbb371dcf814ffc5567e3ac",
+      "executionMode": "transactional"
+    },
+    {
+      "version": "20260729100001",
+      "name": "enforce_coaching_foundation",
+      "sha256": "bef427aae5dc6c836e087dd264eb573036643d30d8bce3a3473d6073b50c1a1d",
+      "executionMode": "transactional"
+    },
+    {
+      "version": "20260729100002",
+      "name": "add_coaching_authority_fences",
+      "sha256": "4682b7719c70316b8a97e3f0696abc022b0b53c731b372eb787b15b295b10a93",
+      "executionMode": "transactional"
     }
   ]
 }

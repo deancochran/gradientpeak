@@ -10,7 +10,11 @@ import type {
   activityRoutes,
   activitySegments,
   activitySessionRpeEvidence,
+  athleteConsentPolicyVersions,
+  athleteDataSharingConsents,
   coachesAthletes,
+  coachingAssignments,
+  coachingEngagements,
   coachingInvitations,
   comments,
   contentAccessGrants,
@@ -32,6 +36,7 @@ import type {
   messages,
   notifications,
   oauthStates,
+  organizationAuditEvents,
   organizationMembershipRoleGrants,
   organizationMemberships,
   organizationPermissions,
@@ -82,6 +87,19 @@ export type OrganizationMembershipRoleGrantRow = InferSelectModel<
 export type OrganizationMembershipRoleGrantInsert = InferInsertModel<
   typeof organizationMembershipRoleGrants
 >;
+
+export type CoachingEngagementRow = InferSelectModel<typeof coachingEngagements>;
+export type CoachingEngagementInsert = InferInsertModel<typeof coachingEngagements>;
+export type CoachingAssignmentRow = InferSelectModel<typeof coachingAssignments>;
+export type CoachingAssignmentInsert = InferInsertModel<typeof coachingAssignments>;
+export type AthleteConsentPolicyVersionRow = InferSelectModel<typeof athleteConsentPolicyVersions>;
+export type AthleteConsentPolicyVersionInsert = InferInsertModel<
+  typeof athleteConsentPolicyVersions
+>;
+export type AthleteDataSharingConsentRow = InferSelectModel<typeof athleteDataSharingConsents>;
+export type AthleteDataSharingConsentInsert = InferInsertModel<typeof athleteDataSharingConsents>;
+export type OrganizationAuditEventRow = InferSelectModel<typeof organizationAuditEvents>;
+export type OrganizationAuditEventInsert = InferInsertModel<typeof organizationAuditEvents>;
 
 export type GroupInvitationRow = InferSelectModel<typeof groupInvitations>;
 export type GroupInvitationInsert = InferInsertModel<typeof groupInvitations>;

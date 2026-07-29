@@ -155,6 +155,18 @@
       "forceRls": false
     },
     {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "rls": true,
+      "name": "athlete_consent_policy_versions",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "rls": true,
+      "name": "athlete_data_sharing_consents",
+      "forceRls": false
+    },
+    {
       "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
       "rls": true,
       "name": "canonical_activity_categories",
@@ -164,6 +176,18 @@
       "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
       "rls": true,
       "name": "coaches_athletes",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "rls": true,
+      "name": "coaching_assignments",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "rls": true,
+      "name": "coaching_engagements",
       "forceRls": false
     },
     {
@@ -293,37 +317,43 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "rls": true,
+      "name": "organization_audit_events",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
       "rls": true,
       "name": "organization_membership_role_grants",
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
       "rls": true,
       "name": "organization_memberships",
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
       "rls": true,
       "name": "organization_permissions",
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
       "rls": true,
       "name": "organization_role_permission_grants",
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
       "rls": true,
       "name": "organization_roles",
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
       "rls": true,
       "name": "organizations",
       "forceRls": false
@@ -2523,6 +2553,196 @@
       "generated": ""
     },
     {
+      "name": "id",
+      "type": "uuid",
+      "table": "athlete_consent_policy_versions",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "scope_key",
+      "type": "text",
+      "table": "athlete_consent_policy_versions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "effective_from",
+      "type": "timestamp with time zone",
+      "table": "athlete_consent_policy_versions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "jurisdiction",
+      "type": "text",
+      "table": "athlete_consent_policy_versions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "terms_text",
+      "type": "text",
+      "table": "athlete_consent_policy_versions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "content_digest",
+      "type": "text",
+      "table": "athlete_consent_policy_versions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "supersedes_policy_version_id",
+      "type": "uuid",
+      "table": "athlete_consent_policy_versions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "athlete_consent_policy_versions",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "athlete_data_sharing_consents",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "organization_id",
+      "type": "uuid",
+      "table": "athlete_data_sharing_consents",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "engagement_id",
+      "type": "uuid",
+      "table": "athlete_data_sharing_consents",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "athlete_profile_id",
+      "type": "uuid",
+      "table": "athlete_data_sharing_consents",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "scope_key",
+      "type": "text",
+      "table": "athlete_data_sharing_consents",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "policy_version_id",
+      "type": "uuid",
+      "table": "athlete_data_sharing_consents",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "granted_by_profile_id",
+      "type": "uuid",
+      "table": "athlete_data_sharing_consents",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "granted_at",
+      "type": "timestamp with time zone",
+      "table": "athlete_data_sharing_consents",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "expires_at",
+      "type": "timestamp with time zone",
+      "table": "athlete_data_sharing_consents",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "ended_at",
+      "type": "timestamp with time zone",
+      "table": "athlete_data_sharing_consents",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "superseded_by_consent_id",
+      "type": "uuid",
+      "table": "athlete_data_sharing_consents",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 11,
+      "generated": ""
+    },
+    {
       "name": "code",
       "type": "text",
       "table": "canonical_activity_categories",
@@ -2600,6 +2820,146 @@
       "notNull": true,
       "identity": "",
       "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "coaching_assignments",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "organization_id",
+      "type": "uuid",
+      "table": "coaching_assignments",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "engagement_id",
+      "type": "uuid",
+      "table": "coaching_assignments",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "coach_membership_id",
+      "type": "uuid",
+      "table": "coaching_assignments",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "assignment_kind",
+      "type": "text",
+      "table": "coaching_assignments",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "assigned_at",
+      "type": "timestamp with time zone",
+      "table": "coaching_assignments",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "ended_at",
+      "type": "timestamp with time zone",
+      "table": "coaching_assignments",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "coaching_engagements",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "organization_id",
+      "type": "uuid",
+      "table": "coaching_engagements",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "athlete_profile_id",
+      "type": "uuid",
+      "table": "coaching_engagements",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "paused_at",
+      "type": "timestamp with time zone",
+      "table": "coaching_engagements",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "ended_at",
+      "type": "timestamp with time zone",
+      "table": "coaching_engagements",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "coaching_engagements",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "coaching_engagements",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
       "generated": ""
     },
     {
@@ -4523,6 +4883,106 @@
       "generated": ""
     },
     {
+      "name": "id",
+      "type": "uuid",
+      "table": "organization_audit_events",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "organization_id",
+      "type": "uuid",
+      "table": "organization_audit_events",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "actor_profile_id",
+      "type": "uuid",
+      "table": "organization_audit_events",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "actor_membership_id",
+      "type": "uuid",
+      "table": "organization_audit_events",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "action",
+      "type": "text",
+      "table": "organization_audit_events",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "resource_type",
+      "type": "text",
+      "table": "organization_audit_events",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "resource_id",
+      "type": "uuid",
+      "table": "organization_audit_events",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "occurred_at",
+      "type": "timestamp with time zone",
+      "table": "organization_audit_events",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "correlation_id",
+      "type": "uuid",
+      "table": "organization_audit_events",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "details",
+      "type": "jsonb",
+      "table": "organization_audit_events",
+      "default": "'{}'::jsonb",
+      "notNull": true,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
       "name": "organization_id",
       "type": "uuid",
       "table": "organization_membership_role_grants",
@@ -4547,7 +5007,7 @@
       "type": "uuid",
       "table": "organization_membership_role_grants",
       "default": "",
-      "notNull": true,
+      "notNull": false,
       "identity": "",
       "position": 3,
       "generated": ""
@@ -4556,8 +5016,8 @@
       "name": "status",
       "type": "text",
       "table": "organization_membership_role_grants",
-      "default": "'active'::text",
-      "notNull": true,
+      "default": "",
+      "notNull": false,
       "identity": "",
       "position": 4,
       "generated": ""
@@ -4580,6 +5040,46 @@
       "notNull": true,
       "identity": "",
       "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "organization_membership_role_grants",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "role_key",
+      "type": "text",
+      "table": "organization_membership_role_grants",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "granted_at",
+      "type": "timestamp with time zone",
+      "table": "organization_membership_role_grants",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "revoked_at",
+      "type": "timestamp with time zone",
+      "table": "organization_membership_role_grants",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 10,
       "generated": ""
     },
     {
@@ -4616,8 +5116,8 @@
       "name": "status",
       "type": "text",
       "table": "organization_memberships",
-      "default": "'active'::text",
-      "notNull": true,
+      "default": "",
+      "notNull": false,
       "identity": "",
       "position": 4,
       "generated": ""
@@ -4640,6 +5140,26 @@
       "notNull": true,
       "identity": "",
       "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "suspended_at",
+      "type": "timestamp with time zone",
+      "table": "organization_memberships",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "ended_at",
+      "type": "timestamp with time zone",
+      "table": "organization_memberships",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 8,
       "generated": ""
     },
     {
@@ -4820,6 +5340,46 @@
       "notNull": true,
       "identity": "",
       "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "root_owner_membership_id",
+      "type": "uuid",
+      "table": "organizations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "timezone",
+      "type": "text",
+      "table": "organizations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "suspended_at",
+      "type": "timestamp with time zone",
+      "table": "organizations",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "closed_at",
+      "type": "timestamp with time zone",
+      "table": "organizations",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 10,
       "generated": ""
     },
     {
@@ -6550,6 +7110,41 @@
       "definition": "CREATE INDEX idx_api_rate_limit_windows_expiry ON public.api_rate_limit_windows USING btree (expires_at)"
     },
     {
+      "name": "athlete_consent_policy_versions_id_scope_unique",
+      "table": "athlete_consent_policy_versions",
+      "definition": "CREATE UNIQUE INDEX athlete_consent_policy_versions_id_scope_unique ON public.athlete_consent_policy_versions USING btree (id, scope_key)"
+    },
+    {
+      "name": "athlete_consent_policy_versions_pkey",
+      "table": "athlete_consent_policy_versions",
+      "definition": "CREATE UNIQUE INDEX athlete_consent_policy_versions_pkey ON public.athlete_consent_policy_versions USING btree (id)"
+    },
+    {
+      "name": "athlete_data_sharing_consents_authority_identity_unique",
+      "table": "athlete_data_sharing_consents",
+      "definition": "CREATE UNIQUE INDEX athlete_data_sharing_consents_authority_identity_unique ON public.athlete_data_sharing_consents USING btree (organization_id, engagement_id, athlete_profile_id, scope_key, id)"
+    },
+    {
+      "name": "athlete_data_sharing_consents_current_unique",
+      "table": "athlete_data_sharing_consents",
+      "definition": "CREATE UNIQUE INDEX athlete_data_sharing_consents_current_unique ON public.athlete_data_sharing_consents USING btree (organization_id, engagement_id, athlete_profile_id, scope_key) WHERE (ended_at IS NULL)"
+    },
+    {
+      "name": "athlete_data_sharing_consents_pkey",
+      "table": "athlete_data_sharing_consents",
+      "definition": "CREATE UNIQUE INDEX athlete_data_sharing_consents_pkey ON public.athlete_data_sharing_consents USING btree (id)"
+    },
+    {
+      "name": "athlete_data_sharing_consents_policy_scope_idx",
+      "table": "athlete_data_sharing_consents",
+      "definition": "CREATE INDEX athlete_data_sharing_consents_policy_scope_idx ON public.athlete_data_sharing_consents USING btree (policy_version_id, scope_key)"
+    },
+    {
+      "name": "athlete_data_sharing_consents_successor_idx",
+      "table": "athlete_data_sharing_consents",
+      "definition": "CREATE INDEX athlete_data_sharing_consents_successor_idx ON public.athlete_data_sharing_consents USING btree (superseded_by_consent_id) WHERE (superseded_by_consent_id IS NOT NULL)"
+    },
+    {
       "name": "canonical_activity_categories_pkey",
       "table": "canonical_activity_categories",
       "definition": "CREATE UNIQUE INDEX canonical_activity_categories_pkey ON public.canonical_activity_categories USING btree (code)"
@@ -6573,6 +7168,51 @@
       "name": "idx_coaches_athletes_coach_id",
       "table": "coaches_athletes",
       "definition": "CREATE INDEX idx_coaches_athletes_coach_id ON public.coaches_athletes USING btree (coach_id)"
+    },
+    {
+      "name": "coaching_assignments_active_coach_membership_idx",
+      "table": "coaching_assignments",
+      "definition": "CREATE INDEX coaching_assignments_active_coach_membership_idx ON public.coaching_assignments USING btree (organization_id, coach_membership_id) WHERE (ended_at IS NULL)"
+    },
+    {
+      "name": "coaching_assignments_active_kind_unique",
+      "table": "coaching_assignments",
+      "definition": "CREATE UNIQUE INDEX coaching_assignments_active_kind_unique ON public.coaching_assignments USING btree (engagement_id, coach_membership_id, assignment_kind) WHERE (ended_at IS NULL)"
+    },
+    {
+      "name": "coaching_assignments_active_primary_unique",
+      "table": "coaching_assignments",
+      "definition": "CREATE UNIQUE INDEX coaching_assignments_active_primary_unique ON public.coaching_assignments USING btree (engagement_id) WHERE ((assignment_kind = 'primary'::text) AND (ended_at IS NULL))"
+    },
+    {
+      "name": "coaching_assignments_pkey",
+      "table": "coaching_assignments",
+      "definition": "CREATE UNIQUE INDEX coaching_assignments_pkey ON public.coaching_assignments USING btree (id)"
+    },
+    {
+      "name": "coaching_engagements_athlete_profile_organization_idx",
+      "table": "coaching_engagements",
+      "definition": "CREATE INDEX coaching_engagements_athlete_profile_organization_idx ON public.coaching_engagements USING btree (athlete_profile_id, organization_id)"
+    },
+    {
+      "name": "coaching_engagements_current_unique",
+      "table": "coaching_engagements",
+      "definition": "CREATE UNIQUE INDEX coaching_engagements_current_unique ON public.coaching_engagements USING btree (organization_id, athlete_profile_id) WHERE (ended_at IS NULL)"
+    },
+    {
+      "name": "coaching_engagements_organization_id_id_athlete_unique",
+      "table": "coaching_engagements",
+      "definition": "CREATE UNIQUE INDEX coaching_engagements_organization_id_id_athlete_unique ON public.coaching_engagements USING btree (organization_id, id, athlete_profile_id)"
+    },
+    {
+      "name": "coaching_engagements_organization_id_id_unique",
+      "table": "coaching_engagements",
+      "definition": "CREATE UNIQUE INDEX coaching_engagements_organization_id_id_unique ON public.coaching_engagements USING btree (organization_id, id)"
+    },
+    {
+      "name": "coaching_engagements_pkey",
+      "table": "coaching_engagements",
+      "definition": "CREATE UNIQUE INDEX coaching_engagements_pkey ON public.coaching_engagements USING btree (id)"
     },
     {
       "name": "coaching_invitations_athlete_coach_unique",
@@ -7010,19 +7650,54 @@
       "definition": "CREATE UNIQUE INDEX oauth_states_pkey ON public.oauth_states USING btree (id)"
     },
     {
+      "name": "organization_audit_events_actor_membership_idx",
+      "table": "organization_audit_events",
+      "definition": "CREATE INDEX organization_audit_events_actor_membership_idx ON public.organization_audit_events USING btree (organization_id, actor_membership_id) WHERE (actor_membership_id IS NOT NULL)"
+    },
+    {
+      "name": "organization_audit_events_correlation_action_unique",
+      "table": "organization_audit_events",
+      "definition": "CREATE UNIQUE INDEX organization_audit_events_correlation_action_unique ON public.organization_audit_events USING btree (organization_id, correlation_id, action) WHERE (correlation_id IS NOT NULL)"
+    },
+    {
+      "name": "organization_audit_events_organization_occurred_idx",
+      "table": "organization_audit_events",
+      "definition": "CREATE INDEX organization_audit_events_organization_occurred_idx ON public.organization_audit_events USING btree (organization_id, occurred_at)"
+    },
+    {
+      "name": "organization_audit_events_pkey",
+      "table": "organization_audit_events",
+      "definition": "CREATE UNIQUE INDEX organization_audit_events_pkey ON public.organization_audit_events USING btree (id)"
+    },
+    {
+      "name": "organization_membership_role_grants_active_unique",
+      "table": "organization_membership_role_grants",
+      "definition": "CREATE UNIQUE INDEX organization_membership_role_grants_active_unique ON public.organization_membership_role_grants USING btree (organization_id, membership_id, role_key) WHERE (revoked_at IS NULL)"
+    },
+    {
       "name": "organization_membership_role_grants_pkey",
       "table": "organization_membership_role_grants",
-      "definition": "CREATE UNIQUE INDEX organization_membership_role_grants_pkey ON public.organization_membership_role_grants USING btree (membership_id, role_id)"
+      "definition": "CREATE UNIQUE INDEX organization_membership_role_grants_pkey ON public.organization_membership_role_grants USING btree (id)"
     },
     {
-      "name": "organization_membership_role_grants_role_status_idx",
-      "table": "organization_membership_role_grants",
-      "definition": "CREATE INDEX organization_membership_role_grants_role_status_idx ON public.organization_membership_role_grants USING btree (role_id, status)"
-    },
-    {
-      "name": "organization_memberships_id_organization_unique",
+      "name": "organization_memberships_active_organization_idx",
       "table": "organization_memberships",
-      "definition": "CREATE UNIQUE INDEX organization_memberships_id_organization_unique ON public.organization_memberships USING btree (id, organization_id)"
+      "definition": "CREATE INDEX organization_memberships_active_organization_idx ON public.organization_memberships USING btree (organization_id, id) WHERE ((suspended_at IS NULL) AND (ended_at IS NULL))"
+    },
+    {
+      "name": "organization_memberships_active_profile_idx",
+      "table": "organization_memberships",
+      "definition": "CREATE INDEX organization_memberships_active_profile_idx ON public.organization_memberships USING btree (profile_id, organization_id) WHERE ((suspended_at IS NULL) AND (ended_at IS NULL))"
+    },
+    {
+      "name": "organization_memberships_organization_id_id_profile_unique",
+      "table": "organization_memberships",
+      "definition": "CREATE UNIQUE INDEX organization_memberships_organization_id_id_profile_unique ON public.organization_memberships USING btree (organization_id, id, profile_id)"
+    },
+    {
+      "name": "organization_memberships_organization_id_id_unique",
+      "table": "organization_memberships",
+      "definition": "CREATE UNIQUE INDEX organization_memberships_organization_id_id_unique ON public.organization_memberships USING btree (organization_id, id)"
     },
     {
       "name": "organization_memberships_organization_profile_unique",
@@ -7353,6 +8028,84 @@
       "table": "activity_session_rpe_evidence",
       "schema": "public",
       "definition": "CREATE TRIGGER activity_session_rpe_evidence_reject_update BEFORE UPDATE ON activity_session_rpe_evidence FOR EACH ROW EXECUTE FUNCTION reject_activity_session_rpe_evidence_mutation()"
+    },
+    {
+      "name": "athlete_consent_policy_versions_immutable",
+      "table": "athlete_consent_policy_versions",
+      "schema": "public",
+      "definition": "CREATE TRIGGER athlete_consent_policy_versions_immutable BEFORE DELETE OR UPDATE ON athlete_consent_policy_versions FOR EACH ROW EXECUTE FUNCTION prevent_policy_version_mutation()"
+    },
+    {
+      "name": "athlete_consent_policy_versions_supersession_guard",
+      "table": "athlete_consent_policy_versions",
+      "schema": "public",
+      "definition": "CREATE CONSTRAINT TRIGGER athlete_consent_policy_versions_supersession_guard AFTER INSERT ON athlete_consent_policy_versions DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_policy_supersession()"
+    },
+    {
+      "name": "athlete_data_sharing_consents_immutable",
+      "table": "athlete_data_sharing_consents",
+      "schema": "public",
+      "definition": "CREATE TRIGGER athlete_data_sharing_consents_immutable BEFORE DELETE OR UPDATE ON athlete_data_sharing_consents FOR EACH ROW EXECUTE FUNCTION prevent_consent_mutation()"
+    },
+    {
+      "name": "athlete_data_sharing_consents_supersession_guard",
+      "table": "athlete_data_sharing_consents",
+      "schema": "public",
+      "definition": "CREATE CONSTRAINT TRIGGER athlete_data_sharing_consents_supersession_guard AFTER INSERT OR UPDATE ON athlete_data_sharing_consents DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_consent_supersession()"
+    },
+    {
+      "name": "coaching_assignments_current_authority_guard",
+      "table": "coaching_assignments",
+      "schema": "public",
+      "definition": "CREATE CONSTRAINT TRIGGER coaching_assignments_current_authority_guard AFTER INSERT OR UPDATE ON coaching_assignments DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_current_coaching_assignment()"
+    },
+    {
+      "name": "coaching_assignments_retained",
+      "table": "coaching_assignments",
+      "schema": "public",
+      "definition": "CREATE TRIGGER coaching_assignments_retained BEFORE DELETE OR UPDATE ON coaching_assignments FOR EACH ROW EXECUTE FUNCTION prevent_coaching_assignment_mutation()"
+    },
+    {
+      "name": "coaching_engagements_retained",
+      "table": "coaching_engagements",
+      "schema": "public",
+      "definition": "CREATE TRIGGER coaching_engagements_retained BEFORE DELETE OR UPDATE ON coaching_engagements FOR EACH ROW EXECUTE FUNCTION prevent_coaching_engagement_mutation()"
+    },
+    {
+      "name": "organization_audit_events_append_only",
+      "table": "organization_audit_events",
+      "schema": "public",
+      "definition": "CREATE TRIGGER organization_audit_events_append_only BEFORE DELETE OR UPDATE ON organization_audit_events FOR EACH ROW EXECUTE FUNCTION prevent_organization_audit_event_mutation()"
+    },
+    {
+      "name": "grants_root_owner_guard",
+      "table": "organization_membership_role_grants",
+      "schema": "public",
+      "definition": "CREATE CONSTRAINT TRIGGER grants_root_owner_guard AFTER INSERT OR DELETE OR UPDATE ON organization_membership_role_grants DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_organization_root_owner()"
+    },
+    {
+      "name": "organization_membership_role_grants_revoke_only",
+      "table": "organization_membership_role_grants",
+      "schema": "public",
+      "definition": "CREATE TRIGGER organization_membership_role_grants_revoke_only BEFORE DELETE OR UPDATE ON organization_membership_role_grants FOR EACH ROW EXECUTE FUNCTION prevent_role_grant_mutation()"
+    },
+    {
+      "name": "memberships_root_owner_guard",
+      "table": "organization_memberships",
+      "schema": "public",
+      "definition": "CREATE CONSTRAINT TRIGGER memberships_root_owner_guard AFTER INSERT OR DELETE OR UPDATE ON organization_memberships DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_organization_root_owner()"
+    },
+    {
+      "name": "organizations_root_owner_guard",
+      "table": "organizations",
+      "schema": "public",
+      "definition": "CREATE CONSTRAINT TRIGGER organizations_root_owner_guard AFTER INSERT OR DELETE OR UPDATE ON organizations DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_organization_root_owner()"
+    },
+    {
+      "name": "organizations_root_owner_transfer_command_guard",
+      "table": "organizations",
+      "schema": "public",
+      "definition": "CREATE TRIGGER organizations_root_owner_transfer_command_guard BEFORE UPDATE OF root_owner_membership_id ON organizations FOR EACH ROW EXECUTE FUNCTION guard_organization_root_owner_transfer()"
     }
   ],
   "functions": [
@@ -7465,6 +8218,42 @@
       "securityDefiner": false
     },
     {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "close_organization(uuid,uuid,boolean,text,uuid)",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.close_organization(p_actor_profile_id uuid, p_organization_id uuid, p_recent_reauthentication_verified boolean, p_reason_code text, p_correlation_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  v_now timestamp with time zone := pg_catalog.transaction_timestamp();\n  v_organization public.organizations%ROWTYPE;\n  v_replay_count integer;\n  v_matching_replay_count integer;\n  v_revoked_grants integer;\n  v_ended_engagements integer;\n  v_ended_assignments integer;\n  v_ended_consents integer;\nBEGIN\n  IF p_recent_reauthentication_verified IS DISTINCT FROM true\n    OR p_correlation_id IS NULL\n    OR p_reason_code IS NULL\n    OR p_reason_code !~ '^[a-z0-9][a-z0-9_]{0,63}$' THEN\n    RAISE EXCEPTION 'reauthentication, a lowercase reason_code, and correlation_id are required';\n  END IF;\n\n  SELECT organization.*\n  INTO v_organization\n  FROM public.organizations AS organization\n  WHERE organization.id = p_organization_id\n  FOR UPDATE;\n\n  IF NOT FOUND THEN\n    RAISE EXCEPTION 'organization not found';\n  END IF;\n\n  SELECT\n    pg_catalog.count(*)::integer,\n    pg_catalog.count(*) FILTER (\n      WHERE audit.action = 'organization.closed'\n        AND audit.resource_id = p_organization_id\n        AND audit.actor_profile_id = p_actor_profile_id\n        AND audit.details ->> 'reason_code' = p_reason_code\n    )::integer\n  INTO v_replay_count, v_matching_replay_count\n  FROM public.organization_audit_events AS audit\n  WHERE audit.organization_id = p_organization_id\n    AND audit.correlation_id = p_correlation_id;\n\n  IF v_replay_count > 0 THEN\n    IF v_replay_count = 1 AND v_matching_replay_count = 1 THEN\n      RETURN;\n    END IF;\n    RAISE EXCEPTION 'correlation_id conflicts with another terminal request';\n  END IF;\n\n  IF v_organization.closed_at IS NOT NULL THEN\n    RAISE EXCEPTION 'organization is closed';\n  END IF;\n\n  IF NOT EXISTS (\n    SELECT 1\n    FROM public.organization_memberships AS root_membership\n    WHERE root_membership.organization_id = p_organization_id\n      AND root_membership.id = v_organization.root_owner_membership_id\n      AND root_membership.profile_id = p_actor_profile_id\n      AND root_membership.suspended_at IS NULL\n      AND root_membership.ended_at IS NULL\n    FOR UPDATE\n  ) THEN\n    RAISE EXCEPTION 'only the active root owner may close organization';\n  END IF;\n\n  UPDATE public.organizations\n  SET closed_at = v_now, suspended_at = NULL\n  WHERE id = p_organization_id;\n\n  UPDATE public.organization_membership_role_grants\n  SET revoked_at = v_now\n  WHERE organization_id = p_organization_id\n    AND revoked_at IS NULL;\n  GET DIAGNOSTICS v_revoked_grants = ROW_COUNT;\n\n  UPDATE public.coaching_engagements\n  SET ended_at = v_now, paused_at = NULL\n  WHERE organization_id = p_organization_id\n    AND ended_at IS NULL;\n  GET DIAGNOSTICS v_ended_engagements = ROW_COUNT;\n\n  UPDATE public.coaching_assignments\n  SET ended_at = v_now\n  WHERE organization_id = p_organization_id\n    AND ended_at IS NULL;\n  GET DIAGNOSTICS v_ended_assignments = ROW_COUNT;\n\n  UPDATE public.athlete_data_sharing_consents\n  SET ended_at = v_now\n  WHERE organization_id = p_organization_id\n    AND ended_at IS NULL;\n  GET DIAGNOSTICS v_ended_consents = ROW_COUNT;\n\n  -- Membership rows intentionally remain unchanged. The closed organization is\n  -- the authority fence; memberships retain historical identity/attribution.\n  INSERT INTO public.organization_audit_events (\n    organization_id,\n    actor_profile_id,\n    actor_membership_id,\n    action,\n    resource_type,\n    resource_id,\n    occurred_at,\n    correlation_id,\n    details\n  ) VALUES (\n    p_organization_id,\n    p_actor_profile_id,\n    v_organization.root_owner_membership_id,\n    'organization.closed',\n    'organization',\n    p_organization_id,\n    v_now,\n    p_correlation_id,\n    pg_catalog.jsonb_build_object(\n      'reason_code', p_reason_code,\n      'revoked_grants', v_revoked_grants,\n      'ended_engagements', v_ended_engagements,\n      'ended_assignments', v_ended_assignments,\n      'ended_consents', v_ended_consents\n    )\n  );\nEND\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": true
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "coaching_athlete_read_access_decision(uuid,uuid,uuid,text)",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.coaching_athlete_read_access_decision(p_actor_profile_id uuid, p_organization_id uuid, p_athlete_profile_id uuid, p_scope_key text)\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  v_now timestamp with time zone := pg_catalog.transaction_timestamp();\n  v_membership_id uuid;\n  v_membership_suspended_at timestamp with time zone;\n  v_membership_ended_at timestamp with time zone;\n  v_granted_at timestamp with time zone;\n  v_engagement_id uuid;\n  v_engagement_paused_at timestamp with time zone;\n  v_engagement_ended_at timestamp with time zone;\n  v_engagement_created_at timestamp with time zone;\n  v_assignment_id uuid;\n  v_consent_id uuid;\n  v_policy_version_id uuid;\n  v_consent_granted_at timestamp with time zone;\n  v_consent_expires_at timestamp with time zone;\n  v_consent_ended_at timestamp with time zone;\n  v_successor_consent_id uuid;\n  v_policy_effective_from timestamp with time zone;\nBEGIN\n  IF p_scope_key IS NULL OR p_scope_key NOT IN (\n    'basic_profile',\n    'training',\n    'activities',\n    'metrics',\n    'goals',\n    'calendar'\n  ) THEN\n    RAISE EXCEPTION USING\n      ERRCODE = '22023',\n      MESSAGE = 'invalid coaching athlete read scope';\n  END IF;\n\n  -- FOR SHARE conflicts with ordinary lifecycle UPDATE. Every writer below first\n  -- takes this organization row FOR UPDATE, so authorization and a future\n  -- projection read can remain in one linearized transaction.\n  PERFORM 1\n  FROM public.organizations AS organization\n  WHERE organization.id = p_organization_id\n    AND organization.suspended_at IS NULL\n    AND organization.closed_at IS NULL\n  FOR SHARE;\n\n  IF NOT FOUND THEN\n    RETURN 'organization_not_active';\n  END IF;\n\n  SELECT\n    membership.id,\n    membership.suspended_at,\n    membership.ended_at\n  INTO\n    v_membership_id,\n    v_membership_suspended_at,\n    v_membership_ended_at\n  FROM public.organization_memberships AS membership\n  WHERE membership.organization_id = p_organization_id\n    AND membership.profile_id = p_actor_profile_id\n  FOR SHARE;\n\n  IF v_membership_id IS NULL\n    OR v_membership_suspended_at IS NOT NULL\n    OR v_membership_ended_at IS NOT NULL THEN\n    RETURN 'membership_not_active';\n  END IF;\n\n  SELECT grant_row.granted_at\n  INTO v_granted_at\n  FROM public.organization_membership_role_grants AS grant_row\n  WHERE grant_row.organization_id = p_organization_id\n    AND grant_row.membership_id = v_membership_id\n    AND grant_row.role_key = 'coach'\n    AND grant_row.revoked_at IS NULL\n  ORDER BY grant_row.granted_at DESC, grant_row.id DESC\n  LIMIT 1\n  FOR SHARE;\n\n  IF v_granted_at IS NULL OR v_granted_at > v_now THEN\n    RETURN 'missing_coach_role';\n  END IF;\n\n  SELECT\n    engagement.id,\n    engagement.paused_at,\n    engagement.ended_at,\n    engagement.created_at\n  INTO\n    v_engagement_id,\n    v_engagement_paused_at,\n    v_engagement_ended_at,\n    v_engagement_created_at\n  FROM public.coaching_engagements AS engagement\n  WHERE engagement.organization_id = p_organization_id\n    AND engagement.athlete_profile_id = p_athlete_profile_id\n  ORDER BY\n    (engagement.ended_at IS NULL) DESC,\n    engagement.created_at DESC,\n    engagement.id DESC\n  LIMIT 1\n  FOR SHARE;\n\n  IF v_engagement_id IS NULL\n    OR v_engagement_paused_at IS NOT NULL\n    OR v_engagement_ended_at IS NOT NULL\n    OR v_engagement_created_at > v_now THEN\n    RETURN 'engagement_not_active';\n  END IF;\n\n  SELECT assignment.id\n  INTO v_assignment_id\n  FROM public.coaching_assignments AS assignment\n  WHERE assignment.organization_id = p_organization_id\n    AND assignment.engagement_id = v_engagement_id\n    AND assignment.coach_membership_id = v_membership_id\n    AND assignment.ended_at IS NULL\n    AND assignment.assigned_at <= v_now\n  ORDER BY assignment.assigned_at DESC, assignment.id DESC\n  LIMIT 1\n  FOR SHARE;\n\n  IF v_assignment_id IS NULL THEN\n    RETURN 'assignment_missing';\n  END IF;\n\n  SELECT\n    consent.id,\n    consent.policy_version_id,\n    consent.granted_at,\n    consent.expires_at,\n    consent.ended_at,\n    consent.superseded_by_consent_id\n  INTO\n    v_consent_id,\n    v_policy_version_id,\n    v_consent_granted_at,\n    v_consent_expires_at,\n    v_consent_ended_at,\n    v_successor_consent_id\n  FROM public.athlete_data_sharing_consents AS consent\n  WHERE consent.organization_id = p_organization_id\n    AND consent.engagement_id = v_engagement_id\n    AND consent.athlete_profile_id = p_athlete_profile_id\n    AND consent.scope_key = p_scope_key\n  ORDER BY\n    (consent.ended_at IS NULL) DESC,\n    consent.granted_at DESC,\n    consent.id DESC\n  LIMIT 1\n  FOR SHARE;\n\n  IF v_consent_id IS NULL THEN\n    RETURN 'consent_missing';\n  END IF;\n\n  IF v_consent_ended_at IS NOT NULL OR v_successor_consent_id IS NOT NULL THEN\n    RETURN 'consent_ended';\n  END IF;\n\n  IF v_consent_granted_at > v_now THEN\n    RETURN 'consent_missing';\n  END IF;\n\n  IF v_consent_expires_at IS NOT NULL AND v_consent_expires_at <= v_now THEN\n    RETURN 'consent_expired';\n  END IF;\n\n  SELECT policy.effective_from\n  INTO v_policy_effective_from\n  FROM public.athlete_consent_policy_versions AS policy\n  WHERE policy.id = v_policy_version_id\n    AND policy.scope_key = p_scope_key;\n\n  IF v_policy_effective_from IS NULL OR v_policy_effective_from > v_now THEN\n    RETURN 'consent_policy_not_effective';\n  END IF;\n\n  RETURN 'allow';\nEND\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": true
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "end_coaching_engagement(uuid,uuid,uuid,text,uuid)",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.end_coaching_engagement(p_actor_profile_id uuid, p_organization_id uuid, p_engagement_id uuid, p_reason_code text, p_correlation_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  v_now timestamp with time zone := pg_catalog.transaction_timestamp();\n  v_organization public.organizations%ROWTYPE;\n  v_actor_membership_id uuid;\n  v_engagement public.coaching_engagements%ROWTYPE;\n  v_replay_count integer;\n  v_matching_replay_count integer;\n  v_ended_assignments integer;\n  v_ended_consents integer;\nBEGIN\n  IF p_correlation_id IS NULL\n    OR p_reason_code IS NULL\n    OR p_reason_code !~ '^[a-z0-9][a-z0-9_]{0,63}$' THEN\n    RAISE EXCEPTION 'a lowercase reason_code and correlation_id are required';\n  END IF;\n\n  SELECT organization.*\n  INTO v_organization\n  FROM public.organizations AS organization\n  WHERE organization.id = p_organization_id\n  FOR UPDATE;\n\n  IF NOT FOUND THEN\n    RAISE EXCEPTION 'organization not found';\n  END IF;\n\n  SELECT\n    pg_catalog.count(*)::integer,\n    pg_catalog.count(*) FILTER (\n      WHERE audit.action = 'coaching.engagement_ended'\n        AND audit.resource_id = p_engagement_id\n        AND audit.actor_profile_id = p_actor_profile_id\n        AND audit.details ->> 'reason_code' = p_reason_code\n    )::integer\n  INTO v_replay_count, v_matching_replay_count\n  FROM public.organization_audit_events AS audit\n  WHERE audit.organization_id = p_organization_id\n    AND audit.correlation_id = p_correlation_id;\n\n  IF v_replay_count > 0 THEN\n    IF v_replay_count = 1 AND v_matching_replay_count = 1 THEN\n      RETURN;\n    END IF;\n    RAISE EXCEPTION 'correlation_id conflicts with another terminal request';\n  END IF;\n\n  IF v_organization.closed_at IS NOT NULL THEN\n    RAISE EXCEPTION 'organization is closed';\n  END IF;\n\n  SELECT membership.id\n  INTO v_actor_membership_id\n  FROM public.organization_memberships AS membership\n  WHERE membership.organization_id = p_organization_id\n    AND membership.profile_id = p_actor_profile_id\n    AND membership.suspended_at IS NULL\n    AND membership.ended_at IS NULL\n  FOR UPDATE;\n\n  SELECT engagement.*\n  INTO v_engagement\n  FROM public.coaching_engagements AS engagement\n  WHERE engagement.organization_id = p_organization_id\n    AND engagement.id = p_engagement_id\n  FOR UPDATE;\n\n  IF NOT FOUND THEN\n    RAISE EXCEPTION 'engagement not found';\n  END IF;\n\n  IF p_actor_profile_id <> v_engagement.athlete_profile_id\n    AND v_actor_membership_id IS DISTINCT FROM v_organization.root_owner_membership_id\n    AND NOT EXISTS (\n      SELECT 1\n      FROM public.organization_membership_role_grants AS grant_row\n      WHERE grant_row.organization_id = p_organization_id\n        AND grant_row.membership_id = v_actor_membership_id\n        AND grant_row.role_key = 'admin'\n        AND grant_row.granted_at <= v_now\n        AND grant_row.revoked_at IS NULL\n    ) THEN\n    RAISE EXCEPTION 'actor lacks engagement-end authority';\n  END IF;\n\n  IF v_engagement.ended_at IS NOT NULL THEN\n    RETURN;\n  END IF;\n\n  UPDATE public.coaching_engagements\n  SET ended_at = v_now, paused_at = NULL\n  WHERE organization_id = p_organization_id\n    AND id = p_engagement_id;\n\n  UPDATE public.coaching_assignments\n  SET ended_at = v_now\n  WHERE organization_id = p_organization_id\n    AND engagement_id = p_engagement_id\n    AND ended_at IS NULL;\n  GET DIAGNOSTICS v_ended_assignments = ROW_COUNT;\n\n  UPDATE public.athlete_data_sharing_consents\n  SET ended_at = v_now\n  WHERE organization_id = p_organization_id\n    AND engagement_id = p_engagement_id\n    AND ended_at IS NULL;\n  GET DIAGNOSTICS v_ended_consents = ROW_COUNT;\n\n  INSERT INTO public.organization_audit_events (\n    organization_id,\n    actor_profile_id,\n    actor_membership_id,\n    action,\n    resource_type,\n    resource_id,\n    occurred_at,\n    correlation_id,\n    details\n  ) VALUES (\n    p_organization_id,\n    p_actor_profile_id,\n    v_actor_membership_id,\n    'coaching.engagement_ended',\n    'coaching_engagement',\n    p_engagement_id,\n    v_now,\n    p_correlation_id,\n    pg_catalog.jsonb_build_object(\n      'reason_code', p_reason_code,\n      'ended_assignments', v_ended_assignments,\n      'ended_consents', v_ended_consents\n    )\n  );\nEND\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": true
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "end_organization_membership(uuid,uuid,uuid,text,uuid)",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.end_organization_membership(p_actor_profile_id uuid, p_organization_id uuid, p_membership_id uuid, p_reason_code text, p_correlation_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  v_now timestamp with time zone := pg_catalog.transaction_timestamp();\n  v_organization public.organizations%ROWTYPE;\n  v_actor_membership_id uuid;\n  v_target_membership public.organization_memberships%ROWTYPE;\n  v_replay_count integer;\n  v_matching_replay_count integer;\n  v_revoked_grants integer;\n  v_ended_assignments integer;\nBEGIN\n  IF p_correlation_id IS NULL\n    OR p_reason_code IS NULL\n    OR p_reason_code !~ '^[a-z0-9][a-z0-9_]{0,63}$' THEN\n    RAISE EXCEPTION 'a lowercase reason_code and correlation_id are required';\n  END IF;\n\n  SELECT organization.*\n  INTO v_organization\n  FROM public.organizations AS organization\n  WHERE organization.id = p_organization_id\n  FOR UPDATE;\n\n  IF NOT FOUND THEN\n    RAISE EXCEPTION 'organization not found';\n  END IF;\n\n  SELECT\n    pg_catalog.count(*)::integer,\n    pg_catalog.count(*) FILTER (\n      WHERE audit.action = 'organization.membership_ended'\n        AND audit.resource_id = p_membership_id\n        AND audit.actor_profile_id = p_actor_profile_id\n        AND audit.details ->> 'reason_code' = p_reason_code\n    )::integer\n  INTO v_replay_count, v_matching_replay_count\n  FROM public.organization_audit_events AS audit\n  WHERE audit.organization_id = p_organization_id\n    AND audit.correlation_id = p_correlation_id;\n\n  IF v_replay_count > 0 THEN\n    IF v_replay_count = 1 AND v_matching_replay_count = 1 THEN\n      RETURN;\n    END IF;\n    RAISE EXCEPTION 'correlation_id conflicts with another terminal request';\n  END IF;\n\n  IF v_organization.suspended_at IS NOT NULL OR v_organization.closed_at IS NOT NULL THEN\n    RAISE EXCEPTION 'organization is not active';\n  END IF;\n\n  SELECT membership.id\n  INTO v_actor_membership_id\n  FROM public.organization_memberships AS membership\n  WHERE membership.organization_id = p_organization_id\n    AND membership.profile_id = p_actor_profile_id\n    AND membership.suspended_at IS NULL\n    AND membership.ended_at IS NULL\n  FOR UPDATE;\n\n  IF v_actor_membership_id IS NULL THEN\n    RAISE EXCEPTION 'actor membership is not active';\n  END IF;\n\n  SELECT membership.*\n  INTO v_target_membership\n  FROM public.organization_memberships AS membership\n  WHERE membership.organization_id = p_organization_id\n    AND membership.id = p_membership_id\n  FOR UPDATE;\n\n  IF NOT FOUND THEN\n    RAISE EXCEPTION 'membership not found';\n  END IF;\n\n  IF v_actor_membership_id = p_membership_id\n    OR v_organization.root_owner_membership_id = p_membership_id THEN\n    RAISE EXCEPTION 'target membership cannot be ended';\n  END IF;\n\n  IF v_actor_membership_id <> v_organization.root_owner_membership_id THEN\n    IF NOT EXISTS (\n      SELECT 1\n      FROM public.organization_membership_role_grants AS actor_grant\n      WHERE actor_grant.organization_id = p_organization_id\n        AND actor_grant.membership_id = v_actor_membership_id\n        AND actor_grant.role_key = 'admin'\n        AND actor_grant.granted_at <= v_now\n        AND actor_grant.revoked_at IS NULL\n    ) OR EXISTS (\n      SELECT 1\n      FROM public.organization_membership_role_grants AS target_grant\n      WHERE target_grant.organization_id = p_organization_id\n        AND target_grant.membership_id = p_membership_id\n        AND target_grant.role_key = 'admin'\n        AND target_grant.granted_at <= v_now\n        AND target_grant.revoked_at IS NULL\n    ) THEN\n      RAISE EXCEPTION 'actor lacks membership-end authority';\n    END IF;\n  END IF;\n\n  IF v_target_membership.ended_at IS NOT NULL THEN\n    RETURN;\n  END IF;\n\n  UPDATE public.organization_memberships\n  SET ended_at = v_now, suspended_at = NULL\n  WHERE organization_id = p_organization_id\n    AND id = p_membership_id;\n\n  UPDATE public.organization_membership_role_grants\n  SET revoked_at = v_now\n  WHERE organization_id = p_organization_id\n    AND membership_id = p_membership_id\n    AND revoked_at IS NULL;\n  GET DIAGNOSTICS v_revoked_grants = ROW_COUNT;\n\n  UPDATE public.coaching_assignments\n  SET ended_at = v_now\n  WHERE organization_id = p_organization_id\n    AND coach_membership_id = p_membership_id\n    AND ended_at IS NULL;\n  GET DIAGNOSTICS v_ended_assignments = ROW_COUNT;\n\n  INSERT INTO public.organization_audit_events (\n    organization_id,\n    actor_profile_id,\n    actor_membership_id,\n    action,\n    resource_type,\n    resource_id,\n    occurred_at,\n    correlation_id,\n    details\n  ) VALUES (\n    p_organization_id,\n    p_actor_profile_id,\n    v_actor_membership_id,\n    'organization.membership_ended',\n    'organization_membership',\n    p_membership_id,\n    v_now,\n    p_correlation_id,\n    pg_catalog.jsonb_build_object(\n      'reason_code', p_reason_code,\n      'revoked_grants', v_revoked_grants,\n      'ended_assignments', v_ended_assignments\n    )\n  );\nEND\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": true
+    },
+    {
       "acl": "",
       "config": ["search_path=\"\""],
       "identity": "enforce_activity_artifact_immutable()",
@@ -7483,6 +8272,15 @@
       "securityDefiner": true
     },
     {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "guard_organization_root_owner_transfer()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_organization_root_owner_transfer()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  v_expected_guard text;\n  v_transfer_owner name;\nBEGIN\n  IF NEW.root_owner_membership_id IS NOT DISTINCT FROM OLD.root_owner_membership_id THEN\n    RETURN NEW;\n  END IF;\n\n  v_expected_guard := pg_catalog.format(\n    '%s:%s:%s',\n    NEW.id,\n    OLD.root_owner_membership_id,\n    NEW.root_owner_membership_id\n  );\n  SELECT pg_catalog.pg_get_userbyid(procedure.proowner)\n  INTO v_transfer_owner\n  FROM pg_catalog.pg_proc AS procedure\n  WHERE procedure.oid = pg_catalog.to_regprocedure(\n    'public.transfer_organization_root_ownership(uuid,uuid,uuid,boolean,text,uuid)'\n  );\n  IF CURRENT_USER IS DISTINCT FROM v_transfer_owner\n    OR pg_catalog.current_setting('gradientpeak.coaching_root_transfer_guard', true)\n      IS DISTINCT FROM v_expected_guard THEN\n    RAISE EXCEPTION 'root ownership may change only through the guarded transfer command';\n  END IF;\n\n  PERFORM pg_catalog.set_config('gradientpeak.coaching_root_transfer_guard', '', true);\n  RETURN NEW;\nEND\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
       "acl": "{postgres=X/postgres,service_role=X/postgres}",
       "config": ["search_path=\"\""],
       "identity": "handle_new_user()",
@@ -7490,6 +8288,60 @@
       "definition": "CREATE OR REPLACE FUNCTION public.handle_new_user()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n    full_name text;\n    user_email text;\n    base_username text;\n    unique_suffix text;\n    final_username text;\nbegin\n    full_name := nullif(btrim(coalesce(\n        new.raw_user_meta_data->>'full_name',\n        new.raw_user_meta_data->>'name',\n        concat_ws(' ',\n            new.raw_user_meta_data->>'first_name',\n            new.raw_user_meta_data->>'last_name'\n        )\n    )), '');\n\n    user_email := coalesce(\n        nullif(new.email, ''),\n        nullif(new.raw_user_meta_data->>'email', ''),\n        new.id::text || '@users.local'\n    );\n\n    base_username := coalesce(\n        nullif(concat_ws('',\n            new.raw_user_meta_data->>'first_name',\n            new.raw_user_meta_data->>'last_name'\n        ), ''),\n        split_part(user_email, '@', 1),\n        'user'\n    );\n\n    unique_suffix := substring(replace(new.id::text, '-', '') from 1 for 6);\n    final_username := left(base_username || unique_suffix, 50);\n\n    insert into public.users (id, name, email, email_verified, image)\n    values (\n        new.id,\n        coalesce(full_name, split_part(user_email, '@', 1), 'User'),\n        user_email,\n        coalesce(new.email_confirmed_at is not null, false),\n        new.raw_user_meta_data->>'avatar_url'\n    )\n    on conflict (id) do update\n    set\n        name = coalesce(public.users.name, excluded.name),\n        email = coalesce(public.users.email, excluded.email),\n        image = coalesce(public.users.image, excluded.image),\n        updated_at = now();\n\n    insert into public.profiles (id, email, full_name, username, avatar_url)\n    values (\n        new.id,\n        new.email,\n        full_name,\n        final_username,\n        new.raw_user_meta_data->>'avatar_url'\n    )\n    on conflict (id) do update\n    set\n        email = coalesce(public.profiles.email, excluded.email),\n        full_name = coalesce(public.profiles.full_name, excluded.full_name),\n        username = coalesce(public.profiles.username, excluded.username),\n        avatar_url = coalesce(public.profiles.avatar_url, excluded.avatar_url),\n        updated_at = now();\n\n    return new;\nend;\n$function$\n",
       "volatility": "v",
       "securityDefiner": true
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "prevent_coaching_assignment_mutation()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_coaching_assignment_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN\n  IF TG_OP = 'DELETE' THEN\n    RAISE EXCEPTION 'coaching assignments are retained and cannot be deleted';\n  END IF;\n  IF NEW.id IS DISTINCT FROM OLD.id\n     OR NEW.organization_id IS DISTINCT FROM OLD.organization_id\n     OR NEW.engagement_id IS DISTINCT FROM OLD.engagement_id\n     OR NEW.coach_membership_id IS DISTINCT FROM OLD.coach_membership_id\n     OR NEW.assignment_kind IS DISTINCT FROM OLD.assignment_kind\n     OR NEW.assigned_at IS DISTINCT FROM OLD.assigned_at\n     OR OLD.ended_at IS NOT NULL\n     OR NEW.ended_at IS NULL THEN\n    RAISE EXCEPTION 'coaching assignments may only transition once from active to ended';\n  END IF;\n  RETURN NEW;\nEND $function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "prevent_coaching_engagement_mutation()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_coaching_engagement_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN\n  IF TG_OP = 'DELETE' THEN\n    RAISE EXCEPTION 'accepted coaching engagements are retained and cannot be deleted';\n  END IF;\n  IF NEW.id IS DISTINCT FROM OLD.id\n     OR NEW.organization_id IS DISTINCT FROM OLD.organization_id\n     OR NEW.athlete_profile_id IS DISTINCT FROM OLD.athlete_profile_id\n     OR NEW.created_at IS DISTINCT FROM OLD.created_at\n     OR (OLD.ended_at IS NOT NULL AND NEW.ended_at IS DISTINCT FROM OLD.ended_at) THEN\n    RAISE EXCEPTION 'coaching engagement identity and terminal end facts are immutable';\n  END IF;\n  RETURN NEW;\nEND $function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "prevent_consent_mutation()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_consent_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN\n  IF TG_OP = 'DELETE' THEN\n    RAISE EXCEPTION 'athlete data sharing consents are retained and cannot be deleted';\n  END IF;\n  IF NEW.id IS DISTINCT FROM OLD.id\n     OR NEW.organization_id IS DISTINCT FROM OLD.organization_id\n     OR NEW.engagement_id IS DISTINCT FROM OLD.engagement_id\n     OR NEW.athlete_profile_id IS DISTINCT FROM OLD.athlete_profile_id\n     OR NEW.scope_key IS DISTINCT FROM OLD.scope_key\n     OR NEW.policy_version_id IS DISTINCT FROM OLD.policy_version_id\n     OR NEW.granted_by_profile_id IS DISTINCT FROM OLD.granted_by_profile_id\n     OR NEW.granted_at IS DISTINCT FROM OLD.granted_at\n     OR NEW.expires_at IS DISTINCT FROM OLD.expires_at\n     OR (OLD.ended_at IS NOT NULL AND NEW.ended_at IS DISTINCT FROM OLD.ended_at)\n     OR (OLD.superseded_by_consent_id IS NOT NULL AND NEW.superseded_by_consent_id IS DISTINCT FROM OLD.superseded_by_consent_id) THEN\n    RAISE EXCEPTION 'consent authority identity and grant facts are immutable';\n  END IF;\n  RETURN NEW;\nEND $function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "prevent_organization_audit_event_mutation()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_organization_audit_event_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN\n  RAISE EXCEPTION 'organization audit events are append-only';\nEND $function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "prevent_policy_version_mutation()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_policy_version_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN\n  RAISE EXCEPTION 'athlete consent policy versions are immutable';\nEND $function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "prevent_role_grant_mutation()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_role_grant_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN\n  IF TG_OP = 'DELETE' THEN\n    RAISE EXCEPTION 'role grants are retained and may only be revoked';\n  END IF;\n  IF NEW.id IS DISTINCT FROM OLD.id\n     OR NEW.organization_id IS DISTINCT FROM OLD.organization_id\n     OR NEW.membership_id IS DISTINCT FROM OLD.membership_id\n     OR NEW.role_id IS DISTINCT FROM OLD.role_id\n     OR NEW.status IS DISTINCT FROM OLD.status\n     OR NEW.role_key IS DISTINCT FROM OLD.role_key\n     OR NEW.granted_at IS DISTINCT FROM OLD.granted_at\n     OR NEW.created_at IS DISTINCT FROM OLD.created_at\n     OR NEW.updated_at IS DISTINCT FROM OLD.updated_at\n     OR OLD.revoked_at IS NOT NULL\n     OR NEW.revoked_at IS NULL THEN\n    RAISE EXCEPTION 'role grants may only transition once from active to revoked';\n  END IF;\n  RETURN NEW;\nEND $function$\n",
+      "volatility": "v",
+      "securityDefiner": false
     },
     {
       "acl": "{postgres=X/postgres,service_role=X/postgres}",
@@ -7528,6 +8380,15 @@
       "securityDefiner": true
     },
     {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "transfer_organization_root_ownership(uuid,uuid,uuid,boolean,text,uuid)",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.transfer_organization_root_ownership(p_actor_profile_id uuid, p_organization_id uuid, p_target_membership_id uuid, p_recent_reauthentication_verified boolean, p_reason_code text, p_correlation_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  v_now timestamp with time zone := pg_catalog.transaction_timestamp();\n  v_organization public.organizations%ROWTYPE;\n  v_target_profile_id uuid;\n  v_replay_count integer;\n  v_matching_replay_count integer;\nBEGIN\n  IF p_recent_reauthentication_verified IS DISTINCT FROM true\n    OR p_target_membership_id IS NULL\n    OR p_correlation_id IS NULL\n    OR p_reason_code IS NULL\n    OR p_reason_code !~ '^[a-z0-9][a-z0-9_]{0,63}$' THEN\n    RAISE EXCEPTION 'reauthentication, a target membership, lowercase reason_code, and correlation_id are required';\n  END IF;\n\n  SELECT organization.*\n  INTO v_organization\n  FROM public.organizations AS organization\n  WHERE organization.id = p_organization_id\n  FOR UPDATE;\n\n  IF NOT FOUND THEN\n    RAISE EXCEPTION 'organization not found';\n  END IF;\n\n  SELECT\n    pg_catalog.count(*)::integer,\n    pg_catalog.count(*) FILTER (\n      WHERE audit.action = 'organization.root_ownership_transferred'\n        AND audit.resource_id = p_target_membership_id\n        AND audit.actor_profile_id = p_actor_profile_id\n        AND audit.details ->> 'reason_code' = p_reason_code\n    )::integer\n  INTO v_replay_count, v_matching_replay_count\n  FROM public.organization_audit_events AS audit\n  WHERE audit.organization_id = p_organization_id\n    AND audit.correlation_id = p_correlation_id;\n\n  IF v_replay_count > 0 THEN\n    IF v_replay_count = 1 AND v_matching_replay_count = 1 THEN\n      RETURN;\n    END IF;\n    RAISE EXCEPTION 'correlation_id conflicts with another root transfer request';\n  END IF;\n\n  IF v_organization.closed_at IS NOT NULL THEN\n    RAISE EXCEPTION 'organization is closed';\n  END IF;\n\n  IF v_organization.root_owner_membership_id = p_target_membership_id THEN\n    RAISE EXCEPTION 'target membership is already the root owner';\n  END IF;\n\n  IF NOT EXISTS (\n    SELECT 1\n    FROM public.organization_memberships AS root_membership\n    WHERE root_membership.organization_id = p_organization_id\n      AND root_membership.id = v_organization.root_owner_membership_id\n      AND root_membership.profile_id = p_actor_profile_id\n      AND root_membership.suspended_at IS NULL\n      AND root_membership.ended_at IS NULL\n    FOR UPDATE\n  ) THEN\n    RAISE EXCEPTION 'only the active root owner may transfer organization ownership';\n  END IF;\n\n  SELECT target_membership.profile_id\n  INTO v_target_profile_id\n  FROM public.organization_memberships AS target_membership\n  WHERE target_membership.organization_id = p_organization_id\n    AND target_membership.id = p_target_membership_id\n    AND target_membership.suspended_at IS NULL\n    AND target_membership.ended_at IS NULL\n  FOR UPDATE;\n\n  IF NOT FOUND THEN\n    RAISE EXCEPTION 'target root-owner membership is not active in organization';\n  END IF;\n\n  PERFORM 1\n  FROM public.organization_membership_role_grants AS grant_row\n  WHERE grant_row.organization_id = p_organization_id\n    AND grant_row.membership_id = p_target_membership_id\n    AND grant_row.role_key = 'admin'\n    AND grant_row.granted_at <= v_now\n    AND grant_row.revoked_at IS NULL\n  FOR SHARE;\n\n  IF NOT FOUND THEN\n    RAISE EXCEPTION 'target root-owner membership requires an effective admin grant';\n  END IF;\n\n  PERFORM pg_catalog.set_config(\n    'gradientpeak.coaching_root_transfer_guard',\n    pg_catalog.format(\n      '%s:%s:%s',\n      p_organization_id,\n      v_organization.root_owner_membership_id,\n      p_target_membership_id\n    ),\n    true\n  );\n\n  UPDATE public.organizations\n  SET root_owner_membership_id = p_target_membership_id,\n      updated_at = v_now\n  WHERE id = p_organization_id;\n\n  INSERT INTO public.organization_audit_events (\n    organization_id,\n    actor_profile_id,\n    actor_membership_id,\n    action,\n    resource_type,\n    resource_id,\n    occurred_at,\n    correlation_id,\n    details\n  ) VALUES (\n    p_organization_id,\n    p_actor_profile_id,\n    v_organization.root_owner_membership_id,\n    'organization.root_ownership_transferred',\n    'organization_membership',\n    p_target_membership_id,\n    v_now,\n    p_correlation_id,\n    pg_catalog.jsonb_build_object(\n      'reason_code', p_reason_code,\n      'previous_root_owner_membership_id', v_organization.root_owner_membership_id,\n      'target_profile_id', v_target_profile_id\n    )\n  );\nEND\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": true
+    },
+    {
       "acl": "",
       "config": ["search_path=\"\""],
       "identity": "validate_activity_effort_segment_range()",
@@ -7542,6 +8403,51 @@
       "identity": "validate_activity_segment_set(uuid)",
       "language": "plpgsql",
       "definition": "CREATE OR REPLACE FUNCTION public.validate_activity_segment_set(target_activity_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  parent_record record;\n  segment_count integer;\n  max_ordinal integer;\n  summed_active bigint;\n  summed_moving bigint;\n  complete_count integer;\nbegin\n  select elapsed_ms, active_ms, moving_ms,timing_coverage into parent_record\n  from public.activities where id = target_activity_id;\n  if not found then return; end if;\n\n  select count(*), max(ordinal), sum(active_ms), sum(moving_ms),\n    count(*) filter(where timing_coverage='complete' and active_ms is not null and moving_ms is not null)\n    into segment_count, max_ordinal, summed_active, summed_moving,complete_count\n  from public.activity_segments where activity_id = target_activity_id;\n  if segment_count = 0 or max_ordinal <> segment_count - 1 then\n    raise exception 'activity % segment ordinals must be contiguous from zero', target_activity_id;\n  end if;\n  if exists (select 1 from public.activity_segments where activity_id = target_activity_id and end_offset_ms > parent_record.elapsed_ms) then\n    raise exception 'activity % segment exceeds parent elapsed bounds', target_activity_id;\n  end if;\n  if exists (\n    select 1 from public.activity_segments s\n    left join public.activity_segments p on p.activity_id=s.activity_id and p.ordinal=s.ordinal-1\n    left join public.activity_segments n on n.activity_id=s.activity_id and n.ordinal=s.ordinal+1\n    where s.activity_id=target_activity_id and s.role='transition'\n      and (p.role is distinct from 'activity' or n.role is distinct from 'activity')\n  ) then raise exception 'activity % transition must be between activity segments', target_activity_id; end if;\n  if exists (\n    select 1 from public.activity_segments s join public.activity_segments n\n      on n.activity_id=s.activity_id and n.ordinal=s.ordinal+1\n    where s.activity_id=target_activity_id and s.role='rest' and n.role='rest'\n  ) then raise exception 'activity % has consecutive rest segments', target_activity_id; end if;\n  if parent_record.timing_coverage='complete' then\n    if complete_count<>segment_count then\n      raise exception 'activity % complete parent requires complete timing for every segment',target_activity_id;\n    end if;\n    if parent_record.active_ms is distinct from summed_active or parent_record.moving_ms is distinct from summed_moving then\n      raise exception 'activity % complete timing does not reconcile with segments',target_activity_id;\n    end if;\n  elsif parent_record.active_ms is not null or parent_record.moving_ms is not null then\n    raise exception 'activity % partial/unavailable parent timing totals must be null',target_activity_id;\n  end if;\n  if exists (\n    select 1 from public.activity_segments s\n    where s.activity_id=target_activity_id\n       and (s.summary->>'version' is distinct from s.summary_version::text\n         or s.summary#>>'{timing,timingCoverage}' is distinct from s.timing_coverage\n         or (s.summary#>>'{timing,activeMs}')::bigint is distinct from s.active_ms\n         or (s.summary#>>'{timing,movingMs}')::bigint is distinct from s.moving_ms)\n  ) then raise exception 'activity % segment summary timing/version mismatch', target_activity_id; end if;\nend $function$\n",
+      "volatility": "v",
+      "securityDefiner": true
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "validate_consent_supersession()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.validate_consent_supersession()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  consent_row public.athlete_data_sharing_consents%ROWTYPE;\n  successor_row public.athlete_data_sharing_consents%ROWTYPE;\nBEGIN\n  SELECT * INTO consent_row FROM public.athlete_data_sharing_consents WHERE id = NEW.id;\n  IF consent_row.superseded_by_consent_id IS NULL THEN\n    RETURN NULL;\n  END IF;\n  IF consent_row.superseded_by_consent_id = consent_row.id OR consent_row.ended_at IS NULL THEN\n    RAISE EXCEPTION 'a consent successor requires an ended predecessor and cannot reference itself';\n  END IF;\n  SELECT * INTO successor_row FROM public.athlete_data_sharing_consents WHERE id = consent_row.superseded_by_consent_id;\n  IF successor_row.ended_at IS NOT NULL THEN\n    RAISE EXCEPTION 'consent successor must be current when linked';\n  END IF;\n  IF successor_row.granted_at < consent_row.granted_at OR consent_row.ended_at > successor_row.granted_at THEN\n    RAISE EXCEPTION 'consent successor chronology is invalid';\n  END IF;\n  IF EXISTS (\n    WITH RECURSIVE consent_chain(id, successor_id, path, cycle) AS (\n      SELECT c.id, c.superseded_by_consent_id, ARRAY[c.id], false\n      FROM public.athlete_data_sharing_consents c\n      WHERE c.id = consent_row.id\n      UNION ALL\n      SELECT next_consent.id,\n             next_consent.superseded_by_consent_id,\n             consent_chain.path || next_consent.id,\n             next_consent.id = ANY(consent_chain.path)\n      FROM consent_chain\n      JOIN public.athlete_data_sharing_consents next_consent ON next_consent.id = consent_chain.successor_id\n      WHERE consent_chain.successor_id IS NOT NULL AND NOT consent_chain.cycle\n    )\n    SELECT 1 FROM consent_chain WHERE cycle\n  ) THEN\n    RAISE EXCEPTION 'consent supersession cannot contain a cycle';\n  END IF;\n  RETURN NULL;\nEND $function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "validate_current_coaching_assignment()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.validate_current_coaching_assignment()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  assignment_row public.coaching_assignments%ROWTYPE;\nBEGIN\n  SELECT * INTO assignment_row FROM public.coaching_assignments WHERE id = NEW.id;\n  IF assignment_row.ended_at IS NOT NULL THEN\n    RETURN NULL;\n  END IF;\n  IF NOT EXISTS (\n    SELECT 1\n    FROM public.organizations o\n    JOIN public.coaching_engagements e ON e.organization_id = o.id AND e.id = assignment_row.engagement_id\n    JOIN public.organization_memberships m ON m.organization_id = o.id AND m.id = assignment_row.coach_membership_id\n    JOIN public.organization_membership_role_grants g ON g.organization_id = o.id AND g.membership_id = m.id\n    WHERE o.id = assignment_row.organization_id\n      AND o.suspended_at IS NULL AND o.closed_at IS NULL\n      AND e.paused_at IS NULL AND e.ended_at IS NULL\n      AND m.suspended_at IS NULL AND m.ended_at IS NULL\n      AND g.role_key = 'coach' AND g.revoked_at IS NULL\n  ) THEN\n    RAISE EXCEPTION 'current coaching assignment requires an active organization, engagement, membership, and coach grant';\n  END IF;\n  RETURN NULL;\nEND $function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "validate_organization_root_owner()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.validate_organization_root_owner()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  target_organization_id uuid;\n  root_membership_id uuid;\nBEGIN\n  target_organization_id := COALESCE(\n    (pg_catalog.to_jsonb(NEW)->>'organization_id')::uuid,\n    (pg_catalog.to_jsonb(OLD)->>'organization_id')::uuid,\n    (pg_catalog.to_jsonb(NEW)->>'id')::uuid,\n    (pg_catalog.to_jsonb(OLD)->>'id')::uuid\n  );\n  SELECT root_owner_membership_id INTO root_membership_id\n  FROM public.organizations\n  WHERE id = target_organization_id\n  FOR UPDATE;\n  IF FOUND AND EXISTS (\n    SELECT 1\n    FROM public.organizations\n    WHERE id = target_organization_id\n      AND closed_at IS NULL\n  ) THEN\n    IF NOT EXISTS (\n      SELECT 1\n      FROM public.organization_memberships AS membership\n      WHERE membership.organization_id = target_organization_id\n        AND membership.id = root_membership_id\n        AND membership.suspended_at IS NULL\n        AND membership.ended_at IS NULL\n    ) THEN\n      RAISE EXCEPTION 'active or suspended organization % must retain an active root-owner membership', target_organization_id;\n    END IF;\n    IF NOT EXISTS (\n      SELECT 1\n      FROM public.organization_membership_role_grants AS grant_row\n      WHERE grant_row.organization_id = target_organization_id\n        AND grant_row.membership_id = root_membership_id\n        AND grant_row.role_key = 'admin'\n        AND grant_row.granted_at <= pg_catalog.transaction_timestamp()\n        AND grant_row.revoked_at IS NULL\n    ) THEN\n      RAISE EXCEPTION 'root-owner membership % must retain an effective admin grant', root_membership_id;\n    END IF;\n  END IF;\n  RETURN NULL;\nEND\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "validate_policy_supersession()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.validate_policy_supersession()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  predecessor_effective_from timestamp with time zone;\nBEGIN\n  IF NEW.supersedes_policy_version_id IS NULL THEN\n    RETURN NULL;\n  END IF;\n  SELECT effective_from INTO predecessor_effective_from\n  FROM public.athlete_consent_policy_versions\n  WHERE id = NEW.supersedes_policy_version_id AND scope_key = NEW.scope_key;\n  IF predecessor_effective_from IS NULL OR NEW.effective_from < predecessor_effective_from THEN\n    RAISE EXCEPTION 'policy supersession must retain scope and cannot move effective chronology backward';\n  END IF;\n  RETURN NULL;\nEND $function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"],
+      "identity": "withdraw_athlete_consent(uuid,uuid,uuid,text,uuid)",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.withdraw_athlete_consent(p_actor_profile_id uuid, p_organization_id uuid, p_consent_id uuid, p_reason_code text, p_correlation_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  v_now timestamp with time zone := pg_catalog.transaction_timestamp();\n  v_organization public.organizations%ROWTYPE;\n  v_actor_membership_id uuid;\n  v_consent public.athlete_data_sharing_consents%ROWTYPE;\n  v_replay_count integer;\n  v_matching_replay_count integer;\nBEGIN\n  IF p_correlation_id IS NULL\n    OR p_reason_code IS NULL\n    OR p_reason_code !~ '^[a-z0-9][a-z0-9_]{0,63}$' THEN\n    RAISE EXCEPTION 'a lowercase reason_code and correlation_id are required';\n  END IF;\n\n  SELECT organization.*\n  INTO v_organization\n  FROM public.organizations AS organization\n  WHERE organization.id = p_organization_id\n  FOR UPDATE;\n\n  IF NOT FOUND THEN\n    RAISE EXCEPTION 'organization not found';\n  END IF;\n\n  SELECT\n    pg_catalog.count(*)::integer,\n    pg_catalog.count(*) FILTER (\n      WHERE audit.action = 'athlete.consent_withdrawn'\n        AND audit.resource_id = p_consent_id\n        AND audit.actor_profile_id = p_actor_profile_id\n        AND audit.details ->> 'reason_code' = p_reason_code\n    )::integer\n  INTO v_replay_count, v_matching_replay_count\n  FROM public.organization_audit_events AS audit\n  WHERE audit.organization_id = p_organization_id\n    AND audit.correlation_id = p_correlation_id;\n\n  IF v_replay_count > 0 THEN\n    IF v_replay_count = 1 AND v_matching_replay_count = 1 THEN\n      RETURN;\n    END IF;\n    RAISE EXCEPTION 'correlation_id conflicts with another terminal request';\n  END IF;\n\n  IF v_organization.closed_at IS NOT NULL THEN\n    RAISE EXCEPTION 'organization is closed';\n  END IF;\n\n  SELECT membership.id\n  INTO v_actor_membership_id\n  FROM public.organization_memberships AS membership\n  WHERE membership.organization_id = p_organization_id\n    AND membership.profile_id = p_actor_profile_id\n    AND membership.suspended_at IS NULL\n    AND membership.ended_at IS NULL\n  FOR UPDATE;\n\n  SELECT consent.*\n  INTO v_consent\n  FROM public.athlete_data_sharing_consents AS consent\n  WHERE consent.organization_id = p_organization_id\n    AND consent.id = p_consent_id\n  FOR UPDATE;\n\n  IF NOT FOUND OR v_consent.athlete_profile_id <> p_actor_profile_id THEN\n    RAISE EXCEPTION 'only the exact athlete may withdraw consent';\n  END IF;\n\n  IF v_consent.ended_at IS NOT NULL THEN\n    RETURN;\n  END IF;\n\n  UPDATE public.athlete_data_sharing_consents\n  SET ended_at = v_now\n  WHERE organization_id = p_organization_id\n    AND id = p_consent_id;\n\n  INSERT INTO public.organization_audit_events (\n    organization_id,\n    actor_profile_id,\n    actor_membership_id,\n    action,\n    resource_type,\n    resource_id,\n    occurred_at,\n    correlation_id,\n    details\n  ) VALUES (\n    p_organization_id,\n    p_actor_profile_id,\n    v_actor_membership_id,\n    'athlete.consent_withdrawn',\n    'athlete_data_sharing_consent',\n    p_consent_id,\n    v_now,\n    p_correlation_id,\n    pg_catalog.jsonb_build_object('reason_code', p_reason_code)\n  );\nEND\n$function$\n",
       "volatility": "v",
       "securityDefiner": true
     }
@@ -8458,6 +9364,118 @@
     },
     {
       "kind": "c",
+      "name": "athlete_consent_policy_versions_digest_non_empty",
+      "table": "athlete_consent_policy_versions",
+      "validated": true,
+      "definition": "CHECK (btrim(content_digest) <> ''::text)"
+    },
+    {
+      "kind": "u",
+      "name": "athlete_consent_policy_versions_id_scope_unique",
+      "table": "athlete_consent_policy_versions",
+      "validated": true,
+      "definition": "UNIQUE (id, scope_key)"
+    },
+    {
+      "kind": "p",
+      "name": "athlete_consent_policy_versions_pkey",
+      "table": "athlete_consent_policy_versions",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "c",
+      "name": "athlete_consent_policy_versions_scope_check",
+      "table": "athlete_consent_policy_versions",
+      "validated": true,
+      "definition": "CHECK (scope_key = ANY (ARRAY['basic_profile'::text, 'training'::text, 'activities'::text, 'metrics'::text, 'goals'::text, 'calendar'::text]))"
+    },
+    {
+      "kind": "c",
+      "name": "athlete_consent_policy_versions_supersedes_not_self_check",
+      "table": "athlete_consent_policy_versions",
+      "validated": true,
+      "definition": "CHECK (supersedes_policy_version_id IS NULL OR supersedes_policy_version_id <> id)"
+    },
+    {
+      "kind": "f",
+      "name": "athlete_consent_policy_versions_supersedes_scope_fkey",
+      "table": "athlete_consent_policy_versions",
+      "validated": true,
+      "definition": "FOREIGN KEY (supersedes_policy_version_id, scope_key) REFERENCES athlete_consent_policy_versions(id, scope_key) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "athlete_consent_policy_versions_terms_non_empty",
+      "table": "athlete_consent_policy_versions",
+      "validated": true,
+      "definition": "CHECK (btrim(terms_text) <> ''::text)"
+    },
+    {
+      "kind": "u",
+      "name": "athlete_data_sharing_consents_authority_identity_unique",
+      "table": "athlete_data_sharing_consents",
+      "validated": true,
+      "definition": "UNIQUE (organization_id, engagement_id, athlete_profile_id, scope_key, id)"
+    },
+    {
+      "kind": "c",
+      "name": "athlete_data_sharing_consents_end_chronology_check",
+      "table": "athlete_data_sharing_consents",
+      "validated": true,
+      "definition": "CHECK (ended_at IS NULL OR ended_at >= granted_at)"
+    },
+    {
+      "kind": "f",
+      "name": "athlete_data_sharing_consents_engagement_fkey",
+      "table": "athlete_data_sharing_consents",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id, engagement_id, athlete_profile_id) REFERENCES coaching_engagements(organization_id, id, athlete_profile_id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "athlete_data_sharing_consents_expiry_chronology_check",
+      "table": "athlete_data_sharing_consents",
+      "validated": true,
+      "definition": "CHECK (expires_at IS NULL OR expires_at >= granted_at)"
+    },
+    {
+      "kind": "c",
+      "name": "athlete_data_sharing_consents_grantor_check",
+      "table": "athlete_data_sharing_consents",
+      "validated": true,
+      "definition": "CHECK (granted_by_profile_id = athlete_profile_id)"
+    },
+    {
+      "kind": "p",
+      "name": "athlete_data_sharing_consents_pkey",
+      "table": "athlete_data_sharing_consents",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "f",
+      "name": "athlete_data_sharing_consents_policy_scope_fkey",
+      "table": "athlete_data_sharing_consents",
+      "validated": true,
+      "definition": "FOREIGN KEY (policy_version_id, scope_key) REFERENCES athlete_consent_policy_versions(id, scope_key) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "f",
+      "name": "athlete_data_sharing_consents_successor_fkey",
+      "table": "athlete_data_sharing_consents",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id, engagement_id, athlete_profile_id, scope_key, superseded_by_consent_id) REFERENCES athlete_data_sharing_consents(organization_id, engagement_id, athlete_profile_id, scope_key, id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "athlete_data_sharing_consents_successor_not_self_check",
+      "table": "athlete_data_sharing_consents",
+      "validated": true,
+      "definition": "CHECK (superseded_by_consent_id IS NULL OR superseded_by_consent_id <> id)"
+    },
+    {
+      "kind": "c",
       "name": "canonical_activity_categories_code_check",
       "table": "canonical_activity_categories",
       "validated": true,
@@ -8497,6 +9515,83 @@
       "table": "coaches_athletes",
       "validated": true,
       "definition": "CHECK (revision > 0)"
+    },
+    {
+      "kind": "c",
+      "name": "coaching_assignments_chronology_check",
+      "table": "coaching_assignments",
+      "validated": true,
+      "definition": "CHECK (ended_at IS NULL OR ended_at >= assigned_at)"
+    },
+    {
+      "kind": "f",
+      "name": "coaching_assignments_engagement_fkey",
+      "table": "coaching_assignments",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id, engagement_id) REFERENCES coaching_engagements(organization_id, id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "coaching_assignments_kind_check",
+      "table": "coaching_assignments",
+      "validated": true,
+      "definition": "CHECK (assignment_kind = ANY (ARRAY['primary'::text, 'supporting'::text]))"
+    },
+    {
+      "kind": "f",
+      "name": "coaching_assignments_membership_fkey",
+      "table": "coaching_assignments",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id, coach_membership_id) REFERENCES organization_memberships(organization_id, id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "p",
+      "name": "coaching_assignments_pkey",
+      "table": "coaching_assignments",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "f",
+      "name": "coaching_engagements_athlete_profile_fkey",
+      "table": "coaching_engagements",
+      "validated": true,
+      "definition": "FOREIGN KEY (athlete_profile_id) REFERENCES profiles(id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "coaching_engagements_lifecycle_check",
+      "table": "coaching_engagements",
+      "validated": true,
+      "definition": "CHECK (ended_at IS NULL OR paused_at IS NULL)"
+    },
+    {
+      "kind": "f",
+      "name": "coaching_engagements_organization_fkey",
+      "table": "coaching_engagements",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "u",
+      "name": "coaching_engagements_organization_id_id_athlete_unique",
+      "table": "coaching_engagements",
+      "validated": true,
+      "definition": "UNIQUE (organization_id, id, athlete_profile_id)"
+    },
+    {
+      "kind": "u",
+      "name": "coaching_engagements_organization_id_id_unique",
+      "table": "coaching_engagements",
+      "validated": true,
+      "definition": "UNIQUE (organization_id, id)"
+    },
+    {
+      "kind": "p",
+      "name": "coaching_engagements_pkey",
+      "table": "coaching_engagements",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
     },
     {
       "kind": "u",
@@ -9234,32 +10329,109 @@
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
     },
     {
+      "kind": "c",
+      "name": "organization_audit_events_action_non_empty",
+      "table": "organization_audit_events",
+      "validated": true,
+      "definition": "CHECK (btrim(action) <> ''::text)"
+    },
+    {
+      "kind": "f",
+      "name": "organization_audit_events_actor_identity_fkey",
+      "table": "organization_audit_events",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id, actor_membership_id, actor_profile_id) REFERENCES organization_memberships(organization_id, id, profile_id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "f",
+      "name": "organization_audit_events_actor_membership_fkey",
+      "table": "organization_audit_events",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id, actor_membership_id) REFERENCES organization_memberships(organization_id, id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "organization_audit_events_actor_membership_profile_check",
+      "table": "organization_audit_events",
+      "validated": true,
+      "definition": "CHECK (actor_membership_id IS NULL OR actor_profile_id IS NOT NULL)"
+    },
+    {
+      "kind": "f",
+      "name": "organization_audit_events_actor_profile_fkey",
+      "table": "organization_audit_events",
+      "validated": true,
+      "definition": "FOREIGN KEY (actor_profile_id) REFERENCES profiles(id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "organization_audit_events_details_object",
+      "table": "organization_audit_events",
+      "validated": true,
+      "definition": "CHECK (jsonb_typeof(details) = 'object'::text)"
+    },
+    {
+      "kind": "f",
+      "name": "organization_audit_events_organization_fkey",
+      "table": "organization_audit_events",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "p",
+      "name": "organization_audit_events_pkey",
+      "table": "organization_audit_events",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "c",
+      "name": "organization_audit_events_resource_type_non_empty",
+      "table": "organization_audit_events",
+      "validated": true,
+      "definition": "CHECK (btrim(resource_type) <> ''::text)"
+    },
+    {
       "kind": "f",
       "name": "organization_membership_role_grants_membership_fkey",
       "table": "organization_membership_role_grants",
       "validated": true,
-      "definition": "FOREIGN KEY (membership_id, organization_id) REFERENCES organization_memberships(id, organization_id) ON DELETE CASCADE"
+      "definition": "FOREIGN KEY (organization_id, membership_id) REFERENCES organization_memberships(organization_id, id) ON DELETE RESTRICT"
     },
     {
       "kind": "f",
       "name": "organization_membership_role_grants_organization_id_fkey",
       "table": "organization_membership_role_grants",
       "validated": true,
-      "definition": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+      "definition": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT"
     },
     {
       "kind": "p",
       "name": "organization_membership_role_grants_pkey",
       "table": "organization_membership_role_grants",
       "validated": true,
-      "definition": "PRIMARY KEY (membership_id, role_id)"
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "c",
+      "name": "organization_membership_role_grants_revocation_chronology_check",
+      "table": "organization_membership_role_grants",
+      "validated": true,
+      "definition": "CHECK (revoked_at IS NULL OR revoked_at >= granted_at)"
     },
     {
       "kind": "f",
       "name": "organization_membership_role_grants_role_fkey",
       "table": "organization_membership_role_grants",
       "validated": true,
-      "definition": "FOREIGN KEY (role_id, organization_id) REFERENCES organization_roles(id, organization_id) ON DELETE CASCADE"
+      "definition": "FOREIGN KEY (role_id, organization_id) REFERENCES organization_roles(id, organization_id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "organization_membership_role_grants_role_key_check",
+      "table": "organization_membership_role_grants",
+      "validated": true,
+      "definition": "CHECK (role_key = ANY (ARRAY['admin'::text, 'coach'::text]))"
     },
     {
       "kind": "c",
@@ -9269,18 +10441,32 @@
       "definition": "CHECK (status = ANY (ARRAY['active'::text, 'inactive'::text]))"
     },
     {
-      "kind": "u",
-      "name": "organization_memberships_id_organization_unique",
+      "kind": "c",
+      "name": "organization_memberships_lifecycle_check",
       "table": "organization_memberships",
       "validated": true,
-      "definition": "UNIQUE (id, organization_id)"
+      "definition": "CHECK (ended_at IS NULL OR suspended_at IS NULL)"
     },
     {
       "kind": "f",
       "name": "organization_memberships_organization_id_fkey",
       "table": "organization_memberships",
       "validated": true,
-      "definition": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+      "definition": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "u",
+      "name": "organization_memberships_organization_id_id_profile_unique",
+      "table": "organization_memberships",
+      "validated": true,
+      "definition": "UNIQUE (organization_id, id, profile_id)"
+    },
+    {
+      "kind": "u",
+      "name": "organization_memberships_organization_id_id_unique",
+      "table": "organization_memberships",
+      "validated": true,
+      "definition": "UNIQUE (organization_id, id)"
     },
     {
       "kind": "u",
@@ -9301,7 +10487,7 @@
       "name": "organization_memberships_profile_id_fkey",
       "table": "organization_memberships",
       "validated": true,
-      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE RESTRICT"
     },
     {
       "kind": "c",
@@ -9350,7 +10536,7 @@
       "name": "organization_role_permission_grants_role_id_fkey",
       "table": "organization_role_permission_grants",
       "validated": true,
-      "definition": "FOREIGN KEY (role_id) REFERENCES organization_roles(id) ON DELETE CASCADE"
+      "definition": "FOREIGN KEY (role_id) REFERENCES organization_roles(id) ON DELETE RESTRICT"
     },
     {
       "kind": "u",
@@ -9378,7 +10564,7 @@
       "name": "organization_roles_organization_id_fkey",
       "table": "organization_roles",
       "validated": true,
-      "definition": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+      "definition": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT"
     },
     {
       "kind": "u",
@@ -9403,6 +10589,13 @@
     },
     {
       "kind": "c",
+      "name": "organizations_lifecycle_check",
+      "table": "organizations",
+      "validated": true,
+      "definition": "CHECK (closed_at IS NULL OR suspended_at IS NULL)"
+    },
+    {
+      "kind": "c",
       "name": "organizations_name_non_empty",
       "table": "organizations",
       "validated": true,
@@ -9416,11 +10609,25 @@
       "definition": "PRIMARY KEY (id)"
     },
     {
+      "kind": "f",
+      "name": "organizations_root_owner_membership_fkey",
+      "table": "organizations",
+      "validated": true,
+      "definition": "FOREIGN KEY (id, root_owner_membership_id) REFERENCES organization_memberships(organization_id, id) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED"
+    },
+    {
       "kind": "c",
       "name": "organizations_slug_non_empty",
       "table": "organizations",
       "validated": true,
       "definition": "CHECK (btrim(slug) <> ''::text)"
+    },
+    {
+      "kind": "c",
+      "name": "organizations_timezone_non_empty",
+      "table": "organizations",
+      "validated": true,
+      "definition": "CHECK (btrim(timezone) <> ''::text)"
     },
     {
       "kind": "p",
@@ -9886,6 +11093,22 @@
       "forceRls": false
     },
     {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "athlete_consent_policy_versions",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "athlete_data_sharing_consents",
+      "managed": true,
+      "forceRls": false
+    },
+    {
       "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
       "rls": true,
       "kind": "r",
@@ -9898,6 +11121,22 @@
       "rls": true,
       "kind": "r",
       "name": "coaches_athletes",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "coaching_assignments",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "coaching_engagements",
       "managed": true,
       "forceRls": false
     },
@@ -10070,7 +11309,15 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "organization_audit_events",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
       "rls": true,
       "kind": "r",
       "name": "organization_membership_role_grants",
@@ -10078,7 +11325,7 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
       "rls": true,
       "kind": "r",
       "name": "organization_memberships",
@@ -10086,7 +11333,7 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
       "rls": true,
       "kind": "r",
       "name": "organization_permissions",
@@ -10094,7 +11341,7 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
       "rls": true,
       "kind": "r",
       "name": "organization_role_permission_grants",
@@ -10102,7 +11349,7 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
       "rls": true,
       "kind": "r",
       "name": "organization_roles",
@@ -10110,7 +11357,7 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
       "rls": true,
       "kind": "r",
       "name": "organizations",

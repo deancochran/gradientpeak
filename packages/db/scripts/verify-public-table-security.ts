@@ -2,15 +2,36 @@
 
 import type { PoolClient } from "pg";
 import { Pool } from "pg";
-import { prepareDbEnv } from "./_helpers";
+import { requireExplicitGuardedDisposableLocalTarget } from "./_target-safety";
 
 type TableSecurityRow = {
   table_name: string;
   rls_enabled: boolean;
   anon_has_any: boolean;
   authenticated_has_any: boolean;
-  service_role_has_dml: boolean;
+  service_role_select_explicit: boolean;
+  service_role_insert_explicit: boolean;
+  service_role_update_explicit: boolean;
+  service_role_delete_explicit: boolean;
+  service_role_truncate_explicit: boolean;
+  service_role_references_explicit: boolean;
+  service_role_trigger_explicit: boolean;
 };
+
+const coachingAuthorityReadOnlyTables = [
+  "organizations",
+  "organization_memberships",
+  "organization_membership_role_grants",
+  "organization_roles",
+  "organization_permissions",
+  "organization_role_permission_grants",
+  "coaching_engagements",
+  "coaching_assignments",
+  "athlete_consent_policy_versions",
+  "athlete_data_sharing_consents",
+  "organization_audit_events",
+] as const;
+const coachingAuthorityReadOnlyTableSet = new Set<string>(coachingAuthorityReadOnlyTables);
 
 type SequenceSecurityRow = {
   sequence_name: string;
@@ -37,7 +58,8 @@ async function expectRoleDenied(client: PoolClient, role: "anon" | "authenticate
 }
 
 async function main() {
-  const pool = new Pool({ connectionString: prepareDbEnv() });
+  const databaseUrl = requireExplicitGuardedDisposableLocalTarget(process.argv.slice(2));
+  const pool = new Pool({ connectionString: databaseUrl });
   const client = await pool.connect();
 
   try {
@@ -62,29 +84,74 @@ async function main() {
         c.relrowsecurity as rls_enabled,
         has_table_privilege('anon', c.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') as anon_has_any,
         has_table_privilege('authenticated', c.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') as authenticated_has_any,
-        has_table_privilege('service_role', c.oid, 'SELECT')
-          and has_table_privilege('service_role', c.oid, 'INSERT')
-          and has_table_privilege('service_role', c.oid, 'UPDATE')
-          and has_table_privilege('service_role', c.oid, 'DELETE') as service_role_has_dml
+        coalesce(bool_or(acl.privilege_type = 'SELECT' and acl.grantee = service_role.oid), false) as service_role_select_explicit,
+        coalesce(bool_or(acl.privilege_type = 'INSERT' and acl.grantee = service_role.oid), false) as service_role_insert_explicit,
+        coalesce(bool_or(acl.privilege_type = 'UPDATE' and acl.grantee = service_role.oid), false) as service_role_update_explicit,
+        coalesce(bool_or(acl.privilege_type = 'DELETE' and acl.grantee = service_role.oid), false) as service_role_delete_explicit,
+        coalesce(bool_or(acl.privilege_type = 'TRUNCATE' and acl.grantee = service_role.oid), false) as service_role_truncate_explicit,
+        coalesce(bool_or(acl.privilege_type = 'REFERENCES' and acl.grantee = service_role.oid), false) as service_role_references_explicit,
+        coalesce(bool_or(acl.privilege_type = 'TRIGGER' and acl.grantee = service_role.oid), false) as service_role_trigger_explicit
       from pg_catalog.pg_class c
       join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+      cross join pg_catalog.pg_roles service_role
+      left join lateral pg_catalog.aclexplode(c.relacl) acl on true
       where n.nspname = 'public'
         and c.relkind in ('r', 'p')
+        and service_role.rolname = 'service_role'
+      group by c.oid, c.relname, c.relrowsecurity
       order by c.relname
     `);
 
     if (tables.rows.length === 0) throw new Error("public table catalog is empty");
-    const tableFailures = tables.rows.filter(
-      (row) =>
-        !row.rls_enabled ||
-        row.anon_has_any ||
-        row.authenticated_has_any ||
-        !row.service_role_has_dml,
+    const tableNames = new Set(tables.rows.map((row) => row.table_name));
+    const missingReadOnlyTables = coachingAuthorityReadOnlyTables.filter(
+      (tableName) => !tableNames.has(tableName),
     );
-    if (tableFailures.length > 0) {
+    if (missingReadOnlyTables.length > 0) {
       throw new Error(
-        `public table security assertions failed: ${tableFailures.map((row) => row.table_name).join(", ")}`,
+        `coaching read-only ACL allowlist has missing or stale table names: ${missingReadOnlyTables.join(", ")}`,
       );
+    }
+    if (coachingAuthorityReadOnlyTableSet.size !== coachingAuthorityReadOnlyTables.length) {
+      throw new Error("coaching read-only ACL allowlist contains duplicate table names");
+    }
+
+    for (const row of tables.rows) {
+      if (!row.rls_enabled) throw new Error(`table ${row.table_name}: expected RLS enabled`);
+      if (row.anon_has_any)
+        throw new Error(`table ${row.table_name}: anon has an effective table ACL`);
+      if (row.authenticated_has_any)
+        throw new Error(`table ${row.table_name}: authenticated has an effective table ACL`);
+
+      if (coachingAuthorityReadOnlyTableSet.has(row.table_name)) {
+        if (!row.service_role_select_explicit) {
+          throw new Error(`table ${row.table_name}: expected explicit service_role SELECT ACL`);
+        }
+        if (
+          row.service_role_insert_explicit ||
+          row.service_role_update_explicit ||
+          row.service_role_delete_explicit ||
+          row.service_role_truncate_explicit ||
+          row.service_role_references_explicit ||
+          row.service_role_trigger_explicit
+        ) {
+          throw new Error(
+            `table ${row.table_name}: service_role must not have explicit INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER ACLs`,
+          );
+        }
+        continue;
+      }
+
+      if (
+        !row.service_role_select_explicit ||
+        !row.service_role_insert_explicit ||
+        !row.service_role_update_explicit ||
+        !row.service_role_delete_explicit
+      ) {
+        throw new Error(
+          `table ${row.table_name}: expected explicit service_role SELECT/INSERT/UPDATE/DELETE ACLs`,
+        );
+      }
     }
 
     const definers = await client.query<{
@@ -215,7 +282,7 @@ async function main() {
     }
 
     console.log(
-      `[db:security:check] ${tables.rows.length - 1} application tables and ${sequences.rows.length - 1} application sequences passed current/default ACL, RLS, and switched-role behavior checks`,
+      `[db:security:check] ${tables.rows.length - 1} application tables (${coachingAuthorityReadOnlyTables.length} coaching read-only ACL tables) and ${sequences.rows.length - 1} application sequences passed catalog ACL, RLS, and switched-role behavior checks`,
     );
   } finally {
     await client.query("rollback").catch(() => undefined);

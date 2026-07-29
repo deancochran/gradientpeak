@@ -52,11 +52,22 @@ async function main() {
       env,
       stdio: "inherit",
     });
-    execFileSync("pnpm", ["exec", "tsx", "scripts/verify-public-table-security.ts"], {
-      cwd: dbPackageRoot,
-      env,
-      stdio: "inherit",
-    });
+    execFileSync(
+      "pnpm",
+      [
+        "exec",
+        "tsx",
+        "scripts/verify-public-table-security.ts",
+        "--disposable",
+        "--local",
+        `--database-url=${targetUrl}`,
+      ],
+      {
+        cwd: dbPackageRoot,
+        env,
+        stdio: "inherit",
+      },
+    );
     execFileSync("pnpm", ["exec", "tsx", "scripts/verify-storage-assets.ts"], {
       cwd: dbPackageRoot,
       env,

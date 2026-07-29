@@ -10,6 +10,10 @@ import {
   activityRoutes,
   activitySegments,
   activitySessionRpeEvidence,
+  athleteConsentPolicyVersions,
+  athleteDataSharingConsents,
+  coachingAssignments,
+  coachingEngagements,
   comments,
   conversationParticipants,
   conversations,
@@ -29,6 +33,7 @@ import {
   messages,
   notifications,
   oauthStates,
+  organizationAuditEvents,
   organizationMembershipRoleGrants,
   organizationMemberships,
   organizationPermissions,
@@ -74,6 +79,7 @@ export const profilesRelations = relations(profiles, ({ many }) => ({
   oauthStates: many(oauthStates),
   organizationsCreated: many(organizations, { relationName: "organizationCreator" }),
   organizationMemberships: many(organizationMemberships),
+  coachingEngagements: many(coachingEngagements),
   profileGoals: many(profileGoals),
   profileMetrics: many(profileMetrics),
   providerSyncJobs: many(providerSyncJobs),
@@ -113,6 +119,9 @@ export const organizationsRelations = relations(organizations, ({ one, many }) =
     references: [profiles.id],
   }),
   memberships: many(organizationMemberships),
+  coachingEngagements: many(coachingEngagements),
+  coachingAssignments: many(coachingAssignments),
+  auditEvents: many(organizationAuditEvents),
   roles: many(organizationRoles),
 }));
 
@@ -128,6 +137,7 @@ export const organizationMembershipsRelations = relations(
       references: [profiles.id],
     }),
     roleGrants: many(organizationMembershipRoleGrants),
+    coachingAssignments: many(coachingAssignments),
   }),
 );
 
@@ -147,7 +157,7 @@ export const organizationPermissionsRelations = relations(organizationPermission
 export const organizationRolePermissionGrantsRelations = relations(
   organizationRolePermissionGrants,
   ({ one }) => ({
-    role: one(organizationRoles, {
+    legacyRole: one(organizationRoles, {
       fields: [organizationRolePermissionGrants.role_id],
       references: [organizationRoles.id],
     }),
@@ -157,6 +167,64 @@ export const organizationRolePermissionGrantsRelations = relations(
     }),
   }),
 );
+
+export const coachingEngagementsRelations = relations(coachingEngagements, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [coachingEngagements.organization_id],
+    references: [organizations.id],
+  }),
+  athleteProfile: one(profiles, {
+    fields: [coachingEngagements.athlete_profile_id],
+    references: [profiles.id],
+  }),
+  assignments: many(coachingAssignments),
+  consents: many(athleteDataSharingConsents),
+}));
+
+export const coachingAssignmentsRelations = relations(coachingAssignments, ({ one }) => ({
+  engagement: one(coachingEngagements, {
+    fields: [coachingAssignments.engagement_id],
+    references: [coachingEngagements.id],
+  }),
+  coachMembership: one(organizationMemberships, {
+    fields: [coachingAssignments.coach_membership_id],
+    references: [organizationMemberships.id],
+  }),
+}));
+
+export const athleteConsentPolicyVersionsRelations = relations(
+  athleteConsentPolicyVersions,
+  ({ many }) => ({ consents: many(athleteDataSharingConsents) }),
+);
+
+export const athleteDataSharingConsentsRelations = relations(
+  athleteDataSharingConsents,
+  ({ one }) => ({
+    engagement: one(coachingEngagements, {
+      fields: [athleteDataSharingConsents.engagement_id],
+      references: [coachingEngagements.id],
+    }),
+    policyVersion: one(athleteConsentPolicyVersions, {
+      fields: [athleteDataSharingConsents.policy_version_id],
+      references: [athleteConsentPolicyVersions.id],
+    }),
+  }),
+);
+
+export const organizationAuditEventsRelations = relations(organizationAuditEvents, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [organizationAuditEvents.organization_id],
+    references: [organizations.id],
+  }),
+  actorProfile: one(profiles, {
+    fields: [organizationAuditEvents.actor_profile_id],
+    references: [profiles.id],
+  }),
+  actorMembership: one(organizationMemberships, {
+    fields: [organizationAuditEvents.actor_membership_id],
+    references: [organizationMemberships.id],
+  }),
+}));
 
 export const organizationMembershipRoleGrantsRelations = relations(
   organizationMembershipRoleGrants,
@@ -598,6 +666,11 @@ export const relationsSchema = {
   organizationPermissionsRelations,
   organizationRolePermissionGrantsRelations,
   organizationMembershipRoleGrantsRelations,
+  coachingEngagementsRelations,
+  coachingAssignmentsRelations,
+  athleteConsentPolicyVersionsRelations,
+  athleteDataSharingConsentsRelations,
+  organizationAuditEventsRelations,
   groupInvitationsRelations,
   groupJoinRequestsRelations,
   groupEventsRelations,

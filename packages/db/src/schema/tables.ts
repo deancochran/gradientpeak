@@ -24,6 +24,7 @@ import {
 
 import { users } from "../auth-schema";
 import { canonicalActivityCategoryDbValues } from "./canonical-activity-categories";
+import { athleteReadScopeDbValues, organizationRoleKeyDbValues } from "./core-enum-parity";
 
 import {
   activityFileIngestionSourceEnum,
@@ -165,43 +166,20 @@ export const groupMemberships = pgTable(
   ],
 );
 
-export const organizations = pgTable(
-  "organizations",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    created_by_profile_id: uuid("created_by_profile_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "restrict" }),
-    name: text("name").notNull(),
-    slug: text("slug").notNull(),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    uniqueIndex("organizations_slug_unique_idx").on(table.slug),
-    index("organizations_created_by_profile_id_idx").on(table.created_by_profile_id),
-    check("organizations_name_non_empty", sql`btrim(${table.name}) <> ''`),
-    check("organizations_slug_non_empty", sql`btrim(${table.slug}) <> ''`),
-  ],
-);
-
 export const organizationMemberships = pgTable(
   "organization_memberships",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     organization_id: uuid("organization_id")
       .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
+      .references((): AnyPgColumn => organizations.id, { onDelete: "restrict" }),
     profile_id: uuid("profile_id")
       .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
-    status: text("status", { enum: ["active", "inactive"] })
-      .notNull()
-      .default("active"),
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    // Legacy reader compatibility only; lifecycle authority is terminal timestamps.
+    status: text("status", { enum: ["active", "inactive"] }),
+    suspended_at: timestamp("suspended_at", { withTimezone: true, mode: "date" }),
+    ended_at: timestamp("ended_at", { withTimezone: true, mode: "date" }),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -214,9 +192,63 @@ export const organizationMemberships = pgTable(
       table.organization_id,
       table.profile_id,
     ),
-    unique("organization_memberships_id_organization_unique").on(table.id, table.organization_id),
-    index("organization_memberships_profile_status_idx").on(table.profile_id, table.status),
-    check("organization_memberships_status_check", sql`${table.status} in ('active', 'inactive')`),
+    unique("organization_memberships_organization_id_id_unique").on(
+      table.organization_id,
+      table.id,
+    ),
+    unique("organization_memberships_organization_id_id_profile_unique").on(
+      table.organization_id,
+      table.id,
+      table.profile_id,
+    ),
+    index("organization_memberships_active_profile_idx")
+      .on(table.profile_id, table.organization_id)
+      .where(sql`${table.suspended_at} is null and ${table.ended_at} is null`),
+    index("organization_memberships_active_organization_idx")
+      .on(table.organization_id, table.id)
+      .where(sql`${table.suspended_at} is null and ${table.ended_at} is null`),
+    check(
+      "organization_memberships_lifecycle_check",
+      sql`${table.ended_at} is null or ${table.suspended_at} is null`,
+    ),
+  ],
+);
+
+export const organizations = pgTable(
+  "organizations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    created_by_profile_id: uuid("created_by_profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    root_owner_membership_id: uuid("root_owner_membership_id").notNull(),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    timezone: text("timezone").notNull(),
+    suspended_at: timestamp("suspended_at", { withTimezone: true, mode: "date" }),
+    closed_at: timestamp("closed_at", { withTimezone: true, mode: "date" }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.id, table.root_owner_membership_id],
+      foreignColumns: [organizationMemberships.organization_id, organizationMemberships.id],
+      name: "organizations_root_owner_membership_fkey",
+    }).onDelete("restrict"),
+    uniqueIndex("organizations_slug_unique_idx").on(table.slug),
+    index("organizations_created_by_profile_id_idx").on(table.created_by_profile_id),
+    check("organizations_name_non_empty", sql`btrim(${table.name}) <> ''`),
+    check("organizations_slug_non_empty", sql`btrim(${table.slug}) <> ''`),
+    check("organizations_timezone_non_empty", sql`btrim(${table.timezone}) <> ''`),
+    check(
+      "organizations_lifecycle_check",
+      sql`${table.closed_at} is null or ${table.suspended_at} is null`,
+    ),
   ],
 );
 
@@ -226,7 +258,7 @@ export const organizationRoles = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     organization_id: uuid("organization_id")
       .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
+      .references(() => organizations.id, { onDelete: "restrict" }),
     key: text("key").notNull(),
     name: text("name").notNull(),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
@@ -264,7 +296,7 @@ export const organizationRolePermissionGrants = pgTable(
   {
     role_id: uuid("role_id")
       .notNull()
-      .references(() => organizationRoles.id, { onDelete: "cascade" }),
+      .references(() => organizationRoles.id, { onDelete: "restrict" }),
     permission_key: text("permission_key", { enum: ["coaching.access"] })
       .notNull()
       .references(() => organizationPermissions.key, { onDelete: "restrict" }),
@@ -278,14 +310,19 @@ export const organizationRolePermissionGrants = pgTable(
 export const organizationMembershipRoleGrants = pgTable(
   "organization_membership_role_grants",
   {
+    id: uuid("id").defaultRandom().primaryKey(),
     organization_id: uuid("organization_id")
       .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
+      .references(() => organizations.id, { onDelete: "restrict" }),
     membership_id: uuid("membership_id").notNull(),
-    role_id: uuid("role_id").notNull(),
-    status: text("status", { enum: ["active", "inactive"] })
-      .notNull()
-      .default("active"),
+    // Legacy reader compatibility only; new writes use role_key and revocation history.
+    role_id: uuid("role_id"),
+    status: text("status", { enum: ["active", "inactive"] }),
+    role_key: text("role_key", { enum: organizationRoleKeyDbValues }).notNull(),
+    granted_at: timestamp("granted_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    revoked_at: timestamp("revoked_at", { withTimezone: true, mode: "date" }),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -294,21 +331,296 @@ export const organizationMembershipRoleGrants = pgTable(
       .notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.membership_id, table.role_id] }),
     foreignKey({
-      columns: [table.membership_id, table.organization_id],
-      foreignColumns: [organizationMemberships.id, organizationMemberships.organization_id],
+      columns: [table.organization_id, table.membership_id],
+      foreignColumns: [organizationMemberships.organization_id, organizationMemberships.id],
       name: "organization_membership_role_grants_membership_fkey",
-    }).onDelete("cascade"),
+    }).onDelete("restrict"),
     foreignKey({
       columns: [table.role_id, table.organization_id],
       foreignColumns: [organizationRoles.id, organizationRoles.organization_id],
       name: "organization_membership_role_grants_role_fkey",
-    }).onDelete("cascade"),
-    index("organization_membership_role_grants_role_status_idx").on(table.role_id, table.status),
+    }).onDelete("restrict"),
+    uniqueIndex("organization_membership_role_grants_active_unique")
+      .on(table.organization_id, table.membership_id, table.role_key)
+      .where(sql`${table.revoked_at} is null`),
     check(
-      "organization_membership_role_grants_status_check",
-      sql`${table.status} in ('active', 'inactive')`,
+      "organization_membership_role_grants_role_key_check",
+      sql`${table.role_key} in ('admin', 'coach')`,
+    ),
+    check(
+      "organization_membership_role_grants_revocation_chronology_check",
+      sql`${table.revoked_at} is null or ${table.revoked_at} >= ${table.granted_at}`,
+    ),
+  ],
+);
+
+export const coachingEngagements = pgTable(
+  "coaching_engagements",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organization_id: uuid("organization_id").notNull(),
+    athlete_profile_id: uuid("athlete_profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    paused_at: timestamp("paused_at", { withTimezone: true, mode: "date" }),
+    ended_at: timestamp("ended_at", { withTimezone: true, mode: "date" }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.organization_id],
+      foreignColumns: [organizations.id],
+      name: "coaching_engagements_organization_fkey",
+    }).onDelete("restrict"),
+    unique("coaching_engagements_organization_id_id_unique").on(table.organization_id, table.id),
+    unique("coaching_engagements_organization_id_id_athlete_unique").on(
+      table.organization_id,
+      table.id,
+      table.athlete_profile_id,
+    ),
+    uniqueIndex("coaching_engagements_current_unique")
+      .on(table.organization_id, table.athlete_profile_id)
+      .where(sql`${table.ended_at} is null`),
+    index("coaching_engagements_athlete_profile_organization_idx").on(
+      table.athlete_profile_id,
+      table.organization_id,
+    ),
+    check(
+      "coaching_engagements_lifecycle_check",
+      sql`${table.ended_at} is null or ${table.paused_at} is null`,
+    ),
+  ],
+);
+
+export const coachingAssignments = pgTable(
+  "coaching_assignments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organization_id: uuid("organization_id").notNull(),
+    engagement_id: uuid("engagement_id").notNull(),
+    coach_membership_id: uuid("coach_membership_id").notNull(),
+    assignment_kind: text("assignment_kind", { enum: ["primary", "supporting"] }).notNull(),
+    assigned_at: timestamp("assigned_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    ended_at: timestamp("ended_at", { withTimezone: true, mode: "date" }),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.organization_id, table.engagement_id],
+      foreignColumns: [coachingEngagements.organization_id, coachingEngagements.id],
+      name: "coaching_assignments_engagement_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organization_id, table.coach_membership_id],
+      foreignColumns: [organizationMemberships.organization_id, organizationMemberships.id],
+      name: "coaching_assignments_membership_fkey",
+    }).onDelete("restrict"),
+    uniqueIndex("coaching_assignments_active_primary_unique")
+      .on(table.engagement_id)
+      .where(sql`${table.assignment_kind} = 'primary' and ${table.ended_at} is null`),
+    uniqueIndex("coaching_assignments_active_kind_unique")
+      .on(table.engagement_id, table.coach_membership_id, table.assignment_kind)
+      .where(sql`${table.ended_at} is null`),
+    index("coaching_assignments_active_coach_membership_idx")
+      .on(table.organization_id, table.coach_membership_id)
+      .where(sql`${table.ended_at} is null`),
+    check(
+      "coaching_assignments_kind_check",
+      sql`${table.assignment_kind} in ('primary', 'supporting')`,
+    ),
+    check(
+      "coaching_assignments_chronology_check",
+      sql`${table.ended_at} is null or ${table.ended_at} >= ${table.assigned_at}`,
+    ),
+  ],
+);
+
+export const athleteConsentPolicyVersions = pgTable(
+  "athlete_consent_policy_versions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    scope_key: text("scope_key", { enum: athleteReadScopeDbValues }).notNull(),
+    effective_from: timestamp("effective_from", { withTimezone: true, mode: "date" }).notNull(),
+    jurisdiction: text("jurisdiction").notNull(),
+    terms_text: text("terms_text").notNull(),
+    content_digest: text("content_digest").notNull(),
+    supersedes_policy_version_id: uuid("supersedes_policy_version_id"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("athlete_consent_policy_versions_id_scope_unique").on(table.id, table.scope_key),
+    foreignKey({
+      columns: [table.supersedes_policy_version_id, table.scope_key],
+      foreignColumns: [table.id, table.scope_key],
+      name: "athlete_consent_policy_versions_supersedes_scope_fkey",
+    }).onDelete("restrict"),
+    check(
+      "athlete_consent_policy_versions_scope_check",
+      sql`${table.scope_key} in ('basic_profile', 'training', 'activities', 'metrics', 'goals', 'calendar')`,
+    ),
+    check("athlete_consent_policy_versions_terms_non_empty", sql`btrim(${table.terms_text}) <> ''`),
+    check(
+      "athlete_consent_policy_versions_digest_non_empty",
+      sql`btrim(${table.content_digest}) <> ''`,
+    ),
+    check(
+      "athlete_consent_policy_versions_supersedes_not_self_check",
+      sql`${table.supersedes_policy_version_id} is null or ${table.supersedes_policy_version_id} <> ${table.id}`,
+    ),
+  ],
+);
+
+export const athleteDataSharingConsents = pgTable(
+  "athlete_data_sharing_consents",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organization_id: uuid("organization_id").notNull(),
+    engagement_id: uuid("engagement_id").notNull(),
+    athlete_profile_id: uuid("athlete_profile_id").notNull(),
+    scope_key: text("scope_key", { enum: athleteReadScopeDbValues }).notNull(),
+    policy_version_id: uuid("policy_version_id").notNull(),
+    granted_by_profile_id: uuid("granted_by_profile_id").notNull(),
+    granted_at: timestamp("granted_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    expires_at: timestamp("expires_at", { withTimezone: true, mode: "date" }),
+    ended_at: timestamp("ended_at", { withTimezone: true, mode: "date" }),
+    superseded_by_consent_id: uuid("superseded_by_consent_id"),
+  },
+  (table) => [
+    unique("athlete_data_sharing_consents_authority_identity_unique").on(
+      table.organization_id,
+      table.engagement_id,
+      table.athlete_profile_id,
+      table.scope_key,
+      table.id,
+    ),
+    foreignKey({
+      columns: [table.organization_id, table.engagement_id, table.athlete_profile_id],
+      foreignColumns: [
+        coachingEngagements.organization_id,
+        coachingEngagements.id,
+        coachingEngagements.athlete_profile_id,
+      ],
+      name: "athlete_data_sharing_consents_engagement_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.policy_version_id, table.scope_key],
+      foreignColumns: [athleteConsentPolicyVersions.id, athleteConsentPolicyVersions.scope_key],
+      name: "athlete_data_sharing_consents_policy_scope_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [
+        table.organization_id,
+        table.engagement_id,
+        table.athlete_profile_id,
+        table.scope_key,
+        table.superseded_by_consent_id,
+      ],
+      foreignColumns: [
+        table.organization_id,
+        table.engagement_id,
+        table.athlete_profile_id,
+        table.scope_key,
+        table.id,
+      ],
+      name: "athlete_data_sharing_consents_successor_fkey",
+    }).onDelete("restrict"),
+    uniqueIndex("athlete_data_sharing_consents_current_unique")
+      .on(table.organization_id, table.engagement_id, table.athlete_profile_id, table.scope_key)
+      .where(sql`${table.ended_at} is null`),
+    index("athlete_data_sharing_consents_policy_scope_idx").on(
+      table.policy_version_id,
+      table.scope_key,
+    ),
+    index("athlete_data_sharing_consents_successor_idx")
+      .on(table.superseded_by_consent_id)
+      .where(sql`${table.superseded_by_consent_id} is not null`),
+    check(
+      "athlete_data_sharing_consents_grantor_check",
+      sql`${table.granted_by_profile_id} = ${table.athlete_profile_id}`,
+    ),
+    check(
+      "athlete_data_sharing_consents_expiry_chronology_check",
+      sql`${table.expires_at} is null or ${table.expires_at} >= ${table.granted_at}`,
+    ),
+    check(
+      "athlete_data_sharing_consents_end_chronology_check",
+      sql`${table.ended_at} is null or ${table.ended_at} >= ${table.granted_at}`,
+    ),
+    check(
+      "athlete_data_sharing_consents_successor_not_self_check",
+      sql`${table.superseded_by_consent_id} is null or ${table.superseded_by_consent_id} <> ${table.id}`,
+    ),
+  ],
+);
+
+export const organizationAuditEvents = pgTable(
+  "organization_audit_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organization_id: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "restrict" }),
+    actor_profile_id: uuid("actor_profile_id").references(() => profiles.id, {
+      onDelete: "restrict",
+    }),
+    actor_membership_id: uuid("actor_membership_id"),
+    action: text("action").notNull(),
+    resource_type: text("resource_type").notNull(),
+    resource_id: uuid("resource_id"),
+    occurred_at: timestamp("occurred_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    correlation_id: uuid("correlation_id"),
+    details: jsonb("details").notNull().default({}),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.organization_id, table.actor_membership_id],
+      foreignColumns: [organizationMemberships.organization_id, organizationMemberships.id],
+      name: "organization_audit_events_actor_membership_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organization_id, table.actor_membership_id, table.actor_profile_id],
+      foreignColumns: [
+        organizationMemberships.organization_id,
+        organizationMemberships.id,
+        organizationMemberships.profile_id,
+      ],
+      name: "organization_audit_events_actor_identity_fkey",
+    }).onDelete("restrict"),
+    index("organization_audit_events_organization_occurred_idx").on(
+      table.organization_id,
+      table.occurred_at,
+    ),
+    index("organization_audit_events_actor_membership_idx")
+      .on(table.organization_id, table.actor_membership_id)
+      .where(sql`${table.actor_membership_id} is not null`),
+    uniqueIndex("organization_audit_events_correlation_action_unique")
+      .on(table.organization_id, table.correlation_id, table.action)
+      .where(sql`${table.correlation_id} is not null`),
+    check("organization_audit_events_action_non_empty", sql`btrim(${table.action}) <> ''`),
+    check(
+      "organization_audit_events_resource_type_non_empty",
+      sql`btrim(${table.resource_type}) <> ''`,
+    ),
+    check(
+      "organization_audit_events_details_object",
+      sql`jsonb_typeof(${table.details}) = 'object'`,
+    ),
+    check(
+      "organization_audit_events_actor_membership_profile_check",
+      sql`${table.actor_membership_id} is null or ${table.actor_profile_id} is not null`,
     ),
   ],
 );
