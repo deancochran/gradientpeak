@@ -1,8 +1,8 @@
 import { invalidateActivityPlanQueries } from "@repo/api/react";
 import {
-  activityPlanStructureSchemaV3,
+  activityPlanStructureSchema,
   calculateActivityPlanStats,
-  compileActivityPlanV3,
+  compileActivityPlan,
 } from "@repo/core";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo } from "react";
@@ -81,7 +81,7 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
 
   useEffect(() => {
     if (!existingPlan || !isEditMode) return;
-    const parsed = activityPlanStructureSchemaV3.safeParse(existingPlan.structure);
+    const parsed = activityPlanStructureSchema.safeParse(existingPlan.structure);
     if (!parsed.success) {
       Alert.alert("Unsupported plan", "This plan is not a valid version 3 activity plan.");
       return;
@@ -105,9 +105,9 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
   ]);
 
   const metrics = useMemo(() => {
-    const parsed = activityPlanStructureSchemaV3.safeParse(store.structure);
+    const parsed = activityPlanStructureSchema.safeParse(store.structure);
     if (!parsed.success) return { stepCount: 0, durationMs: 0, durationMinutes: 0 };
-    const stats = calculateActivityPlanStats(compileActivityPlanV3(parsed.data));
+    const stats = calculateActivityPlanStats(compileActivityPlan(parsed.data));
     const exactSeconds = stats.duration.exactElapsedSeconds ?? 0;
     return {
       stepCount: stats.occurrenceCount,
@@ -120,7 +120,7 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     (structureOverride = store.structure) => {
       const errors: ActivityPlanValidationErrors = {};
       if (!store.name.trim()) errors.name = "Plan name is required.";
-      const result = activityPlanStructureSchemaV3.safeParse(structureOverride);
+      const result = activityPlanStructureSchema.safeParse(structureOverride);
       if (!result.success) {
         for (const issue of result.error.issues) {
           const key = mapActivityPlanIssueToUiKey(issue, structureOverride);
@@ -138,7 +138,7 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
       Alert.alert("Plan unavailable", "Refresh this plan before editing.");
       return null;
     }
-    const parsed = activityPlanStructureSchemaV3.safeParse(store.structure);
+    const parsed = activityPlanStructureSchema.safeParse(store.structure);
     const currentValidation = validate(store.structure);
     if (!parsed.success || !currentValidation.isValid) {
       Alert.alert(

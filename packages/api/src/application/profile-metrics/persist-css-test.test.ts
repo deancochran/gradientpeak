@@ -46,7 +46,7 @@ function createDb(options: { failMetricInsert?: boolean } = {}) {
                 staged.push({ table, values: returnedValues });
                 return returnedValues;
               }
-              const returnedValues = { ...(values as Record<string, unknown>), idx: 1 };
+              const returnedValues = { ...(values as Record<string, unknown>) };
               staged.push({ table, values: returnedValues });
               return [returnedValues];
             }),

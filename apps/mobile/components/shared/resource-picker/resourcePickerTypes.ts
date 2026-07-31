@@ -64,16 +64,4 @@ export type ResourcePickerExternalItem = ResourcePickerItemBase & {
   presentation: "external";
 };
 
-/**
- * Backwards-compatible selection payload used by existing callbacks. It cannot
- * render a result row: callers that render an external item must opt in with
- * `presentation: "external"`.
- */
-export type ResourcePickerSelectionItem = ResourcePickerItemBase & {
-  presentation?: undefined;
-};
-
-export type ResourcePickerItem =
-  | ResourcePickerCanonicalItem
-  | ResourcePickerExternalItem
-  | ResourcePickerSelectionItem;
+export type ResourcePickerItem = ResourcePickerCanonicalItem | ResourcePickerExternalItem;

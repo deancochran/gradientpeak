@@ -1,19 +1,19 @@
 import {
   type ActivityPlanTarget,
-  activityPlanStructureSchemaV3,
+  activityPlanStructureSchema,
   type CompiledActivityPlan,
   type CompiledActivityPlanOccurrence,
-  compileValidatedActivityPlanV3,
+  compileValidatedActivityPlan,
   type RecordingActivityCategory,
 } from "@repo/core";
 
-export interface RecordingActivityPlanV3Input {
+export interface RecordingActivityPlanInput {
   id?: string;
   name: string;
   description?: string | null;
   notes?: string | null;
   gps_recording_enabled?: boolean;
-  /** Untrusted transport input; compileRecordingPlan performs strict V3 parsing. */
+  /** Untrusted transport input; compileRecordingPlan performs strict parsing. */
   structure: unknown;
 }
 
@@ -30,7 +30,7 @@ const FREE_RECORDING_STEP_ID = "00000000-0000-4000-8000-000000000003";
  */
 export function createFreeRecordingExecutionPlan(
   activity_category: RecordingActivityCategory,
-): RecordingActivityPlanV3Input {
+): RecordingActivityPlanInput {
   const name = `${activity_category} free recording`;
   return {
     name,
@@ -78,10 +78,10 @@ export type CompiledRecordingPlan = Omit<CompiledActivityPlan, "occurrences"> & 
   occurrences: readonly RecordingPlanOccurrence[];
 };
 
-/** Compiles the strict V3 snapshot and adds presentation-only labels without changing identity/order. */
-export function compileRecordingPlan(plan: RecordingActivityPlanV3Input): CompiledRecordingPlan {
-  const structure = activityPlanStructureSchemaV3.parse(plan.structure);
-  const compiled = compileValidatedActivityPlanV3(structure);
+/** Compiles the strict snapshot and adds presentation-only labels without changing identity/order. */
+export function compileRecordingPlan(plan: RecordingActivityPlanInput): CompiledRecordingPlan {
+  const structure = activityPlanStructureSchema.parse(plan.structure);
+  const compiled = compileValidatedActivityPlan(structure);
 
   return {
     ...compiled,

@@ -97,7 +97,7 @@ function validStructure() {
   };
 }
 
-describe("useActivityPlanForm V3", () => {
+describe("useActivityPlanForm", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     useActivityPlanCreationStore.setState({
@@ -109,7 +109,7 @@ describe("useActivityPlanForm V3", () => {
     });
   });
 
-  it("rejects a missing V3 segment list", () => {
+  it("rejects a missing segment list", () => {
     const { result } = renderHook(() => useActivityPlanForm());
     expect(result.current.canSubmit).toBe(false);
     expect(Object.values(result.current.validation.errors)[0]).toContain("Too small");
@@ -122,7 +122,7 @@ describe("useActivityPlanForm V3", () => {
     expect(result.current.metrics.duration).toBe(15);
   });
 
-  it("maps V3 segment paths to interval and step UI error keys", () => {
+  it("maps segment paths to interval and step UI error keys", () => {
     const structure = validStructure();
     const firstActivity = structure.segments[0];
     const secondActivity = structure.segments[1];
@@ -146,7 +146,7 @@ describe("useActivityPlanForm V3", () => {
     ).toBeDefined();
   });
 
-  it("submits only strict V3 without a synthetic activity_category field", async () => {
+  it("submits only strict structures without a synthetic activity_category field", async () => {
     useActivityPlanCreationStore.setState({ structure: validStructure() });
     const { result } = renderHook(() => useActivityPlanForm());
     await act(async () => {

@@ -19,13 +19,13 @@ jest.mock("@/components/shared/RouteCard", () => ({
 const { CreateEventMainStep } = require("./CreateEventMainStep");
 
 describe("CreateEventMainStep", () => {
-  it("renders only accessible legacy guidance for a read-only existing event", () => {
+  it("renders only accessible unavailable-plan guidance for a read-only existing event", () => {
     renderNative(
       <CreateEventMainStep
         control={{}}
         draft={{
           activityPlanId: "plan-1",
-          activityPlanName: "Legacy plan",
+          activityPlanName: "Unavailable plan",
           mode: "planned",
           notes: "",
           recurrenceEndDate: null,
@@ -34,7 +34,7 @@ describe("CreateEventMainStep", () => {
           routeName: null,
           scheduledDate: "2026-06-02",
           timezone: "UTC",
-          title: "Legacy plan",
+          title: "Unavailable plan",
         }}
         isPending={false}
         isReadOnly
@@ -51,7 +51,7 @@ describe("CreateEventMainStep", () => {
     );
 
     expect(screen.getByText("This event is read-only on mobile")).toBeTruthy();
-    expect(screen.getByText(/legacy or unavailable/)).toBeTruthy();
+    expect(screen.getByText(/activity plan is unavailable/)).toBeTruthy();
     expect(screen.queryByTestId("event-detail-title-input")).toBeNull();
     expect(screen.queryByTestId("event-detail-notes-input")).toBeNull();
     expect(screen.queryByTestId("event-detail-start-date-button")).toBeNull();

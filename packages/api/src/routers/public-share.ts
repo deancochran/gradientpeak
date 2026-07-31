@@ -1,6 +1,6 @@
 import {
-  activityPlanStructureSchemaV3,
-  completedActivitySegmentSchemaV1,
+  activityPlanStructureSchema,
+  completedActivitySegmentSchema,
   trainingPlanSchema,
 } from "@repo/core";
 import { sql } from "drizzle-orm";
@@ -55,7 +55,7 @@ const publicActivitySchema = z
     max_power: z.number().int().nullable(),
     avg_speed_mps: z.number().nullable(),
     max_speed_mps: z.number().nullable(),
-    segments: z.array(completedActivitySegmentSchemaV1),
+    segments: z.array(completedActivitySegmentSchema),
     current_artifact: currentArtifactSchema.nullable(),
     likes_count: z.number().int().nonnegative(),
     owner: profileSummarySchema,
@@ -68,7 +68,7 @@ const publicActivityPlanSchema = z
     name: z.string(),
     description: z.string().nullable(),
     notes: z.string().nullable(),
-    structure: activityPlanStructureSchemaV3,
+    structure: activityPlanStructureSchema,
     structure_hash: z.string().regex(/^v1:sha256:[0-9a-f]{64}$/),
     gps_recording_enabled: z.boolean(),
     template_visibility: z.enum(["private", "followers", "public"]),

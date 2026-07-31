@@ -385,10 +385,12 @@ describe("Wahoo repository activity persistence boundary", () => {
 
     expect(selected?.activityFilePath).toBe(schema.activityArtifacts.path);
     expect(selected?.activityFileSize).toBe(schema.activityArtifacts.byte_size);
+    expect(selected?.artifactId).toBe(schema.activityArtifacts.id);
+    expect(selected?.segmentsRevision).toBe(schema.activities.segments_revision);
     expect(result).toEqual(row);
   });
 
-  it("derives planned activity category from V3 structure", async () => {
+  it("derives planned activity category from the canonical structure", async () => {
     const structure = {
       version: 3,
       segments: [

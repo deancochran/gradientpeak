@@ -88,13 +88,13 @@ describe("activity effort curves", () => {
     expect(getActivityEffortCurveBest(records)?.id).toBe("observed");
   });
 
-  it("recognizes onboarding modeled anchors even when legacy provenance omitted source", () => {
+  it("fails closed when an onboarding modeled anchor omits its source", () => {
     expect(
       getActivityEffortObservationStatus({
         ...observedEffort,
         source: null,
         method: "onboarding_modeled_curve",
       }),
-    ).toBe("modeled");
+    ).toBe("review");
   });
 });

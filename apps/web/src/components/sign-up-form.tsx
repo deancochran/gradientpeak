@@ -8,6 +8,7 @@ import { useForm } from "react-hook-form";
 import { getSignUpFormError } from "../lib/auth/form-errors";
 import { type SignUpFormValues, signUpFormSchema } from "../lib/auth/form-schemas";
 import { signUpWithEmailAction } from "../lib/auth/server-actions";
+import { contractEpochFormInputProps } from "../lib/contract-epoch";
 import { AuthCardShell } from "./auth-card-shell";
 
 export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
@@ -43,6 +44,7 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
       <AuthCardShell title="Sign up" description="Create a new account">
         <Form {...form}>
           <form action={signUpWithEmailAction.url} method="post" onSubmit={handleSignUp}>
+            <input {...contractEpochFormInputProps} />
             <div className="flex flex-col gap-6">
               <FormTextField
                 autoComplete="email"

@@ -194,7 +194,7 @@ function UserProfilePage() {
           {isSelf ? (
             <Card>
               <CardHeader>
-                <CardTitle>Groups</CardTitle>
+                <h2 className="text-xl font-semibold">Groups</h2>
                 <CardDescription>Active community memberships</CardDescription>
               </CardHeader>
               <CardContent>
@@ -234,7 +234,7 @@ function UserProfilePage() {
           {isSelf ? (
             <Card>
               <CardHeader>
-                <CardTitle>Your library</CardTitle>
+                <h2 className="text-xl font-semibold">Your library</h2>
                 <CardDescription>Open your training and activity collections.</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

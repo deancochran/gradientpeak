@@ -9,9 +9,9 @@ import { athleteMetricRoleByType } from "../../evidence-contracts";
 import { athleteIntelligenceModelInputSchema } from "../../model-input-contracts";
 import { athleteIntelligenceProjectionSchema } from "../../projection-contracts";
 import type { ActivityReadinessResults } from "../activity-readiness";
-import type { GoalDemandPolicyV1Result } from "../goal-demand";
+import type { GoalDemandPolicyResult } from "../goal-demand";
 import type { PhysiologyMetricsPolicyResult } from "../physiology-metrics";
-import { assembleWholeAthleteProjectionV1 } from "../projection";
+import { assembleWholeAthleteProjection } from "../projection";
 import type { TrainingFeasibilityResults } from "../training-feasibility";
 
 const AS_OF = "2026-07-10T12:00:00.000Z";
@@ -287,14 +287,20 @@ function model(
       ctlOverride: nullEv("training_load"),
       atlOverride: nullEv("training_load"),
     },
+    readCoverage: {
+      metrics: { state: "complete", reason: null },
+      activities: { state: "complete", reason: null },
+      efforts: { state: "complete", reason: null },
+      schedules: { state: "complete", reason: null },
+    },
     plannedSchedule: [],
   });
 }
 
 const demand = (
   goalSourceId: string,
-  requirement: Extract<GoalDemandPolicyV1Result, { state: "complete" }>["requirement"],
-): GoalDemandPolicyV1Result => ({
+  requirement: Extract<GoalDemandPolicyResult, { state: "complete" }>["requirement"],
+): GoalDemandPolicyResult => ({
   policyVersion: "goal-demand-v1",
   state: "complete",
   goalSourceId,
@@ -305,7 +311,7 @@ const baseInput = (
   goals: readonly Goal[],
   demands: readonly {
     goalSourceId: string;
-    demand: GoalDemandPolicyV1Result;
+    demand: GoalDemandPolicyResult;
     effortCurve?: {
       policyVersion: "effort-curves-v1";
       threshold: CalculationResult;
@@ -422,7 +428,7 @@ describe("whole athlete projection v1", () => {
         }),
       },
     ];
-    const projection = assembleWholeAthleteProjectionV1(baseInput(goals, inputs));
+    const projection = assembleWholeAthleteProjection(baseInput(goals, inputs));
     expect(athleteIntelligenceProjectionSchema.parse(projection)).toEqual(projection);
     expect(
       projection.goalCoverage.map((goal) => goal.dimensions.map((item) => item.dimension)),
@@ -475,7 +481,7 @@ describe("whole athlete projection v1", () => {
         highIntensity: result(200, "seconds_per_kilometer"),
       },
     });
-    const projection = assembleWholeAthleteProjectionV1(
+    const projection = assembleWholeAthleteProjection(
       baseInput(goals, [paceInput("goal:ahead", 300), paceInput("goal:behind", 200)]),
     );
 
@@ -545,7 +551,7 @@ describe("whole athlete projection v1", () => {
         } as const,
       },
     ];
-    const projection = assembleWholeAthleteProjectionV1(
+    const projection = assembleWholeAthleteProjection(
       baseInput(goals, [
         {
           goalSourceId: "goal:pace",
@@ -585,7 +591,7 @@ describe("whole athlete projection v1", () => {
     expect(projection.opportunities.training).toEqual([]);
     expect(projection.opportunities.evidence).toHaveLength(1);
 
-    const missingProjection = assembleWholeAthleteProjectionV1(
+    const missingProjection = assembleWholeAthleteProjection(
       baseInput(goals, [
         {
           goalSourceId: "goal:pace",
@@ -648,7 +654,7 @@ describe("whole athlete projection v1", () => {
         }),
       },
     ];
-    const projection = assembleWholeAthleteProjectionV1(baseInput(goals, demands));
+    const projection = assembleWholeAthleteProjection(baseInput(goals, demands));
     expect(
       projection.opportunities.training.map(({ goalSourceId, dimension }) => [
         goalSourceId,
@@ -659,7 +665,7 @@ describe("whole athlete projection v1", () => {
       ["goal:high", "duration"],
       ["goal:low", "threshold"],
     ]);
-    const reordered = assembleWholeAthleteProjectionV1(
+    const reordered = assembleWholeAthleteProjection(
       baseInput(
         [
           {
@@ -734,8 +740,8 @@ describe("whole athlete projection v1", () => {
         },
       },
     ];
-    const base = assembleWholeAthleteProjectionV1(baseInput(goals, demands));
-    const ftp = assembleWholeAthleteProjectionV1({
+    const base = assembleWholeAthleteProjection(baseInput(goals, demands));
+    const ftp = assembleWholeAthleteProjection({
       ...baseInput(goals, demands),
       physiology: physiology(320, 80),
     });
@@ -751,7 +757,7 @@ describe("whole athlete projection v1", () => {
     expect(ftp.capability.wattsPerKilogram.estimate).toBe(4);
     expect(ftp.readiness).toEqual(base.readiness);
     expect(ftp.feasibility).toEqual(base.feasibility);
-    const effort = assembleWholeAthleteProjectionV1(
+    const effort = assembleWholeAthleteProjection(
       baseInput(goals, [
         {
           goalSourceId: "goal:power",
@@ -771,19 +777,19 @@ describe("whole athlete projection v1", () => {
     );
     expect(effort.capability.effortCurves[0]?.threshold.estimate).toBe(330);
     expect(effort.goalCoverage).toEqual(base.goalCoverage);
-    const endurance = assembleWholeAthleteProjectionV1({
+    const endurance = assembleWholeAthleteProjection({
       ...baseInput(goals, demands),
       activityReadiness: readiness({ endurance: result(240, "minutes") }),
     });
     expect(endurance.capability.enduranceRecencyWeightedMinutes.estimate).toBe(240);
     expect(endurance.readiness).toEqual(base.readiness);
-    const availability = assembleWholeAthleteProjectionV1({
+    const availability = assembleWholeAthleteProjection({
       ...baseInput(goals, demands),
       calendarFeasibility: feasibility(0.5),
     });
     expect(availability.capability).toEqual(base.capability);
     expect(availability.goalCoverage).toEqual(base.goalCoverage);
-    const recovery = assembleWholeAthleteProjectionV1({
+    const recovery = assembleWholeAthleteProjection({
       ...baseInput(goals, demands),
       activityReadiness: readiness({
         readinessContext: result(-0.5, "bounded_baseline_deviation"),
@@ -813,7 +819,7 @@ describe("whole athlete projection v1", () => {
         } as const,
       },
     ];
-    const demandResult: GoalDemandPolicyV1Result = incomplete
+    const demandResult: GoalDemandPolicyResult = incomplete
       ? {
           policyVersion: "goal-demand-v1",
           state: "incomplete",
@@ -826,7 +832,7 @@ describe("whole athlete projection v1", () => {
           target: result(target, "W"),
           testDuration: result(1200, "s"),
         });
-    const projection = assembleWholeAthleteProjectionV1({
+    const projection = assembleWholeAthleteProjection({
       ...baseInput(goals, [{ goalSourceId: "goal:test", demand: demandResult }]),
       calendarFeasibility: feasibility(calendar),
       activityReadiness: readiness({
@@ -865,7 +871,7 @@ describe("whole athlete projection v1", () => {
       reasonCodes: ["partial_direct_power_evidence"],
       contributingSourceIds: ["metric:ftp"],
     });
-    const projection = assembleWholeAthleteProjectionV1({
+    const projection = assembleWholeAthleteProjection({
       ...baseInput(goals, [
         {
           goalSourceId: "goal:uncertain",
@@ -956,7 +962,7 @@ describe("whole athlete projection v1", () => {
               target: result(350, "W"),
               testDuration: result(1200, "s"),
             };
-    const projection = assembleWholeAthleteProjectionV1({
+    const projection = assembleWholeAthleteProjection({
       ...baseInput(
         [goal],
         [
@@ -1036,7 +1042,7 @@ describe("whole athlete projection v1", () => {
       dimension === "distance"
         ? first(activity.metrics.distanceMeters.evidenceSourceIds, "Distance evidence")
         : first(activity.metrics.elapsedDurationSeconds.evidenceSourceIds, "Duration evidence");
-    const projection = assembleWholeAthleteProjectionV1({
+    const projection = assembleWholeAthleteProjection({
       ...baseInput(
         [goal],
         [
@@ -1096,7 +1102,7 @@ describe("whole athlete projection v1", () => {
       ...runActivity.metrics.distanceMeters.evidenceSourceIds,
       ...runActivity.metrics.elapsedDurationSeconds.evidenceSourceIds,
     ];
-    const projection = assembleWholeAthleteProjectionV1({
+    const projection = assembleWholeAthleteProjection({
       ...baseInput(
         [goal],
         [
@@ -1189,7 +1195,7 @@ describe("whole athlete projection v1", () => {
       ),
       model: activityCategoryFilteredModel,
     };
-    const projection = assembleWholeAthleteProjectionV1(input);
+    const projection = assembleWholeAthleteProjection(input);
     expect(projection.goalCoverage[0]?.dimensions[0]?.capability).toMatchObject({
       estimate: 0.25,
       contributingSourceIds: [bikeDurationSourceId],
@@ -1209,7 +1215,7 @@ describe("whole athlete projection v1", () => {
         },
       },
     };
-    const futureProjection = assembleWholeAthleteProjectionV1({
+    const futureProjection = assembleWholeAthleteProjection({
       ...input,
       model: futureActivityCategorySpecificModel,
     });
@@ -1228,7 +1234,7 @@ describe("whole athlete projection v1", () => {
       priority: 1,
       objective: { type: "threshold", metric: "power", value: 350, test_duration_s: 1200 } as const,
     };
-    const projection = assembleWholeAthleteProjectionV1(
+    const projection = assembleWholeAthleteProjection(
       baseInput(
         [missingActivityCategory],
         [

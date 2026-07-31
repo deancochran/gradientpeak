@@ -34,7 +34,6 @@ describe("notificationsRouter", () => {
             entity_id: ENTITY_ID,
             read_at: readAt,
             created_at: createdAt,
-            is_read: true,
           },
         ],
       })),
@@ -49,7 +48,6 @@ describe("notificationsRouter", () => {
         entity_id: ENTITY_ID,
         read_at: readAt.toISOString(),
         created_at: createdAt.toISOString(),
-        is_read: true,
       },
     ]);
     expect(execute).toHaveBeenCalledTimes(1);

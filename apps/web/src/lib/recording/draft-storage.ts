@@ -7,6 +7,8 @@ import {
   portableWebRecordingSubmissionJobSchema,
 } from "@repo/core";
 
+import { WEB_RECORDING_DATABASE_NAME } from "../contract-epoch";
+
 import {
   type ClaimedWebRecordingSubmissionJob,
   createQueuedSubmissionJob,
@@ -95,7 +97,8 @@ export async function checkpointTimerDraft(
   await storage.remove();
 }
 
-const TIMER_DRAFT_DATABASE_NAME = "gradientpeak-web-recording";
+export const TIMER_DRAFT_DATABASE_NAME = WEB_RECORDING_DATABASE_NAME;
+export const TIMER_DRAFT_DATABASE_VERSION = 1;
 const TIMER_DRAFT_STORE_NAME = "timer-drafts";
 const FINALIZED_ARTIFACT_STORE_NAME = "finalized-artifacts";
 const SUBMISSION_JOB_STORE_NAME = "submission-jobs";
@@ -125,28 +128,28 @@ export function parseStoredSubmissionJobEnvelope(
   value: unknown,
   ownerId: string,
 ): StoredSubmissionJobEnvelope | null {
-  const envelope =
-    typeof value === "object" && value !== null
-      ? (value as Partial<StoredSubmissionJobEnvelope>)
-      : null;
-  const candidate = envelope && "job" in envelope ? envelope.job : value;
-  const parsed = portableWebRecordingSubmissionJobSchema.safeParse(candidate);
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const envelope = value as Record<string, unknown>;
+  const parsed = portableWebRecordingSubmissionJobSchema.safeParse(envelope.job);
   if (!parsed.success || parsed.data.artifact.ownerId !== ownerId) return null;
-  const claimExpiresAtMs = envelope?.claimExpiresAtMs;
-  const revision = envelope?.revision;
+  const claimExpiresAtMs = envelope.claimExpiresAtMs;
+  const revision = envelope.revision;
+  if (
+    (envelope.claimOwner !== null && typeof envelope.claimOwner !== "string") ||
+    typeof claimExpiresAtMs !== "number" ||
+    !Number.isSafeInteger(claimExpiresAtMs) ||
+    claimExpiresAtMs < 0 ||
+    typeof revision !== "number" ||
+    !Number.isSafeInteger(revision) ||
+    revision < 0
+  ) {
+    return null;
+  }
   return {
     job: parsed.data,
-    claimOwner: typeof envelope?.claimOwner === "string" ? envelope.claimOwner : null,
-    claimExpiresAtMs:
-      typeof claimExpiresAtMs === "number" &&
-      Number.isSafeInteger(claimExpiresAtMs) &&
-      claimExpiresAtMs >= 0
-        ? claimExpiresAtMs
-        : 0,
-    revision:
-      typeof revision === "number" && Number.isSafeInteger(revision) && revision >= 0
-        ? revision
-        : 0,
+    claimOwner: envelope.claimOwner,
+    claimExpiresAtMs,
+    revision,
   };
 }
 
@@ -782,17 +785,11 @@ export class IndexedDbTimerDraftStorage implements WebRecordingStorage {
     }
 
     return await new Promise((resolve, reject) => {
-      const request = indexedDB.open(TIMER_DRAFT_DATABASE_NAME, 2);
+      const request = indexedDB.open(TIMER_DRAFT_DATABASE_NAME, TIMER_DRAFT_DATABASE_VERSION);
       request.onupgradeneeded = () => {
-        if (!request.result.objectStoreNames.contains(TIMER_DRAFT_STORE_NAME)) {
-          request.result.createObjectStore(TIMER_DRAFT_STORE_NAME);
-        }
-        if (!request.result.objectStoreNames.contains(FINALIZED_ARTIFACT_STORE_NAME)) {
-          request.result.createObjectStore(FINALIZED_ARTIFACT_STORE_NAME);
-        }
-        if (!request.result.objectStoreNames.contains(SUBMISSION_JOB_STORE_NAME)) {
-          request.result.createObjectStore(SUBMISSION_JOB_STORE_NAME);
-        }
+        request.result.createObjectStore(TIMER_DRAFT_STORE_NAME);
+        request.result.createObjectStore(FINALIZED_ARTIFACT_STORE_NAME);
+        request.result.createObjectStore(SUBMISSION_JOB_STORE_NAME);
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () =>

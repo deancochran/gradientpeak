@@ -17,7 +17,7 @@ const createPlan = createSystemActivityPlanBuilderFactory("swim", [
  * Estimated TSS: ~40
  */
 export const EASY_SWIM: RecordingServiceActivityPlan = {
-  id: "3f6a7b8c-9d0e-1f2a-3b4c-5d6e7f8a9b0c",
+  id: "3f6a7b8c-9d0e-4f2a-bb4c-5d6e7f8a9b0c",
   name: "Easy Swim",
   description: "Comfortable continuous swim focusing on technique and aerobic base",
   gps_recording_enabled: false,
@@ -49,7 +49,7 @@ export const EASY_SWIM: RecordingServiceActivityPlan = {
  * Estimated TSS: ~75
  */
 export const SPRINT_INTERVALS_SWIM: RecordingServiceActivityPlan = {
-  id: "4a7b8c9d-0e1f-2a3b-4c5d-6e7f8a9b0c1d",
+  id: "4a7b8c9d-0e1f-4a3b-8c5d-6e7f8a9b0c1d",
   name: "Sprint Intervals",
   description: "High-intensity sprint intervals for speed development",
   gps_recording_enabled: false,
@@ -109,7 +109,7 @@ export const SPRINT_INTERVALS_SWIM: RecordingServiceActivityPlan = {
  * Estimated TSS: ~80
  */
 export const THRESHOLD_SWIM: RecordingServiceActivityPlan = {
-  id: "5b8c9d0e-1f2a-3b4c-5d6e-7f8a9b0c1d2e",
+  id: "5b8c9d0e-1f2a-4b4c-9d6e-7f8a9b0c1d2e",
   name: "Threshold Set",
   description: "Sustained threshold efforts for lactate tolerance",
   gps_recording_enabled: false,
@@ -152,7 +152,7 @@ export const THRESHOLD_SWIM: RecordingServiceActivityPlan = {
  * Estimated TSS: ~30
  */
 export const TECHNIQUE_SWIM: RecordingServiceActivityPlan = {
-  id: "6c9d0e1f-2a3b-4c5d-6e7f-8a9b0c1d2e3f",
+  id: "6c9d0e1f-2a3b-4c5d-ae7f-8a9b0c1d2e3f",
   name: "Technique Focus",
   description: "Technical swimming session focusing on stroke mechanics",
   gps_recording_enabled: false,
@@ -207,7 +207,7 @@ export const TECHNIQUE_SWIM: RecordingServiceActivityPlan = {
  * Estimated TSS: ~60
  */
 export const ENDURANCE_SWIM: RecordingServiceActivityPlan = {
-  id: "7d0e1f2a-3b4c-5d6e-7f8a-9b0c1d2e3f4a",
+  id: "7d0e1f2a-3b4c-4d6e-bf8a-9b0c1d2e3f4a",
   name: "Endurance Set",
   description: "Long aerobic swim for endurance base building",
   gps_recording_enabled: false,

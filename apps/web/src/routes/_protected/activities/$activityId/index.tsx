@@ -10,7 +10,13 @@ import {
   AlertDialogTrigger,
 } from "@repo/ui/components/alert-dialog";
 import { Button } from "@repo/ui/components/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@repo/ui/components/card";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +30,10 @@ import { Loader2, Lock, Share2, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { SessionRpeCard } from "../../../../components/activity/session-rpe-card";
+import {
+  ActivityStreamChartsCard,
+  ActivitySwimDetailCards,
+} from "../../../../components/protected/activity-file-detail-cards";
 import {
   DetailMetricGrid,
   DetailPageIntro,
@@ -50,6 +60,7 @@ import {
   formatPace,
   formatPower,
   formatSpeed,
+  getActivityBadgeLabel,
   getActivityCoordinates,
   summarizeActivityStreams,
 } from "../../../../lib/activity-route-helpers";
@@ -91,6 +102,8 @@ function ActivityDetailPage() {
   const { activityId } = Route.useParams();
   const [liked, setLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(0);
+  const [failedLikeIntent, setFailedLikeIntent] = useState<boolean | null>(null);
+  const [deleteFailed, setDeleteFailed] = useState(false);
   const activityQuery = api.activities.getById.useQuery({ id: activityId });
   const activity = activityQuery.data?.activity;
   const derived = activityQuery.data?.derived;
@@ -108,9 +121,14 @@ function ActivityDetailPage() {
     return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
   }, [activity?.segments]);
   const currentArtifactLabel = deriveCurrentArtifactLabel(activity?.current_artifact ?? null);
-  const primaryStreamSegment = activity?.segments
+  const activityStreamSegments = (activity?.segments ?? [])
     .filter((segment) => segment.role === "activity")
-    .sort((left, right) => left.ordinal - right.ordinal)[0];
+    .sort((left, right) => left.ordinal - right.ordinal);
+  const primaryStreamSegment = activityStreamSegments[0];
+  const streamScopeDescription =
+    activityStreamSegments.length > 1 && primaryStreamSegment?.activity_category
+      ? `Showing the first ${getActivityBadgeLabel(primaryStreamSegment.activity_category).toLowerCase()} segment from this multisport activity.`
+      : undefined;
   const commonLoad = derived?.stress.common_load;
   const loadLabels = getActivityLoadLabels();
   const loadPresentation = getCommonLoadPresentation(commonLoad, {
@@ -166,22 +184,29 @@ function ActivityDetailPage() {
           : streamsQuery.isLoading
             ? "loading"
             : "ready";
+  const streamErrorMessage =
+    ingestionStatus === "failed"
+      ? (ingestion?.last_error_message ?? "Activity file processing failed.")
+      : streamsQuery.error?.message;
+  const retryLikeLabel =
+    failedLikeIntent === null ? undefined : failedLikeIntent ? "Retry like" : "Retry unlike";
   const toggleLikeMutation = api.social.toggleLike.useMutation({
-    onError: () => {
-      setLiked(activityQuery.data?.has_liked ?? false);
-      setLikesCount(activity?.likes_count ?? 0);
-      toast.error("Like update failed");
-    },
+    retry: false,
+    onError: () => toast.error("Like update failed"),
   });
   const updateMutation = api.activities.update.useMutation({
-    onSuccess: async () => {
-      await utils.activities.invalidate();
+    onSuccess: async (_data, variables) => {
+      await utils.activities.getById.invalidate({ id: variables.id });
+      void utils.activities.listPaginated.invalidate();
       toast.success("Visibility updated");
     },
   });
   const deleteMutation = api.activities.delete.useMutation({
-    onSuccess: async () => {
-      await utils.activities.invalidate();
+    retry: false,
+    onMutate: () => setDeleteFailed(false),
+    onError: () => setDeleteFailed(true),
+    onSuccess: () => {
+      void utils.activities.listPaginated.invalidate();
       toast.success("Activity deleted");
       void navigate({ to: "/activities" });
     },
@@ -192,6 +217,11 @@ function ActivityDetailPage() {
     setLikesCount(activity?.likes_count ?? 0);
   }, [activity?.likes_count, activityQuery.data?.has_liked]);
 
+  useEffect(() => {
+    setFailedLikeIntent(null);
+    setDeleteFailed(false);
+  }, [activity?.id]);
+
   const coordinates = useMemo(
     () => getActivityCoordinates(activity?.polyline, streamsQuery.data?.records),
     [activity?.polyline, streamsQuery.data?.records],
@@ -201,6 +231,43 @@ function ActivityDetailPage() {
     [streamsQuery.data?.records, unitSystem],
   );
   const contentVisibility = activity ? resolveContentVisibility(activity) : "private";
+
+  const handleLikeToggle = async () => {
+    if (!activity) return;
+    const intendedLiked = failedLikeIntent ?? !liked;
+    let previousLiked = liked;
+    let previousCount = likesCount;
+
+    if (failedLikeIntent !== null) {
+      const refreshed = await activityQuery.refetch();
+      const authoritativeLiked = refreshed.data?.has_liked;
+      const authoritativeCount = refreshed.data?.activity.likes_count;
+      if (typeof authoritativeLiked === "boolean") {
+        previousLiked = authoritativeLiked;
+        previousCount = authoritativeCount ?? previousCount;
+        setLiked(authoritativeLiked);
+        setLikesCount(previousCount);
+        if (authoritativeLiked === intendedLiked) {
+          setFailedLikeIntent(null);
+          return;
+        }
+      }
+    }
+
+    setFailedLikeIntent(null);
+    setLiked(intendedLiked);
+    setLikesCount(intendedLiked ? previousCount + 1 : Math.max(0, previousCount - 1));
+    toggleLikeMutation.mutate(
+      { entity_id: activity.id, entity_type: "activity" },
+      {
+        onError: () => {
+          setLiked(previousLiked);
+          setLikesCount(previousCount);
+          setFailedLikeIntent(intendedLiked);
+        },
+      },
+    );
+  };
 
   const handleShare = async () => {
     if (!activity) return;
@@ -242,16 +309,9 @@ function ActivityDetailPage() {
             <LikeToggleButton
               count={likesCount}
               liked={liked}
-              onClick={() => {
-                const nextLiked = !liked;
-                setLiked(nextLiked);
-                setLikesCount((current) => (nextLiked ? current + 1 : Math.max(0, current - 1)));
-                toggleLikeMutation.mutate({
-                  entity_id: activity.id,
-                  entity_type: "activity",
-                });
-              }}
+              onClick={() => void handleLikeToggle()}
               pending={toggleLikeMutation.isPending}
+              {...(retryLikeLabel ? { retryLabel: retryLikeLabel } : {})}
             />
             {isOwner ? (
               <Dialog>
@@ -330,6 +390,15 @@ function ActivityDetailPage() {
         title={activity.name}
       />
 
+      {deleteFailed ? (
+        <div
+          className="rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+          role="alert"
+        >
+          Activity could not be deleted. Nothing was removed.
+        </div>
+      ) : null}
+
       <DetailMetricGrid
         items={[
           { label: loadLabels.load, value: loadPresentation.load },
@@ -392,7 +461,9 @@ function ActivityDetailPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Context</CardTitle>
+            <CardTitle aria-level={2} role="heading">
+              Context
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
@@ -436,14 +507,34 @@ function ActivityDetailPage() {
         </Card>
       </div>
 
+      <ActivityStreamChartsCard
+        {...(streamsQuery.data?.records === undefined
+          ? {}
+          : { records: streamsQuery.data.records })}
+        {...(streamScopeDescription ? { scopeDescription: streamScopeDescription } : {})}
+      />
+
       <ActivityStreamAnalysisCard
-        analysis={streamsQuery.data?.analysis}
+        {...(streamsQuery.data?.analysis === undefined
+          ? {}
+          : { analysis: streamsQuery.data.analysis })}
         artifactState={streamArtifactState}
-        errorMessage={
-          ingestionStatus === "failed"
-            ? (ingestion?.last_error_message ?? "Activity file processing failed.")
-            : streamsQuery.error?.message
-        }
+        {...(streamErrorMessage ? { errorMessage: streamErrorMessage } : {})}
+        {...(streamScopeDescription ? { scopeDescription: streamScopeDescription } : {})}
+      />
+
+      <ActivitySwimDetailCards
+        {...(primaryStreamSegment?.activity_category === undefined
+          ? {}
+          : { activityCategory: primaryStreamSegment.activity_category })}
+        {...(streamsQuery.data?.laps === undefined ? {} : { laps: streamsQuery.data.laps })}
+        {...(streamsQuery.data?.lengths === undefined
+          ? {}
+          : { lengths: streamsQuery.data.lengths })}
+        {...(streamScopeDescription ? { scopeDescription: streamScopeDescription } : {})}
+        {...(streamsQuery.data?.summary === undefined
+          ? {}
+          : { summary: streamsQuery.data.summary })}
       />
 
       {isOwner ? (
@@ -456,13 +547,17 @@ function ActivityDetailPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>FIT stream highlights</CardTitle>
+          <CardTitle aria-level={2} role="heading">
+            Stream highlights
+          </CardTitle>
+          <CardDescription>
+            {streamScopeDescription ?? "Range and peak values from the accepted activity stream."}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {streamHighlights.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No rich stream preview is available yet. This first pass surfaces route previews and
-              summary stats, while deeper FIT charting is intentionally staged.
+              No stream range or peak summary is available for this scope.
             </p>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">

@@ -66,7 +66,7 @@ describe("buildProjectionEngineInput", () => {
       user_values: {
         optimization_profile: "balanced",
         post_goal_recovery_days: 6,
-        behavior_controls_v1: {
+        behavior_controls: {
           aggressiveness: 0.55,
           variability: 0.5,
           spike_frequency: 0.4,
@@ -123,7 +123,7 @@ describe("buildProjectionEngineInput", () => {
     expect(first.creation_config).toEqual({
       optimization_profile: normalizedConfig.optimization_profile,
       post_goal_recovery_days: normalizedConfig.post_goal_recovery_days,
-      behavior_controls_v1: normalizedConfig.behavior_controls_v1,
+      behavior_controls: normalizedConfig.behavior_controls,
       calibration: normalizedConfig.calibration,
     });
     expect(first.scheduling_constraints).toEqual({

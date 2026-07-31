@@ -38,7 +38,7 @@ jest.mock("@/components/ErrorBoundary", () => ({
   ScreenErrorFallback: createHost("Fallback"),
 }));
 jest.mock("@/lib/providers/ActivityRecorderProvider", () => ({
-  useSharedActivityRecorder: () => ({ cleanup, discardFinalizedArtifact }),
+  useActivityRecorderService: () => ({ service: { cleanup, discardFinalizedArtifact } }),
 }));
 jest.mock("@/lib/hooks/useActivitySubmission", () => ({
   useActivitySubmission: () => {

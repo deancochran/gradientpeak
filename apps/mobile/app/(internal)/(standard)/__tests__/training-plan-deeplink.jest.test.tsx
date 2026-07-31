@@ -36,8 +36,8 @@ type InsightTimelineFixture = {
   timeline: Array<{
     adherence_score: number;
     boundary_state: string;
-    actual_tss: number;
-    scheduled_tss: number;
+    completed_load_tss: number;
+    scheduled_load_tss: number;
   }>;
   projection: { at_goal_date: Record<string, unknown> };
   adherence_summary: { interpretation: string; contributors: Array<{ detail: string }> };
@@ -65,8 +65,8 @@ var mockSnapshotState: {
     timeline: Array.from({ length: 40 }, (_, index) => ({
       adherence_score: 80,
       boundary_state: "safe",
-      actual_tss: index + 100,
-      scheduled_tss: index + 110,
+      completed_load_tss: index + 100,
+      scheduled_load_tss: index + 110,
     })),
     projection: { at_goal_date: {} },
     adherence_summary: {
@@ -500,8 +500,8 @@ const resetTestState = () => {
     timeline: Array.from({ length: 40 }, (_, index) => ({
       adherence_score: 80,
       boundary_state: "safe",
-      actual_tss: index + 100,
-      scheduled_tss: index + 110,
+      completed_load_tss: index + 100,
+      scheduled_load_tss: index + 110,
     })),
     projection: { at_goal_date: {} },
     adherence_summary: {
@@ -620,12 +620,17 @@ describe("TrainingPlanOverview deep-link routing", () => {
       profile_id: "test-profile-id",
       template_visibility: "private",
       created_at: "2026-01-01T00:00:00.000Z",
-      durationWeeks: { recommended: 8 },
-      sessions_per_week_target: 4,
-      activity_category: ["run"],
-      experienceLevel: ["beginner"],
       structure_hash: "fixture-structure-hash",
-      structure: {},
+      structure: {
+        version: 1,
+        activity_category: ["run"],
+        durationWeeks: { recommended: 8 },
+        experienceLevel: ["beginner"],
+        sessions: [
+          { offset_days: 0, activity_plan_id: "11111111-1111-4111-8111-111111111111" },
+          { offset_days: 49, activity_plan_id: "11111111-1111-4111-8111-111111111111" },
+        ],
+      },
     };
     mockLocalSearchParams.id = "plan-owned-snapshot-1";
 
@@ -634,7 +639,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     expect(hasTextContaining("Plan snapshot")).toBe(true);
     expect(screen.getByTestId("training-plan-periodization-preview")).toBeTruthy();
     expect(hasTextContaining("8 weeks")).toBe(true);
-    expect(hasTextContaining("4/week")).toBe(true);
+    expect(hasTextContaining("0.25/week")).toBe(true);
     expect(hasTextContaining("Open Calendar")).toBe(false);
     expect(hasTextContaining("Route-backed activities")).toBe(false);
   });

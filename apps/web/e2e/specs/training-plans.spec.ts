@@ -1,37 +1,57 @@
-import { expect, test } from "../fixtures";
+import { test } from "../fixtures";
 import {
+  cleanupTrainingPlanByName,
+  prepareTrainingPlanPrerequisites,
+  withTrainingPlanLibraryFixture,
+} from "../training-plans/data";
+import {
+  createEditAndReloadTrainingPlan,
+  createScheduleAndReorderTrainingPlan,
   expectTrainingPlanLibraries,
-  saveAndRestoreMaxSessionsPreference,
+  saveAndRestoreTrainingPreferences,
+  trainingPlanName,
 } from "../training-plans/journeys";
 
-test.skip(
-  !process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY,
-  "training-plan E2E requires a service-role credential for the confirmed athlete fixture",
-);
-
-test("athlete can browse owned and template training-plan libraries", async ({ athletePage }) => {
-  await athletePage.goto("/training-plans");
-  await expectTrainingPlanLibraries(athletePage);
-  await expect(athletePage.getByRole("button", { name: "Create training plan" })).toBeVisible();
+test("athlete can browse persisted owned and template training-plan libraries", async ({
+  athletePage,
+}, testInfo) => {
+  await withTrainingPlanLibraryFixture(testInfo, async (fixture) => {
+    await expectTrainingPlanLibraries(athletePage, fixture);
+  });
 });
 
-test("athlete preferences hydrate, validate, persist, and survive reload", async ({
+test("athlete creates, reloads, edits, and cleans a persisted training plan", async ({
   athletePage,
-}) => {
-  await saveAndRestoreMaxSessionsPreference(athletePage);
+}, testInfo) => {
+  const name = trainingPlanName(testInfo, "Training plan");
+  let restorePrerequisites: (() => Promise<void>) | undefined;
+  try {
+    await cleanupTrainingPlanByName(name);
+    restorePrerequisites = await prepareTrainingPlanPrerequisites();
+    await createEditAndReloadTrainingPlan(athletePage, testInfo);
+  } finally {
+    await cleanupTrainingPlanByName(name);
+    await restorePrerequisites?.();
+  }
 });
 
-test("training-plan create and reorder journeys expose durable controls and states", async ({
+test("athlete atomically reorders persisted scheduled activities", async ({
+  athletePage,
+}, testInfo) => {
+  const name = trainingPlanName(testInfo, "Reorder training plan");
+  let restorePrerequisites: (() => Promise<void>) | undefined;
+  try {
+    await cleanupTrainingPlanByName(name);
+    restorePrerequisites = await prepareTrainingPlanPrerequisites();
+    await createScheduleAndReorderTrainingPlan(athletePage, testInfo);
+  } finally {
+    await cleanupTrainingPlanByName(name);
+    await restorePrerequisites?.();
+  }
+});
+
+test("athlete preferences hydrate, validate, persist, reload, and restore", async ({
   athletePage,
 }) => {
-  await athletePage.goto("/training-plans/create");
-  await expect(athletePage.getByRole("heading", { name: "Create training plan" })).toBeVisible();
-  await expect(athletePage.getByRole("heading", { name: "Preview" })).toBeVisible();
-  await expect(athletePage.getByRole("button", { name: "Create plan" })).toBeDisabled();
-
-  await athletePage.goto("/training-plans/reorder");
-  await expect(
-    athletePage.getByRole("heading", { name: "Reorder training plan activities" }),
-  ).toBeVisible();
-  await expect(athletePage.getByRole("button", { name: /save order|retry save/i })).toBeDisabled();
+  await saveAndRestoreTrainingPreferences(athletePage);
 });

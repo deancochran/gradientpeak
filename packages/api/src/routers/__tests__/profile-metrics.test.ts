@@ -20,7 +20,6 @@ type DbCall = {
 function createProfileMetricRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "00000000-0000-4000-8000-000000000001",
-    idx: 1,
     created_at: new Date("2026-03-01T00:00:00.000Z"),
     updated_at: new Date("2026-03-01T00:00:00.000Z"),
     profile_id: "11111111-1111-4111-8111-111111111111",

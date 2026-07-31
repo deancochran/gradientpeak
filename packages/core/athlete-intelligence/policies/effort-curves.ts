@@ -9,8 +9,8 @@ import {
 import { resolveEvidenceEligibility } from "../evidence-contracts";
 import type { LineageGroupId, SourceId } from "../lineage";
 import type {
-  AthleteIntelligenceModelInput,
   EffortObservationInput,
+  ParsedAthleteIntelligenceModelInput,
 } from "../model-input-contracts";
 import { parseUncertainty, type Uncertainty } from "../uncertainty";
 
@@ -117,7 +117,7 @@ function pointValue(effort: EffortObservationInput, target: EffortCurveTarget): 
 
 function matchingEvidenceSources(input: {
   effort: EffortObservationInput;
-  evidenceRegistry: AthleteIntelligenceModelInput["evidenceRegistry"];
+  evidenceRegistry: ParsedAthleteIntelligenceModelInput["evidenceRegistry"];
   assessmentAsOf: string;
 }): {
   valueSourceId: SourceId;
@@ -270,7 +270,7 @@ function insufficientDecisionEvidence(input: {
 }
 
 function calculateTarget(
-  model: Pick<AthleteIntelligenceModelInput, "efforts" | "evidenceRegistry">,
+  model: Pick<ParsedAthleteIntelligenceModelInput, "efforts" | "evidenceRegistry">,
   target: EffortCurveTarget,
   assessmentAsOf: string,
 ): CalculationResult {
@@ -427,7 +427,7 @@ function calculateTarget(
 
 /** Calculates distinct threshold and high-intensity values at caller-supplied durations. */
 export function calculateDurationAwareEffortCurve(input: {
-  model: Pick<AthleteIntelligenceModelInput, "efforts" | "evidenceRegistry">;
+  model: Pick<ParsedAthleteIntelligenceModelInput, "efforts" | "evidenceRegistry">;
   assessmentAsOf: string;
   threshold: EffortCurveTarget;
   highIntensity: EffortCurveTarget;

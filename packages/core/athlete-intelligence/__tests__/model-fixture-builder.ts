@@ -1,5 +1,4 @@
 import {
-  type AthleteIntelligenceModelInput,
   athleteIntelligenceModelInputSchema,
   type ParsedAthleteIntelligenceModelInput,
 } from "../model-input-contracts";
@@ -17,11 +16,11 @@ type ModelSlice =
 
 /** Typed slice replacements for Core tests; callers must explicitly replace complete slices. */
 export type AthleteIntelligenceModelFixtureOverrides = Partial<
-  Pick<AthleteIntelligenceModelInput, ModelSlice>
+  Pick<ParsedAthleteIntelligenceModelInput, ModelSlice>
 > & {
-  evidenceRegistry?: AthleteIntelligenceModelInput["evidenceRegistry"];
-  assessmentAsOf?: AthleteIntelligenceModelInput["assessmentAsOf"];
-  planningTimezone?: AthleteIntelligenceModelInput["planningTimezone"];
+  evidenceRegistry?: ParsedAthleteIntelligenceModelInput["evidenceRegistry"];
+  assessmentAsOf?: ParsedAthleteIntelligenceModelInput["assessmentAsOf"];
+  planningTimezone?: ParsedAthleteIntelligenceModelInput["planningTimezone"];
 };
 
 /**

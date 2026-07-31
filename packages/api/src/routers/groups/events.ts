@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { activityPlanStructureSchemaV3, materializeRecurrenceOccurrences } from "@repo/core";
+import { activityPlanStructureSchema, materializeRecurrenceOccurrences } from "@repo/core";
 import {
   createOneOffGroupEventInputSchema,
   createRecurringEventSeriesInputSchema,
@@ -225,7 +225,7 @@ async function assertActivityPlansAvailableForGroupEvent(
     });
   }
 
-  if (!activityPlanStructureSchemaV3.safeParse(row.structure).success) {
+  if (!activityPlanStructureSchema.safeParse(row.structure).success) {
     throw new TRPCError({
       code: "BAD_REQUEST",
       message:
@@ -247,12 +247,13 @@ async function assertRouteAvailableForGroupEvent(
       profile_id: activityRoutes.profile_id,
       is_public: activityRoutes.is_public,
       is_system_template: activityRoutes.is_system_template,
+      storage_state: activityRoutes.storage_state,
     })
     .from(activityRoutes)
     .where(eq(activityRoutes.id, routeId))
     .limit(1);
 
-  if (!route || !canUseRouteForGroupEvent(route, profileId)) {
+  if (!route || route.storage_state !== "ready" || !canUseRouteForGroupEvent(route, profileId)) {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Route is not available for this group event",

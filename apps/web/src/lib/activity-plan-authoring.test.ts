@@ -1,4 +1,4 @@
-import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -12,19 +12,21 @@ import {
 } from "./activity-plan-authoring";
 
 describe("activity plan authoring", () => {
-  it("builds structures accepted by the portable Core V3 contract", () => {
-    expect(
-      activityPlanStructureSchemaV3.safeParse(createActivityPlanStructure("bike")).success,
-    ).toBe(true);
+  it("builds structures accepted by the portable Core contract", () => {
+    expect(activityPlanStructureSchema.safeParse(createActivityPlanStructure("bike")).success).toBe(
+      true,
+    );
   });
 
   it("creates additional activity segments with the plan activity category and permits rest", () => {
     const structure = createActivityPlanStructure("run");
     structure.segments.push(createActivityPlanSegment("rest"));
     structure.segments.push(createActivityPlanSegment("activity", "run"));
-    expect(
-      activityPlanStructureSchemaV3.parse(structure).segments.map((item) => item.role),
-    ).toEqual(["activity", "rest", "activity"]);
+    expect(activityPlanStructureSchema.parse(structure).segments.map((item) => item.role)).toEqual([
+      "activity",
+      "rest",
+      "activity",
+    ]);
   });
 
   it("preserves compatible targets and explicitly resets incompatible ones on activity_category change", () => {

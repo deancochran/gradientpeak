@@ -6,7 +6,6 @@ import {
 } from "../schemas/activity-category";
 import type { ProfileGoal } from "../schemas/goals/profile_goals";
 import type { AthletePreferenceProfile } from "../schemas/settings/profile_settings";
-import type { TrainingPlanGoalTarget } from "../schemas/training-plan-structure";
 import type { TrainingPlanCreationConfig } from "../schemas/training-plan-structure/creation-config-schemas";
 
 const bounded01Schema = z.number().min(0).max(1);
@@ -265,17 +264,6 @@ export type GoalPrescriptionDemand = z.infer<typeof goalPrescriptionDemandSchema
 export type ActivityCategoryPrescription = z.infer<typeof activityCategoryPrescriptionSchema>;
 export type TrainingPrescription = z.infer<typeof trainingPrescriptionSchema>;
 
-export interface TrainingPrescriptionGoalInput {
-  id?: string;
-  name?: string;
-  title?: string;
-  target_date: string;
-  priority?: number;
-  targets?: TrainingPlanGoalTarget[];
-}
-
-type PrescriptionGoal = TrainingPrescriptionGoalInput | ProfileGoal;
-
 interface GoalSignal {
   goalType: GoalPrescriptionType;
   activityCategory: CanonicalActivityCategory;
@@ -296,10 +284,6 @@ function round3(value: number): number {
 
 function normalizePriority(priority?: number): number {
   return clamp01((priority ?? 5) / 10);
-}
-
-function isProfileGoal(goal: PrescriptionGoal): goal is ProfileGoal {
-  return "objective" in goal && "activity_category" in goal;
 }
 
 function toActivityCategory(value: string | undefined): CanonicalActivityCategory {
@@ -445,71 +429,17 @@ function signalFromProfileGoal(goal: ProfileGoal): GoalSignal {
   }
 }
 
-function signalFromLegacyTarget(
-  goal: TrainingPrescriptionGoalInput,
-  target: TrainingPlanGoalTarget,
-): GoalSignal {
-  const priority = normalizePriority(goal.priority);
-  if (target.target_type === "race_performance") {
-    const category = toActivityCategory(target.activity_category);
-    const distanceKm = target.distance_m / 1000;
-    return {
-      goalType: category === "strength" ? "strength" : "event_performance",
-      activityCategory: category,
-      priority,
-      demand:
-        category === "strength"
-          ? strengthDemand()
-          : demandForEvent(distanceKm, category, target.target_time_s !== undefined),
-      distanceKm,
-      hasPerformanceTarget: target.target_time_s !== undefined,
-    };
-  }
-  if (target.target_type === "pace_threshold") {
-    const category = toActivityCategory(target.activity_category);
-    return {
-      goalType: "threshold",
-      activityCategory: category,
-      priority,
-      demand: demandForThreshold("pace", category),
-      thresholdMetric: "pace",
-      hasPerformanceTarget: true,
-    };
-  }
-  if (target.target_type === "power_threshold") {
-    const category = toActivityCategory(target.activity_category);
-    return {
-      goalType: category === "strength" ? "strength" : "threshold",
-      activityCategory: category,
-      priority,
-      demand: category === "strength" ? strengthDemand() : demandForThreshold("power", category),
-      thresholdMetric: "power",
-      hasPerformanceTarget: true,
-    };
-  }
-  return {
-    goalType: "threshold",
-    activityCategory: "other",
-    priority,
-    demand: demandForThreshold("hr", "other"),
-    thresholdMetric: "hr",
-    hasPerformanceTarget: true,
-  };
-}
-
-function deriveGoalSignals(goals: PrescriptionGoal[]): GoalSignal[] {
-  return goals.flatMap((goal) =>
-    isProfileGoal(goal)
-      ? [signalFromProfileGoal(goal)]
-      : (goal.targets ?? []).map((target) => signalFromLegacyTarget(goal, target)),
-  );
+function deriveGoalSignals(goals: ProfileGoal[]): GoalSignal[] {
+  return goals.map(signalFromProfileGoal);
 }
 
 function mergeDemand(signals: GoalSignal[]): GoalPrescriptionDemand {
   if (signals.length === 0) return demandForCompletion(5, 1, "other");
+  const firstSignal = signals[0];
+  if (!firstSignal) return demandForCompletion(5, 1, "other");
   const totalWeight = signals.reduce((sum, signal) => sum + signal.priority, 0) || 1;
   const demand = Object.fromEntries(
-    Object.keys(signals[0]!.demand).map((key) => [key, 0]),
+    Object.keys(firstSignal.demand).map((key) => [key, 0]),
   ) as GoalPrescriptionDemand;
   for (const signal of signals) {
     const weight = signal.priority / totalWeight;
@@ -780,7 +710,7 @@ function buildActivityCategoryPrescription(input: {
 }
 
 export function resolveTrainingPrescription(input: {
-  goals: PrescriptionGoal[];
+  goals: ProfileGoal[];
   preferences?: AthletePreferenceProfile | null;
   creationConfig?: TrainingPlanCreationConfig | null;
 }): TrainingPrescription {

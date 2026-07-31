@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { ActivityPlanStructureV3 } from "../activity-plan";
+import type { ActivityPlanStructure } from "../activity-plan";
 import {
   type ActivityTargetCategory,
   type ActivityTargetType,
@@ -32,7 +32,7 @@ export type ActivityTargetCompatibilityIssue = {
 
 export function getActivityTargetCompatibilityIssues(input: {
   pathPrefix?: (string | number)[];
-  structure: ActivityPlanStructureV3;
+  structure: ActivityPlanStructure;
 }): ActivityTargetCompatibilityIssue[] {
   const issues: ActivityTargetCompatibilityIssue[] = [];
   const pathPrefix = input.pathPrefix ?? [];
@@ -79,7 +79,7 @@ export function getActivityTargetCompatibilityIssues(input: {
 export function addActivityTargetCompatibilityIssuesToZodContext(input: {
   ctx: z.RefinementCtx;
   pathPrefix?: (string | number)[];
-  structure: ActivityPlanStructureV3;
+  structure: ActivityPlanStructure;
 }): void {
   getActivityTargetCompatibilityIssues(input).forEach((issue) => {
     input.ctx.addIssue({

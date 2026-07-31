@@ -9,6 +9,7 @@ import {
   ROUTE_FILE_MIME_TYPES,
   ROUTE_FILE_NATIVE_MIME_TYPES,
   ROUTE_FILE_WEB_ACCEPT,
+  routeEditFormSchema,
   routeUploadFormSchema,
 } from "..";
 
@@ -90,6 +91,22 @@ describe("route file contract", () => {
         name: "Route",
         description: "a".repeat(1_001),
       }).success,
+    ).toBe(false);
+  });
+
+  it("normalizes editable route metadata without requiring a route file", () => {
+    expect(
+      routeEditFormSchema.parse({
+        name: "  Ridge loop  ",
+        description: "   ",
+      }),
+    ).toEqual({ name: "Ridge loop", description: null });
+  });
+
+  it("rejects invalid editable route metadata", () => {
+    expect(routeEditFormSchema.safeParse({ name: "", description: null }).success).toBe(false);
+    expect(
+      routeEditFormSchema.safeParse({ name: "Route", description: "a".repeat(1_001) }).success,
     ).toBe(false);
   });
 });

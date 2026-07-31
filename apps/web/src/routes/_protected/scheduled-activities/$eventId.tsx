@@ -7,10 +7,12 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { useRef, useState } from "react";
 
 import { RouteFlashToast, type RouteFlashType } from "../../../components/route-flash-toast";
 import { api } from "../../../lib/api/client";
+import { contractEpochFormInputProps } from "../../../lib/contract-epoch";
 import { formatDayLabel, formatEventTimeRange, getEventTitle } from "../../../lib/planning";
 import {
   attachCalendarActivityPlanAction,
@@ -30,6 +32,21 @@ function ScheduledActivityDetailPage() {
   const { eventId } = Route.useParams();
   const search = Route.useSearch() as { flash?: string; flashType?: RouteFlashType };
   const [selectedPlanId, setSelectedPlanId] = useState("");
+  const [rescheduleDate, setRescheduleDate] = useState("");
+  const [removeScope, setRemoveScope] = useState<"single" | "future" | "series">("single");
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [planOperation, setPlanOperation] = useState<"attach" | "remove" | null>(null);
+  const [updatePending, setUpdatePending] = useState(false);
+  const [deletePending, setDeletePending] = useState(false);
+  const planPendingRef = useRef(false);
+  const updatePendingRef = useRef(false);
+  const deletePendingRef = useRef(false);
+  const attachCalendarActivityPlan = useServerFn(attachCalendarActivityPlanAction);
+  const updateCalendarEvent = useServerFn(updateCalendarEventAction);
+  const deleteCalendarEvent = useServerFn(deleteCalendarEventAction);
+  const utils = api.useUtils();
   const eventQuery = api.events.getById.useQuery({ id: eventId }, { enabled: Boolean(eventId) });
   const plansQuery = api.activityPlans.list.useQuery({
     ownerScope: "own",
@@ -45,6 +62,7 @@ function ScheduledActivityDetailPage() {
       </div>
     );
   if (!event) return <p>Scheduled activity not found.</p>;
+  const date = rescheduleDate || event.scheduled_date;
   const recurring = Boolean(event.series_id || event.recurrence_rule);
   const linkedPlanState = event.activity_plan
     ? "linked"
@@ -90,6 +108,11 @@ function ScheduledActivityDetailPage() {
                 safety.
               </p>
             ) : null}
+            {planError ? (
+              <p role="alert" aria-live="polite" className="text-sm text-destructive">
+                {planError}
+              </p>
+            ) : null}
             {(linkedPlanState === "linked" || linkedPlanState === "unlinked") &&
             plansQuery.isError ? (
               <div role="alert">
@@ -103,7 +126,30 @@ function ScheduledActivityDetailPage() {
                 action={attachCalendarActivityPlanAction.url}
                 method="post"
                 className="space-y-3"
+                onSubmit={async (formEvent) => {
+                  formEvent.preventDefault();
+                  if (planPendingRef.current) return;
+                  planPendingRef.current = true;
+                  setPlanOperation("attach");
+                  setPlanError(null);
+                  try {
+                    await attachCalendarActivityPlan({
+                      data: new FormData(formEvent.currentTarget) as never,
+                    });
+                    await utils.events.invalidate();
+                  } catch (error) {
+                    setPlanError(
+                      error instanceof Error
+                        ? error.message
+                        : "Unable to attach activity plan. Try again.",
+                    );
+                  } finally {
+                    planPendingRef.current = false;
+                    setPlanOperation(null);
+                  }
+                }}
               >
+                <input {...contractEpochFormInputProps} />
                 <input type="hidden" name="event_id" value={event.id} />
                 <input type="hidden" name="operation" value="attach" />
                 <input
@@ -131,13 +177,39 @@ function ScheduledActivityDetailPage() {
                     </option>
                   ))}
                 </select>
-                <Button type="submit" disabled={!selectedPlanId}>
-                  Attach activity plan
+                <Button type="submit" disabled={!selectedPlanId || planOperation !== null}>
+                  {planOperation === "attach" ? "Attaching..." : "Attach activity plan"}
                 </Button>
               </form>
             ) : null}
             {linkedPlanState === "linked" && event.activity_plan ? (
-              <form action={attachCalendarActivityPlanAction.url} method="post">
+              <form
+                action={attachCalendarActivityPlanAction.url}
+                method="post"
+                onSubmit={async (formEvent) => {
+                  formEvent.preventDefault();
+                  if (planPendingRef.current) return;
+                  planPendingRef.current = true;
+                  setPlanOperation("remove");
+                  setPlanError(null);
+                  try {
+                    await attachCalendarActivityPlan({
+                      data: new FormData(formEvent.currentTarget) as never,
+                    });
+                    await utils.events.invalidate();
+                  } catch (error) {
+                    setPlanError(
+                      error instanceof Error
+                        ? error.message
+                        : "Unable to remove activity plan. Try again.",
+                    );
+                  } finally {
+                    planPendingRef.current = false;
+                    setPlanOperation(null);
+                  }
+                }}
+              >
+                <input {...contractEpochFormInputProps} />
                 <input type="hidden" name="event_id" value={event.id} />
                 <input type="hidden" name="operation" value="remove" />
                 <input
@@ -150,8 +222,8 @@ function ScheduledActivityDetailPage() {
                   name="redirectTo"
                   value={`/scheduled-activities/${event.id}`}
                 />
-                <Button type="submit" variant="outline">
-                  Remove activity plan
+                <Button type="submit" variant="outline" disabled={planOperation !== null}>
+                  {planOperation === "remove" ? "Removing..." : "Remove activity plan"}
                 </Button>
               </form>
             ) : null}
@@ -167,7 +239,34 @@ function ScheduledActivityDetailPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <form action={updateCalendarEventAction.url} method="post" className="space-y-3">
+              <form
+                action={updateCalendarEventAction.url}
+                method="post"
+                className="space-y-3"
+                onSubmit={async (formEvent) => {
+                  formEvent.preventDefault();
+                  if (updatePendingRef.current) return;
+                  updatePendingRef.current = true;
+                  setUpdatePending(true);
+                  setUpdateError(null);
+                  try {
+                    await updateCalendarEvent({
+                      data: new FormData(formEvent.currentTarget) as never,
+                    });
+                    await utils.events.invalidate();
+                  } catch (error) {
+                    setUpdateError(
+                      error instanceof Error
+                        ? error.message
+                        : "Unable to reschedule occurrence. Try again.",
+                    );
+                  } finally {
+                    updatePendingRef.current = false;
+                    setUpdatePending(false);
+                  }
+                }}
+              >
+                <input {...contractEpochFormInputProps} />
                 <input type="hidden" name="event_id" value={event.id} />
                 <input type="hidden" name="scope" value="single" />
                 <input
@@ -190,10 +289,18 @@ function ScheduledActivityDetailPage() {
                   className="h-10 w-full rounded-md border bg-background px-3"
                   type="date"
                   name="scheduled_date"
-                  defaultValue={event.scheduled_date}
+                  value={date}
+                  onChange={(inputEvent) => setRescheduleDate(inputEvent.target.value)}
                   required
                 />
-                <Button type="submit">Reschedule occurrence</Button>
+                {updateError ? (
+                  <p role="alert" aria-live="polite" className="text-sm text-destructive">
+                    {updateError}
+                  </p>
+                ) : null}
+                <Button type="submit" disabled={updatePending}>
+                  {updatePending ? "Rescheduling..." : "Reschedule occurrence"}
+                </Button>
               </form>
             </CardContent>
           </Card>
@@ -209,7 +316,27 @@ function ScheduledActivityDetailPage() {
             action={deleteCalendarEventAction.url}
             method="post"
             className="flex flex-wrap items-end gap-3"
+            onSubmit={async (formEvent) => {
+              formEvent.preventDefault();
+              if (deletePendingRef.current) return;
+              deletePendingRef.current = true;
+              setDeletePending(true);
+              setDeleteError(null);
+              try {
+                await deleteCalendarEvent({ data: new FormData(formEvent.currentTarget) as never });
+              } catch (error) {
+                setDeleteError(
+                  error instanceof Error
+                    ? error.message
+                    : "Unable to remove scheduled activity. Try again.",
+                );
+              } finally {
+                deletePendingRef.current = false;
+                setDeletePending(false);
+              }
+            }}
           >
+            <input {...contractEpochFormInputProps} />
             <input type="hidden" name="event_id" value={event.id} />
             <input type="hidden" name="redirectTo" value="/scheduled-activities" />
             {recurring ? (
@@ -217,7 +344,8 @@ function ScheduledActivityDetailPage() {
                 <span className="block font-medium">Remove scope</span>
                 <select
                   name="scope"
-                  defaultValue="single"
+                  value={removeScope}
+                  onChange={(event) => setRemoveScope(event.target.value as typeof removeScope)}
                   className="h-10 rounded-md border bg-background px-3"
                 >
                   <option value="single">This event only</option>
@@ -228,8 +356,13 @@ function ScheduledActivityDetailPage() {
             ) : (
               <input type="hidden" name="scope" value="single" />
             )}
-            <Button type="submit" variant="destructive">
-              Remove from schedule
+            {deleteError ? (
+              <p role="alert" aria-live="polite" className="text-sm text-destructive">
+                {deleteError}
+              </p>
+            ) : null}
+            <Button type="submit" variant="destructive" disabled={deletePending}>
+              {deletePending ? "Removing..." : "Remove from schedule"}
             </Button>
           </form>
         </CardContent>

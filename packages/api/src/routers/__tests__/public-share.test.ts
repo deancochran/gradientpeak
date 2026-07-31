@@ -1,4 +1,4 @@
-import { activityPlanStructureSchemaV3 } from "@repo/core";
+import { activityPlanStructureSchema } from "@repo/core";
 import { describe, expect, it } from "vitest";
 
 import { publicShareRouter } from "../public-share";
@@ -106,9 +106,9 @@ describe("publicShareRouter", () => {
     expect(activity?.current_artifact).not.toHaveProperty("path");
   });
 
-  it("returns only modern V3 public activity-plan fields", async () => {
+  it("returns only modern public activity-plan fields", async () => {
     const id = "00000000-0000-4000-8000-000000000010";
-    const structure = activityPlanStructureSchemaV3.parse({
+    const structure = activityPlanStructureSchema.parse({
       version: 3,
       segments: [
         {

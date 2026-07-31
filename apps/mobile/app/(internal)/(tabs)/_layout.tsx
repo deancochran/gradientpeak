@@ -11,7 +11,7 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGuard";
 import { markNavigationStart } from "@/lib/performance";
-import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { useActivityRecorderService } from "@/lib/providers/ActivityRecorderProvider";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 import {
   activitySelectionStore,
@@ -67,7 +67,7 @@ export default function InternalLayout() {
   const { resolvedTheme } = useTheme();
   const guardNavigation = useNavigationActionGuard();
   const navigateTo = useAppNavigate();
-  const recorderService = useSharedActivityRecorder();
+  const { service: recorderService } = useActivityRecorderService();
   const recordingLifecycle = useSessionView(recorderService)?.lifecycle ?? "idle";
   const trainingPreferencesVisible = useTrainingPreferencesSheetStore((state) => state.visible);
   const closeTrainingPreferences = useTrainingPreferencesSheetStore((state) => state.close);

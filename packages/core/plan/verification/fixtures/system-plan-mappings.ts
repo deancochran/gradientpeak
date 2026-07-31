@@ -3,7 +3,6 @@ import {
   deriveSystemActivityTemplateActivityCategory,
   SYSTEM_TEMPLATES,
 } from "../../../samples";
-import { normalizeLinkedActivityPlanId } from "../../../samples/template-ids";
 import type {
   LinkedSystemActivityTemplateFixture,
   SystemPlanFixtureCatalogEntry,
@@ -76,11 +75,7 @@ const systemTemplateById = new Map(SYSTEM_TEMPLATES.map((template) => [template.
 function resolveLinkedActivityTemplates(
   structure: Record<string, unknown>,
 ): LinkedSystemActivityTemplateFixture[] {
-  const linkedActivityPlanIds = uniqueStrings(
-    collectStringField(structure, "activity_plan_id").map((id) =>
-      normalizeLinkedActivityPlanId(id),
-    ),
-  );
+  const linkedActivityPlanIds = uniqueStrings(collectStringField(structure, "activity_plan_id"));
 
   return linkedActivityPlanIds.map((id) => {
     const template = systemTemplateById.get(id);

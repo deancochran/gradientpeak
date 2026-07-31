@@ -135,9 +135,6 @@ export type TrainingPathLoadPoint = {
   scheduled_load_tss?: number | null;
   tentative_scheduled_load_tss?: number | null;
   recommended_load_tss?: number | null;
-  ideal_tss?: number | null;
-  actual_tss?: number | null;
-  scheduled_tss?: number | null;
 };
 
 export type TrainingPathFitnessPoint = {

@@ -1,3 +1,4 @@
+import { Button } from "@repo/ui/components/button";
 import {
   Card,
   CardContent,
@@ -21,6 +22,22 @@ function DashboardPage() {
   const { user } = useAuth();
   const dashboardQuery = api.home.getDashboard.useQuery();
 
+  if (dashboardQuery.isError) {
+    return (
+      <Card role="alert">
+        <CardHeader>
+          <CardTitle>Dashboard unavailable</CardTitle>
+          <CardDescription>We could not load your dashboard. Please try again.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button type="button" onClick={() => void dashboardQuery.refetch()}>
+            Retry dashboard
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
   const dashboard = dashboardQuery.data;
   const schedule = dashboard?.schedule.slice(0, 4) ?? [];
 
@@ -36,7 +53,7 @@ function DashboardPage() {
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <MetricCard
-          title="Long-term"
+          title="Long-term Load"
           value={
             dashboard?.currentLoadStatus
               ? String(dashboard.currentLoadStatus.longTermLoad)
@@ -44,15 +61,15 @@ function DashboardPage() {
           }
           description={
             dashboard?.currentLoadStatus
-              ? `Common Load · CTL alias · ${dashboard.currentLoadStatus.maturity}`
+              ? `Common Load · ${dashboard.currentLoadStatus.maturity} maturity`
               : dashboard
-                ? "Complete common Load history is unavailable"
-                : "Loading common Load history"
+                ? "Complete Common Load history is unavailable"
+                : "Loading Common Load history"
           }
           icon={<Activity className="h-4 w-4" />}
         />
         <MetricCard
-          title="Recent"
+          title="Recent Load"
           value={
             dashboard?.currentLoadStatus
               ? String(dashboard.currentLoadStatus.recentLoad)
@@ -60,13 +77,13 @@ function DashboardPage() {
           }
           description={
             dashboard?.currentLoadStatus
-              ? "Common Load · ATL alias"
-              : "Complete common Load history is unavailable"
+              ? "Common Load"
+              : "Complete Common Load history is unavailable"
           }
           icon={<Activity className="h-4 w-4" />}
         />
         <MetricCard
-          title="Balance"
+          title="Load Balance"
           value={
             dashboard?.currentLoadStatus
               ? String(dashboard.currentLoadStatus.loadBalance)
@@ -74,8 +91,8 @@ function DashboardPage() {
           }
           description={
             dashboard?.currentLoadStatus
-              ? `Common Load · TSB alias · ${dashboard.currentLoadStatus.coverageStatus} coverage`
-              : "Complete common Load history is unavailable"
+              ? `${dashboard.currentLoadStatus.coverageStatus} coverage`
+              : "Complete Common Load history is unavailable"
           }
           icon={<Activity className="h-4 w-4" />}
         />
@@ -92,11 +109,7 @@ function DashboardPage() {
         <MetricCard
           title="Active Plan"
           value={dashboard?.activePlan?.name ?? "No active plan"}
-          description={
-            dashboard?.activePlan?.phase
-              ? `Phase: ${dashboard.activePlan.phase}`
-              : "Create or assign a plan to see progress here"
-          }
+          description="Create or assign a plan to see progress here"
           icon={<CalendarDays className="h-4 w-4" />}
         />
       </section>
@@ -158,9 +171,8 @@ function DashboardPage() {
                 {dashboard?.activePlan?.name ?? "No active plan"}
               </div>
               <p className="mt-2 text-sm text-muted-foreground">
-                {dashboard?.activePlan?.phase
-                  ? `Phase: ${dashboard.activePlan.phase}`
-                  : "Use search to jump directly into planning, messages, settings, or calendar workflows."}
+                Use search to jump directly into planning, messages, settings, or calendar
+                workflows.
               </p>
             </div>
             <p className="text-xs text-muted-foreground">

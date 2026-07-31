@@ -2,10 +2,11 @@ import type {
   ActivityPlanDuration,
   ActivityPlanIntervalStep,
   ActivityPlanPresentationModel,
-  ActivityPlanStructureV3,
+  ActivityPlanStructure,
   ActivityPlanTarget,
 } from "@repo/core";
-import { deriveActivityPlanPresentation, formatDurationSec } from "@repo/core";
+import { deriveActivityPlanPresentation } from "@repo/core";
+import { formatDurationSec } from "@repo/core/utils/dates";
 import { Text } from "@repo/ui/components/text";
 import { useMemo } from "react";
 import { View } from "react-native";
@@ -30,7 +31,7 @@ type ActivityPlanContentPreviewProps = {
   testIDPrefix?: string;
 };
 
-function flattenSteps(structure: ActivityPlanStructureV3 | null): ActivityPlanIntervalStep[] {
+function flattenSteps(structure: ActivityPlanStructure | null): ActivityPlanIntervalStep[] {
   if (!structure) return [];
   const steps: ActivityPlanIntervalStep[] = [];
   for (const segment of structure.segments) {

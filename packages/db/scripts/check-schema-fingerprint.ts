@@ -221,7 +221,6 @@ export async function createSchemaFingerprint(pool: Pool) {
             and tablename = 'objects'
             and policyname in (
               'Users can manage their own avatar',
-              'Users can manage their own routes',
               'Users can upload their own activity files',
               'Users can read their own activity files',
               'Service role can manage all activity files'
@@ -301,7 +300,7 @@ async function main() {
     if (JSON.stringify(expected) !== JSON.stringify(actual)) {
       const diagnostics = fingerprintDiff(expected, actual);
       throw new Error(
-        `managed schema fingerprint drifted; regenerate only through guarded db:migration:fresh -- --write-fingerprint\n${diagnostics.map((line) => `- ${line}`).join("\n")}`,
+        `managed schema fingerprint drifted; regenerate only through guarded db:fresh:verify -- --write-fingerprint\n${diagnostics.map((line) => `- ${line}`).join("\n")}`,
       );
     }
     console.log(`[db:schema:fingerprint] ${managedTableNames().length} managed tables match`);

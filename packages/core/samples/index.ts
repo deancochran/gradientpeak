@@ -64,13 +64,6 @@ export const SAMPLE_ACTIVITIES_BY_TYPE = {
   other: SAMPLE_OTHER_ACTIVITIES,
 } as const;
 
-// Helper function to get sample activities by type (legacy)
-export function getSampleActivitiesByType(
-  activityCategory: keyof typeof SAMPLE_ACTIVITIES_BY_TYPE,
-) {
-  return SAMPLE_ACTIVITIES_BY_TYPE[activityCategory] || [];
-}
-
 // Helper function to get sample activities by activity_category and GPS intent
 export function getSampleActivitiesByCategory(
   activity_category: "run" | "bike" | "swim" | "strength" | "other",
@@ -108,8 +101,9 @@ export type SystemTemplate = SystemActivityPlanTemplate & { id: string };
  */
 function mapToTemplate(plan: SystemActivityPlanTemplate): SystemTemplate {
   if (!plan.id) {
-    throw new Error(`System activity template ${plan.name} must declare an explicit stable ID`);
+    throw new Error(`System activity template ${plan.name} must declare an RFC 4122 UUID`);
   }
+
   const normalizedId = normalizeSystemActivityTemplateId({
     id: plan.id,
     activityCategory: deriveSystemActivityTemplateActivityCategory(plan.structure),

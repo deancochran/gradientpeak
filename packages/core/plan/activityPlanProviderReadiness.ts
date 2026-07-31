@@ -1,8 +1,8 @@
 import {
-  type ActivityPlanStructureV3,
+  type ActivityPlanStructure,
   type ActivityPlanTarget,
   type CompiledActivityPlanOccurrence,
-  compileActivityPlanV3,
+  compileActivityPlan,
 } from "../activity-plan";
 import {
   getProviderCapabilityDefinition,
@@ -180,7 +180,7 @@ export function getActivityPlanProviderProjection(input: {
   anchors?: ActivityPlanTargetAnchors;
   nativeDefaultsAvailable?: boolean;
   provider: ActivityPlanProvider;
-  structure: ActivityPlanStructureV3;
+  structure: ActivityPlanStructure;
 }): ActivityPlanProviderProjection {
   const findings: ProviderProjectionFinding[] = [];
   const anchors = input.anchors ?? {};
@@ -206,7 +206,7 @@ export function getActivityPlanProviderProjection(input: {
     }
   }
 
-  const compiled = compileActivityPlanV3(input.structure);
+  const compiled = compileActivityPlan(input.structure);
   const capability =
     input.provider === "native" ? null : getProviderPlannedActivityCapability(input.provider);
 
@@ -324,75 +324,4 @@ export function getActivityPlanProviderProjection(input: {
   }
 
   return { disposition: dispositionFor(findings), findings, provider: input.provider };
-}
-
-/** Provider readiness compatibility wrapper retained for existing callers. */
-export function getActivityPlanProviderReadiness(input: {
-  activityCategory?: ActivityTargetCategory;
-  anchors?: ActivityPlanTargetAnchors;
-  nativeDefaultsAvailable?: boolean;
-  provider: ActivityPlanProvider;
-  structure: ActivityPlanStructureV3;
-}): ActivityPlanProviderReadinessResult {
-  const projection = getActivityPlanProviderProjection(input);
-  const defaultedTargetTypes = new Set<ActivityPlanTarget["type"]>();
-  const issues: ActivityPlanProviderReadinessIssue[] = projection.findings.flatMap((finding) => {
-    if (finding.disposition !== "unsupported") return [];
-    const code: ActivityPlanProviderReadinessIssue["code"] =
-      finding.reasonCode === "provider_delivery_evidence_missing"
-        ? "unsupported_provider"
-        : finding.reasonCode === "unsupported_activity_category"
-          ? "unsupported_activity_category"
-          : finding.reasonCode === "missing_target_anchor"
-            ? "missing_anchor"
-            : "unsupported_target";
-    return [
-      {
-        ...(finding.reasonCode === "provider_delivery_evidence_missing"
-          ? { blockedBy: "external" as const }
-          : {}),
-        code,
-        message: finding.message,
-        path: finding.path,
-        ...(finding.targetType ? { targetType: finding.targetType } : {}),
-      },
-    ];
-  });
-
-  if (input.provider === "native" && input.nativeDefaultsAvailable !== false) {
-    for (const segment of input.structure.segments) {
-      if (segment.role !== "activity") continue;
-      for (const interval of segment.intervals) {
-        for (const step of interval.steps) {
-          for (const target of step.targets) {
-            if (hasTargetAnchor(target.type, input.anchors ?? {}) === false) {
-              defaultedTargetTypes.add(target.type);
-            }
-          }
-        }
-      }
-    }
-  }
-
-  const status: ActivityPlanProviderReadinessStatus = issues.some(
-    (issue) => issue.code === "unsupported_provider",
-  )
-    ? "unsupported_provider"
-    : issues.some((issue) => issue.code === "unsupported_activity_category")
-      ? "unsupported_activity_category"
-      : issues.some((issue) => issue.code === "unsupported_target")
-        ? "unsupported_target"
-        : issues.some((issue) => issue.code === "missing_anchor")
-          ? "missing_anchor"
-          : defaultedTargetTypes.size > 0
-            ? "uses_defaults"
-            : "ready";
-
-  return {
-    defaultedTargetTypes: [...defaultedTargetTypes],
-    issues,
-    projection,
-    provider: input.provider,
-    status,
-  };
 }

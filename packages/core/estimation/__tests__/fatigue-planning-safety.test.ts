@@ -14,12 +14,6 @@ describe("fatigue planning language", () => {
 
     expect(prediction.weeklyProjection.loadChangeState).toBe("increasing");
     expect(prediction.weeklyProjection.reasons).toContain("LOAD_CHANGE_INCREASING");
-    expect(prediction.weeklyProjection.isSafe).toBeNull();
-    expect(prediction.recoveryPlan).toEqual({
-      daysToRecover: null,
-      nextHardActivityDate: null,
-      suggestedRestDays: null,
-    });
     expect(userFacingText).not.toMatch(
       /safe|dangerous|overtraining|overreaching|clear(?:ed|ance)/i,
     );
@@ -34,7 +28,6 @@ describe("fatigue planning language", () => {
 
     expect(prediction.weeklyProjection.loadChangeState).toBe("insufficient_data");
     expect(prediction.weeklyProjection.reasons).toEqual(["MISSING_FITNESS_STATE"]);
-    expect(prediction.weeklyProjection.isSafe).toBeNull();
     expect(prediction.weeklyProjection.recommendation).toContain("unavailable");
   });
 
@@ -47,6 +40,5 @@ describe("fatigue planning language", () => {
 
     expect(result.loadChangeState).toBe("insufficient_data");
     expect(result.reasons).toEqual(["MISSING_FITNESS_STATE"]);
-    expect(result.isSafe).toBeNull();
   });
 });

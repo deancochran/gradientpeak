@@ -6,7 +6,7 @@ import {
   unavailableResult,
 } from "../calculation-result-contracts";
 import { type FieldEvidenceEligibility, resolveFieldEvidenceEligibility } from "../eligibility";
-import type { AthleteIntelligenceModelInput } from "../model-input-contracts";
+import type { ParsedAthleteIntelligenceModelInput } from "../model-input-contracts";
 import {
   ATHLETE_INTELLIGENCE_PROJECTION_VERSION,
   type AthleteIntelligenceProjection,
@@ -15,7 +15,7 @@ import {
 import type { ActivityReadinessResults } from "./activity-readiness";
 import type { CriticalPowerCapability } from "./critical-power-capability";
 import type { DurationAwareEffortCurve } from "./effort-curves";
-import { GOAL_DEMAND_POLICY_VERSION, type GoalDemandPolicyV1Result } from "./goal-demand";
+import { GOAL_DEMAND_POLICY_VERSION, type GoalDemandPolicyResult } from "./goal-demand";
 import type { PhysiologyMetricsPolicyResult } from "./physiology-metrics";
 import type { TrainingFeasibilityResults } from "./training-feasibility";
 
@@ -33,12 +33,12 @@ export const PROJECTION_DECISION_QUALITY_POLICY = Object.freeze({
 
 export interface GoalProjectionInputs {
   goalSourceId: string;
-  demand: GoalDemandPolicyV1Result;
+  demand: GoalDemandPolicyResult;
   effortCurve?: DurationAwareEffortCurve;
 }
 
 export interface WholeAthleteProjectionInput {
-  model: AthleteIntelligenceModelInput;
+  model: ParsedAthleteIntelligenceModelInput;
   physiology: PhysiologyMetricsPolicyResult;
   criticalPower?: CriticalPowerCapability;
   effortCurves: readonly GoalProjectionInputs[];
@@ -77,14 +77,14 @@ function truncatedDomain(domain: "metrics" | "activities" | "efforts"): Calculat
 }
 
 function hasTruncatedCoverage(
-  model: AthleteIntelligenceModelInput,
+  model: ParsedAthleteIntelligenceModelInput,
   domain: "metrics" | "activities" | "efforts",
 ): boolean {
   return model.readCoverage?.[domain].state === "truncated";
 }
 
 function fieldEligibility(
-  model: AthleteIntelligenceModelInput,
+  model: ParsedAthleteIntelligenceModelInput,
   evidenceSourceIds: readonly string[],
   targetActivityCategory: CanonicalActivityCategory,
 ) {
@@ -111,7 +111,7 @@ function fieldEligibility(
 }
 
 function activityCapabilities(
-  model: AthleteIntelligenceModelInput,
+  model: ParsedAthleteIntelligenceModelInput,
   targetActivityCategory: CanonicalActivityCategory | null,
 ) {
   if (targetActivityCategory === null)
@@ -345,12 +345,12 @@ function compare(
 }
 
 function dimensionsForGoal(input: {
-  demand: GoalDemandPolicyV1Result;
+  demand: GoalDemandPolicyResult;
   curve?: DurationAwareEffortCurve;
   physiology: PhysiologyMetricsPolicyResult;
   activity: ReturnType<typeof activityCapabilities>;
   goalActivityCategory: string | null;
-  model: AthleteIntelligenceModelInput;
+  model: ParsedAthleteIntelligenceModelInput;
 }) {
   if (input.demand.state !== "complete") return [];
   const requirement = input.demand.requirement;
@@ -428,7 +428,7 @@ function dimensionsForGoal(input: {
 const dimensionOrder = ["threshold", "speed", "distance", "duration", "frequency"] as const;
 
 function goalActivityCategory(
-  model: AthleteIntelligenceModelInput,
+  model: ParsedAthleteIntelligenceModelInput,
   goalSourceId: string,
 ): CanonicalActivityCategory | null {
   const goal = model.goals.find((entry) => entry.sourceId === goalSourceId);
@@ -461,7 +461,7 @@ function supportsTrainingRecommendation(dimension: {
 }
 
 /** Assembles policy outputs into the one public physical/per-goal projection contract. */
-export function assembleWholeAthleteProjectionV1(
+export function assembleWholeAthleteProjection(
   input: WholeAthleteProjectionInput,
 ): AthleteIntelligenceProjection {
   const activitiesTruncated = hasTruncatedCoverage(input.model, "activities");
@@ -479,7 +479,7 @@ export function assembleWholeAthleteProjectionV1(
   const suppliedByGoal = new Map(input.effortCurves.map((entry) => [entry.goalSourceId, entry]));
   const coverageWithPriority = input.model.goals.map((goal) => {
     const supplied = suppliedByGoal.get(goal.sourceId);
-    const demand: GoalDemandPolicyV1Result = supplied?.demand ?? {
+    const demand: GoalDemandPolicyResult = supplied?.demand ?? {
       policyVersion: GOAL_DEMAND_POLICY_VERSION,
       state: "incomplete",
       goalSourceId: goal.sourceId,
@@ -645,5 +645,3 @@ export function assembleWholeAthleteProjectionV1(
     },
   });
 }
-
-export const projectWholeAthleteV1 = assembleWholeAthleteProjectionV1;

@@ -4,6 +4,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { AuthCardShell } from "../../components/auth-card-shell";
 import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
 import { sendVerificationEmailAction } from "../../lib/auth/server-actions";
+import { contractEpochFormInputProps } from "../../lib/contract-epoch";
 
 export const Route = createFileRoute("/auth/verify")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -47,6 +48,7 @@ function VerifyEmailPage() {
               can return to sign in.
             </p>
             <form action={sendVerificationEmailAction.url} method="post" className="space-y-3">
+              <input {...contractEpochFormInputProps} />
               <input type="hidden" name="email" value={email ?? ""} />
               <input type="hidden" name="source" value={source ?? ""} />
               <Button type="submit" className="w-full" disabled={!email}>

@@ -1,4 +1,4 @@
-import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import { Badge } from "@repo/ui/components/badge";
 import {
   Card,
@@ -21,7 +21,7 @@ function durationLabel(duration: {
 }
 
 export function ActivityPlanStructure({ structure }: { structure: unknown }) {
-  const parsed = activityPlanStructureSchemaV3.safeParse(structure);
+  const parsed = activityPlanStructureSchema.safeParse(structure);
 
   return (
     <Card data-testid="activity-plan-structure">

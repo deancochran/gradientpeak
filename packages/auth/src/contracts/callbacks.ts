@@ -10,12 +10,23 @@ export const authCallbackIntentSchema = z.enum([
 
 export const authCallbackTargetSchema = z.enum(["web", "mobile"]);
 
-export const authCallbackRequestSchema = z.object({
-  intent: authCallbackIntentSchema,
-  target: authCallbackTargetSchema,
-  next: z.string().min(1).optional(),
-  fallback: z.string().min(1),
-});
+export const authCallbackRequestSchema = z
+  .object({
+    intent: authCallbackIntentSchema,
+    target: authCallbackTargetSchema,
+    next: z.string().min(1).optional(),
+    fallback: z.string().min(1),
+  })
+  .strict();
+
+/** The complete query contract accepted by the first-party web callback route. */
+export const authCallbackQuerySchema = authCallbackRequestSchema
+  .extend({
+    code: z.string().min(1).optional(),
+    error: z.string().min(1).optional(),
+    token: z.string().min(1).optional(),
+  })
+  .strict();
 
 export const mobileCallbackPayloadSchema = z.object({
   intent: authCallbackIntentSchema,
@@ -196,4 +207,5 @@ export function buildAuthCallbackUrls(
 export type AuthCallbackIntent = z.infer<typeof authCallbackIntentSchema>;
 export type AuthCallbackTarget = z.infer<typeof authCallbackTargetSchema>;
 export type AuthCallbackRequest = z.infer<typeof authCallbackRequestSchema>;
+export type AuthCallbackQuery = z.infer<typeof authCallbackQuerySchema>;
 export type MobileCallbackPayload = z.infer<typeof mobileCallbackPayloadSchema>;

@@ -1,11 +1,20 @@
-import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import {
   MAX_ROUTE_FILE_SIZE_BYTES,
+  MAX_ROUTE_LIST_OFFSET,
   routeDescriptionSchema,
   routeNameSchema,
   safeRouteFileNameSchema,
 } from "@repo/core/route-files";
-import { type ActivityRouteRow, activityRoutes, events, groupEvents } from "@repo/db";
+import {
+  type ActivityRouteRow,
+  activityRouteDeletionReceipts,
+  activityRoutes,
+  comments,
+  events,
+  groupEvents,
+  likes,
+} from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, asc, count, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -41,7 +50,11 @@ const routeIdSchema = z.string().uuid();
 // supported sort deterministic and prevents applying a created-at cursor to distance/ascent sorts.
 const routeCursorSchema = z
   .string()
-  .regex(/^index:\d+$/, "Cursor must be in 'index:<offset>' format");
+  .regex(/^index:\d+$/, "Cursor must be in 'index:<offset>' format")
+  .refine((cursor) => {
+    const offset = Number(cursor.slice(6));
+    return Number.isSafeInteger(offset) && offset <= MAX_ROUTE_LIST_OFFSET;
+  }, `Cursor offset must not exceed ${MAX_ROUTE_LIST_OFFSET}`);
 
 const activityRouteWithLikeSchema = serializedActivityRouteSchema
   .extend({
@@ -151,6 +164,7 @@ async function requireRouteGeometryForRow(input: {
 
 const uploadRouteSchema = z
   .object({
+    idempotencyKey: routeIdSchema,
     name: routeNameSchema,
     description: routeDescriptionSchema,
     fileContent: z
@@ -201,7 +215,7 @@ export const routesRouter = createTRPCRouter({
         throw new Error("Failed to build route visibility condition");
       }
 
-      const conditions = [visibilityCondition];
+      const conditions = [visibilityCondition, eq(activityRoutes.storage_state, "ready")];
 
       const trimmedSearch = input.search?.trim();
 
@@ -337,6 +351,10 @@ export const routesRouter = createTRPCRouter({
         });
       }
 
+      if (route.storage_state !== "ready" && route.profile_id !== ctx.session.user.id) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Route not found" });
+      }
+
       await requireRouteReadForRow({ db, route, userId: ctx.session.user.id });
 
       const [likeStats, profileIdentityMap] = await Promise.all([
@@ -377,6 +395,10 @@ export const routesRouter = createTRPCRouter({
         });
       }
 
+      if (routeData.storage_state !== "ready") {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Route geometry is unavailable" });
+      }
+
       await requireRouteGeometryForRow({ db, route: routeData, userId: ctx.session.user.id });
 
       if (!routeData.file_path) {
@@ -399,6 +421,18 @@ export const routesRouter = createTRPCRouter({
 
       // Parse GPX file
       const fileContent = await fileData.text();
+      const downloadedSha256 = createHash("sha256").update(fileContent, "utf8").digest("hex");
+      if (!routeData.file_sha256 || downloadedSha256 !== routeData.file_sha256) {
+        logger.error("Route file integrity check failed", {
+          event: "route_storage_integrity_failed",
+          path: routeData.file_path,
+          routeId: routeData.id,
+        });
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Stored route file failed its integrity check",
+        });
+      }
       let parsed: ReturnType<typeof parseStoredRouteFile>;
 
       try {
@@ -427,109 +461,151 @@ export const routesRouter = createTRPCRouter({
     .input(uploadRouteSchema)
     .output(serializedActivityRouteSchema)
     .mutation(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
+      let artifacts: ReturnType<typeof buildRouteFileArtifacts>;
       try {
-        const db = getRequiredDb(ctx);
-        const artifacts = buildRouteFileArtifacts(input.fileContent, input.fileName);
-
-        // Generate unique file path
-        const storageFormat = getCanonicalRouteStorageFormat(artifacts.format);
-        const routeId = randomUUID();
-        const correlationId = `route-upload:${routeId}`;
-        const filePath = `${ctx.session.user.id}/${routeId}.${storageFormat.extension}`;
-
-        const { error: uploadError } = await storageService.storage
-          .from(ROUTES_BUCKET)
-          .upload(filePath, input.fileContent, {
-            contentType: storageFormat.mimeType,
-            upsert: false,
-          });
-
-        if (uploadError) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Failed to upload route file",
-          });
-        }
-
-        try {
-          const routeData = await db.transaction(async (tx) => {
-            const updatedAt = new Date();
-            const [createdRoute] = await tx
-              .insert(activityRoutes)
-              .values({
-                created_at: updatedAt,
-                description: input.description,
-                elevation_polyline: artifacts.elevationPolyline,
-                file_path: filePath,
-                id: routeId,
-                is_public: false,
-                name: input.name,
-                polyline: artifacts.polyline,
-                profile_id: ctx.session.user.id,
-                total_ascent: artifacts.totalAscent,
-                total_descent: artifacts.totalDescent,
-                total_distance: artifacts.totalDistance,
-                updated_at: updatedAt,
-              })
-              .returning();
-            if (!createdRoute) {
-              throw new TRPCError({
-                code: "INTERNAL_SERVER_ERROR",
-                message: "Failed to save route",
-              });
-            }
-            await enqueueWahooOwnedRouteMirror({
-              db,
-              expectedRouteUpdatedAt: updatedAt.toISOString(),
-              operation: "upsert",
-              profileId: ctx.session.user.id,
-              routeId,
-              transaction: tx,
-            });
-            return createdRoute;
-          });
-
-          return serializeActivityRouteRow(routeData);
-        } catch {
-          // Cleanup: delete uploaded file if database insert fails
-          try {
-            const { error: cleanupError } = await storageService.storage
-              .from(ROUTES_BUCKET)
-              .remove([filePath]);
-            if (cleanupError) {
-              logger.error("Route upload cleanup failed", {
-                event: "route_upload_cleanup_failed",
-                bucket: ROUTES_BUCKET,
-                path: filePath,
-                correlationId,
-                routeId,
-                failureKind: "storage_error_result",
-              });
-            }
-          } catch {
-            logger.error("Route upload cleanup failed", {
-              event: "route_upload_cleanup_failed",
-              bucket: ROUTES_BUCKET,
-              path: filePath,
-              correlationId,
-              routeId,
-              failureKind: "storage_exception",
-            });
-          }
-
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Failed to save route",
-          });
-        }
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-
+        artifacts = buildRouteFileArtifacts(input.fileContent, input.fileName);
+      } catch {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Invalid route file",
+        });
+      }
+
+      const storageFormat = getCanonicalRouteStorageFormat(artifacts.format);
+      const routeId = input.idempotencyKey;
+      const filePath = `${ctx.session.user.id}/${routeId}.${storageFormat.extension}`;
+      const fileSha256 = createHash("sha256").update(input.fileContent, "utf8").digest("hex");
+      const matchesUpload = (route: ActivityRouteRow) =>
+        route.profile_id === ctx.session.user.id &&
+        route.name === input.name &&
+        route.description === input.description &&
+        route.file_path === filePath &&
+        route.file_sha256 === fileSha256 &&
+        route.polyline === artifacts.polyline &&
+        route.elevation_polyline === artifacts.elevationPolyline &&
+        route.total_distance === artifacts.totalDistance &&
+        route.total_ascent === artifacts.totalAscent &&
+        route.total_descent === artifacts.totalDescent;
+
+      let routeData: ActivityRouteRow | undefined;
+      [routeData] = await db
+        .select()
+        .from(activityRoutes)
+        .where(eq(activityRoutes.id, routeId))
+        .limit(1);
+
+      if (!routeData) {
+        const claimedAt = new Date();
+        try {
+          [routeData] = await db
+            .insert(activityRoutes)
+            .values({
+              created_at: claimedAt,
+              description: input.description,
+              elevation_polyline: artifacts.elevationPolyline,
+              file_path: filePath,
+              file_sha256: fileSha256,
+              id: routeId,
+              is_public: false,
+              name: input.name,
+              polyline: artifacts.polyline,
+              profile_id: ctx.session.user.id,
+              storage_state: "upload_pending",
+              total_ascent: artifacts.totalAscent,
+              total_descent: artifacts.totalDescent,
+              total_distance: artifacts.totalDistance,
+              updated_at: claimedAt,
+            })
+            .returning();
+        } catch {
+          try {
+            [routeData] = await db
+              .select()
+              .from(activityRoutes)
+              .where(eq(activityRoutes.id, routeId))
+              .limit(1);
+          } catch {
+            routeData = undefined;
+          }
+        }
+      }
+      if (!routeData) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to prepare route upload; retry with the same file",
+        });
+      }
+      if (!matchesUpload(routeData)) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Upload request conflicts with an existing route",
+        });
+      }
+      if (routeData.storage_state === "ready") return serializeActivityRouteRow(routeData);
+      if (routeData.storage_state === "deletion_pending") {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Route deletion is already in progress",
+        });
+      }
+
+      const { error: uploadError } = await storageService.storage
+        .from(ROUTES_BUCKET)
+        .upload(filePath, input.fileContent, {
+          contentType: storageFormat.mimeType,
+          upsert: true,
+        });
+      if (uploadError) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to upload route file; retry with the same file",
+        });
+      }
+
+      try {
+        const readyRoute = await db.transaction(async (tx) => {
+          const updatedAt = new Date();
+          const [updated] = await tx
+            .update(activityRoutes)
+            .set({ storage_state: "ready", updated_at: updatedAt })
+            .where(
+              and(
+                eq(activityRoutes.id, routeId),
+                eq(activityRoutes.profile_id, ctx.session.user.id),
+                eq(activityRoutes.storage_state, "upload_pending"),
+              ),
+            )
+            .returning();
+          if (!updated) {
+            const [current] = await tx
+              .select()
+              .from(activityRoutes)
+              .where(
+                and(
+                  eq(activityRoutes.id, routeId),
+                  eq(activityRoutes.profile_id, ctx.session.user.id),
+                ),
+              )
+              .limit(1);
+            if (current?.storage_state === "ready" && matchesUpload(current)) return current;
+            throw new Error("route_upload_claim_not_pending");
+          }
+          await enqueueWahooOwnedRouteMirror({
+            db,
+            expectedRouteUpdatedAt: updatedAt.toISOString(),
+            operation: "upsert",
+            profileId: ctx.session.user.id,
+            routeId,
+            transaction: tx,
+          });
+          return updated;
+        });
+        return serializeActivityRouteRow(readyRoute);
+      } catch {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Route upload is stored but not finalized; retry with the same file",
         });
       }
     }),
@@ -547,6 +623,7 @@ export const routesRouter = createTRPCRouter({
             and(
               eq(activityRoutes.id, input.id),
               eq(activityRoutes.profile_id, ctx.session.user.id),
+              eq(activityRoutes.storage_state, "ready"),
             ),
           )
           .for("update")
@@ -595,7 +672,7 @@ export const routesRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
-      const filePath = await db.transaction(async (tx) => {
+      const deletionClaim = await db.transaction(async (tx) => {
         const [route] = await tx
           .select()
           .from(activityRoutes)
@@ -608,9 +685,23 @@ export const routesRouter = createTRPCRouter({
           .for("update")
           .limit(1);
         if (!route) {
+          const [receipt] = await tx
+            .select({ routeId: activityRouteDeletionReceipts.route_id })
+            .from(activityRouteDeletionReceipts)
+            .where(
+              and(
+                eq(activityRouteDeletionReceipts.route_id, input.id),
+                eq(activityRouteDeletionReceipts.profile_id, ctx.session.user.id),
+              ),
+            )
+            .limit(1);
+          if (receipt) return null;
+          throw new TRPCError({ code: "NOT_FOUND", message: "Route not found" });
+        }
+        if (route.storage_state === "upload_pending") {
           throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Route not found or you don't have permission to delete it",
+            code: "CONFLICT",
+            message: "Route upload must finish before it can be deleted",
           });
         }
         const [eventsCountRows] = await tx
@@ -629,6 +720,71 @@ export const routesRouter = createTRPCRouter({
             message: `Cannot delete route because it is used by ${linkedEventsCount} event${linkedEventsCount > 1 ? "s" : ""}. Please remove the route from those events first.`,
           });
         }
+        if (route.storage_state === "ready") {
+          const [pendingRoute] = await tx
+            .update(activityRoutes)
+            .set({ storage_state: "deletion_pending", updated_at: new Date() })
+            .where(
+              and(
+                eq(activityRoutes.id, input.id),
+                eq(activityRoutes.profile_id, ctx.session.user.id),
+                eq(activityRoutes.storage_state, "ready"),
+              ),
+            )
+            .returning();
+          if (!pendingRoute) throw new Error("route_deletion_claim_failed");
+          return pendingRoute;
+        }
+        return route;
+      });
+
+      if (!deletionClaim) return deleteRouteOutputSchema.parse({ success: true });
+
+      const deletionContext = {
+        event: "route_storage_deletion_failed",
+        bucket: ROUTES_BUCKET,
+        path: deletionClaim.file_path,
+        correlationId: `route-delete:${input.id}`,
+        routeId: input.id,
+      };
+      try {
+        const { error } = await storageService.storage
+          .from(ROUTES_BUCKET)
+          .remove([deletionClaim.file_path]);
+        if (error) {
+          logger.error("Route storage deletion failed", {
+            ...deletionContext,
+            failureKind: "storage_error_result",
+          });
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Route file deletion is pending; retry route deletion",
+          });
+        }
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        logger.error("Route storage deletion failed", {
+          ...deletionContext,
+          failureKind: "storage_exception",
+        });
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Route file deletion is pending; retry route deletion",
+        });
+      }
+
+      await db.transaction(async (tx) => {
+        const [deletedRoute] = await tx
+          .delete(activityRoutes)
+          .where(
+            and(
+              eq(activityRoutes.id, input.id),
+              eq(activityRoutes.profile_id, ctx.session.user.id),
+              eq(activityRoutes.storage_state, "deletion_pending"),
+            ),
+          )
+          .returning({ id: activityRoutes.id });
+        if (!deletedRoute) return;
         await enqueueWahooOwnedRouteMirror({
           db,
           operation: "delete",
@@ -636,32 +792,19 @@ export const routesRouter = createTRPCRouter({
           routeId: input.id,
           transaction: tx,
         });
-        const [deletedRoute] = await tx
-          .delete(activityRoutes)
-          .where(
-            and(
-              eq(activityRoutes.id, input.id),
-              eq(activityRoutes.profile_id, ctx.session.user.id),
-            ),
-          )
-          .returning({ id: activityRoutes.id });
-        if (!deletedRoute) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Failed to delete route",
-          });
-        }
-        return route.file_path;
+        await tx
+          .delete(likes)
+          .where(and(eq(likes.entity_id, input.id), eq(likes.entity_type, "route")));
+        await tx
+          .delete(comments)
+          .where(and(eq(comments.entity_id, input.id), eq(comments.entity_type, "route")));
+        await tx.insert(activityRouteDeletionReceipts).values({
+          deleted_at: new Date(),
+          file_path: deletionClaim.file_path,
+          profile_id: ctx.session.user.id,
+          route_id: input.id,
+        });
       });
-
-      if (filePath) {
-        const { error } = await storageService.storage.from(ROUTES_BUCKET).remove([filePath]);
-        if (error) {
-          logger.warn("Route storage cleanup will require repair", {
-            event: "route_storage_cleanup_failed",
-          });
-        }
-      }
 
       return deleteRouteOutputSchema.parse({ success: true });
     }),

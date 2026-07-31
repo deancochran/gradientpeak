@@ -25,11 +25,7 @@ function mapBackendProjectionChartToTrainingPathChart(
 ): BuilderDailyTrainingPathChartViewModel | null {
   if (!projectionChart || typeof projectionChart !== "object") return null;
   const chart = projectionChart as Record<string, unknown>;
-  const points = Array.isArray(chart.display_points)
-    ? chart.display_points
-    : Array.isArray(chart.points)
-      ? chart.points
-      : [];
+  const points = Array.isArray(chart.points) ? chart.points : [];
   const validPoints = points.filter(isBackendProjectionPoint);
   if (validPoints.length === 0) return null;
 

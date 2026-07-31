@@ -1,8 +1,5 @@
 import { z } from "zod";
-import {
-  canonicalActivityCategorySchema,
-  planningActivityCategorySchema,
-} from "../activity-category";
+import { canonicalActivityCategorySchema } from "../activity-category";
 import { trainingPlanGoalTargetSchema } from "../training-plan-structure";
 
 const nonNegativeFiniteNumberSchema = z.number().finite().min(0);
@@ -84,7 +81,7 @@ export const referenceTrajectoryPointSchema = z
 export const referenceTrajectorySchema = z
   .object({
     mode: trajectoryModeSchema,
-    activity_category: planningActivityCategorySchema,
+    activity_category: canonicalActivityCategorySchema,
     points: z.array(referenceTrajectoryPointSchema),
     feasibility: feasibilityAssessmentSchema,
     calculated_parameters: z.record(z.string(), calculatedParameterSchema),

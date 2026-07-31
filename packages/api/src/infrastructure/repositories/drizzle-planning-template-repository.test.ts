@@ -5,7 +5,7 @@ import { activityPlanStructureHash } from "../../application/activity-plans/stru
 import { createPlanningTemplateRepository } from "./drizzle-planning-template-repository";
 
 describe("createPlanningTemplateRepository", () => {
-  it("accepts only strict V3 rows matching the in-code catalog fingerprint", async () => {
+  it("accepts only strict rows matching the in-code catalog fingerprint", async () => {
     const catalog = buildSystemActivityTemplateCatalog();
     const first = catalog[0];
     const second = catalog[1];
@@ -84,7 +84,7 @@ describe("createPlanningTemplateRepository", () => {
     expect(persist).not.toHaveBeenCalled();
   });
 
-  it("marks strict V3 system rows unavailable when execution metadata differs", async () => {
+  it("marks strict system rows unavailable when execution metadata differs", async () => {
     const candidate = buildSystemActivityTemplateCatalog()[0];
     const source = SYSTEM_TEMPLATES.find((template) => template.id === candidate?.template_id);
     if (!candidate || !source) throw new Error("Expected system template fixture");
@@ -133,7 +133,7 @@ describe("createPlanningTemplateRepository", () => {
     ).rejects.toThrow("changed activity plans");
   });
 
-  it("marks a V3 row unavailable when its canonical structure hash differs", async () => {
+  it("marks a row unavailable when its canonical structure hash differs", async () => {
     const candidate = buildSystemActivityTemplateCatalog()[0];
     const source = SYSTEM_TEMPLATES.find((template) => template.id === candidate?.template_id);
     if (!candidate || !source) throw new Error("Expected system template fixture");

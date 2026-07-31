@@ -171,7 +171,6 @@ export interface ProjectionChartPayload {
   start_date: string;
   end_date: string;
   points: DeterministicProjectionPoint[];
-  display_points?: DeterministicProjectionPoint[];
   /** Daily recommended load suitable for day-level charts. */
   daily_load_points?: DailyLoadDistributionPoint[];
   goal_markers: ProjectionGoalMarker[];
@@ -274,7 +273,6 @@ export function buildProjectionChartPayloadFromDeterministicProjection(input: {
     start_date: expandedPlan.start_date,
     end_date: expandedPlan.end_date,
     points: deterministicProjection.points,
-    display_points: deterministicProjection.display_points,
     daily_load_points: deterministicProjection.daily_load_points,
     goal_markers: deterministicProjection.goal_markers,
     periodization_phases: expandedPlan.blocks.map((block, index) => ({

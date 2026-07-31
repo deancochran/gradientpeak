@@ -779,12 +779,12 @@ function ActivityDetailScreen() {
                 <View className="flex-row justify-between">
                   <View className="items-center">
                     <Text className="text-2xl font-bold">
-                      {typeof activity.pool_length === "number"
+                      {typeof activity.pool_length_meters === "number"
                         ? formatDisplayUnitValue(
                             toDisplayUnitValue(
                               {
                                 dimension: "pool_length",
-                                value: activity.pool_length,
+                                value: activity.pool_length_meters,
                                 unit: "meters",
                               },
                               preferredUnitSystem,

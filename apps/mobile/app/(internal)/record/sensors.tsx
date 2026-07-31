@@ -21,7 +21,7 @@ import {
   useRecordingCommands,
   useSessionView,
 } from "@/lib/hooks/useActivityRecorder";
-import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { useActivityRecorderService } from "@/lib/providers/ActivityRecorderProvider";
 import {
   type ConnectedSensor,
   type PersistedSensor,
@@ -36,7 +36,7 @@ import { useTheme } from "@/lib/stores/theme-store";
 
 function SensorsScreen() {
   const { resolvedTheme } = useTheme();
-  const service = useSharedActivityRecorder();
+  const { service } = useActivityRecorderService();
   const sessionView = useSessionView(service);
   const connectedSensors = service?.sensorsManager?.getConnectedSensors() ?? [];
   const knownSensors = useKnownSensors(service);

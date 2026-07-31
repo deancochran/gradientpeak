@@ -24,6 +24,7 @@ import { z } from "zod";
 import { useAuth } from "../../components/providers/auth-provider";
 import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
 import { api } from "../../lib/api/client";
+import { contractEpochFormInputProps } from "../../lib/contract-epoch";
 import { sendMessageAction } from "../../lib/messaging/server-actions";
 
 const messageComposerSchema = z.object({
@@ -240,15 +241,13 @@ function MessagesPage() {
 
   const toggleRecipient = (recipient: ComposeRecipient) => {
     setComposeError(null);
-    setSelectedRecipients((current) => {
-      const isSelected = current.some((entry) => entry.id === recipient.id);
-      const nextRecipients = isSelected
-        ? current.filter((entry) => entry.id !== recipient.id)
-        : [...current, recipient];
+    const isSelected = selectedRecipients.some((entry) => entry.id === recipient.id);
+    const nextRecipients = isSelected
+      ? selectedRecipients.filter((entry) => entry.id !== recipient.id)
+      : [...selectedRecipients, recipient];
 
-      updateComposeSearch({ composeRecipients: nextRecipients });
-      return nextRecipients;
-    });
+    setSelectedRecipients(nextRecipients);
+    updateComposeSearch({ composeRecipients: nextRecipients });
   };
 
   const openConversation = async (id: string, successMessage: string) => {
@@ -462,27 +461,36 @@ function MessagesPage() {
               </div>
               <ScrollArea className="w-full whitespace-nowrap">
                 <div className="flex gap-2">
-                  {conversations.map((conversation) => (
-                    <Link
-                      key={`mobile-${conversation.id}`}
-                      to="/messages"
-                      search={{
-                        compose: false,
-                        composeGroup: undefined,
-                        composeQuery: undefined,
-                        composeRecipients: [],
-                        conversationId: conversation.id,
-                        flash: undefined,
-                        flashType: undefined,
-                      }}
-                      className={cn(
-                        "rounded-full border px-3 py-1.5 text-sm transition-colors hover:bg-accent",
-                        selectedId === conversation.id && "bg-accent",
-                      )}
-                    >
-                      {getConversationDisplayName(conversation)}
-                    </Link>
-                  ))}
+                  {conversations.map((conversation) => {
+                    const unreadCount = conversation.unread_count ?? 0;
+
+                    return (
+                      <Link
+                        key={`mobile-${conversation.id}`}
+                        to="/messages"
+                        search={{
+                          compose: false,
+                          composeGroup: undefined,
+                          composeQuery: undefined,
+                          composeRecipients: [],
+                          conversationId: conversation.id,
+                          flash: undefined,
+                          flashType: undefined,
+                        }}
+                        className={cn(
+                          "flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors hover:bg-accent",
+                          selectedId === conversation.id && "bg-accent",
+                        )}
+                      >
+                        {getConversationDisplayName(conversation)}
+                        {unreadCount > 0 ? (
+                          <Badge className="h-5 min-w-5 justify-center px-1.5">
+                            {unreadCount > 9 ? "9+" : unreadCount}
+                          </Badge>
+                        ) : null}
+                      </Link>
+                    );
+                  })}
                 </div>
               </ScrollArea>
             </div>
@@ -712,6 +720,7 @@ function MessagesPage() {
               <div className="border-t p-4">
                 <Form {...form}>
                   <form action={sendMessageAction.url} method="post" onSubmit={handleSend}>
+                    <input {...contractEpochFormInputProps} />
                     <input type="hidden" name="conversation_id" value={selectedId ?? ""} />
                     <input
                       type="hidden"

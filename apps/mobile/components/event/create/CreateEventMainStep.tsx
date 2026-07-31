@@ -183,8 +183,8 @@ export function CreateEventMainStep({
           >
             <Text className="font-semibold text-foreground">This event is read-only on mobile</Text>
             <Text className="text-sm text-muted-foreground">
-              Its linked activity plan is legacy or unavailable. Go back to view the event, or use
-              the event removal action to remove it.
+              Its linked activity plan is unavailable. Go back to view the event, or use the event
+              removal action to remove it.
             </Text>
           </View>
         </CardContent>

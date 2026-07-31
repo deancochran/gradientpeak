@@ -1,4 +1,4 @@
-import type { AthleteIntelligenceModelInput, TrainingFeasibilityInput } from "@repo/core";
+import type { ParsedAthleteIntelligenceModelInput, TrainingFeasibilityInput } from "@repo/core";
 import { athleteIntelligenceModelInputSchema, type calculateTrainingFeasibility } from "@repo/core";
 import type { TRPCError } from "@trpc/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -26,8 +26,8 @@ const profileId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const goalId = "11111111-1111-4111-8111-111111111111";
 const asOf = new Date("2026-07-10T12:00:00.000Z");
 
-function canonicalModel(): AthleteIntelligenceModelInput {
-  const evidenceRegistry: AthleteIntelligenceModelInput["evidenceRegistry"] = {};
+function canonicalModel(): ParsedAthleteIntelligenceModelInput {
+  const evidenceRegistry: ParsedAthleteIntelligenceModelInput["evidenceRegistry"] = {};
   let sequence = 0;
   const evidence = (
     value: number | null,
@@ -276,6 +276,12 @@ function canonicalModel(): AthleteIntelligenceModelInput {
       ctlOverride: { ...nullMetric("training_load"), identity: null },
       atlOverride: { ...nullMetric("training_load"), identity: null },
     },
+    readCoverage: {
+      metrics: { state: "complete", reason: null },
+      activities: { state: "complete", reason: null },
+      efforts: { state: "complete", reason: null },
+      schedules: { state: "complete", reason: null },
+    },
     plannedSchedule: [
       {
         sourceId: evidence(null, null, {
@@ -301,11 +307,11 @@ function canonicalModel(): AthleteIntelligenceModelInput {
   });
 }
 
-const readerFor = (model: AthleteIntelligenceModelInput): AthleteIntelligenceModelReader => ({
+const readerFor = (model: ParsedAthleteIntelligenceModelInput): AthleteIntelligenceModelReader => ({
   read: vi.fn(async () => model),
 });
 
-async function project(model: AthleteIntelligenceModelInput) {
+async function project(model: ParsedAthleteIntelligenceModelInput) {
   return projectAthleteIntelligence({
     modelReader: readerFor(model),
     profileId,
@@ -321,7 +327,7 @@ function first<T>(items: readonly T[], fixtureName: string): T {
 }
 
 function replaceEvidenceValue(
-  model: AthleteIntelligenceModelInput,
+  model: ParsedAthleteIntelligenceModelInput,
   sourceId: string | undefined,
   value: number,
 ): void {

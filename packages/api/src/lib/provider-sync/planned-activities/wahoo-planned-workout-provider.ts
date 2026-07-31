@@ -1,4 +1,4 @@
-import { activityPlanStructureSchemaV3, compileActivityPlanV3 } from "@repo/core";
+import { activityPlanStructureSchema, compileActivityPlan } from "@repo/core";
 import type { ProviderSyncRepository, WahooRepository } from "../../../repositories";
 import { isWahooSupported, toActivityType } from "../../integrations/wahoo/activity-type-utils";
 import {
@@ -14,6 +14,7 @@ import {
   getPlannedActivityJobType,
   getPlannedActivitySyncLaneKey,
   getPlannedActivitySyncPolicy,
+  PLANNED_ACTIVITY_JOB_PRIORITY,
 } from "./planned-activity-policy";
 import type { PlannedActivityProviderAdapter, PlannedActivityProviderQueueResult } from "./types";
 
@@ -70,12 +71,12 @@ export class WahooPlannedActivityProvider implements PlannedActivityProviderAdap
       if (!existing) return { jobId: null, queued: false, skipped: true };
       return rejectOrUnsync("Wahoo route-linked planned activities are not supported");
     }
-    const parsed = activityPlanStructureSchemaV3.safeParse(planned.activityPlan.structure);
+    const parsed = activityPlanStructureSchema.safeParse(planned.activityPlan.structure);
     if (!parsed.success) {
-      return rejectOrUnsync("Wahoo sync requires a valid Activity Plan V3 structure");
+      return rejectOrUnsync("Wahoo sync requires a valid activity-plan structure");
     }
     const structure = parsed.data;
-    const compiled = compileActivityPlanV3(structure);
+    const compiled = compileActivityPlan(structure);
     const activityType = toActivityType(compiled.activity_category);
     if (!isWahooSupported(activityType)) {
       return rejectOrUnsync("Only run and bike planned activities are supported by Wahoo");
@@ -143,6 +144,7 @@ export class WahooPlannedActivityProvider implements PlannedActivityProviderAdap
       operation: "publish",
       payload,
       payloadHash: hashPlannedActivityPayload(payload),
+      priority: PLANNED_ACTIVITY_JOB_PRIORITY,
       profileId: input.profileId,
       provider: "wahoo",
       resourceKind: "event",
@@ -179,6 +181,7 @@ export class WahooPlannedActivityProvider implements PlannedActivityProviderAdap
       operation: "unsync",
       payload,
       payloadHash: hashPlannedActivityPayload(payload),
+      priority: PLANNED_ACTIVITY_JOB_PRIORITY,
       profileId: input.profileId,
       provider: "wahoo",
       resourceKind: "event",

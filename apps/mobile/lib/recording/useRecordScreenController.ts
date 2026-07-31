@@ -15,7 +15,7 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { useRecordingConfig } from "@/lib/hooks/useRecordingConfig";
 import { useAllPermissionsGranted } from "@/lib/hooks/useStandalonePermissions";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
-import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { useActivityRecorderService } from "@/lib/providers/ActivityRecorderProvider";
 import type { ActivityRecorderService, RecordingLifecycle } from "@/lib/services/ActivityRecorder";
 import {
   activitySelectionStore,
@@ -27,7 +27,7 @@ export function useRecordScreenController() {
   const router = useRouter();
   const navigateTo = useAppNavigate();
   const { user } = useAuth();
-  const service = useSharedActivityRecorder();
+  const { service } = useActivityRecorderService();
   const [isInitialized, setIsInitialized] = React.useState(false);
   const [activityQuickEditVisible, setActivityQuickEditVisible] = React.useState(false);
   const [isFinishing, setIsFinishing] = React.useState(false);
@@ -95,20 +95,18 @@ export function useRecordScreenController() {
   React.useEffect(() => {
     if (!service || !zones?.profile) return;
 
-    const { ftp, threshold_hr, weight_kg, threshold_pace } = zones.profile;
+    const { ftp, threshold_hr, weight_kg } = zones.profile;
 
-    if (ftp || threshold_hr || weight_kg || threshold_pace) {
+    if (ftp || threshold_hr || weight_kg) {
       console.log("[RecordModal] Applying derived metrics:", {
         ftp,
         threshold_hr,
         weight_kg,
-        threshold_pace,
       });
       service.updateMetrics({
         ...(ftp ? { ftp } : {}),
         ...(threshold_hr ? { thresholdHr: threshold_hr } : {}),
         ...(weight_kg ? { weightKg: weight_kg } : {}),
-        ...(threshold_pace ? { thresholdPaceSecondsPerKm: threshold_pace } : {}),
       });
     }
   }, [service, zones?.profile]);

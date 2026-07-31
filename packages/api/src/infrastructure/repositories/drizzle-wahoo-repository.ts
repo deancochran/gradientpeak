@@ -407,6 +407,17 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           profileId: schema.activities.profile_id,
           activityFilePath: schema.activityArtifacts.path,
           activityFileSize: schema.activityArtifacts.byte_size,
+          artifactId: schema.activityArtifacts.id,
+          materializerVersion: schema.activities.materializer_version,
+          segmentsRevision: schema.activities.segments_revision,
+          timingCoverage: schema.activities.timing_coverage,
+          hasSwimSegment: sql<boolean>`exists (
+            select 1 from ${schema.activitySegments}
+            where ${schema.activitySegments.activity_id} = ${schema.integrationResourceLinks.internal_resource_id}
+              and ${schema.activitySegments.profile_id} = ${schema.activities.profile_id}
+              and ${schema.activitySegments.role} = 'activity'
+              and ${schema.activitySegments.activity_category} = 'swim'
+          )`,
           analysisReady: sql<boolean>`exists (
             select 1 from ${schema.activityFileIngestions}
             where ${schema.activityFileIngestions.activity_id} = ${schema.integrationResourceLinks.internal_resource_id}
@@ -455,6 +466,17 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           profileId: schema.activities.profile_id,
           activityFilePath: schema.activityArtifacts.path,
           activityFileSize: schema.activityArtifacts.byte_size,
+          artifactId: schema.activityArtifacts.id,
+          materializerVersion: schema.activities.materializer_version,
+          segmentsRevision: schema.activities.segments_revision,
+          timingCoverage: schema.activities.timing_coverage,
+          hasSwimSegment: sql<boolean>`exists (
+            select 1 from ${schema.activitySegments}
+            where ${schema.activitySegments.activity_id} = ${schema.activities.id}
+              and ${schema.activitySegments.profile_id} = ${schema.activities.profile_id}
+              and ${schema.activitySegments.role} = 'activity'
+              and ${schema.activitySegments.activity_category} = 'swim'
+          )`,
           analysisReady: sql<boolean>`exists (
             select 1 from ${schema.activityFileIngestions}
             where ${schema.activityFileIngestions.activity_id} = ${schema.activities.id}
@@ -661,7 +683,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
               inArray(schema.profileMetrics.metric_type, ["ftp", "lthr", "max_hr"]),
             ),
           )
-          .orderBy(desc(schema.profileMetrics.recorded_at)),
+          .orderBy(desc(schema.profileMetrics.recorded_at), desc(schema.profileMetrics.id)),
         db
           .select({
             id: schema.activityEfforts.id,

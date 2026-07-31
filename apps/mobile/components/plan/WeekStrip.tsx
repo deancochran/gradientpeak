@@ -1,9 +1,9 @@
+import { isSameDay } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
-import { isSameDay } from "@/lib/utils/plan/dateGrouping";
 
 interface DayStatus {
   completed: boolean;

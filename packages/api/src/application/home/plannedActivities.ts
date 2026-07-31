@@ -1,10 +1,7 @@
 import { type EventRow, schema } from "@repo/db";
 import { and, asc, eq, gte, lt } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
-import {
-  type ActivityPlanExecutionDto,
-  toAvailableActivityPlanExecutionDto,
-} from "../../dto/activity-plan";
+import { type ActivityPlanExecutionDto, toActivityPlanExecutionDto } from "../../dto/activity-plan";
 import { getActivityPlansDerivedMetrics } from "../../utils/activity-plan-derived-metrics";
 
 type HomeDb = ReturnType<typeof getRequiredDb>;
@@ -50,7 +47,7 @@ export async function listPlannedActivitiesInRange(
 
   return rows.map((row) => ({
     ...row,
-    activity_plan: toAvailableActivityPlanExecutionDto(row.activity_plan),
+    activity_plan: row.activity_plan ? toActivityPlanExecutionDto(row.activity_plan) : null,
     scheduled_date: row.scheduled_date,
   }));
 }

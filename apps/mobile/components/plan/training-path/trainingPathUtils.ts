@@ -1,4 +1,4 @@
-import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core";
+import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
 import { isCanonicalDateKey } from "@/lib/calendar/dateMath";
 import {
   type CommonLoadIdentity,
@@ -27,8 +27,6 @@ type BuildTrainingPathInput = {
   selectedWeekStart?: string | null;
   range: TrainingPathRange;
   weekWindow?: TrainingPathWeekWindow | null;
-  /** Legacy TSS replay is only valid for explicitly advanced legacy charts. */
-  allowLegacyTssProjection?: boolean;
   todayKey: string;
 };
 
@@ -52,7 +50,6 @@ type NormalizedTrainingPathInput = {
   selectedWeekStart?: string | null;
   range: TrainingPathRange;
   weekWindow?: TrainingPathWeekWindow | null;
-  allowLegacyTssProjection: boolean;
   todayKey: string;
 };
 
@@ -158,7 +155,7 @@ function aggregateLoadByWeek(timeline: TrainingPathLoadPoint[]) {
       targetLoad: null,
       targetLoadDates: new Set<string>(),
     };
-    const completedLoad = point.completed_load_tss ?? point.actual_tss;
+    const completedLoad = point.completed_load_tss;
     const completedState = point.completed_observation_state;
     if (completedState === "observed") {
       bucket.hasCompletedObservation = true;
@@ -180,9 +177,9 @@ function aggregateLoadByWeek(timeline: TrainingPathLoadPoint[]) {
     } else if (getNumericLoad(completedLoad) > 0) {
       bucket.completedAggregateUnavailable = true;
     }
-    bucket.plannedLoad += getNumericLoad(point.scheduled_load_tss ?? point.scheduled_tss);
+    bucket.plannedLoad += getNumericLoad(point.scheduled_load_tss);
     bucket.tentativePlannedLoad += getNumericLoad(point.tentative_scheduled_load_tss);
-    const targetLoad = point.recommended_load_tss ?? point.ideal_tss;
+    const targetLoad = point.recommended_load_tss;
     if (typeof targetLoad === "number" && Number.isFinite(targetLoad)) {
       bucket.targetLoad = (bucket.targetLoad ?? 0) + targetLoad;
       bucket.targetLoadDates.add(point.date);
@@ -264,66 +261,6 @@ function resolveTodayFitnessState(points: TrainingPathFitnessPoint[], todayKey: 
         atl: currentFitness.atl ?? null,
         tsb: currentFitness.tsb ?? null,
       };
-}
-
-export function buildScheduledFitnessTrend(input: {
-  endDate?: string;
-  fitnessHistory?: TrainingPathFitnessPoint[] | null;
-  idealFitnessCurve?: TrainingPathFitnessPoint[] | null;
-  timeline?: TrainingPathLoadPoint[] | null;
-  todayKey: string;
-}) {
-  if (!isCanonicalDateKey(input.todayKey)) return [];
-  const currentFitness = resolveTodayFitnessState(input.fitnessHistory ?? [], input.todayKey);
-  const idealEndDate = (input.idealFitnessCurve ?? [])
-    .map((point) => point.date)
-    .filter(isCanonicalDateKey)
-    .sort((left, right) => right.localeCompare(left))[0];
-
-  const timelineEndDate = (input.timeline ?? [])
-    .map((point) => point.date)
-    .filter(isCanonicalDateKey)
-    .sort((left, right) => right.localeCompare(left))[0];
-  const projectionEndDate =
-    (input.endDate && isCanonicalDateKey(input.endDate) ? input.endDate : undefined) ??
-    timelineEndDate ??
-    idealEndDate;
-
-  if (!currentFitness || !projectionEndDate || projectionEndDate < input.todayKey) return [];
-
-  const scheduledTssByDate = new Map<string, number>();
-  for (const point of input.timeline ?? []) {
-    if (!point.date || !isCanonicalDateKey(point.date)) continue;
-    const scheduledLoad =
-      getNumericLoad(point.scheduled_load_tss ?? point.scheduled_tss) +
-      getNumericLoad(point.tentative_scheduled_load_tss);
-    if (scheduledLoad <= 0) continue;
-    scheduledTssByDate.set(point.date, (scheduledTssByDate.get(point.date) ?? 0) + scheduledLoad);
-  }
-
-  const tomorrow = addDays(input.todayKey, 1);
-  const replayed =
-    tomorrow <= projectionEndDate
-      ? replayTrainingLoadByDate({
-          dailyTss: buildDailyTssByDateSeries({
-            startDate: tomorrow,
-            endDate: projectionEndDate,
-            tssByDate: scheduledTssByDate,
-          }),
-          initialATL: currentFitness.atl ?? currentFitness.ctl,
-          initialCTL: currentFitness.ctl,
-        })
-      : [];
-
-  return [
-    currentFitness,
-    ...replayed.map((point) => ({
-      date: point.date,
-      ctl: Math.round(point.ctl * 10) / 10,
-      atl: Math.round(point.atl * 10) / 10,
-      tsb: Math.round(point.tsb * 10) / 10,
-    })),
-  ];
 }
 
 export function buildTrainingPathGoalMarkers(
@@ -490,7 +427,6 @@ function normalizeTrainingPathInput(input: BuildTrainingPathInput): NormalizedTr
     selectedWeekStart: input.selectedWeekStart,
     range: input.range,
     weekWindow: input.weekWindow,
-    allowLegacyTssProjection: input.allowLegacyTssProjection === true,
     todayKey: input.todayKey,
   };
 }
@@ -499,19 +435,7 @@ function buildSourceMaps(input: NormalizedTrainingPathInput): TrainingPathSource
   return {
     loadByWeek: aggregateLoadByWeek(input.timeline),
     actualFitnessByWeek: actualFitnessByWeek(input.fitnessHistory, input.todayKey),
-    scheduledFitnessByWeek: scheduledFitnessByWeek(
-      input.projectedFitness.length > 0
-        ? input.projectedFitness
-        : input.allowLegacyTssProjection
-          ? buildScheduledFitnessTrend({
-              fitnessHistory: input.fitnessHistory,
-              idealFitnessCurve: input.idealFitnessCurve,
-              timeline: input.timeline,
-              todayKey: input.todayKey,
-            })
-          : [],
-      input.todayKey,
-    ),
+    scheduledFitnessByWeek: scheduledFitnessByWeek(input.projectedFitness, input.todayKey),
     idealFitnessByWeek: latestFitnessByWeek(input.idealFitnessCurve),
     goalMarkers: buildTrainingPathGoalMarkers(input.goalMarkers),
   };

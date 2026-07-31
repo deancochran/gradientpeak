@@ -8,6 +8,7 @@ describe("onboarding schema composition", () => {
       completeOnboardingSchema.parse({
         full_name: "Athlete Example",
         username: "athlete",
+        baseline_field_sources: {},
       }),
     ).toMatchObject({
       full_name: "Athlete Example",
@@ -21,6 +22,7 @@ describe("onboarding schema composition", () => {
         full_name: "Athlete Example",
         username: "athlete",
         intents: ["train_event", "track_activities"],
+        baseline_field_sources: {},
       }).intents,
     ).toEqual(["train_event", "track_activities"]);
 
@@ -29,6 +31,7 @@ describe("onboarding schema composition", () => {
         full_name: "Athlete Example",
         username: "athlete",
         planning_timezone: "Pacific/Auckland",
+        baseline_field_sources: {},
       }).planning_timezone,
     ).toBe("Pacific/Auckland");
 
@@ -45,6 +48,7 @@ describe("onboarding schema composition", () => {
         full_name: "Athlete Example",
         username: "athlete",
         dob: "1990-02-03",
+        baseline_field_sources: {},
       }).dob,
     ).toBe("1990-02-03");
     expect(
@@ -60,6 +64,7 @@ describe("onboarding schema composition", () => {
         full_name: "Athlete Example",
         username: "athlete",
         intents: ["explore", "explore"],
+        baseline_field_sources: {},
       }).success,
     ).toBe(false);
 
@@ -80,13 +85,21 @@ describe("onboarding schema composition", () => {
     );
   });
 
-  it("keeps legacy payloads compatible and accepts strict baseline field sources", () => {
+  it("requires strict baseline field sources on current completion payloads", () => {
+    expect(
+      completeOnboardingSchema.safeParse({
+        full_name: "Metadata Athlete",
+        username: "metadata-athlete",
+      }).success,
+    ).toBe(false);
+
     expect(
       completeOnboardingSchema.parse({
-        full_name: "Legacy Athlete",
-        username: "legacy-athlete",
+        full_name: "Metadata Athlete",
+        username: "metadata-athlete",
+        baseline_field_sources: {},
       }).baseline_field_sources,
-    ).toBeUndefined();
+    ).toEqual({});
 
     expect(
       completeOnboardingSchema.parse({
@@ -136,6 +149,7 @@ describe("onboarding schema composition", () => {
         full_name: "Weighted Athlete",
         username: "weighted-athlete",
         weight_kg,
+        baseline_field_sources: {},
       }).success,
     ).toBe(true);
   });

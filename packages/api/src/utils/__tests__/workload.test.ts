@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildCanonicalDailyLoads, buildWorkloadEnvelopes } from "../workload";
+import {
+  buildCanonicalDailyLoads,
+  buildWorkloadEnvelopes,
+  type CanonicalLoadActivity,
+} from "../workload";
 
 const start = new Date("2026-02-01T00:00:00.000Z");
 const end = new Date("2026-02-28T00:00:00.000Z");
@@ -32,7 +36,7 @@ describe("workload utils", () => {
           trimp: 100,
           tss: 50,
           tss_identity: bikeIdentity,
-          load_method: "heart_rate_reserve",
+          load_method: "heart_rate_threshold",
           load_version: "1",
           load_source_definition: "activity_analysis",
         },
@@ -42,7 +46,7 @@ describe("workload utils", () => {
     );
 
     expect(result.source).toBe("mixed");
-    expect(result.dailyLoads).toEqual([]);
+    expect(result).not.toHaveProperty("dailyLoads");
     expect(result.series.map(({ identity }) => identity.family)).toEqual(["trimp", "tss"]);
     expect(buildWorkloadEnvelopes([], start, end).acwr.value).toBeNull();
   });
@@ -83,11 +87,10 @@ describe("workload utils", () => {
           ? bikeIdentity
           : {
               ...bikeIdentity,
-              method: "heart_rate_reserve" as const,
+              method: "heart_rate_threshold" as const,
               calibration: {
-                type: "heart_rate_reserve_bpm" as const,
-                resting: 50,
-                maximum: 190,
+                type: "lthr_bpm" as const,
+                value: 165,
               },
             },
     }));
@@ -149,7 +152,7 @@ describe("workload utils", () => {
       started_at: `${date}T06:00:00.000Z`,
       activity_category: "run",
       trimp: 40 + index,
-      load_method: "heart_rate_reserve",
+      load_method: "heart_rate_threshold",
       load_version: "1",
       load_source_definition: "activity_analysis",
     }));
@@ -159,7 +162,7 @@ describe("workload utils", () => {
     expect(workload.acwr.identity).toMatchObject({
       activity_category: "run",
       family: "trimp",
-      method: "heart_rate_reserve",
+      method: "heart_rate_threshold",
       version: "1",
       sourceDefinition: "activity_analysis",
     });
@@ -177,5 +180,19 @@ describe("workload utils", () => {
     expect(workload.acwr.value).toBeTypeOf("number");
     expect(workload.acwr.source).toBe("tss");
     expect(workload.monotony.value).toBeTypeOf("number");
+  });
+
+  it("rejects the retired training_stress_score alias and does not read it", () => {
+    const retiredInput = {
+      started_at: "2026-02-01T06:00:00.000Z",
+      // @ts-expect-error The workload boundary accepts current tss only.
+      training_stress_score: 50,
+      tss_identity: bikeIdentity,
+    } satisfies CanonicalLoadActivity;
+
+    const result = buildCanonicalDailyLoads([retiredInput], start, start);
+
+    expect(result.series).toEqual([]);
+    expect(result).not.toHaveProperty("dailyLoads");
   });
 });

@@ -27,6 +27,20 @@ type SerializedActivityTime = Pick<ActivityRow, "activity_plan_id" | "id"> & {
   started_at: string;
 };
 type SerializedEventDate = { starts_at: string };
+export type EffectivePlanLoadActivityRecord = Pick<
+  ActivityRow,
+  | "id"
+  | "profile_id"
+  | "started_at"
+  | "finished_at"
+  | "elapsed_ms"
+  | "active_ms"
+  | "moving_ms"
+  | "timing_coverage"
+  | "distance_meters"
+  | "avg_heart_rate"
+  | "max_heart_rate"
+>;
 /**
  * Effective-plan scheduled items are calendar-date anchored records. This is
  * intentionally narrower than the general event-completion record contract.
@@ -59,7 +73,14 @@ export type PlannedDaySummaryReadInput = {
 };
 type ConstraintActivityPlan = Pick<
   ActivityPlanRow,
-  "id" | "gps_recording_enabled" | "structure" | "structure_hash"
+  | "id"
+  | "profile_id"
+  | "name"
+  | "description"
+  | "gps_recording_enabled"
+  | "structure"
+  | "structure_hash"
+  | "updated_at"
 >;
 type ProfileMetricValue = Pick<ProfileMetricRow, "value">;
 type ConstraintTrainingPlan = Pick<TrainingPlanRow, "id" | "structure">;
@@ -86,16 +107,19 @@ type EstimationEffort = Omit<
 };
 type EstimationProfileMetric = Pick<
   ProfileMetricRow,
+  | "id"
   | "calculation_version"
   | "method"
   | "metric_type"
   | "provenance"
   | "quality_score"
+  | "reference_activity_id"
   | "source"
   | "unit"
   | "value"
 > & {
   recorded_at: string;
+  reference_activity_category: string | null;
 };
 type EstimationRoute = {
   id: ActivityRouteRow["id"];
@@ -136,7 +160,7 @@ export interface EventReadRepository {
     profileId: string;
     startDate?: string;
   }): Promise<{
-    activities: ActivityRow[];
+    activities: EffectivePlanLoadActivityRecord[];
     events: EffectivePlanLoadEventRecord[];
     recommendationEvents: EffectivePlanLoadEventRecord[];
     recommendationSource: {

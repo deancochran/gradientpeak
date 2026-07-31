@@ -92,11 +92,6 @@ jest.mock("@/lib/utils/plan/colors", () => ({
   getActivityColor: () => ({ name: "Outdoor Run" }),
 }));
 
-jest.mock("@/lib/utils/plan/dateGrouping", () => ({
-  __esModule: true,
-  isActivityCompleted: () => false,
-}));
-
 jest.mock("@/lib/hooks/useDeletedDetailRedirect", () => ({
   __esModule: true,
   useDeletedDetailRedirect: () => ({

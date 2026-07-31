@@ -81,7 +81,7 @@ describe("deriveTrainingPathChartFromActiveProjection", () => {
         conflicts: { isBlocking: false, items: [] },
         planPreview: null,
         projectionChart: {
-          display_points: [
+          points: [
             {
               date: "2026-01-05",
               predicted_load_tss: 300,
@@ -123,7 +123,7 @@ describe("deriveTrainingPathChartFromActiveProjection", () => {
         conflicts: { isBlocking: false, items: [] },
         planPreview: null,
         projectionChart: {
-          display_points: [
+          points: [
             {
               date: "2026-01-05",
               predicted_load_tss: 300,
@@ -155,7 +155,7 @@ describe("deriveTrainingPathChartFromActiveProjection", () => {
         feasibilityReasons: [],
         conflicts: { isBlocking: false, items: [] },
         planPreview: null,
-        projectionChart: { display_points: [], daily_load_points: [] },
+        projectionChart: { points: [], daily_load_points: [] },
         previewSnapshotToken: null,
       } satisfies ActiveTrainingPlanProjection,
       localChart,
@@ -177,7 +177,7 @@ describe("deriveTrainingPathChartFromActiveProjection", () => {
         conflicts: { isBlocking: false, items: [] },
         planPreview: null,
         projectionChart: {
-          display_points: [
+          points: [
             {
               date: "2026-01-05",
               predicted_load_tss: 300,

@@ -1,6 +1,8 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import type { BrowserContextOptions } from "@playwright/test";
 import { expect, test as sharedTest } from "../../fixtures";
 import {
   AuthArtifactRegistry,
@@ -8,8 +10,34 @@ import {
   cleanupAuthArtifacts,
 } from "./artifact-registry";
 
-type LaneServer = { baseURL: string; process: ChildProcess };
-type AuthLaneFixtures = { authArtifactRegistry: AuthArtifactRegistry };
+export type LaneServer = { baseURL: string; clientIp: string; process: ChildProcess };
+type LaneProcess = Omit<LaneServer, "clientIp">;
+type AuthLaneFixtures = { authArtifactRegistry: AuthArtifactRegistry; laneServer: LaneServer };
+type AuthLaneWorkerFixtures = { laneProcess: LaneProcess };
+
+export function authLaneContextOptions(
+  laneServer: LaneServer,
+  options: BrowserContextOptions = {},
+): BrowserContextOptions {
+  return {
+    ...options,
+    baseURL: laneServer.baseURL,
+    extraHTTPHeaders: {
+      ...options.extraHTTPHeaders,
+      "x-forwarded-for": laneServer.clientIp,
+    },
+  };
+}
+
+export function authLaneRequestHeaders(
+  laneServer: LaneServer,
+  headers: Record<string, string> = {},
+) {
+  return {
+    ...headers,
+    "x-forwarded-for": laneServer.clientIp,
+  };
+}
 
 async function waitUntilReady(baseURL: string, child: ChildProcess) {
   const deadline = Date.now() + 30_000;
@@ -55,7 +83,7 @@ async function stopLaneServer(child: ChildProcess) {
   }
 }
 
-export const test = sharedTest.extend<AuthLaneFixtures, { laneServer: LaneServer }>({
+export const test = sharedTest.extend<AuthLaneFixtures, AuthLaneWorkerFixtures>({
   authArtifactRegistry: [
     async ({ laneServer: _laneServer }, use, testInfo) => {
       const registry = new AuthArtifactRegistry();
@@ -95,7 +123,17 @@ export const test = sharedTest.extend<AuthLaneFixtures, { laneServer: LaneServer
     },
     { auto: true },
   ],
-  laneServer: [
+  laneServer: async ({ laneProcess }, use, testInfo) => {
+    const digest = createHash("sha256")
+      .update(`${testInfo.workerIndex}:${testInfo.testId}:${testInfo.retry}`)
+      .digest();
+    const octet = (index: number) => ((digest[index] ?? 0) % 254) + 1;
+    await use({
+      ...laneProcess,
+      clientIp: `127.${octet(0)}.${octet(1)}.${octet(2)}`,
+    });
+  },
+  laneProcess: [
     // biome-ignore lint/correctness/noEmptyPattern: Playwright fixture callbacks require object destructuring.
     async ({}, use, workerInfo) => {
       const port = 32_000 + (process.pid % 1_000) * 10 + workerInfo.workerIndex;
@@ -117,6 +155,10 @@ export const test = sharedTest.extend<AuthLaneFixtures, { laneServer: LaneServer
             AUTH_EMAIL_MODE: "capture",
             AUTH_EMAIL_CAPTURE_PATH: capturePath,
             BETTER_AUTH_SECRET: secret,
+            // Better Auth generates action links from APP_URL. Keep those links
+            // on this worker's isolated Vite server rather than inheriting a
+            // developer tunnel or another long-running web server.
+            APP_URL: baseURL,
             NODE_OPTIONS: [process.env.NODE_OPTIONS, "--preserve-symlinks"]
               .filter(Boolean)
               .join(" "),
@@ -143,10 +185,11 @@ export const test = sharedTest.extend<AuthLaneFixtures, { laneServer: LaneServer
     const projectUse = testInfo.project.use as {
       viewport?: { width: number; height: number } | null;
     };
-    const context = await browser.newContext({
-      baseURL: laneServer.baseURL,
-      viewport: projectUse.viewport ?? { width: 1280, height: 720 },
-    });
+    const context = await browser.newContext(
+      authLaneContextOptions(laneServer, {
+        viewport: projectUse.viewport ?? { width: 1280, height: 720 },
+      }),
+    );
     const page = await context.newPage();
     try {
       await use(page);

@@ -5,7 +5,11 @@
 
 import type { StandardActivity } from "@repo/core";
 import { parseActivityFile } from "@repo/core/server/activity-files";
-import type { ActivitySubmissionTransaction } from "../../../application/activities/submit-activity";
+import {
+  type ActivitySubmissionTransaction,
+  MATERIALIZER_VERSION,
+  UnsupportedPersistedActivityVersionError,
+} from "../../../application/activities/submit-activity";
 import { logger } from "../../logger";
 import {
   buildImportedActivityCreateInput,
@@ -25,7 +29,12 @@ interface WahooRepository {
     profileId: string;
     activityFilePath: string | null;
     activityFileSize: number | null;
+    artifactId: string | null;
     analysisReady: boolean;
+    materializerVersion: string | null;
+    segmentsRevision: number;
+    timingCoverage: "complete" | "partial" | "unavailable";
+    hasSwimSegment: boolean;
   } | null>;
   findImportedActivityByProviderExternalId(input: {
     externalId: string;
@@ -35,7 +44,12 @@ interface WahooRepository {
     profileId: string;
     activityFilePath: string | null;
     activityFileSize: number | null;
+    artifactId: string | null;
     analysisReady: boolean;
+    materializerVersion: string | null;
+    segmentsRevision: number;
+    timingCoverage: "complete" | "partial" | "unavailable";
+    hasSwimSegment: boolean;
   } | null>;
   createImportedActivityResourceLink(input: {
     activityId: string;
@@ -176,12 +190,14 @@ const WAHOO_WORKOUT_TYPE_MAP: Record<number, WahooActivityType> = {
   5: "run", // TREADMILL RUNNING
   12: "bike", // INDOOR BIKING
   25: "swim", // LAP SWIMMING
+  26: "swim", // OPEN WATER SWIMMING
 };
 
 export interface ImportResult {
   success: boolean;
   activityId?: string;
   error?: string;
+  failureReason?: "unsupported_persisted_version";
   skipped?: boolean;
   reason?: string;
 }
@@ -291,6 +307,13 @@ export class WahooActivityImporter {
         integrationId: integration.integrationId,
       });
 
+      if (existing && existing.materializerVersion !== MATERIALIZER_VERSION) {
+        return {
+          success: false,
+          error: "Wahoo activity has a non-current materializer version",
+          failureReason: "unsupported_persisted_version",
+        };
+      }
       if (existing?.analysisReady) {
         logger.info("Wahoo activity import skipped", {
           operation: "import_activity",
@@ -318,6 +341,13 @@ export class WahooActivityImporter {
           };
         }
 
+        if (existingImport.materializerVersion !== MATERIALIZER_VERSION) {
+          return {
+            success: false,
+            error: "Wahoo activity has a non-current materializer version",
+            failureReason: "unsupported_persisted_version",
+          };
+        }
         if (existingImport.analysisReady) {
           options.signal?.throwIfAborted();
           await this.deps.repository.createImportedActivityResourceLink({
@@ -352,7 +382,12 @@ export class WahooActivityImporter {
               profileId: existing.profileId,
               activityFilePath: existing.activityFilePath,
               activityFileSize: existing.activityFileSize,
+              artifactId: existing.artifactId,
               analysisReady: existing.analysisReady,
+              materializerVersion: existing.materializerVersion,
+              segmentsRevision: existing.segmentsRevision,
+              timingCoverage: existing.timingCoverage,
+              hasSwimSegment: existing.hasSwimSegment,
             }
           : null);
       if (repairCandidate && repairCandidate.profileId !== integration.profileId) {
@@ -361,7 +396,6 @@ export class WahooActivityImporter {
           error: "Provider activity identity is owned by another profile",
         };
       }
-
       // 3. Find linked planned activity event (if any)
       // Note: This queries integration_resource_links to map external Wahoo workout resources to planned events
       // The external_id column stores the Wahoo workout ID
@@ -447,7 +481,7 @@ export class WahooActivityImporter {
           distanceMeters: summary.distance_accum,
           durationSeconds: summary.duration_total_accum,
           elevationGainMeters: summary.ascent_accum,
-          movingSeconds: summary.duration_active_accum,
+          providerActiveDurationSeconds: summary.duration_active_accum,
           normalizedPower: summary.power_bike_np_last,
           providerUpdatedAt: summary.updated_at ?? summary.created_at ?? null,
           startedAt: this.calculateStartTime(summary),
@@ -486,6 +520,13 @@ export class WahooActivityImporter {
           newActivity = await this.deps.submitActivity(activity, parsedActivity, { beforePersist });
         }
       } catch (insertError) {
+        if (insertError instanceof UnsupportedPersistedActivityVersionError) {
+          return {
+            success: false,
+            error: "Wahoo activity has non-current persisted versions",
+            failureReason: "unsupported_persisted_version",
+          };
+        }
         if (!isExpectedProviderUniqueViolation(insertError)) {
           logger.warn(WAHOO_ACTIVITY_IMPORT_FAILURE_MESSAGES.persist_activity, {
             operation: "persist_activity",
@@ -731,7 +772,7 @@ export class WahooActivityImporter {
           contentType: "application/octet-stream",
           path: stagingReservation.path,
         });
-      } catch (uploadError) {
+      } catch {
         logger.warn("Wahoo activity file storage failed", {
           operation: "store_file",
           outcome: "failure",

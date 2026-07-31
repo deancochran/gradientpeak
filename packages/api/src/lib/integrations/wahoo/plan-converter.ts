@@ -1,12 +1,12 @@
 /**
  * Wahoo Plan Converter
- * Converts compiled GradientPeak ActivityPlan V3 semantics to Wahoo's plan.json format
+ * Converts compiled GradientPeak activity-plan semantics to Wahoo's plan.json format
  */
 
 import type {
   ActivityPlanDuration,
   ActivityPlanProviderProjection,
-  ActivityPlanStructureV3,
+  ActivityPlanStructure,
   ActivityPlanTarget,
   ActivityTargetCategory,
   CompiledActivityStepOccurrence,
@@ -15,8 +15,8 @@ import type {
 } from "@repo/core";
 import {
   activityPlanSpeedKphToMetersPerSecond,
-  compileActivityPlanV3,
-  getActivityPlanProviderReadiness,
+  compileActivityPlan,
+  getActivityPlanProviderProjection,
   isTargetTypePermittedForActivity,
   selectActivityPlanProviderTarget,
 } from "@repo/core";
@@ -102,8 +102,8 @@ export interface ConvertOptions {
 /**
  * Calculate total activity-plan duration in seconds from structure
  */
-export function calculateWorkoutDuration(structure: ActivityPlanStructureV3): number {
-  return compileActivityPlanV3(structure).occurrences.reduce(
+export function calculateWorkoutDuration(structure: ActivityPlanStructure): number {
+  return compileActivityPlan(structure).occurrences.reduce(
     (seconds, occurrence) => seconds + parseDuration(occurrence.duration),
     0,
   );
@@ -133,7 +133,7 @@ function parseDuration(duration: ActivityPlanDuration): number {
  * Convert GradientPeak activity plan to Wahoo plan.json format
  */
 export function convertToWahooPlan(
-  structure: ActivityPlanStructureV3,
+  structure: ActivityPlanStructure,
   options: ConvertOptions,
 ): WahooPlanJson {
   const activityTypeMapping = toWahooTypes(options.activityType, {
@@ -147,7 +147,7 @@ export function convertToWahooPlan(
   }
 
   const { workout_type_family, workout_type_location } = activityTypeMapping;
-  const compiled = compileActivityPlanV3(structure);
+  const compiled = compileActivityPlan(structure);
   const activityOccurrences = compiled.occurrences.filter(
     (occurrence): occurrence is CompiledActivityStepOccurrence => occurrence.role === "activity",
   );
@@ -478,10 +478,10 @@ function inferIntensityType(target: ActivityPlanTarget): WahooInterval["intensit
  * Note: This assumes the Wahoo activity type has already been validated with isWahooSupported
  */
 export function validateWahooCompatibility(
-  structure: ActivityPlanStructureV3,
+  structure: ActivityPlanStructure,
   options: ConvertOptions,
 ): WahooCompatibilityResult {
-  const readiness = getActivityPlanProviderReadiness({
+  const projection = getActivityPlanProviderProjection({
     anchors: {
       ...(options.ftp !== undefined ? { ftpWatts: options.ftp } : {}),
       ...(options.max_hr !== undefined ? { maxHeartRateBpm: options.max_hr } : {}),
@@ -492,7 +492,7 @@ export function validateWahooCompatibility(
     provider: "wahoo",
     structure,
   });
-  const findings: WahooCompatibilityIssue[] = readiness.projection.findings.map((finding) => ({
+  const findings: WahooCompatibilityIssue[] = projection.findings.map((finding) => ({
     code:
       finding.reasonCode === "missing_target_anchor"
         ? "missing_metric"
@@ -514,7 +514,7 @@ export function validateWahooCompatibility(
       : {}),
     ...(finding.targetType !== undefined ? { targetType: finding.targetType } : {}),
   }));
-  const compiled = compileActivityPlanV3(structure);
+  const compiled = compileActivityPlan(structure);
   if (compiled.occurrences.length > 100) {
     findings.push({
       code: "invalid_plan",
@@ -537,14 +537,14 @@ export function validateWahooCompatibility(
     disposition,
     findings,
     issues,
-    projection: readiness.projection,
+    projection,
     warnings,
   };
 }
 
 /** Canonical hash input for enqueue, worker race checks, and persisted provider metadata. */
 export function getWahooProjectionSnapshot(
-  structure: ActivityPlanStructureV3,
+  structure: ActivityPlanStructure,
   options: ConvertOptions,
 ): WahooProjectionSnapshot {
   return { plan: convertToWahooPlan(structure, options) };

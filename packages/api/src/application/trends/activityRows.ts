@@ -1,4 +1,4 @@
-import { segmentSummarySchemaV1 } from "@repo/core";
+import { segmentSummarySchema } from "@repo/core";
 import { type ActivityRow, publicActivityCategorySchema } from "@repo/db";
 import { z } from "zod";
 import {
@@ -46,7 +46,7 @@ export function normalizeTrendActivityRows(rows: TrendActivityRow[]): Normalized
   return trendActivityRowSchema.array().parse(
     rows.flatMap((activity) =>
       orderedActivitySegments(activity.segments).map((segment) => {
-        const summary = segmentSummarySchemaV1.parse(segment.summary);
+        const summary = segmentSummarySchema.parse(segment.summary);
         const timing = summary.timing;
         const activeMs =
           timing.timingCoverage === "unavailable" || !("activeMs" in timing)

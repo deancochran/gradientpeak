@@ -58,7 +58,6 @@ function commonLoad(load: number, intensity: number, estimated: boolean) {
       calculationVersion: "threshold-v1",
       sourceFingerprint: "threshold-fingerprint",
     },
-    sessionRpeEvidence: null,
     evidenceFingerprint: "activity-fingerprint",
     computedAsOf: "2026-07-02T00:00:00.000Z",
   };

@@ -440,7 +440,7 @@ describe("activityPlansRouter", () => {
     expect(result.nextCursor).toBe("index:1");
   });
 
-  it("filters by activity_categories contained in V3 segments instead of the storage column", async () => {
+  it("filters by activity_categories contained in structure segments instead of the storage column", async () => {
     const runStructure = structuredClone(sampleStructure);
     runStructure.segments[0].activity_category = "run";
     runStructure.segments[0].intervals[0].steps[0].targets = [{ type: "%MaxHR", intensity: 70 }];
@@ -613,7 +613,7 @@ describe("activityPlansRouter", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
   });
 
-  it("getById rejects stored non-V3 JSON without a read fallback", async () => {
+  it("getById rejects stored non-current JSON without a read fallback", async () => {
     const oldRow = createActivityPlanRow({ structure: { version: 2, intervals: [] } });
     const { caller } = createCaller({
       state: { "select:activity_plans": [[oldRow]] },
@@ -892,6 +892,28 @@ describe("activityPlansRouter", () => {
     expect(callLog.some((call) => call.operation === "update")).toBe(false);
   });
 
+  it("rejects update and deletion by a non-owner before mutating the plan", async () => {
+    const ownedByAnotherAthlete = createActivityPlanRow({ profile_id: OTHER_USER_ID });
+    const { caller, callLog } = createCaller({
+      state: { "select:activity_plans": [[]] },
+    });
+
+    await expect(
+      caller.update({
+        id: ownedByAnotherAthlete.id,
+        expectedStructureHash: ownedByAnotherAthlete.structure_hash,
+        name: "Attempted non-owner edit",
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" } as Partial<TRPCError>);
+    await expect(caller.delete({ id: ownedByAnotherAthlete.id })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    } as Partial<TRPCError>);
+
+    expect(callLog.some((call) => call.operation === "update" || call.operation === "delete")).toBe(
+      false,
+    );
+  });
+
   it("update republishes every owned future planned event after a material plan change", async () => {
     const existingRow = createActivityPlanRow({ name: "Before Update" });
     const updatedRow = createActivityPlanRow({ name: "After Update" });
@@ -1004,7 +1026,7 @@ describe("activityPlansRouter", () => {
     expect(callLog).toHaveLength(0);
   });
 
-  it("delete removes an owned plan", async () => {
+  it("delete returns only the current plannedActivitySync DTO field", async () => {
     const ownedPlan = createActivityPlanRow({ id: "77777777-7777-4777-8777-777777777777" });
     const { caller, callLog } = createCaller({
       state: {
@@ -1016,7 +1038,8 @@ describe("activityPlansRouter", () => {
     const result = await caller.delete({ id: "77777777-7777-4777-8777-777777777777" });
 
     expect(callLog.some((call) => call.operation === "delete")).toBe(true);
-    expect(result).toEqual({ success: true, plannedActivitySync: null, wahooSync: null });
+    expect(result).toEqual({ success: true, plannedActivitySync: null });
+    expect(result).not.toHaveProperty("wahooSync");
   });
 
   it("delete enqueues unsync for linked future planned events before allowing FK set-null", async () => {

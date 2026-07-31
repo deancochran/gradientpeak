@@ -1,12 +1,40 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  authCallbackQuerySchema,
+  authCallbackRequestSchema,
   isAllowedMobileCallbackUrl,
   resolveAuthCallbackRedirect,
   sanitizeWebCallbackPath,
 } from "./callbacks";
 
 const appUrl = "https://app.example";
+
+describe("auth callback request contracts", () => {
+  const request = {
+    fallback: "/auth/login",
+    intent: "post-sign-in",
+    target: "web",
+  } as const;
+
+  it("requires the current request fields and rejects compatibility fields", () => {
+    expect(authCallbackRequestSchema.safeParse(request).success).toBe(true);
+    expect(authCallbackRequestSchema.safeParse({ ...request, token: "legacy-token" }).success).toBe(
+      false,
+    );
+    expect(authCallbackRequestSchema.safeParse({ ...request, fallback: undefined }).success).toBe(
+      false,
+    );
+    expect(authCallbackRequestSchema.safeParse({ ...request, target: undefined }).success).toBe(
+      false,
+    );
+  });
+
+  it("allows only the current callback payload fields alongside a complete request", () => {
+    expect(authCallbackQuerySchema.safeParse({ ...request, code: "code" }).success).toBe(true);
+    expect(authCallbackQuerySchema.safeParse({ ...request, legacy: "value" }).success).toBe(false);
+  });
+});
 
 describe("sanitizeWebCallbackPath", () => {
   it.each([

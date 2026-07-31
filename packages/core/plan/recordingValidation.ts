@@ -1,4 +1,4 @@
-import { type CompiledActivityPlan, compileActivityPlanV3 } from "../activity-plan";
+import { type CompiledActivityPlan, compileActivityPlan } from "../activity-plan";
 import { GLOBAL_DEFAULTS } from "../calculations/defaults";
 import type { RecordingServiceActivityPlan } from "../schemas";
 
@@ -37,12 +37,12 @@ export function validatePlanRequirements(
 ): PlanValidationResult {
   let compiled: CompiledActivityPlan;
   try {
-    compiled = compileActivityPlanV3(plan.structure);
+    compiled = compileActivityPlan(plan.structure);
   } catch {
     return {
       isValid: false,
       missingMetrics: [],
-      warnings: ["Recording requires a valid activity-plan V3 structure."],
+      warnings: ["Recording requires a valid activity-plan structure."],
     };
   }
 

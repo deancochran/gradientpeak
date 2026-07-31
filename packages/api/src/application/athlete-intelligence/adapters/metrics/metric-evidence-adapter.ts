@@ -299,7 +299,9 @@ export class MetricEvidenceAdapter {
           lte(profileMetrics.recorded_at, input.asOf),
         ),
       )
-      .orderBy(desc(profileMetrics.recorded_at)) as Promise<ProfileMetricRow[]>;
+      .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.id)) as Promise<
+      ProfileMetricRow[]
+    >;
   }
 
   private unknownEvidence(input: {

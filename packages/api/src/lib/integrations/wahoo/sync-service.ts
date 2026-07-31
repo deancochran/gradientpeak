@@ -5,9 +5,9 @@
 
 import { createHash } from "node:crypto";
 import {
-  type ActivityPlanStructureV3,
-  activityPlanStructureSchemaV3,
-  compileActivityPlanV3,
+  type ActivityPlanStructure,
+  activityPlanStructureSchema,
+  compileActivityPlan,
 } from "@repo/core";
 import {
   type ActivityEffortThresholdEvidence,
@@ -1728,19 +1728,19 @@ export class WahooSyncService {
         );
       }
 
-      const parsedStructure = activityPlanStructureSchemaV3.safeParse(activityPlan.structure);
+      const parsedStructure = activityPlanStructureSchema.safeParse(activityPlan.structure);
       if (!parsedStructure.success) {
         return rejectOrUnsync(
           createSyncFailure({
             category: "eligibility",
             code: "invalid_plan",
-            error: "A valid Activity Plan V3 structure is required for Wahoo sync.",
+            error: "A valid activity-plan structure is required for Wahoo sync.",
             retryable: false,
           }),
         );
       }
       const structure = parsedStructure.data;
-      const compiled = compileActivityPlanV3(structure);
+      const compiled = compileActivityPlan(structure);
       const normalizedPlanned: WahooPlannedEvent = {
         id: planned.id,
         starts_at: planned.startsAt,
@@ -2301,7 +2301,7 @@ export class WahooSyncService {
    */
   private async createNewSync(
     planned: WahooPlannedEvent,
-    structure: ActivityPlanStructureV3,
+    structure: ActivityPlanStructure,
     profile: ReturnType<typeof resolveWahooSyncMetrics>,
     integration: { externalId: string; id: string },
     wahooClient: WahooClient,
@@ -2557,7 +2557,7 @@ export class WahooSyncService {
       providerMetadata?: WahooEventResourceProviderMetadata | null;
       updatedAt: string | null;
     },
-    structure: ActivityPlanStructureV3,
+    structure: ActivityPlanStructure,
     profile: ReturnType<typeof resolveWahooSyncMetrics>,
     wahooClient: WahooClient,
     _profileId: string,

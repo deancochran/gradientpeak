@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDeterministicProjectionPayload } from "../projectionCalculations";
+import { buildDeterministicProjectionPayload } from "../projection/engine";
 import {
   buildPreviewMinimalPlanFromForm,
   buildPreviewReadinessSnapshot,

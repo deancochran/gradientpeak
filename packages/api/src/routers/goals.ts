@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   canonicalGoalActivityCategorySchema,
   canonicalGoalObjectiveSchema,
+  dateOnlySchema,
   type profileGoalCreateSchema,
   profileGoalRecordSchema,
 } from "@repo/core";
@@ -19,33 +20,27 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
 import { assertProfileAccess, withProfileWriteAccess } from "./account/profile-access";
 
-function toSafeDbErrorMessage(error: unknown): string {
-  if (!error || typeof error !== "object") {
-    return "Unknown database error";
-  }
-
-  const databaseError = error as {
-    code?: string;
-    message?: string;
-  };
-
-  const code = databaseError.code ? `[${databaseError.code}] ` : "";
-  const message = (databaseError.message ?? "Unknown database error")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 180);
-
-  return `${code}${message}`;
-}
-
 function rethrowTrpcError(error: unknown): never | undefined {
   if (error instanceof TRPCError) {
     throw error;
   }
 }
 
+function rethrowPrivateGoalTrpcError(error: unknown): never | undefined {
+  if (!(error instanceof TRPCError)) return;
+  if (error.code === "FORBIDDEN") {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Goal not found" });
+  }
+  throw error;
+}
+
+function getSafeErrorCode(error: unknown): string | null {
+  if (!error || typeof error !== "object" || !("code" in error)) return null;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code.slice(0, 32) : null;
+}
+
 const goalIdSchema = z.string().uuid();
-const goalDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 const goalsListInputSchema = z
   .object({
@@ -63,7 +58,7 @@ const goalsListInputSchema = z
 const profileGoalWriteSchema = profileGoalWriteDataSchema.extend({ profile_id: z.string().uuid() });
 const profileGoalUpdateDataSchema = z
   .object({
-    target_date: goalDateSchema,
+    target_date: dateOnlySchema,
     title: z.string().trim().min(1).max(100),
     priority: z.number().int().min(0).max(10),
     activity_category: canonicalGoalActivityCategorySchema,
@@ -215,10 +210,7 @@ export const goalsRouter = createTRPCRouter({
     const db = getRequiredDb(ctx);
     const offset = parseIndexCursor(input.cursor);
 
-    await assertProfileAccess({
-      ctx,
-      profileId: input.profile_id,
-    });
+    await assertProfileAccess({ ctx, profileId: input.profile_id });
 
     const conditions = buildGoalListConditions({
       profileId: input.profile_id,
@@ -271,10 +263,12 @@ export const goalsRouter = createTRPCRouter({
       });
     }
 
-    await assertProfileAccess({
-      ctx,
-      profileId: goal.profile_id,
-    });
+    try {
+      await assertProfileAccess({ ctx, profileId: goal.profile_id });
+    } catch (error) {
+      rethrowPrivateGoalTrpcError(error);
+      throw error;
+    }
 
     return goal;
   }),
@@ -305,16 +299,12 @@ export const goalsRouter = createTRPCRouter({
     } catch (error) {
       rethrowTrpcError(error);
       console.error("goals.create failed", {
-        profileId: input.profile_id,
-        errorCode:
-          error && typeof error === "object" && "code" in error ? (error as any).code : null,
-        errorMessage:
-          error && typeof error === "object" && "message" in error ? (error as any).message : null,
+        errorCode: getSafeErrorCode(error),
       });
 
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
-        message: `Failed to create goal: ${toSafeDbErrorMessage(error)}`,
+        message: "Failed to create goal",
       });
     }
   }),
@@ -370,7 +360,7 @@ export const goalsRouter = createTRPCRouter({
           cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
         };
       } catch (error) {
-        rethrowTrpcError(error);
+        rethrowPrivateGoalTrpcError(error);
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to update goal",
@@ -408,7 +398,7 @@ export const goalsRouter = createTRPCRouter({
         });
       }
     } catch (error) {
-      rethrowTrpcError(error);
+      rethrowPrivateGoalTrpcError(error);
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
         message: "Failed to delete goal",

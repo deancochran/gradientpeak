@@ -1,5 +1,5 @@
 import {
-  activityPlanStructureSchemaV3,
+  activityPlanStructureSchema,
   formatDateOnlyInTimeZone,
   ianaTimezoneSchema,
   persistedTrainingPlanStructureSchema,
@@ -162,7 +162,6 @@ export async function applyTrainingPlanTemplateUseCase(input: {
       ownerProfileId?: string | null;
       isPublic?: boolean | null;
       isSystem?: boolean | null;
-      routeId?: string | null;
     }
   >();
 
@@ -182,8 +181,7 @@ export async function applyTrainingPlanTemplateUseCase(input: {
         profile_id as "ownerProfileId",
         content_visibility = 'public' as "isPublic",
         is_system_template as "isSystem",
-        route_id as "routeId"
-        , structure
+        structure
       from activity_plans
       where id in (${sql.join(
         candidatePlanIds.map((id) => sql`${id}::uuid`),
@@ -221,12 +219,11 @@ export async function applyTrainingPlanTemplateUseCase(input: {
       ownerProfileId?: string | null;
       isPublic?: boolean | null;
       isSystem?: boolean | null;
-      routeId?: string | null;
       structure: unknown;
     }>(accessiblePlans);
     allowedPlanIds = new Set(
       accessiblePlanRows
-        .filter((row) => activityPlanStructureSchemaV3.safeParse(row.structure).success)
+        .filter((row) => activityPlanStructureSchema.safeParse(row.structure).success)
         .map((row) => row.id),
     );
     accessiblePlanRows.forEach((row) => {
@@ -235,7 +232,6 @@ export async function applyTrainingPlanTemplateUseCase(input: {
         ownerProfileId: row.ownerProfileId,
         isPublic: row.isPublic,
         isSystem: row.isSystem,
-        routeId: row.routeId,
       });
     });
   }
@@ -422,7 +418,7 @@ export async function applyTrainingPlanTemplateUseCase(input: {
           profileId,
         );
 
-        if (!shouldGrantLinkedPlan && !linkedPlanAccess?.routeId && !shouldGrantTrainingPlan) {
+        if (!shouldGrantLinkedPlan && !shouldGrantTrainingPlan) {
           continue;
         }
 

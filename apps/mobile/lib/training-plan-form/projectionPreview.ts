@@ -1,6 +1,6 @@
 import { canonicalizeMinimalTrainingPlanCreate } from "@repo/core/plan/canonicalization";
 import type { ProjectionChartPayload } from "@repo/core/plan/projectionTypes";
-import { withLegacyTrainingLoadAliases } from "@repo/core/plan/trainingLoadTimeline";
+import { normalizeTrainingLoadTimelinePoint } from "@repo/core/plan/trainingLoadTimeline";
 import {
   type AthleteTrainingSettings,
   type AthleteTrainingSettingsFormInput,
@@ -171,7 +171,7 @@ export function buildTrainingPreferencesProjectionPreview(input: {
 
     return {
       previewIdealCurve:
-        preview.projectionChart.display_points?.map((point) => ({
+        preview.projectionChart.points.map((point) => ({
           date: point.date,
           ctl: point.predicted_fitness_ctl,
         })) ?? [],
@@ -195,7 +195,7 @@ export function buildTrainingPreferencesLoadTimeline(input: {
   const baselineTimeline = input.snapshot.insightTimeline?.timeline ?? [];
   const baselineByDate = new Map(baselineTimeline.map((point) => [point.date, point]));
   const previewByDate = new Map(
-    (input.projectionChart?.display_points ?? []).map((point) => [point.date, point]),
+    (input.projectionChart?.points ?? []).map((point) => [point.date, point]),
   );
   const dailyRecommendedLoadByDate = new Map(
     (input.projectionChart?.daily_load_points ?? []).map((point) => [
@@ -224,22 +224,22 @@ export function buildTrainingPreferencesLoadTimeline(input: {
       const previewPoint = previewByDate.get(date);
       const scheduledLoad = hasCalendarScheduleForDate(date)
         ? (scheduledLoadAggregation.scheduledLoadByDate.get(date) ?? 0)
-        : (baseline?.scheduled_tss ?? 0);
+        : (baseline?.scheduled_load_tss ?? 0);
       const tentativeScheduledLoad = hasCalendarScheduleForDate(date)
         ? (scheduledLoadAggregation.tentativeScheduledLoadByDate.get(date) ?? 0)
         : 0;
 
-      return withLegacyTrainingLoadAliases({
+      return normalizeTrainingLoadTimelinePoint({
         date,
         recommended_load_tss: Math.round(
           dailyRecommendedLoadByDate.get(date) ??
             previewPoint?.predicted_load_tss ??
-            baseline?.ideal_tss ??
+            baseline?.recommended_load_tss ??
             0,
         ),
         scheduled_load_tss: Math.round(scheduledLoad),
         tentative_scheduled_load_tss: Math.round(tentativeScheduledLoad),
-        completed_load_tss: baseline?.actual_tss ?? 0,
+        completed_load_tss: baseline?.completed_load_tss ?? 0,
         adherence_score: baseline?.adherence_score ?? 0,
         boundary_state: baseline?.boundary_state,
         boundary_reasons: baseline?.boundary_reasons,

@@ -1,13 +1,13 @@
 type UnknownRecord = Record<string, unknown>;
 
 export type WebActivityStreamRecord = {
-  timestamp?: Date | string;
-  distance?: number;
-  heartRate?: number;
-  power?: number;
-  cadence?: number;
-  speed?: number;
-  altitude?: number;
+  timestamp?: Date | string | undefined;
+  distance?: number | undefined;
+  heartRate?: number | undefined;
+  power?: number | undefined;
+  cadence?: number | undefined;
+  speed?: number | undefined;
+  altitude?: number | undefined;
 };
 
 export type ActivityStreamSeries = {
@@ -104,8 +104,7 @@ export function summarizeSwimDetails(input: {
     return type === 1 || type === "active";
   }).length;
   return {
-    poolLength: field(summary, "poolLength", "pool_length"),
-    poolLengthUnit: typeof summary.poolLengthUnit === "string" ? summary.poolLengthUnit : "meters",
+    poolLengthMeters: field(summary, "poolLengthMeters", "pool_length_meters"),
     totalStrokes: field(summary, "totalStrokes", "total_strokes"),
     averageStrokeDistance: field(summary, "avgStrokeDistance", "avg_stroke_distance"),
     lengths: input.lengths?.length ?? 0,

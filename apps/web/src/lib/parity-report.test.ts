@@ -18,5 +18,9 @@ describe("getWebParityReport", () => {
     expect(report.partial).toEqual([]);
     expect(report.implementedUnverified.length).toBeGreaterThan(0);
     expect(report.missing.map((feature) => feature.id)).toEqual(["record.sensors", "record.ftms"]);
+    expect(report.runtimeVerifiedFeatures).toBe(0);
+    expect(report.runtimeVerifiedFeaturePercentage).toBe(0);
+    expect(report.runtimeVerifiedJourneys).toBe(0);
+    expect(report.runtimeVerifiedJourneyPercentage).toBe(0);
   });
 });

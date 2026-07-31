@@ -4,6 +4,7 @@ import { projectCanonicalTrainingPlan } from "../canonicalTrainingPlanProjection
 import type { GoalAnchoredProjectionPlan } from "../goalAnchoredProjectionPlan";
 import { materializePlanToEvents } from "../materializePlanToEvents";
 import type { NormalizedSystemActivityTemplateCatalogEntry } from "../verification/activityTemplateCatalog";
+import { buildSystemActivityTemplateCatalog } from "../verification/activityTemplateCatalog";
 
 const planId = "11111111-1111-4111-8111-111111111111";
 const runTemplateId = "22222222-2222-4222-8222-222222222222";
@@ -188,6 +189,32 @@ describe("projectCanonicalTrainingPlan", () => {
           reason: "missing_exact_activity_category_focus_coverage",
         },
       ],
+    });
+  });
+
+  it("resolves the current other race-specific coverage cell to a real system template", () => {
+    const result = projectCanonicalTrainingPlan({
+      planId,
+      projection,
+      candidates: buildSystemActivityTemplateCatalog(),
+      dailyLoadPoints: [
+        {
+          date: "2026-01-06",
+          recommended_load_tss: 32.5,
+          primary_focus: "race_specific",
+          activity_category: "other",
+          confidence: "high",
+          reason_codes: [],
+        },
+      ],
+    });
+
+    expect(result.status).toBe("resolved");
+    if (result.status !== "resolved") throw new Error("expected resolved projection");
+    expect(result.resolution_manifest[0]).toMatchObject({
+      activity_category: "other",
+      focus: "race_specific",
+      selected_activity_plan_id: "1f6ea8cb-5df9-42cb-9f04-3ca5a8a6d6d1",
     });
   });
 });

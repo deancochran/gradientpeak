@@ -70,7 +70,7 @@ jest.mock("@/lib/stores/activityPlanCreation", () => ({
 
 import { ActivityPlanComposerScreen } from "../ActivityPlanComposerScreen";
 
-function blockedForm(editStatus: "legacy_read_only" | "unavailable") {
+function blockedForm() {
   return {
     form: {
       name: "",
@@ -88,29 +88,17 @@ function blockedForm(editStatus: "legacy_read_only" | "unavailable") {
     isSubmitting: false,
     isLoading: false,
     isEditBlocked: true,
-    editStatus,
+    editStatus: "unavailable",
   };
 }
 
 describe("ActivityPlanComposerScreen blocked edit routes", () => {
-  it("renders a legacy plan as read-only without mounting editable composer content", () => {
-    formHookMock.mockReturnValue(blockedForm("legacy_read_only"));
-
-    const screen = render(<ActivityPlanComposerScreen mode="edit" planId="legacy-plan" />);
-
-    expect(screen.getByText("Legacy plan is read-only")).toBeTruthy();
-    expect(screen.getByText(/multisport plan can be viewed/i)).toBeTruthy();
-    expect(screen.queryByText("EditableBasics")).toBeNull();
-    expect(screen.queryByText("EditableStructure")).toBeNull();
-  });
-
-  it("renders an unknown execution kind as unavailable rather than legacy", () => {
-    formHookMock.mockReturnValue(blockedForm("unavailable"));
+  it("renders an unavailable plan without mounting editable composer content", () => {
+    formHookMock.mockReturnValue(blockedForm());
 
     const screen = render(<ActivityPlanComposerScreen mode="edit" planId="unknown-plan" />);
 
     expect(screen.getByText("Plan unavailable")).toBeTruthy();
-    expect(screen.queryByText("Legacy plan is read-only")).toBeNull();
     expect(screen.queryByText("EditableBasics")).toBeNull();
     expect(screen.queryByText("EditableStructure")).toBeNull();
   });

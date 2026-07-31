@@ -34,7 +34,6 @@ export {
 export {
   derivePowerCurveFromFTP,
   estimatePowerForDuration,
-  estimateWPrime,
 } from "./calculations/power-curve";
 export {
   deriveSpeedCurveFromThresholdPace,
@@ -58,10 +57,6 @@ export {
   pacePerHundredMetersToSpeed,
   speedToPacePerHundredMeters,
 } from "./calculations/swim-pace-curve";
-// ============================================================================
-// Constants Module
-// ============================================================================
-export * from "./constants";
 export * from "./recording";
 
 // ============================================================================
@@ -74,7 +69,7 @@ export * from "./activity-analysis"; // Shared dynamic activity analysis contrac
 export * from "./activity-artifacts"; // Thin decoded source-artifact contracts
 export * from "./activity-categories"; // Canonical activity_category registry and heuristics
 export * from "./activity-files"; // Runtime-neutral activity file ingestion contracts
-export * from "./activity-plan"; // Strict V3 plan contracts and compiler
+export * from "./activity-plan"; // Strict activity-plan contracts and compiler
 export * from "./activity-segments"; // Completed activity segment contracts
 export {
   type ActivityEffortObservationKind,
@@ -169,7 +164,6 @@ export * as AthleteInputs from "./athlete-inputs";
 export * as Bluetooth from "./bluetooth";
 export * as Calculations from "./calculations";
 export * as Coaching from "./coaching";
-export * as Constants from "./constants";
 export * as Duration from "./duration";
 export * as Estimation from "./estimation";
 export * as Estimators from "./estimators/index";

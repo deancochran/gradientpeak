@@ -1,4 +1,4 @@
-import { activityPlanStructureSchemaV3, getScheduledDateKey } from "@repo/core";
+import { activityPlanStructureSchema, getScheduledDateKey } from "@repo/core";
 import type { PublicEventStatus } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import type { Context } from "../../context";
@@ -149,7 +149,7 @@ export async function createEventUseCase<
         message: "Activity plan not found or not accessible",
       });
     }
-    if (!activityPlanStructureSchemaV3.safeParse(activityPlan.structure).success) {
+    if (!activityPlanStructureSchema.safeParse(activityPlan.structure).success) {
       throw new TRPCError({
         code: "BAD_REQUEST",
         message: "Only executable single-category activity plans can be scheduled",
@@ -313,7 +313,6 @@ export async function createEventUseCase<
   return {
     ...event,
     plannedActivitySync: plannedActivitySyncResult,
-    wahooSync: plannedActivitySyncResult,
     insight_refresh_hint: dependencies.buildInsightRefreshHint({
       trainingPlanId: event.training_plan_id,
       changedDate: event.scheduled_date,

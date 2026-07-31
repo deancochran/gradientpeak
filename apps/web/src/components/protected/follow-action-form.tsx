@@ -1,9 +1,12 @@
+import { invalidateRelationshipQueries } from "@repo/api/react";
 import { Button } from "@repo/ui/components/button";
 import { useServerFn } from "@tanstack/react-start";
 import { UserCheck, UserMinus, UserPlus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { api } from "../../lib/api/client";
+import { contractEpochFormInputProps } from "../../lib/contract-epoch";
 import { followUserAction, unfollowUserAction } from "../../lib/social/server-actions";
 
 type FollowActionFormProps = {
@@ -21,6 +24,7 @@ export function FollowActionForm({
 }: FollowActionFormProps) {
   const followUser = useServerFn(followUserAction);
   const unfollowUser = useServerFn(unfollowUserAction);
+  const utils = api.useUtils();
   const [isPendingSubmit, setIsPendingSubmit] = useState(false);
 
   const action = isFollowing || isPending ? unfollowUserAction : followUserAction;
@@ -41,11 +45,15 @@ export function FollowActionForm({
       toast.error(error instanceof Error ? error.message : "Unable to update follow state");
     } finally {
       setIsPendingSubmit(false);
+      // Server actions change the profile query's relationship status. Refresh the
+      // tRPC cache so the control reflects the persisted follow state immediately.
+      void invalidateRelationshipQueries(utils, [targetUserId]);
     }
   };
 
   return (
     <form action={action.url} method="post" onSubmit={handleSubmit}>
+      <input {...contractEpochFormInputProps} />
       <input type="hidden" name="target_user_id" value={targetUserId} />
       <input type="hidden" name="redirectTo" value={redirectTo} />
       <Button

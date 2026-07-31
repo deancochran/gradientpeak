@@ -19,7 +19,7 @@ Use this file when working in `packages/db`.
 ## Source Of Truth
 
 - `src/schema/**` is the relational source of truth.
-- `supabase/migrations/` is the deployable migration authority; `drizzle/deploy/` is its mechanically checked mirror.
+- `supabase/migrations/` has exactly one fresh-only transactional MVP baseline; `drizzle/deploy/` has its byte-identical mirror. Archives are inert evidence and are never read by active tooling.
 - `supabase/migrations-archive/` and the migration lock preserve pre-baseline history and must not be edited.
 - `supabase/` contains DB-owned local workflow assets.
 

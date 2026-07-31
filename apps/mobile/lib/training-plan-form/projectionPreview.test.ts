@@ -5,11 +5,11 @@ import { buildTrainingPreferencesLoadTimeline } from "./projectionPreview";
 type TimelineInput = Parameters<typeof buildTrainingPreferencesLoadTimeline>[0];
 
 describe("buildTrainingPreferencesLoadTimeline", () => {
-  it("uses canonical daily load points before legacy projection display points", () => {
+  it("uses daily load points alongside canonical projection points", () => {
     const timeline = buildTrainingPreferencesLoadTimeline({
       snapshot: { insightTimeline: { timeline: [] } } as unknown as TimelineInput["snapshot"],
       projectionChart: {
-        display_points: [
+        points: [
           {
             date: "2026-01-05",
             predicted_load_tss: 300,
@@ -36,11 +36,11 @@ describe("buildTrainingPreferencesLoadTimeline", () => {
     expect(timeline[0]?.recommended_load_tss).toBe(72);
   });
 
-  it("falls back to legacy display points when canonical daily load points are missing", () => {
+  it("uses canonical projection points when daily load points are missing", () => {
     const timeline = buildTrainingPreferencesLoadTimeline({
       snapshot: { insightTimeline: { timeline: [] } } as unknown as TimelineInput["snapshot"],
       projectionChart: {
-        display_points: [
+        points: [
           {
             date: "2026-01-05",
             predicted_load_tss: 123.4,
@@ -57,11 +57,11 @@ describe("buildTrainingPreferencesLoadTimeline", () => {
     expect(timeline[0]?.recommended_load_tss).toBe(123);
   });
 
-  it("adds canonical daily load dates even when they are absent from display points", () => {
+  it("adds daily load dates beyond canonical projection points", () => {
     const timeline = buildTrainingPreferencesLoadTimeline({
       snapshot: { insightTimeline: { timeline: [] } } as unknown as TimelineInput["snapshot"],
       projectionChart: {
-        display_points: [
+        points: [
           {
             date: "2026-01-05",
             predicted_load_tss: 80,

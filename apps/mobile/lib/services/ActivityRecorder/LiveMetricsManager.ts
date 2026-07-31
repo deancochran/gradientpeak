@@ -133,7 +133,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       ftp: this.profile.ftp,
       threshold_hr: this.profile.threshold_hr,
       weight: this.profile.weight,
-      threshold_pace: this.profile.threshold_pace_seconds_per_km,
+      threshold_pace_seconds_per_km: this.profile.threshold_pace_seconds_per_km,
     });
   }
 
@@ -193,7 +193,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       ftp: this.profile.ftp,
       threshold_hr: this.profile.threshold_hr,
       weight: this.profile.weight,
-      threshold_pace: this.profile.threshold_pace_seconds_per_km,
+      threshold_pace_seconds_per_km: this.profile.threshold_pace_seconds_per_km,
     });
   }
 

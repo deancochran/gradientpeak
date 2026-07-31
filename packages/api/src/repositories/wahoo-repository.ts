@@ -117,7 +117,12 @@ export interface WahooRepository {
     profileId: string;
     activityFilePath: string | null;
     activityFileSize: number | null;
+    artifactId: string | null;
     analysisReady: boolean;
+    materializerVersion: string | null;
+    segmentsRevision: number;
+    timingCoverage: "complete" | "partial" | "unavailable";
+    hasSwimSegment: boolean;
   } | null>;
   findImportedActivityByProviderExternalId(input: {
     externalId: string;
@@ -127,7 +132,12 @@ export interface WahooRepository {
     profileId: string;
     activityFilePath: string | null;
     activityFileSize: number | null;
+    artifactId: string | null;
     analysisReady: boolean;
+    materializerVersion: string | null;
+    segmentsRevision: number;
+    timingCoverage: "complete" | "partial" | "unavailable";
+    hasSwimSegment: boolean;
   } | null>;
   createImportedActivityResourceLink(input: {
     activityId: string;

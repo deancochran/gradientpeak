@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   createProfileMetricInputSchema,
   formatProfileMetricValue,
+  getCanonicalProfileMetricValueFromDisplay,
   getProfileMetricDefinition,
+  getProfileMetricDisplayUnit,
+  getProfileMetricDisplayValue,
   isProfileMetricValueWithinRange,
   profileMetricObservationSchema,
   profileMetricTypes,
@@ -54,6 +57,36 @@ describe("profile metric definitions", () => {
       "1:40 /100m",
     );
     expect(formatProfileMetricValue({ metric_type: "stress_score", value: 7 })).toBe("7");
+  });
+
+  it("adapts convertible values to imperial display and back to canonical units", () => {
+    expect(
+      formatProfileMetricValue({
+        metric_type: "weight_kg",
+        preferredUnitSystem: "imperial",
+        value: 70,
+      }),
+    ).toBe("154.3 lb");
+    expect(
+      formatProfileMetricValue({
+        metric_type: "threshold_pace_seconds_per_km",
+        preferredUnitSystem: "imperial",
+        value: 300,
+      }),
+    ).toBe("8:03 /mi");
+    expect(
+      formatProfileMetricValue({
+        metric_type: "css_seconds_per_100m",
+        preferredUnitSystem: "imperial",
+        value: 100,
+      }),
+    ).toBe("1:31 /100yd");
+
+    const displayedWeight = getProfileMetricDisplayValue("weight_kg", 70, "imperial");
+    expect(getProfileMetricDisplayUnit("weight_kg", "imperial")).toBe("lb");
+    expect(
+      getCanonicalProfileMetricValueFromDisplay("weight_kg", displayedWeight, "imperial"),
+    ).toBeCloseTo(70, 8);
   });
 
   it("represents a locked override as manual provenance", () => {

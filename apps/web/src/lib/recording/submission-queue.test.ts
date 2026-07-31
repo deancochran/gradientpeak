@@ -17,6 +17,7 @@ import {
 const artifact = portableWebRecordingArtifactSchema.parse({
   schemaVersion: 1,
   ownerId: "profile-1",
+  sessionRpeOperationId: null,
   recordingSessionId: "session-1",
   segmentId: "55555555-5555-4555-8555-555555555555",
   snapshot: {

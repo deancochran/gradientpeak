@@ -5,7 +5,7 @@ import type {
   TrainingPlanGoalTarget,
 } from "../schemas/training-plan-structure";
 import type { DailyLoadDistributionSchedulingConstraints } from "./dailyLoadDistribution";
-import type { DailyRecommendedLoadSession } from "./dailyRecommendedLoad";
+import type { DailyLoadRecommendationSession } from "./dailyLoadRecommendation";
 import type { NoHistoryAnchorContext } from "./projection/no-history";
 import type { BuildDeterministicProjectionInput } from "./projectionCalculations";
 
@@ -32,7 +32,7 @@ type ProjectionRelevantCreationConfig = Pick<
   TrainingPlanCreationConfig,
   | "optimization_profile"
   | "post_goal_recovery_days"
-  | "behavior_controls_v1"
+  | "behavior_controls"
   | "calibration"
   | "availability_config"
   | "constraints"
@@ -45,7 +45,7 @@ export interface BuildProjectionEngineInputShape {
   starting_atl?: number;
   prior_inferred_snapshot?: InferredStateSnapshot;
   preference_profile?: AthletePreferenceProfile;
-  planned_sessions?: DailyRecommendedLoadSession[];
+  planned_sessions?: DailyLoadRecommendationSession[];
   scheduling_constraints?: DailyLoadDistributionSchedulingConstraints;
   no_history_context?: NoHistoryAnchorContext;
   disable_weekly_tss_optimizer?: boolean;
@@ -131,7 +131,7 @@ export function buildProjectionEngineInput(
         ? {
             optimization_profile: input.normalized_creation_config.optimization_profile,
             post_goal_recovery_days: input.normalized_creation_config.post_goal_recovery_days,
-            behavior_controls_v1: input.normalized_creation_config.behavior_controls_v1,
+            behavior_controls: input.normalized_creation_config.behavior_controls,
             calibration: input.normalized_creation_config.calibration,
           }
         : undefined,

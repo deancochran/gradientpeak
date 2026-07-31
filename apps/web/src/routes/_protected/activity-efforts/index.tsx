@@ -1,18 +1,10 @@
 import {
+  type ActivityEffortCategory,
   type ActivityEffortType,
   activityEffortDefinitions,
   getActivityEffortDefinitionId,
 } from "@repo/core/athlete-inputs";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@repo/ui/components/alert-dialog";
+import type { PreferredUnitSystem } from "@repo/core/units";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -22,13 +14,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@repo/ui/components/dialog";
 import {
   Table,
   TableBody,
@@ -40,27 +25,24 @@ import {
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BarChart3, Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { toast } from "sonner";
 import { SimpleTrendChart } from "../../../components/charts/simple-trend-chart";
-import {
-  ActivityEffortForm,
-  toDateTimeLocalValue,
-} from "../../../components/protected/activity-effort-form";
 import { DetailPageIntro } from "../../../components/protected/activity-route-primitives";
+import { useViewingUserPreferredUnitSystem } from "../../../hooks/use-viewing-user-preferred-unit-system";
 import {
   buildObservedDurationCurve,
+  formatActivityEffortCurveDisplayValue,
   formatActivityEffortDisplayValue,
   getActivityEffortCurveValue,
+  getActivityEffortDisplayUnitLabel,
   getEffortHistoryForDuration,
   getEffortStatus,
 } from "../../../lib/activity-effort-presentation";
-import type { ActivityEffortFormValues } from "../../../lib/activity-route-form-schemas";
 import { formatDateTime, formatDuration } from "../../../lib/activity-route-helpers";
 import { api } from "../../../lib/api/client";
 
 type ActivityEffortRow = {
   id: string;
-  activity_category: ActivityEffortFormValues["activity_category"];
+  activity_category: ActivityEffortCategory;
   activity_id?: string | null;
   duration_seconds: number;
   effort_type: ActivityEffortType;
@@ -73,12 +55,16 @@ type ActivityEffortRow = {
   value: number;
 };
 
-function getEffortSummary(rows: ActivityEffortRow[]) {
+export function getEffortSourceLabel(source?: string | null): string {
+  return source || "Unknown source";
+}
+
+function getEffortSummary(rows: ActivityEffortRow[], unitSystem: PreferredUnitSystem) {
   if (rows.length === 0) return "No records yet";
   const observed = rows.filter((row) => getEffortStatus(row) === "observed");
   if (observed.length === 0) return "No observed efforts";
   const best = observed.reduce((current, row) => (row.value > current.value ? row : current));
-  return `Best ${formatActivityEffortDisplayValue(best)}`;
+  return `Best ${formatActivityEffortDisplayValue(best, unitSystem)}`;
 }
 
 export const Route = createFileRoute("/_protected/activity-efforts/")({
@@ -86,15 +72,13 @@ export const Route = createFileRoute("/_protected/activity-efforts/")({
 });
 
 function ActivityEffortsPage() {
-  const utils = api.useUtils();
+  const { unitSystem } = useViewingUserPreferredUnitSystem();
   const effortsQuery = api.activityEfforts.getForProfile.useQuery();
   const efforts = (effortsQuery.data ?? []) as unknown as ActivityEffortRow[];
   const [selectedDefinitionId, setSelectedDefinitionId] = useState<
     (typeof activityEffortDefinitions)[number]["id"]
   >(activityEffortDefinitions[0].id);
   const [selectedDuration, setSelectedDuration] = useState<number | null>(null);
-  const [editingEffort, setEditingEffort] = useState<ActivityEffortRow | null>(null);
-  const [deleteEffort, setDeleteEffort] = useState<ActivityEffortRow | null>(null);
 
   const groupedEfforts = useMemo(() => {
     const map = new Map<string, ActivityEffortRow[]>();
@@ -127,36 +111,37 @@ function ActivityEffortsPage() {
     ? `${activeDefinition.activityCategory === "swim" ? "Swim" : "Run"} pace`
     : activeDefinition.label;
   const curveAxisLabel = isPaceCurve
-    ? `Pace (/${activeDefinition.activityCategory === "swim" ? "100m" : "km"})`
+    ? `Pace (${getActivityEffortDisplayUnitLabel(
+        activeDefinition.activityCategory,
+        activeDefinition.effortType,
+        unitSystem,
+      )})`
     : isHeartRateCurve
       ? "Heart rate (bpm)"
       : `Power (${activeDefinition.unit})`;
-
-  const updateMutation = api.activityEfforts.update.useMutation({
-    onSuccess: async () => {
-      await utils.activityEfforts.invalidate();
-      toast.success("Effort updated");
-      setEditingEffort(null);
-    },
-  });
-  const deleteMutation = api.activityEfforts.delete.useMutation({
-    onSuccess: async () => {
-      await utils.activityEfforts.invalidate();
-      toast.success("Effort deleted");
-      setDeleteEffort(null);
-    },
-  });
 
   return (
     <div className="container mx-auto max-w-6xl space-y-6 py-4">
       <DetailPageIntro
         actions={null}
-        description="Choose a measurement card to open its chart and manage the records behind it."
+        description="Choose a measurement card to inspect calculated evidence across durations and dates."
         eyebrow="Performance"
         title="Activity efforts"
       />
 
-      {effortsQuery.isLoading ? (
+      {effortsQuery.isError ? (
+        <Card>
+          <CardContent className="space-y-4 py-10 text-center" role="alert">
+            <p className="font-medium text-destructive">Activity efforts could not be loaded.</p>
+            <p className="text-sm text-muted-foreground">
+              Check your connection and retry without leaving this page.
+            </p>
+            <Button onClick={() => void effortsQuery.refetch()} type="button" variant="outline">
+              Retry activity efforts
+            </Button>
+          </CardContent>
+        </Card>
+      ) : effortsQuery.isLoading ? (
         <div className="flex min-h-[300px] items-center justify-center rounded-2xl border">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
@@ -190,12 +175,12 @@ function ActivityEffortsPage() {
                     <div className="rounded-xl bg-muted/40 px-3 py-2">
                       <p className="text-xs uppercase text-muted-foreground">Latest</p>
                       <p className="font-medium">
-                        {latest ? formatActivityEffortDisplayValue(latest) : "-"}
+                        {latest ? formatActivityEffortDisplayValue(latest, unitSystem) : "-"}
                       </p>
                     </div>
                     <div className="rounded-xl bg-muted/40 px-3 py-2">
                       <p className="text-xs uppercase text-muted-foreground">Summary</p>
-                      <p className="font-medium">{getEffortSummary(rows)}</p>
+                      <p className="font-medium">{getEffortSummary(rows, unitSystem)}</p>
                     </div>
                   </div>
                 </button>
@@ -210,13 +195,11 @@ function ActivityEffortsPage() {
               emptyMessage="No eligible observed efforts are available for this curve."
               formatX={formatDuration}
               formatValue={(value) =>
-                formatActivityEffortDisplayValue({
-                  activity_category: activeDefinition.activityCategory,
-                  effort_type: activeDefinition.effortType,
-                  unit: activeDefinition.unit,
-                  value: isPaceCurve
-                    ? (activeDefinition.activityCategory === "swim" ? 100 : 1_000) / value
-                    : value,
+                formatActivityEffortCurveDisplayValue({
+                  activityCategory: activeDefinition.activityCategory,
+                  effortType: activeDefinition.effortType,
+                  unitSystem,
+                  value,
                 })
               }
               invertY={isPaceCurve}
@@ -228,6 +211,7 @@ function ActivityEffortsPage() {
                   activeDefinition.activityCategory,
                   activeDefinition.effortType,
                   point.value,
+                  unitSystem,
                 ),
                 x: point.durationSeconds,
               }))}
@@ -272,13 +256,11 @@ function ActivityEffortsPage() {
                   description={`Observed ${formatDuration(activeDuration)} efforts by recorded date.`}
                   emptyMessage="No observed history at this duration. Review and modeled rows may still appear below."
                   formatValue={(value) =>
-                    formatActivityEffortDisplayValue({
-                      activity_category: activeDefinition.activityCategory,
-                      effort_type: activeDefinition.effortType,
-                      unit: activeDefinition.unit,
-                      value: isPaceCurve
-                        ? (activeDefinition.activityCategory === "swim" ? 100 : 1_000) / value
-                        : value,
+                    formatActivityEffortCurveDisplayValue({
+                      activityCategory: activeDefinition.activityCategory,
+                      effortType: activeDefinition.effortType,
+                      unitSystem,
+                      value,
                     })
                   }
                   invertY={isPaceCurve}
@@ -290,61 +272,29 @@ function ActivityEffortsPage() {
                       activeDefinition.activityCategory,
                       activeDefinition.effortType,
                       row.value,
+                      unitSystem,
                     ),
                     x: new Date(row.recorded_at).getTime(),
                   }))}
                   title={`${formatDuration(activeDuration)} history over date`}
                 />
-                <EffortRowsTable rows={selectedRows} />
+                <EffortRowsTable rows={selectedRows} unitSystem={unitSystem} />
               </CardContent>
             </Card>
           </div>
         </div>
       )}
-
-      <EffortEditDialog
-        effort={editingEffort}
-        onClose={() => setEditingEffort(null)}
-        onSubmit={(values) => {
-          if (!editingEffort) return;
-          return updateMutation.mutateAsync({
-            id: editingEffort.id,
-            activity_category: values.activity_category,
-            duration_seconds: values.duration_seconds,
-            effort_type: values.effort_type,
-            recorded_at: new Date(values.recorded_at).toISOString(),
-            value: values.value,
-          });
-        }}
-        onSubmitError={() => {
-          toast.error("Effort update failed");
-        }}
-        pending={updateMutation.isPending}
-      />
-
-      <AlertDialog open={!!deleteEffort} onOpenChange={(open) => !open && setDeleteEffort(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete effort?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This removes the selected effort record from your profile.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => deleteEffort && deleteMutation.mutate({ id: deleteEffort.id })}
-            >
-              Delete effort
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
 
-function EffortRowsTable({ rows }: { rows: ActivityEffortRow[] }) {
+function EffortRowsTable({
+  rows,
+  unitSystem,
+}: {
+  rows: ActivityEffortRow[];
+  unitSystem: PreferredUnitSystem;
+}) {
   if (rows.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed px-6 py-10 text-center text-muted-foreground">
@@ -373,12 +323,12 @@ function EffortRowsTable({ rows }: { rows: ActivityEffortRow[] }) {
               <TableRow key={row.id}>
                 <TableCell>{formatDateTime(row.recorded_at)}</TableCell>
                 <TableCell className="whitespace-nowrap font-medium">
-                  {formatActivityEffortDisplayValue(row)}
+                  {formatActivityEffortDisplayValue(row, unitSystem)}
                 </TableCell>
                 <TableCell>{formatDuration(row.duration_seconds)}</TableCell>
                 <TableCell>
                   <div className="flex flex-wrap gap-1">
-                    <Badge variant="secondary">{row.source ?? "legacy"}</Badge>
+                    <Badge variant="secondary">{getEffortSourceLabel(row.source)}</Badge>
                     <Badge variant={status === "observed" ? "default" : "outline"}>{status}</Badge>
                   </div>
                 </TableCell>
@@ -405,56 +355,5 @@ function EffortRowsTable({ rows }: { rows: ActivityEffortRow[] }) {
         </TableBody>
       </Table>
     </div>
-  );
-}
-
-function EffortEditDialog({
-  effort,
-  onClose,
-  onSubmit,
-  pending,
-  onSubmitError,
-}: {
-  effort: ActivityEffortRow | null;
-  onClose: () => void;
-  onSubmit: (values: ActivityEffortFormValues) => Promise<unknown> | unknown;
-  onSubmitError: (error: unknown) => Promise<void> | void;
-  pending: boolean;
-}) {
-  const isManual = effort?.source === "manual";
-  return (
-    <Dialog open={!!effort} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{isManual ? "Edit effort" : "Add manual override"}</DialogTitle>
-          <DialogDescription>
-            {isManual
-              ? "Update this manual effort record."
-              : "The original evidence remains unchanged. Saving creates a separate manual effort."}
-          </DialogDescription>
-        </DialogHeader>
-        <ActivityEffortForm
-          actionLayout="dialog"
-          onCancel={onClose}
-          onSubmit={onSubmit}
-          onSubmitError={onSubmitError}
-          pending={pending}
-          submitLabel={isManual ? "Save" : "Create override"}
-          submittingLabel="Saving..."
-          values={
-            effort
-              ? {
-                  activity_category: effort.activity_category,
-                  duration_seconds: effort.duration_seconds,
-                  effort_type: effort.effort_type,
-                  recorded_at: toDateTimeLocalValue(effort.recorded_at),
-                  unit: effort.unit,
-                  value: effort.value,
-                }
-              : undefined
-          }
-        />
-      </DialogContent>
-    </Dialog>
   );
 }

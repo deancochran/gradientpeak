@@ -57,7 +57,6 @@ function unavailable(durationSeconds: number | null = 3600): CommonLoadResult {
     method: null,
     quality: null,
     thresholdEvidence: null,
-    sessionRpeEvidence: null,
     evidenceFingerprint: null,
     computedAsOf,
     contributingDurationSeconds: durationSeconds,

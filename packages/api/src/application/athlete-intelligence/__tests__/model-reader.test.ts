@@ -366,6 +366,10 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     expect(selects[4]?.fields).toMatchObject({
       activityId: activityEfforts.activity_id,
     });
+    const effortWhere = querySql(selects[4]?.where);
+    expect(effortWhere.sql).toContain(
+      'and ("activity_efforts"."updated_at" is null or "activity_efforts"."updated_at" <= $4)',
+    );
     const normalizedPowerSql = querySql(
       (selects[3]?.fields as { normalizedPower: SQL }).normalizedPower,
     ).sql;

@@ -42,6 +42,7 @@ describe("Wahoo staging cleanup reservation", () => {
         integrationId: "integration-1",
         jobType: WAHOO_STAGING_CLEANUP_JOB,
         payload: { path: first.path, uploadOutcome: "uncertain" },
+        priority: 100,
         profileId: "profile-1",
         provider: "wahoo",
       }),

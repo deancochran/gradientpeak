@@ -1,5 +1,5 @@
 import type { CanonicalActivityCategory } from "../schemas/activity-category";
-import type { ActivityPlanDuration, ActivityPlanTarget } from "./v3-schema";
+import type { ActivityPlanDuration, ActivityPlanTarget } from "./structure-schema";
 
 export type CompiledActivityStepOccurrence = {
   occurrenceId: string;

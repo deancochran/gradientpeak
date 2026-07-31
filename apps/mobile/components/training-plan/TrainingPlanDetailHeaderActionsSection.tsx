@@ -127,10 +127,12 @@ export function TrainingPlanDetailHeaderActionsSection({
         </View>
       </View>
 
-      <View className="gap-2">
-        <Text className="text-sm font-medium text-foreground">Plan snapshot</Text>
-        <TrainingPlanPeriodizationPreview model={visualModel} />
-      </View>
+      {visualModel ? (
+        <View className="gap-2">
+          <Text className="text-sm font-medium text-foreground">Plan snapshot</Text>
+          <TrainingPlanPeriodizationPreview model={visualModel} />
+        </View>
+      ) : null}
 
       {overview ? (
         <View className="gap-2">

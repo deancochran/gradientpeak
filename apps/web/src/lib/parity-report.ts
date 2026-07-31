@@ -1,6 +1,7 @@
 import { getRequiredWebParityFeatures, type ParityFeatureStatus } from "@repo/core/parity";
 
 import { webParityManifest } from "./parity-manifest";
+import { getWebJourneyRuntimeCoverageReport } from "./testing/journey-coverage";
 
 const STATUS_CREDIT = {
   implemented: 1,
@@ -12,6 +13,7 @@ const STATUS_CREDIT = {
 
 export function getWebParityReport() {
   const requiredFeatures = getRequiredWebParityFeatures();
+  const runtimeCoverage = getWebJourneyRuntimeCoverageReport();
   const features = requiredFeatures.map((feature) => ({
     id: feature.id,
     status: webParityManifest.features[feature.id] as ParityFeatureStatus,
@@ -30,5 +32,9 @@ export function getWebParityReport() {
     ),
     partial: features.filter((feature) => feature.status === "partial"),
     percentage: Number(((earned / features.length) * 100).toFixed(1)),
+    runtimeVerifiedFeatures: runtimeCoverage.features.runtimeVerified,
+    runtimeVerifiedFeaturePercentage: runtimeCoverage.features.percentage,
+    runtimeVerifiedJourneys: runtimeCoverage.journeys.runtimeVerified,
+    runtimeVerifiedJourneyPercentage: runtimeCoverage.journeys.percentage,
   };
 }

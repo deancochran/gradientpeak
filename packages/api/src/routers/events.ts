@@ -1,5 +1,5 @@
 import {
-  activityPlanStructureSchemaV3,
+  activityPlanStructureSchema,
   addDaysDateOnlyUtc,
   type EventLifecycle,
   type EventRecurrence,
@@ -29,7 +29,6 @@ import {
   createEventUseCase,
   deleteEventUseCase,
   enqueueProviderPlannedActivityJobs,
-  listVisibleOwnedEvents,
   MAX_PLANNED_DAY_SUMMARY_EVENTS,
   PlannedDaySummaryLimitExceededError,
   plannedDaySummaryUseCase,
@@ -39,7 +38,6 @@ import type { Context } from "../context";
 import { type DrizzleTransactionClient, getRequiredDb } from "../db";
 import {
   type ActivityPlanExecutionDto,
-  hasActivityPlanExecutionDto,
   InvalidStoredActivityPlanError,
   toActivityPlanExecutionDto,
 } from "../dto/activity-plan";
@@ -57,13 +55,7 @@ import {
 } from "../utils/activity-plan-derived-metrics";
 import { loadProfileIdentityMap, type ProfileIdentity } from "../utils/profile-identity";
 
-type EventLifecycleStatus =
-  | "scheduled"
-  | "completed"
-  | "cancelled"
-  | "skipped"
-  | "rescheduled"
-  | "expired";
+type EventLifecycleStatus = "scheduled" | "completed" | "cancelled" | "expired";
 
 function getEventCompletionRepository(ctx: Context) {
   return createEventCompletionRepository(getRequiredDb(ctx));
@@ -136,33 +128,6 @@ function toCoreEventType(eventType: DbEventType): CoreEventType {
   return eventType as CoreEventType;
 }
 
-const _plannedEventSelect = `
-  id,
-  profile_id,
-  event_type,
-  title,
-  description,
-  all_day,
-  timezone,
-  activity_plan_id,
-  training_plan_id,
-  recurrence_rule,
-  recurrence_timezone,
-  series_id,
-  source_provider,
-  occurrence_key,
-  original_starts_at,
-  notes,
-  status,
-  linked_activity_id,
-  created_at,
-  updated_at,
-  starts_at,
-  ends_at,
-  scheduled_date,
-  activity_plan:activity_plans (*)
-`;
-
 type PlannedEventRecord = Omit<
   Pick<
     EventRow,
@@ -198,7 +163,7 @@ type PlannedEventRecord = Omit<
   starts_at: string;
   ends_at: string | null;
   original_starts_at: string | null;
-  activity_plan: PublicActivityPlansRow[] | null;
+  activity_plan: PublicActivityPlansRow | null;
   route: {
     id: string;
     name: string;
@@ -223,13 +188,6 @@ type MappedEvent<T extends PlannedEventRecord = PlannedEventRecord> = Omit<
   event_type: CoreEventType;
   activity_plan: EventActivityPlan | null;
 };
-
-function flattenActivityPlanRelation(
-  activityPlan: PlannedEventRecord["activity_plan"] | EventActivityPlan | null | undefined,
-): PublicActivityPlansRow | EventActivityPlan | null {
-  if (Array.isArray(activityPlan)) return activityPlan[0] ?? null;
-  return activityPlan ?? null;
-}
 
 const validateConstraintsSchema = z
   .object({
@@ -517,11 +475,8 @@ function hasInstantChanged(
 }
 
 function mapEvent<T extends PlannedEventRecord>(event: T): MappedEvent<T> {
-  const rawActivityPlan = flattenActivityPlanRelation(event.activity_plan);
-  const activityPlan: EventActivityPlan | null = rawActivityPlan
-    ? hasActivityPlanExecutionDto(rawActivityPlan)
-      ? rawActivityPlan
-      : toActivityPlanExecutionDto(rawActivityPlan)
+  const activityPlan: EventActivityPlan | null = event.activity_plan
+    ? toActivityPlanExecutionDto(event.activity_plan)
     : null;
 
   return {
@@ -532,20 +487,11 @@ function mapEvent<T extends PlannedEventRecord>(event: T): MappedEvent<T> {
   };
 }
 
-function mapEventWithoutAvailablePlan<T extends PlannedEventRecord>(event: T): MappedEvent<T> {
-  return {
-    ...event,
-    activity_plan: null,
-    event_type: toCoreEventType(event.event_type),
-    scheduled_date: event.scheduled_date,
-  };
-}
-
 function toSafeStoredActivityPlanError(error: unknown): never {
   if (error instanceof InvalidStoredActivityPlanError) {
     throw new TRPCError({
       code: "INTERNAL_SERVER_ERROR",
-      message: "Stored activity plan is not valid V3",
+      message: "Stored activity plan is not valid",
     });
   }
   throw error;
@@ -560,18 +506,7 @@ function mapEventSafely<T extends PlannedEventRecord>(event: T): MappedEvent<T> 
 }
 
 function mapEvents<T extends PlannedEventRecord>(events: T[] | null): Array<MappedEvent<T>> {
-  return (events || []).map((event) => {
-    try {
-      return mapEvent(event);
-    } catch (error) {
-      if (error instanceof InvalidStoredActivityPlanError) {
-        // Collection reads retain the Event and its activity_plan_id while making
-        // the unusable relation explicit as unavailable.
-        return mapEventWithoutAvailablePlan(event);
-      }
-      throw error;
-    }
-  });
+  return (events || []).map(mapEvent);
 }
 
 function assertRestDayWritesBlocked(_eventType: CoreEventType, _action: "create" | "update"): void {
@@ -617,7 +552,7 @@ async function countVisibleOwnedEventsInRange(
       ...input,
       includeAdhoc: true,
       limit: pageSize,
-      cursor,
+      ...(cursor === undefined ? {} : { cursor }),
     })) as PlannedEventRecord[] | null;
 
     const rows = batch ?? [];
@@ -643,56 +578,24 @@ function countUniqueScheduledDates(events: Array<Pick<PlannedEventRecord, "start
   return new Set(events.map((event) => toDateKey(event.starts_at))).size;
 }
 
-function getRecordValue(record: unknown, key: string): unknown {
-  if (!record || typeof record !== "object") return undefined;
-  return (record as Record<string, unknown>)[key];
-}
-
-function hasTruthyRecordValue(record: unknown, keys: string[]): boolean {
-  return keys.some((key) => Boolean(getRecordValue(record, key)));
-}
-
-function getRecordString(record: unknown, key: string): string | undefined {
-  const value = getRecordValue(record, key);
-  return typeof value === "string" ? value : undefined;
-}
-
 function buildCompletedSignature(dateKey: string, activityPlanId: string): string {
   return `${dateKey}::${activityPlanId}`;
 }
 
 function resolveEventStatus(
   event: {
+    linked_activity_id: string | null;
     scheduled_date: string;
+    status: PublicEventStatus;
     activity_plan_id?: string | null;
   },
   statusContext: EventStatusContext,
 ): EventLifecycleStatus {
   const scheduledDateKey = toDateKey(event.scheduled_date);
-  const explicitStatus = getRecordString(event, "status")?.toLowerCase();
+  if (event.status === "cancelled") return "cancelled";
 
-  const explicitlySkipped =
-    explicitStatus === "skipped" || hasTruthyRecordValue(event, ["skipped_at", "is_skipped"]);
-  if (explicitlySkipped) return "skipped";
-
-  if (explicitStatus === "cancelled") return "cancelled";
-
-  const explicitlyRescheduled =
-    explicitStatus === "rescheduled" ||
-    hasTruthyRecordValue(event, [
-      "rescheduled_at",
-      "rescheduled_from_date",
-      "original_scheduled_date",
-    ]);
-  if (explicitlyRescheduled) return "rescheduled";
-
-  // A lifecycle label alone is not completion evidence. Require an activity identity, while
-  // preserving explicit non-completion lifecycle states when a stale link remains attached.
-  const explicitlyCompleted = hasTruthyRecordValue(event, [
-    "completed_activity_id",
-    "linked_activity_id",
-  ]);
-  if (explicitlyCompleted) return "completed";
+  // A completed status without a canonical activity link is not completion evidence.
+  if (event.linked_activity_id) return "completed";
 
   if (scheduledDateKey < statusContext.todayDateKey) return "expired";
   return "scheduled";
@@ -700,7 +603,9 @@ function resolveEventStatus(
 
 async function addEventLifecycleStatus<
   T extends {
+    linked_activity_id: string | null;
     scheduled_date: string;
+    status: PublicEventStatus;
     activity_plan_id?: string | null;
   },
 >(
@@ -868,7 +773,7 @@ function isEventPlanWritableForCompletion(
   return (
     activityPlanId === null ||
     (activityPlanStructure !== null &&
-      activityPlanStructureSchemaV3.safeParse(activityPlanStructure).success)
+      activityPlanStructureSchema.safeParse(activityPlanStructure).success)
   );
 }
 
@@ -1018,7 +923,7 @@ export const eventsRouter = createTRPCRouter({
         ctx.session.user.id,
       );
 
-      const plansMap = new Map(plansWithEstimation.map((p: any) => [p.id, p]));
+      const plansMap = new Map(plansWithEstimation.map((plan) => [plan.id, plan]));
       return (await enrichEventsWithActivityPlanIdentity(
         getRequiredDb(ctx),
         events.map((event) => ({
@@ -1149,9 +1054,6 @@ export const eventsRouter = createTRPCRouter({
       }
 
       const _eventUpdates: Record<string, unknown> = {
-        // TODO(events-router): Once dedicated completion lifecycle columns
-        // (completed_activity_id/completed_at) are available in the events
-        // table, migrate this canonical linkage to those fields.
         linked_activity_id: input.activity_id,
         status: "completed",
       };
@@ -1458,46 +1360,45 @@ export const eventsRouter = createTRPCRouter({
 
     let listedEvents;
     try {
-      listedEvents = await listVisibleOwnedEvents({
-        repository: eventReadRepository,
-        query: {
-          profileId: ctx.session.user.id,
-          limit,
-          includeAdhoc: input.include_adhoc,
-          trainingPlanId: input.training_plan_id,
-          activityPlanId: input.activity_plan_id,
-          activityCategory: input.activity_category as
-            | "run"
-            | "bike"
-            | "swim"
-            | "strength"
-            | "other"
-            | undefined,
-          dateFrom: input.date_from
-            ? toRangeStartIso(input.date_from, planningTimezone)
-            : undefined,
-          dateTo: input.date_to ? toRangeEndIso(input.date_to, planningTimezone) : undefined,
-          eventTypes:
-            input.event_types && input.event_types.length > 0
-              ? [...new Set(input.event_types.map((eventType) => toDbEventType(eventType)))]
-              : undefined,
-          cursor:
-            cursorDate && cursorId
-              ? { startsAt: toCanonicalInstantIso(cursorDate), id: cursorId }
-              : undefined,
-        },
-        isVisible: () => true,
-        buildCursor: (row) => ({
-          startsAt: toCanonicalInstantIso(row.starts_at),
-          id: row.id,
-        }),
+      const activityCategory = input.activity_category as
+        | "run"
+        | "bike"
+        | "swim"
+        | "strength"
+        | "other"
+        | undefined;
+      const dateFrom = input.date_from
+        ? toRangeStartIso(input.date_from, planningTimezone)
+        : undefined;
+      const dateTo = input.date_to ? toRangeEndIso(input.date_to, planningTimezone) : undefined;
+      const eventTypes =
+        input.event_types && input.event_types.length > 0
+          ? [...new Set(input.event_types.map((eventType) => toDbEventType(eventType)))]
+          : undefined;
+      const cursor =
+        cursorDate && cursorId
+          ? { startsAt: toCanonicalInstantIso(cursorDate), id: cursorId }
+          : undefined;
+
+      listedEvents = await eventReadRepository.listOwnedEvents({
+        profileId: ctx.session.user.id,
+        limit: limit + 1,
+        includeAdhoc: input.include_adhoc,
+        ...(input.training_plan_id === undefined ? {} : { trainingPlanId: input.training_plan_id }),
+        ...(input.activity_plan_id === undefined ? {} : { activityPlanId: input.activity_plan_id }),
+        ...(activityCategory === undefined ? {} : { activityCategory }),
+        ...(dateFrom === undefined ? {} : { dateFrom }),
+        ...(dateTo === undefined ? {} : { dateTo }),
+        ...(eventTypes === undefined ? {} : { eventTypes }),
+        ...(cursor === undefined ? {} : { cursor }),
       });
     } catch (error) {
       toSafeStoredActivityPlanError(error);
     }
-    const { rows, hasMore } = listedEvents;
+    const rows = listedEvents ?? [];
+    const hasMore = rows.length > limit;
 
-    const events = mapEvents((hasMore ? rows.slice(0, limit) : rows) as PlannedEventRecord[]);
+    const events = mapEvents(rows.slice(0, limit) as PlannedEventRecord[]);
 
     const itemsWithPlans = events.filter(
       (
@@ -1516,7 +1417,7 @@ export const eventsRouter = createTRPCRouter({
         ctx.session.user.id,
       );
 
-      const plansMap = new Map(plansWithEstimation.map((p: any) => [p.id, p]));
+      const plansMap = new Map(plansWithEstimation.map((plan) => [plan.id, plan]));
       itemsWithEstimation = events.map((event) => ({
         ...event,
         activity_plan: event.activity_plan
@@ -1647,13 +1548,7 @@ export const eventsRouter = createTRPCRouter({
         limit: 500,
       });
 
-      // This is an internal estimation input, not a public Event DTO. Preserve legacy
-      // rows here so constraint evaluation remains independent of presentation mapping.
-      const plannedThisWeekMapped =
-        (plannedThisWeek as PlannedEventRecord[] | null)?.map((event) => ({
-          ...event,
-          activity_plan: flattenActivityPlanRelation(event.activity_plan),
-        })) ?? [];
+      const plannedThisWeekMapped = (plannedThisWeek as PlannedEventRecord[] | null) ?? [];
 
       const currentWeekPlans = plannedThisWeekMapped
         .map((event) => event.activity_plan)
@@ -1663,7 +1558,7 @@ export const eventsRouter = createTRPCRouter({
         );
 
       const allDerivedPlans = await getActivityPlansDerivedMetrics(
-        [...currentWeekPlans, activityPlan as any],
+        [...currentWeekPlans, activityPlan],
         db,
         eventReadRepository,
         ctx.session.user.id,
@@ -1671,13 +1566,13 @@ export const eventsRouter = createTRPCRouter({
       );
       const currentWeekDerivedPlans = allDerivedPlans.slice(0, currentWeekPlans.length);
       const currentWeeklyTSS = currentWeekDerivedPlans.reduce(
-        (sum, plan) => sum + plan.authoritative_metrics.estimated_tss,
+        (sum, plan) => sum + (plan.authoritative_metrics.estimated_tss ?? 0),
         0,
       );
 
       const newActivityDerivedPlan = allDerivedPlans[currentWeekPlans.length]!;
       const newWeeklyTSS =
-        currentWeeklyTSS + newActivityDerivedPlan.authoritative_metrics.estimated_tss;
+        currentWeeklyTSS + (newActivityDerivedPlan.authoritative_metrics.estimated_tss ?? 0);
 
       const maxWeeklyTSS = structure.target_weekly_tss_max || Infinity;
       const weeklyTSSStatus =
@@ -1831,7 +1726,7 @@ export const eventsRouter = createTRPCRouter({
           ctx.session.user.id,
         );
 
-        const plansMap = new Map(plansWithEstimation.map((p: any) => [p.id, p]));
+        const plansMap = new Map(plansWithEstimation.map((plan) => [plan.id, plan]));
         const itemsWithEstimation = events.map((event) => ({
           ...event,
           activity_plan: event.activity_plan ? plansMap.get(event.activity_plan.id) : null,

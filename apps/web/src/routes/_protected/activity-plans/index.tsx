@@ -79,7 +79,11 @@ function ActivityPlansPage() {
     <div className="container mx-auto max-w-6xl space-y-6 py-4">
       <DetailPageIntro
         actions={
-          <Button onClick={() => setCreating(true)} type="button">
+          <Button
+            data-testid="activity-plan-create"
+            onClick={() => setCreating(true)}
+            type="button"
+          >
             <Plus className="mr-2 h-4 w-4" />
             Create activity plan
           </Button>
@@ -169,6 +173,7 @@ function ActivityPlansPage() {
                 return (
                   <button
                     className="w-full rounded-2xl border bg-card p-5 text-left transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    data-testid={`activity-plan-card-${plan.id}`}
                     key={plan.id}
                     onClick={() =>
                       void navigate({

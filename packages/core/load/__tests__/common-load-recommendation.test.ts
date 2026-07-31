@@ -119,7 +119,6 @@ describe("common Load recommendation v1", () => {
       method: null,
       quality: null,
       thresholdEvidence: null,
-      sessionRpeEvidence: null,
       evidenceFingerprint: null,
       computedAsOf,
       contributingDurationSeconds: null,

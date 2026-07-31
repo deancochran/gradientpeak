@@ -2,9 +2,8 @@ import { z } from "zod";
 import { commonLoadAggregateSchema, commonLoadResultSchema } from "../load/common-relative-load";
 import { canonicalActivityCategorySchema } from "../schemas/activity-category";
 import {
-  type ActivityTssIdentityMethod,
-  activityTssCompatibleMethodsByActivityCategory,
-  activityTssIdentityMethodValues,
+  type ActivityTssMethod,
+  activityTssMethodsByActivityCategory,
   activityTssMethodValues,
 } from "./calculation-policy";
 import { activityCalibrationQualitySchema } from "./calibration-quality";
@@ -27,14 +26,6 @@ const activityTssCalibrationSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("threshold_speed_mps"), value: z.number().positive() }).strict(),
   z.object({ type: z.literal("swim_threshold_speed_mps"), value: z.number().positive() }).strict(),
   z.object({ type: z.literal("lthr_bpm"), value: z.number().min(80).max(220) }).strict(),
-  z
-    .object({
-      type: z.literal("heart_rate_reserve_bpm"),
-      resting: z.number().positive(),
-      maximum: z.number().positive(),
-    })
-    .strict()
-    .refine(({ maximum, resting }) => maximum > resting),
 ]);
 
 const activityTssIdentityBaseShape = {
@@ -47,13 +38,13 @@ const activityTssIdentityBaseShape = {
 function validateTssIdentity(
   identity: {
     activity_category: z.infer<typeof canonicalActivityCategorySchema>;
-    method: ActivityTssIdentityMethod;
+    method: ActivityTssMethod;
     calibration: z.infer<typeof activityTssCalibrationSchema>;
   },
   context: z.RefinementCtx,
 ): void {
-  const allowedMethods: readonly ActivityTssIdentityMethod[] =
-    activityTssCompatibleMethodsByActivityCategory[identity.activity_category];
+  const allowedMethods: readonly ActivityTssMethod[] =
+    activityTssMethodsByActivityCategory[identity.activity_category];
   if (!allowedMethods.includes(identity.method)) {
     context.addIssue({
       code: "custom",
@@ -72,7 +63,7 @@ function validateTssIdentity(
             ? "swim_threshold_speed_mps"
             : identity.method === "heart_rate_threshold"
               ? "lthr_bpm"
-              : "heart_rate_reserve_bpm";
+              : null;
   if (identity.calibration.type !== expected) {
     context.addIssue({
       code: "custom",
@@ -86,7 +77,7 @@ function validateTssIdentity(
 export const activityTssIdentitySchema = z
   .object({
     ...activityTssIdentityBaseShape,
-    method: z.enum(activityTssIdentityMethodValues),
+    method: currentActivityTssMethodSchema,
   })
   .strict()
   .superRefine(validateTssIdentity);

@@ -18,6 +18,7 @@ import {
 } from "react-native-css/components/react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AppBootstrapGate } from "@/components/auth/AppBootstrapGate";
+import { initializeContractEpoch } from "@/lib/contract-epoch/contractEpoch";
 import { useStartupActivitySubmissionRecovery } from "@/lib/hooks/useStartupActivitySubmissionRecovery";
 import { PerformanceBeacon } from "@/lib/performance";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
@@ -131,10 +132,25 @@ function RootLayout() {
   const authReady = useAuthStore((state) => state.ready);
   const profileId = useAuthStore((state) => state.profile?.id);
   const initializeAuth = useAuthStore((state) => state.initialize);
+  const [contractEpochState, setContractEpochState] = React.useState<
+    "initializing" | "ready" | "failed"
+  >("initializing");
+
+  const startContractEpochInitialization = React.useCallback(() => {
+    setContractEpochState("initializing");
+    void initializeContractEpoch().then(
+      () => setContractEpochState("ready"),
+      () => setContractEpochState("failed"),
+    );
+  }, []);
+
+  React.useEffect(() => {
+    startContractEpochInitialization();
+  }, [startContractEpochInitialization]);
 
   // Clean up any orphaned recording files on app startup
   React.useEffect(() => {
-    if (!authReady || !profileId) return;
+    if (contractEpochState !== "ready" || !authReady || !profileId) return;
     void prepareMobileRecordingStartup(profileId)
       .then(({ checkpoint: checkpointRecovery, hasQuarantinedEvidence, queueJobs }) => {
         const hasRecoverableSubmission =
@@ -160,7 +176,7 @@ function RootLayout() {
       .catch((error) => {
         console.warn("Failed to inspect pending activity submissions before cleanup:", error);
       });
-  }, [authReady, profileId]);
+  }, [authReady, contractEpochState, profileId]);
 
   React.useEffect(() => {
     installE2ERuntimeErrorCapture();
@@ -168,14 +184,39 @@ function RootLayout() {
   }, []);
 
   React.useEffect(() => {
+    if (contractEpochState !== "ready") return;
     void initializeServerConfig();
-  }, []);
+  }, [contractEpochState]);
 
   React.useEffect(() => {
-    if (initialized && !authReady) {
+    if (contractEpochState === "ready" && initialized && !authReady) {
       void initializeAuth();
     }
-  }, [authReady, initializeAuth, initialized]);
+  }, [authReady, contractEpochState, initializeAuth, initialized]);
+
+  if (contractEpochState === "initializing") {
+    return (
+      <View className="flex-1 items-center justify-center bg-background">
+        <Spinner label="Preparing app data" size="large" testID="contract-epoch-loading" />
+      </View>
+    );
+  }
+
+  if (contractEpochState === "failed") {
+    return (
+      <View className="flex-1 items-center justify-center gap-4 bg-background p-6">
+        <Text accessibilityRole="header" className="text-lg font-semibold text-foreground">
+          App data needs to be reset
+        </Text>
+        <Text className="text-center text-muted-foreground">
+          Retry to safely prepare this version of the app before continuing.
+        </Text>
+        <Button onPress={startContractEpochInitialization} testID="contract-epoch-retry">
+          <Text>Retry</Text>
+        </Button>
+      </View>
+    );
+  }
 
   return (
     <TelemetryProvider>

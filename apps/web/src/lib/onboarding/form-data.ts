@@ -2,7 +2,7 @@ import { completeOnboardingSchema } from "@repo/core/schemas/onboarding";
 import { z } from "zod";
 
 const uuidListSchema = z.array(z.string().uuid()).max(10);
-const sourceSchema = completeOnboardingSchema.shape.baseline_field_sources.unwrap();
+const sourceSchema = completeOnboardingSchema.shape.baseline_field_sources;
 const settingsPatchSchema = z
   .object({
     preset: z.enum(["safer", "balanced", "push_harder"]).optional(),
@@ -89,10 +89,10 @@ export function parseOnboardingFormData(data: FormData) {
       return source ? [[field, source]] : [];
     }),
   );
-  const parsedSources = Object.keys(sources).length > 0 ? sourceSchema.parse(sources) : undefined;
+  const parsedSources = sourceSchema.parse(sources);
   const profile = completeOnboardingSchema.parse({
     ...rawProfile,
-    ...(parsedSources ? { baseline_field_sources: parsedSources } : null),
+    baseline_field_sources: parsedSources,
   });
 
   let settings_patch: z.infer<typeof settingsPatchSchema> | undefined;

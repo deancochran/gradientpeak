@@ -112,8 +112,8 @@ export interface WahooWorkoutSummary {
   cadence_avg: number;
   calories_accum: number;
   distance_accum: number;
-  duration_active_accum: number;
-  duration_total_accum: number;
+  duration_active_accum: number | string;
+  duration_total_accum: number | string;
   heart_rate_avg: number;
   power_avg: number;
   power_bike_np_last: number;

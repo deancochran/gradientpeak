@@ -30,6 +30,10 @@ pnpm dev:web:tunnel
 pnpm dev:web:scan
 ```
 
+`turbo run dev` (and the `pnpm dev` wrapper) starts the web app, Wahoo worker, reserved ngrok
+tunnel, mobile app, and local database setup. Use `pnpm dev:web:local` when the web app should
+run without ngrok.
+
 Use package-specific entrypoints when you only need one surface:
 
 ```bash

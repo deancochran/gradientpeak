@@ -185,8 +185,8 @@ function estimate(
   });
 }
 
-/** Pure v1 policy. Values are continuous measurements, never categories or a composite score. */
-export function calculateActivityReadinessV1(
+/** Pure policy. Values are continuous measurements, never categories or a composite score. */
+export function calculateActivityReadiness(
   input: ActivityReadinessInput,
 ): ActivityReadinessResults {
   const assessmentMs = Date.parse(input.assessmentAt);

@@ -319,7 +319,7 @@ describe("WahooSyncService planned-activity validation", () => {
       .mockReturnValue(null);
     const template = core.SYSTEM_TEMPLATES[0];
     if (!template) throw new Error("Expected a system template fixture");
-    const source: core.ActivityPlanStructureV3 = structuredClone(template.structure);
+    const source: core.ActivityPlanStructure = structuredClone(template.structure);
     const sourceSegment = source.segments.find((segment) => segment.role === "activity");
     if (!sourceSegment) throw new Error("Expected an activity segment fixture");
     const duplicateSegment = structuredClone(sourceSegment);
@@ -636,7 +636,7 @@ describe("WahooSyncService planned-activity reconciliation", () => {
 
   it("removes a stale planned activity when the edited plan becomes unsupported", async () => {
     const unsupported = core.SYSTEM_TEMPLATES.find(
-      (template) => core.compileActivityPlanV3(template.structure).activity_category === "strength",
+      (template) => core.compileActivityPlan(template.structure).activity_category === "strength",
     );
     if (!unsupported) throw new Error("Expected a strength system template fixture");
     const { execution, repository, service, wahooClient } = syncFixture({

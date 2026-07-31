@@ -1,7 +1,7 @@
 import {
   type CompiledRecordingPlan,
   compileRecordingPlan,
-  type RecordingActivityPlanV3Input,
+  type RecordingActivityPlanInput,
   type RecordingPlanOccurrence,
 } from "./plan";
 
@@ -32,7 +32,7 @@ export class PlanExecution {
   private occurrenceStartMovingTime = 0;
   private occurrenceStartDistanceMeters = 0;
 
-  public loadPlan(plan: RecordingActivityPlanV3Input): void {
+  public loadPlan(plan: RecordingActivityPlanInput): void {
     this.compiledPlan = compileRecordingPlan(plan);
     this.occurrenceIndex = 0;
     this.occurrenceStartMovingTime = 0;

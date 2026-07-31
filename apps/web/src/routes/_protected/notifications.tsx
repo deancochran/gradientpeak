@@ -18,6 +18,7 @@ import { Bell, Mail, UserPlus } from "lucide-react";
 
 import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
 import { api } from "../../lib/api/client";
+import { contractEpochFormInputProps } from "../../lib/contract-epoch";
 import { markNotificationsReadAction } from "../../lib/notifications/server-actions";
 import {
   acceptFollowRequestAction,
@@ -75,6 +76,7 @@ function NotificationsPage() {
           <p className="text-muted-foreground">Open, review, and clear the latest activity.</p>
         </div>
         <form action={markNotificationsReadAction.url} method="post">
+          <input {...contractEpochFormInputProps} />
           <input type="hidden" name="redirectTo" value="/notifications" />
           {unreadIds.map((notificationId) => (
             <input
@@ -201,6 +203,7 @@ function NotificationItem({
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {item.isUnread ? (
             <form action={markNotificationsReadAction.url} method="post">
+              <input {...contractEpochFormInputProps} />
               <input type="hidden" name="notification_ids" value={notification.id} />
               <input type="hidden" name="redirectTo" value={targetHref} />
               <input type="hidden" name="successMessage" value="Notification marked as read" />
@@ -217,6 +220,7 @@ function NotificationItem({
             item.actorId ? (
               <>
                 <form action={acceptFollowRequestAction.url} method="post">
+                  <input {...contractEpochFormInputProps} />
                   <input type="hidden" name="follower_id" value={item.actorId} />
                   <input type="hidden" name="notification_id" value={notification.id} />
                   <input type="hidden" name="redirectTo" value={redirectTo} />
@@ -225,6 +229,7 @@ function NotificationItem({
                   </Button>
                 </form>
                 <form action={rejectFollowRequestAction.url} method="post">
+                  <input {...contractEpochFormInputProps} />
                   <input type="hidden" name="follower_id" value={item.actorId} />
                   <input type="hidden" name="notification_id" value={notification.id} />
                   <input type="hidden" name="redirectTo" value={redirectTo} />

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  buildCreateFromRecordingSummaryInput,
+  buildUploadedRecordingSummaryInput,
   finalizeTimerRecordingArtifact,
   sessionRpeOperationIdForReview,
 } from "./finalized-artifact";
@@ -74,9 +74,8 @@ describe("web recording finalization", () => {
     });
 
     expect(
-      buildCreateFromRecordingSummaryInput(artifact, {
-        bucket: "activity-files",
-        path: "activities/profile-1/uploads/session-1.tcx",
+      buildUploadedRecordingSummaryInput(artifact, {
+        ingestionId: "55555555-5555-4555-8555-555555555555",
       }),
     ).toMatchObject({
       profileId: "profile-1",
@@ -92,6 +91,8 @@ describe("web recording finalization", () => {
           },
         ],
       },
+      artifactSource: "uploadedArtifact",
+      uploadedArtifact: { ingestionId: "55555555-5555-4555-8555-555555555555" },
     });
   });
 
@@ -111,9 +112,8 @@ describe("web recording finalization", () => {
       digest: async () => "c".repeat(64),
     });
     expect(
-      buildCreateFromRecordingSummaryInput(artifact, {
-        bucket: "activity-files",
-        path: "recording.tcx",
+      buildUploadedRecordingSummaryInput(artifact, {
+        ingestionId: "55555555-5555-4555-8555-555555555555",
       }).notes,
     ).toBe("User note");
     expect(

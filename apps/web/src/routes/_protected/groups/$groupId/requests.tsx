@@ -135,22 +135,26 @@ function GroupRequestsPage() {
                   onRetry={() => void inviteQueue.refetch()}
                 >
                   <div className="space-y-2">
-                    {(inviteQueue.data?.items ?? []).map((invitation) => (
-                      <div
-                        className="flex items-center justify-between gap-3 rounded-lg bg-muted/40 p-3"
-                        key={invitation.id}
-                      >
-                        <span>{invitation.invited_profile.username ?? "Athlete"}</span>
-                        <Button
-                          disabled={revokeMutation.isPending}
-                          onClick={() => revokeMutation.mutate({ invitationId: invitation.id })}
-                          type="button"
-                          variant="outline"
+                    {(inviteQueue.data?.items ?? []).length ? (
+                      inviteQueue.data?.items.map((invitation) => (
+                        <div
+                          className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/40 p-3"
+                          key={invitation.id}
                         >
-                          Revoke
-                        </Button>
-                      </div>
-                    ))}
+                          <span>{invitation.invited_profile.username ?? "Athlete"}</span>
+                          <Button
+                            disabled={revokeMutation.isPending}
+                            onClick={() => revokeMutation.mutate({ invitationId: invitation.id })}
+                            type="button"
+                            variant="outline"
+                          >
+                            Revoke
+                          </Button>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-muted-foreground">No pending invitations.</p>
+                    )}
                   </div>
                 </QueryState>
               </section>

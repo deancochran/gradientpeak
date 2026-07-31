@@ -16,7 +16,7 @@ const createPlan = createSystemActivityPlanBuilderFactory("run", [
  * Estimated TSS: ~60
  */
 export const THRESHOLD_RUN_WORKOUT_1: RecordingServiceActivityPlan = {
-  id: "8e1f2a3b-4c5d-6e7f-8a9b-0c1d2e3f4a5b",
+  id: "8e1f2a3b-4c5d-4e7f-8a9b-0c1d2e3f4a5b",
   name: "Threshold Run Development 1",
   description: "Indoor treadmill session focusing on threshold heart rate intervals",
   gps_recording_enabled: false,
@@ -59,7 +59,7 @@ export const THRESHOLD_RUN_WORKOUT_1: RecordingServiceActivityPlan = {
  * Estimated TSS: ~70
  */
 export const THRESHOLD_RUN_WORKOUT_2: RecordingServiceActivityPlan = {
-  id: "9f2a3b4c-5d6e-7f8a-9b0c-1d2e3f4a5b6c",
+  id: "9f2a3b4c-5d6e-4f8a-9b0c-1d2e3f4a5b6c",
   name: "Threshold Run Development 2",
   description: "Longer indoor treadmill threshold session with progressive intervals",
   gps_recording_enabled: false,
@@ -108,7 +108,7 @@ export const THRESHOLD_RUN_WORKOUT_2: RecordingServiceActivityPlan = {
  * Estimated TSS: ~65
  */
 export const SPEED_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
-  id: "0a3b4c5d-6e7f-8a9b-0c1d-2e3f4a5b6c7d",
+  id: "0a3b4c5d-6e7f-4a9b-8c1d-2e3f4a5b6c7d",
   name: "Speed Intervals",
   description: "High-intensity speed intervals for VO2 max development",
   gps_recording_enabled: false,
@@ -151,7 +151,7 @@ export const SPEED_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
  * Estimated TSS: ~25
  */
 export const EASY_RECOVERY_RUN: RecordingServiceActivityPlan = {
-  id: "1b4c5d6e-7f8a-9b0c-1d2e-3f4a5b6c7d8e",
+  id: "1b4c5d6e-7f8a-4b0c-9d2e-3f4a5b6c7d8e",
   name: "Easy Recovery Run",
   description: "Low-intensity recovery run for active recovery",
   gps_recording_enabled: false,
@@ -171,7 +171,7 @@ export const EASY_RECOVERY_RUN: RecordingServiceActivityPlan = {
  * Estimated TSS: ~70
  */
 export const HILL_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
-  id: "2c5d6e7f-8a9b-0c1d-2e3f-4a5b6c7d8e9f",
+  id: "2c5d6e7f-8a9b-4c1d-ae3f-4a5b6c7d8e9f",
   name: "Hill Intervals",
   description: "Incline-based intervals for strength and power development",
   gps_recording_enabled: false,

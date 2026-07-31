@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { derivePowerCurveFromFTP, estimatePowerForDuration, estimateWPrime } from "../power-curve";
+import { derivePowerCurveFromFTP, estimatePowerForDuration } from "../power-curve";
 
 describe("derivePowerCurveFromFTP", () => {
   it("returns only a modeled 60-minute FTP threshold anchor", () => {
@@ -22,49 +22,6 @@ describe("derivePowerCurveFromFTP", () => {
     Number.POSITIVE_INFINITY,
   ])("rejects invalid FTP %s", (ftp) => {
     expect(() => derivePowerCurveFromFTP(ftp)).toThrow("FTP must be between 1 and 3000 watts");
-  });
-});
-
-describe("estimateWPrime", () => {
-  it("should estimate higher W' for males than females", () => {
-    const weight = 70;
-    const maleWPrime = estimateWPrime(weight, "male", "recreational");
-    const femaleWPrime = estimateWPrime(weight, "female", "recreational");
-
-    expect(maleWPrime).toBeGreaterThan(femaleWPrime);
-  });
-
-  it("should estimate higher W' for trained athletes", () => {
-    const weight = 70;
-    const recWPrime = estimateWPrime(weight, "male", "recreational");
-    const trainedWPrime = estimateWPrime(weight, "male", "trained");
-    const eliteWPrime = estimateWPrime(weight, "male", "elite");
-
-    expect(trainedWPrime).toBeGreaterThan(recWPrime);
-    expect(eliteWPrime).toBeGreaterThan(trainedWPrime);
-  });
-
-  it("should scale W' with weight", () => {
-    const lightWPrime = estimateWPrime(60, "male", "recreational");
-    const heavyWPrime = estimateWPrime(80, "male", "recreational");
-
-    expect(heavyWPrime).toBeGreaterThan(lightWPrime);
-    expect(heavyWPrime / lightWPrime).toBeCloseTo(80 / 60, 1);
-  });
-
-  it("should return reasonable values for 70kg recreational male", () => {
-    const wPrime = estimateWPrime(70, "male", "recreational");
-    expect(wPrime).toBeGreaterThan(15000);
-    expect(wPrime).toBeLessThan(20000);
-  });
-
-  it("should throw error for invalid weight", () => {
-    expect(() => estimateWPrime(0, "male", "recreational")).toThrow(
-      "Weight must be greater than 0",
-    );
-    expect(() => estimateWPrime(-10, "male", "recreational")).toThrow(
-      "Weight must be greater than 0",
-    );
   });
 });
 

@@ -106,7 +106,7 @@ jest.mock("@/lib/hooks/useActivityRecorder", () => ({
 
 jest.mock("@/lib/providers/ActivityRecorderProvider", () => ({
   __esModule: true,
-  useSharedActivityRecorder: () => ({}),
+  useActivityRecorderService: () => ({ service: {} }),
 }));
 
 jest.mock("@/lib/server-config", () => ({

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { evaluateMpcObjective } from "../projection/mpc/objective";
 import {
   type BuildDeterministicProjectionInput,
   buildDeterministicProjectionPayload,
-} from "../projectionCalculations";
+} from "../projection/engine";
+import { evaluateMpcObjective } from "../projection/mpc/objective";
 import { scoreTargetSatisfaction } from "../scoring/targetSatisfaction";
 
 function maxPlannedWeeklyTss(

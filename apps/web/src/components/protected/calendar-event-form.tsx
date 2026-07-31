@@ -4,9 +4,11 @@ import { Form, FormTextareaField, FormTextField } from "@repo/ui/components/form
 import { TimeInput } from "@repo/ui/components/time-input";
 import { useZodForm } from "@repo/ui/hooks";
 import { Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 
+import { contractEpochFormInputProps } from "../../lib/contract-epoch";
 import { updateCalendarEventAction } from "../../lib/planning/server-actions";
 
 type EditableCalendarEvent = {
@@ -61,6 +63,10 @@ export function CalendarEventForm({ event, month, view }: CalendarEventFormProps
   const [allDay, setAllDay] = useState(Boolean(event.all_day));
   const recurring = Boolean(event.series_id || event.recurrence_rule);
   const [scope, setScope] = useState<"single" | "future" | "series">("single");
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const updateCalendarEvent = useServerFn(updateCalendarEventAction);
   const form = useZodForm({
     defaultValues: {
       notes: event.notes ?? "",
@@ -83,12 +89,34 @@ export function CalendarEventForm({ event, month, view }: CalendarEventFormProps
     }
   }, [event, form]);
 
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (submittingRef.current) return;
+
+    submittingRef.current = true;
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      await updateCalendarEvent({ data: new FormData(event.currentTarget) as never });
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Unable to update event. Try again.");
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <Form {...form}>
-      <form action={updateCalendarEventAction.url} method="post" className="space-y-4">
+      <form
+        action={updateCalendarEventAction.url}
+        method="post"
+        className="space-y-4"
+        onSubmit={handleSubmit}
+      >
+        <input {...contractEpochFormInputProps} />
         <input type="hidden" name="event_id" value={event.id} />
         <input type="hidden" name="scope" value={scope} />
-        {scope !== "single" ? <input type="hidden" name="scheduled_date" value={date} /> : null}
         <input
           type="hidden"
           name="redirectTo"
@@ -158,11 +186,17 @@ export function CalendarEventForm({ event, month, view }: CalendarEventFormProps
           </div>
         ) : null}
 
+        {submitError ? (
+          <p role="alert" aria-live="polite" className="text-sm text-destructive">
+            {submitError}
+          </p>
+        ) : null}
+
         <div className="flex gap-2">
-          <Button type="submit" disabled={!title.trim() || !date}>
-            Save changes
+          <Button type="submit" disabled={!title.trim() || !date || isSubmitting}>
+            {isSubmitting ? "Saving..." : "Save changes"}
           </Button>
-          <Button asChild variant="outline">
+          <Button asChild variant="outline" disabled={isSubmitting}>
             <Link
               to="/calendar/events/$eventId"
               params={{ eventId: event.id }}

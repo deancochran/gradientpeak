@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { getUpdatePasswordFormError } from "../lib/auth/form-errors";
 import { type UpdatePasswordFormValues, updatePasswordFormSchema } from "../lib/auth/form-schemas";
 import { resetPasswordAction } from "../lib/auth/server-actions";
+import { contractEpochFormInputProps } from "../lib/contract-epoch";
 import { AuthCardShell } from "./auth-card-shell";
 
 export function UpdatePasswordForm({
@@ -58,6 +59,7 @@ export function UpdatePasswordForm({
       >
         <Form {...form}>
           <form action={resetPasswordAction.url} method="post" onSubmit={handleSubmit}>
+            <input {...contractEpochFormInputProps} />
             <input type="hidden" name="token" value={token ?? ""} />
             <div className="flex flex-col gap-6">
               <FormTextField

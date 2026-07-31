@@ -4,7 +4,6 @@ export * from "./canonical-json";
 export * from "./evidence";
 export * from "./evidence-contracts";
 export * from "./evidence-resolver";
-export * from "./goal-demand-policy-contracts";
 export * from "./lineage";
 export * from "./metric-catalog";
 export * from "./model-input-contracts";

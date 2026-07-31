@@ -3,15 +3,15 @@
 // ================================
 
 import {
-  type ActivityPlanStructureV3,
-  compileActivityPlanV3,
+  type ActivityPlanStructure,
+  compileActivityPlan,
   extractActivityProfile,
 } from "@repo/core";
 import { memo } from "react";
 import { View } from "react-native";
 
 interface ActivityProgressGraphProps {
-  structure: ActivityPlanStructureV3;
+  structure: ActivityPlanStructure;
   currentStep: number;
   className?: string;
 }
@@ -22,7 +22,7 @@ export const ActivityProgressGraph = memo<ActivityProgressGraphProps>(
     currentStep,
     className = "h-12",
   }: ActivityProgressGraphProps) {
-    const profileData = extractActivityProfile(compileActivityPlanV3(structure));
+    const profileData = extractActivityProfile(compileActivityPlan(structure));
 
     return (
       <View className={`bg-muted/20 rounded-md p-1 ${className}`}>

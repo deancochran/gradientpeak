@@ -281,11 +281,6 @@ jest.mock("@/lib/utils/plan/colors", () => ({
   getActivityColor: () => ({ name: "Outdoor Run" }),
 }));
 
-jest.mock("@/lib/utils/plan/dateGrouping", () => ({
-  __esModule: true,
-  isActivityCompleted: () => false,
-}));
-
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
   ArrowUpRight: "ArrowUpRight",

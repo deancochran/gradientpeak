@@ -10,11 +10,8 @@ import { preferredUnitSystemSchema } from "../units";
 import {
   ATHLETE_READ_ACCESS_DENIAL_REASONS,
   ATHLETE_READ_SCOPES,
-  ORGANIZATION_MEMBERSHIP_STATUSES,
   ORGANIZATION_OPERATION_REQUIREMENTS,
   ORGANIZATION_OPERATIONS,
-  ORGANIZATION_PERMISSIONS,
-  ORGANIZATION_ROLE_GRANT_STATUSES,
   ORGANIZATION_ROLE_KEYS,
 } from "./constants";
 
@@ -324,19 +321,3 @@ export function evaluateOrganizationOperationRoleEligibility(input: {
 
   return { outcome: "ineligible", operation: input.operation, reason: "missing_required_role" };
 }
-
-// Legacy compatibility only. New authority is the fixed role and operation contract above.
-export const organizationPermissionSchema = z.enum(ORGANIZATION_PERMISSIONS);
-export const organizationMembershipStatusSchema = z.enum(ORGANIZATION_MEMBERSHIP_STATUSES);
-export const organizationRoleGrantStatusSchema = z.enum(ORGANIZATION_ROLE_GRANT_STATUSES);
-
-export const organizationCapabilityCheckSchema = z
-  .object({
-    organizationId: z.string().uuid(),
-    profileId: z.string().uuid(),
-    permission: organizationPermissionSchema,
-  })
-  .strict()
-  .readonly();
-
-export type OrganizationCapabilityCheck = z.infer<typeof organizationCapabilityCheckSchema>;

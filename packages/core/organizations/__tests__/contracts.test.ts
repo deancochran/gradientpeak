@@ -11,7 +11,6 @@ import {
   athleteReadScopeProjectionFields,
   athleteReadScopeProjectionSchemas,
   basicProfileScopeProjectionSchema,
-  COACHING_ACCESS_PERMISSION,
   calendarScopeProjectionSchema,
   evaluateOrganizationOperationRoleEligibility,
   goalsScopeProjectionSchema,
@@ -19,12 +18,8 @@ import {
   ORGANIZATION_OPERATION_REQUIREMENTS,
   ORGANIZATION_OPERATIONS,
   organizationAccessDecisionSchema,
-  organizationCapabilityCheckSchema,
   organizationContextSchema,
-  organizationMembershipStatusSchema,
   organizationOperationRoleEligibilityDecisionSchema,
-  organizationPermissionSchema,
-  organizationRoleGrantStatusSchema,
   organizationStaffMembershipSummarySchema,
   scopedConsentSummarySchema,
   trainingScopeProjectionSchema,
@@ -374,22 +369,5 @@ describe("fixed organization authority", () => {
       scope: "activities",
       reason: "consent_policy_not_effective",
     });
-  });
-});
-
-describe("legacy organization authorization compatibility", () => {
-  it("preserves the existing capability and lifecycle contracts for API consumers", () => {
-    expect(organizationPermissionSchema.parse(COACHING_ACCESS_PERMISSION)).toBe("coaching.access");
-    expect(
-      organizationCapabilityCheckSchema.parse({
-        organizationId: id,
-        profileId: otherId,
-        permission: COACHING_ACCESS_PERMISSION,
-      }),
-    ).toEqual({ organizationId: id, profileId: otherId, permission: "coaching.access" });
-    expect(organizationMembershipStatusSchema.safeParse("active").success).toBe(true);
-    expect(organizationMembershipStatusSchema.safeParse("removed").success).toBe(false);
-    expect(organizationRoleGrantStatusSchema.safeParse("inactive").success).toBe(true);
-    expect(organizationRoleGrantStatusSchema.safeParse("revoked").success).toBe(false);
   });
 });

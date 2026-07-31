@@ -4,6 +4,7 @@ import {
   profileMetricDefinitions,
   profileMetricTypes,
 } from "@repo/core/athlete-inputs";
+import type { PreferredUnitSystem } from "@repo/core/units";
 
 export type ProfileMetricGroup = {
   description: string;
@@ -91,6 +92,7 @@ export function hasCanonicalProfileMetricCoverage(): boolean {
 
 export function formatProfileMetricDisplayValue(input: {
   metric_type: ProfileMetricType;
+  preferredUnitSystem?: PreferredUnitSystem;
   unit?: string | null;
   value: number;
 }): string {
@@ -102,6 +104,6 @@ export function isManualProfileMetric(source?: string | null): boolean {
 }
 
 export function formatObservationSource(source?: string | null): string {
-  if (!source) return "Legacy / unknown";
+  if (!source) return "Unknown source";
   return source.replaceAll("_", " ").replace(/^./, (character) => character.toUpperCase());
 }

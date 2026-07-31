@@ -2,15 +2,15 @@ import type {
   ActivityPlanActivitySegment,
   ActivityPlanInterval,
   ActivityPlanIntervalStep,
-  ActivityPlanSegmentV3,
-  ActivityPlanStructureV3,
+  ActivityPlanSegment,
+  ActivityPlanStructure,
   CanonicalActivityCategory,
   EditableActivityPlanStructure,
 } from "@repo/core";
-import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import { isTargetTypePermittedForActivity } from "@repo/core/targets";
 
-export type ActivityPlanSegmentRole = ActivityPlanSegmentV3["role"];
+export type ActivityPlanSegmentRole = ActivityPlanSegment["role"];
 
 function id() {
   return crypto.randomUUID();
@@ -37,7 +37,7 @@ export function createActivityPlanInterval(name = "Main set"): ActivityPlanInter
 export function createActivityPlanSegment(
   role: ActivityPlanSegmentRole,
   activity_category: CanonicalActivityCategory = "run",
-): ActivityPlanSegmentV3 {
+): ActivityPlanSegment {
   if (role === "activity") {
     return {
       id: id(),
@@ -125,14 +125,14 @@ export function createActivityPlanStructure(
   return { version: 3, segments: [createActivityPlanSegment("activity", activity_category)] };
 }
 
-export function parseActivityPlanStructure(value: unknown): ActivityPlanStructureV3 {
-  return activityPlanStructureSchemaV3.parse(value);
+export function parseActivityPlanStructure(value: unknown): ActivityPlanStructure {
+  return activityPlanStructureSchema.parse(value);
 }
 
 export function updateActivitySegment(
   structure: EditableActivityPlanStructure,
   segmentId: string,
-  update: (segment: ActivityPlanSegmentV3) => ActivityPlanSegmentV3,
+  update: (segment: ActivityPlanSegment) => ActivityPlanSegment,
 ): EditableActivityPlanStructure {
   return {
     version: 3,
@@ -187,7 +187,7 @@ export function moveActivityPlanItem<T>(items: T[], index: number, offset: -1 | 
 }
 
 export function isActivitySegment(
-  segment: ActivityPlanSegmentV3,
+  segment: ActivityPlanSegment,
 ): segment is ActivityPlanActivitySegment {
   return segment.role === "activity";
 }

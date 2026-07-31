@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { activityPlanStructureSchemaV3 } from "../activity-plan";
+import { activityPlanStructureSchema } from "../activity-plan";
 import {
   type CanonicalActivityCategory,
   canonicalActivityCategorySchema,
@@ -25,13 +25,13 @@ export {
   Target,
 } from "./target_helpers";
 
-/** Strict modern activity-plan domain input. ActivityCategory authority lives in V3 segments. */
+/** Strict modern activity-plan domain input. ActivityCategory authority lives in segments. */
 export const activityPlanInputSchema = z
   .object({
     name: z.string().min(1, "Plan name is required"),
     description: z.string().max(1000).nullable().optional(),
     notes: z.string().max(2000).nullable().optional(),
-    structure: activityPlanStructureSchemaV3,
+    structure: activityPlanStructureSchema,
   })
   .strict();
 export type ActivityPlanInput = z.infer<typeof activityPlanInputSchema>;
@@ -41,13 +41,13 @@ export const activityPlanSchema = activityPlanInputSchema.safeExtend({
 });
 export type ActivityPlan = z.infer<typeof activityPlanSchema>;
 
-/** Recorded-session plan contract using the canonical V3 structure. */
+/** Recorded-session plan contract using the canonical structure. */
 export const recordingServiceActivityPlanSchema = z
   .object({
     name: z.string().min(1, "Plan name is required"),
     description: z.string().max(1000).nullable().optional(),
     notes: z.string().max(2000).nullable().optional(),
-    structure: activityPlanStructureSchemaV3,
+    structure: activityPlanStructureSchema,
   })
   .strict()
   .safeExtend({
@@ -67,59 +67,59 @@ export type RecordingServiceActivityPlan = z.infer<typeof recordingServiceActivi
  * Schema for activity metrics stored in JSONB
  * Includes all performance, environmental, and analysis metrics
  */
-export const ActivityMetricsSchema = z.object({
-  // Power metrics
-  avg_power: z.number().optional(),
-  max_power: z.number().optional(),
+export const ActivityMetricsSchema = z
+  .object({
+    // Power metrics
+    avg_power: z.number().optional(),
+    max_power: z.number().optional(),
 
-  // Heart rate metrics
-  avg_hr: z.number().optional(),
-  max_hr: z.number().optional(),
-  max_hr_pct_threshold: z.number().optional(),
+    // Heart rate metrics
+    avg_hr: z.number().optional(),
+    max_hr: z.number().optional(),
+    max_hr_pct_threshold: z.number().optional(),
 
-  // Cadence metrics
-  avg_cadence: z.number().optional(),
-  max_cadence: z.number().optional(),
+    // Cadence metrics
+    avg_cadence: z.number().optional(),
+    max_cadence: z.number().optional(),
 
-  // Speed metrics
-  avg_speed: z.number().optional(),
-  max_speed: z.number().optional(),
-  normalized_speed_mps: z.number().optional(),
-  normalized_graded_speed_mps: z.number().optional(),
+    // Speed metrics
+    avg_speed: z.number().optional(),
+    max_speed: z.number().optional(),
+    normalized_speed_mps: z.number().optional(),
+    normalized_graded_speed_mps: z.number().optional(),
 
-  // Work and calories
-  total_work: z.number().optional(),
-  calories: z.number().optional(),
+    // Work and calories
+    total_work: z.number().optional(),
+    calories: z.number().optional(),
 
-  // Elevation metrics
-  total_ascent: z.number().optional(),
-  total_descent: z.number().optional(),
-  avg_grade: z.number().optional(),
-  elevation_gain_per_km: z.number().optional(),
+    // Elevation metrics
+    total_ascent: z.number().optional(),
+    total_descent: z.number().optional(),
+    avg_grade: z.number().optional(),
+    elevation_gain_per_km: z.number().optional(),
 
-  // Environmental metrics. Temperatures are canonical Celsius values.
-  avg_temperature: z.number().optional(),
-  weather_condition: z.string().optional(),
+    // Environmental metrics. Temperatures are canonical Celsius values.
+    avg_temperature: z.number().optional(),
+    weather_condition: z.string().optional(),
 
-  // Analysis metrics
-  tss: z.number().optional(), // Training Stress Score
-  if: z.number().optional(), // Intensity Factor
-  vi: z.number().optional(), // Variability Index
-  ef: z.number().optional(), // Efficiency Factor
-  power_weight_ratio: z.number().optional(),
-  power_hr_ratio: z.number().optional(),
-  decoupling: z.number().optional(),
-  efficiency_factor: z.number().optional(),
-  aerobic_decoupling: z.number().optional(),
-  training_effect: z.enum(["recovery", "base", "tempo", "threshold", "vo2max"]).optional(),
+    // Analysis metrics
+    tss: z.number().optional(), // Training Stress Score
+    if: z.number().optional(), // Intensity Factor
+    vi: z.number().optional(), // Variability Index
+    ef: z.number().optional(), // Efficiency Factor
+    power_weight_ratio: z.number().optional(),
+    power_hr_ratio: z.number().optional(),
+    decoupling: z.number().optional(),
+    efficiency_factor: z.number().optional(),
+    aerobic_decoupling: z.number().optional(),
+    training_effect: z.enum(["recovery", "base", "tempo", "threshold", "vo2max"]).optional(),
 
-  // Swim metrics. Pool lengths are canonical metres; provider aliases must be normalized upstream.
-  total_strokes: z.number().optional(),
-  avg_swolf: z.number().optional(),
-  pool_length: z.number().optional(),
-  // Optional for existing canonical payloads; when supplied it must be explicit metres.
-  pool_length_unit: z.literal("meters").optional(),
-});
+    // Swim metrics. Pool lengths are canonical metres; provider aliases must be normalized upstream.
+    total_strokes: z.number().optional(),
+    avg_swolf: z.number().optional(),
+    pool_length_meters: z.number().optional(),
+  })
+  .strict();
 
 export type ActivityMetrics = z.infer<typeof ActivityMetricsSchema>;
 

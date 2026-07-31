@@ -1,4 +1,4 @@
-import { type CreationBehaviorControlsV1, creationBehaviorControlsV1Schema } from "@repo/core";
+import { type CreationBehaviorControls, creationBehaviorControlsSchema } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
@@ -12,12 +12,12 @@ import {
 } from "./fields/TrainingPlanConfigSliderFields";
 
 interface BehaviorControlsConfigSectionProps {
-  behaviorControls: CreationBehaviorControlsV1;
-  onChange: (values: CreationBehaviorControlsV1) => void;
+  behaviorControls: CreationBehaviorControls;
+  onChange: (values: CreationBehaviorControls) => void;
   onReset?: () => void;
 }
 
-const normalizeValues = (values: CreationBehaviorControlsV1): CreationBehaviorControlsV1 => ({
+const normalizeValues = (values: CreationBehaviorControls): CreationBehaviorControls => ({
   aggressiveness: Number(values.aggressiveness.toFixed(2)),
   variability: Number(values.variability.toFixed(2)),
   spike_frequency: Number(values.spike_frequency.toFixed(2)),
@@ -27,7 +27,7 @@ const normalizeValues = (values: CreationBehaviorControlsV1): CreationBehaviorCo
   starting_fitness_confidence: Number(values.starting_fitness_confidence.toFixed(2)),
 });
 
-const areValuesEqual = (left: CreationBehaviorControlsV1, right: CreationBehaviorControlsV1) =>
+const areValuesEqual = (left: CreationBehaviorControls, right: CreationBehaviorControls) =>
   left.aggressiveness === right.aggressiveness &&
   left.variability === right.variability &&
   left.spike_frequency === right.spike_frequency &&
@@ -40,7 +40,7 @@ type TuningPresetKey = "conservative" | "balanced" | "ambitious";
 
 const tuningPresets: Record<
   TuningPresetKey,
-  { label: string; description: string; values: CreationBehaviorControlsV1 }
+  { label: string; description: string; values: CreationBehaviorControls }
 > = {
   conservative: {
     label: "Conservative",
@@ -93,7 +93,7 @@ function CustomTuningFields({
   const defaultValues = useMemo(() => normalizeValues(behaviorControls), [behaviorControls]);
 
   const form = useZodForm({
-    schema: creationBehaviorControlsV1Schema,
+    schema: creationBehaviorControlsSchema,
     defaultValues,
     mode: "onChange",
     reValidateMode: "onChange",

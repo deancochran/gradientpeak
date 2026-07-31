@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 const estimateActivity = vi.hoisted(() =>
   vi.fn((context: any) => {
     if (context.structure?.version === 2) {
-      throw new Error("Invalid activity-plan V3 structure");
+      throw new Error("Invalid activity-plan structure");
     }
     const duration =
       context.structure?.segments?.[0]?.intervals?.[0]?.steps?.[0]?.duration?.seconds ?? 1800;
@@ -80,6 +80,54 @@ function structure(duration = 1800, name = "Bike", percentFtp = 75) {
   };
 }
 
+function thresholdHrRunStructure(intensity = 80) {
+  return {
+    version: 3 as const,
+    segments: [
+      {
+        id: "55555555-5555-4555-8555-555555555555",
+        role: "activity" as const,
+        activity_category: "run" as const,
+        name: "Run",
+        intervals: [
+          {
+            id: "66666666-6666-4666-8666-666666666666",
+            name: "Main",
+            repetitions: 1,
+            steps: [
+              {
+                id: "77777777-7777-4777-8777-777777777777",
+                name: "Threshold HR run",
+                duration: { type: "time" as const, seconds: 1800 },
+                targets: [{ type: "%ThresholdHR" as const, intensity }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function runLthrMetric(activityCategory: "bike" | "run" | "swim" = "run") {
+  return {
+    id: "88888888-8888-4888-8888-888888888888",
+    metric_type: "lthr" as const,
+    unit: "bpm",
+    value: 170,
+    recorded_at: asOf.toISOString(),
+    source: "derived" as const,
+    method: "activity_file_lthr_detection",
+    calculation_version: "activity-file-lthr-v1",
+    reference_activity_id: "99999999-9999-4999-8999-999999999999",
+    reference_activity_category: activityCategory,
+    provenance: {
+      activity_id: "99999999-9999-4999-8999-999999999999",
+      derived_from: "activity_file_stream",
+    },
+  };
+}
+
 function plan(overrides: Record<string, unknown> = {}): any {
   const planStructure =
     (overrides.structure as ReturnType<typeof structure> | undefined) ?? structure();
@@ -135,6 +183,44 @@ describe("on-demand activity plan estimation", () => {
     expect(Object.isFrozen(summary)).toBe(true);
     expect(() => Object.assign(routeFact!, { distance_meters: 1 })).toThrow(TypeError);
     expect(snapshot.getRoute("route-1")?.distance_meters).toBe(10_000);
+  });
+
+  it("does not revive a cleared generic LTHR profile override", async () => {
+    const snapshot = await loadEstimationSnapshot(
+      store({
+        metrics: [
+          {
+            id: "metric-cleared",
+            metric_type: "lthr",
+            unit: "bpm",
+            value: 0,
+            recorded_at: asOf.toISOString(),
+            source: "manual",
+            method: "profile_update_override",
+            reference_activity_id: null,
+            reference_activity_category: null,
+            provenance: { input: "profile_update", override_state: "cleared" },
+          },
+          {
+            id: "metric-old",
+            metric_type: "lthr",
+            unit: "bpm",
+            value: 165,
+            recorded_at: "2026-07-01T12:00:00.000Z",
+            source: "manual",
+            method: "profile_update_override",
+            reference_activity_id: null,
+            reference_activity_category: null,
+            provenance: { input: "profile_update", override_state: "active" },
+          },
+        ],
+      }) as never,
+      "profile-1",
+      [],
+      asOf,
+    );
+
+    expect(snapshot.profile.threshold_hr).toBeNull();
   });
 
   it("loads one canonical snapshot, propagates asOf, memoizes duplicate inputs, and performs no writes", async () => {
@@ -285,6 +371,65 @@ describe("on-demand activity plan estimation", () => {
       method: "power_threshold",
       reason: "threshold_missing",
       contributingDurationSeconds: 1800,
+    });
+  });
+
+  it("calculates planned run Load from a category-specific LTHR target", async () => {
+    const [result] = await getActivityPlansDerivedMetrics(
+      [plan({ structure: thresholdHrRunStructure() })],
+      {} as never,
+      store({ metrics: [runLthrMetric()] }) as never,
+      "profile-1",
+      { asOf },
+    );
+
+    expect(result?.common_load).toMatchObject({
+      status: "available",
+      activity_category: "run",
+      method: "heart_rate_zones",
+      intensity: 0.8,
+      contributingDurationSeconds: 1800,
+      thresholdEvidence: { type: "lthr_bpm", value: 170 },
+    });
+    if (result?.common_load.status !== "available") throw new Error("Expected available Load");
+    expect(result.common_load.load).toBeCloseTo(32, 12);
+  });
+
+  it("does not use another activity category's LTHR for a run plan", async () => {
+    const [result] = await getActivityPlansDerivedMetrics(
+      [plan({ structure: thresholdHrRunStructure() })],
+      {} as never,
+      store({ metrics: [runLthrMetric("bike")] }) as never,
+      "profile-1",
+      { asOf },
+    );
+
+    expect(result?.common_load).toMatchObject({
+      status: "unavailable",
+      activity_category: "run",
+      method: "heart_rate_zones",
+      reason: "threshold_missing",
+    });
+  });
+
+  it("treats category-specific LTHR outside the freshness window as missing", async () => {
+    const staleMetric = {
+      ...runLthrMetric(),
+      recorded_at: "2026-03-01T12:00:00.000Z",
+    };
+    const [result] = await getActivityPlansDerivedMetrics(
+      [plan({ structure: thresholdHrRunStructure() })],
+      {} as never,
+      store({ metrics: [staleMetric] }) as never,
+      "profile-1",
+      { asOf },
+    );
+
+    expect(result?.common_load).toMatchObject({
+      status: "unavailable",
+      activity_category: "run",
+      method: "heart_rate_zones",
+      reason: "threshold_missing",
     });
   });
 

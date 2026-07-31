@@ -216,8 +216,7 @@ const ChartBoundsSync = React.memo(function ChartBoundsSync({
 const buildDisplayedPoints = (input: {
   projectionChart?: ProjectionChartPayload;
 }): ProjectionPoint[] => {
-  const projection = input.projectionChart;
-  return projection?.display_points ?? projection?.points ?? [];
+  return input.projectionChart?.points ?? [];
 };
 
 const resolveSelectedMicrocycle = (

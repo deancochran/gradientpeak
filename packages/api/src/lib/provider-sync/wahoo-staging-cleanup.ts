@@ -2,6 +2,9 @@ import { createHash, randomUUID } from "node:crypto";
 import type { ProviderSyncJobRecord, ProviderSyncRepository } from "../../repositories";
 
 export const WAHOO_STAGING_CLEANUP_JOB = "wahoo.staging_cleanup";
+// Lower queue values run first. Cleanup is recoverable background maintenance,
+// so keep it behind user-visible planned-workout publication and removal.
+export const WAHOO_STAGING_CLEANUP_PRIORITY = 100;
 /**
  * The production drain lease is capped at 30 minutes. Keep reservation cleanup
  * unavailable for 45 minutes so a normally bounded import cannot lose its
@@ -74,6 +77,7 @@ export function createWahooStagingCleanupReservation(input: {
           operation: "cleanup",
           payload: { path, uploadOutcome },
           payloadHash: identity,
+          priority: WAHOO_STAGING_CLEANUP_PRIORITY,
           profileId,
           provider: "wahoo",
           resourceKind: "activity",

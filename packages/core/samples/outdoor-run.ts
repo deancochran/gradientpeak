@@ -29,7 +29,7 @@ const createPlan = createSystemActivityPlanBuilderFactory("run", [
  * Estimated TSS: ~25
  */
 export const EASY_AEROBIC_RUN: SystemActivityPlanTemplate = {
-  id: "3b6c7d8e-9f0a-1b2c-3d4e-5f6a7b8c9d0e",
+  id: "3b6c7d8e-9f0a-4b2c-bd4e-5f6a7b8c9d0e",
   name: "Easy Aerobic Run",
   description: "Comfortable outdoor run focusing on aerobic base building",
   gps_recording_enabled: true,
@@ -80,7 +80,7 @@ export const TEMPO_RUN: RecordingServiceActivityPlan = {
  * Estimated TSS: ~85
  */
 export const INTERVAL_RUN: RecordingServiceActivityPlan = {
-  id: "4c7d8e9f-0a1b-2c3d-4e5f-6a7b8c9d0e1f",
+  id: "4c7d8e9f-0a1b-4c3d-8e5f-6a7b8c9d0e1f",
   name: "5K Pace Intervals",
   description: "High-intensity intervals at 5K race pace",
   gps_recording_enabled: true,
@@ -123,7 +123,7 @@ export const INTERVAL_RUN: RecordingServiceActivityPlan = {
  * Estimated TSS: ~65
  */
 export const LONG_RUN: RecordingServiceActivityPlan = {
-  id: "5d8e9f0a-1b2c-3d4e-5f6a-7b8c9d0e1f2a",
+  id: "5d8e9f0a-1b2c-4d4e-9f6a-7b8c9d0e1f2a",
   name: "Long Steady Run",
   description: "Extended aerobic run for endurance building",
   gps_recording_enabled: true,
@@ -155,7 +155,7 @@ export const LONG_RUN: RecordingServiceActivityPlan = {
  * Estimated TSS: ~70
  */
 export const FARTLEK_RUN: RecordingServiceActivityPlan = {
-  id: "6e9f0a1b-2c3d-4e5f-6a7b-8c9d0e1f2a3b",
+  id: "6e9f0a1b-2c3d-4e5f-aa7b-8c9d0e1f2a3b",
   name: "Fartlek Training",
   description: "Unstructured speed play with varied intensities",
   gps_recording_enabled: true,
@@ -193,7 +193,7 @@ export const FARTLEK_RUN: RecordingServiceActivityPlan = {
 };
 
 export const SYSTEM_TEMPO_RUN: RecordingServiceActivityPlan = {
-  id: "b6c2d5e4-9f3a-8b7c-2d1e-3f0a6b5c4d2f",
+  id: "b6c2d5e4-9f3a-4b7c-ad1e-3f0a6b5c4d2f",
   name: "Tempo Run",
   description:
     "20 minute tempo run at 85% threshold heart rate - Comfortably hard sustained effort",
@@ -219,7 +219,7 @@ export const SYSTEM_TEMPO_RUN: RecordingServiceActivityPlan = {
 };
 
 export const SYSTEM_THRESHOLD_INTERVALS_RUN: RecordingServiceActivityPlan = {
-  id: "c7d3e6f5-0a4b-9c8d-3e2f-4a1b7c6d5e3a",
+  id: "c7d3e6f5-0a4b-4c8d-be2f-4a1b7c6d5e3a",
   name: "Threshold Intervals",
   description: "6x1km at 95% threshold heart rate with 2min recovery - Build speed endurance",
   gps_recording_enabled: true,
@@ -254,7 +254,7 @@ export const SYSTEM_THRESHOLD_INTERVALS_RUN: RecordingServiceActivityPlan = {
 };
 
 export const SYSTEM_LONG_EASY_RUN: RecordingServiceActivityPlan = {
-  id: "d8e4f7a6-1b5c-0d9e-4f3a-5b2c8d7e6f4b",
+  id: "d8e4f7a6-1b5c-4d9e-8f3a-5b2c8d7e6f4b",
   name: "Long Easy Run",
   description: "15km easy long run at 70% threshold heart rate - Build aerobic endurance",
   gps_recording_enabled: true,

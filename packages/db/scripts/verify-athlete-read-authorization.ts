@@ -10,11 +10,6 @@ import {
   withDisposableDatabase,
 } from "./_disposable-target";
 import { dbPackageRoot } from "./_helpers";
-import {
-  autocommitSettings,
-  type MigrationLedgerEntry,
-  type MigrationPolicy,
-} from "./_migration-plan";
 
 const scopes = ["basic_profile", "training", "activities", "metrics", "goals", "calendar"] as const;
 type Scope = (typeof scopes)[number];
@@ -411,28 +406,34 @@ async function proveDecisionMatrix(pool: Pool) {
         "update public.coaching_assignments set ended_at=transaction_timestamp() where id=$1",
         [graph.assignment],
       );
-      await client.query(
-        `insert into public.coaching_assignments(
-          id,organization_id,engagement_id,coach_membership_id,assignment_kind,assigned_at
-        ) values($1,$2,$3,$4,'primary',transaction_timestamp() + interval '1 hour')`,
-        [id(401), graph.org, graph.engagement, graph.coachMembership],
+      await expectFailure(
+        () =>
+          client.query(
+            `insert into public.coaching_assignments(
+            id,organization_id,engagement_id,coach_membership_id,assignment_kind,assigned_at
+          ) values($1,$2,$3,$4,'primary',transaction_timestamp() + interval '1 hour')`,
+            [id(401), graph.org, graph.engagement, graph.coachMembership],
+          ),
+        "future assignment is rejected",
       );
-      await assertDecision(client, "assignment_missing", graph);
     });
     await withRollback(client, "current supporting assignment with future primary", async () => {
       await client.query(
         "update public.coaching_assignments set ended_at=transaction_timestamp() where id=$1",
         [graph.assignment],
       );
-      await client.query(
-        `insert into public.coaching_assignments(
-          id,organization_id,engagement_id,coach_membership_id,assignment_kind,assigned_at
-        ) values
-          ($1,$3,$4,$5,'supporting',transaction_timestamp()),
-          ($2,$3,$4,$5,'primary',transaction_timestamp() + interval '1 hour')`,
-        [id(402), id(403), graph.org, graph.engagement, graph.coachMembership],
+      await expectFailure(
+        () =>
+          client.query(
+            `insert into public.coaching_assignments(
+            id,organization_id,engagement_id,coach_membership_id,assignment_kind,assigned_at
+          ) values
+            ($1,$3,$4,$5,'supporting',transaction_timestamp()),
+            ($2,$3,$4,$5,'primary',transaction_timestamp() + interval '1 hour')`,
+            [id(402), id(403), graph.org, graph.engagement, graph.coachMembership],
+          ),
+        "future primary assignment is rejected",
       );
-      await assertDecision(client, "allow", graph);
     });
     await withRollback(client, "assignment on another engagement", async () => {
       await client.query(
@@ -1201,10 +1202,10 @@ async function proveAclDenials(pool: Pool, url: string) {
 async function main() {
   const policy = JSON.parse(
     readFileSync(resolve(dbPackageRoot, "migration-policy.json"), "utf8"),
-  ) as MigrationPolicy;
+  ) as { authorityDirectory: string; activeLedgerFile: string };
   const ledger = JSON.parse(
     readFileSync(resolve(dbPackageRoot, policy.activeLedgerFile), "utf8"),
-  ) as { entries: MigrationLedgerEntry[] };
+  ) as { entries: Array<{ version: string; name: string }> };
 
   await withDisposableDatabase(
     process.argv.slice(2),
@@ -1219,8 +1220,6 @@ async function main() {
             policy.authorityDirectory,
             `${migration.version}_${migration.name}.sql`,
           ),
-          migration.executionMode,
-          autocommitSettings(policy, migration),
         );
       }
       await seedProfiles(pool);

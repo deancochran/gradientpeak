@@ -30,7 +30,7 @@ jest.mock("react-native", () => ({
 jest.mock("@repo/core", () => ({
   __esModule: true,
   createEmptyGoalDraft: () => ({ targets: [] }),
-  creationBehaviorControlsV1Schema: z
+  creationBehaviorControlsSchema: z
     .object({
       aggressiveness: z.number().min(0).max(1),
       variability: z.number().min(0).max(1),
@@ -206,7 +206,7 @@ function projectionFixture<T extends ProjectionChartFixture>(fixture: T): T {
 const baseProjectionDiagnostics: NonNullable<ProjectionChartFixture["projection_diagnostics"]> = {
   selected_path: "full_mpc",
   fallback_reason: null,
-  candidate_counts: { full_mpc: 0, degraded_bounded_mpc: 0, legacy_optimizer: 0 },
+  candidate_counts: { full_mpc: 0, degraded_bounded_mpc: 0 },
   prune_counts: { full_mpc: 0, degraded_bounded_mpc: 0 },
   active_constraints: [],
   tie_break_chain: [],
@@ -284,6 +284,7 @@ const baseConfigData = {
     ],
   },
   availabilityProvenance: {
+    method_version: "test-provenance-v1",
     source: "default",
     confidence: null,
     rationale: [],
@@ -293,6 +294,7 @@ const baseConfigData = {
   recentInfluenceScore: 0,
   recentInfluenceAction: "accepted",
   recentInfluenceProvenance: {
+    method_version: "test-provenance-v1",
     source: "default",
     confidence: null,
     rationale: [],
@@ -307,7 +309,7 @@ const baseConfigData = {
   },
   optimizationProfile: "balanced",
   postGoalRecoveryDays: 5,
-  behaviorControlsV1: {
+  behaviorControls: {
     aggressiveness: 0.5,
     variability: 0.5,
     spike_frequency: 0.35,
@@ -378,7 +380,7 @@ const baseConfigData = {
     goal_difficulty_preference: { locked: false },
     optimization_profile: { locked: false },
     post_goal_recovery_days: { locked: false },
-    behavior_controls_v1: { locked: false },
+    behavior_controls: { locked: false },
   },
 } as TrainingPlanConfigFormData;
 
@@ -901,9 +903,9 @@ describe("SinglePageForm blocker surfacing", () => {
     await waitFor(() => {
       expect(onConfigChange).toHaveBeenCalledWith(
         expect.objectContaining({
-          behaviorControlsV1: expect.objectContaining({
+          behaviorControls: expect.objectContaining({
             aggressiveness: 0.62,
-            variability: baseConfigData.behaviorControlsV1.variability,
+            variability: baseConfigData.behaviorControls.variability,
           }),
         }),
       );
@@ -915,7 +917,7 @@ describe("SinglePageForm blocker surfacing", () => {
 
     const rendered = renderNative(
       <BehaviorControlsConfigSection
-        behaviorControls={baseConfigData.behaviorControlsV1}
+        behaviorControls={baseConfigData.behaviorControls}
         onChange={onChange}
       />,
     );
@@ -929,7 +931,7 @@ describe("SinglePageForm blocker surfacing", () => {
 
     await waitFor(() => {
       expect(onChange).toHaveBeenCalledWith({
-        ...baseConfigData.behaviorControlsV1,
+        ...baseConfigData.behaviorControls,
         aggressiveness: 0.68,
       });
     });
@@ -939,7 +941,7 @@ describe("SinglePageForm blocker surfacing", () => {
     rendered.rerender(
       <BehaviorControlsConfigSection
         behaviorControls={{
-          ...baseConfigData.behaviorControlsV1,
+          ...baseConfigData.behaviorControls,
           aggressiveness: 0.41,
         }}
         onChange={onChange}
@@ -1289,7 +1291,6 @@ describe("SinglePageForm blocker surfacing", () => {
             candidate_counts: {
               full_mpc: 50,
               degraded_bounded_mpc: 0,
-              legacy_optimizer: 0,
             },
             prune_counts: {
               full_mpc: 4,

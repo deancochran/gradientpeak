@@ -1,16 +1,15 @@
 import {
   canonicalGoalActivityCategorySchema,
   canonicalGoalObjectiveSchema,
+  dateOnlySchema,
   profileGoalCreateSchema,
 } from "@repo/core";
 import { z } from "zod";
 
-const goalDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-
 /** Canonical goal write data before server-owned identity and ownership are attached. */
 export const profileGoalWriteDataSchema = z
   .object({
-    target_date: goalDateSchema,
+    target_date: dateOnlySchema,
     title: z.string().trim().min(1).max(100),
     priority: z.number().int().min(0).max(10),
     activity_category: canonicalGoalActivityCategorySchema,

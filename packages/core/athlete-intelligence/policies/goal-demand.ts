@@ -18,7 +18,7 @@ const routeContextSchema = z
   })
   .strict();
 
-export const goalDemandPolicyV1InputSchema = z
+export const goalDemandPolicyInputSchema = z
   .object({
     goal: z.unknown(),
     route: routeContextSchema.optional(),
@@ -111,13 +111,13 @@ const unsupportedGoalDemandResultSchema = resultIdentitySchema
   })
   .strict();
 
-export const goalDemandPolicyV1ResultSchema = z.discriminatedUnion("state", [
+export const goalDemandPolicyResultSchema = z.discriminatedUnion("state", [
   completeGoalDemandResultSchema,
   incompleteGoalDemandResultSchema,
   unsupportedGoalDemandResultSchema,
 ]);
 
-export type GoalDemandPolicyV1Result = z.infer<typeof goalDemandPolicyV1ResultSchema>;
+export type GoalDemandPolicyResult = z.infer<typeof goalDemandPolicyResultSchema>;
 
 function sourceIdForGoal(input: unknown): SourceId | null {
   if (typeof input !== "object" || input === null || !("id" in input)) return null;
@@ -157,10 +157,10 @@ function derivedDurationResult(durationSeconds: number, sourceId: SourceId) {
 }
 
 /** Returns only the direct, canonical physical requirements expressed by a goal. */
-export function calculateGoalDemandV1(
-  input: z.input<typeof goalDemandPolicyV1InputSchema>,
-): GoalDemandPolicyV1Result {
-  const parsedInput = goalDemandPolicyV1InputSchema.parse(input);
+export function calculateGoalDemand(
+  input: z.input<typeof goalDemandPolicyInputSchema>,
+): GoalDemandPolicyResult {
+  const parsedInput = goalDemandPolicyInputSchema.parse(input);
   const goalSourceId = sourceIdForGoal(parsedInput.goal);
   const rawObjective =
     typeof parsedInput.goal === "object" &&
@@ -175,7 +175,7 @@ export function calculateGoalDemandV1(
   const supportedTypes = new Set(["event_performance", "threshold", "completion", "consistency"]);
 
   if (typeof rawType === "string" && !supportedTypes.has(rawType)) {
-    return goalDemandPolicyV1ResultSchema.parse({
+    return goalDemandPolicyResultSchema.parse({
       policyVersion: GOAL_DEMAND_POLICY_VERSION,
       state: "unsupported",
       goalSourceId,
@@ -187,7 +187,7 @@ export function calculateGoalDemandV1(
   if (!parsedGoal.success || goalSourceId === null) {
     const missingFields = missingGoalFields(parsedInput.goal);
     if (goalSourceId === null && !missingFields.includes("id")) missingFields.push("id");
-    return goalDemandPolicyV1ResultSchema.parse({
+    return goalDemandPolicyResultSchema.parse({
       policyVersion: GOAL_DEMAND_POLICY_VERSION,
       state: "incomplete",
       goalSourceId,
@@ -207,7 +207,7 @@ export function calculateGoalDemandV1(
     if (objective.target_weeks === undefined) policyMissingFields.push("objective.target_weeks");
   }
   if (policyMissingFields.length > 0) {
-    return goalDemandPolicyV1ResultSchema.parse({
+    return goalDemandPolicyResultSchema.parse({
       policyVersion: GOAL_DEMAND_POLICY_VERSION,
       state: "incomplete",
       goalSourceId,
@@ -220,7 +220,7 @@ export function calculateGoalDemandV1(
     case "event_performance": {
       const distance = objective.distance_m;
       if (distance === undefined) {
-        return goalDemandPolicyV1ResultSchema.parse({
+        return goalDemandPolicyResultSchema.parse({
           policyVersion: GOAL_DEMAND_POLICY_VERSION,
           state: "incomplete",
           goalSourceId,
@@ -228,7 +228,7 @@ export function calculateGoalDemandV1(
         });
       }
       if (objective.target_time_s === undefined && objective.target_speed_mps === undefined) {
-        return goalDemandPolicyV1ResultSchema.parse({
+        return goalDemandPolicyResultSchema.parse({
           policyVersion: GOAL_DEMAND_POLICY_VERSION,
           state: "incomplete",
           goalSourceId,
@@ -241,7 +241,7 @@ export function calculateGoalDemandV1(
           ? undefined
           : distance / objective.target_speed_mps);
       if (duration === undefined) {
-        return goalDemandPolicyV1ResultSchema.parse({
+        return goalDemandPolicyResultSchema.parse({
           policyVersion: GOAL_DEMAND_POLICY_VERSION,
           state: "incomplete",
           goalSourceId,
@@ -282,7 +282,7 @@ export function calculateGoalDemandV1(
     }
     case "threshold": {
       if (objective.test_duration_s === undefined) {
-        return goalDemandPolicyV1ResultSchema.parse({
+        return goalDemandPolicyResultSchema.parse({
           policyVersion: GOAL_DEMAND_POLICY_VERSION,
           state: "incomplete",
           goalSourceId,
@@ -314,7 +314,7 @@ export function calculateGoalDemandV1(
         objective.target_sessions_per_week === undefined ||
         objective.target_weeks === undefined
       ) {
-        return goalDemandPolicyV1ResultSchema.parse({
+        return goalDemandPolicyResultSchema.parse({
           policyVersion: GOAL_DEMAND_POLICY_VERSION,
           state: "incomplete",
           goalSourceId,
@@ -338,7 +338,7 @@ export function calculateGoalDemandV1(
       break;
   }
 
-  return goalDemandPolicyV1ResultSchema.parse({
+  return goalDemandPolicyResultSchema.parse({
     policyVersion: GOAL_DEMAND_POLICY_VERSION,
     state: "complete",
     goalSourceId,

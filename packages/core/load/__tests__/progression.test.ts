@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TSS_CONSTANTS as LOAD_TSS_CONSTANTS } from "../../constants/load";
 import { TSS_CONSTANTS as TRAINING_TSS_CONSTANTS } from "../../constants/training";
-import { getFormStatus, getFormStatusColor, getLoadBalanceStatus } from "../form";
+import { getLoadBalanceStatus } from "../form";
 import {
   calculateATL,
   calculateCTL,
@@ -73,15 +73,12 @@ describe("load progression", () => {
     expect(replayed[1]?.ctl).toBeGreaterThan(replayed[0]?.ctl ?? 0);
   });
 
-  it("provides form and ramp helpers from canonical modules", () => {
+  it("provides load balance and ramp helpers from canonical modules", () => {
     expect(getLoadBalanceStatus(30)).toBe("high_positive_balance");
     expect(getLoadBalanceStatus(8)).toBe("positive_balance");
     expect(getLoadBalanceStatus(0)).toBe("near_balance");
     expect(getLoadBalanceStatus(-20)).toBe("negative_balance");
     expect(getLoadBalanceStatus(-40)).toBe("high_negative_balance");
-    // Deprecated compatibility mapping remains stable for existing callers.
-    expect(getFormStatus(8)).toBe("optimal");
-    expect(getFormStatusColor(-40)).toBe("#ef4444");
     expect(calculateRampRate(60, 54)).toBe(6);
     expect(isRampRateSafe(6, 8)).toBe(true);
     expect(isRampRateSafe(9, 8)).toBe(false);

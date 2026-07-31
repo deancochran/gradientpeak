@@ -6,6 +6,8 @@ import { useRouteUpload } from "./useRouteUpload";
 const getDocumentAsyncMock = jest.fn();
 const invalidateRoutesMock = jest.fn();
 const uploadRouteMock = jest.fn();
+const claimRouteUploadOperationMock = jest.fn();
+const clearRouteUploadOperationMock = jest.fn();
 
 const MAX_ROUTE_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
@@ -33,12 +35,27 @@ jest.mock("@/lib/api", () => ({
   },
 }));
 
+jest.mock("@/lib/hooks/useAuth", () => ({
+  useAuth: () => ({ user: { id: "profile-1" } }),
+}));
+
+jest.mock("@/lib/route-files/route-upload-operation", () => ({
+  __esModule: true,
+  claimRouteUploadOperation: (...args: unknown[]) => claimRouteUploadOperationMock(...args),
+  clearRouteUploadOperation: (...args: unknown[]) => clearRouteUploadOperationMock(...args),
+}));
+
 describe("useRouteUpload", () => {
   beforeEach(() => {
     jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
     getDocumentAsyncMock.mockReset();
     invalidateRoutesMock.mockReset().mockResolvedValue(undefined);
     uploadRouteMock.mockReset().mockResolvedValue({ id: "route-1" });
+    claimRouteUploadOperationMock.mockReset().mockResolvedValue({
+      idempotencyKey: "00000000-0000-4000-8000-000000000001",
+      storageKey: "route-upload-operation",
+    });
+    clearRouteUploadOperationMock.mockReset().mockResolvedValue(undefined);
     global.fetch = jest
       .fn()
       .mockResolvedValue({ ok: true, text: jest.fn().mockResolvedValue("<gpx />") });
@@ -82,7 +99,9 @@ describe("useRouteUpload", () => {
       description: "Uploaded for recording session",
       fileContent: "<gpx />",
       fileName: name,
+      idempotencyKey: "00000000-0000-4000-8000-000000000001",
     });
+    expect(clearRouteUploadOperationMock).toHaveBeenCalledWith("route-upload-operation");
     expect(onRouteUploaded).toHaveBeenCalledWith("route-1");
     await waitFor(() => expect(result.current.isUploadingRoute).toBe(false));
   });

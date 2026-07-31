@@ -1,4 +1,11 @@
 import { z } from "zod";
+import {
+  type CanonicalUnitValue,
+  displayUnitLabel,
+  type PreferredUnitSystem,
+  toCanonicalUnitValue,
+  toDisplayUnitValue,
+} from "../units";
 import { formatSecondsToMmSs } from "../utils/fitness-inputs";
 
 export const PROFILE_PERFORMANCE_THRESHOLD_BOUNDS = {
@@ -232,17 +239,72 @@ export function normalizeProfileMetricValue(metricType: ProfileMetricType, value
   return definition.decimals === 0 ? Math.round(rounded) : rounded;
 }
 
+function getConvertibleProfileMetricCanonicalValue(
+  metricType: ProfileMetricType,
+  value: number,
+): CanonicalUnitValue | null {
+  if (metricType === "weight_kg") {
+    return { dimension: "mass", value, unit: "kilograms" };
+  }
+  if (metricType === "threshold_pace_seconds_per_km") {
+    return { dimension: "running_pace", value, unit: "seconds_per_kilometer" };
+  }
+  if (metricType === "css_seconds_per_100m") {
+    return { dimension: "swimming_pace", value, unit: "seconds_per_100_meters" };
+  }
+  return null;
+}
+
+/** Converts canonical profile-metric values for viewer-controlled presentation. */
+export function getProfileMetricDisplayValue(
+  metricType: ProfileMetricType,
+  value: number,
+  preferredUnitSystem: PreferredUnitSystem = "metric",
+): number {
+  const canonical = getConvertibleProfileMetricCanonicalValue(metricType, value);
+  return canonical ? toDisplayUnitValue(canonical, preferredUnitSystem).value : value;
+}
+
+/** Returns the viewer-facing unit without changing the canonical metric contract. */
+export function getProfileMetricDisplayUnit(
+  metricType: ProfileMetricType,
+  preferredUnitSystem: PreferredUnitSystem = "metric",
+): string {
+  const canonical = getConvertibleProfileMetricCanonicalValue(metricType, 0);
+  return canonical
+    ? displayUnitLabel(toDisplayUnitValue(canonical, preferredUnitSystem).unit)
+    : getProfileMetricDefinition(metricType).unit;
+}
+
+/** Converts a displayed profile-metric input back to its canonical persisted value. */
+export function getCanonicalProfileMetricValueFromDisplay(
+  metricType: ProfileMetricType,
+  value: number,
+  preferredUnitSystem: PreferredUnitSystem = "metric",
+): number | null {
+  if (!Number.isFinite(value)) return null;
+  const canonical = getConvertibleProfileMetricCanonicalValue(metricType, 0);
+  if (!canonical) return value;
+  const displayTemplate = toDisplayUnitValue(canonical, preferredUnitSystem);
+  return toCanonicalUnitValue({ ...displayTemplate, value })?.value ?? null;
+}
+
 export function formatProfileMetricValue(input: {
   metric_type: string;
+  preferredUnitSystem?: PreferredUnitSystem;
   value: number;
   unit?: string | null;
 }): string {
-  if (Number.isFinite(input.value)) {
-    if (input.metric_type === "threshold_pace_seconds_per_km") {
-      return `${formatSecondsToMmSs(Math.round(input.value))} /km`;
-    }
-    if (input.metric_type === "css_seconds_per_100m") {
-      return `${formatSecondsToMmSs(Math.round(input.value))} /100m`;
+  if (Number.isFinite(input.value) && isProfileMetricType(input.metric_type)) {
+    const canonical = getConvertibleProfileMetricCanonicalValue(input.metric_type, input.value);
+    if (canonical) {
+      const display = toDisplayUnitValue(canonical, input.preferredUnitSystem ?? "metric");
+      const label = displayUnitLabel(display.unit);
+      if (display.dimension === "running_pace" || display.dimension === "swimming_pace") {
+        return `${formatSecondsToMmSs(Math.round(display.value))} ${label}`;
+      }
+      const decimals = getProfileMetricDefinition(input.metric_type).decimals;
+      return `${Number(display.value.toFixed(decimals))} ${label}`;
     }
   }
 

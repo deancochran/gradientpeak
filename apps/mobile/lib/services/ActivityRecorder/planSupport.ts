@@ -1,5 +1,5 @@
-import { activityPlanStructureSchemaV3, type CanonicalActivityCategory } from "@repo/core";
-import type { RecordingActivityPlanV3Input } from "./plan";
+import { activityPlanStructureSchema, type CanonicalActivityCategory } from "@repo/core";
+import type { RecordingActivityPlanInput } from "./plan";
 
 export type MobileRecordingPlanSupport =
   | {
@@ -14,16 +14,16 @@ export type MobileRecordingPlanSupport =
 
 const INVALID_PLAN_MESSAGE = "This plan can't be recorded on mobile. Check the plan and try again.";
 
-/** Checks whether a canonical V3 plan can be executed by the native recorder. */
+/** Checks whether a canonical plan can be executed by the native recorder. */
 export function getMobileRecordingPlanSupport(
-  plan: Pick<RecordingActivityPlanV3Input, "name" | "structure"> | null | undefined,
+  plan: Pick<RecordingActivityPlanInput, "name" | "structure"> | null | undefined,
 ): MobileRecordingPlanSupport {
   if (!plan) {
     return { supported: false, reason: "invalid_structure", message: INVALID_PLAN_MESSAGE };
   }
 
   try {
-    const parsed = activityPlanStructureSchemaV3.safeParse(plan.structure);
+    const parsed = activityPlanStructureSchema.safeParse(plan.structure);
     if (!parsed.success) {
       return { supported: false, reason: "invalid_structure", message: INVALID_PLAN_MESSAGE };
     }

@@ -63,11 +63,10 @@ describe("workload", () => {
       expect(result.requiredDays).toBe(7);
     });
 
-    it("does not substitute power-derived work for low-quality HR TRIMP", () => {
+    it("abstains from TRIMP when heart-rate coverage is low quality", () => {
       const result = computeTrimp({
         coverageDays: 10,
         durationSeconds: 1800,
-        avgPowerWatts: 200,
         hrSampleCount: 5,
         hrCoverageRatio: 0.5,
       });
@@ -121,13 +120,6 @@ describe("workload", () => {
       expect(result.reasonCode).toBe("chronic_load_zero");
       expect(result.status).toBe("stable");
     });
-
-    it("makes identity-less load arrays unavailable", () => {
-      const result = computeAcwr(Array(28).fill(50), 28);
-
-      expect(result.value).toBeNull();
-      expect(result.reasonCode).toBe("identity_required");
-    });
   });
 
   describe("computeMonotony", () => {
@@ -145,13 +137,6 @@ describe("workload", () => {
 
       expect(result.value).toBeNull();
       expect(result.reasonCode).toBe("zero_variance");
-    });
-
-    it("makes identity-less load arrays unavailable", () => {
-      const result = computeMonotony(Array(7).fill(42), 7);
-
-      expect(result.value).toBeNull();
-      expect(result.reasonCode).toBe("identity_required");
     });
   });
 });

@@ -6,10 +6,10 @@ import {
 import { fingerprintCanonicalJson } from "./canonical-json";
 import { sourceIdSchema } from "./lineage";
 import {
-  type AthleteIntelligenceModelInput,
   athleteIntelligenceModelInputSchema,
   type ModelReadCoverage,
   modelReadCoverageSchema,
+  type ParsedAthleteIntelligenceModelInput,
 } from "./model-input-contracts";
 
 export const ATHLETE_STATE_VECTOR_VERSION = "athlete-state-vector-v1" as const;
@@ -109,12 +109,12 @@ export type AthleteStateVector = z.infer<typeof athleteStateVectorSchema>;
 export type AssembleAthleteStateInput = Omit<
   z.input<typeof assembleAthleteStateInputSchema>,
   "model"
-> & { model: AthleteIntelligenceModelInput };
+> & { model: ParsedAthleteIntelligenceModelInput };
 
 function materializeChannel(
   channel: z.infer<typeof channelInputSchema>,
   model: Pick<
-    AthleteIntelligenceModelInput,
+    ParsedAthleteIntelligenceModelInput,
     "assessmentAsOf" | "activityWindow" | "athleteId" | "evidenceRegistry"
   > & {
     readCoverage: ModelReadCoverage;

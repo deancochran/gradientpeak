@@ -140,7 +140,7 @@ export function TimerOnlyRecordingProvider({
       setNowMs(hydratedAtMs);
 
       if (result.draft) {
-        const recovered = recoverTimerOnlyRecording(result.draft, hydratedAtMs);
+        const recovered = recoverTimerOnlyRecording(result.draft);
         setProviderState({
           recording: recovered.state,
           error: recovered.rejectedReason,

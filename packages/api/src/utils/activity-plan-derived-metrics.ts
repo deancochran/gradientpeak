@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { compileActivityPlanV3 } from "@repo/core/activity-plan";
+import { compileActivityPlan } from "@repo/core/activity-plan";
 import { buildEstimationContext, estimateActivity, estimateMetrics } from "@repo/core/estimation";
 import {
   adaptPlannedCommonLoadDoses,
@@ -48,6 +48,9 @@ type MemoizedEstimate = {
 };
 
 type PlannedCommonLoadThresholds = Awaited<ReturnType<typeof loadEstimationSnapshot>>["thresholds"];
+type PlannedCommonLoadLthrByActivityCategory = Awaited<
+  ReturnType<typeof loadEstimationSnapshot>
+>["lthrByActivityCategory"];
 
 function fingerprint(kind: string, values: readonly unknown[]): string {
   const digest = createHash("sha256").update(JSON.stringify(values)).digest("hex");
@@ -59,9 +62,10 @@ function plannedCommonLoad(input: {
   planId: string;
   structure: unknown;
   thresholds: PlannedCommonLoadThresholds;
+  lthrByActivityCategory: PlannedCommonLoadLthrByActivityCategory;
 }): CommonLoadResult | CommonLoadAggregate {
   const computedAsOf = input.asOf.toISOString();
-  const compiled = compileActivityPlanV3(input.structure);
+  const compiled = compileActivityPlan(input.structure);
   const thresholdForActivityCategory = (activity_category: "bike" | "run" | "swim") => {
     const threshold =
       activity_category === "bike"
@@ -125,23 +129,47 @@ function plannedCommonLoad(input: {
       },
     };
   };
+  const lthrForActivityCategory = (activity_category: "bike" | "run" | "swim") => {
+    const lthr = input.lthrByActivityCategory[activity_category];
+    if (!lthr?.quality.observed_at || !lthr.quality.evidence_fingerprint) {
+      return { method: "heart_rate_zones" as const, quality: null, thresholdEvidence: null };
+    }
+    const thresholdEvidence = {
+      type: "lthr_bpm" as const,
+      value: lthr.value,
+      unit: "beats_per_minute" as const,
+      source: lthr.quality.source,
+      observedAt: lthr.quality.observed_at,
+      validAt: lthr.quality.valid_at ?? lthr.quality.observed_at,
+      freshness: lthr.quality.stale ? ("stale" as const) : ("current" as const),
+      calculationVersion: lthr.quality.calculation_version ?? null,
+      sourceFingerprint: lthr.quality.evidence_fingerprint,
+    } satisfies CommonThresholdEvidence;
+    return {
+      method: "heart_rate_zones" as const,
+      quality: lthr.quality,
+      thresholdEvidence,
+    };
+  };
   const doses = compiled.occurrences.flatMap((occurrence) => {
     if (occurrence.role !== "activity") return [];
     const activity_category = occurrence.activity_category;
-    const provenance =
-      activity_category === "bike" || activity_category === "run" || activity_category === "swim"
-        ? thresholdForActivityCategory(activity_category)
-        : { method: null, quality: null, thresholdEvidence: null };
     const supportedTarget = occurrence.targets.find((target) =>
       activity_category === "bike"
-        ? target.type === "%FTP" || target.type === "watts"
+        ? target.type === "%FTP" || target.type === "watts" || target.type === "%ThresholdHR"
         : activity_category === "run" || activity_category === "swim"
-          ? target.type === "speed"
+          ? target.type === "speed" || target.type === "%ThresholdHR"
           : false,
     );
+    const provenance =
+      activity_category === "bike" || activity_category === "run" || activity_category === "swim"
+        ? supportedTarget?.type === "%ThresholdHR"
+          ? lthrForActivityCategory(activity_category)
+          : thresholdForActivityCategory(activity_category)
+        : { method: null, quality: null, thresholdEvidence: null };
     const target =
-      supportedTarget?.type === "%FTP"
-        ? // Activity-plan %FTP is authored in percentage points; Core receives a threshold ratio.
+      supportedTarget?.type === "%FTP" || supportedTarget?.type === "%ThresholdHR"
+        ? // Activity-plan threshold percentages are authored in points; Core receives a ratio.
           ({ type: "percent_threshold", thresholdRatio: supportedTarget.intensity / 100 } as const)
         : supportedTarget?.type === "watts"
           ? ({ type: "power_watts", value: supportedTarget.intensity } as const)
@@ -242,6 +270,7 @@ export async function getActivityPlansDerivedMetrics<TPlan extends SupportedActi
           planId: plan.id,
           structure: plan.structure,
           thresholds: snapshot.thresholds,
+          lthrByActivityCategory: snapshot.lthrByActivityCategory,
         }),
         estimate_computed_at: asOf.toISOString(),
         estimate_last_accessed_at: asOf.toISOString(),
@@ -276,7 +305,6 @@ function toFailedResult<TPlan extends EstimationActivityPlanInput>(
       method: null,
       quality: null,
       thresholdEvidence: null,
-      sessionRpeEvidence: null,
       evidenceFingerprint: null,
       computedAsOf: asOf.toISOString(),
       contributingDurationSeconds: null,

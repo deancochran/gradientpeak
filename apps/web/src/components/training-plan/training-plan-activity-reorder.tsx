@@ -32,6 +32,7 @@ export function TrainingPlanActivityReorder() {
   const [original, setOriginal] = useState<ReorderActivity[]>([]);
   const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [saveFailed, setSaveFailed] = useState(false);
 
   useEffect(() => {
     if (dirty) return;
@@ -48,6 +49,7 @@ export function TrainingPlanActivityReorder() {
 
   const save = async () => {
     setMessage(null);
+    setSaveFailed(false);
     try {
       const input = buildActivityReorderInput(original, activities);
       if (!input) return;
@@ -57,11 +59,11 @@ export function TrainingPlanActivityReorder() {
       setDirty(false);
       setMessage("Activity schedule saved.");
     } catch (error) {
-      setActivities(structuredClone(original));
-      setDirty(false);
-      await utils.events.invalidate();
+      // Keep the edited schedule so a transient failure can be retried without redoing it.
+      setDirty(true);
+      setSaveFailed(true);
       setMessage(
-        `${error instanceof Error ? error.message : "Activity reorder failed."} The schedule was not changed.`,
+        `${error instanceof Error ? error.message : "Activity reorder failed."} Your changes are still ready to retry.`,
       );
     }
   };
@@ -96,7 +98,7 @@ export function TrainingPlanActivityReorder() {
           {[...activities]
             .sort((left, right) => left.scheduled_date.localeCompare(right.scheduled_date))
             .map((activity) => (
-              <Card key={activity.id}>
+              <Card data-training-plan-id={activity.training_plan_id} key={activity.id}>
                 <CardHeader>
                   <CardTitle>{activity.title || "Scheduled activity"}</CardTitle>
                 </CardHeader>
@@ -108,6 +110,7 @@ export function TrainingPlanActivityReorder() {
                         setActivities((items) => moveScheduledActivity(items, activity.id, -1));
                         setDirty(true);
                         setMessage(null);
+                        setSaveFailed(false);
                       }}
                       type="button"
                       variant="outline"
@@ -119,6 +122,7 @@ export function TrainingPlanActivityReorder() {
                         setActivities((items) => moveScheduledActivity(items, activity.id, 1));
                         setDirty(true);
                         setMessage(null);
+                        setSaveFailed(false);
                       }}
                       type="button"
                       variant="outline"
@@ -132,13 +136,13 @@ export function TrainingPlanActivityReorder() {
         </div>
       )}
       {message ? (
-        <p aria-live="polite" role={reorder.isError ? "alert" : undefined}>
+        <p aria-live="polite" role={saveFailed ? "alert" : undefined}>
           {message}
         </p>
       ) : null}
       <div className="flex gap-2">
         <Button disabled={!dirty || reorder.isPending} onClick={() => void save()} type="button">
-          {reorder.isPending ? "Saving…" : reorder.isError ? "Retry save" : "Save order"}
+          {reorder.isPending ? "Saving…" : saveFailed ? "Retry save" : "Save order"}
         </Button>
         <Button
           disabled={!dirty || reorder.isPending}
@@ -146,6 +150,7 @@ export function TrainingPlanActivityReorder() {
             setActivities(structuredClone(original));
             setDirty(false);
             setMessage(null);
+            setSaveFailed(false);
           }}
           type="button"
           variant="outline"

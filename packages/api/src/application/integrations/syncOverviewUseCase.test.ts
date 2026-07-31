@@ -105,4 +105,46 @@ describe("getProviderSyncOverview planned Wahoo delivery", () => {
     });
     expect(wahoo?.summary).toMatchObject({ badge: "Queued", health: "queued" });
   });
+
+  it("does not interpret or expose unknown persisted sync diagnostics", async () => {
+    const diagnostic = "legacy provider failure token=secret https://provider.test/private";
+    mocks.listSyncStateByIntegrationIds.mockResolvedValue([
+      {
+        integrationId: INTEGRATION_ID,
+        lastError: diagnostic,
+        lastSyncFailedAt: "2026-07-28T11:00:00.000Z",
+        lastSyncSucceededAt: null,
+        metadata: null,
+        resource: "historical_activities",
+      },
+    ]);
+
+    const overview = await getProviderSyncOverview({ db: {} as never, profileId: PROFILE_ID });
+    const wahoo = overview.find((provider) => provider.provider === "wahoo");
+
+    expect(wahoo?.activityHistory).toMatchObject({ lastError: null, status: "idle" });
+    expect(wahoo?.providerHealth).toMatchObject({ lastError: null, status: "connected" });
+    expect(JSON.stringify(overview)).not.toContain(diagnostic);
+  });
+
+  it("maps the current generic bounded sync category without exposing raw diagnostics", async () => {
+    mocks.listSyncStateByIntegrationIds.mockResolvedValue([
+      {
+        integrationId: INTEGRATION_ID,
+        lastError: "provider_sync_failed",
+        lastSyncFailedAt: "2026-07-28T11:00:00.000Z",
+        lastSyncSucceededAt: null,
+        metadata: null,
+        resource: "historical_activities",
+      },
+    ]);
+
+    const overview = await getProviderSyncOverview({ db: {} as never, profileId: PROFILE_ID });
+    const wahoo = overview.find((provider) => provider.provider === "wahoo");
+
+    expect(wahoo?.activityHistory).toMatchObject({
+      lastError: "Provider sync failed",
+      status: "failed",
+    });
+  });
 });

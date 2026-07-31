@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { calculateGoalDemandV1, GOAL_DEMAND_POLICY_VERSION } from "../goal-demand";
+import { calculateGoalDemand, GOAL_DEMAND_POLICY_VERSION } from "../goal-demand";
 
 const header = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -11,10 +11,10 @@ const header = {
   activity_category: "run" as const,
 };
 
-describe("calculateGoalDemandV1", () => {
+describe("calculateGoalDemand", () => {
   it("returns event distance, duration, derived speed, and explicit route context", () => {
     const routeSourceId = "activity:race-route";
-    const result = calculateGoalDemandV1({
+    const result = calculateGoalDemand({
       goal: {
         ...header,
         objective: {
@@ -40,7 +40,7 @@ describe("calculateGoalDemandV1", () => {
   });
 
   it("estimates duration from a speed-only target with goal derivation lineage", () => {
-    const result = calculateGoalDemandV1({
+    const result = calculateGoalDemand({
       goal: {
         ...header,
         objective: {
@@ -77,14 +77,14 @@ describe("calculateGoalDemandV1", () => {
     };
 
     expect(() => {
-      calculateGoalDemandV1({
+      calculateGoalDemand({
         goal,
         // @ts-expect-error Runtime validation must reject route context without source lineage.
         route: { distanceMeters: 10_200 },
       });
     }).toThrow();
     expect(() =>
-      calculateGoalDemandV1({
+      calculateGoalDemand({
         goal,
         route: { sourceId: "route:", distanceMeters: 10_200 },
       }),
@@ -96,7 +96,7 @@ describe("calculateGoalDemandV1", () => {
     ["power", 315, "W"],
     ["hr", 172, "bpm"],
   ] as const)("returns a canonical %s threshold target", (metric, value, unit) => {
-    const result = calculateGoalDemandV1({
+    const result = calculateGoalDemand({
       goal: {
         ...header,
         objective: { type: "threshold", metric, value, test_duration_s: 1_200 },
@@ -120,7 +120,7 @@ describe("calculateGoalDemandV1", () => {
       },
     ],
   ])("returns direct completion requirements for %o", (values, expected) => {
-    const result = calculateGoalDemandV1({
+    const result = calculateGoalDemand({
       goal: { ...header, objective: { type: "completion", ...values } },
     });
     expect(result.state).toBe("complete");
@@ -129,7 +129,7 @@ describe("calculateGoalDemandV1", () => {
   });
 
   it("returns sessions per week and weeks for consistency", () => {
-    const result = calculateGoalDemandV1({
+    const result = calculateGoalDemand({
       goal: {
         ...header,
         objective: { type: "consistency", target_sessions_per_week: 4, target_weeks: 12 },
@@ -152,7 +152,7 @@ describe("calculateGoalDemandV1", () => {
     [{ type: "threshold", metric: "power", value: 300 }, ["objective.test_duration_s"]],
     [{ type: "consistency", target_weeks: 8 }, ["objective.target_sessions_per_week"]],
   ])("returns incomplete for missing physical requirements", (objective, missingFields) => {
-    const result = calculateGoalDemandV1({ goal: { ...header, objective } });
+    const result = calculateGoalDemand({ goal: { ...header, objective } });
     expect(result).toMatchObject({ state: "incomplete" });
     if (result.state !== "incomplete") return;
     expect(result.missingFields).toEqual(expect.arrayContaining(missingFields));
@@ -160,7 +160,7 @@ describe("calculateGoalDemandV1", () => {
   });
 
   it("returns unsupported for an unknown goal type", () => {
-    const result = calculateGoalDemandV1({
+    const result = calculateGoalDemand({
       goal: { ...header, objective: { type: "body_composition", value: 70 } },
     });
     expect(result).toEqual({

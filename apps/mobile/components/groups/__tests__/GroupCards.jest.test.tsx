@@ -81,11 +81,11 @@ describe("GroupCard", () => {
   });
 
   it("renders the rich default identity and access badges through the canonical shell", () => {
-    renderNative(<GroupCard group={group} onPress={jest.fn()} testID="default-group-card" />);
+    renderNative(<GroupCard group={group} onPress={jest.fn()} />);
 
     expect(screen.getByLabelText("View group Sunday Riders")).toBeTruthy();
     expect(screen.getByText("@sunday-riders")).toBeTruthy();
-    expect(screen.getByTestId("default-group-card").props.accessibilityState).toEqual({
+    expect(screen.getByTestId("group-card-group-1").props.accessibilityState).toEqual({
       disabled: false,
     });
   });

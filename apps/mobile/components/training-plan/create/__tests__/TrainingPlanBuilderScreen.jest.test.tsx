@@ -695,7 +695,7 @@ describe("TrainingPlanBuilderScreen", () => {
 
   it("routes create through the canonical mutation and preserves the authored payload", async () => {
     mockPreviewCreationConfigData = {
-      projection_chart: { readiness_score: 80, display_points: [] },
+      projection_chart: { readiness_score: 80, points: [] },
       preview_snapshot: { token: "snapshot-token" },
     };
     renderNative(<TrainingPlanBuilderScreen />);

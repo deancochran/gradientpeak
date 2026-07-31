@@ -1,8 +1,8 @@
 import type { CanonicalActivityCategory } from "../schemas/activity-category";
 import type { ActivityTarget, ActivityTargetType } from "../targets/schema";
-import { type CompiledActivityPlan, compileValidatedActivityPlanV3 } from "./compile";
-import type { ActivityPlanDuration, ActivityPlanStructureV3 } from "./v3-schema";
-import { activityPlanStructureSchemaV3 } from "./v3-schema";
+import { type CompiledActivityPlan, compileValidatedActivityPlan } from "./compile";
+import type { ActivityPlanDuration, ActivityPlanStructure } from "./structure-schema";
+import { activityPlanStructureSchema } from "./structure-schema";
 
 export type ActivityPlanIntensityBasis =
   | "threshold_percent"
@@ -27,7 +27,7 @@ export type ActivityPlanPresentationModel = {
   occurrences: readonly ActivityPlanPresentationOccurrence[];
   activity_category: CanonicalActivityCategory;
   stepCount: number;
-  structure: ActivityPlanStructureV3;
+  structure: ActivityPlanStructure;
 };
 
 const thresholdPercentTypes = new Set<ActivityTargetType>(["%FTP", "%MaxHR", "%ThresholdHR"]);
@@ -144,10 +144,10 @@ function normalizeTarget(
 export function deriveActivityPlanPresentation(
   input: unknown,
 ): ActivityPlanPresentationModel | null {
-  const parsed = activityPlanStructureSchemaV3.safeParse(input);
+  const parsed = activityPlanStructureSchema.safeParse(input);
   if (!parsed.success) return null;
 
-  const compiled = compileValidatedActivityPlanV3(parsed.data);
+  const compiled = compileValidatedActivityPlan(parsed.data);
   const ranges = collectRelativeRanges(compiled.occurrences);
   const occurrences = compiled.occurrences.map<ActivityPlanPresentationOccurrence>((occurrence) => {
     const intensity = normalizeTarget(

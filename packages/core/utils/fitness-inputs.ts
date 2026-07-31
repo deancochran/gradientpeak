@@ -101,14 +101,6 @@ export function formatDateOnly(date: Date): string {
   return date.toISOString().split("T")[0] ?? "";
 }
 
-/** Formats a date from its local calendar fields for legacy form callers. */
-export function formatLocalDateOnly(date: Date): string {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 export function parseHmsToSeconds(value: string | undefined): number | undefined {
   const trimmed = value?.trim() ?? "";
   const match = HMS_PATTERN.exec(trimmed);

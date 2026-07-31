@@ -8,7 +8,7 @@ const COMMIT_MARKER = "committed-v1";
 const MAX_HEADLESS_ENVELOPES = 100;
 const MAX_INVALID_HEADLESS_ENVELOPES = 20;
 const MAX_ENVELOPE_BYTES = 8_192;
-const SCHEMA_VERSION = 5;
+const CURRENT_SCHEMA_VERSION = 5;
 const STREAM_COMMIT_MARKER = "stream-committed-v1";
 const STREAM_VERSION = 1;
 const MAX_STREAM_ENVELOPE_BYTES = 1_048_576;
@@ -53,6 +53,10 @@ export type RecordingEvidenceSqlExecutor = {
   ): Promise<void>;
 };
 
+type RecordingEvidenceDatabaseHandle = RecordingEvidenceSqlExecutor & {
+  closeAsync?: () => Promise<void>;
+};
+
 /**
  * Checkpoint shape and recovery invariants belong to the recorder, not this
  * SQLite adapter. Callers inject that strict validation so this module never
@@ -64,7 +68,8 @@ export type RecordingEvidenceCheckpointValidator = (input: {
   profileId: string;
 }) => Promise<boolean>;
 
-let databasePromise: Promise<RecordingEvidenceSqlExecutor> | undefined;
+let databasePromise: Promise<RecordingEvidenceDatabaseHandle> | undefined;
+let claimedCheckpointSessionId: string | null = null;
 
 async function sha256(value: string): Promise<string> {
   const { CryptoDigestAlgorithm, digestStringAsync } = await import("expo-crypto");
@@ -93,251 +98,44 @@ export async function getRecordingEvidenceDatabase(): Promise<RecordingEvidenceS
   return databasePromise;
 }
 
-/**
- * SQLite's user_version is the schema authority.  This deliberately does not
- * overwrite a marker: each version is committed only after its idempotent DDL
- * completed, so a killed upgrade retries the same step on the next open.
- */
-async function hasColumn(
+/** Creates the complete current authority for a brand-new recording database. */
+async function createCurrentRecordingEvidenceSchema(
   tx: RecordingEvidenceSqlExecutor,
-  table: string,
-  column: string,
-): Promise<boolean> {
-  const columns = await tx.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
-  return columns.some((entry) => entry.name === column);
-}
-
-async function migrateV1(tx: RecordingEvidenceSqlExecutor): Promise<void> {
-  // Every statement is idempotent: this also resumes a v0 install killed mid-step.
-  await tx.execAsync(`CREATE TABLE IF NOT EXISTS recording_evidence_sessions (session_id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('active', 'fenced', 'finalized', 'accepted', 'quarantined')), next_sequence INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, finalized_path TEXT, finalized_size INTEGER, finalized_sha256 TEXT);
-    CREATE TABLE IF NOT EXISTS recording_gps_envelopes (session_id TEXT NOT NULL REFERENCES recording_evidence_sessions(session_id), sequence INTEGER NOT NULL, timestamp INTEGER NOT NULL, payload TEXT NOT NULL, byte_size INTEGER NOT NULL, sha256 TEXT NOT NULL, commit_marker TEXT NOT NULL, PRIMARY KEY (session_id, sequence));
-    CREATE INDEX IF NOT EXISTS recording_gps_envelopes_session_sequence ON recording_gps_envelopes(session_id, sequence);
-    CREATE TABLE IF NOT EXISTS recording_evidence_meta (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS recording_evidence_quarantine (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, reason TEXT NOT NULL, payload TEXT, quarantined_at INTEGER NOT NULL);
-    CREATE UNIQUE INDEX IF NOT EXISTS one_active_recording_evidence_per_profile ON recording_evidence_sessions(profile_id) WHERE state = 'active';`);
-}
-
-async function migrateV2(tx: RecordingEvidenceSqlExecutor): Promise<void> {
-  // SQLite has no ADD COLUMN IF NOT EXISTS. Inspect first instead of swallowing a
-  // malformed-schema error; a partial v2 therefore resumes safely.
-  if (!(await hasColumn(tx, "recording_evidence_sessions", "finalized_artifact_json")))
-    await tx.execAsync(
-      "ALTER TABLE recording_evidence_sessions ADD COLUMN finalized_artifact_json TEXT",
-    );
-  if (!(await hasColumn(tx, "recording_evidence_sessions", "finalized_artifact_digest")))
-    await tx.execAsync(
-      "ALTER TABLE recording_evidence_sessions ADD COLUMN finalized_artifact_digest TEXT",
-    );
-  await tx.execAsync(`CREATE TABLE IF NOT EXISTS recording_stream_envelopes (session_id TEXT NOT NULL REFERENCES recording_evidence_sessions(session_id), stream_kind TEXT NOT NULL, sequence INTEGER NOT NULL, stream_order INTEGER NOT NULL, timestamp INTEGER NOT NULL, payload TEXT NOT NULL, byte_size INTEGER NOT NULL, sha256 TEXT NOT NULL, commit_marker TEXT NOT NULL, version INTEGER NOT NULL, PRIMARY KEY (session_id, stream_kind, sequence), UNIQUE (session_id, stream_kind, stream_order));
-    CREATE INDEX IF NOT EXISTS recording_stream_envelopes_recovery ON recording_stream_envelopes(session_id, stream_kind, sequence);
-    CREATE TABLE IF NOT EXISTS recording_finalization_recovery (session_id TEXT PRIMARY KEY NOT NULL REFERENCES recording_evidence_sessions(session_id), status TEXT NOT NULL CHECK(status IN ('pending', 'blocked')), reason TEXT NOT NULL, updated_at INTEGER NOT NULL);
-    CREATE TABLE IF NOT EXISTS activity_submission_queue_jobs (id TEXT PRIMARY KEY NOT NULL, operation_id TEXT NOT NULL UNIQUE, profile_id TEXT NOT NULL, session_id TEXT NOT NULL, artifact_id TEXT NOT NULL, status TEXT NOT NULL, attempts INTEGER NOT NULL, retry_class TEXT NOT NULL, next_attempt_at INTEGER, error_category TEXT, lease_owner TEXT, lease_token TEXT, lease_expires_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, job_json TEXT NOT NULL, schema_version INTEGER NOT NULL);
-    CREATE INDEX IF NOT EXISTS activity_submission_queue_due ON activity_submission_queue_jobs(profile_id, status, next_attempt_at, lease_expires_at);
-    CREATE TABLE IF NOT EXISTS activity_submission_queue_quarantine (id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT, reason TEXT NOT NULL, quarantined_at INTEGER NOT NULL);
-    CREATE TABLE IF NOT EXISTS activity_submission_migration_items (legacy_key TEXT NOT NULL, item_id TEXT NOT NULL, phase TEXT NOT NULL, disposition TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY (legacy_key, item_id));
-    CREATE TABLE IF NOT EXISTS recording_evidence_acceptance_tombstones (operation_id TEXT PRIMARY KEY NOT NULL, activity_id TEXT NOT NULL, accepted_at INTEGER NOT NULL);`);
-}
-
-async function migrateV3(tx: RecordingEvidenceSqlExecutor): Promise<void> {
-  if (!(await hasColumn(tx, "recording_evidence_sessions", "next_stream_order"))) {
-    await tx.execAsync(
-      "ALTER TABLE recording_evidence_sessions ADD COLUMN next_stream_order INTEGER NOT NULL DEFAULT 0",
-    );
-  }
-  if (!(await hasColumn(tx, "recording_evidence_sessions", "checkpoint_json"))) {
-    await tx.execAsync("ALTER TABLE recording_evidence_sessions ADD COLUMN checkpoint_json TEXT");
-    await tx.execAsync("ALTER TABLE recording_evidence_sessions ADD COLUMN checkpoint_digest TEXT");
-  }
-  // Remove the accidentally deployed global uniqueness constraint before the
-  // backfill. Rebuilding this child table is safe: nothing has an FK to it.
-  await tx.execAsync(`CREATE TABLE IF NOT EXISTS recording_stream_envelopes_v3 (session_id TEXT NOT NULL REFERENCES recording_evidence_sessions(session_id), stream_kind TEXT NOT NULL, sequence INTEGER NOT NULL, stream_order INTEGER NOT NULL, timestamp INTEGER NOT NULL, payload TEXT NOT NULL, byte_size INTEGER NOT NULL, sha256 TEXT NOT NULL, commit_marker TEXT NOT NULL, version INTEGER NOT NULL, PRIMARY KEY (session_id, stream_kind, sequence), UNIQUE (session_id, stream_kind, stream_order));
-    INSERT OR IGNORE INTO recording_stream_envelopes_v3 SELECT session_id, stream_kind, sequence, stream_order, timestamp, payload, byte_size, sha256, commit_marker, version FROM recording_stream_envelopes;
-    DROP TABLE recording_stream_envelopes;
-    ALTER TABLE recording_stream_envelopes_v3 RENAME TO recording_stream_envelopes;
-    CREATE INDEX IF NOT EXISTS recording_stream_envelopes_recovery ON recording_stream_envelopes(session_id, stream_kind, sequence);`);
-  // v2 used (session, kind, order) as a uniqueness key, so old multi-kind flushes
-  // can contain duplicate orders. Re-number only a fully deterministic sequence;
-  // malformed legacy rows are quarantined rather than making database open fail.
-  const sessions = await tx.getAllAsync<{ session_id: string }>(
-    "SELECT session_id FROM recording_evidence_sessions",
-  );
-  for (const { session_id } of sessions) {
-    const rows = await tx.getAllAsync<{
-      stream_kind: string;
-      sequence: number;
-      stream_order: number;
-      timestamp: number;
-    }>(
-      "SELECT stream_kind, sequence, stream_order, timestamp FROM recording_stream_envelopes WHERE session_id = ? ORDER BY stream_order, timestamp, stream_kind, sequence",
-      session_id,
-    );
-    let valid = true;
-    const sequenceByKind = new Map<string, number>();
-    let previousTimestamp = -Infinity;
-    for (const row of rows) {
-      const expected = sequenceByKind.get(row.stream_kind) ?? 0;
-      if (
-        !row.stream_kind ||
-        row.sequence !== expected ||
-        !Number.isFinite(row.timestamp) ||
-        row.timestamp < previousTimestamp
-      ) {
-        valid = false;
-        break;
-      }
-      sequenceByKind.set(row.stream_kind, expected + 1);
-      previousTimestamp = row.timestamp;
-    }
-    if (!valid) {
-      await quarantineEvidence(tx, session_id, "legacy-stream-order-ambiguous");
-      await tx.runAsync("DELETE FROM recording_stream_envelopes WHERE session_id = ?", session_id);
-      continue;
-    }
-    // Use a temporary negative range so the existing unique index never sees a collision.
-    for (const [index, row] of rows.entries())
-      await tx.runAsync(
-        "UPDATE recording_stream_envelopes SET stream_order = ? WHERE session_id = ? AND stream_kind = ? AND sequence = ?",
-        -(index + 1),
-        session_id,
-        row.stream_kind,
-        row.sequence,
-      );
-    for (const [index, row] of rows.entries())
-      await tx.runAsync(
-        "UPDATE recording_stream_envelopes SET stream_order = ? WHERE session_id = ? AND stream_kind = ? AND sequence = ?",
-        index,
-        session_id,
-        row.stream_kind,
-        row.sequence,
-      );
-    await tx.runAsync(
-      "UPDATE recording_evidence_sessions SET next_stream_order = ? WHERE session_id = ?",
-      rows.length,
-      session_id,
-    );
-  }
-  await tx.execAsync(
-    "CREATE UNIQUE INDEX IF NOT EXISTS recording_stream_envelopes_global_order ON recording_stream_envelopes(session_id, stream_order)",
-  );
-}
-
-/**
- * Some v1 installations were shipped before `accepted` became a terminal
- * state. SQLite cannot widen a CHECK, so this is deliberately a table rebuild
- * rather than an ALTER TABLE. It runs after the additive migrations, meaning
- * every copied row has the complete current column set.
- */
-async function migrateV4(tx: RecordingEvidenceSqlExecutor): Promise<void> {
-  const definition = await tx.getAllAsync<{ sql: string | null }>(
-    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'recording_evidence_sessions'",
-  );
-  // A missing definition is only possible in a malformed hand-built database;
-  // v1 creates the authoritative table and its constraint below.
-  if (definition[0]?.sql?.includes("'accepted'")) return;
-  await tx.execAsync(`CREATE TABLE recording_evidence_sessions_v4 (
-      session_id TEXT PRIMARY KEY NOT NULL,
-      profile_id TEXT NOT NULL,
-      state TEXT NOT NULL CHECK(state IN ('active', 'fenced', 'finalized', 'accepted', 'quarantined')),
-      next_sequence INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      finalized_path TEXT,
-      finalized_size INTEGER,
-      finalized_sha256 TEXT,
-      finalized_artifact_json TEXT,
-      finalized_artifact_digest TEXT,
-      next_stream_order INTEGER NOT NULL DEFAULT 0,
-      checkpoint_json TEXT,
-      checkpoint_digest TEXT
-    );
-    INSERT INTO recording_evidence_sessions_v4
-      (session_id, profile_id, state, next_sequence, created_at, finalized_path, finalized_size, finalized_sha256, finalized_artifact_json, finalized_artifact_digest, next_stream_order, checkpoint_json, checkpoint_digest)
-      SELECT session_id, profile_id, state, next_sequence, created_at, finalized_path, finalized_size, finalized_sha256, finalized_artifact_json, finalized_artifact_digest, next_stream_order, checkpoint_json, checkpoint_digest
-      FROM recording_evidence_sessions
-      WHERE state IN ('active', 'fenced', 'finalized', 'accepted', 'quarantined');
-    INSERT INTO recording_evidence_quarantine (session_id, reason, payload, quarantined_at)
-      SELECT session_id, 'legacy-session-state-invalid', state, ${Date.now()}
-      FROM recording_evidence_sessions
-      WHERE state NOT IN ('active', 'fenced', 'finalized', 'accepted', 'quarantined');
-    DROP TABLE recording_evidence_sessions;
-    ALTER TABLE recording_evidence_sessions_v4 RENAME TO recording_evidence_sessions;
-    CREATE UNIQUE INDEX IF NOT EXISTS one_active_recording_evidence_per_profile ON recording_evidence_sessions(profile_id) WHERE state = 'active';`);
-}
-
-/** Accepted uploads retain their file reference until the independently retryable
- * OS cleanup succeeds.  Acceptance itself is never rolled back by that effect. */
-async function migrateV5(tx: RecordingEvidenceSqlExecutor): Promise<void> {
-  if (!(await hasColumn(tx, "recording_evidence_sessions", "cleanup_pending"))) {
-    await tx.execAsync(
-      "ALTER TABLE recording_evidence_sessions ADD COLUMN cleanup_pending INTEGER NOT NULL DEFAULT 0",
-    );
-    await tx.execAsync("ALTER TABLE recording_evidence_sessions ADD COLUMN cleanup_error TEXT");
-    await tx.execAsync(
-      "ALTER TABLE recording_evidence_sessions ADD COLUMN cleanup_attempts INTEGER NOT NULL DEFAULT 0",
-    );
-    await tx.execAsync(
-      "ALTER TABLE recording_evidence_sessions ADD COLUMN next_cleanup_at INTEGER",
-    );
-  }
-  await tx.execAsync(
-    "CREATE INDEX IF NOT EXISTS recording_evidence_accepted_cleanup_due ON recording_evidence_sessions(state, cleanup_pending, next_cleanup_at)",
-  );
+): Promise<void> {
+  await tx.execAsync(`CREATE TABLE recording_evidence_sessions (session_id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('active', 'fenced', 'finalized', 'accepted', 'quarantined')), next_sequence INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, finalized_path TEXT, finalized_size INTEGER, finalized_sha256 TEXT, finalized_artifact_json TEXT, finalized_artifact_digest TEXT, next_stream_order INTEGER NOT NULL DEFAULT 0, checkpoint_json TEXT, checkpoint_digest TEXT, cleanup_pending INTEGER NOT NULL DEFAULT 0, cleanup_error TEXT, cleanup_attempts INTEGER NOT NULL DEFAULT 0, next_cleanup_at INTEGER);
+    CREATE TABLE recording_gps_envelopes (session_id TEXT NOT NULL REFERENCES recording_evidence_sessions(session_id), sequence INTEGER NOT NULL, timestamp INTEGER NOT NULL, payload TEXT NOT NULL, byte_size INTEGER NOT NULL, sha256 TEXT NOT NULL, commit_marker TEXT NOT NULL, PRIMARY KEY (session_id, sequence));
+    CREATE INDEX recording_gps_envelopes_session_sequence ON recording_gps_envelopes(session_id, sequence);
+    CREATE TABLE recording_evidence_meta (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);
+    CREATE TABLE recording_evidence_quarantine (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, reason TEXT NOT NULL, payload TEXT, quarantined_at INTEGER NOT NULL);
+    CREATE UNIQUE INDEX one_active_recording_evidence_per_profile ON recording_evidence_sessions(profile_id) WHERE state = 'active';
+    CREATE TABLE recording_stream_envelopes (session_id TEXT NOT NULL REFERENCES recording_evidence_sessions(session_id), stream_kind TEXT NOT NULL, sequence INTEGER NOT NULL, stream_order INTEGER NOT NULL, timestamp INTEGER NOT NULL, payload TEXT NOT NULL, byte_size INTEGER NOT NULL, sha256 TEXT NOT NULL, commit_marker TEXT NOT NULL, version INTEGER NOT NULL, PRIMARY KEY (session_id, stream_kind, sequence), UNIQUE (session_id, stream_kind, stream_order));
+    CREATE INDEX recording_stream_envelopes_recovery ON recording_stream_envelopes(session_id, stream_kind, sequence);
+    CREATE UNIQUE INDEX recording_stream_envelopes_global_order ON recording_stream_envelopes(session_id, stream_order);
+    CREATE TABLE activity_submission_queue_jobs (id TEXT PRIMARY KEY NOT NULL, operation_id TEXT NOT NULL UNIQUE, profile_id TEXT NOT NULL, session_id TEXT NOT NULL, artifact_id TEXT NOT NULL, status TEXT NOT NULL, attempts INTEGER NOT NULL, retry_class TEXT NOT NULL, next_attempt_at INTEGER, error_category TEXT, lease_owner TEXT, lease_token TEXT, lease_expires_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, job_json TEXT NOT NULL, schema_version INTEGER NOT NULL);
+    CREATE INDEX activity_submission_queue_due ON activity_submission_queue_jobs(profile_id, status, next_attempt_at, lease_expires_at);
+    CREATE TABLE activity_submission_queue_quarantine (id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT, reason TEXT NOT NULL, quarantined_at INTEGER NOT NULL);
+    CREATE TABLE recording_evidence_acceptance_tombstones (operation_id TEXT PRIMARY KEY NOT NULL, activity_id TEXT NOT NULL, accepted_at INTEGER NOT NULL);
+    CREATE INDEX recording_evidence_accepted_cleanup_due ON recording_evidence_sessions(state, cleanup_pending, next_cleanup_at);`);
 }
 
 /** Public initializer so adapter-level tests exercise the production protocol. */
 export async function initializeRecordingEvidenceDatabase(
   db: RecordingEvidenceSqlExecutor,
 ): Promise<void> {
-  try {
-    // Read before *any* schema DDL. A newer database is not safe for this binary to touch.
-    const pragma = await db.getAllAsync<{ user_version?: number }>("PRAGMA user_version");
-    const version = pragma[0]?.user_version ?? 0;
-    if (version > SCHEMA_VERSION) throw new Error("unsupported-recording-evidence-schema");
-    // Dropping the referenced parent during the v4 CHECK rebuild is only safe
-    // when SQLite FK enforcement was disabled before the exclusive transaction.
-    // It is restored after the version marker commits; no application writes can
-    // interleave with this initializer.
-    const mayRebuildSessions = version < SCHEMA_VERSION;
-    if (mayRebuildSessions) await db.execAsync("PRAGMA foreign_keys = OFF");
-    const steps: Array<() => Promise<void>> = [
-      async () =>
-        db.withExclusiveTransactionAsync(async (tx) => {
-          await migrateV1(tx);
-          await tx.execAsync("PRAGMA user_version = 1");
-        }),
-      async () =>
-        db.withExclusiveTransactionAsync(async (tx) => {
-          await migrateV2(tx);
-          await tx.execAsync("PRAGMA user_version = 2");
-        }),
-      async () =>
-        db.withExclusiveTransactionAsync(async (tx) => {
-          await migrateV3(tx);
-          await tx.execAsync("PRAGMA user_version = 3");
-        }),
-      async () =>
-        db.withExclusiveTransactionAsync(async (tx) => {
-          await migrateV4(tx);
-          await tx.execAsync("PRAGMA user_version = 4");
-        }),
-      async () =>
-        db.withExclusiveTransactionAsync(async (tx) => {
-          await migrateV5(tx);
-          await tx.execAsync("PRAGMA user_version = 5");
-        }),
-    ];
-    for (let current = version; current < SCHEMA_VERSION; current += 1) {
-      const step = steps[current];
-      if (!step) throw new Error("unsupported-recording-evidence-schema");
-      await step();
-    }
-  } finally {
-    // Foreign-key enforcement is scoped to this connection. Re-enable it after
-    // a rebuild and on every current-schema reopen before callers can operate.
-    await db.execAsync("PRAGMA foreign_keys = ON");
+  const pragma = await db.getAllAsync<{ user_version?: number }>("PRAGMA user_version");
+  const version = pragma[0]?.user_version ?? 0;
+  if (version !== 0 && version !== CURRENT_SCHEMA_VERSION)
+    throw new Error("unsupported-recording-evidence-schema");
+  if (version === 0) {
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      await createCurrentRecordingEvidenceSchema(tx);
+      await tx.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);
+    });
   }
+  await db.execAsync("PRAGMA foreign_keys = ON");
 }
 
-/** Queue/migration storage shares the recorder's SQLite durability boundary. */
+/** Queue storage shares the recorder's SQLite durability boundary. */
 export async function withRecordingEvidenceTransaction<T>(
   task: (transaction: RecordingEvidenceSqlExecutor) => Promise<T>,
 ): Promise<T> {
@@ -362,20 +160,6 @@ function assertStreamEnvelope(input: Omit<RecordingStreamEnvelope, "sequence" | 
   ) {
     throw new Error("invalid-stream-envelope");
   }
-}
-
-async function activeStreamSession(
-  tx: RecordingEvidenceSqlExecutor,
-): Promise<{ session_id: string }> {
-  const active = await tx.getAllAsync<{ session_id: string }>(
-    "SELECT session_id FROM recording_evidence_sessions WHERE state = 'active' ORDER BY created_at",
-  );
-  if (active.length !== 1 || !active[0]) {
-    for (const session of active)
-      await quarantineEvidence(tx, session.session_id, "ambiguous-active-session");
-    throw new Error("Recording evidence has no unambiguous active session");
-  }
-  return active[0];
 }
 
 async function appendStreamEnvelopes(
@@ -530,30 +314,25 @@ export function createRecordingStreamJournalAdapter(input: {
   };
 }
 
-/** Compatibility adapter for foreground callers; it binds each operation to the sole active SQLite session. */
-export function createActiveRecordingStreamJournalAdapter(): RecordingStreamJournalAdapter {
-  return {
-    async append(envelopes) {
-      const db = await getRecordingEvidenceDatabase();
-      let sessionId = "";
-      await db.withExclusiveTransactionAsync(async (tx) => {
-        sessionId = (await activeStreamSession(tx)).session_id;
-      });
-      await appendStreamEnvelopes(sessionId, undefined, envelopes);
-    },
-    async recover() {
-      const db = await getRecordingEvidenceDatabase();
-      let sessionId = "";
-      await db.withExclusiveTransactionAsync(async (tx) => {
-        sessionId = (await activeStreamSession(tx)).session_id;
-      });
-      return recoverStreamEnvelopes(sessionId);
-    },
-  };
-}
-
 export function resetRecordingEvidenceJournalForTests(): void {
   databasePromise = undefined;
+  claimedCheckpointSessionId = null;
+}
+
+/**
+ * Removes all recorder evidence authority for a contract-epoch reset. The
+ * cached handle is closed before deletion and is forgotten even when close or
+ * deletion fails, allowing the next startup attempt to retry safely.
+ */
+export async function resetRecordingEvidenceJournal(): Promise<void> {
+  const pendingDatabase = databasePromise;
+  databasePromise = undefined;
+  claimedCheckpointSessionId = null;
+  const database = await pendingDatabase;
+  if (database?.closeAsync) await database.closeAsync();
+  const SQLite = await import("expo-sqlite");
+  await SQLite.deleteDatabaseAsync(DATABASE_NAME);
+  await getRecordingEvidenceDatabase();
 }
 
 /** Test-only adapter seam; production always opens the Expo SQLite authority. */
@@ -612,15 +391,13 @@ export async function quarantineRecordingEvidenceSession(input: {
       );
     }
   });
+  if (quarantined && claimedCheckpointSessionId === input.sessionId) {
+    claimedCheckpointSessionId = null;
+  }
   return quarantined;
 }
 
-/**
- * Corrupt compatibility storage has no reliable identity.  Never infer one
- * from it; instead release only this profile's active rows whose SQLite
- * checkpoint is absent, malformed, fails its authoritative digest, or fails
- * the recorder's strict schema, version, and owner/session invariants.
- */
+/** Quarantine active SQLite rows whose stored checkpoint fails strict validation. */
 export async function quarantineOrphanedActiveRecordingEvidenceSessions(
   profileId: string,
   validateCheckpoint: RecordingEvidenceCheckpointValidator,
@@ -665,7 +442,7 @@ export async function quarantineOrphanedActiveRecordingEvidenceSessions(
           await quarantineEvidence(
             tx,
             null,
-            "checkpoint:orphaned-unreadable-compatibility",
+            "checkpoint:orphaned-unreadable",
             JSON.stringify({ sessionId: session.session_id }),
           );
         }
@@ -736,7 +513,6 @@ export async function allocateRecordingEvidenceSession(input: {
   });
 }
 
-/** Checkpoints are SQLite-authoritative; AsyncStorage is only a compatibility mirror. */
 export async function persistRecordingEvidenceCheckpoint(input: {
   sessionId: string;
   profileId: string;
@@ -770,10 +546,17 @@ export async function persistRecordingEvidenceCheckpoint(input: {
 /**
  * SQLite is the recovery authority.  A finalized session has already handed its
  * artifact to the queue and must never compete with a new active session for a
- * checkpoint; a fenced row is considered only when it has an explicit rebuild
- * marker.  This ordering deliberately does not depend on wall-clock ordering.
+ * checkpoint. This ordering deliberately does not depend on wall-clock ordering.
  */
-export async function loadRecordingEvidenceCheckpoint(profileId: string): Promise<string | null> {
+export type RecordingEvidenceCheckpointRow = {
+  sessionId: string;
+  checkpointJson: string;
+};
+
+/** Returns the only recoverable checkpoint row for a profile. */
+export async function readRecordingEvidenceCheckpoint(
+  profileId: string,
+): Promise<RecordingEvidenceCheckpointRow | null> {
   const db = await getRecordingEvidenceDatabase();
   const rows = await db.getAllAsync<{
     session_id: string;
@@ -782,24 +565,73 @@ export async function loadRecordingEvidenceCheckpoint(profileId: string): Promis
   }>(
     `SELECT s.session_id, s.checkpoint_json, s.checkpoint_digest
        FROM recording_evidence_sessions s
-       LEFT JOIN recording_finalization_recovery r ON r.session_id = s.session_id
-      WHERE s.profile_id = ? AND s.checkpoint_json IS NOT NULL
-        AND (s.state = 'active' OR (s.state = 'fenced' AND r.status = 'pending'))
-      ORDER BY CASE s.state WHEN 'active' THEN 0 ELSE 1 END, s.created_at DESC`,
+       WHERE s.profile_id = ? AND s.checkpoint_json IS NOT NULL AND s.state = 'active'
+       ORDER BY s.created_at DESC`,
     profileId,
   );
-  if (rows.length !== 1) return null;
+  if (rows.length === 0) return null;
+  if (rows.length !== 1) {
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      for (const row of rows)
+        await quarantineEvidence(tx, row.session_id, "checkpoint:ambiguous-authority");
+    });
+    throw new Error("ambiguous-recording-evidence-checkpoint");
+  }
   const row = rows[0];
   if (!row) return null;
   if ((await sha256(row.checkpoint_json)) !== row.checkpoint_digest) {
-    await quarantineRecordingEvidenceSession({
-      sessionId: row.session_id,
-      profileId,
-      reason: "sqlite-checkpoint-digest-invalid",
-    });
+    await db.withExclusiveTransactionAsync((tx) =>
+      quarantineEvidence(tx, row.session_id, "checkpoint:sqlite-checkpoint-digest-invalid"),
+    );
+    if (claimedCheckpointSessionId === row.session_id) {
+      claimedCheckpointSessionId = null;
+    }
     throw new Error("sqlite-checkpoint-digest-invalid");
   }
-  return row.checkpoint_json;
+  return { sessionId: row.session_id, checkpointJson: row.checkpoint_json };
+}
+
+/** Retained for journal callers that only need the validated SQLite bytes. */
+export async function loadRecordingEvidenceCheckpoint(profileId: string): Promise<string | null> {
+  return (await readRecordingEvidenceCheckpoint(profileId))?.checkpointJson ?? null;
+}
+
+/** Claims the current SQLite checkpoint for one in-process recovery owner. */
+export async function claimRecordingEvidenceCheckpoint(
+  profileId: string,
+): Promise<RecordingEvidenceCheckpointRow | null> {
+  const row = await readRecordingEvidenceCheckpoint(profileId);
+  if (!row || claimedCheckpointSessionId) return null;
+  claimedCheckpointSessionId = row.sessionId;
+  return row;
+}
+
+export function releaseRecordingEvidenceCheckpointClaim(sessionId: string): void {
+  if (claimedCheckpointSessionId === sessionId) claimedCheckpointSessionId = null;
+}
+
+/** Clears only the exact SQLite checkpoint after its durable handoff. */
+export async function clearRecordingEvidenceCheckpoint(sessionId: string): Promise<void> {
+  const db = await getRecordingEvidenceDatabase();
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    await tx.runAsync(
+      "UPDATE recording_evidence_sessions SET checkpoint_json = NULL, checkpoint_digest = NULL WHERE session_id = ? AND state IN ('active', 'fenced', 'finalized')",
+      sessionId,
+    );
+  });
+  releaseRecordingEvidenceCheckpointClaim(sessionId);
+}
+
+/** Whether SQLite retains quarantine evidence from any recorder session. */
+export async function hasQuarantinedRecordingEvidence(): Promise<boolean> {
+  const db = await getRecordingEvidenceDatabase();
+  return (
+    (
+      await db.getAllAsync<{ present: number }>(
+        "SELECT 1 AS present FROM recording_evidence_quarantine LIMIT 1",
+      )
+    ).length > 0
+  );
 }
 
 /** Removes an allocated-but-not-active session from the active pointer. */
@@ -986,13 +818,45 @@ async function finalizedArtifactMatches(session: {
 
 export type FinalizedArtifactReferenceRecovery =
   | { status: "healthy"; sessionId: string }
-  | { status: "rebuild-pending"; sessionId: string; reason: string }
-  | { status: "blocked"; sessionId: string; reason: string };
+  | { status: "quarantined"; sessionId: string; reason: string };
+
+async function validateCurrentFinalizedHandoff(session: {
+  session_id: string;
+  profile_id: string;
+  finalized_path: string | null;
+  finalized_size: number | null;
+  finalized_sha256: string | null;
+  finalized_artifact_json: string | null;
+  finalized_artifact_digest: string | null;
+}): Promise<void> {
+  if (
+    !session.finalized_path ||
+    !session.finalized_size ||
+    !/^[0-9a-f]{64}$/.test(session.finalized_sha256 ?? "") ||
+    !session.finalized_artifact_json ||
+    !/^[0-9a-f]{64}$/.test(session.finalized_artifact_digest ?? "")
+  ) {
+    throw new Error("finalized-current-fields-missing");
+  }
+  if ((await sha256(session.finalized_artifact_json)) !== session.finalized_artifact_digest) {
+    throw new Error("finalized-handoff-digest-invalid");
+  }
+  const artifact = recordingSessionArtifactSchema.parse(
+    JSON.parse(session.finalized_artifact_json),
+  );
+  if (
+    artifact.sessionId !== session.session_id ||
+    artifact.profileId !== session.profile_id ||
+    artifact.activityFilePath !== session.finalized_path
+  ) {
+    throw new Error("finalized-handoff-owner-invalid");
+  }
+}
 
 /**
- * Revalidates SQLite's derived FIT reference. A bad derived file never taints
- * the committed stream/GPS evidence: its reference is removed and the already
- * fenced session becomes a durable rebuild candidate.
+ * Revalidates a current-epoch finalized handoff before startup can replay it.
+ * Incomplete rows cannot establish current finalization authority, so they are
+ * quarantined rather than being upgraded into rebuild or retry state.
  */
 export async function inspectFinalizedArtifactReferences(
   profileId: string,
@@ -1002,6 +866,7 @@ export async function inspectFinalizedArtifactReferences(
   await db.withExclusiveTransactionAsync(async (tx) => {
     const sessions = await tx.getAllAsync<{
       session_id: string;
+      profile_id: string;
       state: string;
       finalized_path: string | null;
       finalized_size: number | null;
@@ -1010,115 +875,36 @@ export async function inspectFinalizedArtifactReferences(
       finalized_artifact_digest: string | null;
       checkpoint_json: string | null;
       checkpoint_digest: string | null;
-      recovery_status: "pending" | "blocked" | null;
-      recovery_reason: string | null;
     }>(
-      `SELECT s.session_id, s.state, s.finalized_path, s.finalized_size, s.finalized_sha256, s.finalized_artifact_json, s.finalized_artifact_digest, s.checkpoint_json, s.checkpoint_digest,
-          r.status AS recovery_status, r.reason AS recovery_reason
+      `SELECT s.session_id, s.profile_id, s.state, s.finalized_path, s.finalized_size, s.finalized_sha256, s.finalized_artifact_json, s.finalized_artifact_digest
         FROM recording_evidence_sessions s
-        LEFT JOIN recording_finalization_recovery r ON r.session_id = s.session_id
-        WHERE s.profile_id = ? AND (s.state = 'finalized' OR r.status IS NOT NULL)`,
+        WHERE s.profile_id = ? AND s.state = 'finalized'`,
       profileId,
     );
     for (const session of sessions) {
-      if (session.recovery_status === "blocked") {
-        recovered.push({
-          status: "blocked",
-          sessionId: session.session_id,
-          reason: session.recovery_reason ?? "finalization-rebuild-blocked",
-        });
-        continue;
-      }
-      if (session.recovery_status === "pending") {
-        recovered.push({
-          status: "rebuild-pending",
-          sessionId: session.session_id,
-          reason: session.recovery_reason ?? "finalized-artifact-mismatch",
-        });
-        continue;
-      }
-      if (await finalizedArtifactMatches(session)) {
-        // A pre-atomic-finalization row can have validated bytes but no durable
-        // handoff. Never submit that file based on its path alone. A complete
-        // handoff payload is re-enqueued by startup; otherwise only a bounded,
-        // digest-verified checkpoint may rebuild it.
-        if (!session.finalized_artifact_json) {
-          const checkpointUsable = Boolean(
-            session.checkpoint_json &&
-              session.checkpoint_digest &&
-              (await sha256(session.checkpoint_json)) === session.checkpoint_digest,
-          );
-          const reason = checkpointUsable
-            ? "legacy-finalized-handoff-missing"
-            : "legacy-finalized-recovery-manifest-missing";
-          await tx.runAsync(
-            "UPDATE recording_evidence_sessions SET state = 'fenced' WHERE session_id = ? AND state = 'finalized'",
-            session.session_id,
-          );
-          await tx.runAsync(
-            "INSERT OR REPLACE INTO recording_finalization_recovery (session_id, status, reason, updated_at) VALUES (?, ?, ?, ?)",
-            session.session_id,
-            checkpointUsable ? "pending" : "blocked",
-            reason,
-            Date.now(),
-          );
-          recovered.push({
-            status: checkpointUsable ? "rebuild-pending" : "blocked",
-            sessionId: session.session_id,
-            reason,
-          });
-          continue;
+      try {
+        await validateCurrentFinalizedHandoff(session);
+        if (!(await finalizedArtifactMatches(session))) {
+          throw new Error("finalized-artifact-mismatch");
         }
         recovered.push({ status: "healthy", sessionId: session.session_id });
-        continue;
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "finalized-handoff-invalid";
+        await tx.runAsync(
+          "UPDATE recording_evidence_sessions SET state = 'quarantined' WHERE session_id = ? AND state = 'finalized'",
+          session.session_id,
+        );
+        await quarantineEvidence(
+          tx,
+          null,
+          reason,
+          JSON.stringify({ sessionId: session.session_id }),
+        );
+        recovered.push({ status: "quarantined", sessionId: session.session_id, reason });
       }
-      const reference = session.finalized_path;
-      await tx.runAsync(
-        "UPDATE recording_evidence_sessions SET state = 'fenced', finalized_path = NULL, finalized_size = NULL, finalized_sha256 = NULL WHERE session_id = ? AND state = 'finalized'",
-        session.session_id,
-      );
-      await tx.runAsync(
-        "INSERT OR REPLACE INTO recording_finalization_recovery (session_id, status, reason, updated_at) VALUES (?, 'pending', 'finalized-artifact-mismatch', ?)",
-        session.session_id,
-        Date.now(),
-      );
-      await quarantineEvidence(
-        tx,
-        null,
-        "finalized-artifact-mismatch",
-        JSON.stringify({ sessionId: session.session_id, path: reference }),
-      );
-      // This is the derived FIT path recorded above, never a stream/GPS evidence path.
-      if (reference) {
-        try {
-          const { File } = await import("expo-file-system");
-          const file = new File(reference);
-          if (file.exists) file.delete();
-        } catch {}
-      }
-      recovered.push({
-        status: "rebuild-pending",
-        sessionId: session.session_id,
-        reason: "finalized-artifact-mismatch",
-      });
     }
   });
   return recovered;
-}
-
-export async function blockFinalizedArtifactRebuild(
-  sessionId: string,
-  reason: string,
-): Promise<void> {
-  const db = await getRecordingEvidenceDatabase();
-  await db.withExclusiveTransactionAsync(async (tx) => {
-    await tx.runAsync(
-      "UPDATE recording_finalization_recovery SET status = 'blocked', reason = ?, updated_at = ? WHERE session_id = ?",
-      reason,
-      Date.now(),
-      sessionId,
-    );
-  });
 }
 
 /** Validates every persisted byte; corrupt evidence is isolated without blocking other sessions. */
@@ -1240,10 +1026,6 @@ export async function recordValidatedFinalizedArtifact(input: {
     );
     if (state[0]?.state !== "finalized")
       throw new Error("Recording evidence artifact cannot be committed");
-    await tx.runAsync(
-      "DELETE FROM recording_finalization_recovery WHERE session_id = ?",
-      input.sessionId,
-    );
   });
 }
 
@@ -1279,10 +1061,6 @@ export async function commitFinalizedArtifactAndHandoff(input: {
       input.sha256,
       payload,
       digest,
-      input.sessionId,
-    );
-    await tx.runAsync(
-      "DELETE FROM recording_finalization_recovery WHERE session_id = ?",
       input.sessionId,
     );
   });
@@ -1502,10 +1280,6 @@ export async function discardFinalizedRecordingEvidence(input: {
           row.id,
         );
       }
-      await tx.runAsync(
-        "DELETE FROM recording_finalization_recovery WHERE session_id = ?",
-        input.sessionId,
-      );
       return;
     }
     if (session.state === "quarantined") {
@@ -1650,11 +1424,7 @@ export async function tombstoneAcceptedRecordingEvidence(
       sessionId,
       job.artifactId,
     );
-    const rebuilding = await tx.getAllAsync<{ session_id: string }>(
-      "SELECT session_id FROM recording_finalization_recovery WHERE session_id = ?",
-      sessionId,
-    );
-    if (peers.length || rebuilding.length) return;
+    if (peers.length) return;
     await tx.runAsync(
       "INSERT OR IGNORE INTO recording_evidence_acceptance_tombstones (operation_id, activity_id, accepted_at) VALUES (?, ?, ?)",
       operationId,
@@ -1764,7 +1534,6 @@ export async function garbageCollectExpiredRecordingEvidence(
       `SELECT s.session_id FROM recording_evidence_sessions s
        WHERE s.state = 'quarantined' AND s.created_at <= ?
          AND NOT EXISTS (SELECT 1 FROM activity_submission_queue_jobs q WHERE q.status != 'complete' AND COALESCE(q.error_category, '') != 'discarded' AND (q.session_id = s.session_id OR q.artifact_id = s.session_id))
-        AND NOT EXISTS (SELECT 1 FROM recording_finalization_recovery r WHERE r.session_id = s.session_id)
         AND NOT EXISTS (SELECT 1 FROM recording_evidence_quarantine dq WHERE dq.session_id = s.session_id AND dq.reason = 'user-discarded-finalized-recording' AND dq.payload LIKE '%"cleanupPending":true%')
         ORDER BY s.created_at LIMIT ?`,
       now - RAW_TERMINAL_EVIDENCE_RETENTION_MS,

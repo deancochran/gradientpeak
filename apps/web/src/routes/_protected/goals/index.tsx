@@ -1,3 +1,4 @@
+import { type CanonicalActivityCategory, canonicalActivityCategorySchema } from "@repo/core";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
@@ -9,19 +10,23 @@ import { api } from "../../../lib/api/client";
 import { formatShortDayLabel } from "../../../lib/planning";
 
 export const Route = createFileRoute("/_protected/goals/")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    category: typeof search.category === "string" ? search.category : undefined,
-    flash: typeof search.flash === "string" ? search.flash : undefined,
-    flashType: search.flashType as RouteFlashType | undefined,
-    q: typeof search.q === "string" ? search.q : "",
-    sort: search.sort === "priority" || search.sort === "created_at" ? search.sort : "target_date",
-  }),
+  validateSearch: (search: Record<string, unknown>) => {
+    const category = canonicalActivityCategorySchema.safeParse(search.category);
+    return {
+      category: category.success ? category.data : undefined,
+      flash: typeof search.flash === "string" ? search.flash : undefined,
+      flashType: search.flashType as RouteFlashType | undefined,
+      q: typeof search.q === "string" ? search.q : "",
+      sort:
+        search.sort === "priority" || search.sort === "created_at" ? search.sort : "target_date",
+    };
+  },
   component: GoalsPage,
 });
 
 function GoalsPage() {
   const search = Route.useSearch() as {
-    category?: string;
+    category?: CanonicalActivityCategory;
     flash?: string;
     flashType?: RouteFlashType;
     q: string;
@@ -32,13 +37,16 @@ function GoalsPage() {
     {
       profile_id: profileQuery.data?.id ?? "00000000-0000-0000-0000-000000000000",
       ...(search.q.trim() ? { search: search.q.trim() } : {}),
-      ...(search.category ? { activity_category: search.category as "run" } : {}),
+      ...(search.category ? { activity_category: search.category } : {}),
       sort_by: search.sort,
       sort_order: search.sort === "priority" ? "desc" : "asc",
       limit: 50,
     },
     { enabled: Boolean(profileQuery.data?.id) },
   );
+  const isProfileUnavailable = profileQuery.isSuccess && !profileQuery.data;
+  const hasQueryError = profileQuery.isError || isProfileUnavailable || goalsQuery.isError;
+  const isQueryLoading = profileQuery.isLoading || goalsQuery.isLoading;
 
   return (
     <div className="space-y-6">
@@ -55,7 +63,9 @@ function GoalsPage() {
           </p>
         </div>
         <Button asChild>
-          <a href="/goals/new">Create goal</a>
+          <a data-testid="goal-create" href="/goals/new">
+            Create goal
+          </a>
         </Button>
       </div>
       <form method="get" className="grid gap-3 rounded-xl border p-4 sm:grid-cols-3">
@@ -92,14 +102,22 @@ function GoalsPage() {
           Apply filters
         </Button>
       </form>
-      {goalsQuery.isError ? (
+      {hasQueryError ? (
         <div role="alert" className="rounded-xl border border-destructive/40 p-4">
           <p>Goals could not be loaded.</p>
           <Button
             className="mt-3"
+            data-testid="goal-list-retry"
             size="sm"
+            type="button"
             variant="outline"
-            onClick={() => void goalsQuery.refetch()}
+            onClick={() => {
+              if (profileQuery.isError || isProfileUnavailable) {
+                void profileQuery.refetch();
+                return;
+              }
+              void goalsQuery.refetch();
+            }}
           >
             Retry
           </Button>
@@ -110,11 +128,12 @@ function GoalsPage() {
           <CardTitle>{goalsQuery.data?.total ?? 0} goals</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {goalsQuery.isLoading ? (
+          {isQueryLoading ? (
             <p className="text-sm text-muted-foreground">Loading goals...</p>
           ) : null}
           {(goalsQuery.data?.items ?? []).map((goal) => (
             <a
+              data-testid={`goal-card-${goal.id}`}
               key={goal.id}
               href={`/goals/${goal.id}`}
               className="flex items-center justify-between gap-3 rounded-xl border p-4 hover:bg-accent"
@@ -131,7 +150,7 @@ function GoalsPage() {
               </div>
             </a>
           ))}
-          {!goalsQuery.isLoading && !goalsQuery.isError && goalsQuery.data?.items.length === 0 ? (
+          {!isQueryLoading && !hasQueryError && goalsQuery.data?.items.length === 0 ? (
             <p className="text-sm text-muted-foreground">No goals match these filters.</p>
           ) : null}
         </CardContent>

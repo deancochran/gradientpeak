@@ -7,7 +7,7 @@ import {
   SYSTEM_TEMPLATES,
   type SystemTemplate,
 } from "@repo/core";
-import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -47,9 +47,9 @@ function hasChanges(local: SystemTemplate, remote: ExistingActivityTemplate): bo
 }
 
 async function seedTemplates() {
-  for (const template of templates) activityPlanStructureSchemaV3.parse(template.structure);
+  for (const template of templates) activityPlanStructureSchema.parse(template.structure);
   if (isValidateOnly) {
-    console.log(`Validated ${templates.length} strict V3 system activity templates.`);
+    console.log(`Validated ${templates.length} strict current system activity templates.`);
     return;
   }
 

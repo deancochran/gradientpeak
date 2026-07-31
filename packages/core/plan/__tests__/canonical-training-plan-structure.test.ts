@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  canonicalActivityCategoryValues,
   canonicalTrainingPlanStructureSchema,
   canonicalTrainingPlanStructureSessionSchema,
+  creationConstraintsSchema,
   persistedTrainingPlanStructureSchema,
   trainingPlanCreateInputSchema,
   trainingPlanCreateSchema,
@@ -68,6 +70,62 @@ describe("canonical training plan structure", () => {
     };
 
     expect(canonicalTrainingPlanStructureSchema.parse(structure)).toEqual(structure);
+  });
+
+  it.each(
+    canonicalActivityCategoryValues,
+  )("accepts canonical plan category %s and preserves multisport ordering", (activity_category) => {
+    expect(
+      canonicalTrainingPlanStructureSchema.parse({
+        ...canonicalStructure,
+        activity_category: [activity_category, "strength"],
+      }).activity_category,
+    ).toEqual([activity_category, "strength"]);
+  });
+
+  it.each([
+    "mixed",
+    "cycling",
+    "running",
+    " bike ",
+  ])("rejects obsolete plan category alias %s", (activity_category) => {
+    expect(
+      canonicalTrainingPlanStructureSchema.safeParse({
+        ...canonicalStructure,
+        activity_category: [activity_category],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects invalid date-only values across planning snapshots and blueprints", () => {
+    expect(
+      canonicalTrainingPlanStructureSchema.safeParse({
+        ...canonicalStructure,
+        goal_blueprints: [{ title: "Event", target_offset_days: 7, activity_category: "run" }],
+        builder_planning_snapshot: {
+          version: 1,
+          plan_preferences: {
+            duration_weeks: null,
+            weekly_session_count: null,
+            target_weekly_hours: null,
+            rest_days_per_week: null,
+          },
+          scheduling: { start_date: "2026-02-29", preferred_weekdays: [] },
+          goal_context: { selected_goals: [] },
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects aliases in category-keyed creation overrides", () => {
+    expect(
+      creationConstraintsSchema.safeParse({
+        hard_rest_days: [],
+        activity_category_overrides: {
+          cycling: { min_sessions_per_week: 1 },
+        },
+      }),
+    ).toMatchObject({ success: false });
   });
 
   it("rejects real target dates in reusable goal blueprints", () => {

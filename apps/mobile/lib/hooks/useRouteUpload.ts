@@ -8,12 +8,17 @@ import * as DocumentPicker from "expo-document-picker";
 import { useRef, useState } from "react";
 import { Alert } from "react-native";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/hooks/useAuth";
 import {
   getRouteFileReadErrorMessage,
   nativeRouteFileMetadataSchema,
   RouteFileReadError,
   readRouteFileText,
 } from "@/lib/route-files/native-route-file";
+import {
+  claimRouteUploadOperation,
+  clearRouteUploadOperation,
+} from "@/lib/route-files/route-upload-operation";
 
 type UseRouteUploadParams = {
   contextLabel: string;
@@ -22,6 +27,7 @@ type UseRouteUploadParams = {
 
 export function useRouteUpload({ onRouteUploaded, contextLabel }: UseRouteUploadParams) {
   const utils = api.useUtils();
+  const { user } = useAuth();
   const [isUploadingRoute, setIsUploadingRoute] = useState(false);
   const uploadInFlightRef = useRef(false);
 
@@ -89,12 +95,25 @@ export function useRouteUpload({ onRouteUploaded, contextLabel }: UseRouteUpload
         }
 
         try {
-          return await uploadRouteMutation.mutateAsync({
-            name: deriveRouteNameFromFileName(metadata.data.name),
-            description: `Uploaded for ${contextLabel || "recording session"}`,
+          if (!user?.id) throw new Error("Authenticated profile is unavailable");
+          const name = deriveRouteNameFromFileName(metadata.data.name);
+          const description = `Uploaded for ${contextLabel || "recording session"}`;
+          const operation = await claimRouteUploadOperation({
+            description,
             fileContent: content,
             fileName: metadata.data.name,
+            name,
+            profileId: user.id,
           });
+          const uploaded = await uploadRouteMutation.mutateAsync({
+            name,
+            description,
+            fileContent: content,
+            fileName: metadata.data.name,
+            idempotencyKey: operation.idempotencyKey,
+          });
+          await clearRouteUploadOperation(operation.storageKey);
+          return uploaded;
         } catch {
           Alert.alert("Route upload failed", "Failed to upload route. Please try again.");
           return null;

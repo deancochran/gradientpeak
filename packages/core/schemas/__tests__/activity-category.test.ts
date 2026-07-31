@@ -5,7 +5,6 @@ import {
   canonicalActivityCategorySchema,
   canonicalActivityCategoryValues,
   goalTargetActivityCategorySchema,
-  planningActivityCategorySchema,
 } from "../activity-category";
 
 describe("canonical activity_category contract", () => {
@@ -19,9 +18,10 @@ describe("canonical activity_category contract", () => {
     expect(core.canonicalActivityCategoryValues).toBe(canonicalActivityCategoryValues);
   });
 
-  it("keeps named constrained schemas intentionally narrower or broader", () => {
+  it("keeps named constrained schemas intentionally narrower", () => {
     expect(activityEffortCategorySchema.options).toEqual(["run", "bike", "swim"]);
     expect(goalTargetActivityCategorySchema.options).toEqual(["run", "bike", "swim", "other"]);
-    expect(planningActivityCategorySchema.safeParse("mixed").success).toBe(true);
+    expect(canonicalActivityCategorySchema.safeParse("mixed").success).toBe(false);
+    expect(canonicalActivityCategorySchema.safeParse("cycling").success).toBe(false);
   });
 });

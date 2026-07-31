@@ -67,6 +67,7 @@ export const ROUTES = {
   ROUTES: {
     LIST: "/routes-list" as const,
     DETAIL: (routeId: string) => `/route-detail?id=${routeId}` as const,
+    EDIT: (routeId: string) => `/route-edit?id=${routeId}` as const,
     UPLOAD: "/route-upload" as const,
   },
 

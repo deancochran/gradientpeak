@@ -155,44 +155,48 @@ function GroupsLibraryPage() {
           isLoading={invitations.isLoading}
           onRetry={() => void invitations.refetch()}
         >
-          <div className="space-y-3">
-            {(invitations.data?.pages.flatMap((page) => page.items) ?? []).map((invitation) => (
-              <div
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4"
-                key={invitation.id}
-              >
-                <button
-                  className="font-semibold hover:underline"
-                  onClick={() => openGroup(invitation.group.id)}
-                  type="button"
+          {(invitations.data?.pages.flatMap((page) => page.items) ?? []).length ? (
+            <div className="space-y-3">
+              {(invitations.data?.pages.flatMap((page) => page.items) ?? []).map((invitation) => (
+                <div
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4"
+                  key={invitation.id}
                 >
-                  {invitation.group.name}
-                </button>
-                <div className="flex gap-2">
-                  <Button
-                    disabled={acceptMutation.isPending}
-                    onClick={() =>
-                      acceptMutation.mutate(
-                        { invitationId: invitation.id },
-                        { onSuccess: () => toast.success("Invitation accepted") },
-                      )
-                    }
+                  <button
+                    className="font-semibold hover:underline"
+                    onClick={() => openGroup(invitation.group.id)}
                     type="button"
                   >
-                    Accept
-                  </Button>
-                  <Button
-                    disabled={declineMutation.isPending}
-                    onClick={() => declineMutation.mutate({ invitationId: invitation.id })}
-                    type="button"
-                    variant="outline"
-                  >
-                    Decline
-                  </Button>
+                    {invitation.group.name}
+                  </button>
+                  <div className="flex gap-2">
+                    <Button
+                      disabled={acceptMutation.isPending}
+                      onClick={() =>
+                        acceptMutation.mutate(
+                          { invitationId: invitation.id },
+                          { onSuccess: () => toast.success("Invitation accepted") },
+                        )
+                      }
+                      type="button"
+                    >
+                      Accept
+                    </Button>
+                    <Button
+                      disabled={declineMutation.isPending}
+                      onClick={() => declineMutation.mutate({ invitationId: invitation.id })}
+                      type="button"
+                      variant="outline"
+                    >
+                      Decline
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyGroupList message="No pending invitations." />
+          )}
           <LoadMore query={invitations} />
         </QueryState>
       ) : null}
@@ -202,30 +206,34 @@ function GroupsLibraryPage() {
           isLoading={requests.isLoading}
           onRetry={() => void requests.refetch()}
         >
-          <div className="space-y-3">
-            {(requests.data?.pages.flatMap((page) => page.items) ?? []).map((request) => (
-              <div
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4"
-                key={request.id}
-              >
-                <button
-                  className="font-semibold hover:underline"
-                  onClick={() => openGroup(request.group.id)}
-                  type="button"
+          {(requests.data?.pages.flatMap((page) => page.items) ?? []).length ? (
+            <div className="space-y-3">
+              {(requests.data?.pages.flatMap((page) => page.items) ?? []).map((request) => (
+                <div
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4"
+                  key={request.id}
                 >
-                  {request.group.name}
-                </button>
-                <Button
-                  disabled={cancelRequestMutation.isPending}
-                  onClick={() => cancelRequestMutation.mutate({ requestId: request.id })}
-                  type="button"
-                  variant="outline"
-                >
-                  Cancel request
-                </Button>
-              </div>
-            ))}
-          </div>
+                  <button
+                    className="font-semibold hover:underline"
+                    onClick={() => openGroup(request.group.id)}
+                    type="button"
+                  >
+                    {request.group.name}
+                  </button>
+                  <Button
+                    disabled={cancelRequestMutation.isPending}
+                    onClick={() => cancelRequestMutation.mutate({ requestId: request.id })}
+                    type="button"
+                    variant="outline"
+                  >
+                    Cancel request
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyGroupList message="No pending access requests." />
+          )}
           <LoadMore query={requests} />
         </QueryState>
       ) : null}
@@ -244,6 +252,7 @@ function GroupsLibraryPage() {
                 <Button
                   onClick={() =>
                     void navigate({
+                      // biome-ignore lint/security/noSecrets: Typed route template, not a secret.
                       to: "/groups/events/$groupEventId",
                       params: { groupEventId: event.id },
                     })
@@ -282,6 +291,14 @@ function GroupGrid({
         <GroupCard group={group} key={group.id} onOpen={() => onOpen(group.id)} />
       ))}
     </div>
+  );
+}
+
+function EmptyGroupList({ message }: { message: string }) {
+  return (
+    <p className="rounded-xl border border-dashed p-8 text-center text-muted-foreground">
+      {message}
+    </p>
   );
 }
 

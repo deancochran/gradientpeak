@@ -723,8 +723,6 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
           scheduled_at: "2026-04-06T12:00:00.000Z",
           activity_category: "run",
           estimated_load: 52,
-          short_term_readiness_delta: -1.5,
-          fitness_contribution: 4.3,
           confidence: "medium",
           explanation:
             "This session contributes fitness while staying close to the recommended load path.",
@@ -776,7 +774,15 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
         score: 68,
         interpretation: "Projection confidence is improving with better adherence.",
       },
-      timeline: [{ date: "2026-04-01", ideal_tss: 42, scheduled_tss: 38, actual_tss: 0 }],
+      timeline: [
+        {
+          date: "2026-04-01",
+          recommended_load_tss: 42,
+          scheduled_load_tss: 38,
+          tentative_scheduled_load_tss: 0,
+          completed_load_tss: 0,
+        },
+      ],
     },
     refetchAll: refetchSnapshotMock,
   }),

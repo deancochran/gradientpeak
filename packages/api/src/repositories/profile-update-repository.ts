@@ -97,7 +97,7 @@ export async function syncAppendOnlyProfileMetric(
     })
     .from(profileMetrics)
     .where(overrideScope)
-    .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.idx))
+    .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.id))
     .limit(1);
 
   if (input.value === null && latest && isClearedProfileOverride(latest)) return;

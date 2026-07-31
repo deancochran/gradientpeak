@@ -15,6 +15,7 @@ export interface ApiContextAuth {
 
 export interface CreateApiContextOptions {
   headers: Headers;
+  trpcSource?: "http" | "server";
   /**
    * A network identity established by a server adapter, never a value read
    * from request headers. The Fetch adapter currently does not provide one.
@@ -51,7 +52,7 @@ export async function createApiContext(opts: CreateApiContextOptions) {
     trustedNetworkIdentity: opts.trustedNetworkIdentity,
     // Request headers are untrusted; adapters may add trusted context fields
     // explicitly, but no external header controls internal execution policy.
-    trpcSource: "server",
+    trpcSource: opts.trpcSource ?? "server",
   };
 }
 

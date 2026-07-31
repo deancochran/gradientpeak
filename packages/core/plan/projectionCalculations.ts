@@ -34,7 +34,7 @@ import {
   type DailyLoadDistributionPoint,
   type DailyLoadDistributionSchedulingConstraints,
 } from "./dailyLoadDistribution";
-import type { DailyRecommendedLoadSession } from "./dailyRecommendedLoad";
+import type { DailyLoadRecommendationSession } from "./dailyLoadRecommendation";
 import { addDaysDateOnlyUtc, diffDateOnlyUtcDays } from "./dateOnlyUtc";
 import { resolveGoalReadinessTarget } from "./goalReadinessTrajectory";
 import {
@@ -98,11 +98,7 @@ import {
 import { computeGoalGdi, computePlanGdi, type FeasibilityBand } from "./scoring/gdi";
 import { scoreGoalAssessment } from "./scoring/goalScore";
 import { scorePlanGoals } from "./scoring/planScore";
-import {
-  resolveTrainingPrescription,
-  type TrainingPrescription,
-  type TrainingPrescriptionGoalInput,
-} from "./trainingPrescription";
+import { resolveTrainingPrescription, type TrainingPrescription } from "./trainingPrescription";
 import { resolveWeeklyAllocation, type WeeklyAllocation } from "./weeklyAllocation";
 
 export { computeCapacityEnvelope } from "./projection/capacity-envelope";
@@ -1382,14 +1378,7 @@ export interface DeterministicProjectionPayload {
   start_date: string;
   end_date: string;
   points: DeterministicProjectionPoint[];
-  display_points?: DeterministicProjectionPoint[];
-  /**
-   * Daily recommended load suitable for day-level charts.
-   *
-   * Prefer this over `display_points` when rendering daily load. `points` and
-   * legacy `display_points` may represent projection milestones or weekly
-   * summaries.
-   */
+  /** Daily recommended load suitable for day-level charts. */
   daily_load_points?: DailyLoadDistributionPoint[];
   goal_markers: DeterministicProjectionGoalMarker[];
   microcycles: DeterministicProjectionMicrocycle[];
@@ -1521,7 +1510,7 @@ export interface BuildDeterministicProjectionInput {
   preference_profile?: AthletePreferenceProfile;
   training_prescription?: TrainingPrescription;
   weekly_allocation?: WeeklyAllocation;
-  planned_sessions?: DailyRecommendedLoadSession[];
+  planned_sessions?: DailyLoadRecommendationSession[];
   scheduling_constraints?: DailyLoadDistributionSchedulingConstraints;
   no_history_context?: NoHistoryAnchorContext;
   prior_inferred_snapshot?: PriorInferredStateSnapshotInput;
@@ -1687,11 +1676,7 @@ interface WeeklyTssOptimizerInput {
   currentWeekPattern: CurvatureEnvelopePattern;
 }
 
-export type WeeklyOptimizationPath =
-  | "full_mpc"
-  | "degraded_bounded_mpc"
-  | "legacy_optimizer"
-  | "cap_only_baseline";
+export type WeeklyOptimizationPath = "full_mpc" | "degraded_bounded_mpc" | "cap_only_baseline";
 
 export interface ProjectionDiagnostics {
   selected_path: WeeklyOptimizationPath;
@@ -1699,7 +1684,6 @@ export interface ProjectionDiagnostics {
   candidate_counts: {
     full_mpc: number;
     degraded_bounded_mpc: number;
-    legacy_optimizer: number;
   };
   prune_counts: {
     full_mpc: number;
@@ -2195,8 +2179,7 @@ function mergeSelectedPath(
   const rank: Record<WeeklyOptimizationPath, number> = {
     full_mpc: 0,
     degraded_bounded_mpc: 1,
-    legacy_optimizer: 2,
-    cap_only_baseline: 3,
+    cap_only_baseline: 2,
   };
 
   return rank[next] > rank[current] ? next : current;
@@ -2255,128 +2238,6 @@ function applyWeeklyTssCaps(input: WeeklyTssCapInput): WeeklyTssCapResult {
   };
 }
 
-function optimizeWeeklyAppliedTssLegacy(input: WeeklyTssOptimizerInput): {
-  selected_weekly_tss: number;
-  evaluated_candidates: number;
-  objective_contributions: ProjectionDiagnostics["objective_contributions"];
-  reference_tracking: NonNullable<ProjectionDiagnostics["reference_tracking"]>;
-} {
-  const baseline = applyWeeklyTssCaps({
-    flooredWeeklyTss: input.flooredWeeklyTss,
-    previousWeekTss: input.previousWeekTss,
-    currentCtl: input.currentCtl,
-    daysInWeek: input.daysInWeek,
-    effectiveControls: input.effectiveControls,
-  }).appliedWeeklyTss;
-
-  if (input.input.disable_weekly_tss_optimizer) {
-    return {
-      selected_weekly_tss: baseline,
-      evaluated_candidates: 0,
-      objective_contributions: createZeroObjectiveContributions(),
-      reference_tracking: createZeroReferenceTracking(),
-    };
-  }
-
-  const futureGoals = input.goalMarkers.filter((goal) => goal.target_date >= input.weekStartDate);
-  if (futureGoals.length === 0) {
-    return {
-      selected_weekly_tss: baseline,
-      evaluated_candidates: 0,
-      objective_contributions: createZeroObjectiveContributions(),
-      reference_tracking: createZeroReferenceTracking(),
-    };
-  }
-
-  const cappedUpperByCtl = findWeeklyTssForCtlRampLimit(
-    input.currentCtl,
-    input.maxAllowedByTssRamp,
-    resolveEffectiveRampCaps({
-      effectiveControls: input.effectiveControls,
-    }).max_ctl_ramp_per_week,
-    input.daysInWeek,
-  );
-  const lowerBound =
-    input.flooredWeeklyTss <= input.maxAllowedByTssRamp
-      ? input.flooredWeeklyTss
-      : input.maxAllowedByTssRamp;
-  const upperBound = Math.min(input.maxAllowedByTssRamp, cappedUpperByCtl);
-
-  if (upperBound <= lowerBound) {
-    return {
-      selected_weekly_tss: baseline,
-      evaluated_candidates: 0,
-      objective_contributions: createZeroObjectiveContributions(),
-      reference_tracking: createZeroReferenceTracking(),
-    };
-  }
-
-  const candidateValues = new Set<number>([round1(lowerBound), round1(upperBound), baseline]);
-  const optimizerCandidateSteps = input.effectiveControls.optimizer.candidate_steps;
-  for (let step = 1; step < optimizerCandidateSteps; step += 1) {
-    const ratio = step / optimizerCandidateSteps;
-    candidateValues.add(round1(lowerBound + (upperBound - lowerBound) * ratio));
-  }
-
-  let bestTss = baseline;
-  let bestScore = Number.NEGATIVE_INFINITY;
-  let evaluatedCandidates = 0;
-  let bestObjectiveContributions = createZeroObjectiveContributions();
-  let bestReferenceTracking = createZeroReferenceTracking();
-
-  for (const candidateTss of [...candidateValues].sort((a, b) => a - b)) {
-    evaluatedCandidates += 1;
-    const constrainedCandidate = applyWeeklyTssCaps({
-      flooredWeeklyTss: input.flooredWeeklyTss,
-      previousWeekTss: input.previousWeekTss,
-      currentCtl: input.currentCtl,
-      daysInWeek: input.daysInWeek,
-      effectiveControls: input.effectiveControls,
-      preferredWeeklyTss: candidateTss,
-    }).appliedWeeklyTss;
-
-    const objective = evaluateWeeklyTssCandidateObjectiveDetails({
-      ...input,
-      candidateWeeklyTss: constrainedCandidate,
-      baselineWeeklyTss: baseline,
-    });
-    const score = objective.objective_score;
-
-    if (score > bestScore) {
-      bestScore = score;
-      bestTss = constrainedCandidate;
-      bestObjectiveContributions = {
-        sampled_weeks: 1,
-        objective_score: objective.objective_score,
-        weighted_terms: objective.weighted_terms,
-      };
-      bestReferenceTracking = objective.reference_tracking;
-      continue;
-    }
-
-    if (score === bestScore) {
-      const currentDistance = Math.abs(constrainedCandidate - baseline);
-      const bestDistance = Math.abs(bestTss - baseline);
-      if (currentDistance < bestDistance) {
-        bestTss = constrainedCandidate;
-        bestObjectiveContributions = {
-          sampled_weeks: 1,
-          objective_score: objective.objective_score,
-          weighted_terms: objective.weighted_terms,
-        };
-        bestReferenceTracking = objective.reference_tracking;
-      }
-    }
-  }
-
-  return {
-    selected_weekly_tss: bestTss,
-    evaluated_candidates: evaluatedCandidates,
-    objective_contributions: bestObjectiveContributions,
-    reference_tracking: bestReferenceTracking,
-  };
-}
-
 function solveWeeklyAppliedTssWithFallback(
   input: WeeklyTssOptimizerInput,
 ): WeeklyOptimizationDecision {
@@ -2395,7 +2256,6 @@ function solveWeeklyAppliedTssWithFallback(
     candidate_counts: {
       full_mpc: 0,
       degraded_bounded_mpc: 0,
-      legacy_optimizer: 0,
     },
     prune_counts: {
       full_mpc: 0,
@@ -2664,39 +2524,15 @@ function solveWeeklyAppliedTssWithFallback(
     degradedFailure = "degraded_mpc_error";
   }
 
-  const legacy = optimizeWeeklyAppliedTssLegacy(input);
-  if (Number.isFinite(legacy.selected_weekly_tss)) {
-    return {
-      selected_weekly_tss: legacy.selected_weekly_tss,
-      diagnostics: {
-        ...baseDiagnostics,
-        selected_path: "legacy_optimizer",
-        fallback_reason:
-          fullMpcFailure !== null || degradedFailure !== null
-            ? [fullMpcFailure, degradedFailure]
-                .filter((reason): reason is string => reason !== null)
-                .join("|")
-            : null,
-        candidate_counts: {
-          ...baseDiagnostics.candidate_counts,
-          legacy_optimizer: legacy.evaluated_candidates,
-        },
-        objective_contributions: legacy.objective_contributions,
-        reference_tracking: legacy.reference_tracking,
-        convergence_guard: {
-          ...convergenceGuard,
-          stability_assertions: [...convergenceGuard.stability_assertions],
-        },
-      },
-    };
-  }
-
   return {
     selected_weekly_tss: baselineDecision.appliedWeeklyTss,
     diagnostics: {
       ...baseDiagnostics,
       selected_path: "cap_only_baseline",
-      fallback_reason: "legacy_optimizer_unavailable",
+      fallback_reason:
+        [fullMpcFailure, degradedFailure]
+          .filter((reason): reason is string => reason !== null)
+          .join("|") || "bounded_mpc_unavailable",
       convergence_guard: {
         ...convergenceGuard,
         stability_assertions: [...convergenceGuard.stability_assertions],
@@ -3657,13 +3493,13 @@ function resolveRiskLevel(input: {
 /**
  * Builds a deterministic weekly projection with explicit ramp caps and post-goal recovery windows.
  */
-export function buildDeterministicProjectionPayload(
+export function buildDeterministicProjectionPayloadInternal(
   input: BuildDeterministicProjectionInput,
 ): DeterministicProjectionPayload {
-  return buildDeterministicProjectionPayloadInternal(input);
+  return buildDeterministicProjectionPayloadFromInputs(input);
 }
 
-function buildDeterministicProjectionPayloadInternal(
+function buildDeterministicProjectionPayloadFromInputs(
   input: BuildDeterministicProjectionInput,
   precomputedReferenceContext?: ProjectionReferenceContext,
 ): DeterministicProjectionPayload {
@@ -3675,7 +3511,7 @@ function buildDeterministicProjectionPayloadInternal(
   const effectiveControls = resolveEffectiveProjectionControls({
     normalized_config: normalizedConfig,
     calibration,
-    ...optionalProperty("behavior_controls_v1", input.creation_config?.behavior_controls_v1),
+    ...optionalProperty("behavior_controls", input.creation_config?.behavior_controls),
   });
   const goalMarkers = input.goals
     .map((goal, index) => ({
@@ -3841,7 +3677,6 @@ function buildDeterministicProjectionPayloadInternal(
     candidate_counts: {
       full_mpc: 0,
       degraded_bounded_mpc: 0,
-      legacy_optimizer: 0,
     },
     prune_counts: {
       full_mpc: 0,
@@ -3951,8 +3786,6 @@ function buildDeterministicProjectionPayloadInternal(
       weeklyDecision.diagnostics.candidate_counts.full_mpc;
     projectionDiagnostics.candidate_counts.degraded_bounded_mpc +=
       weeklyDecision.diagnostics.candidate_counts.degraded_bounded_mpc;
-    projectionDiagnostics.candidate_counts.legacy_optimizer +=
-      weeklyDecision.diagnostics.candidate_counts.legacy_optimizer;
     projectionDiagnostics.prune_counts.full_mpc += weeklyDecision.diagnostics.prune_counts.full_mpc;
     projectionDiagnostics.prune_counts.degraded_bounded_mpc +=
       weeklyDecision.diagnostics.prune_counts.degraded_bounded_mpc;
@@ -4256,7 +4089,7 @@ function buildDeterministicProjectionPayloadInternal(
   const trainingPrescription =
     input.training_prescription ??
     resolveTrainingPrescription({
-      goals: input.goals as TrainingPrescriptionGoalInput[],
+      goals: [],
       ...optionalProperty("preferences", input.preference_profile),
     });
   const weeklyAllocation =
@@ -4595,7 +4428,6 @@ function buildDeterministicProjectionPayloadInternal(
     start_date: startDate,
     end_date: endDate,
     points: pointsWithReadiness,
-    display_points: pointsWithReadiness,
     daily_load_points: dailyLoadPoints,
     goal_markers: goalMarkers,
     microcycles,

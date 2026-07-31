@@ -110,13 +110,21 @@ export function EntityMapCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
+        <CardTitle aria-level={2} role="heading">
+          {title}
+        </CardTitle>
         {subtitle ? <CardDescription>{subtitle}</CardDescription> : null}
       </CardHeader>
       <CardContent>
         {points ? (
           <div className="overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-sky-50 via-background to-emerald-50 dark:from-sky-950/30 dark:to-emerald-950/20">
-            <svg className="block h-72 w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <svg
+              aria-label={`${title} map`}
+              className="block h-72 w-full"
+              preserveAspectRatio="none"
+              role="img"
+              viewBox="0 0 100 100"
+            >
               <defs>
                 <linearGradient id="route-line" x1="0%" x2="100%" y1="0%" y2="100%">
                   <stop offset="0%" stopColor="currentColor" stopOpacity="0.95" />
@@ -159,7 +167,12 @@ export function ElevationProfileCard({ coordinates }: { coordinates: RouteCoordi
       </CardHeader>
       <CardContent>
         <div className="overflow-hidden rounded-2xl border border-border bg-muted/20 p-4">
-          <svg className="block h-32 w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <svg
+            aria-hidden="true"
+            className="block h-32 w-full"
+            preserveAspectRatio="none"
+            viewBox="0 0 100 100"
+          >
             <polyline
               className="text-primary"
               fill="none"
@@ -181,11 +194,13 @@ export function LikeToggleButton({
   liked,
   onClick,
   pending = false,
+  retryLabel,
 }: {
   count: number;
   liked: boolean;
   onClick: () => void;
   pending?: boolean;
+  retryLabel?: string;
 }) {
   return (
     <Button
@@ -196,7 +211,10 @@ export function LikeToggleButton({
       variant="outline"
     >
       <Heart className={cn("h-4 w-4", liked && "fill-current")} />
-      <span>{count > 0 ? `${count} like${count === 1 ? "" : "s"}` : liked ? "Liked" : "Like"}</span>
+      <span>
+        {retryLabel ??
+          (count > 0 ? `${count} like${count === 1 ? "" : "s"}` : liked ? "Liked" : "Like")}
+      </span>
     </Button>
   );
 }
@@ -221,7 +239,10 @@ export function ActivityListCard({ activity, onOpen }: { activity: any; onOpen: 
   const elapsedSeconds =
     activity.elapsed_ms != null ? Math.round(activity.elapsed_ms / 1000) : null;
   return (
-    <Card className="transition-colors hover:border-primary/30">
+    <Card
+      className="transition-colors hover:border-primary/30"
+      data-testid={`activity-card-${activity.id}`}
+    >
       <CardContent className="space-y-4 p-4">
         <div className="flex items-start gap-3">
           <ActivityCategoryIcons categories={categories ?? []} />
@@ -237,7 +258,12 @@ export function ActivityListCard({ activity, onOpen }: { activity: any; onOpen: 
               <p className="line-clamp-2 text-sm text-muted-foreground">{activity.notes}</p>
             ) : null}
           </div>
-          <Button onClick={onOpen} type="button" variant="ghost">
+          <Button
+            data-testid={`activity-card-${activity.id}-open`}
+            onClick={onOpen}
+            type="button"
+            variant="ghost"
+          >
             Open
           </Button>
         </div>
@@ -268,7 +294,10 @@ export function RouteListCard({ onOpen, route }: { onOpen: () => void; route: an
   const { unitSystem } = useViewingUserPreferredUnitSystem();
 
   return (
-    <Card className="transition-colors hover:border-primary/30">
+    <Card
+      className="transition-colors hover:border-primary/30"
+      data-testid={`route-card-${route.id}`}
+    >
       <CardContent className="space-y-4 p-4">
         <div className="flex items-start gap-3">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10">
@@ -283,7 +312,12 @@ export function RouteListCard({ onOpen, route }: { onOpen: () => void; route: an
               <p className="line-clamp-2 text-sm text-muted-foreground">{route.description}</p>
             ) : null}
           </div>
-          <Button onClick={onOpen} type="button" variant="ghost">
+          <Button
+            data-testid={`route-card-${route.id}-open`}
+            onClick={onOpen}
+            type="button"
+            variant="ghost"
+          >
             Open
           </Button>
         </div>
@@ -300,7 +334,10 @@ export function RouteListCard({ onOpen, route }: { onOpen: () => void; route: an
 
 export function ActivityEffortListCard({ effort, onOpen }: { effort: any; onOpen: () => void }) {
   return (
-    <Card className="transition-colors hover:border-primary/30">
+    <Card
+      className="transition-colors hover:border-primary/30"
+      data-testid={`activity-effort-card-${effort.id}`}
+    >
       <CardContent className="space-y-4 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1">
@@ -314,7 +351,12 @@ export function ActivityEffortListCard({ effort, onOpen }: { effort: any; onOpen
               Manual or imported best-effort reference.
             </p>
           </div>
-          <Button onClick={onOpen} type="button" variant="ghost">
+          <Button
+            data-testid={`activity-effort-card-${effort.id}-open`}
+            onClick={onOpen}
+            type="button"
+            variant="ghost"
+          >
             Open
           </Button>
         </div>

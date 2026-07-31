@@ -172,12 +172,13 @@ export function createContentAccessPermissions(db: DrizzleQueryExecutor) {
           ownerProfileId: schema.activityRoutes.profile_id,
           isPublic: schema.activityRoutes.is_public,
           isSystem: schema.activityRoutes.is_system_template,
+          storageState: schema.activityRoutes.storage_state,
         })
         .from(schema.activityRoutes)
         .where(eq(schema.activityRoutes.id, resource.id))
         .limit(1);
 
-      return row
+      return row?.storageState === "ready"
         ? {
             id: row.id,
             ownerProfileId: row.ownerProfileId,

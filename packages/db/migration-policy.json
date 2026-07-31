@@ -1,28 +1,12 @@
 {
   "authorityDirectory": "supabase/migrations",
-  "archiveDirectory": "supabase/migrations-archive",
   "mirrorDirectory": "drizzle/deploy",
   "baseline": {
-    "version": "20260726005149",
-    "name": "generation_2_baseline",
-    "sha256": "84292946d4e61fd3dd46312ba31343471fb8248c7af644b06593b91d08e8d57c"
-  },
-  "forwardMigrations": {
-    "filenamePattern": "^(\\d{14})_([a-z0-9]+(?:_[a-z0-9]+)*)\\.sql$",
-    "minimumVersionExclusive": "20260726005149",
-    "executionModes": ["transactional", "autocommit"],
-    "autocommitOperationKinds": ["create_index_concurrently"],
-    "autocommitSession": {
-      "lockTimeout": "5s",
-      "statementTimeout": "15min"
-    }
+    "version": "20260730000000",
+    "name": "mvp_baseline",
+    "sha256": "282147b99d88302e614a11bd4128d7fb2f13598ab8e2873c9ad3716e6f040952"
   },
   "activeLedgerFile": "migration-ledger.json",
-  "historicalEvidence": {
-    "generation0PreLedger": "migration-ledger-generation-0-pre.json",
-    "generation0MismatchCatalog": "migration-history-generation-0-mismatches.json",
-    "generation1FinalLedger": "migration-ledger-generation-1-final.json"
-  },
   "ownedExtensions": [{ "name": "btree_gist", "schema": "extensions" }],
   "ownedDefaultPrivilegeRoles": ["postgres"]
 }

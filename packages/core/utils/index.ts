@@ -8,8 +8,6 @@
 export * from "./activity-defaults";
 // Export date grouping utilities
 export * from "./date-grouping";
-// Export date utilities
-export * from "./dates";
 export * from "./fitness-inputs";
 export * from "./minute-of-day";
 export type { LatLng, LatLngAlt, RouteStats } from "./polyline";

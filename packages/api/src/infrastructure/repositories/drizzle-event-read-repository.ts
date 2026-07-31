@@ -21,10 +21,7 @@ import {
   getCurrentPlanningWeek,
   getPlanningDateRange,
 } from "../../application/training-plan/current-planning-week";
-import {
-  toActivityPlanExecutionDto,
-  toAvailableActivityPlanExecutionDto,
-} from "../../dto/activity-plan";
+import { toActivityPlanExecutionDto } from "../../dto/activity-plan";
 import type { EventReadRepository } from "../../repositories";
 import {
   filterSupersededProfileOverrides,
@@ -48,19 +45,12 @@ function addCalendarDays(date: string, days: number): string {
   return value.toISOString().slice(0, 10);
 }
 
-function serializeActivityPlanRow(
-  activityPlan: typeof schema.activityPlans.$inferSelect | null,
-  invalidPlan: "null" | "throw" = "null",
-) {
+function serializeActivityPlanRow(activityPlan: typeof schema.activityPlans.$inferSelect | null) {
   if (!activityPlan) {
     return null;
   }
 
-  const plan =
-    invalidPlan === "throw"
-      ? toActivityPlanExecutionDto(activityPlan)
-      : toAvailableActivityPlanExecutionDto(activityPlan);
-  if (!plan) return null;
+  const plan = toActivityPlanExecutionDto(activityPlan);
   return {
     ...plan,
     created_at: activityPlan.created_at.toISOString(),
@@ -83,50 +73,54 @@ function serializeActivityRouteRow(
   };
 }
 
-function serializeEventRow(
-  row: {
-    activity_plan_id: string | null;
-    route_id: string | null;
-    activity_plan: typeof schema.activityPlans.$inferSelect | null;
-    activity_route: typeof schema.activityRoutes.$inferSelect | null;
-    all_day: boolean | null;
-    created_at: Date;
-    description: string | null;
-    ends_at: Date | null;
-    event_type: "planned" | "race_target" | "custom" | "imported";
-    id: string;
-    linked_activity_id: string | null;
-    notes: string | null;
-    occurrence_key: string | null;
-    original_starts_at: Date | null;
-    profile_id: string;
-    recurrence_rule: string | null;
-    recurrence_timezone: string | null;
-    scheduled_date: string;
-    series_id: string | null;
-    source_provider: string | null;
-    starts_at: Date;
-    status: "scheduled" | "completed" | "cancelled" | null;
-    timezone: string | null;
-    title: string | null;
-    training_plan_id: string | null;
-    updated_at: Date;
-  },
-  invalidPlan: "null" | "throw" = "null",
-) {
+function requireCurrentEventField<T>(value: T | null, field: string): T {
+  if (value === null) {
+    throw new Error(`Invalid event row: ${field} is required`);
+  }
+  return value;
+}
+
+function serializeEventRow(row: {
+  activity_plan_id: string | null;
+  route_id: string | null;
+  activity_plan: typeof schema.activityPlans.$inferSelect | null;
+  activity_route: typeof schema.activityRoutes.$inferSelect | null;
+  all_day: boolean | null;
+  created_at: Date;
+  description: string | null;
+  ends_at: Date | null;
+  event_type: "planned" | "race_target" | "custom" | "imported";
+  id: string;
+  linked_activity_id: string | null;
+  notes: string | null;
+  occurrence_key: string | null;
+  original_starts_at: Date | null;
+  profile_id: string;
+  recurrence_rule: string | null;
+  recurrence_timezone: string | null;
+  scheduled_date: string;
+  series_id: string | null;
+  source_provider: string | null;
+  starts_at: Date;
+  status: "scheduled" | "completed" | "cancelled" | null;
+  timezone: string | null;
+  title: string | null;
+  training_plan_id: string | null;
+  updated_at: Date;
+}) {
   const { activity_route: _activityRoute, ...event } = row;
   return {
     ...event,
-    all_day: row.all_day ?? false,
+    all_day: requireCurrentEventField(row.all_day, "all_day"),
     linked_activity_id: row.linked_activity_id,
-    occurrence_key: row.occurrence_key ?? "",
+    occurrence_key: requireCurrentEventField(row.occurrence_key, "occurrence_key"),
     recurrence_rule: row.recurrence_rule,
     recurrence_timezone: row.recurrence_timezone,
     series_id: row.series_id,
     source_provider: row.source_provider,
-    status: row.status ?? "scheduled",
-    timezone: row.timezone ?? "UTC",
-    title: row.title ?? "",
+    status: requireCurrentEventField(row.status, "status"),
+    timezone: requireCurrentEventField(row.timezone, "timezone"),
+    title: requireCurrentEventField(row.title, "title"),
     training_plan_id: row.training_plan_id,
     created_at: row.created_at.toISOString(),
     starts_at: row.starts_at.toISOString(),
@@ -134,7 +128,7 @@ function serializeEventRow(
     ends_at: row.ends_at?.toISOString() ?? null,
     original_starts_at: row.original_starts_at?.toISOString() ?? null,
     updated_at: row.updated_at.toISOString(),
-    activity_plan: serializeActivityPlanRow(row.activity_plan, invalidPlan),
+    activity_plan: serializeActivityPlanRow(row.activity_plan),
     route: serializeActivityRouteRow(row.activity_route),
   };
 }
@@ -317,7 +311,19 @@ export function createEventReadRepository(
           )
           .limit(boundedLimit),
         db
-          .select()
+          .select({
+            id: schema.activities.id,
+            profile_id: schema.activities.profile_id,
+            started_at: schema.activities.started_at,
+            finished_at: schema.activities.finished_at,
+            elapsed_ms: schema.activities.elapsed_ms,
+            active_ms: schema.activities.active_ms,
+            moving_ms: schema.activities.moving_ms,
+            timing_coverage: schema.activities.timing_coverage,
+            distance_meters: schema.activities.distance_meters,
+            avg_heart_rate: schema.activities.avg_heart_rate,
+            max_heart_rate: schema.activities.max_heart_rate,
+          })
           .from(schema.activities)
           .where(
             and(
@@ -371,7 +377,7 @@ export function createEventReadRepository(
         .where(and(eq(schema.events.id, eventId), eq(schema.events.profile_id, profileId)))
         .limit(1);
 
-      return row ? serializeEventRow(row, "throw") : null;
+      return row ? serializeEventRow(row) : null;
     },
 
     async countOwnedEventsInRange({ profileId, startsAtGte, startsAtLt }) {
@@ -490,9 +496,13 @@ export function createEventReadRepository(
         db
           .select({
             id: schema.activityPlans.id,
+            profile_id: schema.activityPlans.profile_id,
+            name: schema.activityPlans.name,
+            description: schema.activityPlans.description,
             gps_recording_enabled: schema.activityPlans.gps_recording_enabled,
             structure: schema.activityPlans.structure,
             structure_hash: schema.activityPlans.structure_hash,
+            updated_at: schema.activityPlans.updated_at,
           })
           .from(schema.activityPlans)
           .where(eq(schema.activityPlans.id, activityPlanId))
@@ -517,7 +527,7 @@ export function createEventReadRepository(
               eq(schema.profileMetrics.metric_type, "lthr"),
             ),
           )
-          .orderBy(desc(schema.profileMetrics.recorded_at))
+          .orderBy(desc(schema.profileMetrics.recorded_at), desc(schema.profileMetrics.id))
           .limit(1)
           .then((rows) => rows[0] ?? null),
         db
@@ -533,7 +543,7 @@ export function createEventReadRepository(
               eq(schema.profileMetrics.metric_type, "weight_kg"),
             ),
           )
-          .orderBy(desc(schema.profileMetrics.recorded_at))
+          .orderBy(desc(schema.profileMetrics.recorded_at), desc(schema.profileMetrics.id))
           .limit(1)
           .then((rows) => rows[0] ?? null),
       ]);
@@ -609,6 +619,21 @@ export function createEventReadRepository(
             calculation_version: schema.profileMetrics.calculation_version,
             quality_score: schema.profileMetrics.quality_score,
             provenance: schema.profileMetrics.provenance,
+            reference_activity_id: schema.profileMetrics.reference_activity_id,
+            reference_activity_category: sql<string | null>`case
+              when ${schema.profileMetrics.metric_type} = 'lthr'
+                and ${schema.profileMetrics.reference_activity_id} is not null
+              then (
+                select case
+                  when count(*) = 1 then min(reference_segment.activity_category)
+                  else null
+                end
+                from activity_segments as reference_segment
+                where reference_segment.activity_id = ${schema.profileMetrics.reference_activity_id}
+                  and reference_segment.role = 'activity'
+              )
+              else null
+            end`,
           })
           .from(schema.profileMetrics)
           .where(
@@ -624,7 +649,7 @@ export function createEventReadRepository(
               ]),
             ),
           )
-          .orderBy(desc(schema.profileMetrics.recorded_at)),
+          .orderBy(desc(schema.profileMetrics.recorded_at), desc(schema.profileMetrics.id)),
         routeIds.length > 0
           ? db
               .select({
@@ -673,10 +698,15 @@ export function createEventReadRepository(
           recorded_at: effort.recorded_at.toISOString(),
         })),
         metrics: [
-          ...resolveLatestObservationsByKey(metrics, (metric) => metric.metric_type).values(),
+          ...resolveLatestObservationsByKey(
+            metrics.filter((metric) => metric.metric_type !== "lthr"),
+            (metric) => metric.metric_type,
+          ).values(),
+          ...metrics.filter((metric) => metric.metric_type === "lthr"),
         ]
           .filter((metric) => metric !== null)
           .map((metric) => ({
+            id: metric.id,
             metric_type: metric.metric_type as
               | "weight_kg"
               | "ftp"
@@ -691,6 +721,8 @@ export function createEventReadRepository(
             calculation_version: metric.calculation_version,
             quality_score: metric.quality_score,
             provenance: metric.provenance,
+            reference_activity_id: metric.reference_activity_id,
+            reference_activity_category: metric.reference_activity_category,
           })),
         routes: routes.map((route) => ({
           ...route,
@@ -789,7 +821,7 @@ export function createEventReadRepository(
           starts_at: item.starts_at.toISOString(),
           scheduled_date: item.scheduled_date,
           training_plan_id: item.training_plan_id,
-          activity_plan: item.activity_plan as any,
+          activity_plan: item.activity_plan,
         })),
         actualActivities: actualActivities.map((activity) => ({
           ...activity,

@@ -53,6 +53,7 @@ function startedRecording() {
 const submissionArtifact = portableWebRecordingArtifactSchema.parse({
   schemaVersion: 1,
   ownerId: "profile-1",
+  sessionRpeOperationId: null,
   recordingSessionId: "session-1",
   segmentId: "55555555-5555-4555-8555-555555555555",
   snapshot: {
@@ -169,7 +170,7 @@ describe("web timer draft persistence", () => {
     const loaded = await loadTimerDraft(storage, "profile-1");
     if (!loaded.draft) throw new Error("Expected a valid draft.");
 
-    const recovered = recoverTimerOnlyRecording(loaded.draft, 100_000);
+    const recovered = recoverTimerOnlyRecording(loaded.draft);
 
     expect(recovered.rejectedReason).toBeNull();
     expect(recovered.state.reducer.lifecycle).toBe("paused");
@@ -177,8 +178,9 @@ describe("web timer draft persistence", () => {
       activity_category: "run",
       eventId: "00000000-0000-4000-8000-000000000001",
     });
+    expect(recovered.state.timer.startedAtMs).toBe(Date.parse(loaded.draft.timing.startedAt));
     expect(getTimerOnlyRecordingTimes(recovered.state, 100_000)).toEqual({
-      elapsedSeconds: 5,
+      elapsedSeconds: 98,
       movingSeconds: 5,
     });
   });
@@ -262,7 +264,7 @@ describe("web timer draft persistence", () => {
     ).toBe(false);
   });
 
-  it("safely rejects malformed primitive storage and repairs non-finite lease metadata", () => {
+  it("accepts only a strict current submission-job envelope", () => {
     expect(parseStoredSubmissionJobEnvelope("corrupt", "profile-1")).toBeNull();
 
     expect(
@@ -275,22 +277,16 @@ describe("web timer draft persistence", () => {
         },
         "profile-1",
       ),
-    ).toMatchObject({ claimExpiresAtMs: 0, revision: 0 });
-  });
-
-  it("recovers a legacy raw submitting job after normalizing its missing lease", () => {
-    const legacy = parseStoredSubmissionJobEnvelope(
-      {
-        ...createQueuedSubmissionJob(submissionArtifact, "2026-07-20T10:31:00.000Z"),
-        status: "submitting",
-      },
-      "profile-1",
-    );
-    if (!legacy) throw new Error("Expected a legacy job.");
-
+    ).toBeNull();
     expect(
-      claimSubmissionJobEnvelope({ envelope: legacy, instanceId: "tab-b", nowMs: 1_000 }),
-    ).toMatchObject({ claimOwner: "tab-b", revision: 1, job: { status: "submitting" } });
+      parseStoredSubmissionJobEnvelope(
+        createQueuedSubmissionJob(submissionArtifact, "2026-07-20T10:31:00.000Z"),
+        "profile-1",
+      ),
+    ).toBeNull();
+    expect(parseStoredSubmissionJobEnvelope(queuedSubmissionEnvelope(), "profile-1")).toEqual(
+      queuedSubmissionEnvelope(),
+    );
   });
 
   it("rejects a reordered terminal write after an expired lease is taken over", () => {

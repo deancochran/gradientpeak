@@ -51,7 +51,7 @@ const baseBehaviorControls = {
 
 const baseCreationInput: CreationNormalizationInput = {
   user_values: {
-    behavior_controls_v1: baseBehaviorControls,
+    behavior_controls: baseBehaviorControls,
   },
 };
 
@@ -171,7 +171,7 @@ describe("computeLocalCreationPreview", () => {
         minimalPlan,
         creationInput: {
           user_values: {
-            behavior_controls_v1: {
+            behavior_controls: {
               ...baseBehaviorControls,
               aggressiveness: 0.7,
               recovery_priority: 0.45,

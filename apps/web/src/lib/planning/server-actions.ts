@@ -1,4 +1,8 @@
-import { canonicalActivityCategorySchema, scheduledDateTimeToIsoInstant } from "@repo/core";
+import {
+  canonicalActivityCategorySchema,
+  dateOnlySchema,
+  scheduledDateTimeToIsoInstant,
+} from "@repo/core";
 import { redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
@@ -12,15 +16,15 @@ import {
 } from "../planning";
 import { createServerActionCaller } from "../server-action-api";
 
-const goalActionSchema = z.object({
+export const goalActionSchema = z.object({
   activity_category: canonicalActivityCategorySchema,
   priority: z.coerce.number().int().min(0).max(10),
   profile_id: z.string().uuid(),
   redirectTo: z.string().optional(),
-  target_date: z.string().min(1),
-  target_sessions_per_week: z.coerce.number().int().min(1),
-  target_weeks: z.coerce.number().int().min(1),
-  title: z.string().trim().min(1),
+  target_date: dateOnlySchema,
+  target_sessions_per_week: z.coerce.number().int().min(1).max(21),
+  target_weeks: z.coerce.number().int().min(1).max(104),
+  title: z.string().trim().min(1).max(100),
 });
 
 const deleteEventActionSchema = z.object({
@@ -29,17 +33,27 @@ const deleteEventActionSchema = z.object({
   scope: z.enum(["single", "future", "series"]).default("single"),
 });
 
-const updateEventActionSchema = z.object({
-  all_day: z.enum(["true", "false"]).optional(),
-  scheduled_date: z.string().min(1),
-  event_id: z.string().uuid(),
-  notes: z.string().optional(),
-  redirectTo: z.string().optional(),
-  time: z.string().optional(),
-  title: z.string().trim().min(1),
-  recurrence_count: z.coerce.number().int().min(1).max(52).optional(),
-  scope: z.enum(["single", "future", "series"]).default("single"),
-});
+export const updateEventActionSchema = z
+  .object({
+    all_day: z.enum(["true", "false"]).optional(),
+    scheduled_date: z.string().min(1).optional(),
+    event_id: z.string().uuid(),
+    notes: z.string().optional(),
+    redirectTo: z.string().optional(),
+    time: z.string().optional(),
+    title: z.string().trim().min(1),
+    recurrence_count: z.coerce.number().int().min(1).max(52).optional(),
+    scope: z.enum(["single", "future", "series"]).default("single"),
+  })
+  .superRefine((value, context) => {
+    if (value.scope === "single" && !value.scheduled_date?.trim()) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "A date is required when updating one event.",
+        path: ["scheduled_date"],
+      });
+    }
+  });
 
 const createEventActionSchema = z.object({
   activity_plan_id: z.string().uuid().optional(),
@@ -73,25 +87,62 @@ function fromFormData<T>(schema: z.ZodSchema<T>, data: unknown) {
 }
 
 function getRedirectTarget(data: unknown, fallback: string) {
-  if (!(data instanceof FormData)) {
-    return fallback;
-  }
-
+  if (!(data instanceof FormData)) return fallback;
   const redirectTo = data.get("redirectTo");
   return typeof redirectTo === "string" && redirectTo.length > 0 ? redirectTo : fallback;
 }
 
+const goalActionResultSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("success"), redirectTo: z.string() }),
+  z.object({ status: z.literal("error"), message: z.string() }),
+]);
+
+type GoalActionResult = z.infer<typeof goalActionResultSchema>;
+
+function goalActionError(message: string): GoalActionResult {
+  return goalActionResultSchema.parse({ status: "error", message });
+}
+
+export function buildScopedCalendarEventUpdate(
+  data: z.infer<typeof updateEventActionSchema>,
+  existingEvent?: PlanningEvent,
+) {
+  if (data.scope !== "single") {
+    return {
+      id: data.event_id,
+      patch: {
+        notes: data.notes?.trim() || null,
+        title: data.title,
+      },
+      scope: data.scope,
+    };
+  }
+
+  if (!existingEvent || !data.scheduled_date) {
+    throw new Error("A single event update requires its current event and scheduled date.");
+  }
+
+  return {
+    id: data.event_id,
+    patch: buildCalendarEventUpdatePatch({
+      allDay: data.all_day === "true",
+      event: existingEvent,
+      notes: data.notes,
+      scheduledDate: data.scheduled_date,
+      time: data.time,
+      title: data.title,
+    }),
+    scope: data.scope,
+  };
+}
+
 export const createPlanGoalAction = createServerFn({ method: "POST" }).handler(async ({ data }) => {
-  const redirectTo = getRedirectTarget(data, "/plan");
   let parsedData: z.infer<typeof goalActionSchema>;
 
   try {
     parsedData = fromFormData(goalActionSchema, data);
   } catch {
-    throw redirect({
-      href: buildFlashHref(redirectTo, "Check the goal form and try again.", "error"),
-      statusCode: 303,
-    });
+    return goalActionError("Check the goal form and try again.");
   }
 
   try {
@@ -110,33 +161,22 @@ export const createPlanGoalAction = createServerFn({ method: "POST" }).handler(a
       title: parsedData.title,
     });
   } catch (error) {
-    throw redirect({
-      href: buildFlashHref(
-        parsedData.redirectTo ?? redirectTo,
-        error instanceof Error ? error.message : "Unable to create goal.",
-        "error",
-      ),
-      statusCode: 303,
-    });
+    return goalActionError(error instanceof Error ? error.message : "Unable to create goal.");
   }
 
-  throw redirect({
-    href: buildFlashHref(parsedData.redirectTo ?? "/plan", "Goal created", "success"),
-    statusCode: 303,
+  return goalActionResultSchema.parse({
+    status: "success",
+    redirectTo: buildFlashHref(parsedData.redirectTo ?? "/plan", "Goal created", "success"),
   });
 });
 
 export const updatePlanGoalAction = createServerFn({ method: "POST" }).handler(async ({ data }) => {
-  const redirectTo = getRedirectTarget(data, "/goals");
   let parsedData: z.infer<typeof updateGoalActionSchema>;
 
   try {
     parsedData = fromFormData(updateGoalActionSchema, data);
   } catch {
-    throw redirect({
-      href: buildFlashHref(redirectTo, "Check the goal form and try again.", "error"),
-      statusCode: 303,
-    });
+    return goalActionError("Check the goal form and try again.");
   }
 
   try {
@@ -156,28 +196,20 @@ export const updatePlanGoalAction = createServerFn({ method: "POST" }).handler(a
       },
     });
   } catch (error) {
-    throw redirect({
-      href: buildFlashHref(
-        parsedData.redirectTo ?? redirectTo,
-        error instanceof Error ? error.message : "Unable to update goal.",
-        "error",
-      ),
-      statusCode: 303,
-    });
+    return goalActionError(error instanceof Error ? error.message : "Unable to update goal.");
   }
 
-  throw redirect({
-    href: buildFlashHref(
+  return goalActionResultSchema.parse({
+    status: "success",
+    redirectTo: buildFlashHref(
       parsedData.redirectTo ?? `/goals/${parsedData.goal_id}`,
       "Goal updated",
       "success",
     ),
-    statusCode: 303,
   });
 });
 
 export const deletePlanGoalAction = createServerFn({ method: "POST" }).handler(async ({ data }) => {
-  const redirectTo = getRedirectTarget(data, "/goals");
   let parsedData: z.infer<typeof deleteGoalActionSchema>;
 
   try {
@@ -185,19 +217,12 @@ export const deletePlanGoalAction = createServerFn({ method: "POST" }).handler(a
     const caller = await createServerActionCaller();
     await caller.goals.delete({ id: parsedData.goal_id });
   } catch (error) {
-    throw redirect({
-      href: buildFlashHref(
-        redirectTo,
-        error instanceof Error ? error.message : "Unable to delete goal.",
-        "error",
-      ),
-      statusCode: 303,
-    });
+    return goalActionError(error instanceof Error ? error.message : "Unable to delete goal.");
   }
 
-  throw redirect({
-    href: buildFlashHref(parsedData.redirectTo ?? "/goals", "Goal deleted", "success"),
-    statusCode: 303,
+  return goalActionResultSchema.parse({
+    status: "success",
+    redirectTo: buildFlashHref(parsedData.redirectTo ?? "/goals", "Goal deleted", "success"),
   });
 });
 
@@ -332,27 +357,12 @@ export const updateCalendarEventAction = createServerFn({ method: "POST" }).hand
 
     try {
       const caller = await createServerActionCaller();
-      const existingEvent = await caller.events.getById({ id: parsedData.event_id });
-      const patch = buildCalendarEventUpdatePatch({
-        allDay: parsedData.all_day === "true",
-        event: existingEvent as PlanningEvent,
-        notes: parsedData.notes,
-        scheduledDate: parsedData.scheduled_date,
-        time: parsedData.time,
-        title: parsedData.title,
-      });
+      const existingEvent =
+        parsedData.scope === "single"
+          ? ((await caller.events.getById({ id: parsedData.event_id })) as PlanningEvent)
+          : undefined;
 
-      await caller.events.update({
-        id: parsedData.event_id,
-        patch:
-          parsedData.scope === "single"
-            ? patch
-            : {
-                notes: patch.notes,
-                title: patch.title,
-              },
-        scope: parsedData.scope,
-      });
+      await caller.events.update(buildScopedCalendarEventUpdate(parsedData, existingEvent));
     } catch (error) {
       throw redirect({
         href: buildFlashHref(

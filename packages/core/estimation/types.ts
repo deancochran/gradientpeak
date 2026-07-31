@@ -1,3 +1,4 @@
+import type { LoadBalanceStatus } from "../load/form";
 import type { ProfileWithDob } from "../profile";
 import type { CanonicalActivityCategory } from "../schemas/activity-category";
 
@@ -148,15 +149,11 @@ export interface FatigueImpact {
   projectedCTL: number; // After this activity
   projectedTSB: number; // After this activity
   formChange: "improving" | "maintaining" | "declining";
-  /** @deprecated A training-load estimate cannot determine physiological recovery time. */
-  recoveryDaysNeeded: number | null;
 }
 
 // ==============================
 // Fatigue Prediction
 // ==============================
-
-export type FormStatus = "fresh" | "optimal" | "neutral" | "tired" | "overreaching";
 
 export type LoadChangeState = "insufficient_data" | "decreasing" | "stable" | "increasing";
 
@@ -173,27 +170,16 @@ export interface FatiguePrediction {
     ctl: number;
     atl: number;
     tsb: number;
-    form: FormStatus;
+    loadBalanceStatus: LoadBalanceStatus;
   };
 
   weeklyProjection: {
     totalTSS: number;
     averageDailyTSS: number;
     rampRate: number; // Weekly CTL change
-    /** @deprecated No binary clearance is inferred from training-load projections. */
-    isSafe: boolean | null;
     loadChangeState: LoadChangeState;
     reasons: PlanningReasonCode[];
     recommendation: string;
-  };
-
-  recoveryPlan: {
-    /** @deprecated Exact physiological recovery cannot be inferred from TSS/TSB. */
-    daysToRecover: number | null;
-    /** @deprecated This estimator does not clear an athlete for a hard activity. */
-    nextHardActivityDate: Date | null;
-    /** @deprecated This estimator does not prescribe exact rest duration. */
-    suggestedRestDays: number | null;
   };
 
   warnings: string[];
@@ -237,8 +223,6 @@ export interface WeeklyLoadEstimation {
   projectedATL: number;
   projectedTSB: number;
   rampRate: number;
-  /** @deprecated No binary clearance is inferred from training-load projections. */
-  isSafe: boolean | null;
   loadChangeState: LoadChangeState;
   reasons: PlanningReasonCode[];
   recommendations: string[];

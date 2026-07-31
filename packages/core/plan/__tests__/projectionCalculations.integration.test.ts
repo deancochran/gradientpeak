@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { buildDeterministicProjectionPayload } from "../projectionCalculations";
+import { buildDeterministicProjectionPayload } from "../projection/engine";
 
 describe("Readiness Score Bug Fix - End-to-End Integration", () => {
   it("single isolated marathon shows bounded realistic readiness", () => {

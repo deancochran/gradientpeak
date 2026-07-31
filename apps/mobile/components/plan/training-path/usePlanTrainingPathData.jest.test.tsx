@@ -322,7 +322,6 @@ jest.mock("./trainingPathUtils", () => ({
     value.setUTCDate(value.getUTCDate() + days);
     return value.toISOString().slice(0, 10);
   },
-  buildScheduledFitnessTrend: () => [],
   getWeekStartDateKey: (date: string) => date,
 }));
 jest.mock("./trainingPathPlanningTime", () => ({
@@ -496,7 +495,7 @@ describe("usePlanTrainingPathData", () => {
       previewIdealCurve: [],
       projectionChart: {
         daily_load_points: [{ date: "2026-04-01", recommended_load_tss: 70 }],
-        display_points: [{ date: "2026-04-01" }],
+        points: [{ date: "2026-04-01" }],
       },
     });
   });

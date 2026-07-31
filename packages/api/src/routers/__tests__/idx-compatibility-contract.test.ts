@@ -36,9 +36,9 @@ describe("idx compatibility contracts", () => {
     }
   });
 
-  it("names provider queue order explicitly and retains the metric insertion tie-breaker", () => {
+  it("names provider queue order explicitly without retired idx aliases", () => {
     expect(publicProviderSyncJobsRowSchema.shape).not.toHaveProperty("idx");
     expect(publicProviderSyncJobsRowSchema.shape).toHaveProperty("queue_sequence");
-    expect(publicProfileMetricsRowSchema.shape).toHaveProperty("idx");
+    expect(publicProfileMetricsRowSchema.shape).not.toHaveProperty("idx");
   });
 });

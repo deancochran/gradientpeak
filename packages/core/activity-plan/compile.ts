@@ -4,7 +4,7 @@ import {
   createActivityStepOccurrenceId,
   createBoundaryOccurrenceId,
 } from "./occurrence";
-import { type ActivityPlanStructureV3, activityPlanStructureSchemaV3 } from "./v3-schema";
+import { type ActivityPlanStructure, activityPlanStructureSchema } from "./structure-schema";
 
 export const ACTIVITY_PLAN_COMPILER_VERSION = 1 as const;
 
@@ -17,14 +17,14 @@ export type CompiledActivityPlan = {
 };
 
 /** Parses once and expands the plan into stable recorder/calculation occurrences. */
-export function compileActivityPlanV3(input: unknown): CompiledActivityPlan {
-  const structure = activityPlanStructureSchemaV3.parse(input);
-  return compileValidatedActivityPlanV3(structure);
+export function compileActivityPlan(input: unknown): CompiledActivityPlan {
+  const structure = activityPlanStructureSchema.parse(input);
+  return compileValidatedActivityPlan(structure);
 }
 
-/** Compiles a previously parsed V3 value without introducing runtime state or randomness. */
-export function compileValidatedActivityPlanV3(
-  structure: ActivityPlanStructureV3,
+/** Compiles a previously parsed value without introducing runtime state or randomness. */
+export function compileValidatedActivityPlan(
+  structure: ActivityPlanStructure,
 ): CompiledActivityPlan {
   const occurrences: CompiledActivityPlanOccurrence[] = [];
   let activity_category: CanonicalActivityCategory | undefined;

@@ -567,6 +567,7 @@ describe("onboardingRouter", () => {
     username: "lifecycle-athlete",
     experience_level: "skip",
     intents: ["train_event", "groups"],
+    baseline_field_sources: {},
     ftp: 250,
   };
   const lifecycleGoal = {

@@ -32,7 +32,7 @@ export interface OnboardingData {
   resting_hr: number | null;
   lthr: number | null;
   ftp: number | null;
-  threshold_pace: number | null;
+  threshold_pace_seconds_per_km: number | null;
   css: number | null;
   vo2max: number | null;
   training_frequency: "1-2" | "3-4" | "5-6" | "7+" | null;

@@ -20,13 +20,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { useActivitySubmission } from "@/lib/hooks/useActivitySubmission";
-import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { useActivityRecorderService } from "@/lib/providers/ActivityRecorderProvider";
 
 function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
   const router = useRouter();
   const [discardError, setDiscardError] = useState<string | null>(null);
 
-  const service = useSharedActivityRecorder();
+  const { service } = useActivityRecorderService();
   const submission = useActivitySubmission(service);
 
   const form = useZodForm<typeof activitySubmissionFormSchema>({

@@ -57,6 +57,7 @@ type RouteCardProps = {
   onPress?: () => void;
   showAttribution?: boolean;
   showLike?: boolean;
+  testID?: string;
   variant?: "default" | "compact" | "detail" | "list";
 };
 
@@ -71,6 +72,7 @@ export function RouteCard({
   onPress,
   showAttribution,
   showLike,
+  testID,
   variant = "default",
 }: RouteCardProps) {
   const preferredUnitSystem = usePreferredUnitSystem();
@@ -164,6 +166,7 @@ export function RouteCard({
       }
       compact={isDense}
       onPress={onPress}
+      testID={testID ?? `route-card-${route.id}`}
     >
       <ResourceCardHeader
         compact={isDense}

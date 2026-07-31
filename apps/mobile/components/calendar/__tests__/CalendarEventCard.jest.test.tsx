@@ -23,11 +23,6 @@ jest.mock("@/lib/utils/plan/colors", () => ({
   __esModule: true,
   getActivityColor: () => ({ bg: "bg-primary", text: "text-primary" }),
 }));
-jest.mock("@/lib/utils/plan/dateGrouping", () => ({
-  __esModule: true,
-  isActivityCompleted: () => false,
-}));
-
 const provenance = {
   model: "gradientpeak_relative_load" as const,
   version: "1" as const,

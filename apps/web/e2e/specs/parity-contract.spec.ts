@@ -11,10 +11,10 @@ test("every inventoried mobile capability has a verifiable web E2E disposition",
   const specTitles = new Map<string, Set<string>>();
 
   expect(new Set(ids).size).toBe(ids.length);
-  expect(journeys).toHaveLength(92);
+  expect(journeys).toHaveLength(93);
   expect(journeys.filter((journey) => journey.status === "executable")).toHaveLength(18);
   expect(journeys.filter((journey) => journey.status === "implemented-unverified")).toHaveLength(
-    73,
+    74,
   );
   expect(journeys.filter((journey) => journey.status === "missing-web-capability")).toHaveLength(1);
 

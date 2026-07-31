@@ -128,23 +128,26 @@ let snapshotState = {
     timeline: [
       {
         date: "2026-05-01",
-        ideal_tss: 45,
-        scheduled_tss: 42,
-        actual_tss: 40,
+        recommended_load_tss: 45,
+        scheduled_load_tss: 42,
+        tentative_scheduled_load_tss: 0,
+        completed_load_tss: 40,
         adherence_score: 90,
       },
       {
         date: "2026-05-02",
-        ideal_tss: 50,
-        scheduled_tss: 44,
-        actual_tss: 38,
+        recommended_load_tss: 50,
+        scheduled_load_tss: 44,
+        tentative_scheduled_load_tss: 0,
+        completed_load_tss: 38,
         adherence_score: 82,
       },
       {
         date: "2026-05-03",
-        ideal_tss: 55,
-        scheduled_tss: 46,
-        actual_tss: 0,
+        recommended_load_tss: 55,
+        scheduled_load_tss: 46,
+        tentative_scheduled_load_tss: 0,
+        completed_load_tss: 0,
         adherence_score: 0,
       },
     ],
@@ -217,7 +220,7 @@ jest.mock("@/lib/training-plan-form/localPreview", () => ({
 
     return {
       projectionChart: {
-        display_points: [
+        points: [
           { date: "2026-05-01", predicted_fitness_ctl: 40, predicted_load_tss: 42 },
           { date: "2026-05-02", predicted_fitness_ctl: 42, predicted_load_tss: 44 },
           { date: "2026-05-03", predicted_fitness_ctl: finalCtl, predicted_load_tss: finalLoad },
@@ -378,23 +381,26 @@ describe("training preferences editor", () => {
         timeline: [
           {
             date: "2026-05-01",
-            ideal_tss: 45,
-            scheduled_tss: 42,
-            actual_tss: 40,
+            recommended_load_tss: 45,
+            scheduled_load_tss: 42,
+            tentative_scheduled_load_tss: 0,
+            completed_load_tss: 40,
             adherence_score: 90,
           },
           {
             date: "2026-05-02",
-            ideal_tss: 50,
-            scheduled_tss: 44,
-            actual_tss: 38,
+            recommended_load_tss: 50,
+            scheduled_load_tss: 44,
+            tentative_scheduled_load_tss: 0,
+            completed_load_tss: 38,
             adherence_score: 82,
           },
           {
             date: "2026-05-03",
-            ideal_tss: 55,
-            scheduled_tss: 46,
-            actual_tss: 0,
+            recommended_load_tss: 55,
+            scheduled_load_tss: 46,
+            tentative_scheduled_load_tss: 0,
+            completed_load_tss: 0,
             adherence_score: 0,
           },
         ],

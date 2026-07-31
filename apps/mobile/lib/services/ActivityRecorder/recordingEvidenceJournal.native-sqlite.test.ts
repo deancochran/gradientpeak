@@ -15,12 +15,15 @@ import { activitySubmissionQueueJobSchema } from "../activitySubmissionQueue/typ
 import { validateStoredRecordingEvidenceCheckpoint } from "./checkpointStorage";
 import {
   allocateRecordingEvidenceSession,
+  claimRecordingEvidenceCheckpoint,
+  clearRecordingEvidenceCheckpoint,
   completeAcceptedRecordingEvidenceCleanup,
   completeDiscardedRecordingEvidenceCleanup,
   createFinalizedArtifactQueueHandoff,
   createRecordingStreamJournalAdapter,
   discardFinalizedRecordingEvidence,
   garbageCollectExpiredRecordingEvidence,
+  hasQuarantinedRecordingEvidence,
   initializeRecordingEvidenceDatabase,
   loadDueAcceptedRecordingEvidenceCleanups,
   loadDueDiscardedRecordingEvidenceCleanups,
@@ -33,6 +36,8 @@ import {
   quarantineOrphanedActiveRecordingEvidenceSessions,
   quarantineRecordingEvidenceSession,
   type RecordingEvidenceSqlExecutor,
+  readRecordingEvidenceCheckpoint,
+  releaseRecordingEvidenceCheckpointClaim,
   resetRecordingEvidenceJournalForTests,
   retryAcceptedRecordingEvidenceCleanup,
   rollbackRecordingEvidenceSession,
@@ -57,7 +62,7 @@ function unplannedCheckpoint(sessionId: string, profileId: string) {
 
 /**
  * This is intentionally not the in-memory SQL emulator used by unit tests.
- * It executes the production migration strings with Node's SQLite engine so
+ * It executes the production schema strings with Node's SQLite engine so
  * SQLite CHECK/FK/DDL and transaction syntax are actually exercised in CI.
  */
 async function nativeExecutor(): Promise<{
@@ -104,7 +109,7 @@ async function nativeExecutor(): Promise<{
   return { close: () => db.close(), executor };
 }
 
-describe("recording evidence native SQLite migrations", () => {
+describe("recording evidence native SQLite schema", () => {
   let close: (() => void) | undefined;
   afterEach(() => {
     resetRecordingEvidenceJournalForTests();
@@ -112,7 +117,7 @@ describe("recording evidence native SQLite migrations", () => {
     close = undefined;
   });
 
-  it("executes v0-to-current DDL, table rebuild, constraints, and a failed transaction rollback", async () => {
+  it("creates the current schema from version zero and reopens it with constraints and foreign keys", async () => {
     const native = await nativeExecutor();
     close = native.close;
     await initializeRecordingEvidenceDatabase(native.executor);
@@ -120,6 +125,15 @@ describe("recording evidence native SQLite migrations", () => {
     expect(
       await native.executor.getAllAsync<{ user_version: number }>("PRAGMA user_version"),
     ).toEqual([{ user_version: 5 }]);
+    await initializeRecordingEvidenceDatabase(native.executor);
+    expect(
+      await native.executor.getAllAsync<{ foreign_keys: number }>("PRAGMA foreign_keys"),
+    ).toEqual([{ foreign_keys: 1 }]);
+    expect(
+      await native.executor.getAllAsync(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'activity_submission_migration_items'",
+      ),
+    ).toEqual([]);
     await native.executor.runAsync(
       "INSERT INTO recording_evidence_sessions (session_id, profile_id, state, created_at) VALUES (?, ?, 'active', ?)",
       "session-a",
@@ -160,7 +174,7 @@ describe("recording evidence native SQLite migrations", () => {
     ).toEqual([]);
   });
 
-  it("selects the sole new active checkpoint over historical finalized state without AsyncStorage", async () => {
+  it("selects the sole active checkpoint over historical finalized state", async () => {
     const native = await nativeExecutor();
     close = native.close;
     await initializeRecordingEvidenceDatabase(native.executor);
@@ -187,6 +201,49 @@ describe("recording evidence native SQLite migrations", () => {
         "historical",
       ),
     ).toEqual([{ state: "finalized" }]);
+  });
+
+  it("claims, clears, and reports quarantine state through SQLite", async () => {
+    const native = await nativeExecutor();
+    close = native.close;
+    await initializeRecordingEvidenceDatabase(native.executor);
+    setRecordingEvidenceDatabaseForTests(native.executor);
+    await allocateRecordingEvidenceSession({ sessionId: "checkpoint", profileId: "profile" });
+    await persistRecordingEvidenceCheckpoint({
+      sessionId: "checkpoint",
+      profileId: "profile",
+      checkpoint: unplannedCheckpoint("checkpoint", "profile"),
+    });
+
+    await expect(claimRecordingEvidenceCheckpoint("profile")).resolves.toMatchObject({
+      sessionId: "checkpoint",
+    });
+    await expect(claimRecordingEvidenceCheckpoint("profile")).resolves.toBeNull();
+    releaseRecordingEvidenceCheckpointClaim("checkpoint");
+    await clearRecordingEvidenceCheckpoint("checkpoint");
+    await expect(readRecordingEvidenceCheckpoint("profile")).resolves.toBeNull();
+    expect(await hasQuarantinedRecordingEvidence()).toBe(false);
+
+    await persistRecordingEvidenceCheckpoint({
+      sessionId: "checkpoint",
+      profileId: "profile",
+      checkpoint: unplannedCheckpoint("checkpoint", "profile"),
+    });
+    await native.executor.runAsync(
+      "UPDATE recording_evidence_sessions SET checkpoint_digest = ? WHERE session_id = ?",
+      "invalid",
+      "checkpoint",
+    );
+    await expect(readRecordingEvidenceCheckpoint("profile")).rejects.toThrow(
+      "sqlite-checkpoint-digest-invalid",
+    );
+    expect(
+      await native.executor.getAllAsync<{ state: string }>(
+        "SELECT state FROM recording_evidence_sessions WHERE session_id = ?",
+        "checkpoint",
+      ),
+    ).toEqual([{ state: "quarantined" }]);
+    expect(await hasQuarantinedRecordingEvidence()).toBe(true);
   });
 
   it("durably discards a finalized session before restart handoff, with owner validation and idempotency", async () => {
@@ -569,143 +626,62 @@ describe("recording evidence native SQLite migrations", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("migrates an actual v2 duplicate per-kind stream order deterministically", async () => {
+  it("rolls back an interrupted fresh create, then retries the current schema", async () => {
     const native = await nativeExecutor();
     close = native.close;
-    await native.executor.execAsync(`
-      CREATE TABLE recording_evidence_sessions (session_id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('active', 'fenced', 'finalized', 'quarantined')), next_sequence INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, finalized_path TEXT, finalized_size INTEGER, finalized_sha256 TEXT, finalized_artifact_json TEXT, finalized_artifact_digest TEXT);
-      CREATE TABLE recording_stream_envelopes (session_id TEXT NOT NULL REFERENCES recording_evidence_sessions(session_id), stream_kind TEXT NOT NULL, sequence INTEGER NOT NULL, stream_order INTEGER NOT NULL, timestamp INTEGER NOT NULL, payload TEXT NOT NULL, byte_size INTEGER NOT NULL, sha256 TEXT NOT NULL, commit_marker TEXT NOT NULL, version INTEGER NOT NULL, PRIMARY KEY (session_id, stream_kind, sequence), UNIQUE (session_id, stream_kind, stream_order));
-      CREATE TABLE recording_evidence_quarantine (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, reason TEXT NOT NULL, payload TEXT, quarantined_at INTEGER NOT NULL);
-      PRAGMA user_version = 2;`);
-    await native.executor.runAsync(
-      "INSERT INTO recording_evidence_sessions (session_id, profile_id, state, created_at) VALUES (?, ?, 'active', ?)",
-      "legacy",
-      "profile",
-      1,
-    );
-    for (const [kind, timestamp, payload] of [
-      ["power", 2, '{"watts":200}'],
-      ["gps", 1, '{"lat":1}'],
-    ] as const) {
-      await native.executor.runAsync(
-        "INSERT INTO recording_stream_envelopes VALUES (?, ?, 0, 0, ?, ?, ?, ?, 'stream-committed-v1', 1)",
-        "legacy",
-        kind,
-        timestamp,
-        payload,
-        payload.length,
-        createHash("sha256").update(payload).digest("hex"),
-      );
-    }
-
-    await initializeRecordingEvidenceDatabase(native.executor);
-    expect(
-      await native.executor.getAllAsync<{ stream_kind: string; stream_order: number }>(
-        "SELECT stream_kind, stream_order FROM recording_stream_envelopes WHERE session_id = ? ORDER BY stream_order",
-        "legacy",
-      ),
-    ).toEqual([
-      { stream_kind: "gps", stream_order: 0 },
-      { stream_kind: "power", stream_order: 1 },
-    ]);
-    expect(
-      await native.executor.getAllAsync<{ next_stream_order: number }>(
-        "SELECT next_stream_order FROM recording_evidence_sessions WHERE session_id = ?",
-        "legacy",
-      ),
-    ).toEqual([{ next_stream_order: 2 }]);
-  });
-
-  it("rebuilds an actual v3 sessions CHECK for accepted while preserving FKs, indexes, and data", async () => {
-    const native = await nativeExecutor();
-    close = native.close;
-    await native.executor.execAsync(`
-      CREATE TABLE recording_evidence_sessions (session_id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('active', 'fenced', 'finalized', 'quarantined')), next_sequence INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, finalized_path TEXT, finalized_size INTEGER, finalized_sha256 TEXT, finalized_artifact_json TEXT, finalized_artifact_digest TEXT, next_stream_order INTEGER NOT NULL DEFAULT 0, checkpoint_json TEXT, checkpoint_digest TEXT);
-      CREATE TABLE recording_gps_envelopes (session_id TEXT NOT NULL REFERENCES recording_evidence_sessions(session_id), sequence INTEGER NOT NULL, timestamp INTEGER NOT NULL, payload TEXT NOT NULL, byte_size INTEGER NOT NULL, sha256 TEXT NOT NULL, commit_marker TEXT NOT NULL, PRIMARY KEY (session_id, sequence));
-      CREATE TABLE recording_evidence_quarantine (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, reason TEXT NOT NULL, payload TEXT, quarantined_at INTEGER NOT NULL);
-      PRAGMA user_version = 3;`);
-    await native.executor.runAsync(
-      "INSERT INTO recording_evidence_sessions (session_id, profile_id, state, created_at, checkpoint_json) VALUES (?, ?, 'finalized', ?, ?)",
-      "legacy-v3",
-      "profile",
-      1,
-      '{"kept":true}',
-    );
-    await native.executor.runAsync(
-      "INSERT INTO recording_gps_envelopes VALUES (?, 0, 1, '{}', 2, 'x', 'committed-v1')",
-      "legacy-v3",
-    );
-
-    await initializeRecordingEvidenceDatabase(native.executor);
-    await native.executor.runAsync(
-      "UPDATE recording_evidence_sessions SET state = 'accepted' WHERE session_id = ?",
-      "legacy-v3",
-    );
-    expect(
-      await native.executor.getAllAsync<{ state: string; checkpoint_json: string }>(
-        "SELECT state, checkpoint_json FROM recording_evidence_sessions WHERE session_id = ?",
-        "legacy-v3",
-      ),
-    ).toEqual([{ state: "accepted", checkpoint_json: '{"kept":true}' }]);
-    expect(
-      await native.executor.getAllAsync<{ name: string }>(
-        "PRAGMA index_list(recording_evidence_sessions)",
-      ),
-    ).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ name: "one_active_recording_evidence_per_profile" }),
-      ]),
-    );
-    await expect(
-      native.executor.runAsync(
-        "INSERT INTO recording_gps_envelopes VALUES (?, 0, 1, '{}', 2, 'x', 'committed-v1')",
-        "missing",
-      ),
-    ).rejects.toThrow();
-  });
-
-  it("rolls back an injected v4 rebuild failure without advancing user_version, then retries", async () => {
-    const native = await nativeExecutor();
-    close = native.close;
-    await native.executor.execAsync(`
-      CREATE TABLE recording_evidence_sessions (session_id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('active', 'fenced', 'finalized', 'quarantined')), next_sequence INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, finalized_path TEXT, finalized_size INTEGER, finalized_sha256 TEXT, finalized_artifact_json TEXT, finalized_artifact_digest TEXT, next_stream_order INTEGER NOT NULL DEFAULT 0, checkpoint_json TEXT, checkpoint_digest TEXT);
-      CREATE TABLE recording_evidence_quarantine (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, reason TEXT NOT NULL, payload TEXT, quarantined_at INTEGER NOT NULL);
-      PRAGMA user_version = 3;`);
-    await native.executor.runAsync(
-      "INSERT INTO recording_evidence_sessions (session_id, profile_id, state, created_at) VALUES (?, ?, 'active', ?)",
-      "retry-v4",
-      "profile",
-      1,
-    );
     let fail = true;
     const failing: RecordingEvidenceSqlExecutor = {
       ...native.executor,
       async execAsync(source) {
-        await native.executor.execAsync(source);
-        if (fail && source.includes("ALTER TABLE recording_evidence_sessions_v4 RENAME")) {
+        if (fail && source.includes("PRAGMA user_version = 5")) {
           fail = false;
-          throw new Error("injected-v4-rebuild-failure");
+          throw new Error("injected-create-failure");
         }
+        await native.executor.execAsync(source);
       },
       async withExclusiveTransactionAsync(task) {
         await native.executor.withExclusiveTransactionAsync(async () => task(failing));
       },
     };
     await expect(initializeRecordingEvidenceDatabase(failing)).rejects.toThrow(
-      "injected-v4-rebuild-failure",
+      "injected-create-failure",
     );
     expect(
       await native.executor.getAllAsync<{ user_version: number }>("PRAGMA user_version"),
-    ).toEqual([{ user_version: 3 }]);
+    ).toEqual([{ user_version: 0 }]);
     expect(
-      await native.executor.getAllAsync<{ sql: string }>(
-        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'recording_evidence_sessions'",
+      await native.executor.getAllAsync<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'recording_evidence_sessions'",
       ),
-    ).toEqual([expect.objectContaining({ sql: expect.stringContaining("'quarantined'") })]);
+    ).toEqual([]);
     await initializeRecordingEvidenceDatabase(native.executor);
     expect(
       await native.executor.getAllAsync<{ user_version: number }>("PRAGMA user_version"),
     ).toEqual([{ user_version: 5 }]);
+  });
+
+  it.each([1, 6])("rejects schema version %i without mutating its database", async (version) => {
+    const native = await nativeExecutor();
+    close = native.close;
+    await native.executor.execAsync(
+      `CREATE TABLE preserved_rows (value TEXT); PRAGMA user_version = ${version};`,
+    );
+    await native.executor.runAsync("INSERT INTO preserved_rows VALUES ('preserved')");
+
+    await expect(initializeRecordingEvidenceDatabase(native.executor)).rejects.toThrow(
+      "unsupported-recording-evidence-schema",
+    );
+    expect(
+      await native.executor.getAllAsync<{ user_version: number }>("PRAGMA user_version"),
+    ).toEqual([{ user_version: version }]);
+    expect(await native.executor.getAllAsync("SELECT value FROM preserved_rows")).toEqual([
+      { value: "preserved" },
+    ]);
+    expect(
+      await native.executor.getAllAsync(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'recording_evidence_sessions'",
+      ),
+    ).toEqual([]);
   });
 
   it("quarantines only the matching active owner and retains committed bytes", async () => {
@@ -767,7 +743,7 @@ describe("recording evidence native SQLite migrations", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("falls back from stale compatibility IDs to orphan inspection without quarantining a valid peer", async () => {
+  it("quarantines invalid SQLite checkpoint rows without affecting a valid peer", async () => {
     const native = await nativeExecutor();
     close = native.close;
     await initializeRecordingEvidenceDatabase(native.executor);
@@ -791,7 +767,7 @@ describe("recording evidence native SQLite migrations", () => {
 
     expect(
       await quarantineRecordingEvidenceSession({
-        sessionId: "stale-compatibility-id",
+        sessionId: "missing-session",
         profileId: "profile",
         reason: "checkpoint-invalid",
       }),

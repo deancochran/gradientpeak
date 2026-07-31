@@ -29,10 +29,10 @@ export type CurvatureEnvelopePattern = "ramp" | "deload" | "taper" | "event" | "
 interface ResolveEffectiveProjectionControlsInput {
   normalized_config: ProjectionSafetyConfig;
   calibration: TrainingPlanCalibrationConfig;
-  behavior_controls_v1?: ProjectionBehaviorControlsV1Input;
+  behavior_controls?: ProjectionBehaviorControlsInput;
 }
 
-interface ProjectionBehaviorControlsV1Input {
+interface ProjectionBehaviorControlsInput {
   aggressiveness?: number;
   variability?: number;
   spike_frequency?: number;
@@ -77,7 +77,7 @@ const CURVATURE_TARGET_SCALE = 0.18;
 export function resolveEffectiveProjectionControls(
   input: ResolveEffectiveProjectionControlsInput,
 ): EffectiveProjectionControls {
-  const behaviorControls = normalizeBehaviorControls(input.behavior_controls_v1);
+  const behaviorControls = normalizeBehaviorControls(input.behavior_controls);
   const aggressiveness = behaviorControls.aggressiveness;
   const variability = behaviorControls.variability;
   const spikeFrequency = behaviorControls.spike_frequency;
@@ -221,7 +221,7 @@ export function computeCurvaturePenalty(input: {
 }
 
 function normalizeBehaviorControls(
-  input: ProjectionBehaviorControlsV1Input | undefined,
+  input: ProjectionBehaviorControlsInput | undefined,
 ): ResolvedBehaviorControls {
   return {
     aggressiveness: clampNumber(

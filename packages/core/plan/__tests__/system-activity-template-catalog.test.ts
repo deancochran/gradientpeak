@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { activityPlanStructureSchemaV3 } from "../../activity-plan";
+import { activityPlanStructureSchema } from "../../activity-plan";
 
 import {
   ALL_SAMPLE_PLANS,
@@ -96,7 +96,7 @@ describe("system activity-template catalog", () => {
 
   it("keeps every shipped system activity template current-schema compatible", () => {
     for (const template of SYSTEM_TEMPLATES) {
-      expect(() => activityPlanStructureSchemaV3.parse(template.structure)).not.toThrow();
+      expect(() => activityPlanStructureSchema.parse(template.structure)).not.toThrow();
     }
   });
 
@@ -119,7 +119,7 @@ describe("system activity-template catalog", () => {
       .update(JSON.stringify(identityManifest))
       .digest("hex");
 
-    expect(identityHash).toBe("abc3165d6a456b90ef0fa85146c41e667d5f4c257e54fe74b9c9e1bb2eb9149c");
+    expect(identityHash).toBe("11eb4083461303fae18be04f0a178818deebf1ec414e0660b8d7fb10176c3987");
   });
 
   it("does not derive nested IDs from editable display names", () => {
@@ -153,7 +153,7 @@ describe("system activity-template catalog", () => {
     expect(SAMPLE_MULTISPORT_COMPONENT_ACTIVITIES).toHaveLength(6);
     expect(
       SAMPLE_MULTISPORT_COMPONENT_ACTIVITIES.every(
-        (template) => activityPlanStructureSchemaV3.safeParse(template.structure).success,
+        (template) => activityPlanStructureSchema.safeParse(template.structure).success,
       ),
     ).toBe(true);
     expect(byId.get(required(OTHER_THRESHOLD_ROW.id, "missing other threshold id"))).toMatchObject({
@@ -188,7 +188,7 @@ describe("system activity-template catalog", () => {
 
   it("keeps every shipped system activity template executable", () => {
     for (const template of SYSTEM_TEMPLATES) {
-      expect(activityPlanStructureSchemaV3.safeParse(template.structure).success).toBe(true);
+      expect(activityPlanStructureSchema.safeParse(template.structure).success).toBe(true);
     }
   });
 

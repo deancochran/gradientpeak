@@ -8,13 +8,6 @@ import {
 
 export const COMMON_RELATIVE_LOAD_MODEL = "gradientpeak_relative_load" as const;
 export const COMMON_RELATIVE_LOAD_VERSION = "1" as const;
-/**
- * @deprecated Session-RPE remains a separate subjective evidence channel.
- * Retained only for callers that parse stored evidence; it cannot authorize
- * canonical common Load v1.
- */
-export const SESSION_RPE_COMMON_LOAD_CALIBRATION_VERSION =
-  "borg_cr10_anchor_7_intensity_1_v1" as const;
 export const commonLoadMethodSchema = z.enum([
   "power_threshold",
   "critical_power_threshold",
@@ -22,18 +15,6 @@ export const commonLoadMethodSchema = z.enum([
   "swim_pace_threshold",
   "heart_rate_zones",
 ]);
-
-/** @deprecated Separate subjective evidence, not a canonical Load adapter. */
-export const commonSessionRpeEvidenceSchema = z
-  .object({
-    rpe: z.number().int().min(1).max(10),
-    scale: z.literal("borg_cr10"),
-    scaleVersion: z.literal("1"),
-    source: z.enum(["user", "provider", "manual"]),
-    recordedAt: z.string().datetime({ offset: true }),
-    provenanceFingerprint: z.string().trim().min(1),
-  })
-  .strict();
 
 const thresholdEvidenceBaseShape = {
   source: z.enum([
@@ -106,9 +87,6 @@ const commonLoadProvenanceShape = {
   method: commonLoadMethodSchema.nullable(),
   quality: activityCalibrationQualitySchema.nullable(),
   thresholdEvidence: commonThresholdEvidenceSchema.nullable(),
-  // This corrects v1 implementation drift to the accepted v1 adapter set:
-  // session-RPE remains separate subjective evidence, never canonical Load.
-  sessionRpeEvidence: z.null().default(null),
   evidenceFingerprint: z.string().trim().min(1).nullable(),
   computedAsOf: z.string().datetime({ offset: true }),
 };
@@ -541,8 +519,6 @@ export const commonLoadAggregateSchema = z
 
 export type CommonLoadMethod = z.infer<typeof commonLoadMethodSchema>;
 export type CommonThresholdEvidence = z.infer<typeof commonThresholdEvidenceSchema>;
-/** @deprecated Separate subjective evidence, not a canonical Load adapter. */
-export type CommonSessionRpeEvidence = z.infer<typeof commonSessionRpeEvidenceSchema>;
 export type CommonLoadResult = z.infer<typeof commonLoadResultSchema>;
 /**
  * Calculation callers may omit normalized compatibility defaults.

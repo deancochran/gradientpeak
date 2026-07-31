@@ -8,9 +8,13 @@ import type {
 import { athleteIntelligenceRuntimeProjectionSchema } from "../../application/athlete-intelligence/projection-orchestrator";
 import { evaluateAthleteIntelligence } from "../../application/athlete-intelligence/read-model";
 import { createRouterCaller } from "../../test/router";
-import { createAthleteIntelligenceRouter } from "../athlete-intelligence";
+import {
+  createAthleteIntelligenceRouter,
+  resolveAccessibleGoalProfile,
+} from "../athlete-intelligence";
 
 const OWNER_ID = "11111111-1111-4111-8111-111111111111";
+const COACH_ID = "22222222-2222-4222-8222-222222222222";
 const GOAL_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
 const unavailable = {
@@ -120,13 +124,18 @@ function projection() {
   });
 }
 
-function caller(evaluate = vi.fn(async () => projection()), authenticated = true) {
-  const router = createAthleteIntelligenceRouter(evaluate);
+function caller(
+  evaluate = vi.fn(async () => projection()),
+  authenticated = true,
+  resolveAccessibleGoalProfile = vi.fn(async () => OWNER_ID),
+  userId = OWNER_ID,
+) {
+  const router = createAthleteIntelligenceRouter(evaluate, resolveAccessibleGoalProfile);
   return {
     evaluate,
     caller: createRouterCaller(router, {
       db: {},
-      userId: OWNER_ID,
+      userId,
       ...(authenticated ? {} : { session: null }),
     }),
   };
@@ -160,6 +169,71 @@ describe("athleteIntelligenceRouter.evaluate", () => {
       expect.objectContaining({ profileId: OWNER_ID, goalId: GOAL_ID }),
     );
     expect(athleteIntelligenceRuntimeProjectionSchema.parse(result)).toEqual(result);
+  });
+
+  it("evaluates an accessible athlete goal in the athlete profile scope for an active coach", async () => {
+    const evaluate = vi.fn(async () => projection());
+    const resolveAccessibleGoalProfile = vi.fn(async () => OWNER_ID);
+    const { caller: api } = caller(evaluate, true, resolveAccessibleGoalProfile, COACH_ID);
+
+    await api.evaluate({ goalId: GOAL_ID });
+
+    expect(resolveAccessibleGoalProfile).toHaveBeenCalledWith(
+      expect.objectContaining({ goalId: GOAL_ID }),
+    );
+    expect(evaluate).toHaveBeenCalledWith(
+      expect.objectContaining({ goalId: GOAL_ID, profileId: OWNER_ID }),
+    );
+  });
+
+  it("resolves delegated goal access to the athlete profile and hides denied goals", async () => {
+    const goal = {
+      id: GOAL_ID,
+      profile_id: OWNER_ID,
+      target_date: "2026-09-01",
+      title: "Coach-visible goal",
+      priority: 8,
+      activity_category: "run" as const,
+      target_payload: { type: "consistency" as const, target_weeks: 8 },
+    };
+    const getGoal = vi.fn(async () => goal);
+    const assertAccess = vi.fn(async () => undefined);
+    const context = { session: { user: { id: COACH_ID } } } as never;
+
+    await expect(
+      resolveAccessibleGoalProfile({
+        ctx: context,
+        db: {} as never,
+        goalId: GOAL_ID,
+        getGoal,
+        assertAccess,
+      }),
+    ).resolves.toBe(OWNER_ID);
+    expect(assertAccess).toHaveBeenCalledWith({ ctx: context, profileId: OWNER_ID });
+
+    assertAccess.mockRejectedValueOnce(
+      new TRPCError({ code: "FORBIDDEN", message: "No delegated access" }),
+    );
+    await expect(
+      resolveAccessibleGoalProfile({
+        ctx: context,
+        db: {} as never,
+        goalId: GOAL_ID,
+        getGoal,
+        assertAccess,
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("does not evaluate a goal outside the authenticated athlete scope", async () => {
+    const resolveAccessibleGoalProfile = vi.fn(async () => {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Goal not found" });
+    });
+    const evaluate = vi.fn(async () => projection());
+    const { caller: api } = caller(evaluate, true, resolveAccessibleGoalProfile, COACH_ID);
+
+    await expect(api.evaluate({ goalId: GOAL_ID })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(evaluate).not.toHaveBeenCalled();
   });
 
   it("returns only curated explainability evidence without source identifiers or raw observations", async () => {

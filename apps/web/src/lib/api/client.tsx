@@ -1,3 +1,4 @@
+import { CONTRACT_EPOCH_HEADER, CURRENT_CONTRACT_EPOCH } from "@repo/api/client";
 import { api, createApiBatchLink, createApiUrl, createQueryClient } from "@repo/api/react";
 import type { QueryClient } from "@tanstack/react-query";
 
@@ -12,11 +13,16 @@ export function getQueryClient() {
     return createQueryClient();
   }
 
-  return (clientQueryClientSingleton ??= createQueryClient());
+  if (!clientQueryClientSingleton) {
+    clientQueryClientSingleton = createQueryClient();
+  }
+
+  return clientQueryClientSingleton;
 }
 
-function createWebHeaders() {
+export function createWebHeaders() {
   const headers = new Headers();
+  headers.set(CONTRACT_EPOCH_HEADER, String(CURRENT_CONTRACT_EPOCH));
   headers.set("x-api-source", "tanstack-start");
   headers.set("x-client-type", "web");
   return headers;

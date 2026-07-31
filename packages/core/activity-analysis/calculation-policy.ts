@@ -8,11 +8,6 @@ export const activityTssMethodValues = [
   "heart_rate_threshold",
 ] as const;
 export type ActivityTssMethod = (typeof activityTssMethodValues)[number];
-export const activityTssIdentityMethodValues = [
-  ...activityTssMethodValues,
-  "heart_rate_reserve",
-] as const;
-export type ActivityTssIdentityMethod = (typeof activityTssIdentityMethodValues)[number];
 export type ActivityPerformanceCurveKind =
   | "power_duration"
   | "grade_adjusted_speed_duration"
@@ -29,19 +24,13 @@ export type CompletedActivityCalculationPolicy = {
   tssMethods: readonly ActivityTssMethod[];
 };
 
-/** Append-only compatibility for parsing historical calculation identities. */
-export const activityTssCompatibleMethodsByActivityCategory = {
-  run: ["run_pace_threshold", "heart_rate_threshold", "heart_rate_reserve"],
-  bike: [
-    "power_threshold",
-    "critical_power_threshold",
-    "heart_rate_threshold",
-    "heart_rate_reserve",
-  ],
-  swim: ["swim_pace_threshold", "heart_rate_threshold", "heart_rate_reserve"],
-  strength: ["heart_rate_threshold", "heart_rate_reserve"],
-  other: ["heart_rate_threshold", "heart_rate_reserve"],
-} as const satisfies Record<CanonicalActivityCategory, readonly ActivityTssIdentityMethod[]>;
+export const activityTssMethodsByActivityCategory = {
+  run: ["run_pace_threshold", "heart_rate_threshold"],
+  bike: ["power_threshold", "critical_power_threshold", "heart_rate_threshold"],
+  swim: ["swim_pace_threshold", "heart_rate_threshold"],
+  strength: ["heart_rate_threshold"],
+  other: ["heart_rate_threshold"],
+} as const satisfies Record<CanonicalActivityCategory, readonly ActivityTssMethod[]>;
 
 /** Curve, threshold, and ordered IF/TSS methods for every canonical activity_category. */
 export const completedActivityCalculationPolicy = {

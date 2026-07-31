@@ -64,9 +64,9 @@ export async function finalizeTimerRecordingArtifact({
   });
 }
 
-export function buildCreateFromRecordingSummaryInput(
+export function buildUploadedRecordingSummaryInput(
   artifact: PortableWebRecordingArtifact,
-  upload: { bucket: string; path: string },
+  upload: { ingestionId: string },
 ) {
   return {
     profileId: artifact.ownerId,
@@ -76,7 +76,7 @@ export function buildCreateFromRecordingSummaryInput(
     startedAt: artifact.startedAt,
     finishedAt: artifact.finishedAt,
     activityPlanId: artifact.snapshot.activity.activityPlanId,
-    artifactSource: "acceptedArtifact" as const,
+    artifactSource: "uploadedArtifact" as const,
     executionManifest: {
       version: 1 as const,
       compilerVersion: 1,
@@ -98,17 +98,9 @@ export function buildCreateFromRecordingSummaryInput(
         },
       ],
     },
-    acceptedArtifact: {
-      sha256: artifact.sha256,
-      byteSize: new TextEncoder().encode(artifact.fileText).byteLength,
-      bucket: upload.bucket,
-      path: upload.path,
-      mediaType: "application/vnd.garmin.tcx+xml",
-      format: "tcx" as const,
-      originalName: artifact.fileName,
-    },
+    uploadedArtifact: { ingestionId: upload.ingestionId },
     summary: {
-      distanceMeters: artifact.review.distanceMeters,
+      distanceMeters: Math.round(artifact.review.distanceMeters),
       calories: artifact.review.calories,
     },
     source: "mobile_recording" as const,

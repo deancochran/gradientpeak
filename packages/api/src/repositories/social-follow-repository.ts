@@ -64,15 +64,18 @@ export async function createFollowRelationshipIfAbsent(
   });
 }
 
-export async function removeFollowRelationship(
+export async function cancelFollowRelationship(
   db: DbClient,
   followerId: string,
   followingId: string,
 ) {
-  await db.execute(sql`
-    delete from follows where follower_id = ${followerId}::uuid
-      and following_id = ${followingId}::uuid
-  `);
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`
+      delete from follows where follower_id = ${followerId}::uuid
+        and following_id = ${followingId}::uuid
+    `);
+    await deleteFollowRequestNotification(tx, followingId, followerId);
+  });
 }
 
 export async function transitionFollowRequest(

@@ -75,6 +75,7 @@ describe("WahooPlannedActivityProvider", () => {
         jobType: "wahoo.publish_event",
         operation: "publish",
         payloadHash: expect.any(String),
+        priority: 50,
         profileId: "profile-1",
         runAt: "2026-07-28T12:00:00.000Z",
         syncLaneKey: "wahoo:integration-1:planned_activity",
@@ -124,6 +125,26 @@ describe("WahooPlannedActivityProvider", () => {
     expect(enqueueJob).toHaveBeenCalledWith(
       expect.objectContaining({ runAt: "2026-08-04T12:00:00.000Z" }),
     );
+  });
+
+  it("immediately queues an eligible workout whose start time already passed", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-29T22:00:00.000Z"));
+    const { enqueueJob, provider } = providerFixture({
+      startsAt: "2026-07-29T06:00:00.000Z",
+    });
+
+    await provider.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" });
+
+    expect(enqueueJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        priority: 50,
+        runAt: "2026-07-29T22:00:00.000Z",
+      }),
+    );
+    expect(enqueueJob.mock.calls[0]?.[0].payload).toMatchObject({
+      startsAt: "2026-07-29T06:00:00.000Z",
+    });
   });
 
   it("uses a transaction-provided enqueue function", async () => {
@@ -220,6 +241,7 @@ describe("WahooPlannedActivityProvider", () => {
       expect.objectContaining({
         integrationGeneration: 4,
         jobType: "wahoo.unsync_event",
+        priority: 50,
         payload: {
           eventId: "event-1",
           operation: "unsync",

@@ -11,7 +11,7 @@ const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
 function segment(
   id: string,
   ordinal: number,
-  activity_category: "bike" | "run",
+  activity_category: "bike" | "run" | "swim" | "strength" | "other",
   start: number,
   end: number,
   heartRateDistribution?: {
@@ -451,6 +451,110 @@ describe("segment-derived activity analysis", () => {
     expect(summaries[0]?.tss).toBeNull();
   });
 
+  it("uses corrected active-duration swim speed for CSS-backed Load", async () => {
+    const activityId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const segmentId = "11111111-1111-4111-8111-111111111111";
+    const activeSeconds = 3_622;
+    const elapsedSeconds = 4_629;
+    const distanceMeters = 3_050;
+    const correctedAverageSpeed = distanceMeters / activeSeconds;
+    const sparseRecordAverageSpeed = 0.8830737704918031;
+    const input = {
+      id: activityId,
+      profile_id: PROFILE_ID,
+      started_at: new Date("2026-07-01T08:00:00.000Z"),
+      finished_at: new Date("2026-07-01T09:17:09.000Z"),
+      elapsed_ms: elapsedSeconds * 1_000,
+      active_ms: null,
+      moving_ms: null,
+      timing_coverage: "partial" as const,
+      distance_meters: distanceMeters,
+      avg_heart_rate: null,
+      max_heart_rate: null,
+      segments: [
+        {
+          id: segmentId,
+          activity_id: activityId,
+          ordinal: 0,
+          role: "activity" as const,
+          activity_category: "swim" as const,
+          start_offset_ms: 0,
+          end_offset_ms: elapsedSeconds * 1_000,
+          source_artifact_id: null,
+          source_session_index: 0,
+          source_message_index: null,
+          raw_type_string: null,
+          raw_type_integer: null,
+          raw_sport_string: "swimming",
+          raw_sport_integer: null,
+          raw_sub_sport_string: null,
+          raw_sub_sport_integer: null,
+          timing_coverage: "partial" as const,
+          active_ms: activeSeconds * 1_000,
+          moving_ms: null,
+          summary: {
+            version: 1,
+            timing: { timingCoverage: "partial" as const, activeMs: activeSeconds * 1_000 },
+            distanceMeters,
+            averageSpeedMetersPerSecond: correctedAverageSpeed,
+            normalizedSpeedMetersPerSecond: distanceMeters / elapsedSeconds,
+          },
+        },
+      ],
+    };
+    const analysisStore = {
+      loadContextEvidence: vi.fn(
+        async () =>
+          new Map([
+            [
+              PROFILE_ID,
+              {
+                profile: { dob: null, gender: null },
+                profileMetrics: [
+                  {
+                    metric_type: "css_seconds_per_100m",
+                    recorded_at: new Date("2026-06-30T08:00:00.000Z"),
+                    unit: "seconds_per_100m",
+                    value: 100,
+                    source: "test",
+                    calculation_version: "css-reference-v1",
+                  },
+                ],
+                recentEfforts: [],
+              },
+            ],
+          ]),
+      ),
+    };
+
+    const [summary] = await buildActivitySegmentDerivedSummaries({
+      store: analysisStore as never,
+      profileId: PROFILE_ID,
+      activities: [input],
+    });
+    const expectedLoad = (activeSeconds / 3_600) * correctedAverageSpeed ** 2 * 100;
+    const sparseRecordLoad = (activeSeconds / 3_600) * sparseRecordAverageSpeed ** 2 * 100;
+
+    expect(summary).toMatchObject({
+      method: "swim_pace_threshold",
+      unavailable_reason: null,
+      common_load: {
+        status: "available",
+        method: "swim_pace_threshold",
+        contributingDurationSeconds: activeSeconds,
+      },
+    });
+    expect(summary?.intensity_factor).toBeCloseTo(correctedAverageSpeed);
+    expect(summary?.tss).toBe(Math.round(expectedLoad));
+    const commonLoad = summary?.common_load;
+    if (commonLoad?.status !== "available") {
+      throw new Error("Expected corrected swim Load to be available");
+    }
+    expect(commonLoad.intensity).toBeCloseTo(correctedAverageSpeed);
+    expect(commonLoad.load).toBeCloseTo(expectedLoad);
+    expect(commonLoad.load).toBeLessThan(sparseRecordLoad);
+  });
+
   it.each([
     {
       name: "full",
@@ -628,6 +732,34 @@ describe("segment-derived activity analysis", () => {
       unavailable_reason: "threshold_missing",
     });
   });
+  it.each([
+    { category: "strength" as const, commonReason: "unsupported_modality" },
+    { category: "other" as const, commonReason: "unsupported_modality" },
+    { category: "bike" as const, commonReason: "duration_missing" },
+    { category: "run" as const, commonReason: "duration_missing" },
+    { category: "swim" as const, commonReason: "duration_missing" },
+  ])("uses $commonReason before thresholds when $category timing is unavailable", async ({
+    category,
+    commonReason,
+  }) => {
+    const unavailable = {
+      ...segment("11111111-1111-4111-8111-111111111111", 0, category, 0, 60_000),
+      summary: { version: 1, timing: { timingCoverage: "unavailable" } },
+      timing_coverage: "unavailable",
+      active_ms: null,
+      moving_ms: null,
+    } as unknown as ReturnType<typeof segment>;
+    const [result] = await buildActivitySegmentDerivedSummaries({
+      store: store() as never,
+      profileId: PROFILE_ID,
+      activities: [activity([unavailable])],
+    });
+    expect(result).toMatchObject({
+      unavailable_reason: "activity_data_missing",
+      common_load: { status: "unavailable", reason: commonReason },
+    });
+  });
+
   it("does not load or inject effective session-RPE into canonical analysis", async () => {
     const rpeOnlySegment = segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 3_600_000);
     const input = activity([

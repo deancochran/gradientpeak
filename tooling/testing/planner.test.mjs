@@ -76,25 +76,25 @@ test("source-file selection covers the containing capsule recursively", async ()
   );
 });
 
-test("tooling self-tests are selected for their source capsule and use node:test", async () => {
+test("current-contract self-tests are selected for their source capsule and use node:test", async () => {
   const root = await fixture([
-    "tooling/multisport/legacy-denylist-lib.mjs",
-    "tooling/multisport/legacy-denylist.self-test.mjs",
+    "tooling/current-contract/scanner.mjs",
+    "tooling/current-contract/scanner.self-test.mjs",
   ]);
   const plan = await createPlan({
     root,
-    selector: { path: "tooling/multisport/legacy-denylist-lib.mjs" },
+    selector: { path: "tooling/current-contract/scanner.mjs" },
   });
 
   assert.deepEqual(
     plan.tests.map(({ kind, path: testPath }) => [kind, testPath]),
-    [["unit", "tooling/multisport/legacy-denylist.self-test.mjs"]],
+    [["unit", "tooling/current-contract/scanner.self-test.mjs"]],
   );
   assert.deepEqual(plan.commands, [
     {
       command: "node",
-      args: ["--test", "tooling/multisport/legacy-denylist.self-test.mjs"],
-      tests: ["tooling/multisport/legacy-denylist.self-test.mjs"],
+      args: ["--test", "tooling/current-contract/scanner.self-test.mjs"],
+      tests: ["tooling/current-contract/scanner.self-test.mjs"],
     },
   ]);
 });
@@ -104,7 +104,7 @@ test("repository-root config files do not expand into the entire repository", as
     "package.json",
     "apps/web/src/unrelated.test.ts",
     "tooling/architecture/check-architecture.test.mjs",
-    "tooling/multisport/legacy-denylist.self-test.mjs",
+    "tooling/current-contract/scanner.self-test.mjs",
     "tooling/testing/planner.test.mjs",
     "tooling/architecture/fixtures/example/missing.test.ts",
     "tests/parity/web-mobile-parity.test.ts",
@@ -116,7 +116,7 @@ test("repository-root config files do not expand into the entire repository", as
     [
       "tests/parity/web-mobile-parity.test.ts",
       "tooling/architecture/check-architecture.test.mjs",
-      "tooling/multisport/legacy-denylist.self-test.mjs",
+      "tooling/current-contract/scanner.self-test.mjs",
       "tooling/testing/planner.test.mjs",
     ],
   );

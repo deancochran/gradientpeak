@@ -74,7 +74,9 @@ export const publicProfilesRowSchema = createSelectSchema(profiles);
 export const publicProfilesInsertSchema = createInsertSchema(profiles);
 export const publicProfilesUpdateSchema = createUpdateSchema(profiles);
 
-export const publicActivityRoutesRowSchema = createSelectSchema(activityRoutes);
+export const publicActivityRoutesRowSchema = createSelectSchema(activityRoutes).omit({
+  file_sha256: true,
+});
 export const publicActivityRoutesInsertSchema = createInsertSchema(activityRoutes);
 export const publicActivityRoutesUpdateSchema = createUpdateSchema(activityRoutes);
 

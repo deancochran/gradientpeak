@@ -50,9 +50,7 @@ export function buildCompleteOnboardingInput(
       username,
       vo2max: data.vo2max ?? undefined,
       weight_kg: data.weight_kg ?? undefined,
-      ...(Object.keys(baselineFieldSources).length > 0
-        ? { baseline_field_sources: baselineFieldSources }
-        : null),
+      baseline_field_sources: baselineFieldSources,
     },
     profile: { full_name: fullName, username },
   };

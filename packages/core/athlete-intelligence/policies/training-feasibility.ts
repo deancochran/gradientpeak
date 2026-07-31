@@ -33,9 +33,7 @@ export const trainingFeasibilityInputSchema = z
   .object({
     sourceId: sourceIdSchema,
     assessmentAsOf: z.string().datetime({ offset: true }),
-    // `timezone` remains accepted for callers on the prior contract.
     planningTimezone: z.string().trim().min(1).max(64).nullable().optional(),
-    timezone: z.string().trim().min(1).max(64).nullable(),
     planningStart: z.string().datetime({ offset: true }).nullable(),
     goalDate: z.string().date().nullable(),
     availabilityWindows: z.array(
@@ -62,8 +60,7 @@ export const trainingFeasibilityInputSchema = z
     requiredWeeklyMinutes: nullableNonnegative,
     requiredWeeklySessions: z.number().int().nonnegative().nullable(),
     // Required-session coverage is activity-category-specific when a session target is stated.
-    // Optional preserves compatibility for callers that do not use session coverage.
-    targetGoalActivityCategory: z.string().trim().min(1).max(64).nullable().optional(),
+    targetGoalActivityCategory: z.string().trim().min(1).max(64).nullable(),
     scheduleComplete: z.boolean(),
     plannedSchedule: z.array(
       z
@@ -300,11 +297,9 @@ function expandSchedule(
   for (const event of input.plannedSchedule) {
     const recurrence = event.recurrence;
     // Recurring events retain the calendar's recurrence zone, which can differ from the
-    // athlete's planning zone. Old callers without event metadata retain prior behavior.
+    // athlete's planning zone.
     const recurrenceFormat = recurrence
-      ? formatter(
-          recurrence.timezone ?? event.timezone ?? input.planningTimezone ?? input.timezone ?? "",
-        )
+      ? formatter(recurrence.timezone ?? event.timezone ?? input.planningTimezone ?? "")
       : planningFormat;
     if (!recurrenceFormat) {
       truncated = true;
@@ -465,7 +460,7 @@ export function calculateTrainingFeasibility(
 ): TrainingFeasibilityResults {
   const input = trainingFeasibilityInputSchema.parse(raw);
   const source = input.sourceId;
-  const planningTimezone = input.planningTimezone ?? input.timezone;
+  const planningTimezone = input.planningTimezone;
   const timezoneFormat = planningTimezone ? formatter(planningTimezone) : null;
   const start = input.planningStart ? new Date(input.planningStart) : null;
   const startKey = start && timezoneFormat ? localDateKey(start, timezoneFormat) : null;

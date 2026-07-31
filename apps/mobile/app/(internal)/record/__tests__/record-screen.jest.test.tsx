@@ -194,7 +194,7 @@ jest.mock("@/lib/hooks/useStandalonePermissions", () => ({
 
 jest.mock("@/lib/providers/ActivityRecorderProvider", () => ({
   __esModule: true,
-  useSharedActivityRecorder: () => service,
+  useActivityRecorderService: () => ({ service }),
 }));
 
 jest.mock("@/lib/services/permissions-check", () => ({

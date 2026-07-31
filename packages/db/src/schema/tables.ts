@@ -14,7 +14,6 @@ import {
   pgTable,
   primaryKey,
   real,
-  serial,
   text,
   timestamp,
   unique,
@@ -176,8 +175,6 @@ export const organizationMemberships = pgTable(
     profile_id: uuid("profile_id")
       .notNull()
       .references(() => profiles.id, { onDelete: "restrict" }),
-    // Legacy reader compatibility only; lifecycle authority is terminal timestamps.
-    status: text("status", { enum: ["active", "inactive"] }),
     suspended_at: timestamp("suspended_at", { withTimezone: true, mode: "date" }),
     ended_at: timestamp("ended_at", { withTimezone: true, mode: "date" }),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
@@ -252,61 +249,6 @@ export const organizations = pgTable(
   ],
 );
 
-export const organizationRoles = pgTable(
-  "organization_roles",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    organization_id: uuid("organization_id")
-      .notNull()
-      .references(() => organizations.id, { onDelete: "restrict" }),
-    key: text("key").notNull(),
-    name: text("name").notNull(),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    unique("organization_roles_organization_key_unique").on(table.organization_id, table.key),
-    unique("organization_roles_id_organization_unique").on(table.id, table.organization_id),
-    check("organization_roles_key_non_empty", sql`btrim(${table.key}) <> ''`),
-    check("organization_roles_name_non_empty", sql`btrim(${table.name}) <> ''`),
-  ],
-);
-
-export const organizationPermissions = pgTable(
-  "organization_permissions",
-  {
-    key: text("key", { enum: ["coaching.access"] }).primaryKey(),
-    description: text("description").notNull(),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    check("organization_permissions_key_check", sql`${table.key} in ('coaching.access')`),
-    check("organization_permissions_description_non_empty", sql`btrim(${table.description}) <> ''`),
-  ],
-);
-
-export const organizationRolePermissionGrants = pgTable(
-  "organization_role_permission_grants",
-  {
-    role_id: uuid("role_id")
-      .notNull()
-      .references(() => organizationRoles.id, { onDelete: "restrict" }),
-    permission_key: text("permission_key", { enum: ["coaching.access"] })
-      .notNull()
-      .references(() => organizationPermissions.key, { onDelete: "restrict" }),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [primaryKey({ columns: [table.role_id, table.permission_key] })],
-);
-
 export const organizationMembershipRoleGrants = pgTable(
   "organization_membership_role_grants",
   {
@@ -315,9 +257,6 @@ export const organizationMembershipRoleGrants = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "restrict" }),
     membership_id: uuid("membership_id").notNull(),
-    // Legacy reader compatibility only; new writes use role_key and revocation history.
-    role_id: uuid("role_id"),
-    status: text("status", { enum: ["active", "inactive"] }),
     role_key: text("role_key", { enum: organizationRoleKeyDbValues }).notNull(),
     granted_at: timestamp("granted_at", { withTimezone: true, mode: "date" })
       .defaultNow()
@@ -336,14 +275,13 @@ export const organizationMembershipRoleGrants = pgTable(
       foreignColumns: [organizationMemberships.organization_id, organizationMemberships.id],
       name: "organization_membership_role_grants_membership_fkey",
     }).onDelete("restrict"),
-    foreignKey({
-      columns: [table.role_id, table.organization_id],
-      foreignColumns: [organizationRoles.id, organizationRoles.organization_id],
-      name: "organization_membership_role_grants_role_fkey",
-    }).onDelete("restrict"),
     uniqueIndex("organization_membership_role_grants_active_unique")
       .on(table.organization_id, table.membership_id, table.role_key)
       .where(sql`${table.revoked_at} is null`),
+    index("organization_membership_role_grants_membership_fkey_idx").on(
+      table.organization_id,
+      table.membership_id,
+    ),
     check(
       "organization_membership_role_grants_role_key_check",
       sql`${table.role_key} in ('admin', 'coach')`,
@@ -431,6 +369,14 @@ export const coachingAssignments = pgTable(
     index("coaching_assignments_active_coach_membership_idx")
       .on(table.organization_id, table.coach_membership_id)
       .where(sql`${table.ended_at} is null`),
+    index("coaching_assignments_engagement_fkey_idx").on(
+      table.organization_id,
+      table.engagement_id,
+    ),
+    index("coaching_assignments_membership_fkey_idx").on(
+      table.organization_id,
+      table.coach_membership_id,
+    ),
     check(
       "coaching_assignments_kind_check",
       sql`${table.assignment_kind} in ('primary', 'supporting')`,
@@ -475,6 +421,10 @@ export const athleteConsentPolicyVersions = pgTable(
     check(
       "athlete_consent_policy_versions_supersedes_not_self_check",
       sql`${table.supersedes_policy_version_id} is null or ${table.supersedes_policy_version_id} <> ${table.id}`,
+    ),
+    index("athlete_consent_policy_versions_supersedes_scope_fkey_idx").on(
+      table.supersedes_policy_version_id,
+      table.scope_key,
     ),
   ],
 );
@@ -545,6 +495,18 @@ export const athleteDataSharingConsents = pgTable(
     index("athlete_data_sharing_consents_successor_idx")
       .on(table.superseded_by_consent_id)
       .where(sql`${table.superseded_by_consent_id} is not null`),
+    index("athlete_data_sharing_consents_engagement_fkey_idx").on(
+      table.organization_id,
+      table.engagement_id,
+      table.athlete_profile_id,
+    ),
+    index("athlete_data_sharing_consents_successor_fkey_idx").on(
+      table.organization_id,
+      table.engagement_id,
+      table.athlete_profile_id,
+      table.scope_key,
+      table.superseded_by_consent_id,
+    ),
     check(
       "athlete_data_sharing_consents_grantor_check",
       sql`${table.granted_by_profile_id} = ${table.athlete_profile_id}`,
@@ -606,6 +568,15 @@ export const organizationAuditEvents = pgTable(
     index("organization_audit_events_actor_membership_idx")
       .on(table.organization_id, table.actor_membership_id)
       .where(sql`${table.actor_membership_id} is not null`),
+    index("organization_audit_events_actor_membership_fkey_idx").on(
+      table.organization_id,
+      table.actor_membership_id,
+    ),
+    index("organization_audit_events_actor_identity_fkey_idx").on(
+      table.organization_id,
+      table.actor_membership_id,
+      table.actor_profile_id,
+    ),
     uniqueIndex("organization_audit_events_correlation_action_unique")
       .on(table.organization_id, table.correlation_id, table.action)
       .where(sql`${table.correlation_id} is not null`),
@@ -617,6 +588,10 @@ export const organizationAuditEvents = pgTable(
     check(
       "organization_audit_events_details_object",
       sql`jsonb_typeof(${table.details}) = 'object'`,
+    ),
+    check(
+      "organization_audit_events_details_size_check",
+      sql`pg_column_size(${table.details}) <= 4096`,
     ),
     check(
       "organization_audit_events_actor_membership_profile_check",
@@ -708,6 +683,12 @@ export const activityRoutes = pgTable(
     name: text("name").notNull(),
     description: text("description"),
     file_path: text("file_path").notNull(),
+    file_sha256: text("file_sha256"),
+    storage_state: text("storage_state", {
+      enum: ["upload_pending", "ready", "deletion_pending"],
+    })
+      .notNull()
+      .default("ready"),
     total_distance: integer("total_distance").notNull(),
     total_ascent: integer("total_ascent"),
     total_descent: integer("total_descent"),
@@ -721,6 +702,14 @@ export const activityRoutes = pgTable(
     check("activity_routes_total_ascent_check", sql`${table.total_ascent} >= 0`),
     check("activity_routes_total_descent_check", sql`${table.total_descent} >= 0`),
     check(
+      "activity_routes_file_sha256_check",
+      sql`${table.file_sha256} is null or ${table.file_sha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "activity_routes_storage_state_check",
+      sql`${table.storage_state} in ('upload_pending', 'ready', 'deletion_pending')`,
+    ),
+    check(
       "activity_routes_system_templates_public_check",
       sql`${table.is_system_template} = false or ${table.is_public} = true`,
     ),
@@ -731,10 +720,26 @@ export const activityRoutes = pgTable(
     index("idx_routes_profile_id").on(table.profile_id).where(sql`${table.profile_id} is not null`),
     index("idx_routes_name").on(table.name),
     index("idx_routes_created_at").on(table.created_at),
+    index("idx_routes_profile_storage_state").on(table.profile_id, table.storage_state),
     index("idx_routes_is_system_template")
       .on(table.is_system_template)
       .where(sql`${table.is_system_template} = true`),
   ],
+);
+
+export const activityRouteDeletionReceipts = pgTable(
+  "activity_route_deletion_receipts",
+  {
+    route_id: uuid("route_id").primaryKey(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    file_path: text("file_path").notNull(),
+    deleted_at: timestamp("deleted_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [index("idx_activity_route_deletion_receipts_profile").on(table.profile_id)],
 );
 
 export const activityPlans = pgTable(
@@ -1310,8 +1315,7 @@ export const activities = pgTable(
     avg_swolf: numeric("avg_swolf", { mode: "number" }),
     efficiency_factor: numeric("efficiency_factor", { mode: "number" }),
     aerobic_decoupling: numeric("aerobic_decoupling", { mode: "number" }),
-    // Canonical pool length is metres. This retained column name avoids a compatibility migration.
-    pool_length: numeric("pool_length", { mode: "number" }),
+    pool_length_meters: numeric("pool_length_meters", { mode: "number" }),
     total_strokes: integer("total_strokes"),
     device_manufacturer: text("device_manufacturer"),
     device_product: text("device_product"),
@@ -1884,6 +1888,9 @@ export const activitySessionRpeEvidence = pgTable(
     uniqueIndex("activity_session_rpe_evidence_one_replacement_per_evidence_unique")
       .on(table.correction_of_id)
       .where(sql`${table.correction_of_id} is not null`),
+    uniqueIndex("activity_session_rpe_evidence_one_root_per_activity_profile_unique")
+      .on(table.activity_id, table.profile_id)
+      .where(sql`${table.correction_of_id} is null`),
     index("idx_activity_session_rpe_evidence_activity_recorded")
       .on(table.activity_id, table.recorded_at, table.id)
       .where(sql`${table.correction_of_id} is null`),
@@ -1965,14 +1972,23 @@ export const integrationCredentials = pgTable(
       .defaultNow()
       .notNull(),
   },
-  (table) => [index("idx_integration_credentials_expires_at").on(table.expires_at)],
+  (table) => [
+    index("idx_integration_credentials_expires_at").on(table.expires_at),
+    check(
+      "integration_credentials_access_token_envelope_check",
+      sql`${table.access_token} like 'enc:v1:%'`,
+    ),
+    check(
+      "integration_credentials_refresh_token_envelope_check",
+      sql`${table.refresh_token} is null or ${table.refresh_token} like 'enc:v1:%'`,
+    ),
+  ],
 );
 
 export const profileMetrics = pgTable(
   "profile_metrics",
   {
     id: uuid("id").primaryKey(),
-    idx: serial("idx").notNull(),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -1997,7 +2013,6 @@ export const profileMetrics = pgTable(
     provenance: jsonb("provenance"),
   },
   (table) => [
-    uniqueIndex("profile_metrics_idx_key").on(table.idx),
     check("profile_metrics_value_check", sql`${table.value} >= 0`),
     check(
       "profile_metrics_method_not_blank_check",
@@ -2063,13 +2078,111 @@ export const profileGoals = pgTable(
       .references(() => profiles.id),
     title: text("title").notNull(),
     priority: integer("priority").notNull(),
-    activity_category: text("activity_category"),
-    target_date: date("target_date"),
-    target_payload: jsonb("target_payload"),
+    activity_category: text("activity_category").notNull(),
+    target_date: date("target_date").notNull(),
+    target_payload: jsonb("target_payload").notNull(),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
     updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
   },
-  (table) => [index("idx_profile_goals_profile_id").on(table.profile_id)],
+  (table) => [
+    index("idx_profile_goals_profile_id").on(table.profile_id),
+    check(
+      "profile_goals_title_length_check",
+      sql`char_length(btrim(${table.title})) between 1 and 100`,
+    ),
+    check("profile_goals_priority_range", sql`${table.priority} between 0 and 10`),
+    check(
+      "profile_goals_activity_category_check",
+      sql`${table.activity_category} in ('run', 'bike', 'swim', 'strength', 'other')`,
+    ),
+    check(
+      "profile_goals_target_payload_shape_check",
+      sql`jsonb_typeof(${table.target_payload}) = 'object'
+        and ${table.target_payload} ? 'type'
+        and jsonb_typeof(${table.target_payload}->'type') = 'string'
+        and ${table.target_payload}->>'type' in ('event_performance', 'threshold', 'completion', 'consistency')
+        and (not (${table.target_payload} ? 'activity_category')
+          or (jsonb_typeof(${table.target_payload}->'activity_category') = 'string'
+            and ${table.target_payload}->>'activity_category' = ${table.activity_category}))`,
+    ),
+    check(
+      "profile_goals_event_performance_payload_check",
+      sql`${table.target_payload}->>'type' <> 'event_performance' or (
+        ${table.target_payload} - array['type', 'activity_category', 'distance_m', 'target_time_s', 'target_speed_mps', 'environment', 'tolerance_pct']::text[] = '{}'::jsonb
+        and ${table.target_payload} ? 'activity_category'
+        and ${table.target_payload} ? 'distance_m'
+        and case when jsonb_typeof(${table.target_payload}->'distance_m') = 'number'
+          then (${table.target_payload}->>'distance_m')::numeric > 0 else false end
+        and (${table.target_payload} ? 'target_time_s' or ${table.target_payload} ? 'target_speed_mps')
+        and (not (${table.target_payload} ? 'target_time_s') or case
+          when jsonb_typeof(${table.target_payload}->'target_time_s') = 'number'
+          then (${table.target_payload}->>'target_time_s')::numeric > 0
+            and trunc((${table.target_payload}->>'target_time_s')::numeric) = (${table.target_payload}->>'target_time_s')::numeric
+          else false end)
+        and (not (${table.target_payload} ? 'target_speed_mps') or case
+          when jsonb_typeof(${table.target_payload}->'target_speed_mps') = 'number'
+          then (${table.target_payload}->>'target_speed_mps')::numeric > 0 else false end)
+        and (not (${table.target_payload} ? 'environment') or (
+          jsonb_typeof(${table.target_payload}->'environment') = 'string'
+          and char_length(btrim(${table.target_payload}->>'environment')) between 1 and 80))
+        and (not (${table.target_payload} ? 'tolerance_pct') or case
+          when jsonb_typeof(${table.target_payload}->'tolerance_pct') = 'number'
+          then (${table.target_payload}->>'tolerance_pct')::numeric between 0 and 1 else false end)
+      )`,
+    ),
+    check(
+      "profile_goals_threshold_payload_check",
+      sql`${table.target_payload}->>'type' <> 'threshold' or (
+        ${table.target_payload} - array['type', 'metric', 'activity_category', 'value', 'test_duration_s', 'tolerance_pct']::text[] = '{}'::jsonb
+        and ${table.target_payload} ? 'metric'
+        and jsonb_typeof(${table.target_payload}->'metric') = 'string'
+        and ${table.target_payload}->>'metric' in ('pace', 'power', 'hr')
+        and ${table.target_payload} ? 'value'
+        and case when jsonb_typeof(${table.target_payload}->'value') = 'number'
+          then (${table.target_payload}->>'value')::numeric > 0 else false end
+        and (not (${table.target_payload} ? 'test_duration_s') or case
+          when jsonb_typeof(${table.target_payload}->'test_duration_s') = 'number'
+          then (${table.target_payload}->>'test_duration_s')::numeric > 0
+            and trunc((${table.target_payload}->>'test_duration_s')::numeric) = (${table.target_payload}->>'test_duration_s')::numeric
+          else false end)
+        and (not (${table.target_payload} ? 'tolerance_pct') or case
+          when jsonb_typeof(${table.target_payload}->'tolerance_pct') = 'number'
+          then (${table.target_payload}->>'tolerance_pct')::numeric between 0 and 1 else false end)
+      )`,
+    ),
+    check(
+      "profile_goals_completion_payload_check",
+      sql`${table.target_payload}->>'type' <> 'completion' or (
+        ${table.target_payload} - array['type', 'activity_category', 'distance_m', 'duration_s']::text[] = '{}'::jsonb
+        and (${table.target_payload} ? 'distance_m' or ${table.target_payload} ? 'duration_s')
+        and (not (${table.target_payload} ? 'distance_m') or case
+          when jsonb_typeof(${table.target_payload}->'distance_m') = 'number'
+          then (${table.target_payload}->>'distance_m')::numeric > 0 else false end)
+        and (not (${table.target_payload} ? 'duration_s') or case
+          when jsonb_typeof(${table.target_payload}->'duration_s') = 'number'
+          then (${table.target_payload}->>'duration_s')::numeric > 0
+            and trunc((${table.target_payload}->>'duration_s')::numeric) = (${table.target_payload}->>'duration_s')::numeric
+          else false end)
+      )`,
+    ),
+    check(
+      "profile_goals_consistency_payload_check",
+      sql`${table.target_payload}->>'type' <> 'consistency' or (
+        ${table.target_payload} - array['type', 'target_sessions_per_week', 'target_weeks']::text[] = '{}'::jsonb
+        and (${table.target_payload} ? 'target_sessions_per_week' or ${table.target_payload} ? 'target_weeks')
+        and (not (${table.target_payload} ? 'target_sessions_per_week') or case
+          when jsonb_typeof(${table.target_payload}->'target_sessions_per_week') = 'number'
+          then (${table.target_payload}->>'target_sessions_per_week')::numeric > 0
+            and trunc((${table.target_payload}->>'target_sessions_per_week')::numeric) = (${table.target_payload}->>'target_sessions_per_week')::numeric
+          else false end)
+        and (not (${table.target_payload} ? 'target_weeks') or case
+          when jsonb_typeof(${table.target_payload}->'target_weeks') = 'number'
+          then (${table.target_payload}->>'target_weeks')::numeric > 0
+            and trunc((${table.target_payload}->>'target_weeks')::numeric) = (${table.target_payload}->>'target_weeks')::numeric
+          else false end)
+      )`,
+    ),
+  ],
 );
 
 export const oauthStates = pgTable(
@@ -2400,59 +2513,6 @@ export const follows = pgTable(
   (table) => [
     primaryKey({ columns: [table.follower_id, table.following_id] }),
     index("idx_follows_following_id").on(table.following_id),
-  ],
-);
-
-export const coachingInvitations = pgTable(
-  "coaching_invitations",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    athlete_id: uuid("athlete_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
-    coach_id: uuid("coach_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
-    status: text("status", { enum: ["pending", "accepted", "declined"] })
-      .notNull()
-      .default("pending"),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    unique("coaching_invitations_athlete_coach_unique").on(table.athlete_id, table.coach_id),
-    index("idx_coaching_invitations_athlete_id").on(table.athlete_id),
-    index("idx_coaching_invitations_coach_id").on(table.coach_id),
-  ],
-);
-
-export const coachesAthletes = pgTable(
-  "coaches_athletes",
-  {
-    coach_id: uuid("coach_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
-    athlete_id: uuid("athlete_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-    revoked_at: timestamp("revoked_at", { withTimezone: true, mode: "date" }),
-    revision: integer("revision").default(1).notNull(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.coach_id, table.athlete_id] }),
-    index("idx_coaches_athletes_coach_id").on(table.coach_id),
-    index("idx_coaches_athletes_athlete_id").on(table.athlete_id),
-    index("idx_coaches_athletes_active_lookup")
-      .on(table.coach_id, table.athlete_id)
-      .where(sql`${table.revoked_at} is null`),
-    check("coaches_athletes_revision_positive", sql`${table.revision} > 0`),
   ],
 );
 

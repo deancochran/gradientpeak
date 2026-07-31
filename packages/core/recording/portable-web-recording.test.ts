@@ -79,14 +79,12 @@ const artifact = {
     distanceMeters: 0,
     calories: null,
   },
+  sessionRpeOperationId: null,
 } as const;
 
 describe("portable web recording contracts", () => {
   it("locks artifact identity and validates bounded review metadata", () => {
-    expect(portableWebRecordingArtifactSchema.parse(artifact)).toEqual({
-      ...artifact,
-      sessionRpeOperationId: null,
-    });
+    expect(portableWebRecordingArtifactSchema.parse(artifact)).toEqual(artifact);
     expect(
       portableWebRecordingArtifactSchema.safeParse({
         ...artifact,
@@ -101,8 +99,13 @@ describe("portable web recording contracts", () => {
     ).toBe(false);
   });
 
-  it("accepts existing v1 artifacts without an RPE operation and rejects malformed IDs", () => {
+  it("requires an explicit null RPE operation ID and rejects malformed IDs", () => {
     expect(portableWebRecordingArtifactSchema.parse(artifact).sessionRpeOperationId).toBeNull();
+    const { sessionRpeOperationId: _sessionRpeOperationId, ...artifactWithoutOperationId } =
+      artifact;
+    expect(portableWebRecordingArtifactSchema.safeParse(artifactWithoutOperationId).success).toBe(
+      false,
+    );
     expect(
       portableWebRecordingArtifactSchema.safeParse({
         ...artifact,

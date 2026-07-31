@@ -1,22 +1,22 @@
 import {
   ACTIVITY_READINESS_CONSTANTS,
-  type AthleteIntelligenceModelInput,
   type AthleteIntelligenceProjection,
   assembleAthleteState,
-  assembleWholeAthleteProjectionV1,
+  assembleWholeAthleteProjection,
   athleteIntelligenceProjectionSchema,
   athleteStateVectorSchema,
   type CalculationResult,
   type CanonicalActivityCategory,
-  calculateActivityReadinessV1,
+  calculateActivityReadiness,
   calculateCriticalPowerCapability,
   calculateDurationAwareEffortCurve,
-  calculateGoalDemandV1,
+  calculateGoalDemand,
   calculateTrainingFeasibility,
   type DurationAwareEffortCurve,
   type EvidenceItem,
   evaluatePhysiologyMetrics,
-  type GoalDemandPolicyV1Result,
+  type GoalDemandPolicyResult,
+  type ParsedAthleteIntelligenceModelInput,
   unavailableResult,
 } from "@repo/core";
 import { TRPCError } from "@trpc/server";
@@ -135,7 +135,7 @@ export interface AthleteIntelligenceModelReader {
     profileId: string;
     goalId: string;
     asOf: Date;
-  }): Promise<AthleteIntelligenceModelInput>;
+  }): Promise<ParsedAthleteIntelligenceModelInput>;
 }
 
 function goalIdFromSourceId(sourceId: string): string | null {
@@ -144,17 +144,20 @@ function goalIdFromSourceId(sourceId: string): string | null {
 }
 
 function goalActivityCategory(
-  goal: AthleteIntelligenceModelInput["goals"][number],
+  goal: ParsedAthleteIntelligenceModelInput["goals"][number],
 ): CanonicalActivityCategory | null {
   return goal.goalActivityCategory;
 }
 
-function fieldEligibility(model: AthleteIntelligenceModelInput, sourceIds: readonly string[]) {
+function fieldEligibility(
+  model: ParsedAthleteIntelligenceModelInput,
+  sourceIds: readonly string[],
+) {
   const evidence = sourceIds.map((sourceId) => model.evidenceRegistry[sourceId]).find(Boolean);
   return evidence ? { evidence } : undefined;
 }
 
-function goalDurationSeconds(demand: GoalDemandPolicyV1Result): number | null {
+function goalDurationSeconds(demand: GoalDemandPolicyResult): number | null {
   if (demand.state !== "complete") return null;
   const requirement = demand.requirement;
   if (requirement.type === "event_performance") return requirement.requiredDuration.estimate;
@@ -164,7 +167,7 @@ function goalDurationSeconds(demand: GoalDemandPolicyV1Result): number | null {
 }
 
 function goalRelevantEffortCurve(input: {
-  model: AthleteIntelligenceModelInput;
+  model: ParsedAthleteIntelligenceModelInput;
   durationSeconds: number;
   modality: "pace" | "power";
   unit: "seconds_per_kilometer" | "seconds_per_100m" | "watts";
@@ -227,9 +230,9 @@ function goalRelevantEffortCurve(input: {
   };
 }
 
-function demandForGoal(goal: AthleteIntelligenceModelInput["goals"][number]) {
+function demandForGoal(goal: ParsedAthleteIntelligenceModelInput["goals"][number]) {
   const id = goalIdFromSourceId(goal.sourceId);
-  return calculateGoalDemandV1({
+  return calculateGoalDemand({
     goal: {
       id,
       profile_id: goal.athleteId,
@@ -242,7 +245,7 @@ function demandForGoal(goal: AthleteIntelligenceModelInput["goals"][number]) {
   });
 }
 
-function readinessContext(model: AthleteIntelligenceModelInput) {
+function readinessContext(model: ParsedAthleteIntelligenceModelInput) {
   const supported = new Set([
     "hrv_rmssd",
     "sleep_hours",
@@ -305,7 +308,7 @@ function evidenceLabel(evidence: EvidenceItem) {
 }
 
 function curatedExplainability(input: {
-  model: AthleteIntelligenceModelInput;
+  model: ParsedAthleteIntelligenceModelInput;
   projection: AthleteIntelligenceProjection;
 }) {
   const goalDimensions = input.projection.goalCoverage.flatMap((goal) =>
@@ -459,7 +462,7 @@ export async function projectAthleteIntelligence(input: {
     ...observation,
     eligibility: fieldEligibility(model, [observation.sourceId]),
   }));
-  const activityReadiness = calculateActivityReadinessV1({
+  const activityReadiness = calculateActivityReadiness({
     assessmentAt: model.assessmentAsOf,
     // Missing goal activity_category must not borrow activity evidence from another activity category.
     targetActivityCategory: activity_category ?? "other",
@@ -475,7 +478,6 @@ export async function projectAthleteIntelligence(input: {
     assessmentAsOf: model.assessmentAsOf,
     // The planning authority is explicit; event zones never become a profile fallback.
     planningTimezone: model.planningTimezone ?? null,
-    timezone: null,
     planningStart: model.assessmentAsOf,
     goalDate: selectedGoal.targetDate,
     availabilityWindows: model.trainingContext.weeklyTimeWindows,
@@ -499,7 +501,7 @@ export async function projectAthleteIntelligence(input: {
     requiredWeeklySessions,
     // Session coverage must be scoped to the selected goal rather than every planned activity.
     targetGoalActivityCategory: activity_category,
-    scheduleComplete: model.readCoverage?.schedules.state === "complete",
+    scheduleComplete: model.readCoverage.schedules.state === "complete",
     plannedSchedule: model.plannedSchedule.map((event) => ({
       sourceId: event.sourceId,
       startAt: event.startAt,
@@ -539,7 +541,7 @@ export async function projectAthleteIntelligence(input: {
   const physiology = evaluatePhysiologyMetrics(model, activity_category);
   const criticalPower = calculateCriticalPowerCapability({ model });
   const assembledProjection = athleteIntelligenceProjectionSchema.parse(
-    assembleWholeAthleteProjectionV1({
+    assembleWholeAthleteProjection({
       model: selectedModel,
       physiology,
       criticalPower,
@@ -650,7 +652,7 @@ export async function projectAthleteIntelligence(input: {
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([loadIdentity, activities]) => {
         const targetActivityCategory = activities[0]?.activity_category ?? "other";
-        const groupReadiness = calculateActivityReadinessV1({
+        const groupReadiness = calculateActivityReadiness({
           assessmentAt: model.assessmentAsOf,
           targetActivityCategory,
           activities,

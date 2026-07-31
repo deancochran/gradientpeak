@@ -3,6 +3,7 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import z, { ZodError } from "zod";
 import type { Context } from "./context";
+import { hasCurrentContractEpoch } from "./contract-epoch";
 import { checkApiRateLimit } from "./lib/rate-limit";
 import { captureApiProcedureMetric } from "./telemetry";
 
@@ -128,6 +129,13 @@ const telemetryProcedure = t.procedure.use(async ({ path, type, next }) => {
 });
 
 export const publicProcedure = telemetryProcedure.use(async ({ ctx, next }) => {
+  if (ctx.trpcSource === "http" && !hasCurrentContractEpoch(ctx.headers)) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "Client contract epoch is unsupported",
+    });
+  }
+
   const rateLimit = await checkApiRateLimit(ctx);
 
   if (!rateLimit.allowed) {

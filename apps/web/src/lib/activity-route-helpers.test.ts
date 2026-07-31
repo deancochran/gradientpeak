@@ -39,15 +39,15 @@ describe("activity route unit presentation", () => {
 
   it("derives single and repeated multisport labels from ordered activity segments", () => {
     expect(
-      deriveActivityCategoryDisplay([{ category: "run", ordinal: 0, role: "activity" }]),
+      deriveActivityCategoryDisplay([{ activity_category: "run", ordinal: 0, role: "activity" }]),
     ).toEqual({ categories: ["run"], label: "Run", singleCategory: "run" });
 
     expect(
       deriveActivityCategoryDisplay([
-        { category: "run", ordinal: 4, role: "activity" },
-        { category: null, ordinal: 1, role: "transition" },
-        { category: "run", ordinal: 0, role: "activity" },
-        { category: "bike", ordinal: 2, role: "activity" },
+        { activity_category: "run", ordinal: 4, role: "activity" },
+        { activity_category: null, ordinal: 1, role: "transition" },
+        { activity_category: "run", ordinal: 0, role: "activity" },
+        { activity_category: "bike", ordinal: 2, role: "activity" },
       ]),
     ).toEqual({
       categories: ["run", "bike", "run"],
@@ -59,8 +59,8 @@ describe("activity route unit presentation", () => {
   it("keeps unknown composition explicit", () => {
     expect(
       deriveActivityCategoryDisplay([
-        { category: null, ordinal: 0, role: "unknown" },
-        { category: null, ordinal: 1, role: "rest" },
+        { activity_category: null, ordinal: 0, role: "unknown" },
+        { activity_category: null, ordinal: 1, role: "rest" },
       ]),
     ).toEqual({ categories: [], label: "Unknown activity", singleCategory: null });
   });

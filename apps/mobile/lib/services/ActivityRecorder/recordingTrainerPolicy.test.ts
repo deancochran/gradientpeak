@@ -1,5 +1,6 @@
 import { FTMS_CHARACTERISTICS, type FTMSFeatures, type FtmsMachineType } from "@deancochran/ftms";
-import { BLE_SERVICE_UUIDS, type FtmsControlMode } from "@repo/core";
+import type { FtmsControlMode } from "@repo/core";
+import { BLE_SERVICE_UUIDS } from "@repo/core/constants/ble";
 import { describe, expect, it } from "vitest";
 import {
   detectFtmsMachineType,

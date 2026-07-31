@@ -142,8 +142,8 @@ describe("athlete intelligence developer vocabulary", () => {
     expect(canonical).toMatchObject({
       athleteIntelligenceModelInputSchema: expect.anything(),
       evidenceItemSchema: expect.anything(),
-      calculateGoalDemandV1: expect.any(Function),
-      assembleWholeAthleteProjectionV1: expect.any(Function),
+      calculateGoalDemand: expect.any(Function),
+      assembleWholeAthleteProjection: expect.any(Function),
     });
     expect(canonical).not.toHaveProperty("legacy");
     expect(canonical).not.toHaveProperty("evaluateGoalGaps");

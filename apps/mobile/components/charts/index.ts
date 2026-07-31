@@ -2,8 +2,6 @@
 
 export type { ConsistencyData } from "./ConsistencyHeatmap";
 export { ConsistencyHeatmap } from "./ConsistencyHeatmap";
-export type { FitnessProjectionChartProps } from "./FitnessProjectionChart";
-export { FitnessProjectionChart } from "./FitnessProjectionChart";
 // Export types for external use
 export type { IntensityDistributionChartProps } from "./IntensityDistributionChart";
 export { IntensityDistributionChart } from "./IntensityDistributionChart";

@@ -4,12 +4,12 @@
  * Eliminates duplication across calendar list entry points
  */
 
+import { type GroupedActivities, groupActivitiesByDate } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { useMemo } from "react";
 import { View } from "react-native";
 import { ActivityPlanCard, type ActivityPlanCardData } from "@/components/shared/ActivityPlanCard";
 import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
-import { type GroupedActivities, groupActivitiesByDate } from "@/lib/utils/plan/dateGrouping";
 
 export interface ActivityListProps {
   activities: PlannedActivity[];

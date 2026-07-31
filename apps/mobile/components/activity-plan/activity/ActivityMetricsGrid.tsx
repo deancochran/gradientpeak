@@ -1,7 +1,7 @@
 import {
-  type ActivityPlanStructureV3,
+  type ActivityPlanStructure,
   calculateActivityPlanStats,
-  compileActivityPlanV3,
+  compileActivityPlan,
 } from "@repo/core";
 import { formatDurationCompact } from "@repo/core/duration/time-format";
 import { MetricCard } from "@repo/ui/components/metric-card";
@@ -11,9 +11,9 @@ import { memo } from "react";
 import { View } from "react-native";
 import { getActivityCategoryConfig } from "@/lib/constants/activities";
 
-export const ActivityMetricsGrid = memo<{ structure: ActivityPlanStructureV3 }>(
+export const ActivityMetricsGrid = memo<{ structure: ActivityPlanStructure }>(
   function ActivityMetricsGrid({ structure }) {
-    const compiled = compileActivityPlanV3(structure);
+    const compiled = compileActivityPlan(structure);
     const stats = calculateActivityPlanStats(compiled);
     const boundaries = compiled.occurrences.filter((item) => item.role !== "activity").length;
     const activity_category = getActivityCategoryConfig(compiled.activity_category);

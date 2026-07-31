@@ -45,16 +45,21 @@ function parseGpxActivity(gpxContent: string): StandardActivity {
   if (doc.documentElement.nodeName !== "gpx") {
     throw new Error("Invalid GPX activity file: root element must be <gpx>");
   }
+  const tracks = doc.getElementsByTagName("trk");
+  if (tracks.length !== 1 || !tracks[0]) {
+    throw new Error("GPX activity files must contain exactly one <trk> activity");
+  }
+  const track = tracks[0];
 
-  const records = collectGpxRecords(doc);
+  const records = collectGpxRecords(track);
   if (records.length === 0) {
     throw new Error("No valid activity records found in GPX file");
   }
 
   return buildXmlActivity({
-    name: extractFirstText(doc, "name"),
+    name: extractFirstText(track, "name"),
     records,
-    type: "generic",
+    type: extractFirstText(track, "type")?.toLowerCase() || "generic",
   });
 }
 
@@ -64,20 +69,24 @@ function parseTcxActivity(tcxContent: string): StandardActivity {
     throw new Error("Invalid TCX activity file: root element must be <TrainingCenterDatabase>");
   }
 
-  const records = collectTcxRecords(doc);
+  const activities = doc.getElementsByTagName("Activity");
+  if (activities.length !== 1 || !activities[0]) {
+    throw new Error("TCX activity files must contain exactly one <Activity>");
+  }
+  const activity = activities[0];
+  const records = collectTcxRecords(activity);
   if (records.length === 0) {
     throw new Error("No valid activity records found in TCX file");
   }
 
-  const activity = doc.getElementsByTagName("Activity")[0];
   const type =
     (
       activity?.getAttribute("Sport") ?? activity?.getAttribute("ActivityCategory")
     )?.toLowerCase() || "generic";
 
   return buildXmlActivity({
-    calories: parseNumberText(doc, "Calories"),
-    name: extractFirstText(doc, "Id"),
+    calories: parseNumberText(activity, "Calories"),
+    name: extractFirstText(activity, "Id"),
     records,
     type,
   });
@@ -91,9 +100,9 @@ function parseXml(content: string, label: string): Document {
   return doc;
 }
 
-function collectGpxRecords(doc: Document): ActivityRecord[] {
+function collectGpxRecords(track: Element): ActivityRecord[] {
   const records: ActivityRecord[] = [];
-  const trackPoints = doc.getElementsByTagName("trkpt");
+  const trackPoints = track.getElementsByTagName("trkpt");
 
   for (let index = 0; index < trackPoints.length; index += 1) {
     const point = trackPoints[index];
@@ -121,9 +130,9 @@ function parseGpxPoint(element: Element): ActivityRecord | null {
   };
 }
 
-function collectTcxRecords(doc: Document): ActivityRecord[] {
+function collectTcxRecords(activity: Element): ActivityRecord[] {
   const records: ActivityRecord[] = [];
-  const trackpoints = doc.getElementsByTagName("Trackpoint");
+  const trackpoints = activity.getElementsByTagName("Trackpoint");
 
   for (let index = 0; index < trackpoints.length; index += 1) {
     const point = trackpoints[index];
@@ -167,14 +176,19 @@ function buildXmlActivity(input: {
       ? Math.max(0, (lastTimed.timestamp.getTime() - firstTimed.timestamp.getTime()) / 1000)
       : 0;
   const totalDistance = resolveTotalDistance(input.records);
+  const endTime = lastTimed?.timestamp ?? startTime;
+  const rawSport = normalizeXmlSport(input.type);
+  const records = input.records.map((record, messageIndex) => ({
+    ...record,
+    messageIndex,
+    sessionMessageIndex: 0,
+  }));
   const stats = calculateRouteStats(
-    input.records
-      .filter((record) => record.positionLat !== undefined && record.positionLong !== undefined)
-      .map((record) => ({
-        latitude: record.positionLat!,
-        longitude: record.positionLong!,
-        altitude: record.altitude,
-      })),
+    records.filter(hasPosition).map((record) => ({
+      latitude: record.positionLat,
+      longitude: record.positionLong,
+      altitude: record.altitude,
+    })),
   );
 
   return {
@@ -184,20 +198,46 @@ function buildXmlActivity(input: {
       type: input.type,
     },
     summary: {
-      avgCadence: average(input.records.map((record) => record.cadence)),
-      avgHeartRate: average(input.records.map((record) => record.heartRate)),
-      avgPower: average(input.records.map((record) => record.power)),
+      avgCadence: average(records.map((record) => record.cadence)),
+      avgHeartRate: average(records.map((record) => record.heartRate)),
+      avgPower: average(records.map((record) => record.power)),
       calories: input.calories,
-      maxCadence: maximum(input.records.map((record) => record.cadence)),
-      maxHeartRate: maximum(input.records.map((record) => record.heartRate)),
-      maxPower: maximum(input.records.map((record) => record.power)),
+      maxCadence: maximum(records.map((record) => record.cadence)),
+      maxHeartRate: maximum(records.map((record) => record.heartRate)),
+      maxPower: maximum(records.map((record) => record.power)),
       totalAscent: stats.totalAscent,
       totalDescent: stats.totalDescent,
       totalDistance,
       totalTime,
     },
-    records: input.records,
+    segments: [
+      {
+        sessionMessageIndex: 0,
+        role: "activity",
+        rawSport,
+        startTime,
+        endTime,
+      },
+    ],
+    records,
   };
+}
+
+function hasPosition<T extends { positionLat?: number; positionLong?: number }>(
+  record: T,
+): record is T & { positionLat: number; positionLong: number } {
+  return record.positionLat !== undefined && record.positionLong !== undefined;
+}
+
+function normalizeXmlSport(type: string): string {
+  const normalized = type.trim().toLowerCase();
+  if (normalized === "run" || normalized === "running") return "running";
+  if (normalized === "bike" || normalized === "biking" || normalized === "cycling") {
+    return "cycling";
+  }
+  if (normalized === "swim" || normalized === "swimming") return "swimming";
+  if (normalized === "strength" || normalized === "strength_training") return "training";
+  return normalized || "generic";
 }
 
 function resolveTotalDistance(records: ActivityRecord[]): number {
@@ -206,13 +246,11 @@ function resolveTotalDistance(records: ActivityRecord[]): number {
     .find((record) => record.distance !== undefined && Number.isFinite(record.distance))?.distance;
   if (lastDistance !== undefined) return lastDistance;
 
-  const coords = records
-    .filter((record) => record.positionLat !== undefined && record.positionLong !== undefined)
-    .map((record) => ({
-      latitude: record.positionLat!,
-      longitude: record.positionLong!,
-      altitude: record.altitude,
-    }));
+  const coords = records.filter(hasPosition).map((record) => ({
+    latitude: record.positionLat,
+    longitude: record.positionLong,
+    altitude: record.altitude,
+  }));
 
   return calculateRouteStats(coords).totalDistance;
 }

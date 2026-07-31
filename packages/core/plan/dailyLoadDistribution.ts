@@ -1,12 +1,12 @@
 import type { AthletePreferenceProfile } from "../schemas/settings/profile_settings";
 import type { DailyFocusRecoveryRange } from "./dailyFocusTemplates";
-import { buildDailyLoadRecommendation } from "./dailyLoadRecommendation";
 import type {
-  DailyRecommendedLoadActivityCategory,
-  DailyRecommendedLoadPrimaryFocus,
-  DailyRecommendedLoadSession,
-  DailyRecommendedLoadWeekday,
-} from "./dailyRecommendedLoad";
+  DailyLoadRecommendationActivityCategory,
+  DailyLoadRecommendationPrimaryFocus,
+  DailyLoadRecommendationSession,
+  DailyLoadRecommendationWeekday,
+} from "./dailyLoadRecommendation";
+import { buildDailyLoadRecommendation } from "./dailyLoadRecommendation";
 import type { WeeklyAllocation } from "./weeklyAllocation";
 
 export interface DailyLoadDistributionWeeklyTarget {
@@ -21,14 +21,14 @@ export interface DailyLoadDistributionWeeklyTarget {
 export interface DailyLoadDistributionPoint {
   date: string;
   recommended_load_tss: number;
-  primary_focus: DailyRecommendedLoadPrimaryFocus;
-  activity_category: DailyRecommendedLoadActivityCategory;
+  primary_focus: DailyLoadRecommendationPrimaryFocus;
+  activity_category: DailyLoadRecommendationActivityCategory;
   confidence: "low" | "medium" | "high";
   confidence_score?: number;
   reason_codes: string[];
 }
 
-export type DailyLoadDistributionWeekday = DailyRecommendedLoadWeekday;
+export type DailyLoadDistributionWeekday = DailyLoadRecommendationWeekday;
 
 export interface DailyLoadDistributionAvailabilityWindow {
   start_minute_of_day: number;
@@ -65,7 +65,7 @@ export interface BuildDailyLoadDistributionInput {
   weeklyTargets: DailyLoadDistributionWeeklyTarget[];
   preferenceProfile?: AthletePreferenceProfile | null;
   weeklyAllocation?: WeeklyAllocation | null;
-  plannedSessions?: DailyRecommendedLoadSession[] | null;
+  plannedSessions?: DailyLoadRecommendationSession[] | null;
   schedulingConstraints?: DailyLoadDistributionSchedulingConstraints | null;
   capacityContext?: DailyLoadDistributionCapacityContext | null;
 }

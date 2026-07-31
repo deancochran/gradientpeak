@@ -68,7 +68,6 @@ type Session = {
 
 function memoryDatabase() {
   const sessions = new Map<string, Session>();
-  const finalizationRecovery = new Map<string, { status: "pending" | "blocked"; reason: string }>();
   const rows: Array<{
     sessionId: string;
     sequence: number;
@@ -93,27 +92,13 @@ function memoryDatabase() {
     execAsync: vi.fn(async () => undefined),
     withExclusiveTransactionAsync: async (task) => task(db),
     getAllAsync: async <T>(sql: string, ...params: unknown[]): Promise<T[]> => {
-      if (sql.includes("recording_finalization_recovery r")) {
+      if (sql.includes("FROM recording_evidence_sessions s")) {
         const profileId = params[0] as string;
         return [...sessions.entries()]
           .filter(
-            ([sessionId, session]) =>
-              session.profile_id === profileId &&
-              (session.finalized_path || finalizationRecovery.has(sessionId)),
+            ([, session]) => session.profile_id === profileId && session.state === "finalized",
           )
-          .flatMap(([session_id, session]) => {
-            const recovery = finalizationRecovery.get(session_id);
-            return session.finalized_path || recovery
-              ? [
-                  {
-                    session_id,
-                    ...session,
-                    recovery_status: recovery?.status ?? null,
-                    recovery_reason: recovery?.reason ?? null,
-                  },
-                ]
-              : [];
-          }) as T[];
+          .map(([session_id, session]) => ({ session_id, ...session })) as T[];
       }
       if (sql.includes("FROM recording_stream_envelopes")) {
         const sessionId = params[0] as string;
@@ -209,17 +194,14 @@ function memoryDatabase() {
         const session = sessions.get(params[0] as string);
         if (session && (session.state === "active" || session.state === "finalized"))
           session.state = "fenced";
-      } else if (sql.includes("INTO recording_finalization_recovery")) {
-        const dynamicStatus = sql.includes("VALUES (?, ?, ?, ?)");
-        finalizationRecovery.set(params[0] as string, {
-          status: dynamicStatus ? (params[1] as "pending" | "blocked") : "pending",
-          reason: params[dynamicStatus ? 2 : 1] as string,
-        });
+      } else if (sql.includes("SET state = 'quarantined'")) {
+        const session = sessions.get(params[0] as string);
+        if (session?.state === "finalized") session.state = "quarantined";
       }
       return { changes: 1 };
     }),
   };
-  return { db, rows, sessions, finalizationRecovery };
+  return { db, rows, sessions };
 }
 
 const location = {
@@ -233,31 +215,24 @@ describe("recording evidence journal", () => {
     files.clear();
   });
 
-  it("migrates v0 and every prior version stepwise, rolls back an interrupted step, and fails closed for future versions", async () => {
-    function migrationDatabase(initialVersion: number, failVersion?: number) {
+  it("creates only a fresh current schema, retries an interrupted create, and rejects old or new versions without mutation", async () => {
+    function schemaDatabase(initialVersion: number, failCreate = false) {
       let version = initialVersion;
-      const columns = new Set(
-        initialVersion >= 2 ? ["finalized_artifact_json", "finalized_artifact_digest"] : [],
-      );
       const statements: string[] = [];
-      let fail = failVersion;
+      let fail = failCreate;
       const db: RecordingEvidenceSqlExecutor = {
         async getAllAsync<T>(sql: string): Promise<T[]> {
           statements.push(sql);
           if (sql === "PRAGMA user_version") return [{ user_version: version }] as T[];
-          if (sql.startsWith("PRAGMA table_info"))
-            return [...columns].map((name) => ({ name })) as T[];
           return [] as T[];
         },
         async execAsync(sql: string): Promise<void> {
           statements.push(sql);
-          if (sql.includes("ADD COLUMN finalized_artifact_json"))
-            columns.add("finalized_artifact_json");
-          if (sql.includes("ADD COLUMN finalized_artifact_digest"))
-            columns.add("finalized_artifact_digest");
-          const target = /PRAGMA user_version = (\d+)/.exec(sql)?.[1];
-          if (target && Number(target) === fail)
+          if (fail && sql.includes("CREATE TABLE recording_evidence_sessions")) {
+            fail = false;
             throw new Error("interrupted-before-version-commit");
+          }
+          const target = /PRAGMA user_version = (\d+)/.exec(sql)?.[1];
           if (target) version = Number(target);
         },
         async runAsync() {
@@ -266,15 +241,12 @@ describe("recording evidence journal", () => {
         async withExclusiveTransactionAsync(task) {
           const snapshot = {
             version,
-            columns: new Set(columns),
             statementCount: statements.length,
           };
           try {
             await task(db);
           } catch (error) {
             version = snapshot.version;
-            columns.clear();
-            for (const column of snapshot.columns) columns.add(column);
             statements.splice(snapshot.statementCount);
             throw error;
           }
@@ -284,40 +256,37 @@ describe("recording evidence journal", () => {
         db,
         statements,
         version: () => version,
-        resume: () => {
-          fail = undefined;
-        },
       };
     }
 
-    for (const prior of [0, 1, 2, 3]) {
-      const fake = migrationDatabase(prior);
-      await initializeRecordingEvidenceDatabase(fake.db);
-      expect(fake.version()).toBe(5);
-      expect(fake.statements[0]).toBe("PRAGMA user_version");
-      if (prior < 2)
-        expect(fake.statements.slice(1).some((sql) => sql.includes("CREATE TABLE"))).toBe(true);
-      if (prior === 3) {
-        // The old v3 definition does not advertise accepted; v4 must rebuild
-        // rather than attempting SQLite's unsupported CHECK alteration.
-        expect(fake.statements.some((sql) => sql.includes("recording_evidence_sessions_v4"))).toBe(
-          true,
-        );
-      }
-    }
-    const interrupted = migrationDatabase(3, 4);
+    const fresh = schemaDatabase(0);
+    await initializeRecordingEvidenceDatabase(fresh.db);
+    expect(fresh.version()).toBe(5);
+    expect(fresh.statements).toEqual([
+      "PRAGMA user_version",
+      expect.stringContaining("CREATE TABLE recording_evidence_sessions"),
+      "PRAGMA user_version = 5",
+      "PRAGMA foreign_keys = ON",
+    ]);
+
+    const interrupted = schemaDatabase(0, true);
     await expect(initializeRecordingEvidenceDatabase(interrupted.db)).rejects.toThrow(
       "interrupted-before-version-commit",
     );
-    expect(interrupted.version()).toBe(3);
-    interrupted.resume();
+    expect(interrupted.version()).toBe(0);
     await initializeRecordingEvidenceDatabase(interrupted.db);
     expect(interrupted.version()).toBe(5);
-    const future = migrationDatabase(6);
-    await expect(initializeRecordingEvidenceDatabase(future.db)).rejects.toThrow(
-      "unsupported-recording-evidence-schema",
-    );
-    expect(future.statements).toEqual(["PRAGMA user_version", "PRAGMA foreign_keys = ON"]);
+
+    const current = schemaDatabase(5);
+    await initializeRecordingEvidenceDatabase(current.db);
+    expect(current.statements).toEqual(["PRAGMA user_version", "PRAGMA foreign_keys = ON"]);
+    for (const unsupportedVersion of [1, 6]) {
+      const unsupported = schemaDatabase(unsupportedVersion);
+      await expect(initializeRecordingEvidenceDatabase(unsupported.db)).rejects.toThrow(
+        "unsupported-recording-evidence-schema",
+      );
+      expect(unsupported.statements).toEqual(["PRAGMA user_version"]);
+    }
   });
 
   it("writes headless GPS without a provider and rejects ambiguous sessions", async () => {
@@ -409,7 +378,7 @@ describe("recording evidence journal", () => {
     expect((await adapter.recover()).map((row) => row.order)).toEqual([0, 1, 2]);
   });
 
-  it("quarantines only a corrupt derived FIT reference and retains rebuild evidence", async () => {
+  it("quarantines incomplete finalized rows instead of creating recovery state", async () => {
     const memory = memoryDatabase();
     setRecordingEvidenceDatabaseForTests(memory.db);
     files.set("file:///artifact.fit", { size: 3, bytes: Uint8Array.from([1, 2, 3]) });
@@ -423,16 +392,13 @@ describe("recording evidence journal", () => {
     });
 
     await expect(inspectFinalizedArtifactReferences("profile")).resolves.toEqual([
-      { status: "rebuild-pending", sessionId: "profile:a", reason: "finalized-artifact-mismatch" },
+      { status: "quarantined", sessionId: "profile:a", reason: "finalized-current-fields-missing" },
     ]);
 
-    expect(memory.sessions.get("profile:a")?.state).toBe("fenced");
-    expect(memory.sessions.get("profile:a")?.finalized_path).toBeNull();
-    expect(files.get("file:///artifact.fit")?.deleted).toBe(true);
-    expect(memory.finalizationRecovery.get("profile:a")).toMatchObject({ status: "pending" });
+    expect(memory.sessions.get("profile:a")?.state).toBe("quarantined");
   });
 
-  it("does not strand a legacy finalized file without a handoff", async () => {
+  it("does not replay an old finalized row even when its file and checkpoint are valid", async () => {
     const memory = memoryDatabase();
     setRecordingEvidenceDatabaseForTests(memory.db);
     const payload = "{}";
@@ -454,42 +420,113 @@ describe("recording evidence journal", () => {
 
     await expect(inspectFinalizedArtifactReferences("profile")).resolves.toEqual([
       {
-        status: "rebuild-pending",
+        status: "quarantined",
         sessionId: "legacy",
-        reason: "legacy-finalized-handoff-missing",
+        reason: "finalized-current-fields-missing",
       },
     ]);
-    expect(memory.sessions.get("legacy")?.state).toBe("fenced");
-    expect(memory.finalizationRecovery.get("legacy")).toMatchObject({ status: "pending" });
-    // Retry observes the durable pending row instead of attempting to submit it.
-    await expect(inspectFinalizedArtifactReferences("profile")).resolves.toEqual([
-      {
-        status: "rebuild-pending",
-        sessionId: "legacy",
-        reason: "legacy-finalized-handoff-missing",
-      },
-    ]);
+    expect(memory.sessions.get("legacy")?.state).toBe("quarantined");
+    await expect(inspectFinalizedArtifactReferences("profile")).resolves.toEqual([]);
   });
 
-  it("blocks a validated legacy finalized file when no recovery manifest exists", async () => {
+  it("keeps a complete current finalized handoff recoverable for idempotent startup replay", async () => {
     const memory = memoryDatabase();
     setRecordingEvidenceDatabaseForTests(memory.db);
-    files.set("file:///legacy.fit", { size: 3, bytes: Uint8Array.from([1, 2, 3]) });
-    memory.sessions.set("legacy", {
+    const artifact = {
+      schemaVersion: 2,
+      sessionId: "current",
+      profileId: "profile",
+      snapshot: {
+        identity: {
+          sessionId: "current",
+          revision: 1,
+          startedAt: "2026-03-20T10:00:00Z",
+          appBuild: "1.2.3",
+        },
+        activity: {
+          activity_category: "bike",
+          mode: "planned",
+          gpsMode: "on",
+          eventId: "550e8400-e29b-41d4-a716-446655440000",
+          activityPlanId: "550e8400-e29b-41d4-a716-446655440001",
+          routeId: "550e8400-e29b-41d4-a716-446655440002",
+        },
+        profileSnapshot: { ftp: 250, thresholdHr: 170, weightKg: 72, defaultsApplied: [] },
+        devices: { connected: [], controllableTrainer: null, selectedSources: [] },
+        capabilities: {
+          canTrackLocation: true,
+          canTrackPower: true,
+          canTrackHeartRate: true,
+          canTrackCadence: true,
+          shouldShowMap: true,
+          shouldShowSteps: true,
+          shouldShowRouteOverlay: true,
+          shouldShowTurnByTurn: true,
+          shouldShowFollowAlong: false,
+          shouldShowTrainerControl: true,
+          canAutoAdvanceSteps: true,
+          shouldAutoFollowTargets: true,
+          autoFollowPriority: "plan_targets",
+          autoFollowConflict: false,
+          autoFollowConflictReason: null,
+          primaryMetric: "power",
+          isValid: true,
+          errors: [],
+          warnings: [],
+        },
+        policies: {
+          sourcePolicy: {
+            preferUserSelection: true,
+            allowDerivedSpeed: true,
+            allowDerivedDistance: true,
+          },
+          controlPolicy: { trainerMode: "auto", autoAdvanceSteps: true },
+          degradedModePolicy: {
+            allowWithoutGps: true,
+            allowWithoutSensors: true,
+            exposeSourceWarnings: true,
+          },
+        },
+      },
+      overrides: [],
+      finalStats: { durationSeconds: 60, movingSeconds: 55, distanceMeters: 200 },
+      activityFilePath: "file:///current.fit",
+      streamArtifactPaths: [],
+      executionManifest: {
+        version: 1,
+        compilerVersion: 1,
+        planHash: "0".repeat(64),
+        occurrences: [],
+      },
+      runtimeSourceState: {
+        selectedSources: [],
+        currentMetrics: {},
+        degradedState: { isDegraded: false, metrics: [] },
+        sourceChanges: [],
+      },
+      completedAt: "2026-03-20T10:01:00Z",
+    };
+    const handoff = JSON.stringify(artifact);
+    const handoffDigest = [...handoff]
+      .reduce((sum, char) => sum + char.charCodeAt(0), 0)
+      .toString(16)
+      .padStart(64, "0");
+    files.set("file:///current.fit", { size: 3, bytes: Uint8Array.from([1, 2, 3]) });
+    memory.sessions.set("current", {
       profile_id: "profile",
       state: "finalized",
       next_sequence: 0,
-      finalized_path: "file:///legacy.fit",
+      finalized_path: "file:///current.fit",
       finalized_size: 3,
       finalized_sha256: "06".repeat(32),
+      finalized_artifact_json: handoff,
+      finalized_artifact_digest: handoffDigest,
     });
     await expect(inspectFinalizedArtifactReferences("profile")).resolves.toEqual([
-      {
-        status: "blocked",
-        sessionId: "legacy",
-        reason: "legacy-finalized-recovery-manifest-missing",
-      },
+      { status: "healthy", sessionId: "current" },
     ]);
-    expect(memory.finalizationRecovery.get("legacy")).toMatchObject({ status: "blocked" });
+    await expect(inspectFinalizedArtifactReferences("profile")).resolves.toEqual([
+      { status: "healthy", sessionId: "current" },
+    ]);
   });
 });

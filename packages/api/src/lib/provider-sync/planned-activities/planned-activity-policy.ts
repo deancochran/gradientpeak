@@ -1,6 +1,9 @@
 import type { IntegrationProviderId } from "@repo/core";
 
 export const PLANNED_WORKOUT_RESOURCE = "planned_activities";
+// Lower queue values run first. User-visible planned-workout mutations must not
+// wait behind best-effort staging cleanup when both are already due.
+export const PLANNED_ACTIVITY_JOB_PRIORITY = 50;
 
 export type PlannedActivitySyncPolicy = {
   availabilityWindowDays: number | null;

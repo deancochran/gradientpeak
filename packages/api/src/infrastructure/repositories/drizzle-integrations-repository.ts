@@ -1,13 +1,11 @@
 import type { DrizzleDbClient } from "@repo/db";
 import { schema } from "@repo/db";
-import { and, eq, gt, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, gt, lt, sql } from "drizzle-orm";
 import type { DrizzleQueryExecutor } from "../../db";
 import {
   decryptNullableProviderToken,
   decryptProviderToken,
   encryptProviderToken,
-  hasProviderTokenEncryptionKey,
-  isEncryptedProviderToken,
 } from "../../lib/provider-token-crypto";
 import {
   IntegrationDisconnectPendingError,
@@ -189,38 +187,10 @@ export function createIntegrationsRepositories(db: DrizzleDbClient): Integration
 
         const accessToken = decryptProviderToken(row.credentials.access_token);
         const refreshToken = decryptNullableProviderToken(row.credentials.refresh_token);
-        const hasLegacyCredential =
-          !isEncryptedProviderToken(row.credentials.access_token) ||
-          (row.credentials.refresh_token !== null &&
-            !isEncryptedProviderToken(row.credentials.refresh_token));
-
-        let rekeyed: { generation: number } | undefined;
-        if (hasLegacyCredential && hasProviderTokenEncryptionKey()) {
-          [rekeyed] = await db
-            .update(schema.integrationCredentials)
-            .set({
-              access_token: encryptProviderToken(accessToken),
-              generation: sql`${schema.integrationCredentials.generation} + 1`,
-              refresh_token: refreshToken === null ? null : encryptProviderToken(refreshToken),
-              updated_at: new Date(),
-            })
-            .where(
-              and(
-                eq(schema.integrationCredentials.integration_id, row.credentials.integration_id),
-                eq(schema.integrationCredentials.generation, row.credentials.generation),
-                eq(schema.integrationCredentials.access_token, row.credentials.access_token),
-                row.credentials.refresh_token === null
-                  ? isNull(schema.integrationCredentials.refresh_token)
-                  : eq(schema.integrationCredentials.refresh_token, row.credentials.refresh_token),
-              ),
-            )
-            .returning({ generation: schema.integrationCredentials.generation });
-        }
 
         return {
           ...row.credentials,
           access_token: accessToken,
-          generation: rekeyed?.generation ?? row.credentials.generation,
           refresh_token: refreshToken,
         };
       },

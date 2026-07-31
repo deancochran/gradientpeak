@@ -6,7 +6,6 @@ import {
   type ParsedFtmsPayload,
 } from "@deancochran/ftms";
 import {
-  BLE_CHARACTERISTIC_UUIDS,
   type CscParserState,
   type CyclingPowerParserState,
   listStandardBleProfileDefinitions,
@@ -19,7 +18,8 @@ import {
   type StandardBleMetricCapability,
   type StandardBleProfileDefinition,
   type StandardBleProfileId,
-} from "@repo/core";
+} from "@repo/core/bluetooth";
+import { BLE_CHARACTERISTIC_UUIDS } from "@repo/core/constants/ble";
 import { type BleError, BleManager, type Characteristic, type Device } from "react-native-ble-plx";
 import { BleScanController } from "./BleScanController";
 import { decodeBase64ToBytes } from "./ble-bytes";

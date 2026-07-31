@@ -386,12 +386,7 @@ export const athleteIntelligenceModelInputSchema = z
     goals: z.array(goalInputSchema).max(32),
     trainingContext: trainingContextInputSchema,
     /** Coverage for every bounded reader domain; policies must preserve truncation as uncertainty. */
-    readCoverage: modelReadCoverageSchema.default({
-      metrics: { state: "complete", reason: null },
-      activities: { state: "complete", reason: null },
-      efforts: { state: "complete", reason: null },
-      schedules: { state: "complete", reason: null },
-    }),
+    readCoverage: modelReadCoverageSchema,
     plannedSchedule: z.array(plannedScheduleObservationSchema).max(MAX_OBSERVATIONS),
   })
   .strict()
@@ -683,16 +678,6 @@ export type TrainingContextInput = z.infer<typeof trainingContextInputSchema>;
 export type PlannedScheduleObservation = z.infer<typeof plannedScheduleObservationSchema>;
 export type BoundedReadCoverage = z.infer<typeof boundedReadCoverageSchema>;
 export type ModelReadCoverage = z.infer<typeof modelReadCoverageSchema>;
-/**
- * Compatibility input accepted by current policy callers. Parsing through the
- * canonical schema always materializes `readCoverage` with every domain.
- */
-export type AthleteIntelligenceModelInput = Omit<
-  z.infer<typeof athleteIntelligenceModelInputSchema>,
-  "readCoverage"
-> & {
-  readCoverage?: ModelReadCoverage;
-};
-export type ParsedAthleteIntelligenceModelInput = z.infer<
+export type ParsedAthleteIntelligenceModelInput = z.output<
   typeof athleteIntelligenceModelInputSchema
 >;

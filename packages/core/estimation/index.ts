@@ -55,7 +55,7 @@ export class InvalidActivityPlanStructureError extends Error {
   override readonly cause: unknown;
 
   constructor(cause: unknown) {
-    super(`Invalid activity-plan V3 structure: ${formatEstimationError(cause)}`);
+    super(`Invalid activity-plan structure: ${formatEstimationError(cause)}`);
     this.cause = cause;
   }
 }
@@ -276,7 +276,6 @@ export function estimateWeeklyLoadComplete(
     projectedATL: currentState.atl, // Would need to track ATL through week
     projectedTSB,
     rampRate: baseEstimation.rampRate,
-    isSafe: baseEstimation.isSafe,
     loadChangeState: baseEstimation.loadChangeState,
     reasons: baseEstimation.reasons,
     recommendations,

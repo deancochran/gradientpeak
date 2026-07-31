@@ -150,22 +150,6 @@ function unavailableWithCompleteProvenance(
   };
 }
 
-describe("session-RPE common Load exclusion", () => {
-  it("rejects session-RPE methods and non-null compatibility evidence", () => {
-    const result = available(3600, 1);
-    expect(commonLoadResultSchema.safeParse({ ...result, method: "session_rpe" }).success).toBe(
-      false,
-    );
-    expect(
-      commonLoadResultSchema.safeParse({
-        ...result,
-        sessionRpeEvidence: { rpe: 7 },
-      }).success,
-    ).toBe(false);
-    expect(result.sessionRpeEvidence).toBeNull();
-  });
-});
-
 describe("common relative Load activity contract and calculation", () => {
   it("exports the same stable contract and helpers from the load subpath and package root", () => {
     expect(resultSchemaFromRoot).toBe(commonLoadResultSchema);

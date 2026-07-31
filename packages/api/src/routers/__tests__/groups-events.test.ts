@@ -56,6 +56,7 @@ function buildActivityRouteRow(overrides: Record<string, unknown> = {}) {
     polyline: "abc",
     is_system_template: false,
     is_public: false,
+    storage_state: "ready",
     ...overrides,
   };
 }

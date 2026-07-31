@@ -3,7 +3,7 @@ import {
   getActivityCategoryTemplateDefaults,
   getActivityCategoryThresholdToEndurancePaceMultiplier,
 } from "../activity-categories";
-import { compileActivityPlanV3 } from "../activity-plan";
+import { compileActivityPlan } from "../activity-plan";
 import { calculateActivityPlanStats } from "../activity-plan-calculations";
 import type { CanonicalActivityCategory } from "../schemas/activity-category";
 import type { EstimationContext, EstimationResult, Route } from "./types";
@@ -18,8 +18,8 @@ import type { EstimationContext, EstimationResult, Route } from "./types";
  * Accuracy: 90-95% for power-based, 80-85% for HR-based
  */
 export function estimateFromStructure(context: EstimationContext): EstimationResult {
-  if (!context.structure) throw new Error("Structure-based estimation requires a V3 structure");
-  const stats = calculateActivityPlanStats(compileActivityPlanV3(context.structure), {
+  if (!context.structure) throw new Error("Structure-based estimation requires a valid structure");
+  const stats = calculateActivityPlanStats(compileActivityPlan(context.structure), {
     cyclingFtpWatts: context.ftp ?? undefined,
   });
   const categoryDoses = stats.categoryDoses.map((dose) => ({

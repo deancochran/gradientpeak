@@ -33,6 +33,7 @@ import { useTheme } from "../../components/providers/theme-provider";
 import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
 import { api } from "../../lib/api/client";
 import { signOutAction } from "../../lib/auth/server-actions";
+import { contractEpochFormInputProps } from "../../lib/contract-epoch";
 import {
   changePasswordAction,
   resendVerificationFromSettingsAction,
@@ -253,6 +254,7 @@ function ProfileInformationCard({
               encType="multipart/form-data"
               className="flex-1 space-y-2"
             >
+              <input {...contractEpochFormInputProps} />
               <input type="hidden" name="field" value="cover_url" />
               <FileInput
                 accept="image/*"
@@ -268,6 +270,7 @@ function ProfileInformationCard({
             </form>
             {coverBlobUrl ? (
               <form action={removeProfileImageAction.url} method="post">
+                <input {...contractEpochFormInputProps} />
                 <input type="hidden" name="field" value="cover_url" />
                 <Button type="submit" variant="ghost">
                   Remove Cover
@@ -302,6 +305,7 @@ function ProfileInformationCard({
           encType="multipart/form-data"
           className="space-y-3"
         >
+          <input {...contractEpochFormInputProps} />
           <FileInput
             accept="image/*"
             buttonLabel="Upload avatar"
@@ -317,6 +321,7 @@ function ProfileInformationCard({
         </form>
         {avatarBlobUrl ? (
           <form action={removeProfileImageAction.url} method="post">
+            <input {...contractEpochFormInputProps} />
             <input type="hidden" name="field" value="avatar_url" />
             <Button type="submit" variant="ghost">
               Remove Avatar
@@ -332,6 +337,7 @@ function ProfileInformationCard({
             }}
             className="space-y-4"
           >
+            <input {...contractEpochFormInputProps} />
             <FormTextField
               control={form.control}
               description="Displayed as your profile name."
@@ -474,6 +480,7 @@ function AccountInformationCard({
           </div>
         </div>
         <form action={signOutAction.url} method="post">
+          <input {...contractEpochFormInputProps} />
           <Button variant="outline" type="submit">
             Sign Out
           </Button>
@@ -540,6 +547,7 @@ function SecurityCard({
               </p>
             </div>
             <form action={resendVerificationFromSettingsAction.url} method="post">
+              <input {...contractEpochFormInputProps} />
               <input type="hidden" name="email" value={email} />
               <Button type="submit" variant="outline">
                 Resend verification
@@ -551,6 +559,7 @@ function SecurityCard({
         )}
 
         <form action={changePasswordAction.url} method="post" className="space-y-4">
+          <input {...contractEpochFormInputProps} />
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-2">
               <Label htmlFor="current-password">Current password</Label>
@@ -602,6 +611,7 @@ function SecurityCard({
             </p>
           </div>
           <form action={revokeOtherSessionsAction.url} method="post">
+            <input {...contractEpochFormInputProps} />
             <Button type="submit" variant="outline">
               Sign out other sessions
             </Button>

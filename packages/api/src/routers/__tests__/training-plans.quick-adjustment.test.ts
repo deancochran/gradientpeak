@@ -77,7 +77,7 @@ function hasStructureUpdate(
 }
 
 describe("trainingPlansRouter.applyQuickAdjustment executable linked plans", () => {
-  it("rejects a strict-V3-valid mixed-category linked ActivityPlan without persisting the adjusted structure", async () => {
+  it("rejects a strict valid mixed-category linked ActivityPlan without persisting the adjusted structure", async () => {
     const activityPlanId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const mixedCategoryStructure = {
       version: 3 as const,

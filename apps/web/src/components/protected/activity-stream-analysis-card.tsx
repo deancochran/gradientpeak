@@ -1,5 +1,11 @@
 import type { ActivityStreamAnalysis, StreamAnalysisInsufficientReason } from "@repo/core";
-import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@repo/ui/components/card";
 
 type ArtifactState = "error" | "loading" | "missing" | "private" | "processing" | "ready";
 
@@ -74,17 +80,22 @@ export function ActivityStreamAnalysisCard({
   analysis,
   artifactState,
   errorMessage,
+  scopeDescription,
 }: {
   analysis?: ActivityStreamAnalysis;
   artifactState: ArtifactState;
   errorMessage?: string;
+  scopeDescription?: string;
 }) {
   if (artifactState !== "ready" || !analysis) {
     const state = artifactState === "ready" ? "error" : artifactState;
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Stream analysis</CardTitle>
+          <CardTitle aria-level={2} role="heading">
+            Stream analysis
+          </CardTitle>
+          {scopeDescription ? <CardDescription>{scopeDescription}</CardDescription> : null}
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">{stateCopy(state, errorMessage)}</p>
@@ -96,7 +107,10 @@ export function ActivityStreamAnalysisCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Stream analysis</CardTitle>
+        <CardTitle aria-level={2} role="heading">
+          Stream analysis
+        </CardTitle>
+        {scopeDescription ? <CardDescription>{scopeDescription}</CardDescription> : null}
       </CardHeader>
       <CardContent className="space-y-5">
         <div>

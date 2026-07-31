@@ -203,6 +203,26 @@ function buildActivityPlan(id: string, name: string, activity_category: "bike" |
   };
 }
 
+function buildCanonicalTrainingPlanStructure() {
+  return {
+    version: 1 as const,
+    sessions: [
+      {
+        offset_days: 0,
+        activity_plan_id: "11111111-1111-4111-8111-111111111111",
+      },
+    ],
+    goal_blueprints: [
+      {
+        title: "Peak for event",
+        priority: 10,
+        activity_category: "bike",
+        target_offset_days: 42,
+      },
+    ],
+  };
+}
+
 function completeCommonLoad(load: number, contributingDurationSeconds: number) {
   return {
     model: "gradientpeak_relative_load" as const,
@@ -219,6 +239,27 @@ function completeCommonLoad(load: number, contributingDurationSeconds: number) {
     totalActivityCount: 1,
     activityCountCoverage: 1,
     knownDurationCoverage: 1,
+  };
+}
+
+function unavailableWorkload() {
+  return {
+    acwr: {
+      value: null,
+      status: "insufficient_history" as const,
+      coverageDays: 0,
+      requiredDays: 28,
+      source: "none" as const,
+      reasonCode: "missing_exact_identity",
+    },
+    monotony: {
+      value: null,
+      status: "insufficient_history" as const,
+      coverageDays: 0,
+      requiredDays: 7,
+      source: "none" as const,
+      reasonCode: "missing_exact_identity",
+    },
   };
 }
 
@@ -369,11 +410,7 @@ describe("homeRouter", () => {
         },
       })),
     );
-    homeMocks.buildWorkloadEnvelopes.mockReturnValue({
-      acwr: { current: 1.1, previous: 0.9 },
-      monotony: { current: 1.4 },
-      strain: { current: 280 },
-    });
+    homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
 
     const { caller } = createCaller({
       select: {
@@ -488,19 +525,7 @@ describe("homeRouter", () => {
             id: "plan-1",
             name: "Build Block",
             description: "Spring build",
-            structure: {
-              periodization: { currentPhase: "build" },
-              periodization_template: {
-                starting_ctl: 40,
-                target_ctl: 60,
-                target_date: "2026-04-20",
-              },
-              goals: [
-                {
-                  targets: [{ target_type: "power" }],
-                },
-              ],
-            },
+            structure: buildCanonicalTrainingPlanStructure(),
           },
         ],
       ],
@@ -524,10 +549,8 @@ describe("homeRouter", () => {
     expect(result.activePlan).toEqual({
       id: "plan-1",
       name: "Build Block",
-      phase: "build",
-      targetType: "power",
     });
-    expect(result.currentStatus).toBeNull();
+    expect(result).not.toHaveProperty("currentStatus");
     expect(result.consistency).toEqual({ streak: 2, weeklyCount: 2 });
     expect(result.weeklySummary).toMatchObject({
       actual: { distance: 25, duration: 5400, tss: 80, tssComplete: true, count: 2 },
@@ -590,12 +613,9 @@ describe("homeRouter", () => {
     expect(result.projectedLoad).toEqual([]);
     expect(homeMocks.replayTrainingLoadByDate).not.toHaveBeenCalled();
     expect(result).not.toHaveProperty("projectedFitness");
+    expect(result).not.toHaveProperty("idealFitnessCurve");
+    expect(result).not.toHaveProperty("goalMetrics");
     expect(JSON.stringify(result)).not.toMatch(/productive|fatigued|overreach/i);
-    expect(result.goalMetrics).toEqual({
-      targetCTL: 60,
-      targetDate: "2026-04-20",
-      description: expect.stringContaining("Target 60 CTL by"),
-    });
     expect(result.personalizationTelemetry).toEqual({
       flags: {
         age_constants: true,
@@ -621,7 +641,7 @@ describe("homeRouter", () => {
       complete: false,
       seriesIdentity: null,
     });
-    homeMocks.buildWorkloadEnvelopes.mockReturnValue({ acwr: {}, monotony: {} });
+    homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
 
     const { caller, db } = createCaller({
       select: {
@@ -664,7 +684,7 @@ describe("homeRouter", () => {
       complete: true,
       seriesIdentity: { activity_category: "bike", method: "power_threshold" },
     });
-    homeMocks.buildWorkloadEnvelopes.mockReturnValue({ acwr: {}, monotony: {} });
+    homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
     homeMocks.getActivityPlansDerivedMetrics.mockImplementation(async (plans: Array<any>) => plans);
 
     const { caller } = createCaller({
@@ -731,10 +751,7 @@ describe("homeRouter", () => {
       byActivityId: new Map(),
       byDate: new Map(),
     });
-    homeMocks.buildWorkloadEnvelopes.mockReturnValue({
-      acwr: { current: 1.1 },
-      monotony: { current: 1.4 },
-    });
+    homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
     homeMocks.getActivityPlansDerivedMetrics.mockResolvedValue([]);
 
     const { caller } = createCaller({
@@ -756,6 +773,35 @@ describe("homeRouter", () => {
     });
 
     await expect(caller.getDashboard({ days: 2 })).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+    });
+  });
+
+  it("rejects legacy workload envelope aliases", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
+    homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
+    homeMocks.createActivityAnalysisStore.mockReturnValue({ kind: "analysis-store" });
+    homeMocks.buildDynamicStressSeries.mockResolvedValue({
+      byActivityId: new Map(),
+      segmentSummaries: [],
+      complete: false,
+      seriesIdentity: null,
+    });
+    homeMocks.buildWorkloadEnvelopes.mockReturnValue({
+      acwr: { current: 1.1, previous: 0.9 },
+      monotony: { current: 1.4 },
+    });
+
+    const { caller } = createCaller({
+      select: {
+        profiles: [[{ dob: null, gender: null }]],
+        events: [[], [], []],
+        activities: [[]],
+      },
+    });
+
+    await expect(caller.getDashboard()).rejects.toMatchObject({
       code: "INTERNAL_SERVER_ERROR",
     });
   });
@@ -783,10 +829,7 @@ describe("homeRouter", () => {
         },
       })),
     );
-    homeMocks.buildWorkloadEnvelopes.mockReturnValue({
-      acwr: { current: 1.1, previous: 0.9 },
-      monotony: { current: 1.4 },
-    });
+    homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
 
     const { caller } = createCaller({
       select: {
@@ -858,7 +901,7 @@ describe("homeRouter", () => {
             id: "plan-1",
             name: "Build Block",
             description: "Spring build",
-            structure: {},
+            structure: buildCanonicalTrainingPlanStructure(),
           },
         ],
       ],
@@ -868,6 +911,47 @@ describe("homeRouter", () => {
       weeklySummary: {
         planned: { distance: 20, duration: 3600, tss: 90 },
       },
+    });
+  });
+
+  it("rejects legacy periodization and singular goal fields instead of translating them", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
+    homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
+    homeMocks.createActivityAnalysisStore.mockReturnValue({ kind: "analysis-store" });
+    homeMocks.buildDynamicStressSeries.mockResolvedValue({
+      byActivityId: new Map(),
+      segmentSummaries: [],
+      complete: false,
+      seriesIdentity: null,
+    });
+    homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
+
+    const { caller } = createCaller({
+      select: {
+        profiles: [[{ dob: null, gender: null }]],
+        events: [[{ training_plan_id: "plan-1", starts_at: new Date("2026-04-04T08:00:00.000Z") }]],
+        activities: [[]],
+      },
+      execute: [
+        [
+          {
+            id: "plan-1",
+            name: "Legacy plan",
+            description: null,
+            structure: {
+              ...buildCanonicalTrainingPlanStructure(),
+              periodization: { currentPhase: "build" },
+              periodization_template: { target_ctl: 60 },
+              goal: { targetCTL: 60, targetDate: "2026-04-20" },
+            },
+          },
+        ],
+      ],
+    });
+
+    await expect(caller.getDashboard()).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
     });
   });
 });

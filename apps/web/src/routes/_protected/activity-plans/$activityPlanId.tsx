@@ -1,4 +1,4 @@
-import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,7 +49,7 @@ function ActivityPlanDetailPage() {
   const planQuery = api.activityPlans.getById.useQuery({ id: activityPlanId }, { retry: false });
   const scheduleQuery = api.events.list.useQuery({
     activity_plan_id: activityPlanId,
-    include_adhoc: false,
+    include_adhoc: true,
     limit: 100,
   });
   const [editing, setEditing] = useState(false);
@@ -62,7 +62,7 @@ function ActivityPlanDetailPage() {
   );
   const scheduledEvent = scheduledEvents[0];
   const isOwner = user?.id === plan?.profile_id;
-  const hasCanonicalStructure = activityPlanStructureSchemaV3.safeParse(plan?.structure).success;
+  const hasCanonicalStructure = activityPlanStructureSchema.safeParse(plan?.structure).success;
 
   useEffect(() => {
     setLiked(plan?.has_liked ?? false);
@@ -373,17 +373,16 @@ function ActivityPlanDetailPage() {
           <Button
             disabled={!scheduleDate || createSchedule.isPending || updateSchedule.isPending}
             onClick={() => {
-              const scheduledDate = `${scheduleDate}T09:00:00.000Z`;
               if (scheduledEvent) {
                 updateSchedule.mutate({
                   id: scheduledEvent.id,
-                  patch: { scheduled_date: scheduledDate },
+                  patch: { scheduled_date: scheduleDate },
                 });
               } else {
                 createSchedule.mutate({
                   activity_plan_id: plan.id,
                   event_type: "planned",
-                  scheduled_date: scheduledDate,
+                  scheduled_date: scheduleDate,
                   title: plan.name,
                 });
               }

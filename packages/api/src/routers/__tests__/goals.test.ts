@@ -1,5 +1,5 @@
 import type { TRPCError } from "@trpc/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { goalsRouter } from "../goals";
 
 type GoalRow = {
@@ -28,6 +28,7 @@ type GoalRow = {
 type QueryMap = {
   profileGoalsSelect?: GoalRow[] | GoalRow[][];
   profileGoalsCount?: Array<{ total: number }>;
+  profileGoalsInsertError?: Error & { code?: string };
   profileGoalsInsert?: GoalRow[];
   profileGoalsUpdate?: GoalRow[];
   profileAccess?: Array<{ has_access: boolean }>;
@@ -137,7 +138,10 @@ function createDbMock(queryMap: QueryMap = {}) {
 
         callLog.push({ operation: "insert", table: tableName, payload });
         return {
-          returning: async () => queryMap.profileGoalsInsert ?? [],
+          returning: async () => {
+            if (queryMap.profileGoalsInsertError) throw queryMap.profileGoalsInsertError;
+            return queryMap.profileGoalsInsert ?? [];
+          },
         };
       },
     }),
@@ -261,6 +265,26 @@ describe("goalsRouter", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
   });
 
+  it("rejects impossible Gregorian target dates before persistence", async () => {
+    const { caller, callLog } = createCaller();
+
+    await expect(
+      caller.create({
+        profile_id: OWNER_ID,
+        target_date: "2026-02-31",
+        title: "Impossible date",
+        priority: 6,
+        activity_category: "run",
+        target_payload: {
+          type: "consistency",
+          target_sessions_per_week: 4,
+          target_weeks: 8,
+        },
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+    expect(callLog).not.toContainEqual(expect.objectContaining({ operation: "insert" }));
+  });
+
   it("allows an authorized coach to fetch a goal by id", async () => {
     const goal = createGoalRow();
     const { caller } = createCaller({
@@ -274,6 +298,19 @@ describe("goalsRouter", () => {
     const result = await caller.getById({ id: GOAL_ID });
 
     expect(result).toEqual(goal);
+  });
+
+  it("does not disclose an existing goal to an unauthorized actor", async () => {
+    const goal = createGoalRow();
+    const { caller } = createCaller({
+      userId: COACH_ID,
+      queryMap: {
+        profileGoalsSelect: [[goal]],
+        profileAccess: [{ has_access: false }],
+      },
+    });
+
+    await expect(caller.getById({ id: GOAL_ID })).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   it("creates a goal and returns cache tags", async () => {
@@ -326,6 +363,34 @@ describe("goalsRouter", () => {
         updated_at: expect.any(Date),
       }),
     });
+  });
+
+  it("does not expose raw database failures when goal creation fails", async () => {
+    const databaseMessage = "sensitive row value rejected by profile_goals";
+    const databaseError = Object.assign(new Error(databaseMessage), { code: "XX000" });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { caller } = createCaller({ queryMap: { profileGoalsInsertError: databaseError } });
+
+    try {
+      await expect(
+        caller.create({
+          profile_id: OWNER_ID,
+          target_date: "2026-06-10",
+          title: "Canonical Goal",
+          priority: 6,
+          activity_category: "run",
+          target_payload: {
+            type: "event_performance",
+            activity_category: "run",
+            distance_m: 5000,
+            target_time_s: 1500,
+          },
+        }),
+      ).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR", message: "Failed to create goal" });
+      expect(JSON.stringify(consoleError.mock.calls)).not.toContain(databaseMessage);
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it("updates a goal by merging partial input with the stored record", async () => {
@@ -413,6 +478,24 @@ describe("goalsRouter", () => {
       cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
     });
     expect(callLog).toContainEqual({ operation: "delete", table: "profile_goals" });
+  });
+
+  it("does not disclose an existing goal through unauthorized writes", async () => {
+    const goal = createGoalRow();
+    const { caller, callLog } = createCaller({
+      userId: COACH_ID,
+      queryMap: {
+        profileGoalsSelect: [[goal], [goal]],
+        profileAccess: [],
+      },
+    });
+
+    await expect(
+      caller.update({ id: GOAL_ID, data: { title: "Unauthorized update" } }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(caller.delete({ id: GOAL_ID })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(callLog).not.toContainEqual(expect.objectContaining({ operation: "update" }));
+    expect(callLog).not.toContainEqual(expect.objectContaining({ operation: "delete" }));
   });
 
   it("rejects delete input with unexpected keys", async () => {

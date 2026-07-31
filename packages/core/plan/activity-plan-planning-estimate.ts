@@ -1,4 +1,4 @@
-import { compileActivityPlanV3 } from "../activity-plan";
+import { compileActivityPlan } from "../activity-plan";
 import { calculateActivityPlanStats } from "../activity-plan-calculations";
 import type { CanonicalActivityCategory } from "../schemas/activity-category";
 
@@ -61,10 +61,10 @@ export function estimateActivityPlanForTrainingContext({
       tss: null,
       confidence: "low",
       factors: [],
-      warnings: ["A validated activity-plan V3 structure is required for planning estimates."],
+      warnings: ["A validated activity-plan structure is required for planning estimates."],
     };
   }
-  const compiled = compileActivityPlanV3(structure);
+  const compiled = compileActivityPlan(structure);
   const stats = calculateActivityPlanStats(compiled, {
     cyclingFtpWatts: athleteContext?.cyclingFtpWatts ?? athleteContext?.ftpWatts ?? undefined,
   });
@@ -128,7 +128,7 @@ export function estimateActivityPlanForTrainingContext({
           ? "medium"
           : "low",
     factors: [
-      "compiled V3 occurrences",
+      "compiled occurrences",
       ...(categoryDoses.some((dose) => dose.evidence !== "unsupported")
         ? ["cycling power targets"]
         : []),

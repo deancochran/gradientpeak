@@ -129,12 +129,7 @@ export function getActivityEffortObservationStatus(
   input: ActivityEffortObservationInput,
 ): ActivityEffortObservationStatus {
   const provenance = isRecord(input.provenance) ? input.provenance : null;
-  if (
-    input.source === "derived" ||
-    input.source === "estimated" ||
-    input.method === "onboarding_modeled_curve" ||
-    provenance?.observation_type === "modeled"
-  ) {
+  if (input.source === "derived" || input.source === "estimated") {
     return "modeled";
   }
 

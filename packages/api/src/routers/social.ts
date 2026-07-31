@@ -77,7 +77,7 @@ export const socialRouter = createTRPCRouter({
         targetUserId: input.user_id,
         direction: "followers",
         limit: input.limit,
-        cursor: input.cursor,
+        ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
       });
     } catch (error) {
       if (error instanceof TRPCError) throw error;
@@ -93,7 +93,7 @@ export const socialRouter = createTRPCRouter({
         targetUserId: input.user_id,
         direction: "following",
         limit: input.limit,
-        cursor: input.cursor,
+        ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
       });
     } catch (error) {
       if (error instanceof TRPCError) throw error;
@@ -119,7 +119,13 @@ export const socialRouter = createTRPCRouter({
         return await searchSocialUsers({
           db: getRequiredDb(ctx),
           viewerId: ctx.session.user.id,
-          input,
+          input: {
+            limit: input.limit,
+            offset: input.offset,
+            ...(input.query === undefined ? {} : { query: input.query }),
+            ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+            ...(input.sort_by === undefined ? {} : { sort_by: input.sort_by }),
+          },
         });
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -131,6 +137,7 @@ export const socialRouter = createTRPCRouter({
     .input(
       z
         .object({
+          comment_id: z.string().uuid().optional(),
           entity_id: z.string().uuid(),
           entity_type: socialCommentEntityTypeSchema,
           content: z.string().min(1).max(1000),
@@ -138,7 +145,16 @@ export const socialRouter = createTRPCRouter({
         .strict(),
     )
     .mutation(({ ctx, input }) =>
-      addContentComment({ db: getRequiredDb(ctx), viewerId: ctx.session.user.id, input }),
+      addContentComment({
+        db: getRequiredDb(ctx),
+        viewerId: ctx.session.user.id,
+        input: {
+          entity_id: input.entity_id,
+          entity_type: input.entity_type,
+          content: input.content,
+          ...(input.comment_id === undefined ? {} : { comment_id: input.comment_id }),
+        },
+      }),
     ),
 
   getComments: protectedProcedure
@@ -154,6 +170,15 @@ export const socialRouter = createTRPCRouter({
         .strict(),
     )
     .query(({ ctx, input }) =>
-      readContentComments({ db: getRequiredDb(ctx), viewerId: ctx.session.user.id, input }),
+      readContentComments({
+        db: getRequiredDb(ctx),
+        viewerId: ctx.session.user.id,
+        input: {
+          entity_id: input.entity_id,
+          entity_type: input.entity_type,
+          limit: input.limit,
+          ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+        },
+      }),
     ),
 });

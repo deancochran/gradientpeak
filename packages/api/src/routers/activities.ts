@@ -2,11 +2,11 @@ import {
   activityDerivedMetricsSchema,
   activityListDerivedSummarySchema,
   activityTssIdentitySchema,
-  completedActivitySegmentSetSchemaV1,
+  completedActivitySegmentSetSchema,
   contentVisibilitySchema,
   ianaTimezoneSchema,
 } from "@repo/core";
-import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import { commonLoadAggregateSchema, commonLoadHistoryResultSchema } from "@repo/core/load";
 import {
   activities,
@@ -286,7 +286,7 @@ const activityParentSummarySchema = z
     calories: z.number().int().nonnegative().nullable().optional(),
     elevationGainMeters: z.number().nonnegative().nullable().optional(),
     avgTemperature: z.number().finite().nullable().optional(),
-    poolLength: z.number().positive().nullable().optional(),
+    poolLengthMeters: z.number().positive().nullable().optional(),
   })
   .strict()
   .default({ distanceMeters: 0 });
@@ -300,7 +300,7 @@ const createInputSchema = z
     startedAt: isoDatetimeSchema,
     finishedAt: isoDatetimeSchema,
     content_visibility: contentVisibilitySchema.optional(),
-    segmentSet: completedActivitySegmentSetSchemaV1,
+    segmentSet: completedActivitySegmentSetSchema,
     acceptedArtifact: recordingAcceptedArtifactSchema,
     summary: activityParentSummarySchema,
   })
@@ -388,7 +388,7 @@ function sessionRpeEvidenceResponse(evidence: Awaited<ReturnType<typeof recordSe
   });
 }
 
-function aggregateSegmentTiming(segmentSet: z.infer<typeof completedActivitySegmentSetSchemaV1>) {
+function aggregateSegmentTiming(segmentSet: z.infer<typeof completedActivitySegmentSetSchema>) {
   const timings = segmentSet.segments.map((segment) => segment.summary.timing);
   const complete = timings.every((timing) => timing.timingCoverage === "complete");
   return {
@@ -544,7 +544,7 @@ export const activitiesRouter = createTRPCRouter({
 
       if (linkedEvent.activity_plan_id) {
         const parsedPlan = linkedEvent.activity_plan
-          ? activityPlanStructureSchemaV3.safeParse(linkedEvent.activity_plan.structure)
+          ? activityPlanStructureSchema.safeParse(linkedEvent.activity_plan.structure)
           : null;
         if (!parsedPlan?.success) {
           throw new TRPCError({
@@ -598,7 +598,7 @@ export const activitiesRouter = createTRPCRouter({
       efficiencyFactor: null,
       aerobicDecoupling: null,
       avgTemperature: input.summary.avgTemperature ?? null,
-      poolLength: input.summary.poolLength ?? null,
+      poolLengthMeters: input.summary.poolLengthMeters ?? null,
       deviceManufacturer: null,
       deviceProduct: null,
       laps: null,

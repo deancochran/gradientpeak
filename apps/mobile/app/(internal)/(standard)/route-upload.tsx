@@ -9,11 +9,16 @@ import { AlertCircle } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/hooks/useAuth";
 import {
   getRouteFileReadErrorMessage,
   nativeRouteFileMetadataSchema,
   readRouteFileText,
 } from "@/lib/route-files/native-route-file";
+import {
+  claimRouteUploadOperation,
+  clearRouteUploadOperation,
+} from "@/lib/route-files/route-upload-operation";
 import { handleSubmitFormError } from "@/lib/utils/formErrors";
 import { type RouteUploadFormValues, routeUploadFormSchema } from "@/lib/validation/route-upload";
 
@@ -22,6 +27,7 @@ type UploadPhase = "idle" | "reading" | "uploading" | "success";
 export default function UploadRouteScreen() {
   const router = useRouter();
   const utils = api.useUtils();
+  const { user } = useAuth();
   const [uploadPhase, setUploadPhase] = useState<UploadPhase>("idle");
   const uploadInFlightRef = useRef(false);
   const terminalSuccessRef = useRef(false);
@@ -98,6 +104,14 @@ export default function UploadRouteScreen() {
       uploadInFlightRef.current = true;
       form.clearErrors("root");
       const file = values.files[0];
+      if (!file) {
+        form.setError("files", {
+          type: "missing-file",
+          message: "Choose a route file to upload.",
+        });
+        uploadInFlightRef.current = false;
+        return;
+      }
       const fileUri = file.uri;
 
       if (typeof fileUri !== "string" || fileUri.length === 0) {
@@ -123,12 +137,22 @@ export default function UploadRouteScreen() {
           }
 
           setUploadPhase("uploading");
+          if (!user?.id) throw new Error("Authenticated profile is unavailable");
+          const operation = await claimRouteUploadOperation({
+            description: values.description ?? null,
+            fileContent,
+            fileName: file.name,
+            name: values.name,
+            profileId: user.id,
+          });
           await uploadMutation.mutateAsync({
             name: values.name,
             description: values.description ?? undefined,
             fileContent,
             fileName: file.name,
+            idempotencyKey: operation.idempotencyKey,
           });
+          await clearRouteUploadOperation(operation.storageKey);
           return true;
         };
         if (!(await readAndUpload())) {

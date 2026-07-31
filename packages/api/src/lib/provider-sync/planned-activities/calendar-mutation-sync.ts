@@ -1,4 +1,4 @@
-import { activityPlanStructureSchemaV3, getProvidersWithCapability } from "@repo/core";
+import { activityPlanStructureSchema, getProvidersWithCapability } from "@repo/core";
 import { type DrizzleDbClient, schema } from "@repo/db";
 import { and, eq, inArray } from "drizzle-orm";
 import type { DrizzleTransactionClient } from "../../../db";
@@ -152,7 +152,7 @@ export async function enqueuePlannedActivitySyncAfterCalendarMutation(
       );
     if (
       eventPlans.length !== eventIds.length ||
-      eventPlans.some((event) => !activityPlanStructureSchemaV3.safeParse(event.structure).success)
+      eventPlans.some((event) => !activityPlanStructureSchema.safeParse(event.structure).success)
     ) {
       throw new Error(
         "Only executable single-activity-category activity plans can be published to providers",

@@ -9,7 +9,8 @@ import {
   repoRoot,
   supabaseCliRoot,
 } from "./_local-database-config";
-import { safeSupabaseCliEnvironment } from "./_supabase-cli-wrapper";
+
+const safeSupabaseCliEnvironment = () => ({ ...process.env });
 
 export { dbPackageRoot, defaultLocalDatabaseUrl, repoRoot, supabaseCliRoot };
 
@@ -45,12 +46,24 @@ export function runSupabaseCli(
   workdir = dbPackageRoot,
   encoding: "utf8" | undefined = undefined,
 ) {
-  return execFileSync("pnpm", ["exec", "supabase", "--workdir", workdir, ...args], {
-    cwd: supabaseCliRoot,
-    env: safeSupabaseCliEnvironment(),
-    encoding,
-    stdio: encoding ? "pipe" : "inherit",
-  });
+  try {
+    return execFileSync("pnpm", ["exec", "supabase", "--workdir", workdir, ...args], {
+      cwd: supabaseCliRoot,
+      env: safeSupabaseCliEnvironment(),
+      encoding,
+      stdio: encoding ? "pipe" : "inherit",
+    });
+  } catch (error) {
+    const result = error as { stderr?: string | Buffer; stdout?: string | Buffer };
+    const stderr = result.stderr?.toString() ?? "";
+    const stdout = result.stdout?.toString() ?? "";
+    if (encoding && stderr.includes("Timeout while shutting down PostHog")) {
+      // The pinned CLI can complete its database operation then fail only while
+      // flushing analytics. Preserve the completed command output for its caller.
+      return stdout;
+    }
+    throw error;
+  }
 }
 
 export function runPnpmExec(args: string[], cwd = dbPackageRoot) {

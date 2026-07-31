@@ -1,5 +1,5 @@
 import { FTMS_SERVICE_UUIDS } from "@deancochran/ftms";
-import { BLE_SERVICE_UUIDS } from "@repo/core";
+import { BLE_SERVICE_UUIDS } from "@repo/core/constants/ble";
 import type { BleManager, Device } from "react-native-ble-plx";
 
 const SCAN_SERVICE_UUIDS = [

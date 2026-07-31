@@ -104,7 +104,7 @@ export interface ProjectionSafetyConfigInput {
   post_goal_recovery_days?: number;
   max_weekly_tss_ramp_pct?: number;
   max_ctl_ramp_per_week?: number;
-  behavior_controls_v1?: {
+  behavior_controls?: {
     aggressiveness?: number;
     variability?: number;
     spike_frequency?: number;

@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { buildDeterministicProjectionPayload } from "../projectionCalculations";
+import { buildDeterministicProjectionPayload } from "../projection/engine";
 
 describe("Goal Readiness Score - 99+ Override Removal", () => {
   it("should not artificially inflate scores to 99+ for elite scenarios", () => {
@@ -346,13 +346,11 @@ describe("Goal Readiness Score - 99+ Override Removal", () => {
       starting_tsb: 2,
     });
 
-    const displayedGoalPoint = projection.display_points?.find(
-      (point) => point.date === "2026-05-24",
-    );
+    const goalPoint = projection.points.find((point) => point.date === "2026-05-24");
 
-    expect(displayedGoalPoint).toBeDefined();
+    expect(goalPoint).toBeDefined();
     expect(projection.physiological_readiness_score).toBeCloseTo(
-      displayedGoalPoint?.readiness_score ?? 0,
+      goalPoint?.readiness_score ?? 0,
       0,
     );
   });

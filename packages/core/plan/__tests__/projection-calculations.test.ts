@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { calculateCTL } from "../../load/progression";
 import { defaultAthletePreferenceProfile } from "../../schemas/settings/profile_settings";
-import { buildDeterministicProjectionPayload as buildDeterministicProjectionPayloadFromEngine } from "../projection/engine";
+import { buildDeterministicProjectionPayload } from "../projection/engine";
 import {
-  buildDeterministicProjectionPayload,
   clampNoHistoryFloorByAvailability,
   classifyBuildTimeFeasibility,
   collectNoHistoryEvidence,
@@ -17,9 +16,10 @@ import {
   resolveNoHistoryAnchor,
   weeklyLoadFromBlockAndBaseline,
 } from "../projectionCalculations";
+import { resolveTrainingPrescription } from "../trainingPrescription";
 
 describe("projection calculations", () => {
-  it("keeps engine entrypoint behavior aligned with legacy projectionCalculations export", () => {
+  it("builds deterministic projections through the canonical engine entrypoint", () => {
     const input: Parameters<typeof buildDeterministicProjectionPayload>[0] = {
       timeline: {
         start_date: "2026-01-05",
@@ -45,10 +45,10 @@ describe("projection calculations", () => {
       starting_ctl: 35,
     };
 
-    const legacyProjection = buildDeterministicProjectionPayload(input);
-    const engineProjection = buildDeterministicProjectionPayloadFromEngine(input);
-
-    expect(engineProjection).toEqual(legacyProjection);
+    expect(buildDeterministicProjectionPayload(input)).toMatchObject({
+      start_date: input.timeline.start_date,
+      end_date: input.timeline.end_date,
+    });
   });
 
   it("adds reference payload fields without breaking existing projection shape", () => {
@@ -2057,7 +2057,7 @@ describe("phase 1 scoring integration", () => {
       },
     });
 
-    expect(projection.display_points).toEqual(projection.points);
+    expect(Object.keys(projection)).toContain("points");
     expect(projection.readiness_score).toBeGreaterThanOrEqual(0);
     expect(projection.readiness_score).toBeLessThanOrEqual(100);
 
@@ -2117,7 +2117,7 @@ describe("phase 1 scoring integration", () => {
       ],
       starting_ctl: 42,
       creation_config: {
-        behavior_controls_v1: {
+        behavior_controls: {
           aggressiveness: 0.1,
         },
       },
@@ -2242,6 +2242,38 @@ describe("phase 1 scoring integration", () => {
       ],
       starting_ctl: 38,
       preference_profile: defaultAthletePreferenceProfile,
+      training_prescription: resolveTrainingPrescription({
+        goals: [
+          {
+            id: "goal-run",
+            profile_id: "profile-1",
+            title: "10k",
+            target_date: "2026-03-16",
+            priority: 2,
+            activity_category: "run",
+            objective: {
+              type: "event_performance",
+              activity_category: "run",
+              distance_m: 10_000,
+              target_time_s: 2520,
+            },
+          },
+          {
+            id: "goal-bike",
+            profile_id: "profile-1",
+            title: "FTP",
+            target_date: "2026-03-30",
+            priority: 1,
+            activity_category: "bike",
+            objective: {
+              type: "threshold",
+              metric: "power",
+              value: 290,
+              activity_category: "bike",
+            },
+          },
+        ],
+      }),
     });
 
     const runLoad = projection.activity_category_load_states?.find(
@@ -2390,9 +2422,13 @@ describe("phase 2 mpc integration diagnostics", () => {
 
     expect(first.projection_diagnostics).toEqual(second.projection_diagnostics);
     expect(first.projection_diagnostics?.selected_path).toBeDefined();
-    expect(["full_mpc", "degraded_bounded_mpc", "legacy_optimizer", "cap_only_baseline"]).toContain(
+    expect(["full_mpc", "degraded_bounded_mpc", "cap_only_baseline"]).toContain(
       first.projection_diagnostics?.selected_path,
     );
+    expect(Object.keys(first.projection_diagnostics?.candidate_counts ?? {})).toEqual([
+      "full_mpc",
+      "degraded_bounded_mpc",
+    ]);
   });
 
   it("emits solver diagnostics metadata for candidate counts and tie-break chain", () => {
@@ -2475,6 +2511,16 @@ describe("phase 2 mpc integration diagnostics", () => {
     expect(first.projection_diagnostics?.fallback_reason).toBe("optimizer_disabled");
   });
 
+  it("uses the cap-only baseline when no future goal can be optimized", () => {
+    const projection = buildDeterministicProjectionPayload({
+      ...phase2Fixture,
+      goals: [],
+    });
+
+    expect(projection.projection_diagnostics?.selected_path).toBe("cap_only_baseline");
+    expect(projection.projection_diagnostics?.fallback_reason).toBe("no_future_goals");
+  });
+
   it("applies configured ramp caps deterministically", () => {
     const strictProjection = buildDeterministicProjectionPayload({
       ...phase2Fixture,
@@ -2550,7 +2596,7 @@ describe("phase 2 mpc integration diagnostics", () => {
       disable_weekly_tss_optimizer: true,
       creation_config: {
         ...phase2Fixture.creation_config,
-        behavior_controls_v1: {
+        behavior_controls: {
           aggressiveness: 0.1,
           variability: 0.5,
           spike_frequency: 0.35,
@@ -2566,7 +2612,7 @@ describe("phase 2 mpc integration diagnostics", () => {
       disable_weekly_tss_optimizer: true,
       creation_config: {
         ...phase2Fixture.creation_config,
-        behavior_controls_v1: {
+        behavior_controls: {
           aggressiveness: 0.9,
           variability: 0.5,
           spike_frequency: 0.35,

@@ -53,7 +53,7 @@ function buildConfigFixture(): TrainingPlanConfigFormData {
     },
     optimizationProfile: "balanced",
     postGoalRecoveryDays: 6,
-    behaviorControlsV1: {
+    behaviorControls: {
       aggressiveness: 0.7,
       variability: 0.4,
       spike_frequency: 0.5,
@@ -121,7 +121,7 @@ function buildConfigFixture(): TrainingPlanConfigFormData {
       min_sessions_per_week: { locked: true, locked_by: "user" },
       optimization_profile: { locked: true, locked_by: "user" },
       post_goal_recovery_days: { locked: true, locked_by: "user" },
-      behavior_controls_v1: { locked: true, locked_by: "user" },
+      behavior_controls: { locked: true, locked_by: "user" },
     },
   } as unknown as TrainingPlanConfigFormData;
 }
@@ -159,7 +159,7 @@ describe("toCreationNormalizationInput", () => {
         constraints: fixture.constraints,
         optimization_profile: "balanced",
         post_goal_recovery_days: 6,
-        behavior_controls_v1: fixture.behaviorControlsV1,
+        behavior_controls: fixture.behaviorControls,
         calibration_composite_locks: fixture.calibrationCompositeLocks,
         calibration: fixture.calibration,
         locks: fixture.locks,
@@ -220,13 +220,13 @@ describe("toCreationNormalizationInput", () => {
 
   it("serializes behavior controls deterministically", () => {
     const fixture = buildConfigFixture();
-    fixture.behaviorControlsV1.shape_target = -0.55;
-    fixture.behaviorControlsV1.shape_strength = 0.92;
+    fixture.behaviorControls.shape_target = -0.55;
+    fixture.behaviorControls.shape_strength = 0.92;
 
     const mapped = toCreationNormalizationInput(fixture);
 
-    expect(mapped.user_values?.behavior_controls_v1?.shape_target).toBe(-0.55);
-    expect(mapped.user_values?.behavior_controls_v1?.shape_strength).toBe(0.92);
+    expect(mapped.user_values?.behavior_controls?.shape_target).toBe(-0.55);
+    expect(mapped.user_values?.behavior_controls?.shape_strength).toBe(0.92);
   });
 });
 
@@ -386,7 +386,7 @@ describe("training plan reverse adapters", () => {
           },
           optimization_profile: "outcome_first",
           post_goal_recovery_days: 8,
-          behavior_controls_v1: {
+          behavior_controls: {
             aggressiveness: 0.8,
             variability: 0.45,
             spike_frequency: 0.6,
@@ -418,8 +418,8 @@ describe("training plan reverse adapters", () => {
     expect(first.recentInfluenceScore).toBe(0.37);
     expect(first.optimizationProfile).toBe("outcome_first");
     expect(first.postGoalRecoveryDays).toBe(8);
-    expect(first.behaviorControlsV1.aggressiveness).toBe(0.8);
-    expect(first.behaviorControlsV1.shape_target).toBe(0.2);
+    expect(first.behaviorControls.aggressiveness).toBe(0.8);
+    expect(first.behaviorControls.shape_target).toBe(0.2);
     expect(first.calibrationCompositeLocks).toEqual({
       target_attainment_weight: true,
       envelope_weight: false,

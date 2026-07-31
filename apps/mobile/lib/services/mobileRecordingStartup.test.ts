@@ -8,7 +8,6 @@ const mocks = vi.hoisted(() => ({
   clearCheckpoint: vi.fn(async () => undefined),
   hasQuarantine: vi.fn(async () => false),
   inspectFinalized: vi.fn(async (): Promise<unknown[]> => []),
-  blockRebuild: vi.fn(async () => undefined),
   loadSqliteArtifacts: vi.fn(async (): Promise<unknown[]> => []),
   garbageCollect: vi.fn(async () => 0),
   garbageCollectAccepted: vi.fn(async () => 0),
@@ -27,19 +26,17 @@ vi.mock("./activitySubmissionQueue", () => ({
 vi.mock("./ActivityRecorder/checkpointStorage", () => ({
   clearRecordingCheckpoint: mocks.clearCheckpoint,
   inspectRecordingCheckpoint: mocks.inspect,
-  hasQuarantinedRecordingEvidence: mocks.hasQuarantine,
 }));
 vi.mock("./ActivityRecorder/recordingEvidenceJournal", () => ({
   inspectFinalizedArtifactReferences: mocks.inspectFinalized,
-  blockFinalizedArtifactRebuild: mocks.blockRebuild,
   loadFinalizedArtifactHandoffs: mocks.loadSqliteArtifacts,
   inspectRecordingEvidenceSession: vi.fn(async () => ({ status: "none" })),
   garbageCollectExpiredRecordingEvidence: mocks.garbageCollect,
+  hasQuarantinedRecordingEvidence: mocks.hasQuarantine,
 }));
 
 import {
   prepareMobileRecordingStartup,
-  registerFinalizationRecoveryOwner,
   resetMobileRecordingStartupForTests,
 } from "./mobileRecordingStartup";
 
@@ -97,7 +94,6 @@ describe("mobile recording startup fence", () => {
     expect(mocks.loadSqliteArtifacts).toHaveBeenCalledWith("profile-1");
     expect(mocks.handoff).not.toHaveBeenCalled();
     expect(result.queueJobs).toEqual([]);
-    expect(mocks.blockRebuild).not.toHaveBeenCalled();
     expect(mocks.garbageCollectDiscarded).toHaveBeenCalledTimes(1);
   });
 
@@ -112,60 +108,13 @@ describe("mobile recording startup fence", () => {
     expect(mocks.clearCheckpoint).toHaveBeenCalledWith("session-1");
   });
 
-  it("rebuilds a corrupt finalized reference once through the registered recorder owner", async () => {
-    const checkpoint = { sessionId: "session-1", streamArtifactPaths: ["streams"] };
-    mocks.inspect.mockResolvedValue({ status: "recovered", checkpoint });
+  it("does not replay a quarantined finalized row", async () => {
     mocks.inspectFinalized.mockResolvedValue([
-      { status: "rebuild-pending", sessionId: "session-1", reason: "finalized-artifact-mismatch" },
+      { status: "quarantined", sessionId: "session-1", reason: "finalized-current-fields-missing" },
     ]);
-    const rebuild = vi.fn(async () => undefined);
-    registerFinalizationRecoveryOwner("profile-1", rebuild);
 
     await prepareMobileRecordingStartup("profile-1");
-    await prepareMobileRecordingStartup("profile-1");
 
-    expect(rebuild).toHaveBeenCalledTimes(1);
-    expect(rebuild).toHaveBeenCalledWith(checkpoint);
     expect(mocks.handoff).not.toHaveBeenCalled();
-  });
-
-  it("leaves a durable blocked state when the required checkpoint is unavailable", async () => {
-    mocks.inspectFinalized.mockResolvedValue([
-      { status: "rebuild-pending", sessionId: "session-1", reason: "finalized-artifact-mismatch" },
-    ]);
-
-    await prepareMobileRecordingStartup("profile-1");
-
-    expect(mocks.blockRebuild).toHaveBeenCalledWith("session-1", "required-checkpoint-unavailable");
-  });
-
-  it("resumes a pending rebuild after process death before an owner ran", async () => {
-    const checkpoint = { sessionId: "session-1", streamArtifactPaths: ["streams"] };
-    mocks.inspect.mockResolvedValue({ status: "recovered", checkpoint });
-    mocks.inspectFinalized.mockResolvedValue([
-      { status: "rebuild-pending", sessionId: "session-1", reason: "finalized-artifact-mismatch" },
-    ]);
-    const firstOwner = vi.fn(async () => undefined);
-    registerFinalizationRecoveryOwner("profile-1", firstOwner);
-    // The durable journal has already recorded pending before this new process starts.
-    resetMobileRecordingStartupForTests();
-    const resumedOwner = vi.fn(async () => undefined);
-    registerFinalizationRecoveryOwner("profile-1", resumedOwner);
-
-    await prepareMobileRecordingStartup("profile-1");
-
-    expect(firstOwner).not.toHaveBeenCalled();
-    expect(resumedOwner).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not rebuild a healthy finalized reference", async () => {
-    mocks.inspectFinalized.mockResolvedValue([{ status: "healthy", sessionId: "session-1" }]);
-    const rebuild = vi.fn(async () => undefined);
-    registerFinalizationRecoveryOwner("profile-1", rebuild);
-
-    await prepareMobileRecordingStartup("profile-1");
-
-    expect(rebuild).not.toHaveBeenCalled();
-    expect(mocks.blockRebuild).not.toHaveBeenCalled();
   });
 });

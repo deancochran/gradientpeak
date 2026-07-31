@@ -41,8 +41,11 @@ export function getOnboardingSteps(options: {
         (data.resting_hr === null ||
           isProfileMetricValueWithinRange("resting_hr", data.resting_hr)) &&
         (data.ftp === null || isProfileMetricValueWithinRange("ftp", data.ftp)) &&
-        (data.threshold_pace === null ||
-          isProfileMetricValueWithinRange("threshold_pace_seconds_per_km", data.threshold_pace)) &&
+        (data.threshold_pace_seconds_per_km === null ||
+          isProfileMetricValueWithinRange(
+            "threshold_pace_seconds_per_km",
+            data.threshold_pace_seconds_per_km,
+          )) &&
         (data.css === null || isProfileMetricValueWithinRange("css_seconds_per_100m", data.css)),
     },
     {

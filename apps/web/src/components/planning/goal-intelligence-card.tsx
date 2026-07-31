@@ -30,7 +30,7 @@ export function GoalIntelligenceCard({
   onRetry: () => void;
 }) {
   return (
-    <Card>
+    <Card data-testid="goal-intelligence">
       <CardHeader>
         <CardTitle>Evidence &amp; limits</CardTitle>
         <CardDescription>
@@ -44,7 +44,13 @@ export function GoalIntelligenceCard({
         {isError ? (
           <div role="alert" className="space-y-3 rounded-xl border border-destructive/40 p-4">
             <p className="text-sm">Assessment details could not be refreshed.</p>
-            <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+            <Button
+              data-testid="goal-intelligence-retry"
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={onRetry}
+            >
               Retry intelligence
             </Button>
           </div>
@@ -56,9 +62,7 @@ export function GoalIntelligenceCard({
               <Badge variant="outline">
                 {intelligence.explainability.assessment.uncertainty} uncertainty
               </Badge>
-              <Badge variant="secondary">
-                Assessed {intelligence.explainability.assessment.at}
-              </Badge>
+              <Badge variant="secondary">As of {intelligence.explainability.assessment.at}</Badge>
             </div>
             <section className="space-y-2">
               <h2 className="text-sm font-medium">Evidence used</h2>
@@ -77,29 +81,37 @@ export function GoalIntelligenceCard({
             </section>
             <section className="space-y-2">
               <h2 className="text-sm font-medium">Limits</h2>
-              {intelligence.explainability.limits.map((limit) => (
-                <div key={limit.id} className="rounded-xl border p-3 text-sm">
-                  <p className="font-medium">
-                    {limit.label} · {limit.state.replaceAll("_", " ")}
-                  </p>
-                  {limit.reasons.map((reason) => (
-                    <p key={reason} className="mt-1 text-muted-foreground">
-                      {reason}
+              {intelligence.explainability.limits.length ? (
+                intelligence.explainability.limits.map((limit) => (
+                  <div key={limit.id} className="rounded-xl border p-3 text-sm">
+                    <p className="font-medium">
+                      {limit.label} · {limit.state.replaceAll("_", " ")}
                     </p>
-                  ))}
-                </div>
-              ))}
+                    {limit.reasons.map((reason) => (
+                      <p key={reason} className="mt-1 text-muted-foreground">
+                        {reason}
+                      </p>
+                    ))}
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">No assessment limits were reported.</p>
+              )}
             </section>
             <section className="space-y-2">
               <h2 className="text-sm font-medium">Coverage</h2>
-              {intelligence.explainability.coverage.map((coverage) => (
-                <p key={coverage.label} className="text-sm text-muted-foreground">
-                  {coverage.label}: {coverage.state}
-                </p>
-              ))}
+              {intelligence.explainability.coverage.length ? (
+                intelligence.explainability.coverage.map((coverage) => (
+                  <p key={coverage.label} className="text-sm text-muted-foreground">
+                    {coverage.label}: {coverage.state}
+                  </p>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">No coverage details are available.</p>
+              )}
             </section>
             {intelligence.explainability.collectionPrompts.length ? (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2" data-testid="goal-collection-prompts">
                 {intelligence.explainability.collectionPrompts.map((prompt) => (
                   <Button asChild key={prompt.destination} size="sm" variant="outline">
                     <a
@@ -110,7 +122,14 @@ export function GoalIntelligenceCard({
                   </Button>
                 ))}
               </div>
-            ) : null}
+            ) : (
+              <p
+                className="text-sm text-muted-foreground"
+                data-testid="goal-collection-prompts-empty"
+              >
+                No collection prompts are available.
+              </p>
+            )}
           </>
         ) : null}
       </CardContent>

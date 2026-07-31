@@ -6,8 +6,6 @@ import {
 } from "../ActivityRecorder/recordingEvidenceJournal";
 import { type ActivitySubmissionQueueJob, activitySubmissionQueueJobSchema } from "./types";
 
-/** Legacy import source only. SQLite is the runtime authority. */
-export const ACTIVITY_SUBMISSION_QUEUE_JOBS_KEY = "activity-submission-queue:v3:jobs";
 const ACTIVE_STATUSES = [
   "draft",
   "queued",
@@ -131,13 +129,6 @@ export function incompleteQueueJobReferencesLocalFiles(job: ActivitySubmissionQu
     job.status !== "complete" &&
     Boolean(job.localActivityFilePath || job.streamArtifactPaths.length)
   );
-}
-
-/** Compatibility bulk writer; each item remains an independent SQLite row. */
-export async function saveActivitySubmissionQueueJobs(
-  jobs: ActivitySubmissionQueueJob[],
-): Promise<void> {
-  await Promise.all(jobs.map(upsertActivitySubmissionQueueJob));
 }
 
 export async function upsertActivitySubmissionQueueJob(

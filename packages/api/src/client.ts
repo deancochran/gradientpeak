@@ -1,4 +1,5 @@
 export type { inferRouterOutputs } from "@trpc/server";
+export { CONTRACT_EPOCH_HEADER, CURRENT_CONTRACT_EPOCH } from "./contract-epoch";
 export type {
   BeginMobileRecordingUploadInput,
   BeginMobileRecordingUploadOutput,

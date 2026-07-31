@@ -1,6 +1,6 @@
 import {
   type ActivityPlanPresentationModel,
-  type ActivityPlanStructureV3,
+  type ActivityPlanStructure,
   deriveActivityPlanPresentation,
 } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
@@ -28,7 +28,7 @@ type ActivityPlanSummaryProps = {
   intensityFactor?: number | null;
   owner?: EntityOwner | null;
   presentation?: ActivityPlanPresentationModel | null;
-  structure?: ActivityPlanStructureV3 | unknown;
+  structure?: ActivityPlanStructure | unknown;
   subtitle?: string | null;
   testID?: string;
   title?: string | null;
@@ -48,7 +48,7 @@ export function formatActivityCategoryLabel(
     .join(" ");
 }
 
-export function countActivityPlanSteps(structure: ActivityPlanStructureV3 | unknown): number {
+export function countActivityPlanSteps(structure: ActivityPlanStructure | unknown): number {
   return deriveActivityPlanPresentation(structure)?.stepCount ?? 0;
 }
 

@@ -43,6 +43,23 @@ let verificationLockPoolSingleton: Pool | null = null;
 let authSingleton: ReturnType<typeof createGradientPeakAuth> | null = null;
 let authSecretWarningLogged = false;
 
+/**
+ * Route-specific limits retain the strict mutation/recovery protections while
+ * allowing a signed-in SPA/SSR navigation to make its normal session reads.
+ * 120 reads/minute permits a bounded two reads/second; it is deliberately not
+ * unlimited and does not use forwarding headers to identify callers.
+ */
+export const AUTH_RATE_LIMIT_POLICY = Object.freeze({
+  global: Object.freeze({ window: 60, max: 10 }),
+  customRules: Object.freeze({
+    "/get-session": Object.freeze({ window: 60, max: 120 }),
+    "/sign-up/email": Object.freeze({ window: 60, max: 5 }),
+    "/request-password-reset": Object.freeze({ window: 60, max: 3 }),
+    "/reset-password": Object.freeze({ window: 60, max: 5 }),
+    "/send-verification-email": Object.freeze({ window: 60, max: 3 }),
+  }),
+});
+
 const enforcePasswordPolicy = createAuthMiddleware(async (ctx) => {
   const passwordField =
     ctx.path === "/sign-up/email"
@@ -274,15 +291,10 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
     },
     rateLimit: {
       enabled: true,
-      window: 60,
-      max: 10,
+      window: AUTH_RATE_LIMIT_POLICY.global.window,
+      max: AUTH_RATE_LIMIT_POLICY.global.max,
       storage: "database",
-      customRules: {
-        "/sign-up/email": { window: 60, max: 5 },
-        "/request-password-reset": { window: 60, max: 3 },
-        "/reset-password": { window: 60, max: 5 },
-        "/send-verification-email": { window: 60, max: 3 },
-      },
+      customRules: AUTH_RATE_LIMIT_POLICY.customRules,
     },
     session: {
       expiresIn: 60 * 60 * 24 * 30,

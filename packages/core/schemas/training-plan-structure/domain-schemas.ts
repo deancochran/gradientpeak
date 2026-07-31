@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { canonicalActivityCategorySchema } from "../activity-category";
+import { dateOnlySchema } from "../date-only";
 import { canonicalGoalActivityCategorySchema } from "../goals/profile_goals";
 
 export const trainingPhaseEnum = z.enum([
@@ -61,7 +63,7 @@ export const trainingPlanGoalTargetSchema = z.discriminatedUnion("target_type", 
 export const trainingPlanGoalSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1).max(100),
-  target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  target_date: dateOnlySchema,
   priority: z.number().int().min(0).max(10).default(5),
   targets: z.array(trainingPlanGoalTargetSchema).min(1),
   target_performance: z.string().max(200).optional(),
@@ -74,7 +76,7 @@ export type TrainingPlanGoalTarget = z.infer<typeof trainingPlanGoalTargetSchema
 
 export const minimalTrainingGoalCreateSchema = z.object({
   name: z.string().max(100).default(""),
-  target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  target_date: dateOnlySchema,
   priority: z.number().int().min(0).max(10).default(5),
   targets: z.array(trainingPlanGoalTargetSchema).min(1),
 });
@@ -83,10 +85,7 @@ export type MinimalTrainingGoalCreate = z.infer<typeof minimalTrainingGoalCreate
 
 export const minimalTrainingPlanCreateSchema = z
   .object({
-    plan_start_date: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/)
-      .optional(),
+    plan_start_date: dateOnlySchema.optional(),
     goals: z.array(minimalTrainingGoalCreateSchema).min(1),
   })
   .transform((data) => ({
@@ -153,8 +152,8 @@ const ctlRangeSchema = createMinMaxRangeSchema(
 export const trainingBlockSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1).max(100),
-  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  start_date: dateOnlySchema,
+  end_date: dateOnlySchema,
   goal_ids: z.array(z.string().uuid()).default([]),
   phase: trainingPhaseEnum,
   intensity_distribution: intensityDistributionSchema.optional(),
@@ -174,12 +173,12 @@ export const trainingConstraintsSchema = z.object({
   available_days: z
     .array(z.enum(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]))
     .optional(),
-  blocked_dates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
+  blocked_dates: z.array(dateOnlySchema).optional(),
   min_rest_days_per_week: z.number().int().min(0).max(7).default(1),
   max_consecutive_training_days: z.number().int().min(1).max(365).optional(),
   activity_category_constraints: z
-    .record(
-      z.string(),
+    .partialRecord(
+      canonicalActivityCategorySchema,
       z.object({
         min_sessions_per_week: z.number().int().min(0).optional(),
         max_sessions_per_week: z.number().int().min(0).optional(),
@@ -210,8 +209,8 @@ export const fitnessProgressionSchema = z.object({
 export type FitnessProgression = z.infer<typeof fitnessProgressionSchema>;
 
 export const activityDistributionSchema = z
-  .record(
-    z.string().min(1),
+  .partialRecord(
+    canonicalActivityCategorySchema,
     z.object({
       target_percentage: z.number().min(0).max(1),
       min_percentage: z.number().min(0).max(1).optional(),
@@ -232,8 +231,8 @@ const periodizedPlanBaseShape = {
   plan_type: z.literal("periodized"),
   name: z.string().min(1).max(255),
   description: z.string().max(2000).optional(),
-  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  start_date: dateOnlySchema,
+  end_date: dateOnlySchema,
   fitness_progression: fitnessProgressionSchema,
   activity_distribution: activityDistributionSchema,
   constraints: trainingConstraintsSchema.optional(),
@@ -308,11 +307,8 @@ const maintenancePlanBaseShape = {
   plan_type: z.literal("maintenance"),
   name: z.string().min(1).max(255),
   description: z.string().max(2000).optional(),
-  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  end_date: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
+  start_date: dateOnlySchema,
+  end_date: dateOnlySchema.optional(),
   target_ctl_range: ctlRangeSchema.optional(),
   intensity_distribution: intensityDistributionSchema.optional(),
   target_weekly_tss_range: nonNegativeNumberRangeSchema.optional(),
@@ -365,7 +361,7 @@ export const trainingPlanGoalBlueprintSchema = z
   .object({
     title: z.string().trim().min(1).max(255),
     priority: z.number().int().min(0).max(10).default(10),
-    activity_category: z.string().trim().min(1).nullable().optional(),
+    activity_category: canonicalActivityCategorySchema.nullable().optional(),
     target_offset_days: z.number().int().min(0).optional(),
     objective: z.unknown().optional(),
   })
@@ -400,7 +396,7 @@ export const trainingPlanBuilderPlanningSnapshotSchema = z
       .strict(),
     scheduling: z
       .object({
-        start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        start_date: dateOnlySchema,
         preferred_weekdays: z.array(z.number().int().min(0).max(6)).max(7),
       })
       .strict(),
@@ -412,13 +408,9 @@ export const trainingPlanBuilderPlanningSnapshotSchema = z
               .object({
                 title: z.string(),
                 target_offset_days: z.number().int().min(0).nullable(),
-                target_date: z
-                  .string()
-                  .regex(/^\d{4}-\d{2}-\d{2}$/)
-                  .nullable()
-                  .optional(),
+                target_date: dateOnlySchema.nullable().optional(),
                 priority: z.number().int().min(0).max(10),
-                activity_category: z.string().nullable(),
+                activity_category: canonicalActivityCategorySchema.nullable(),
                 objective: z.unknown().nullable(),
                 source_profile_goal_id: z.string().min(1).nullable().optional(),
               })
@@ -444,7 +436,7 @@ export type TrainingPlanBuilderPlanningSnapshot = z.infer<
 export const canonicalTrainingPlanStructureSchema = z
   .object({
     version: z.literal(1),
-    activity_category: z.array(z.string().trim().min(1)).optional(),
+    activity_category: z.array(canonicalActivityCategorySchema).optional(),
     experienceLevel: z.array(z.enum(["beginner", "intermediate", "advanced"])).optional(),
     durationWeeks: z
       .object({
@@ -502,7 +494,7 @@ export type PersistedTrainingPlanStructure = z.infer<typeof persistedTrainingPla
 
 export const wizardGoalInputSchema = z.object({
   name: z.string().max(100).default(""),
-  target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  target_date: dateOnlySchema,
   targets: z.array(trainingPlanGoalTargetSchema).min(1),
 });
 
@@ -516,13 +508,15 @@ export const wizardFitnessInputSchema = z.object({
 
 export type WizardFitnessInput = z.infer<typeof wizardFitnessInputSchema>;
 
-export const wizardActivityInputSchema = z.record(z.string(), z.number().min(0).max(1)).refine(
-  (data) => {
-    const total = Object.values(data).reduce((sum, v) => sum + v, 0);
-    return Math.abs(total - 1) < 0.01;
-  },
-  { message: "Percentages must sum to 100%" },
-);
+export const wizardActivityInputSchema = z
+  .partialRecord(canonicalActivityCategorySchema, z.number().min(0).max(1))
+  .refine(
+    (data) => {
+      const total = Object.values(data).reduce((sum, v) => sum + v, 0);
+      return Math.abs(total - 1) < 0.01;
+    },
+    { message: "Percentages must sum to 100%" },
+  );
 
 export type WizardActivityInput = z.infer<typeof wizardActivityInputSchema>;
 
@@ -540,7 +534,7 @@ export type WizardConstraintsInput = z.infer<typeof wizardConstraintsInputSchema
 export const wizardPeriodizedInputSchema = z.object({
   plan_type: z.literal("periodized"),
   name: z.string().min(1).max(255).optional(),
-  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  start_date: dateOnlySchema,
   goals: z
     .array(wizardGoalInputSchema)
     .min(1)
@@ -565,7 +559,7 @@ export type WizardPeriodizedInput = z.infer<typeof wizardPeriodizedInputSchema>;
 export const wizardMaintenanceInputSchema = z.object({
   plan_type: z.literal("maintenance"),
   name: z.string().min(1).max(255).optional(),
-  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  start_date: dateOnlySchema,
   target_ctl_range: z
     .object({
       min: z.number().min(0).max(250),

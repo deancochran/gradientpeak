@@ -3,9 +3,11 @@ import { DateInput } from "@repo/ui/components/date-input";
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
 import { TimeInput } from "@repo/ui/components/time-input";
-import { useEffect, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { useEffect, useRef, useState } from "react";
 
 import { api } from "../../lib/api/client";
+import { contractEpochFormInputProps } from "../../lib/contract-epoch";
 import { getTodayDateKey } from "../../lib/planning";
 import { createCalendarEventAction } from "../../lib/planning/server-actions";
 
@@ -23,6 +25,10 @@ export function AgendaCreateForm({
   const [time, setTime] = useState("09:00");
   const [allDay, setAllDay] = useState(false);
   const [timezone, setTimezone] = useState("UTC");
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const createCalendarEvent = useServerFn(createCalendarEventAction);
   const activityPlansQuery = api.activityPlans.list.useQuery(
     { ownerScope: "own", limit: 100 },
     { enabled: eventType === "planned" },
@@ -32,8 +38,31 @@ export function AgendaCreateForm({
     setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
   }, []);
 
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (submittingRef.current) return;
+
+    submittingRef.current = true;
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      await createCalendarEvent({ data: new FormData(event.currentTarget) as never });
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Unable to create event. Try again.");
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
+    }
+  };
+
   return (
-    <form action={createCalendarEventAction.url} method="post" className="space-y-5">
+    <form
+      action={createCalendarEventAction.url}
+      method="post"
+      className="space-y-5"
+      onSubmit={handleSubmit}
+    >
+      <input {...contractEpochFormInputProps} />
       <input type="hidden" name="timezone" value={timezone} />
       <fieldset className="grid gap-3 sm:grid-cols-3">
         <legend className="sr-only">Creation type</legend>
@@ -155,11 +184,17 @@ export function AgendaCreateForm({
         />
       </div>
 
+      {submitError ? (
+        <p role="alert" aria-live="polite" className="text-sm text-destructive">
+          {submitError}
+        </p>
+      ) : null}
+
       <Button
         type="submit"
-        disabled={!date || (eventType === "planned" && activityPlansQuery.isError)}
+        disabled={!date || isSubmitting || (eventType === "planned" && activityPlansQuery.isError)}
       >
-        Create
+        {isSubmitting ? "Creating..." : "Create"}
       </Button>
     </form>
   );

@@ -5,27 +5,26 @@ describe("canonical activity metric units", () => {
   it("accepts Celsius temperatures and pool lengths in metres", () => {
     const metrics = {
       avg_temperature: 21.5,
-      pool_length: 25,
-      pool_length_unit: "meters",
+      pool_length_meters: 25,
     } as const;
 
     expect(ActivityMetricsSchema.parse(metrics)).toEqual(metrics);
   });
 
-  it("accepts a legacy canonical pool length without a redundant unit field", () => {
-    expect(ActivityMetricsSchema.safeParse({ pool_length: 25 }).success).toBe(true);
+  it("accepts the canonical pool length field", () => {
+    expect(ActivityMetricsSchema.safeParse({ pool_length_meters: 25 }).success).toBe(true);
   });
 
-  it("does not retain the removed maximum-temperature metric", () => {
-    expect(ActivityMetricsSchema.parse({ avg_temperature: 21.5, max_temperature: 25.25 })).toEqual({
-      avg_temperature: 21.5,
-    });
+  it("rejects the removed maximum-temperature metric", () => {
+    expect(
+      ActivityMetricsSchema.safeParse({ avg_temperature: 21.5, max_temperature: 25.25 }).success,
+    ).toBe(false);
   });
 
   it.each([
-    { pool_length: 25, pool_length_unit: "yards" },
-    { pool_length: 25, pool_length_unit: "feet" },
-    { pool_length: 25, pool_length_unit: "m" },
+    { pool_length_meters: 25, pool_length_unit: "yards" },
+    { pool_length_meters: 25, pool_length_unit: "feet" },
+    { pool_length_meters: 25, pool_length_unit: "m" },
   ])("rejects non-metric pool length input %#", (metrics) => {
     expect(ActivityMetricsSchema.safeParse(metrics).success).toBe(false);
   });

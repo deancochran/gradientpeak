@@ -1,4 +1,4 @@
-import { activityPlanStructureSchemaV3, SYSTEM_TEMPLATES } from "@repo/core";
+import { activityPlanStructureSchema, SYSTEM_TEMPLATES } from "@repo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { deleteEventUseCase } from "../../application/events/deleteEventUseCase";
 import {
@@ -265,7 +265,10 @@ function createReadRepository(params: {
     async listCompletedActivitiesInRange() {
       return params.nextResult("activities").data ?? [];
     },
-    async listOwnedEvents(input: { dateFrom?: string; dateTo?: string }) {
+    async listOwnedEvents(input: { dateFrom?: string; dateTo?: string; limit?: number }) {
+      if (input.limit) {
+        params.logFilter("events", "limit", "limit", input.limit);
+      }
       if (input.dateFrom) {
         params.logFilter("events", "gte", "starts_at", input.dateFrom);
       }
@@ -382,7 +385,7 @@ function createWriteRepository(params: {
           (event) =>
             event.activity_plan_id !== null &&
             (("activity_plan_structure" in event &&
-              !activityPlanStructureSchemaV3.safeParse(event.activity_plan_structure).success) ||
+              !activityPlanStructureSchema.safeParse(event.activity_plan_structure).success) ||
               event.activity_plan_unavailable === true),
         )
       ) {
@@ -700,7 +703,7 @@ describe("eventsRouter generalization", () => {
     });
   });
 
-  it("gives non-completion lifecycle states precedence over a retained activity link", async () => {
+  it("gives cancelled status precedence over a retained activity link", async () => {
     const { caller } = createCaller({
       events: {
         data: [
@@ -711,13 +714,8 @@ describe("eventsRouter generalization", () => {
           }),
           createEventRow({
             id: "00000000-0000-4000-8000-000000000022",
-            status: "skipped",
+            status: "completed",
             linked_activity_id: "00000000-0000-4000-8000-000000000122",
-          }),
-          createEventRow({
-            id: "00000000-0000-4000-8000-000000000023",
-            status: "rescheduled",
-            linked_activity_id: "00000000-0000-4000-8000-000000000123",
           }),
         ],
         error: null,
@@ -727,11 +725,7 @@ describe("eventsRouter generalization", () => {
 
     const result = await caller.list({ limit: 20, include_adhoc: true });
 
-    expect(result.items.map((item) => item.status)).toEqual([
-      "cancelled",
-      "skipped",
-      "rescheduled",
-    ]);
+    expect(result.items.map((item) => item.status)).toEqual(["cancelled", "completed"]);
   });
 
   it("list accepts tRPC infinite-query direction metadata", async () => {
@@ -743,6 +737,39 @@ describe("eventsRouter generalization", () => {
     await expect(
       caller.list({ limit: 20, include_adhoc: true, direction: "forward" }),
     ).resolves.toMatchObject({ items: [] });
+  });
+
+  it("uses one bounded canonical repository page and preserves the cursor contract", async () => {
+    const first = createEventRow({ id: "00000000-0000-4000-8000-000000000101" });
+    const second = createEventRow({
+      id: "00000000-0000-4000-8000-000000000102",
+      starts_at: "2026-03-03T00:00:00.000Z",
+    });
+    const third = createEventRow({
+      id: "00000000-0000-4000-8000-000000000103",
+      starts_at: "2026-03-04T00:00:00.000Z",
+    });
+    const { caller, callLog } = createCaller({
+      events: { data: [first, second, third], error: null },
+    });
+
+    const result = await caller.list({ limit: 2, include_adhoc: true });
+
+    expect(result.items).toHaveLength(2);
+    expect(result.nextCursor).toBe("2026-03-03T00:00:00.000Z_00000000-0000-4000-8000-000000000102");
+    expect(
+      callLog.filter(
+        (call) =>
+          call.operation === "filter" &&
+          (call.payload as { type?: string; column?: string })?.type === "limit",
+      ),
+    ).toEqual([
+      {
+        table: "events",
+        operation: "filter",
+        payload: { type: "limit", column: "limit", value: 3 },
+      },
+    ]);
   });
 
   it("list rejects unexpected input keys", async () => {
@@ -914,7 +941,7 @@ describe("eventsRouter generalization", () => {
     });
   });
 
-  it("getToday omits mixed nested plans", async () => {
+  it("getToday rejects mixed nested plans", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-12T15:00:00.000Z"));
     const { caller } = createCaller({
@@ -933,11 +960,10 @@ describe("eventsRouter generalization", () => {
       },
     });
 
-    await expect(caller.getToday()).resolves.toMatchObject([
-      {
-        activity_plan: null,
-      },
-    ]);
+    await expect(caller.getToday()).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Stored activity plan is not valid",
+    });
   });
 
   it("returns the safe stored-plan error for invalid direct event relations", async () => {
@@ -958,7 +984,7 @@ describe("eventsRouter generalization", () => {
       caller.getById({ id: "00000000-0000-4000-8000-000000000001" }),
     ).rejects.toMatchObject({
       code: "INTERNAL_SERVER_ERROR",
-      message: "Stored activity plan is not valid V3",
+      message: "Stored activity plan is not valid",
     });
   });
 
@@ -1448,6 +1474,36 @@ describe("eventsRouter generalization", () => {
     expect(result.affected_event_ids).toEqual([
       "00000000-0000-4000-8000-000000000020",
       "00000000-0000-4000-8000-000000000021",
+    ]);
+  });
+
+  it("preserves each occurrence schedule when a future scope only changes event details", async () => {
+    const anchor = createEventRow({
+      event_type: "custom",
+      series_id: "series-1",
+      starts_at: "2026-05-01T09:00:00.000Z",
+      scheduled_date: "2026-05-01",
+    });
+    const future = createEventRow({
+      id: "00000000-0000-4000-8000-000000000021",
+      event_type: "custom",
+      series_id: "series-1",
+      starts_at: "2026-05-08T09:00:00.000Z",
+      scheduled_date: "2026-05-08",
+    });
+    const { caller, callLog } = createCaller({
+      events: [{ data: anchor, error: null }],
+      scoped_events: { data: [anchor, future], error: null },
+    });
+
+    await caller.update({ id: anchor.id, scope: "future", patch: { title: "Updated series" } });
+
+    expect(callLog.find((call) => call.operation === "update")?.payload).toEqual({
+      title: "Updated series",
+    });
+    expect([anchor, future].map((event) => event.scheduled_date)).toEqual([
+      "2026-05-01",
+      "2026-05-08",
     ]);
   });
 

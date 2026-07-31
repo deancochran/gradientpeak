@@ -1,4 +1,5 @@
-import { decodePolyline, formatDurationSec } from "@repo/core";
+import { decodePolyline } from "@repo/core";
+import { formatDurationSec } from "@repo/core/utils/dates";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { MessageCircle, Route } from "lucide-react-native";
@@ -206,11 +207,12 @@ function ActivityMetricsRow({
 
   const elapsedSeconds =
     activity.elapsed_seconds ??
-    (typeof (activity.active_ms ?? activity.elapsed_ms) === "number"
-      ? (activity.active_ms ?? activity.elapsed_ms ?? 0) / 1000
-      : null);
+    (typeof activity.elapsed_ms === "number" ? activity.elapsed_ms / 1000 : null);
+  const activeSeconds = typeof activity.active_ms === "number" ? activity.active_ms / 1000 : null;
   if (typeof elapsedSeconds === "number" && elapsedSeconds > 0) {
     metrics.push({ label: "Elapsed", value: formatDurationSec(elapsedSeconds) });
+  } else if (typeof activeSeconds === "number" && activeSeconds > 0) {
+    metrics.push({ label: "Active", value: formatDurationSec(activeSeconds) });
   }
 
   if (loadPresentation?.load && loadPresentation.intensity) {

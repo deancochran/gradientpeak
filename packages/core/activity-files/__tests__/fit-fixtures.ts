@@ -6,9 +6,11 @@ export type FitFixtureSession = {
   elapsedSeconds: number;
   timerSeconds?: number;
   distanceMeters?: number;
+  avgSpeed?: number;
+  recordSpeeds?: readonly [number, number];
   pause?: { startSeconds: number; endSeconds: number };
   pauseEventType?: 1 | 8 | 9;
-  poolLength?: number;
+  rawPoolLength?: number;
   emitLengthBoundaryRecord?: boolean;
   emitUnownedRecord?: boolean;
   unownedLap?: boolean;
@@ -48,12 +50,14 @@ export function buildFitFixture(sessions: readonly FitFixtureSession[]): Uint8Ar
       timestamp: fitTime(startMs),
       distance: 0,
       heartRate: 120 + index,
+      ...(session.recordSpeeds === undefined ? {} : { speed: session.recordSpeeds[0] }),
     });
     encoder.writeMesg({
       mesgNum: Profile.MesgNum.RECORD,
       timestamp: fitTime(endMs - 1000),
       distance: session.distanceMeters ?? 0,
       heartRate: 130 + index,
+      ...(session.recordSpeeds === undefined ? {} : { speed: session.recordSpeeds[1] }),
     });
     if (session.pause) {
       encoder.writeMesg({
@@ -78,7 +82,7 @@ export function buildFitFixture(sessions: readonly FitFixtureSession[]): Uint8Ar
         totalElapsedTime: session.elapsedSeconds,
         totalTimerTime: timerSeconds,
         totalStrokes: 20,
-        avgSpeed: (session.distanceMeters ?? session.poolLength ?? 25) / timerSeconds,
+        avgSpeed: (session.distanceMeters ?? session.rawPoolLength ?? 25) / timerSeconds,
         lengthType: 1,
         swimStroke: 0,
         event: 28,
@@ -88,7 +92,7 @@ export function buildFitFixture(sessions: readonly FitFixtureSession[]): Uint8Ar
         encoder.writeMesg({
           mesgNum: Profile.MesgNum.RECORD,
           timestamp: fitTime(endMs),
-          distance: session.distanceMeters ?? session.poolLength ?? 0,
+          distance: session.distanceMeters ?? session.rawPoolLength ?? 0,
         });
       }
     }
@@ -129,6 +133,7 @@ export function buildFitFixture(sessions: readonly FitFixtureSession[]): Uint8Ar
       totalTimerTime: timerSeconds,
       totalMovingTime: timerSeconds,
       totalDistance: session.distanceMeters ?? 0,
+      ...(session.avgSpeed === undefined ? {} : { avgSpeed: session.avgSpeed }),
       ...(index === 0 && session.sport === 1
         ? {
             avgSpeed: 3.25,
@@ -148,10 +153,10 @@ export function buildFitFixture(sessions: readonly FitFixtureSession[]): Uint8Ar
       event: 8,
       eventType: 1,
       trigger: index === sessions.length - 1 ? 0 : 2,
-      ...(session.poolLength === undefined
+      ...(session.rawPoolLength === undefined
         ? {}
         : {
-            poolLength: session.poolLength,
+            poolLength: session.rawPoolLength,
             poolLengthUnit: 0,
             numLengths: 1,
             numActiveLengths: 1,
@@ -198,7 +203,15 @@ export const fitFixtures = {
     buildFitFixture([{ sport: 1, subSport: 2, elapsedSeconds: 60, distanceMeters: 200 }]),
   swim: () =>
     buildFitFixture([
-      { sport: 5, subSport: 17, elapsedSeconds: 30, distanceMeters: 25, poolLength: 25 },
+      {
+        sport: 5,
+        subSport: 17,
+        elapsedSeconds: 30,
+        distanceMeters: 25,
+        rawPoolLength: 25,
+        avgSpeed: 1,
+        recordSpeeds: [1.2, 1.4],
+      },
     ]),
   triathlon: () =>
     buildFitFixture([
@@ -246,7 +259,7 @@ export const fitFixtures = {
         subSport: 17,
         elapsedSeconds: 30,
         distanceMeters: 25,
-        poolLength: 25,
+        rawPoolLength: 25,
         emitLengthBoundaryRecord: true,
       },
       { sport: 3, subSport: 34, elapsedSeconds: 5 },

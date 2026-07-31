@@ -1,5 +1,5 @@
 import {
-  activityPlanStructureSchemaV3,
+  activityPlanStructureSchema,
   buildSystemActivityTemplateCatalog,
   normalizeActivityTemplateStructureForAudit,
   SYSTEM_TEMPLATES,
@@ -83,7 +83,7 @@ function requirePublishedLinkedActivityPlans(input: {
   const catalogSignatures = new Map(
     buildSystemActivityTemplateCatalog().flatMap((candidate) => {
       const source = SYSTEM_TEMPLATES.find((template) => template.id === candidate.template_id);
-      const parsed = activityPlanStructureSchemaV3.safeParse(source?.structure);
+      const parsed = activityPlanStructureSchema.safeParse(source?.structure);
       return parsed.success
         ? [
             [
@@ -97,7 +97,7 @@ function requirePublishedLinkedActivityPlans(input: {
   const publishedIds = new Set(
     input.rows
       .filter((row) => {
-        const parsed = activityPlanStructureSchemaV3.safeParse(row.structure);
+        const parsed = activityPlanStructureSchema.safeParse(row.structure);
         if (
           !parsed.success ||
           typeof row.gpsRecordingEnabled !== "boolean" ||

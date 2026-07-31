@@ -1,10 +1,5 @@
 import { readFileSync } from "node:fs";
-import { Pool, type PoolClient } from "pg";
-import {
-  invalidIndexCleanup,
-  type MigrationOperation,
-  validateAutocommitOperation,
-} from "./_migration-operations";
+import { Pool } from "pg";
 import {
   requireGuardedDisposableLocalDatabaseUrl,
   requireRepositoryManagedDisposableLocalTarget,
@@ -76,68 +71,20 @@ export async function bootstrapSupabaseSchemas(pool: Pool) {
   `);
 }
 
-export type MigrationExecutionMode = "transactional" | "autocommit";
-export type AutocommitSession = { lockTimeout: string; statementTimeout: string };
-
-export async function applySqlFile(
-  pool: Pool,
-  path: string,
-  executionMode: MigrationExecutionMode = "transactional",
-  autocommit?: AutocommitSession & { operation: MigrationOperation },
-) {
+export async function applySqlFile(pool: Pool, path: string) {
   const client = await pool.connect();
   const sql = readFileSync(path, "utf8");
   try {
-    if (executionMode === "transactional") {
-      await client.query("begin");
-      await client.query(sql);
-      await client.query("commit");
-      return;
-    }
-    await applyAutocommitMigration(client, sql, path, autocommit);
+    await client.query("begin");
+    await client.query(sql);
+    await client.query("commit");
   } catch (error) {
     await client.query("rollback").catch(() => undefined);
     throw new Error(
-      `failed ${executionMode} SQL fixture ${path}: ${error instanceof Error ? error.message : String(error)}`,
+      `failed transactional baseline ${path}: ${error instanceof Error ? error.message : String(error)}`,
       { cause: error },
     );
   } finally {
     client.release();
-  }
-}
-
-async function applyAutocommitMigration(
-  client: PoolClient,
-  sql: string,
-  path: string,
-  autocommit: (AutocommitSession & { operation: MigrationOperation }) | undefined,
-) {
-  if (!autocommit) throw new Error(`autocommit migration is missing session metadata: ${path}`);
-  validateAutocommitOperation(sql, autocommit.operation);
-  await client.query(`set lock_timeout = '${autocommit.lockTimeout}'`);
-  await client.query(`set statement_timeout = '${autocommit.statementTimeout}'`);
-  try {
-    await client.query(sql);
-  } catch (error) {
-    const invalid = await client.query<{ name: string }>(
-      `
-      select c.relname as name
-      from pg_catalog.pg_index i
-      join pg_catalog.pg_class c on c.oid = i.indexrelid
-      join pg_catalog.pg_namespace n on n.oid = c.relnamespace
-      where n.nspname = $1
-        and c.relname = $2
-        and not i.indisvalid
-    `,
-      [autocommit.operation.schema, autocommit.operation.indexName],
-    );
-    const cleanup = invalidIndexCleanup(autocommit.operation);
-    const recovery = invalid.rowCount
-      ? `INVALID index detected: ${invalid.rows.map((row) => row.name).join(", ")}. Run ${cleanup} before retrying.`
-      : `A failed concurrent build may leave an INVALID index; inspect it and run ${cleanup} before retrying.`;
-    throw new Error(`autocommit migration failed: ${path}. ${recovery}`, { cause: error });
-  } finally {
-    await client.query("reset lock_timeout");
-    await client.query("reset statement_timeout");
   }
 }

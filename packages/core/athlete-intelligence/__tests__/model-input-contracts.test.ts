@@ -225,6 +225,12 @@ function input() {
       ctlOverride: ev(null, "training_load"),
       atlOverride: ev(null, "training_load"),
     },
+    readCoverage: {
+      metrics: { state: "complete", reason: null },
+      activities: { state: "complete", reason: null },
+      efforts: { state: "complete", reason: null },
+      schedules: { state: "complete", reason: null },
+    },
     plannedSchedule: [
       {
         sourceId: scheduleSourceId,
@@ -310,7 +316,7 @@ describe("athlete intelligence model input contracts", () => {
     mismatchedLoad.identity = {
       activity_category: "run",
       family: "trimp",
-      method: "heart_rate_reserve",
+      method: "heart_rate_threshold",
       version: "1",
       sourceDefinition: "provider:a",
     };
@@ -379,8 +385,8 @@ describe("athlete intelligence model input contracts", () => {
   });
 
   it("accepts truncated schedule read coverage", () => {
-    const truncated = input();
-    (truncated as ReturnType<typeof input> & { readCoverage?: unknown }).readCoverage = {
+    const truncated = input() as { readCoverage: unknown };
+    truncated.readCoverage = {
       metrics: { state: "complete", reason: null },
       activities: { state: "complete", reason: null },
       efforts: { state: "complete", reason: null },
@@ -390,7 +396,7 @@ describe("athlete intelligence model input contracts", () => {
   });
 
   it("rejects malformed and unreasoned bounded read coverage", () => {
-    const malformed = input() as ReturnType<typeof input> & { readCoverage?: unknown };
+    const malformed = input() as { readCoverage: unknown };
     malformed.readCoverage = {
       metrics: { state: "complete", reason: "query_limit_reached" },
       activities: { state: "complete", reason: null },
@@ -399,7 +405,7 @@ describe("athlete intelligence model input contracts", () => {
     };
     rejects(malformed as ReturnType<typeof input>);
 
-    const truncated = input() as ReturnType<typeof input> & { readCoverage?: unknown };
+    const truncated = input() as { readCoverage: unknown };
     truncated.readCoverage = {
       metrics: { state: "truncated", reason: "source_window_truncated" },
       activities: { state: "complete", reason: null },

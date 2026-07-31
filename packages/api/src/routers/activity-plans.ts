@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { ContentVisibility } from "@repo/core";
-import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import { activityPlanCreateSchema, activityPlanUpdateSchema } from "@repo/core/schemas";
 import {
   type ActivityPlanInsert,
@@ -93,7 +93,7 @@ const duplicateActivityPlanInputSchema = z
 const activityPlanRowSchema = publicActivityPlansRowSchema
   .extend({
     created_at: z.date(),
-    structure: activityPlanStructureSchemaV3,
+    structure: activityPlanStructureSchema,
     updated_at: z.date(),
     content_visibility: templateVisibilitySchema.default("private"),
   })
@@ -106,18 +106,18 @@ const serializedActivityPlanSchema = activityPlanRowSchema.transform((row) => ({
 }));
 
 function validateStructure(structure: unknown) {
-  return activityPlanStructureSchemaV3.parse(structure);
+  return activityPlanStructureSchema.parse(structure);
 }
 
 const createActivityPlanInput = activityPlanCreateSchema.safeExtend({
   gps_recording_enabled: z.boolean().default(true),
-  structure: activityPlanStructureSchemaV3,
+  structure: activityPlanStructureSchema,
   template_visibility: templateVisibilitySchema.optional(),
 });
 
 const updateActivityPlanInput = activityPlanUpdateSchema.safeExtend({
   gps_recording_enabled: z.boolean().optional(),
-  structure: activityPlanStructureSchemaV3.optional(),
+  structure: activityPlanStructureSchema.optional(),
   template_visibility: templateVisibilitySchema.optional(),
 });
 
@@ -156,14 +156,14 @@ function serializeActivityPlanRow(row: ActivityPlanRow | unknown) {
 }
 
 function toPublicActivityPlan<T extends { structure: unknown }>(plan: T) {
-  const parsed = activityPlanStructureSchemaV3.safeParse(plan.structure);
+  const parsed = activityPlanStructureSchema.safeParse(plan.structure);
   const activitySegment = parsed.success
     ? parsed.data.segments.find((segment) => segment.role === "activity")
     : undefined;
   if (!activitySegment)
     throw new TRPCError({
       code: "INTERNAL_SERVER_ERROR",
-      message: "Stored activity plan is not valid V3",
+      message: "Stored activity plan is not valid",
     });
   return {
     ...plan,
@@ -570,7 +570,7 @@ export const activityPlansRouter = createTRPCRouter({
     if (!parsedPlanRow.success) {
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
-        message: "Stored activity plan is not valid V3",
+        message: "Stored activity plan is not valid",
       });
     }
     const planRow = parsedPlanRow.data;
@@ -578,10 +578,10 @@ export const activityPlansRouter = createTRPCRouter({
     await requireActivityPlanReadForRow({ db, plan: planRow, userId });
 
     const plan = serializeActivityPlanRow(planRow);
-    if (!activityPlanStructureSchemaV3.safeParse(plan.structure).success) {
+    if (!activityPlanStructureSchema.safeParse(plan.structure).success) {
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
-        message: "Stored activity plan is not valid V3",
+        message: "Stored activity plan is not valid",
       });
     }
 
@@ -670,7 +670,7 @@ export const activityPlansRouter = createTRPCRouter({
     } catch (validationError) {
       throw new TRPCError({
         code: "BAD_REQUEST",
-        message: "Invalid activity plan structure (V3 required)",
+        message: "Invalid activity plan structure",
         cause: validationError,
       });
     }
@@ -731,7 +731,7 @@ export const activityPlansRouter = createTRPCRouter({
       if (!activityPlanRowSchema.safeParse(existingRow).success) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: "Stored activity plan is not valid V3",
+          message: "Stored activity plan is not valid",
         });
       }
       if (existingRow.structure_hash !== expectedStructureHash) {
@@ -752,7 +752,7 @@ export const activityPlansRouter = createTRPCRouter({
         } catch (validationError) {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "Invalid activity plan structure (V3 required)",
+            message: "Invalid activity plan structure",
             cause: validationError,
           });
         }
@@ -859,7 +859,6 @@ export const activityPlansRouter = createTRPCRouter({
       return {
         ...toPublicActivityPlan(withIdentityFields(planWithEstimation)),
         plannedActivitySync,
-        wahooSync: plannedActivitySync,
       };
     }),
 
@@ -930,7 +929,6 @@ export const activityPlansRouter = createTRPCRouter({
     return {
       success: true,
       plannedActivitySync,
-      wahooSync: plannedActivitySync,
     };
   }),
 
@@ -957,7 +955,7 @@ export const activityPlansRouter = createTRPCRouter({
 
       const originalPlan = serializeActivityPlanRow(originalRow);
 
-      if (!activityPlanStructureSchemaV3.safeParse(originalPlan.structure).success) {
+      if (!activityPlanStructureSchema.safeParse(originalPlan.structure).success) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Original plan is not executable",

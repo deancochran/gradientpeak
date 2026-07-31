@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  completedActivitySegmentSetSchemaV1,
+  completedActivitySegmentSetSchema,
   rawOnlySegmentSourceReferenceSchema,
-  SEGMENT_SUMMARY_V1_LIMITS,
-  segmentSummarySchemaV1,
+  SEGMENT_SUMMARY_LIMITS,
+  segmentSummarySchema,
 } from "../completed-segment-schema";
 
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
@@ -15,7 +15,7 @@ const completeSummary = (activeMs: number, movingMs = activeMs) => ({
 
 describe("completed activity segment contract", () => {
   it("accepts ordered half-open ranges with uncovered pause gaps", () => {
-    const result = completedActivitySegmentSetSchemaV1.parse({
+    const result = completedActivitySegmentSetSchema.parse({
       version: 1,
       elapsedMs: 10_000,
       segments: [
@@ -52,7 +52,7 @@ describe("completed activity segment contract", () => {
   });
 
   it("structurally forbids activity_category and creation labels on non-activity roles", () => {
-    const result = completedActivitySegmentSetSchemaV1.safeParse({
+    const result = completedActivitySegmentSetSchema.safeParse({
       version: 1,
       elapsedMs: 1_000,
       segments: [
@@ -87,9 +87,9 @@ describe("completed activity segment contract", () => {
         },
       ],
     };
-    expect(completedActivitySegmentSetSchemaV1.safeParse(base).success).toBe(false);
+    expect(completedActivitySegmentSetSchema.safeParse(base).success).toBe(false);
     expect(
-      completedActivitySegmentSetSchemaV1.safeParse({
+      completedActivitySegmentSetSchema.safeParse({
         ...base,
         segments: [{ ...base.segments[0], source: { kind: "raw", rawSport: 254 } }],
       }).success,
@@ -126,7 +126,7 @@ describe("completed activity segment contract", () => {
     });
 
     expect(
-      completedActivitySegmentSetSchemaV1.safeParse(
+      completedActivitySegmentSetSchema.safeParse(
         set({
           kind: "artifact",
           artifactId: id(2),
@@ -136,19 +136,19 @@ describe("completed activity segment contract", () => {
       ).success,
     ).toBe(true);
     expect(
-      completedActivitySegmentSetSchemaV1.safeParse(
+      completedActivitySegmentSetSchema.safeParse(
         set({ kind: "artifact", artifactId: id(2), source: { standard: "fit", format: "tcx" } }),
       ).success,
     ).toBe(false);
     expect(
-      completedActivitySegmentSetSchemaV1.safeParse(
+      completedActivitySegmentSetSchema.safeParse(
         set({ kind: "raw", rawType: "activity", sessionMessageIndex: 0 }),
       ).success,
     ).toBe(false);
   });
 
   it("enforces ranges, ordering, adjacency, and moving-active-range timing", () => {
-    const result = completedActivitySegmentSetSchemaV1.safeParse({
+    const result = completedActivitySegmentSetSchema.safeParse({
       version: 1,
       elapsedMs: 2_000,
       segments: [
@@ -183,13 +183,13 @@ describe("completed activity segment contract", () => {
 
   it("requires partial timing evidence", () => {
     expect(
-      segmentSummarySchemaV1.safeParse({
+      segmentSummarySchema.safeParse({
         version: 1,
         timing: { timingCoverage: "partial" },
       }).success,
     ).toBe(false);
     expect(
-      segmentSummarySchemaV1.safeParse({
+      segmentSummarySchema.safeParse({
         version: 1,
         timing: { timingCoverage: "partial", movingMs: 10 },
       }).success,
@@ -198,7 +198,7 @@ describe("completed activity segment contract", () => {
 
   it("accepts canonical cadence, speed, and bounded swim metrics", () => {
     expect(
-      segmentSummarySchemaV1.safeParse({
+      segmentSummarySchema.safeParse({
         version: 1,
         timing: { timingCoverage: "unavailable" },
         averageCadenceRpm: 90,
@@ -216,17 +216,17 @@ describe("completed activity segment contract", () => {
       }).success,
     ).toBe(true);
     expect(
-      segmentSummarySchemaV1.safeParse({
+      segmentSummarySchema.safeParse({
         version: 1,
         timing: { timingCoverage: "unavailable" },
-        averageCadenceRpm: SEGMENT_SUMMARY_V1_LIMITS.maxCadenceRpm + 1,
-        averageSpeedMetersPerSecond: SEGMENT_SUMMARY_V1_LIMITS.maxSpeedMetersPerSecond + 1,
-        normalizedSpeedMetersPerSecond: SEGMENT_SUMMARY_V1_LIMITS.maxSpeedMetersPerSecond + 1,
-        swim: { poolLengthMeters: SEGMENT_SUMMARY_V1_LIMITS.maxPoolLengthMeters + 1 },
+        averageCadenceRpm: SEGMENT_SUMMARY_LIMITS.maxCadenceRpm + 1,
+        averageSpeedMetersPerSecond: SEGMENT_SUMMARY_LIMITS.maxSpeedMetersPerSecond + 1,
+        normalizedSpeedMetersPerSecond: SEGMENT_SUMMARY_LIMITS.maxSpeedMetersPerSecond + 1,
+        swim: { poolLengthMeters: SEGMENT_SUMMARY_LIMITS.maxPoolLengthMeters + 1 },
       }).success,
     ).toBe(false);
     expect(
-      segmentSummarySchemaV1.safeParse({
+      segmentSummarySchema.safeParse({
         version: 1,
         timing: { timingCoverage: "unavailable" },
         swim: {},

@@ -37,8 +37,14 @@ describe("TrainingPlanDetailHeaderActionsSection", () => {
         plan={{
           name: "Shared Plan",
           created_at: "2026-01-01T00:00:00.000Z",
-          durationWeeks: { recommended: 8 },
-          sessions_per_week_target: 4,
+          structure: {
+            version: 1,
+            durationWeeks: { recommended: 8 },
+            sessions: [
+              { offset_days: 0, activity_plan_id: "11111111-1111-4111-8111-111111111111" },
+              { offset_days: 49, activity_plan_id: "11111111-1111-4111-8111-111111111111" },
+            ],
+          },
         }}
       />,
     );
@@ -47,7 +53,7 @@ describe("TrainingPlanDetailHeaderActionsSection", () => {
     expect(screen.getByText("Plan snapshot")).toBeTruthy();
     expect(screen.getByTestId("training-plan-periodization-preview")).toBeTruthy();
     expect(screen.getByTestId("training-plan-visual-segment-7")).toBeTruthy();
-    expect(screen.getByTestId("training-plan-visual-recovery-7")).toBeTruthy();
+    expect(screen.queryByTestId("training-plan-visual-recovery-7")).toBeNull();
     expect(screen.queryByTestId("training-plan-visual-segment-8")).toBeNull();
   });
 

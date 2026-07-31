@@ -12,7 +12,7 @@
 import type { FTMSFeatures } from "@deancochran/ftms";
 import { z } from "zod";
 
-import type { ActivityPlanStructureV3 } from "../activity-plan";
+import type { ActivityPlanStructure } from "../activity-plan";
 import type { CanonicalActivityCategory } from "./activity-category";
 
 export const recordingPrimaryMetricSchema = z.enum(["time", "distance", "reps", "power"]);
@@ -96,7 +96,7 @@ export interface RecordingConfigInput {
     hasStructure: boolean; // Has steps to follow
     stepCount: number;
     requiresManualAdvance: boolean; // Any "untilFinished" steps
-    structure?: ActivityPlanStructureV3 | null;
+    structure?: ActivityPlanStructure | null;
   };
 
   // Connected devices

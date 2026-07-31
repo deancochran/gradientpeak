@@ -2,9 +2,10 @@
  * Helper functions for integrating TSS estimation into tRPC endpoints
  */
 
+import type { ActivityCalibrationQuality } from "@repo/core";
 import {
   type ActivityPlanAuthoritativeMetrics,
-  compileActivityPlanV3,
+  compileActivityPlan,
 } from "@repo/core/activity-plan";
 import {
   getActivityEffortThresholdEvidence,
@@ -15,10 +16,9 @@ import {
 import type { EstimationActivityPlanInput as CoreEstimationActivityPlanInput } from "@repo/core/estimation";
 import { buildEstimationContext, estimateActivity, estimateMetrics } from "@repo/core/estimation";
 import type { ActivityPlanRow } from "@repo/db";
+import { resolveActivityContextFromEvidence } from "../lib/activity-analysis/context";
 import type { EventReadRepository } from "../repositories";
 import {
-  filterObservationsAfterLatestTombstone,
-  filterSupersededProfileOverrides,
   isActiveManualFtpOverride,
   resolveLatestObservationsByKey,
 } from "./profile-override-observations";
@@ -49,7 +49,7 @@ export function toEstimationActivityPlan(input: {
   structure: unknown;
 }): CoreEstimationActivityPlanInput {
   return {
-    activity_category: compileActivityPlanV3(input.structure).activity_category,
+    activity_category: compileActivityPlan(input.structure).activity_category,
     structure: input.structure as CoreEstimationActivityPlanInput["structure"],
   };
 }
@@ -69,6 +69,14 @@ export type EstimationSnapshot = Readonly<{
   asOf: Date;
   profile: Awaited<ReturnType<typeof getEstimationProfileInputsFromData>>;
   thresholds: ReturnType<typeof resolveEstimationThresholds>;
+  lthrByActivityCategory: Readonly<
+    Partial<
+      Record<
+        "bike" | "run" | "swim",
+        Readonly<{ value: number; quality: ActivityCalibrationQuality }>
+      >
+    >
+  >;
   getRoute(id: string): Readonly<Record<string, any>> | undefined;
   getRouteSummary(id: string): Readonly<ActivityPlanRouteSummary> | undefined;
 }>;
@@ -113,16 +121,25 @@ function getEstimationProfileInputsFromData(
   let weightKg: number | null = null;
   let restingHr: number | null = null;
   let maxHr: number | null = null;
-  let lthr: number | null = null;
   const thresholds = resolveEstimationThresholds(data.efforts, data.metrics, asOf.toISOString());
   const ftp = getEligibleThresholdValue(thresholds.cycling_ftp);
   const runThresholdPace = getEligibleThresholdValue(thresholds.running_threshold_pace);
+  const genericLthr = resolveLatestObservationsByKey(
+    data.metrics.filter(
+      (metric) => metric.metric_type === "lthr" && metric.reference_activity_id === null,
+    ),
+    () => "lthr:generic",
+  ).get("lthr:generic");
+  const genericLthrValue = genericLthr ? Number(genericLthr.value) : null;
+  const lthr =
+    genericLthrValue !== null && Number.isFinite(genericLthrValue) && genericLthrValue > 0
+      ? genericLthrValue
+      : null;
   for (const metric of data.metrics) {
     if (metric.metric_type === "weight_kg" && weightKg === null) weightKg = Number(metric.value);
     else if (metric.metric_type === "resting_hr" && restingHr === null)
       restingHr = Number(metric.value);
     else if (metric.metric_type === "max_hr" && maxHr === null) maxHr = Number(metric.value);
-    else if (metric.metric_type === "lthr" && lthr === null) lthr = Number(metric.value);
   }
   return {
     ftp: ftp === null ? null : Math.round(ftp),
@@ -148,6 +165,33 @@ export async function loadEstimationSnapshot(
     routeIds: [...new Set(routeIds)],
   });
   const thresholds = resolveEstimationThresholds(data.efforts, data.metrics, asOf.toISOString());
+  const activityContext = resolveActivityContextFromEvidence({
+    activityTimestamp: asOf,
+    evidence: {
+      profile: {
+        dob: data.profile?.dob ? new Date(data.profile.dob) : null,
+        gender: null,
+      },
+      profileMetrics: data.metrics.map((metric) => ({
+        ...metric,
+        recorded_at: new Date(metric.recorded_at),
+      })),
+      recentEfforts: data.efforts.map((effort) => ({
+        ...effort,
+        recorded_at: new Date(effort.recorded_at),
+      })),
+    },
+  });
+  const lthrByActivityCategory = Object.fromEntries(
+    (["bike", "run", "swim"] as const).flatMap((activityCategory) => {
+      const value = activityContext.profileMetrics.lthr_by_activity_category?.[activityCategory];
+      const quality =
+        activityContext.calibrationQuality?.lthrByActivityCategory?.[activityCategory];
+      return value !== undefined && quality
+        ? [[activityCategory, Object.freeze({ value, quality })] as const]
+        : [];
+    }),
+  );
   const routes = new Map(
     data.routes.map((route) => [route.id, Object.freeze({ ...route })] as const),
   );
@@ -165,6 +209,7 @@ export async function loadEstimationSnapshot(
     asOf: new Date(asOf),
     profile: Object.freeze(getEstimationProfileInputsFromData(data, asOf)),
     thresholds: Object.freeze(thresholds),
+    lthrByActivityCategory: Object.freeze(lthrByActivityCategory),
     getRoute: (id: string) => routes.get(id),
     getRouteSummary: (id: string) => routeSummaries.get(id),
   });

@@ -66,7 +66,7 @@ function dependencies() {
     }),
     getProfileDefaultContentVisibility: vi.fn().mockResolvedValue("private"),
     logger: { error: vi.fn() },
-  } as any;
+  };
 }
 
 function db() {
@@ -75,7 +75,7 @@ function db() {
       activities: { findFirst: vi.fn().mockResolvedValue(activity) },
       activityFileIngestions: { findFirst: vi.fn().mockResolvedValue(ingestion("ready")) },
     },
-  } as any;
+  } as never;
 }
 
 function configureSuccess() {
@@ -115,6 +115,9 @@ function configureSuccess() {
       efficiency_factor: null,
       aerobic_decoupling: null,
       avg_temperature: null,
+      pool_length_meters: 25,
+      total_strokes: 400,
+      avg_swolf: 42.5,
     },
     segmentSet: { version: 1, elapsedMs: 3_600_000, segments: [] },
   });
@@ -142,7 +145,7 @@ describe("processManualActivityFile", () => {
           name: "Ride",
           fileType: "fit",
         },
-        deps,
+        deps as never,
       ),
     ).resolves.toMatchObject({ activity });
 
@@ -154,6 +157,9 @@ describe("processManualActivityFile", () => {
       expect.anything(),
       expect.objectContaining({
         requestedActivityId: manualImportActivityId(profileId, digest),
+        poolLengthMeters: 25,
+        totalStrokes: 400,
+        avgSwolf: 42.5,
         analysis: expect.objectContaining({
           ingestion: expect.objectContaining({ claimToken: ingestion("processing").claim_token }),
         }),
@@ -173,7 +179,7 @@ describe("processManualActivityFile", () => {
         name: "Ride",
         fileType: "fit",
       },
-      deps,
+      deps as never,
     );
     expect(deps.decodeActivityFile).not.toHaveBeenCalled();
     expect(mocks.submit).not.toHaveBeenCalled();
@@ -193,7 +199,7 @@ describe("processManualActivityFile", () => {
         name: "Ride",
         fileType: "fit",
       },
-      dependencies(),
+      dependencies() as never,
     );
     expect(mocks.markUploaded).toHaveBeenCalledOnce();
     expect(mocks.markProcessing).toHaveBeenCalledOnce();
@@ -224,7 +230,7 @@ describe("processManualActivityFile", () => {
           name: "Ride",
           fileType: "fit",
         },
-        deps,
+        deps as never,
       ),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(mocks.markFailed).toHaveBeenCalledWith(
@@ -250,7 +256,7 @@ describe("processManualActivityFile", () => {
           name: "Ride",
           fileType: "fit",
         },
-        dependencies(),
+        dependencies() as never,
       ),
     ).rejects.toMatchObject({ code: "CONFLICT" });
     expect(mocks.markFailed).not.toHaveBeenCalled();

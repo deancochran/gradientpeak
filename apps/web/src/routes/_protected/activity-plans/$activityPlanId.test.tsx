@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Route } from "./$activityPlanId";
 
 const mocks = vi.hoisted(() => ({
+  eventListInput: undefined as unknown,
   plan: undefined as unknown,
 }));
 
@@ -45,7 +46,12 @@ vi.mock("../../../lib/api/client", () => ({
     events: {
       create: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
       delete: { useMutation: () => ({ isPending: false, mutate: vi.fn(), mutateAsync: vi.fn() }) },
-      list: { useQuery: () => ({ data: { items: [] }, isLoading: false, isError: false }) },
+      list: {
+        useQuery: (input: unknown) => {
+          mocks.eventListInput = input;
+          return { data: { items: [] }, isLoading: false, isError: false };
+        },
+      },
       update: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
     },
     social: { toggleLike: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) } },
@@ -55,6 +61,7 @@ vi.mock("../../../lib/api/client", () => ({
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 beforeEach(() => {
+  mocks.eventListInput = undefined;
   mocks.plan = {
     authoritative_metrics: null,
     content_visibility: "private",
@@ -84,5 +91,10 @@ describe("ActivityPlanDetailPage invalid plan", () => {
     expect(screen.getByText("Activity plan unavailable")).toBeTruthy();
     expect(screen.queryByText("Read-only structure")).toBeNull();
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(mocks.eventListInput).toEqual({
+      activity_plan_id: "invalid-plan",
+      include_adhoc: true,
+      limit: 100,
+    });
   });
 });

@@ -42,7 +42,7 @@ describe("GPS cutover schemas", () => {
     ).toBe(false);
   });
 
-  it("requires strict V3 structure and rejects top-level location/activity_category aliases", () => {
+  it("requires strict structure and rejects top-level location/activity_category aliases", () => {
     const structure = {
       version: 3 as const,
       segments: [

@@ -27,7 +27,7 @@ import { useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { useRecordingCommands } from "@/lib/hooks/useActivityRecorder";
 import { useRecordingConfig } from "@/lib/hooks/useRecordingConfig";
-import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { useActivityRecorderService } from "@/lib/providers/ActivityRecorderProvider";
 
 const ACTIVITY_CATEGORIES: {
   value: RecordingActivityCategory;
@@ -42,7 +42,7 @@ const ACTIVITY_CATEGORIES: {
 ];
 
 export default function ActivitySelectionScreen() {
-  const service = useSharedActivityRecorder();
+  const { service } = useActivityRecorderService();
   const { sessionContract, sessionView } = useRecordingConfig(service);
   const activityCategory = sessionView?.recordingConfiguration.input.activityCategory ?? "bike";
   const gpsRecordingEnabled = sessionView?.recordingConfiguration.input.gpsRecordingEnabled ?? true;

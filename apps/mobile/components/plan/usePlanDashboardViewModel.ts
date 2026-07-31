@@ -778,13 +778,13 @@ export function usePlanDashboardViewModel({
       }
 
       if (pointDate >= currentStart && pointDate <= currentEnd) {
-        currentActual += point.actual_tss || 0;
-        currentPlanned += point.scheduled_tss || 0;
-        currentRecommended += point.ideal_tss || 0;
+        currentActual += point.completed_load_tss || 0;
+        currentPlanned += point.scheduled_load_tss || 0;
+        currentRecommended += point.recommended_load_tss || 0;
       }
 
       if (pointDate >= previousStart && pointDate <= previousEnd) {
-        previousActual += point.actual_tss || 0;
+        previousActual += point.completed_load_tss || 0;
       }
     }
 
@@ -834,9 +834,9 @@ export function usePlanDashboardViewModel({
     for (const point of insightTimelinePoints) {
       const weekStart = getWeekStartDateKey(point.date);
       const bucket = buckets.get(weekStart) ?? { actual: 0, scheduled: 0, recommended: 0 };
-      bucket.actual += point.actual_tss || 0;
-      bucket.scheduled += point.scheduled_tss || 0;
-      bucket.recommended += point.ideal_tss || 0;
+      bucket.actual += point.completed_load_tss || 0;
+      bucket.scheduled += point.scheduled_load_tss || 0;
+      bucket.recommended += point.recommended_load_tss || 0;
       buckets.set(weekStart, bucket);
     }
 

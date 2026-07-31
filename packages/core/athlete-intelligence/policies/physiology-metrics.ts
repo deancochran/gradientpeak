@@ -13,9 +13,9 @@ import {
   resolveEvidenceEligibility,
 } from "../evidence-contracts";
 import {
-  type AthleteIntelligenceModelInput,
   athleteIntelligenceModelInputSchema,
   type MetricEvidenceInput,
+  type ParsedAthleteIntelligenceModelInput,
 } from "../model-input-contracts";
 
 export const PHYSIOLOGY_METRICS_POLICY_VERSION = "physiology_metrics_v1";
@@ -104,7 +104,7 @@ function freshnessInfluence(observedAt: string, asOf: string): number {
 }
 
 function candidatesFor(
-  input: AthleteIntelligenceModelInput,
+  input: ParsedAthleteIntelligenceModelInput,
   metricType: AthleteMetricType,
   targetActivityCategory?: CanonicalActivityCategory | null,
 ): Candidate[] {
@@ -192,7 +192,7 @@ function median(values: readonly number[]): number {
 }
 
 function directEffect(
-  input: AthleteIntelligenceModelInput,
+  input: ParsedAthleteIntelligenceModelInput,
   metricType: AthleteMetricType,
   targetActivityCategory?: CanonicalActivityCategory | null,
 ): PhysiologyMetricEffect {
@@ -227,7 +227,7 @@ function directEffect(
 }
 
 function derivedRatio(
-  input: AthleteIntelligenceModelInput,
+  input: ParsedAthleteIntelligenceModelInput,
   metricType: AthleteMetricType,
 ): CalculationResult {
   const candidates = independentCandidates(candidatesFor(input, metricType)).sort(
@@ -276,7 +276,7 @@ function derivedRatio(
 
 /** Applies role-bounded, continuous physiology policies without producing an athlete score. */
 export function evaluatePhysiologyMetrics(
-  rawInput: AthleteIntelligenceModelInput,
+  rawInput: ParsedAthleteIntelligenceModelInput,
   targetActivityCategory?: CanonicalActivityCategory | null,
 ): PhysiologyMetricsPolicyResult {
   const assessmentTime = Date.parse(rawInput.assessmentAsOf);

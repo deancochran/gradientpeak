@@ -5,7 +5,7 @@ import {
   type PlanValidationResult,
   validatePlanRequirements as validateCorePlanRequirements,
 } from "@repo/core/plan";
-import type { RecordingActivityPlanV3Input } from "./plan";
+import type { RecordingActivityPlanInput } from "./plan";
 import type { RecorderProfileRef } from "./types";
 
 export type {
@@ -16,7 +16,7 @@ export type {
 export type { PlanValidationMessage, PlanValidationMetrics, PlanValidationResult };
 
 export function validatePlanRequirements(
-  plan: RecordingActivityPlanV3Input,
+  plan: RecordingActivityPlanInput,
   _profile: RecorderProfileRef,
   metrics?: PlanValidationMetrics,
 ): PlanValidationResult {

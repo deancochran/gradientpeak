@@ -151,6 +151,7 @@ export async function submitImportedActivityArtifact(
       profileId: input.activity.profileId,
       parsedData: input.parsedActivity,
       artifactId,
+      providerActiveDurationSeconds: input.activity.providerActiveDurationSeconds,
     });
     const summary = analysis.summaryValues;
     const contentVisibility =
@@ -186,6 +187,9 @@ export async function submitImportedActivityArtifact(
       efficiencyFactor: valueOrNull(summary.efficiency_factor),
       aerobicDecoupling: valueOrNull(summary.aerobic_decoupling),
       avgTemperature: valueOrNull(summary.avg_temperature),
+      poolLengthMeters: valueOrNull(summary.pool_length_meters),
+      totalStrokes: valueOrNull(summary.total_strokes),
+      avgSwolf: valueOrNull(summary.avg_swolf),
       deviceManufacturer: input.parsedActivity.metadata.manufacturer,
       deviceProduct: input.parsedActivity.metadata.product,
       laps: input.parsedActivity.laps ?? null,

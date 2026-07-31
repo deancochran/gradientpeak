@@ -9,7 +9,7 @@ import { materializePlanToEvents } from "../materializePlanToEvents";
 import { aggregateWeeklyPlannedLoad } from "./aggregateWeeklyPlannedLoad";
 import {
   calculateSystemTemplateDurationSeconds,
-  validateSystemTemplateActivityPlanV3,
+  validateSystemTemplateActivityPlan,
 } from "./systemPlanAudit";
 
 export interface MaterializeSystemPlanLoadEstimationContext {
@@ -101,7 +101,7 @@ function estimateTemplateLoad(
   };
 
   const structure = hasIntervals(template)
-    ? validateSystemTemplateActivityPlanV3(template)
+    ? validateSystemTemplateActivityPlan(template)
     : undefined;
   const estimation = structure
     ? estimateFromStructure({

@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/ca
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { RouteUploadForm } from "../../../components/protected/route-upload-form";
+import { useAuth } from "../../../components/providers/auth-provider";
 import { api } from "../../../lib/api/client";
 
 export const Route = createFileRoute("/_protected/routes/upload")({
@@ -11,6 +12,7 @@ export const Route = createFileRoute("/_protected/routes/upload")({
 function RouteUploadPage() {
   const navigate = Route.useNavigate();
   const utils = api.useUtils();
+  const { user } = useAuth();
   const uploadMutation = api.routes.upload.useMutation();
 
   return (
@@ -25,40 +27,50 @@ function RouteUploadPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>GPX, TCX, or XML route file</CardTitle>
+          <CardTitle aria-level={2} role="heading">
+            GPX, TCX, or XML route file
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <RouteUploadForm
-            onCancel={() =>
-              void navigate({
-                to: "/routes",
-                search: {
-                  search: "",
-                  ownerScope: "own",
-                  sort: "newest",
-                  minDistanceKm: "",
-                  maxDistanceKm: "",
-                  minAscentM: "",
-                  maxAscentM: "",
-                  page: 1,
-                },
-              })
-            }
-            onSubmit={(values) =>
-              uploadMutation.mutateAsync({
-                description: values.description ?? undefined,
-                fileContent: values.fileContent,
-                fileName: values.file.name,
-                name: values.name,
-              })
-            }
-            onSuccess={async (route) => {
-              await utils.routes.invalidate();
-              toast.success("Route uploaded");
-              void navigate({ to: "/routes/$routeId", params: { routeId: route.id } });
-            }}
-            onSubmitError={() => toast.error("Route upload failed")}
-          />
+          {user?.id ? (
+            <RouteUploadForm
+              idempotencyScope={user.id}
+              onCancel={() =>
+                void navigate({
+                  to: "/routes",
+                  search: {
+                    search: "",
+                    ownerScope: "own",
+                    sort: "newest",
+                    minDistanceKm: "",
+                    maxDistanceKm: "",
+                    minAscentM: "",
+                    maxAscentM: "",
+                    page: 1,
+                  },
+                })
+              }
+              onSubmit={(values) =>
+                uploadMutation.mutateAsync({
+                  description: values.description ?? undefined,
+                  fileContent: values.fileContent,
+                  fileName: values.file.name,
+                  idempotencyKey: values.idempotencyKey,
+                  name: values.name,
+                })
+              }
+              onSuccess={(route) => {
+                void utils.routes.invalidate();
+                toast.success("Route uploaded");
+                void navigate({ to: "/routes/$routeId", params: { routeId: route.id } });
+              }}
+              onSubmitError={() => toast.error("Route upload failed")}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground" role="status">
+              Preparing your route upload...
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

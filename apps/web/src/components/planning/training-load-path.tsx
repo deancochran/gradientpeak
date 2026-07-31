@@ -1,12 +1,6 @@
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
+import { Card, CardContent, CardDescription, CardHeader } from "@repo/ui/components/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
 
 import { getCommonLoadPresentation } from "../../lib/activity-load-presentation";
@@ -105,6 +99,7 @@ function ItemList({
           <div
             key={item.completedActivityId ?? item.scheduledItemId ?? `${item.kind}-${item.date}`}
             className="flex items-center justify-between gap-3 rounded-xl border p-3"
+            data-scheduled-item-id={item.scheduledItemId}
           >
             <div>
               <p className="font-medium">{formatShortDayLabel(item.date)}</p>
@@ -147,7 +142,7 @@ export function TrainingLoadPath({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Training path</CardTitle>
+        <h2 className="leading-none font-semibold">Training path</h2>
         <CardDescription>
           Server-composed common Load {resolvedRangeLabel(effectiveLoad?.resolvedRange)}. Firm and
           tentative work remain separate.

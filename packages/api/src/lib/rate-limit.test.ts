@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Context } from "../context";
+import { type Context, createApiContext } from "../context";
 import {
   ANONYMOUS_GLOBAL_CIRCUIT_BREAKER_LIMIT,
   type ApiRateLimitStore,
@@ -8,13 +8,10 @@ import {
   type RateLimitIdentity,
 } from "./rate-limit";
 
-function context(headers = new Headers()): Context {
-  return {
-    session: null,
+async function context(headers = new Headers()): Promise<Context> {
+  return createApiContext({
     headers,
-    clientType: "web",
-    trpcSource: "fetch",
-  } as Context;
+  });
 }
 
 describe("API rate limiting", () => {
@@ -27,7 +24,7 @@ describe("API rate limiting", () => {
       },
     };
     await checkApiRateLimit(
-      context(new Headers({ "x-api-source": "vitest", "x-forwarded-for": "203.0.113.4" })),
+      await context(new Headers({ "x-api-source": "vitest", "x-forwarded-for": "203.0.113.4" })),
       1,
       store,
     );
@@ -40,7 +37,7 @@ describe("API rate limiting", () => {
   it("does not shard anonymous buckets with hostile headers", async () => {
     let identity: RateLimitIdentity | undefined;
     await checkApiRateLimit(
-      context(
+      await context(
         new Headers({
           "x-api-source": "vitest",
           "cf-connecting-ip": "198.51.100.8",
@@ -61,9 +58,9 @@ describe("API rate limiting", () => {
   it("uses an intentionally high-capacity global anonymous circuit breaker", async () => {
     const store = new InMemoryApiRateLimitStore();
     const now = 1_000;
-    let result = await checkApiRateLimit(context(), now, store);
+    let result = await checkApiRateLimit(await context(), now, store);
     for (let index = 1; index <= ANONYMOUS_GLOBAL_CIRCUIT_BREAKER_LIMIT; index += 1) {
-      result = await checkApiRateLimit(context(), now, store);
+      result = await checkApiRateLimit(await context(), now, store);
     }
     expect(result).toMatchObject({
       allowed: false,
@@ -72,12 +69,12 @@ describe("API rate limiting", () => {
       retryAfterSeconds: 60,
     });
     expect(result.resetAt).toEqual(new Date(61_000));
-    expect((await checkApiRateLimit(context(), 61_000, store)).allowed).toBe(true);
+    expect((await checkApiRateLimit(await context(), 61_000, store)).allowed).toBe(true);
   });
 
   it("fails closed when the durable store is unavailable", async () => {
     await expect(
-      checkApiRateLimit(context(), 1_000, {
+      checkApiRateLimit(await context(), 1_000, {
         increment() {
           throw new Error("database unavailable");
         },

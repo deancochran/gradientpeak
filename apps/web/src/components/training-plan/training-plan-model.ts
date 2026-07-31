@@ -1,6 +1,7 @@
 import {
   type CanonicalTrainingPlanStructure,
   canonicalTrainingPlanStructureSchema,
+  persistedTrainingPlanStructureSchema,
 } from "@repo/core";
 
 export type TrainingPlanSessionDraft = {
@@ -27,9 +28,12 @@ export function buildTrainingPlanStructure(
 
 export function toTrainingPlanSessionDrafts(structure: unknown): TrainingPlanSessionDraft[] {
   const parsed = canonicalTrainingPlanStructureSchema.safeParse(structure);
-  if (!parsed.success) return [];
+  const persisted = parsed.success
+    ? parsed
+    : persistedTrainingPlanStructureSchema.safeParse(structure);
+  if (!persisted.success) return [];
 
-  return parsed.data.sessions.map((session) => ({
+  return persisted.data.sessions.map((session) => ({
     activityPlanId: session.activity_plan_id,
     draftId: `${session.offset_days}-${session.activity_plan_id}-${session.event_overrides?.title ?? ""}`,
     offsetDays: session.offset_days,
@@ -39,14 +43,18 @@ export function toTrainingPlanSessionDrafts(structure: unknown): TrainingPlanSes
 
 export function summarizeTrainingPlan(structure: unknown) {
   const parsed = canonicalTrainingPlanStructureSchema.safeParse(structure);
-  if (!parsed.success || parsed.data.sessions.length === 0) {
+  const persisted = parsed.success
+    ? parsed
+    : persistedTrainingPlanStructureSchema.safeParse(structure);
+  if (!persisted.success || persisted.data.sessions.length === 0) {
     return { durationDays: 0, sessionCount: 0, weekCount: 0 };
   }
 
-  const durationDays = Math.max(...parsed.data.sessions.map((session) => session.offset_days)) + 1;
+  const durationDays =
+    Math.max(...persisted.data.sessions.map((session) => session.offset_days)) + 1;
   return {
     durationDays,
-    sessionCount: parsed.data.sessions.length,
+    sessionCount: persisted.data.sessions.length,
     weekCount: Math.ceil(durationDays / 7),
   };
 }

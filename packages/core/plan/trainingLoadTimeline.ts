@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export type TrainingLoadSource =
   | "goal_projection"
   | "baseline"
@@ -9,7 +11,7 @@ export type TrainingLoadTimelinePoint = {
   date: string;
   recommended_load_tss: number;
   scheduled_load_tss: number;
-  tentative_scheduled_load_tss?: number;
+  tentative_scheduled_load_tss: number;
   completed_load_tss: number;
   adherence_score?: number;
   boundary_state?: "safe" | "caution" | "exceeded";
@@ -21,36 +23,33 @@ export type TrainingLoadTimelinePoint = {
   };
 };
 
-export type LegacyTrainingLoadTimelinePoint = {
-  date: string;
-  ideal_tss?: number | null;
-  scheduled_tss?: number | null;
-  actual_tss?: number | null;
-  adherence_score?: number | null;
-  boundary_state?: "safe" | "caution" | "exceeded";
-  boundary_reasons?: string[];
-};
+export const trainingLoadTimelineInputPointSchema = z
+  .object({
+    date: z.string(),
+    recommended_load_tss: z.number().finite().nullable().optional(),
+    scheduled_load_tss: z.number().finite().nullable().optional(),
+    tentative_scheduled_load_tss: z.number().finite().nullable().optional(),
+    completed_load_tss: z.number().finite().nullable().optional(),
+    adherence_score: z.number().finite().nullable().optional(),
+    boundary_state: z.enum(["safe", "caution", "exceeded"]).optional(),
+    boundary_reasons: z.array(z.string()).optional(),
+    source: z
+      .object({
+        recommended: z
+          .enum(["goal_projection", "baseline", "fallback", "calendar", "recorded_activity"])
+          .optional(),
+        scheduled: z
+          .enum(["goal_projection", "baseline", "fallback", "calendar", "recorded_activity"])
+          .optional(),
+        completed: z
+          .enum(["goal_projection", "baseline", "fallback", "calendar", "recorded_activity"])
+          .optional(),
+      })
+      .optional(),
+  })
+  .strict();
 
-export type TrainingLoadTimelinePointWithLegacyAliases = TrainingLoadTimelinePoint & {
-  ideal_tss: number;
-  scheduled_tss: number;
-  actual_tss: number;
-};
-
-type TrainingLoadTimelineInputPoint = {
-  date: string;
-  recommended_load_tss?: number | null;
-  scheduled_load_tss?: number | null;
-  tentative_scheduled_load_tss?: number | null;
-  completed_load_tss?: number | null;
-  ideal_tss?: number | null;
-  scheduled_tss?: number | null;
-  actual_tss?: number | null;
-  adherence_score?: number | null;
-  boundary_state?: "safe" | "caution" | "exceeded";
-  boundary_reasons?: string[];
-  source?: TrainingLoadTimelinePoint["source"];
-};
+export type TrainingLoadTimelineInputPoint = z.input<typeof trainingLoadTimelineInputPointSchema>;
 
 export type TrainingLoadWeek = {
   week_start: string;
@@ -82,37 +81,33 @@ export function getWeekStartDateKey(dateKey: string) {
 
 export function normalizeTrainingLoadTimelinePoint(
   point: TrainingLoadTimelineInputPoint,
-): TrainingLoadTimelinePointWithLegacyAliases {
-  const recommendedLoad = roundLoad(point.recommended_load_tss ?? point.ideal_tss);
-  const scheduledLoad = roundLoad(point.scheduled_load_tss ?? point.scheduled_tss);
-  const tentativeScheduledLoad = roundLoad(point.tentative_scheduled_load_tss);
-  const completedLoad = roundLoad(point.completed_load_tss ?? point.actual_tss);
+): TrainingLoadTimelinePoint {
+  const parsed = trainingLoadTimelineInputPointSchema.parse(point);
+  const recommendedLoad = roundLoad(parsed.recommended_load_tss);
+  const scheduledLoad = roundLoad(parsed.scheduled_load_tss);
+  const tentativeScheduledLoad = roundLoad(parsed.tentative_scheduled_load_tss);
+  const completedLoad = roundLoad(parsed.completed_load_tss);
+  const source = parsed.source
+    ? {
+        ...(parsed.source.recommended === undefined
+          ? {}
+          : { recommended: parsed.source.recommended }),
+        ...(parsed.source.scheduled === undefined ? {} : { scheduled: parsed.source.scheduled }),
+        ...(parsed.source.completed === undefined ? {} : { completed: parsed.source.completed }),
+      }
+    : undefined;
 
   return {
-    date: point.date,
+    date: parsed.date,
     recommended_load_tss: recommendedLoad,
     scheduled_load_tss: scheduledLoad,
     tentative_scheduled_load_tss: tentativeScheduledLoad,
     completed_load_tss: completedLoad,
-    adherence_score: roundLoad(point.adherence_score),
-    boundary_state: point.boundary_state,
-    boundary_reasons: point.boundary_reasons,
-    source: point.source,
-    ideal_tss: recommendedLoad,
-    scheduled_tss: scheduledLoad,
-    actual_tss: completedLoad,
+    adherence_score: roundLoad(parsed.adherence_score),
+    ...(parsed.boundary_state === undefined ? {} : { boundary_state: parsed.boundary_state }),
+    ...(parsed.boundary_reasons === undefined ? {} : { boundary_reasons: parsed.boundary_reasons }),
+    ...(source === undefined ? {} : { source }),
   };
-}
-
-export function withLegacyTrainingLoadAliases(
-  point: TrainingLoadTimelinePoint,
-): TrainingLoadTimelinePointWithLegacyAliases {
-  return normalizeTrainingLoadTimelinePoint({
-    ...point,
-    ideal_tss: point.recommended_load_tss,
-    scheduled_tss: point.scheduled_load_tss,
-    actual_tss: point.completed_load_tss,
-  });
 }
 
 export function aggregateTrainingLoadTimelineByWeek(

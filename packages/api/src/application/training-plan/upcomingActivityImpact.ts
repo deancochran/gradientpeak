@@ -1,4 +1,4 @@
-import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import type { CanonicalActivityCategory } from "@repo/core/schemas/activity-category";
 
 export type UpcomingActivityImpact = {
@@ -7,17 +7,26 @@ export type UpcomingActivityImpact = {
   scheduled_at: string;
   activity_category: CanonicalActivityCategory;
   estimated_load: number | null;
-  short_term_readiness_delta: number | null;
-  fitness_contribution: number | null;
   confidence: "high" | "medium" | "low";
   explanation: string;
 };
 
+type PlannedActivityImpactInput = {
+  id?: unknown;
+  scheduled_date: string;
+  starts_at?: unknown;
+  title?: unknown;
+  activity_plan?: {
+    id?: unknown;
+    name?: unknown;
+    title?: unknown;
+    structure?: unknown;
+  } | null;
+};
+
 function readCanonicalPlanActivityCategory(plan: unknown): CanonicalActivityCategory | null {
   if (!plan || typeof plan !== "object") return null;
-  const parsed = activityPlanStructureSchemaV3.safeParse(
-    (plan as { structure?: unknown }).structure,
-  );
+  const parsed = activityPlanStructureSchema.safeParse((plan as { structure?: unknown }).structure);
   if (!parsed.success) return null;
   return (
     parsed.data.segments.find((segment) => segment.role === "activity")?.activity_category ?? null
@@ -25,7 +34,7 @@ function readCanonicalPlanActivityCategory(plan: unknown): CanonicalActivityCate
 }
 
 export function buildUpcomingActivityImpact(input: {
-  plannedActivities: any[];
+  plannedActivities: PlannedActivityImpactInput[];
   estimatedTssByPlanId: Map<unknown, unknown>;
   today: string;
   horizonEnd: string;
@@ -59,10 +68,6 @@ export function buildUpcomingActivityImpact(input: {
           scheduled_at: String(planned.starts_at ?? `${scheduledDate}T00:00:00.000Z`),
           activity_category,
           estimated_load: estimatedLoad === null ? null : Math.round(estimatedLoad * 10) / 10,
-          // These fields remain in the DTO for compatibility, but planned load does not
-          // provide enough evidence to infer physiological readiness or fitness effects.
-          short_term_readiness_delta: null,
-          fitness_contribution: null,
           confidence: estimatedLoad === null ? "low" : "medium",
           explanation:
             estimatedLoad === null

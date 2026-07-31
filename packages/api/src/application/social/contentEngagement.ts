@@ -51,7 +51,12 @@ export async function addContentComment({
 }: {
   db: DbClient;
   viewerId: string;
-  input: { entity_id: string; entity_type: SocialCommentEntityType; content: string };
+  input: {
+    comment_id?: string;
+    entity_id: string;
+    entity_type: SocialCommentEntityType;
+    content: string;
+  };
 }) {
   await requireAccess(db, viewerId, input.entity_id, input.entity_type, "comment on");
   return addContentCommentRecord(db, viewerId, input);

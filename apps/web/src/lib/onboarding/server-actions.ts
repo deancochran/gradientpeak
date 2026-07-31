@@ -1,16 +1,15 @@
 import { redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
+import { ZodError } from "zod";
 import { getSafeAppRedirectTarget } from "../app-url";
 import { createServerActionCaller } from "../server-action-api";
 import { parseOnboardingFormData } from "./form-data";
 
-function errorRedirect(error: unknown, redirectTo?: string): never {
-  const search = new URLSearchParams({
-    flash: error instanceof Error ? error.message : "Unable to complete setup",
-    flashType: "error",
-  });
-  if (redirectTo) search.set("redirect", redirectTo);
-  throw redirect({ href: `/onboarding?${search.toString()}`, statusCode: 303 });
+function getSafeOnboardingErrorMessage(error: unknown): string {
+  if (error instanceof ZodError) {
+    return error.issues[0]?.message ?? "Review the setup values and try again.";
+  }
+  return "Unable to complete setup. Please try again.";
 }
 
 export const loadOnboardingOptions = createServerFn({ method: "GET" }).handler(async () => {
@@ -63,29 +62,36 @@ export const loadOnboardingOptions = createServerFn({ method: "GET" }).handler(a
 export const completeOnboardingIdentityAction = createServerFn({ method: "POST" })
   .validator((data: unknown) => {
     if (!(data instanceof FormData)) throw new Error("Expected onboarding form data");
-    return parseOnboardingFormData(data);
+    return data;
   })
   .handler(async ({ data }) => {
-    const fallback = getSafeAppRedirectTarget(data.redirect, "/");
+    let parsed: ReturnType<typeof parseOnboardingFormData>;
+    try {
+      parsed = parseOnboardingFormData(data);
+    } catch (error) {
+      return { message: getSafeOnboardingErrorMessage(error), status: "error" as const };
+    }
+
+    const fallback = getSafeAppRedirectTarget(parsed.redirect, "/");
     try {
       const caller = await createServerActionCaller();
 
       // Optional relationship actions happen before the profile is marked complete so failures
       // remain recoverable on this route. The procedures are idempotent for already-saved choices.
-      for (const invitationId of data.social.invitationIds) {
+      for (const invitationId of parsed.social.invitationIds) {
         await caller.groups.acceptInvite({ invitationId });
       }
-      for (const groupId of data.social.groupIds) {
+      for (const groupId of parsed.social.groupIds) {
         await caller.groups.joinOrRequest({ groupId });
       }
-      for (const target_user_id of data.social.followProfileIds) {
+      for (const target_user_id of parsed.social.followProfileIds) {
         await caller.social.followUser({ target_user_id });
       }
 
       const result = await caller.onboarding.completeLifecycleSetup({
-        profile: data.profile,
-        ...(data.goal ? { goal: data.goal } : null),
-        ...(data.settings_patch ? { settings_patch: data.settings_patch } : null),
+        profile: parsed.profile,
+        ...(parsed.goal ? { goal: parsed.goal } : null),
+        ...(parsed.settings_patch ? { settings_patch: parsed.settings_patch } : null),
       });
       const failed = [
         result.goal.status === "failed" ? "goal" : null,
@@ -97,7 +103,7 @@ export const completeOnboardingIdentityAction = createServerFn({ method: "POST" 
         );
       }
     } catch (error) {
-      errorRedirect(error, data.redirect);
+      return { message: getSafeOnboardingErrorMessage(error), status: "error" as const };
     }
 
     throw redirect({ href: fallback, statusCode: 303 });

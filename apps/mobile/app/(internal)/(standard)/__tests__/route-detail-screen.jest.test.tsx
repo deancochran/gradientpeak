@@ -1,6 +1,6 @@
 import React from "react";
 import { createButtonComponent, createHost } from "../../../../test/mock-components";
-import { fireEvent, renderNative, screen } from "../../../../test/render-native";
+import { act, fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const routeData = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -16,9 +16,14 @@ const routeData = {
 };
 
 const backMock = jest.fn();
+const navigateMock = jest.fn();
 const deleteMutateMock = jest.fn();
 const toggleLikeMutateMock = jest.fn();
+const routeInvalidateMock = jest.fn();
+const loadFullUseQueryMock = jest.fn();
 const authState = { user: { id: "profile-1" } };
+const routeLifecycleState = { storageState: "ready" };
+let reliableMutationOptions: { onError?: () => Promise<void>; onSuccess?: () => void } | undefined;
 
 type StackScreenProps = Record<string, unknown> & {
   options?: { headerRight?: () => React.ReactNode };
@@ -35,7 +40,7 @@ jest.mock("expo-router", () => ({
       ),
   },
   useLocalSearchParams: () => ({ id: routeData.id }),
-  useRouter: () => ({ back: backMock }),
+  useRouter: () => ({ back: backMock, navigate: navigateMock }),
 }));
 
 jest.mock("react-native", () => ({
@@ -86,6 +91,16 @@ jest.mock("@/lib/hooks/useAuth", () => ({
   useAuth: () => authState,
 }));
 
+jest.mock("@/lib/hooks/useActivityRecorder", () => ({
+  __esModule: true,
+  useSessionView: () => null,
+}));
+
+jest.mock("@/lib/providers/ActivityRecorderProvider", () => ({
+  __esModule: true,
+  useOptionalActivityRecorderService: () => null,
+}));
+
 jest.mock("@repo/ui/components/textarea", () => ({
   __esModule: true,
   Textarea: createHost("Textarea"),
@@ -93,29 +108,45 @@ jest.mock("@repo/ui/components/textarea", () => ({
 
 jest.mock("@/lib/hooks/useReliableMutation", () => ({
   __esModule: true,
-  useReliableMutation: () => ({
-    mutate: deleteMutateMock,
-    isPending: false,
-  }),
+  useReliableMutation: (
+    _mutation: unknown,
+    options: { onError?: () => Promise<void>; onSuccess?: () => void },
+  ) => {
+    reliableMutationOptions = options;
+    return {
+      mutate: deleteMutateMock,
+      isPending: false,
+    };
+  },
 }));
 
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
-    useUtils: () => ({ routes: {} }),
+    useUtils: () => ({ routes: { invalidate: routeInvalidateMock } }),
     routes: {
       get: {
-        useQuery: () => ({ data: { ...routeData, profile_id: "profile-1" }, isLoading: false }),
-      },
-      loadFull: {
         useQuery: () => ({
           data: {
-            coordinates: [
-              { latitude: 40.0, longitude: -75.0, altitude: 120 },
-              { latitude: 40.1, longitude: -75.1, altitude: 180 },
-            ],
+            ...routeData,
+            profile_id: "profile-1",
+            storage_state: routeLifecycleState.storageState,
           },
+          isLoading: false,
         }),
+      },
+      loadFull: {
+        useQuery: (...args: unknown[]) => {
+          loadFullUseQueryMock(...args);
+          return {
+            data: {
+              coordinates: [
+                { latitude: 40.0, longitude: -75.0, altitude: 120 },
+                { latitude: 40.1, longitude: -75.1, altitude: 180 },
+              ],
+            },
+          };
+        },
       },
       delete: {},
     },
@@ -141,7 +172,7 @@ jest.mock("@/lib/api", () => ({
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
-  ...jest.requireActual("@repo/core"),
+  decodePolyline: jest.fn(() => []),
 }));
 
 jest.mock("@/components/activity/charts/ElevationProfileChart", () => ({
@@ -160,9 +191,14 @@ const RouteDetailScreen = require("../route-detail").default;
 describe("route detail screen", () => {
   beforeEach(() => {
     backMock.mockReset();
+    navigateMock.mockReset();
     deleteMutateMock.mockReset();
     toggleLikeMutateMock.mockReset();
+    routeInvalidateMock.mockReset().mockResolvedValue(undefined);
+    loadFullUseQueryMock.mockReset();
     authState.user.id = "profile-1";
+    routeLifecycleState.storageState = "ready";
+    reliableMutationOptions = undefined;
   });
 
   it("shows the new identity-first route layout", () => {
@@ -179,11 +215,17 @@ describe("route detail screen", () => {
     expect(screen.getByText("4")).toBeTruthy();
   });
 
-  it("moves delete into the header overflow menu", () => {
+  it("moves owner management into the header overflow menu", () => {
     renderNative(<RouteDetailScreen />);
 
     expect(screen.getByTestId("route-detail-options-trigger")).toBeTruthy();
+    expect(screen.getByTestId("route-detail-options-edit")).toBeTruthy();
     expect(screen.getByTestId("route-detail-options-delete")).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId("route-detail-options-edit"));
+    expect(navigateMock).toHaveBeenCalledWith(
+      "/route-edit?id=11111111-1111-4111-8111-111111111111",
+    );
   });
 
   it("hides owner-only delete action for non-owners", () => {
@@ -192,6 +234,7 @@ describe("route detail screen", () => {
     renderNative(<RouteDetailScreen />);
 
     expect(screen.getByTestId("route-detail-options-trigger")).toBeTruthy();
+    expect(screen.queryByTestId("route-detail-options-edit")).toBeNull();
     expect(screen.queryByTestId("route-detail-options-delete")).toBeNull();
   });
 
@@ -206,5 +249,29 @@ describe("route detail screen", () => {
     fireEvent.press(screen.getByTestId("route-detail-delete-confirm"));
 
     expect(deleteMutateMock).toHaveBeenCalledWith({ id: "11111111-1111-4111-8111-111111111111" });
+  });
+
+  it("renders deletion-pending routes as a retry-only owner state", async () => {
+    routeLifecycleState.storageState = "deletion_pending";
+    renderNative(<RouteDetailScreen />);
+
+    expect(screen.getByTestId("route-detail-deletion-pending")).toBeTruthy();
+    expect(screen.getByText("Route deletion pending")).toBeTruthy();
+    expect(screen.queryByTestId("route-detail-options-recording")).toBeNull();
+    expect(screen.queryByTestId("route-detail-options-edit")).toBeNull();
+    expect(screen.getByTestId("route-detail-options-delete")).toBeTruthy();
+    expect(
+      loadFullUseQueryMock.mock.calls.every(
+        ([, options]) => (options as { enabled?: boolean } | undefined)?.enabled === false,
+      ),
+    ).toBe(true);
+
+    fireEvent.press(screen.getByTestId("route-detail-options-delete"));
+    expect(screen.getByTestId("route-detail-delete-modal")).toBeTruthy();
+    await act(async () => {
+      await reliableMutationOptions?.onError?.();
+    });
+    expect(routeInvalidateMock).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("route-detail-delete-modal")).toBeNull();
   });
 });

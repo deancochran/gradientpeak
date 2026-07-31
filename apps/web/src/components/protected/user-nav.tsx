@@ -31,6 +31,7 @@ import {
 import { useState } from "react";
 
 import { signOutAction } from "../../lib/auth/server-actions";
+import { contractEpochFormInputProps } from "../../lib/contract-epoch";
 import { useAuth } from "../providers/auth-provider";
 
 function getInitials(email: string | null | undefined) {
@@ -145,6 +146,7 @@ export function UserNav() {
             onSubmit={handleSignOut}
             className="w-full"
           >
+            <input {...contractEpochFormInputProps} />
             <button type="submit" className="flex w-full items-center gap-2" disabled={isPending}>
               <LogOut className="h-4 w-4" />
               <span>{isPending ? "Logging out..." : "Log out"}</span>

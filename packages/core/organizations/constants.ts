@@ -76,12 +76,6 @@ export const ATHLETE_READ_SCOPE_OPERATIONS = {
   calendar: "read_athlete_calendar",
 } as const satisfies Record<AthleteReadScope, OrganizationOperation>;
 
-// Legacy compatibility only. New authority is ORGANIZATION_OPERATION_REQUIREMENTS.
-export const ORGANIZATION_PERMISSIONS = ["coaching.access"] as const;
-export type OrganizationPermission = (typeof ORGANIZATION_PERMISSIONS)[number];
-
-export const COACHING_ACCESS_PERMISSION = "coaching.access" satisfies OrganizationPermission;
-
 export const ORGANIZATION_MEMBERSHIP_STATUSES = ["active", "inactive"] as const;
 export type OrganizationMembershipStatus = (typeof ORGANIZATION_MEMBERSHIP_STATUSES)[number];
 

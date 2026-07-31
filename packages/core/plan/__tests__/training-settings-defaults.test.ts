@@ -66,9 +66,9 @@ describe("mapAthletePreferencesToCreationDefaults", () => {
     expect(mapped.post_goal_recovery_days).toBe(8);
     expect(mapped.recent_influence).toEqual({ influence_score: 0.6 });
     expect(mapped.recent_influence_action).toBe("accepted");
-    expect(mapped.behavior_controls_v1.aggressiveness).not.toBe(0.5);
-    expect(mapped.behavior_controls_v1.spike_frequency).toBeGreaterThan(0.7);
-    expect(mapped.behavior_controls_v1.recovery_priority).toBeGreaterThan(0.65);
+    expect(mapped.behavior_controls.aggressiveness).not.toBe(0.5);
+    expect(mapped.behavior_controls.spike_frequency).toBeGreaterThan(0.7);
+    expect(mapped.behavior_controls.recovery_priority).toBeGreaterThan(0.65);
     expect(mapped.calibration.optimizer.churn_penalty_weight).toBeGreaterThan(0.3);
     expect(mapped.calibration.readiness_timeline.target_tsb).toBeGreaterThan(10);
     expect(mapped.calibration.durability_penalties.strain_scale).toBeLessThan(900);

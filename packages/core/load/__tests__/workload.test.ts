@@ -53,16 +53,10 @@ describe("safe workload calculations", () => {
     expect(result.reasonCode).toBe("insufficient_coverage");
   });
 
-  it("makes identity-less numeric compatibility calls unavailable", () => {
-    expect(computeAcwr(Array(28).fill(50), 28).reasonCode).toBe("identity_required");
-    expect(computeMonotony(Array(7).fill(50), 7).reasonCode).toBe("identity_required");
-  });
-
-  it("never uses power as a fallback for missing or low-quality HR TRIMP", () => {
+  it("abstains from TRIMP when heart-rate coverage is low quality", () => {
     const trimp = computeTrimp({
       coverageDays: 28,
       durationSeconds: 1800,
-      avgPowerWatts: 200,
       hrSampleCount: 5,
       hrCoverageRatio: 0.5,
     });

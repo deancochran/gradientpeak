@@ -574,7 +574,7 @@ describe("activity analysis", () => {
     expect(activityDerivedStressSchema.parse(preTrancheDetail)).toEqual(preTrancheDetail);
   });
 
-  it("keeps historical heart-rate-reserve identities parseable but not selectable", () => {
+  it("rejects removed heart-rate-reserve identities", () => {
     const historicalIdentity = {
       activity_category: "bike",
       method: "heart_rate_reserve",
@@ -587,7 +587,7 @@ describe("activity analysis", () => {
       },
     } as const;
 
-    expect(activityTssIdentitySchema.safeParse(historicalIdentity).success).toBe(true);
+    expect(activityTssIdentitySchema.safeParse(historicalIdentity).success).toBe(false);
     expect(
       activityListDerivedSummarySchema.safeParse({
         tss: 100,
@@ -1418,7 +1418,6 @@ describe("activity analysis", () => {
       status: "available",
       method: "power_threshold",
       estimated: false,
-      sessionRpeEvidence: null,
     });
   });
 });

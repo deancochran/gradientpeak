@@ -4,7 +4,7 @@ import {
   calculationReasonCodeSchema,
   calculationResultSchema,
 } from "./calculation-result-contracts";
-import { goalDemandPolicyV1ResultSchema } from "./policies/goal-demand";
+import { goalDemandPolicyResultSchema } from "./policies/goal-demand";
 import { trainingFeasibilityResultsSchema } from "./policies/training-feasibility";
 
 export const ATHLETE_INTELLIGENCE_PROJECTION_VERSION =
@@ -76,7 +76,7 @@ export const coverageDimensionSchema = z
 export const goalCoverageProjectionSchema = z
   .object({
     goalSourceId: z.string().min(1).max(256),
-    demand: goalDemandPolicyV1ResultSchema,
+    demand: goalDemandPolicyResultSchema,
     dimensions: z.array(coverageDimensionSchema).max(8),
   })
   .strict();

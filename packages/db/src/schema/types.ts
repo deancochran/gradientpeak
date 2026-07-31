@@ -7,15 +7,14 @@ import type {
   activityEfforts,
   activityFileIngestions,
   activityPlans,
+  activityRouteDeletionReceipts,
   activityRoutes,
   activitySegments,
   activitySessionRpeEvidence,
   athleteConsentPolicyVersions,
   athleteDataSharingConsents,
-  coachesAthletes,
   coachingAssignments,
   coachingEngagements,
-  coachingInvitations,
   comments,
   contentAccessGrants,
   conversationParticipants,
@@ -39,9 +38,6 @@ import type {
   organizationAuditEvents,
   organizationMembershipRoleGrants,
   organizationMemberships,
-  organizationPermissions,
-  organizationRolePermissionGrants,
-  organizationRoles,
   organizations,
   profileGoals,
   profileMetrics,
@@ -67,19 +63,6 @@ export type OrganizationInsert = InferInsertModel<typeof organizations>;
 
 export type OrganizationMembershipRow = InferSelectModel<typeof organizationMemberships>;
 export type OrganizationMembershipInsert = InferInsertModel<typeof organizationMemberships>;
-
-export type OrganizationRoleRow = InferSelectModel<typeof organizationRoles>;
-export type OrganizationRoleInsert = InferInsertModel<typeof organizationRoles>;
-
-export type OrganizationPermissionRow = InferSelectModel<typeof organizationPermissions>;
-export type OrganizationPermissionInsert = InferInsertModel<typeof organizationPermissions>;
-
-export type OrganizationRolePermissionGrantRow = InferSelectModel<
-  typeof organizationRolePermissionGrants
->;
-export type OrganizationRolePermissionGrantInsert = InferInsertModel<
-  typeof organizationRolePermissionGrants
->;
 
 export type OrganizationMembershipRoleGrantRow = InferSelectModel<
   typeof organizationMembershipRoleGrants
@@ -118,12 +101,12 @@ export type GroupEventSeriesRsvpInsert = InferInsertModel<typeof groupEventSerie
 
 export type ActivityRouteRow = InferSelectModel<typeof activityRoutes>;
 export type ActivityRouteInsert = InferInsertModel<typeof activityRoutes>;
-
-export type CoachingInvitationRow = InferSelectModel<typeof coachingInvitations>;
-export type CoachingInvitationInsert = InferInsertModel<typeof coachingInvitations>;
-
-export type CoachAthleteRow = InferSelectModel<typeof coachesAthletes>;
-export type CoachAthleteInsert = InferInsertModel<typeof coachesAthletes>;
+export type ActivityRouteDeletionReceiptRow = InferSelectModel<
+  typeof activityRouteDeletionReceipts
+>;
+export type ActivityRouteDeletionReceiptInsert = InferInsertModel<
+  typeof activityRouteDeletionReceipts
+>;
 
 export type ActivityPlanRow = InferSelectModel<typeof activityPlans>;
 export type ActivityPlanInsert = InferInsertModel<typeof activityPlans>;

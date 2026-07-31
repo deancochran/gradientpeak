@@ -108,7 +108,7 @@ function getCurrentSyncError(input: {
   return toSafeProviderSyncCopy(input.lastError);
 }
 
-function toSafeProviderSyncCopy(error: string): string {
+function toSafeProviderSyncCopy(error: string): string | null {
   switch (error) {
     case "activity_history_failed":
       return "Activity history sync failed";
@@ -123,9 +123,10 @@ function toSafeProviderSyncCopy(error: string): string {
       return "Disconnect is being retried";
     case "disconnect_failed":
       return "Disconnect failed";
-    default:
-      // Compatibility boundary for rows written before durable error categories.
+    case "provider_sync_failed":
       return "Provider sync failed";
+    default:
+      return null;
   }
 }
 

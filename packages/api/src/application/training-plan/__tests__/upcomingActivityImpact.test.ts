@@ -1,18 +1,17 @@
-import { compileActivityPlanV3, SYSTEM_TEMPLATES } from "@repo/core";
+import { compileActivityPlan, SYSTEM_TEMPLATES } from "@repo/core";
 import { describe, expect, it } from "vitest";
 import { buildUpcomingActivityImpact } from "../upcomingActivityImpact";
 
 function structureForActivityCategory(activity_category: "bike") {
   const template = SYSTEM_TEMPLATES.find(
-    (candidate) =>
-      compileActivityPlanV3(candidate.structure).activity_category === activity_category,
+    (candidate) => compileActivityPlan(candidate.structure).activity_category === activity_category,
   );
   if (!template) throw new Error(`Missing ${activity_category} system template`);
   return template.structure;
 }
 
 describe("buildUpcomingActivityImpact", () => {
-  it("preserves unsupported physiology fields as null and describes only planned load", () => {
+  it("returns only supported planned-load context", () => {
     const [impact] = buildUpcomingActivityImpact({
       plannedActivities: [
         {
@@ -35,11 +34,11 @@ describe("buildUpcomingActivityImpact", () => {
     expect(impact).toMatchObject({
       estimated_load: 65,
       activity_category: "bike",
-      short_term_readiness_delta: null,
-      fitness_contribution: null,
       confidence: "medium",
       explanation: "This session's planned load is above the recommended daily load.",
     });
+    expect(impact).not.toHaveProperty("short_term_readiness_delta");
+    expect(impact).not.toHaveProperty("fitness_contribution");
   });
 
   it("gives an explicit reason when planned load cannot be estimated", () => {
@@ -64,12 +63,12 @@ describe("buildUpcomingActivityImpact", () => {
 
     expect(impact).toMatchObject({
       estimated_load: null,
-      short_term_readiness_delta: null,
-      fitness_contribution: null,
       confidence: "low",
       explanation:
         "Add duration and intensity to compare this session's planned load with the recommended daily load.",
     });
+    expect(impact).not.toHaveProperty("short_term_readiness_delta");
+    expect(impact).not.toHaveProperty("fitness_contribution");
   });
 
   it("omits a planned impact whose linked plan is not canonical", () => {

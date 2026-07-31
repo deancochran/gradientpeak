@@ -19,7 +19,7 @@ import type {
   RecordingTrainerIntentSource,
   RecordingTrainerMachineType,
 } from "@repo/core";
-import type { RecordingActivityPlanV3Input, RecordingPlanOccurrence } from "./plan";
+import type { RecordingActivityPlanInput, RecordingPlanOccurrence } from "./plan";
 
 /** Recorder-owned control state; these values are not FTMS protocol opcodes. */
 export type FtmsControllerMode =
@@ -190,7 +190,6 @@ export interface ProfileMetrics {
   threshold_hr?: number; // Lactate Threshold Heart Rate
   weight?: number; // kg
   age?: number; // years
-  threshold_pace?: number; // seconds per km (deprecated: use threshold_pace_seconds_per_km)
   threshold_pace_seconds_per_km?: number;
 }
 
@@ -429,7 +428,7 @@ export interface RecordingMetadata {
   profileId: string;
   profile: RecorderProfileRef;
   eventId?: string;
-  activityPlan?: RecordingActivityPlanV3Input;
+  activityPlan?: RecordingActivityPlanInput;
   activityFilePath?: string;
 }
 

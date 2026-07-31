@@ -1,9 +1,12 @@
+import { CONTRACT_EPOCH_HEADER, CURRENT_CONTRACT_EPOCH } from "@repo/api/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
-import { ApiRequestTimeoutError, fetchWithTimeout } from "./api";
+import { ApiRequestTimeoutError, createMobileHeaders, fetchWithTimeout } from "./api";
 
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
-vi.mock("@/lib/auth/auth-headers", () => ({ getSessionAuthHeaders: () => new Headers() }));
+vi.mock("@/lib/auth/auth-headers", () => ({
+  getSessionAuthHeaders: () => new Headers({ Cookie: "better-auth.session_token=redacted" }),
+}));
 vi.mock("@/lib/logging/mobile-action-log", () => ({
   getMobileDeviceKind: () => "simulator",
   logMobileAction: vi.fn(),
@@ -175,5 +178,15 @@ describe("fetchWithTimeout", () => {
       "failure",
       expect.objectContaining({ classification: "local_timeout" }),
     );
+  });
+});
+
+describe("createMobileHeaders", () => {
+  it("adds the current contract epoch without replacing auth headers", () => {
+    const headers = createMobileHeaders();
+
+    expect(headers.get(CONTRACT_EPOCH_HEADER)).toBe(String(CURRENT_CONTRACT_EPOCH));
+    expect(headers.get("cookie")).toBe("better-auth.session_token=redacted");
+    expect(headers.get("x-client-type")).toBe("mobile");
   });
 });

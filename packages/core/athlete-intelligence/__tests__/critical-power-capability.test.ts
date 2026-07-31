@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type {
-  AthleteIntelligenceModelInput,
   EffortObservationInput,
+  ParsedAthleteIntelligenceModelInput,
 } from "../model-input-contracts";
 import { calculateCriticalPowerCapability } from "../policies/critical-power-capability";
 
@@ -47,42 +47,43 @@ function model(
       powerWatts: observation.powerWatts,
     }),
   );
-  const evidenceRegistry: AthleteIntelligenceModelInput["evidenceRegistry"] = Object.fromEntries(
-    efforts.flatMap((effort) => [
-      [
-        effort.evidenceSourceIds[0],
-        {
-          athleteId: "athlete-1",
-          sourceId: effort.evidenceSourceIds[0],
-          lineageGroupId: effort.lineageGroupId,
-          observedAt: effort.observedAt,
-          rawObservation: { value: effort.durationSeconds, unit: "seconds" },
-          activity_category: "bike" as const,
-          modality: "duration",
-          sourceType: "activity_effort" as const,
-          qualityState: "known" as const,
-          validityState: "valid" as const,
-          compatibilityState: "compatible" as const,
-        },
-      ],
-      [
-        effort.evidenceSourceIds[1],
-        {
-          athleteId: "athlete-1",
-          sourceId: effort.evidenceSourceIds[1],
-          lineageGroupId: effort.lineageGroupId,
-          observedAt: effort.observedAt,
-          rawObservation: { value: effort.powerWatts, unit: "watts" },
-          activity_category: "bike" as const,
-          modality: input.modeled ? "value-modeled" : "value",
-          sourceType: "activity_effort" as const,
-          qualityState: "known" as const,
-          validityState: "valid" as const,
-          compatibilityState: "compatible" as const,
-        },
-      ],
-    ]),
-  );
+  const evidenceRegistry: ParsedAthleteIntelligenceModelInput["evidenceRegistry"] =
+    Object.fromEntries(
+      efforts.flatMap((effort) => [
+        [
+          effort.evidenceSourceIds[0],
+          {
+            athleteId: "athlete-1",
+            sourceId: effort.evidenceSourceIds[0],
+            lineageGroupId: effort.lineageGroupId,
+            observedAt: effort.observedAt,
+            rawObservation: { value: effort.durationSeconds, unit: "seconds" },
+            activity_category: "bike" as const,
+            modality: "duration",
+            sourceType: "activity_effort" as const,
+            qualityState: "known" as const,
+            validityState: "valid" as const,
+            compatibilityState: "compatible" as const,
+          },
+        ],
+        [
+          effort.evidenceSourceIds[1],
+          {
+            athleteId: "athlete-1",
+            sourceId: effort.evidenceSourceIds[1],
+            lineageGroupId: effort.lineageGroupId,
+            observedAt: effort.observedAt,
+            rawObservation: { value: effort.powerWatts, unit: "watts" },
+            activity_category: "bike" as const,
+            modality: input.modeled ? "value-modeled" : "value",
+            sourceType: "activity_effort" as const,
+            qualityState: "known" as const,
+            validityState: "valid" as const,
+            compatibilityState: "compatible" as const,
+          },
+        ],
+      ]),
+    );
   return {
     assessmentAsOf: AS_OF,
     efforts,

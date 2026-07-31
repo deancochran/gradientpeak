@@ -256,7 +256,26 @@ begin
   if exists(select 1 from public.activity_artifacts where id=disposable_artifact) then
     raise exception 'authorized artifact purge failed';
   end if;
+  insert into public.activity_file_ingestions(
+    activity_id,artifact_id,profile_id,source,operation_key,status,
+    accepted_sha256,accepted_byte_size,accepted_bucket,accepted_path,
+    accepted_media_type,accepted_format,uploaded_at
+  ) values(
+    activity,artifact_two,profile,'manual_import','constraint-artifact-deletion','ready',
+    digest_two,1,'activity-files','artifacts/sha256/'||profile||'/'||digest_two,
+    'application/octet-stream','fit',now()
+  );
   perform public.request_activity_artifact_deletion(artifact_two);
+  if exists(
+    select 1 from public.activity_file_ingestions
+    where operation_key='constraint-artifact-deletion'
+      and (status<>'failed' or artifact_id is not null or accepted_sha256 is not null
+        or accepted_byte_size is not null or accepted_bucket is not null or accepted_path is not null
+        or accepted_media_type is not null or accepted_format is not null or uploaded_at is not null
+        or last_error_code<>'artifact_deletion_requested')
+  ) then
+    raise exception 'artifact deletion did not clear accepted ingestion metadata';
+  end if;
   if exists(select 1 from public.activity_artifact_links where artifact_id=artifact_two)
     or exists(select 1 from public.activity_segments where source_artifact_id=artifact_two) then
     raise exception 'linked artifact deletion did not revoke source references';

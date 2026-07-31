@@ -1,6 +1,6 @@
 import { isValidDateOnlyUtc } from "@repo/core";
 import { Badge } from "@repo/ui/components/badge";
-import { Button } from "@repo/ui/components/button";
+import { Button, buttonVariants } from "@repo/ui/components/button";
 import {
   Card,
   CardContent,
@@ -22,6 +22,7 @@ import {
   getMonthKey,
   isValidMonthKey,
   type PlanningEvent,
+  shiftDateKey,
 } from "../../../../lib/planning";
 
 export const Route = createFileRoute("/_protected/calendar/day/$date")({
@@ -69,22 +70,47 @@ function CalendarDayPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <Button asChild variant="outline" size="sm">
-          <Link
-            to="/calendar"
-            search={{
-              month,
-              view: view as "agenda" | "month" | "week",
-            }}
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to calendar
-          </Link>
-        </Button>
+        <Link
+          to="/calendar"
+          search={{
+            date: routeDate,
+            month,
+            view: view as "agenda" | "month" | "week",
+          }}
+          className={buttonVariants({ variant: "outline", size: "sm" })}
+        >
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to calendar
+        </Link>
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">{formatDayLabel(routeDate)}</h1>
           <p className="mt-1 text-muted-foreground">Day agenda and goal anchors.</p>
         </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Link
+          to="/calendar/day/$date"
+          params={{ date: shiftDateKey(routeDate, -1) }}
+          search={{ month, view }}
+          className={buttonVariants({ variant: "outline", size: "sm" })}
+        >
+          Previous day
+        </Link>
+        <Link
+          to="/calendar/day/$date"
+          params={{ date: shiftDateKey(routeDate, 1) }}
+          search={{ month, view }}
+          className={buttonVariants({ variant: "outline", size: "sm" })}
+        >
+          Next day
+        </Link>
+        <Link
+          to="/calendar/new"
+          search={{ date: routeDate, type: "custom" }}
+          className={buttonVariants({ variant: "outline", size: "sm" })}
+        >
+          Create event for this day
+        </Link>
       </div>
 
       {goals.length > 0 ? (

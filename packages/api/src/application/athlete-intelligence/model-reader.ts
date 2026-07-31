@@ -1,11 +1,11 @@
 import {
-  type AthleteIntelligenceModelInput,
   type AthleteMetricType,
   addDaysDateOnlyUtc,
   athleteIntelligenceModelInputSchema,
   athleteMetricRoleByType,
   canonicalGoalObjectiveSchema,
   getEligibleThresholdValue,
+  type ParsedAthleteIntelligenceModelInput,
   resolveCanonicalThresholds,
 } from "@repo/core";
 import {
@@ -24,7 +24,7 @@ import {
   profileMetrics,
   profiles,
 } from "@repo/db";
-import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 import {
   filterSupersededProfileOverrides,
@@ -162,7 +162,7 @@ export interface AthleteIntelligenceRows {
   /** True when the recurring-event scan hit its explicit safety bound before source exhaustion. */
   scheduleTruncated?: boolean;
   /** Bounded source completeness carried into the canonical model contract. */
-  readCoverage?: AthleteIntelligenceModelInput["readCoverage"];
+  readCoverage?: ParsedAthleteIntelligenceModelInput["readCoverage"];
 }
 
 type ScheduleRow = AthleteIntelligenceRows["schedule"][number];
@@ -529,7 +529,7 @@ export function createDrizzleAthleteIntelligenceDataSource(
               eq(activityEfforts.profile_id, p),
               lte(activityEfforts.recorded_at, input.asOf),
               lte(activityEfforts.created_at, input.asOf),
-              sql`${activityEfforts.updated_at} is null or ${activityEfforts.updated_at} <= ${input.asOf}`,
+              or(isNull(activityEfforts.updated_at), lte(activityEfforts.updated_at, input.asOf)),
             ),
           )
           .orderBy(desc(activityEfforts.recorded_at), desc(activityEfforts.id))
@@ -620,7 +620,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
   goalId?: string;
   asOf: Date;
   activityLookbackDays?: number;
-}): Promise<AthleteIntelligenceModelInput> {
+}): Promise<ParsedAthleteIntelligenceModelInput> {
   const asOf = new Date(input.asOf);
   const goalId = input.goalId ?? "goal-1";
   const from = new Date(

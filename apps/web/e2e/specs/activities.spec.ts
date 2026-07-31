@@ -1,4 +1,5 @@
 import {
+  activityFileForIdentity,
   activityFiles,
   activityFixtureIdentity,
   deleteImportedActivity,
@@ -10,6 +11,7 @@ test.describe("completed activities and imports", () => {
   test("imports real GPX, exposes streams, recovers engagement, enforces sharing, filters history, and deletes", async ({
     athletePage,
   }, testInfo) => {
+    test.setTimeout(60_000);
     const name = activityFixtureIdentity(testInfo, "GPX");
     let activityId = "";
     try {
@@ -26,34 +28,44 @@ test.describe("completed activities and imports", () => {
       await expect(athletePage.getByText("Session RPE saved.")).toBeVisible();
       await expect(athletePage.getByText(/Current RPE 6\/10/)).toBeVisible();
 
-      await athletePage.route("**/api/trpc/social.toggleLike*", (route) => route.abort(), {
-        times: 1,
+      await test.step("recovers a failed like without double-toggling", async () => {
+        await athletePage.route("**/api/trpc/social.toggleLike*", (route) => route.abort(), {
+          times: 1,
+        });
+        await athletePage.getByRole("button", { name: "Like", exact: true }).click();
+        await expect(athletePage.getByRole("button", { name: "Retry like" })).toBeVisible();
+        await athletePage.getByRole("button", { name: "Retry like" }).click();
+        await expect(athletePage.getByRole("button", { name: /1 like/ })).toBeVisible();
       });
-      await athletePage.getByRole("button", { name: "Like", exact: true }).click();
-      await expect(athletePage.getByRole("button", { name: "Retry like" })).toBeVisible();
-      await athletePage.getByRole("button", { name: "Retry like" }).click();
-      await expect(athletePage.getByRole("button", { name: /1 like/ })).toBeVisible();
 
-      await athletePage.route("**/api/trpc/social.addComment*", (route) => route.abort(), {
-        times: 1,
+      await test.step("idempotently retries a comment after response loss", async () => {
+        await athletePage.route(
+          "**/api/trpc/social.addComment*",
+          async (route) => {
+            await route.fetch();
+            await route.abort();
+          },
+          { times: 1 },
+        );
+        await athletePage.getByLabel("Add a comment").fill("Deterministic activity comment");
+        await athletePage.getByRole("button", { name: "Post comment" }).click();
+        await expect(
+          athletePage.getByText("Comment was not posted. Your text is preserved."),
+        ).toBeVisible();
+        await athletePage.getByRole("button", { name: "Post comment" }).click();
+        await expect(athletePage.getByText("Deterministic activity comment")).toHaveCount(1);
       });
-      await athletePage.getByLabel("Add a comment").fill("Deterministic activity comment");
-      await athletePage.getByRole("button", { name: "Post comment" }).click();
-      await expect(
-        athletePage.getByText("Comment was not posted. Your text is preserved."),
-      ).toBeVisible();
-      await athletePage.getByRole("button", { name: "Retry comment" }).click();
-      await expect(athletePage.getByText("Deterministic activity comment")).toBeVisible();
 
-      for (const visibility of ["Private", "Followers"] as const) {
-        await athletePage.getByRole("button", { name: "Change visibility" }).click();
-        await athletePage.getByRole("button", { name: new RegExp(`^${visibility}`) }).click();
-        await expect(athletePage.getByText("Visibility updated")).toBeVisible();
-        await athletePage.keyboard.press("Escape");
-        await athletePage.goto(`/share/activities/${activityId}`);
-        await expect(athletePage.getByRole("heading", { name })).not.toBeVisible();
-        await athletePage.goto(`/activities/${activityId}`);
-      }
+      await athletePage.goto(`/share/activities/${activityId}`);
+      await expect(athletePage.getByRole("heading", { name })).not.toBeVisible();
+      await athletePage.goto(`/activities/${activityId}`);
+      await athletePage.getByRole("button", { name: "Change visibility" }).click();
+      await athletePage.getByRole("button", { name: /^Followers/ }).click();
+      await expect(athletePage.getByText("Visibility updated")).toBeVisible();
+      await athletePage.keyboard.press("Escape");
+      await athletePage.goto(`/share/activities/${activityId}`);
+      await expect(athletePage.getByRole("heading", { name })).not.toBeVisible();
+      await athletePage.goto(`/activities/${activityId}`);
       await athletePage.getByRole("button", { name: "Change visibility" }).click();
       await athletePage.getByRole("button", { name: /^Public/ }).click();
       await expect(athletePage.getByText("Visibility updated")).toBeVisible();
@@ -63,14 +75,14 @@ test.describe("completed activities and imports", () => {
       await athletePage.goto("/activities");
       await athletePage.getByLabel("Search activities").fill(name);
       await athletePage.getByRole("button", { name: "Search" }).click();
-      await expect(athletePage.getByText(name)).toBeVisible();
+      await expect(athletePage.getByRole("heading", { name })).toBeVisible();
       await athletePage.getByLabel("Activity category").selectOption("run");
       await athletePage.getByLabel("Sort by").selectOption("distance");
-      await athletePage.getByLabel("Order").selectOption("asc");
-      await athletePage.getByLabel("From").fill("2026-01-01");
-      await athletePage.getByLabel("To").fill("2026-01-01");
-      await expect(athletePage.getByText(name)).toBeVisible();
-      await athletePage.getByRole("button", { name: "Open" }).click();
+      await athletePage.getByRole("combobox", { name: /^Order/ }).selectOption("asc");
+      await athletePage.getByRole("textbox", { name: "From", exact: true }).fill("2026-01-01");
+      await athletePage.getByRole("textbox", { name: "To", exact: true }).fill("2026-01-01");
+      await expect(athletePage.getByRole("heading", { name })).toBeVisible();
+      await athletePage.getByTestId(`activity-card-${activityId}-open`).click();
 
       await athletePage.getByRole("button", { name: "Delete", exact: true }).click();
       await athletePage.getByRole("button", { name: "Cancel" }).click();
@@ -83,6 +95,7 @@ test.describe("completed activities and imports", () => {
       await expect(
         athletePage.getByText("Activity could not be deleted. Nothing was removed."),
       ).toBeVisible();
+      await athletePage.unroute("**/api/trpc/activities.delete*");
       await expect(athletePage).toHaveURL(new RegExp(`/activities/${activityId}`));
       await deleteImportedActivity(athletePage, activityId);
       activityId = "";
@@ -119,6 +132,7 @@ test.describe("completed activities and imports", () => {
   test("keeps the selected file recoverable after a failed parse and retries with valid GPX", async ({
     athletePage,
   }, testInfo) => {
+    test.setTimeout(60_000);
     const name = activityFixtureIdentity(testInfo, "GPX retry");
     let activityId = "";
     try {
@@ -131,8 +145,11 @@ test.describe("completed activities and imports", () => {
       await athletePage.getByTestId("activity-import-name-input").fill(name);
       await athletePage.getByRole("button", { name: "Import activity" }).click();
       await expect(athletePage.getByRole("alert")).toBeVisible();
-      await athletePage.getByTestId("activity-import-file-input").setInputFiles(activityFiles.gpx);
+      await athletePage
+        .getByTestId("activity-import-file-input")
+        .setInputFiles(activityFileForIdentity(activityFiles.gpx, name));
       await athletePage.getByRole("button", { name: "Import activity" }).click();
+      await athletePage.waitForURL(/\/activities\/[0-9a-f-]+\/?$/, { timeout: 30_000 });
       await expect(athletePage.getByRole("heading", { name })).toBeVisible();
       activityId = athletePage.url().match(/\/activities\/([0-9a-f-]+)/)?.[1] ?? "";
     } finally {

@@ -23,7 +23,7 @@ import {
 } from "../verification/deriveFixtureBackedSystemPlanContracts";
 import {
   calculateSystemTemplateDurationSeconds,
-  validateSystemTemplateActivityPlanV3,
+  validateSystemTemplateActivityPlan,
 } from "../verification/systemPlanAudit";
 
 export type ToleranceClass = "tight" | "moderate" | "flexible";
@@ -278,7 +278,7 @@ export function materializeSystemPlanScenario(scenario: SystemPlanContractScenar
         thresholdHr: estimationProfile.threshold_hr,
         thresholdPaceSecondsPerKm: estimationProfile.threshold_pace_seconds_per_km,
         activityCategory: deriveSystemActivityTemplateActivityCategory(template.structure) as never,
-        structure: validateSystemTemplateActivityPlanV3(template),
+        structure: validateSystemTemplateActivityPlan(template),
       });
 
       return {

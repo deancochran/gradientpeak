@@ -101,7 +101,7 @@ function projectionFixture<T extends ProjectionChartFixture>(fixture: T): T {
 const baseProjectionDiagnostics: NonNullable<ProjectionChartFixture["projection_diagnostics"]> = {
   selected_path: "full_mpc",
   fallback_reason: null,
-  candidate_counts: { full_mpc: 0, degraded_bounded_mpc: 0, legacy_optimizer: 0 },
+  candidate_counts: { full_mpc: 0, degraded_bounded_mpc: 0 },
   prune_counts: { full_mpc: 0, degraded_bounded_mpc: 0 },
   active_constraints: [],
   tie_break_chain: [],
@@ -184,7 +184,7 @@ describe("CreationProjectionChart metadata", () => {
     ).toBe(true);
   });
 
-  it("uses canonical display_points series without local synthetic points", () => {
+  it("uses the canonical points series without local synthetic points", () => {
     renderNative(
       <CreationProjectionChart
         projectionChart={projectionFixture({
@@ -199,8 +199,6 @@ describe("CreationProjectionChart metadata", () => {
               predicted_form_tsb: -7,
               readiness_score: 74,
             },
-          ],
-          display_points: [
             {
               date: "2026-02-20",
               predicted_load_tss: 430,
@@ -233,7 +231,7 @@ describe("CreationProjectionChart metadata", () => {
     );
 
     expect(new Set(tabs.map((node: ReactTestInstance) => node.props.accessibilityLabel)).size).toBe(
-      2,
+      3,
     );
   });
 
@@ -506,7 +504,7 @@ describe("CreationProjectionChart metadata", () => {
             ...baseProjectionDiagnostics,
             selected_path: "full_mpc",
             fallback_reason: null,
-            candidate_counts: { full_mpc: 42, degraded_bounded_mpc: 0, legacy_optimizer: 0 },
+            candidate_counts: { full_mpc: 42, degraded_bounded_mpc: 0 },
             prune_counts: { full_mpc: 6, degraded_bounded_mpc: 0 },
             active_constraints: ["single_mode_safety_caps_enforced", "feasibility_caps_enforced"],
             tie_break_chain: ["objective", "readiness"],

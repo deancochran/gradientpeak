@@ -31,9 +31,25 @@ describe("content access row helpers", () => {
 
   it("does not treat geometry-only grants as full read grants", async () => {
     const selectResults = [
-      [{ id: "route-1", ownerProfileId: "profile-2", isPublic: false, isSystem: false }],
+      [
+        {
+          id: "route-1",
+          ownerProfileId: "profile-2",
+          isPublic: false,
+          isSystem: false,
+          storageState: "ready",
+        },
+      ],
       [],
-      [{ id: "route-1", ownerProfileId: "profile-2", isPublic: false, isSystem: false }],
+      [
+        {
+          id: "route-1",
+          ownerProfileId: "profile-2",
+          isPublic: false,
+          isSystem: false,
+          storageState: "ready",
+        },
+      ],
       [{ accessLevel: "read_geometry", sourceType: "event", sourceId: "event-1" }],
     ];
     const builder = {
@@ -51,5 +67,29 @@ describe("content access row helpers", () => {
       allowed: true,
       reason: "grant",
     });
+  });
+
+  it("denies full route access while storage deletion is pending", async () => {
+    const builder = {
+      from: () => builder,
+      where: () => builder,
+      limit: async () => [
+        {
+          id: "route-1",
+          ownerProfileId: "profile-1",
+          isPublic: false,
+          isSystem: false,
+          storageState: "deletion_pending",
+        },
+      ],
+    };
+    const db = { select: () => builder } as unknown as DrizzleQueryExecutor;
+
+    await expect(
+      createContentAccessPermissions(db).canRead("profile-1", {
+        type: "activity_route",
+        id: "route-1",
+      }),
+    ).resolves.toMatchObject({ allowed: false, reason: "denied" });
   });
 });

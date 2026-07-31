@@ -77,7 +77,7 @@ export const INITIAL_ONBOARDING_DATA: OnboardingData = {
   resting_hr: null,
   lthr: null,
   ftp: null,
-  threshold_pace: null,
+  threshold_pace_seconds_per_km: null,
   css: null,
   vo2max: null,
   training_frequency: null,

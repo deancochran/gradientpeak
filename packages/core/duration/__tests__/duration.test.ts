@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compileActivityPlanV3 } from "../../activity-plan";
+import { compileActivityPlan } from "../../activity-plan";
 import {
   describeActivityPlanDuration,
   formatDuration,
@@ -40,7 +40,7 @@ describe("duration module", () => {
   });
 
   it("separates active, rest, distance, and open semantics", () => {
-    const compiled = compileActivityPlanV3({
+    const compiled = compileActivityPlan({
       version: 3,
       segments: [
         {

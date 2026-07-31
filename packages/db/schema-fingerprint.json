@@ -42,8 +42,8 @@
         "event",
         "activity_plan",
         "activity_route",
-        "activity",
-        "group_event_route_delivery"
+        "group_event_route_delivery",
+        "activity"
       ]
     },
     {
@@ -133,6 +133,12 @@
     {
       "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
       "rls": true,
+      "name": "activity_route_deletion_receipts",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
       "name": "activity_routes",
       "forceRls": false
     },
@@ -155,13 +161,13 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "name": "athlete_consent_policy_versions",
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "name": "athlete_data_sharing_consents",
       "forceRls": false
@@ -173,27 +179,15 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
-      "rls": true,
-      "name": "coaches_athletes",
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "name": "coaching_assignments",
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "name": "coaching_engagements",
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
-      "rls": true,
-      "name": "coaching_invitations",
       "forceRls": false
     },
     {
@@ -317,43 +311,25 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "name": "organization_audit_events",
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "name": "organization_membership_role_grants",
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "name": "organization_memberships",
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
-      "rls": true,
-      "name": "organization_permissions",
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
-      "rls": true,
-      "name": "organization_role_permission_grants",
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
-      "rls": true,
-      "name": "organization_roles",
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "name": "organizations",
       "forceRls": false
@@ -653,13 +629,23 @@
       "generated": ""
     },
     {
+      "name": "content_visibility",
+      "type": "text",
+      "table": "activities",
+      "default": "'private'::text",
+      "notNull": true,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
       "name": "provider",
       "type": "integration_provider",
       "table": "activities",
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 10,
+      "position": 11,
       "generated": ""
     },
     {
@@ -669,267 +655,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 11,
-      "generated": ""
-    },
-    {
-      "name": "distance_meters",
-      "type": "integer",
-      "table": "activities",
-      "default": "0",
-      "notNull": true,
-      "identity": "",
       "position": 12,
-      "generated": ""
-    },
-    {
-      "name": "elevation_gain_meters",
-      "type": "numeric(10,2)",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 13,
-      "generated": ""
-    },
-    {
-      "name": "elevation_loss_meters",
-      "type": "numeric(10,2)",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 14,
-      "generated": ""
-    },
-    {
-      "name": "calories",
-      "type": "integer",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 15,
-      "generated": ""
-    },
-    {
-      "name": "avg_heart_rate",
-      "type": "integer",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 16,
-      "generated": ""
-    },
-    {
-      "name": "max_heart_rate",
-      "type": "integer",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 17,
-      "generated": ""
-    },
-    {
-      "name": "avg_power",
-      "type": "integer",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 18,
-      "generated": ""
-    },
-    {
-      "name": "max_power",
-      "type": "integer",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 19,
-      "generated": ""
-    },
-    {
-      "name": "avg_cadence",
-      "type": "integer",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 20,
-      "generated": ""
-    },
-    {
-      "name": "max_cadence",
-      "type": "integer",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 21,
-      "generated": ""
-    },
-    {
-      "name": "avg_speed_mps",
-      "type": "numeric(6,2)",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 22,
-      "generated": ""
-    },
-    {
-      "name": "max_speed_mps",
-      "type": "numeric(6,2)",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 23,
-      "generated": ""
-    },
-    {
-      "name": "normalized_speed_mps",
-      "type": "numeric(6,2)",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 24,
-      "generated": ""
-    },
-    {
-      "name": "normalized_graded_speed_mps",
-      "type": "numeric(6,2)",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 25,
-      "generated": ""
-    },
-    {
-      "name": "avg_temperature",
-      "type": "numeric",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 26,
-      "generated": ""
-    },
-    {
-      "name": "avg_swolf",
-      "type": "numeric",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 27,
-      "generated": ""
-    },
-    {
-      "name": "efficiency_factor",
-      "type": "numeric",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 28,
-      "generated": ""
-    },
-    {
-      "name": "aerobic_decoupling",
-      "type": "numeric",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 29,
-      "generated": ""
-    },
-    {
-      "name": "pool_length",
-      "type": "numeric",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 30,
-      "generated": ""
-    },
-    {
-      "name": "total_strokes",
-      "type": "integer",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 31,
-      "generated": ""
-    },
-    {
-      "name": "device_manufacturer",
-      "type": "text",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 32,
-      "generated": ""
-    },
-    {
-      "name": "device_product",
-      "type": "text",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 33,
-      "generated": ""
-    },
-    {
-      "name": "polyline",
-      "type": "text",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 34,
-      "generated": ""
-    },
-    {
-      "name": "laps",
-      "type": "jsonb",
-      "table": "activities",
-      "default": "'[]'::jsonb",
-      "notNull": true,
-      "identity": "",
-      "position": 35,
-      "generated": ""
-    },
-    {
-      "name": "map_bounds",
-      "type": "jsonb",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 36,
-      "generated": ""
-    },
-    {
-      "name": "content_visibility",
-      "type": "text",
-      "table": "activities",
-      "default": "'private'::text",
-      "notNull": true,
-      "identity": "",
-      "position": 37,
       "generated": ""
     },
     {
@@ -939,7 +665,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 38,
+      "position": 13,
       "generated": ""
     },
     {
@@ -949,7 +675,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 39,
+      "position": 14,
       "generated": ""
     },
     {
@@ -959,7 +685,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 40,
+      "position": 15,
       "generated": ""
     },
     {
@@ -969,7 +695,7 @@
       "default": "'unavailable'::text",
       "notNull": true,
       "identity": "",
-      "position": 41,
+      "position": 16,
       "generated": ""
     },
     {
@@ -979,7 +705,7 @@
       "default": "1",
       "notNull": true,
       "identity": "",
-      "position": 42,
+      "position": 17,
       "generated": ""
     },
     {
@@ -989,7 +715,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 43,
+      "position": 18,
       "generated": ""
     },
     {
@@ -999,7 +725,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 44,
+      "position": 19,
       "generated": ""
     },
     {
@@ -1009,7 +735,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 45,
+      "position": 20,
       "generated": ""
     },
     {
@@ -1018,6 +744,256 @@
       "table": "activities",
       "default": "now()",
       "notNull": true,
+      "identity": "",
+      "position": 21,
+      "generated": ""
+    },
+    {
+      "name": "distance_meters",
+      "type": "integer",
+      "table": "activities",
+      "default": "0",
+      "notNull": true,
+      "identity": "",
+      "position": 22,
+      "generated": ""
+    },
+    {
+      "name": "elevation_gain_meters",
+      "type": "numeric(10,2)",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 23,
+      "generated": ""
+    },
+    {
+      "name": "elevation_loss_meters",
+      "type": "numeric(10,2)",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 24,
+      "generated": ""
+    },
+    {
+      "name": "calories",
+      "type": "integer",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 25,
+      "generated": ""
+    },
+    {
+      "name": "avg_heart_rate",
+      "type": "integer",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 26,
+      "generated": ""
+    },
+    {
+      "name": "max_heart_rate",
+      "type": "integer",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 27,
+      "generated": ""
+    },
+    {
+      "name": "avg_power",
+      "type": "integer",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 28,
+      "generated": ""
+    },
+    {
+      "name": "max_power",
+      "type": "integer",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 29,
+      "generated": ""
+    },
+    {
+      "name": "avg_cadence",
+      "type": "integer",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 30,
+      "generated": ""
+    },
+    {
+      "name": "max_cadence",
+      "type": "integer",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 31,
+      "generated": ""
+    },
+    {
+      "name": "avg_speed_mps",
+      "type": "numeric(6,2)",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 32,
+      "generated": ""
+    },
+    {
+      "name": "max_speed_mps",
+      "type": "numeric(6,2)",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 33,
+      "generated": ""
+    },
+    {
+      "name": "normalized_speed_mps",
+      "type": "numeric(6,2)",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 34,
+      "generated": ""
+    },
+    {
+      "name": "normalized_graded_speed_mps",
+      "type": "numeric(6,2)",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 35,
+      "generated": ""
+    },
+    {
+      "name": "avg_temperature",
+      "type": "numeric",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 36,
+      "generated": ""
+    },
+    {
+      "name": "avg_swolf",
+      "type": "numeric",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 37,
+      "generated": ""
+    },
+    {
+      "name": "efficiency_factor",
+      "type": "numeric",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 38,
+      "generated": ""
+    },
+    {
+      "name": "aerobic_decoupling",
+      "type": "numeric",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 39,
+      "generated": ""
+    },
+    {
+      "name": "pool_length_meters",
+      "type": "numeric",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 40,
+      "generated": ""
+    },
+    {
+      "name": "total_strokes",
+      "type": "integer",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 41,
+      "generated": ""
+    },
+    {
+      "name": "device_manufacturer",
+      "type": "text",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 42,
+      "generated": ""
+    },
+    {
+      "name": "device_product",
+      "type": "text",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 43,
+      "generated": ""
+    },
+    {
+      "name": "polyline",
+      "type": "text",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 44,
+      "generated": ""
+    },
+    {
+      "name": "laps",
+      "type": "jsonb",
+      "table": "activities",
+      "default": "'[]'::jsonb",
+      "notNull": true,
+      "identity": "",
+      "position": 45,
+      "generated": ""
+    },
+    {
+      "name": "map_bounds",
+      "type": "jsonb",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
       "identity": "",
       "position": 46,
       "generated": ""
@@ -1313,123 +1289,23 @@
       "generated": ""
     },
     {
-      "name": "recorded_at",
-      "type": "timestamp with time zone",
-      "table": "activity_efforts",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 6,
-      "generated": ""
-    },
-    {
-      "name": "effort_type",
-      "type": "effort_type",
-      "table": "activity_efforts",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 7,
-      "generated": ""
-    },
-    {
-      "name": "duration_seconds",
-      "type": "integer",
-      "table": "activity_efforts",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 8,
-      "generated": ""
-    },
-    {
-      "name": "start_offset",
-      "type": "integer",
-      "table": "activity_efforts",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 9,
-      "generated": ""
-    },
-    {
-      "name": "unit",
-      "type": "text",
-      "table": "activity_efforts",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 10,
-      "generated": ""
-    },
-    {
-      "name": "value",
-      "type": "real",
-      "table": "activity_efforts",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 11,
-      "generated": ""
-    },
-    {
-      "name": "source",
-      "type": "evidence_observation_source",
-      "table": "activity_efforts",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 12,
-      "generated": ""
-    },
-    {
-      "name": "method",
-      "type": "text",
-      "table": "activity_efforts",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 13,
-      "generated": ""
-    },
-    {
-      "name": "calculation_version",
-      "type": "text",
-      "table": "activity_efforts",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 14,
-      "generated": ""
-    },
-    {
-      "name": "quality_score",
-      "type": "numeric",
-      "table": "activity_efforts",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 15,
-      "generated": ""
-    },
-    {
-      "name": "provenance",
-      "type": "jsonb",
-      "table": "activity_efforts",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 16,
-      "generated": ""
-    },
-    {
       "name": "segment_id",
       "type": "uuid",
       "table": "activity_efforts",
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 17,
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "recorded_at",
+      "type": "timestamp with time zone",
+      "table": "activity_efforts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
       "generated": ""
     },
     {
@@ -1439,12 +1315,112 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 18,
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "effort_type",
+      "type": "effort_type",
+      "table": "activity_efforts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "duration_seconds",
+      "type": "integer",
+      "table": "activity_efforts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 10,
       "generated": ""
     },
     {
       "name": "distance_meters",
       "type": "integer",
+      "table": "activity_efforts",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 11,
+      "generated": ""
+    },
+    {
+      "name": "start_offset",
+      "type": "integer",
+      "table": "activity_efforts",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 12,
+      "generated": ""
+    },
+    {
+      "name": "unit",
+      "type": "text",
+      "table": "activity_efforts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 13,
+      "generated": ""
+    },
+    {
+      "name": "value",
+      "type": "real",
+      "table": "activity_efforts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 14,
+      "generated": ""
+    },
+    {
+      "name": "source",
+      "type": "evidence_observation_source",
+      "table": "activity_efforts",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 15,
+      "generated": ""
+    },
+    {
+      "name": "method",
+      "type": "text",
+      "table": "activity_efforts",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 16,
+      "generated": ""
+    },
+    {
+      "name": "calculation_version",
+      "type": "text",
+      "table": "activity_efforts",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 17,
+      "generated": ""
+    },
+    {
+      "name": "quality_score",
+      "type": "numeric",
+      "table": "activity_efforts",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 18,
+      "generated": ""
+    },
+    {
+      "name": "provenance",
+      "type": "jsonb",
       "table": "activity_efforts",
       "default": "",
       "notNull": false,
@@ -1473,13 +1449,23 @@
       "generated": ""
     },
     {
+      "name": "artifact_id",
+      "type": "uuid",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
       "name": "profile_id",
       "type": "uuid",
       "table": "activity_file_ingestions",
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 3,
+      "position": 4,
       "generated": ""
     },
     {
@@ -1489,7 +1475,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 4,
+      "position": 5,
       "generated": ""
     },
     {
@@ -1499,7 +1485,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 5,
+      "position": 6,
       "generated": ""
     },
     {
@@ -1509,117 +1495,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 6,
-      "generated": ""
-    },
-    {
-      "name": "status",
-      "type": "activity_file_ingestion_status",
-      "table": "activity_file_ingestions",
-      "default": "'pending_upload'::activity_file_ingestion_status",
-      "notNull": true,
-      "identity": "",
       "position": 7,
-      "generated": ""
-    },
-    {
-      "name": "attempt_count",
-      "type": "integer",
-      "table": "activity_file_ingestions",
-      "default": "0",
-      "notNull": true,
-      "identity": "",
-      "position": 8,
-      "generated": ""
-    },
-    {
-      "name": "last_error_code",
-      "type": "text",
-      "table": "activity_file_ingestions",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 9,
-      "generated": ""
-    },
-    {
-      "name": "last_error_message",
-      "type": "text",
-      "table": "activity_file_ingestions",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 10,
-      "generated": ""
-    },
-    {
-      "name": "requested_at",
-      "type": "timestamp with time zone",
-      "table": "activity_file_ingestions",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 11,
-      "generated": ""
-    },
-    {
-      "name": "started_at",
-      "type": "timestamp with time zone",
-      "table": "activity_file_ingestions",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 12,
-      "generated": ""
-    },
-    {
-      "name": "completed_at",
-      "type": "timestamp with time zone",
-      "table": "activity_file_ingestions",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 13,
-      "generated": ""
-    },
-    {
-      "name": "failed_at",
-      "type": "timestamp with time zone",
-      "table": "activity_file_ingestions",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 14,
-      "generated": ""
-    },
-    {
-      "name": "created_at",
-      "type": "timestamp with time zone",
-      "table": "activity_file_ingestions",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 15,
-      "generated": ""
-    },
-    {
-      "name": "updated_at",
-      "type": "timestamp with time zone",
-      "table": "activity_file_ingestions",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 16,
-      "generated": ""
-    },
-    {
-      "name": "artifact_id",
-      "type": "uuid",
-      "table": "activity_file_ingestions",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 17,
       "generated": ""
     },
     {
@@ -1629,7 +1505,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 18,
+      "position": 8,
       "generated": ""
     },
     {
@@ -1639,7 +1515,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 19,
+      "position": 9,
       "generated": ""
     },
     {
@@ -1649,7 +1525,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 20,
+      "position": 10,
       "generated": ""
     },
     {
@@ -1659,17 +1535,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 21,
-      "generated": ""
-    },
-    {
-      "name": "received_at",
-      "type": "timestamp with time zone",
-      "table": "activity_file_ingestions",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 22,
+      "position": 11,
       "generated": ""
     },
     {
@@ -1679,7 +1545,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 23,
+      "position": 12,
       "generated": ""
     },
     {
@@ -1689,7 +1555,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 24,
+      "position": 13,
       "generated": ""
     },
     {
@@ -1699,7 +1565,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 25,
+      "position": 14,
       "generated": ""
     },
     {
@@ -1709,7 +1575,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 26,
+      "position": 15,
       "generated": ""
     },
     {
@@ -1719,7 +1585,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 27,
+      "position": 16,
       "generated": ""
     },
     {
@@ -1729,7 +1595,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 28,
+      "position": 17,
       "generated": ""
     },
     {
@@ -1739,7 +1605,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 29,
+      "position": 18,
       "generated": ""
     },
     {
@@ -1749,7 +1615,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 30,
+      "position": 19,
       "generated": ""
     },
     {
@@ -1759,7 +1625,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 31,
+      "position": 20,
       "generated": ""
     },
     {
@@ -1769,7 +1635,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 32,
+      "position": 21,
       "generated": ""
     },
     {
@@ -1779,7 +1645,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 33,
+      "position": 22,
       "generated": ""
     },
     {
@@ -1789,7 +1655,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 34,
+      "position": 23,
       "generated": ""
     },
     {
@@ -1799,7 +1665,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 35,
+      "position": 24,
       "generated": ""
     },
     {
@@ -1809,7 +1675,7 @@
       "default": "false",
       "notNull": true,
       "identity": "",
-      "position": 36,
+      "position": 25,
       "generated": ""
     },
     {
@@ -1819,7 +1685,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 37,
+      "position": 26,
       "generated": ""
     },
     {
@@ -1828,6 +1694,116 @@
       "table": "activity_file_ingestions",
       "default": "",
       "notNull": false,
+      "identity": "",
+      "position": 27,
+      "generated": ""
+    },
+    {
+      "name": "received_at",
+      "type": "timestamp with time zone",
+      "table": "activity_file_ingestions",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 28,
+      "generated": ""
+    },
+    {
+      "name": "status",
+      "type": "activity_file_ingestion_status",
+      "table": "activity_file_ingestions",
+      "default": "'pending_upload'::activity_file_ingestion_status",
+      "notNull": true,
+      "identity": "",
+      "position": 29,
+      "generated": ""
+    },
+    {
+      "name": "attempt_count",
+      "type": "integer",
+      "table": "activity_file_ingestions",
+      "default": "0",
+      "notNull": true,
+      "identity": "",
+      "position": 30,
+      "generated": ""
+    },
+    {
+      "name": "last_error_code",
+      "type": "text",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 31,
+      "generated": ""
+    },
+    {
+      "name": "last_error_message",
+      "type": "text",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 32,
+      "generated": ""
+    },
+    {
+      "name": "requested_at",
+      "type": "timestamp with time zone",
+      "table": "activity_file_ingestions",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 33,
+      "generated": ""
+    },
+    {
+      "name": "started_at",
+      "type": "timestamp with time zone",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 34,
+      "generated": ""
+    },
+    {
+      "name": "completed_at",
+      "type": "timestamp with time zone",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 35,
+      "generated": ""
+    },
+    {
+      "name": "failed_at",
+      "type": "timestamp with time zone",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 36,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "activity_file_ingestions",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 37,
+      "generated": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "activity_file_ingestions",
+      "default": "now()",
+      "notNull": true,
       "identity": "",
       "position": 38,
       "generated": ""
@@ -1913,63 +1889,13 @@
       "generated": ""
     },
     {
-      "name": "template_visibility",
-      "type": "text",
-      "table": "activity_plans",
-      "default": "'private'::text",
-      "notNull": true,
-      "identity": "",
-      "position": 9,
-      "generated": ""
-    },
-    {
-      "name": "import_provider",
-      "type": "text",
-      "table": "activity_plans",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 10,
-      "generated": ""
-    },
-    {
-      "name": "import_external_id",
-      "type": "text",
-      "table": "activity_plans",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 11,
-      "generated": ""
-    },
-    {
-      "name": "is_system_template",
-      "type": "boolean",
-      "table": "activity_plans",
-      "default": "false",
-      "notNull": true,
-      "identity": "",
-      "position": 12,
-      "generated": ""
-    },
-    {
-      "name": "content_visibility",
-      "type": "text",
-      "table": "activity_plans",
-      "default": "'private'::text",
-      "notNull": true,
-      "identity": "",
-      "position": 13,
-      "generated": ""
-    },
-    {
       "name": "structure_hash",
       "type": "text",
       "table": "activity_plans",
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 14,
+      "position": 9,
       "generated": ""
     },
     {
@@ -1979,7 +1905,97 @@
       "default": "true",
       "notNull": true,
       "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "template_visibility",
+      "type": "text",
+      "table": "activity_plans",
+      "default": "'private'::text",
+      "notNull": true,
+      "identity": "",
+      "position": 11,
+      "generated": ""
+    },
+    {
+      "name": "content_visibility",
+      "type": "text",
+      "table": "activity_plans",
+      "default": "'private'::text",
+      "notNull": true,
+      "identity": "",
+      "position": 12,
+      "generated": ""
+    },
+    {
+      "name": "import_provider",
+      "type": "text",
+      "table": "activity_plans",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 13,
+      "generated": ""
+    },
+    {
+      "name": "import_external_id",
+      "type": "text",
+      "table": "activity_plans",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 14,
+      "generated": ""
+    },
+    {
+      "name": "is_system_template",
+      "type": "boolean",
+      "table": "activity_plans",
+      "default": "false",
+      "notNull": true,
+      "identity": "",
       "position": 15,
+      "generated": ""
+    },
+    {
+      "name": "route_id",
+      "type": "uuid",
+      "table": "activity_route_deletion_receipts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "profile_id",
+      "type": "uuid",
+      "table": "activity_route_deletion_receipts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "file_path",
+      "type": "text",
+      "table": "activity_route_deletion_receipts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "deleted_at",
+      "type": "timestamp with time zone",
+      "table": "activity_route_deletion_receipts",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
       "generated": ""
     },
     {
@@ -2053,13 +2069,33 @@
       "generated": ""
     },
     {
+      "name": "file_sha256",
+      "type": "text",
+      "table": "activity_routes",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "storage_state",
+      "type": "text",
+      "table": "activity_routes",
+      "default": "'ready'::text",
+      "notNull": true,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
       "name": "total_distance",
       "type": "integer",
       "table": "activity_routes",
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 8,
+      "position": 10,
       "generated": ""
     },
     {
@@ -2069,7 +2105,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 9,
+      "position": 11,
       "generated": ""
     },
     {
@@ -2079,7 +2115,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 10,
+      "position": 12,
       "generated": ""
     },
     {
@@ -2089,7 +2125,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 11,
+      "position": 13,
       "generated": ""
     },
     {
@@ -2099,7 +2135,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 12,
+      "position": 14,
       "generated": ""
     },
     {
@@ -2109,7 +2145,7 @@
       "default": "false",
       "notNull": true,
       "identity": "",
-      "position": 13,
+      "position": 15,
       "generated": ""
     },
     {
@@ -2119,7 +2155,7 @@
       "default": "false",
       "notNull": true,
       "identity": "",
-      "position": 14,
+      "position": 16,
       "generated": ""
     },
     {
@@ -2273,13 +2309,33 @@
       "generated": ""
     },
     {
+      "name": "raw_sub_sport_string",
+      "type": "text",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 16,
+      "generated": ""
+    },
+    {
+      "name": "raw_sub_sport_integer",
+      "type": "integer",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 17,
+      "generated": ""
+    },
+    {
       "name": "summary",
       "type": "jsonb",
       "table": "activity_segments",
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 16,
+      "position": 18,
       "generated": ""
     },
     {
@@ -2289,7 +2345,7 @@
       "default": "1",
       "notNull": true,
       "identity": "",
-      "position": 17,
+      "position": 19,
       "generated": ""
     },
     {
@@ -2299,7 +2355,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 18,
+      "position": 20,
       "generated": ""
     },
     {
@@ -2309,7 +2365,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 19,
+      "position": 21,
       "generated": ""
     },
     {
@@ -2319,7 +2375,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 20,
+      "position": 22,
       "generated": ""
     },
     {
@@ -2329,7 +2385,7 @@
       "default": "1",
       "notNull": true,
       "identity": "",
-      "position": 21,
+      "position": 23,
       "generated": ""
     },
     {
@@ -2339,7 +2395,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 22,
+      "position": 24,
       "generated": ""
     },
     {
@@ -2349,7 +2405,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 23,
+      "position": 25,
       "generated": ""
     },
     {
@@ -2358,26 +2414,6 @@
       "table": "activity_segments",
       "default": "now()",
       "notNull": true,
-      "identity": "",
-      "position": 24,
-      "generated": ""
-    },
-    {
-      "name": "raw_sub_sport_string",
-      "type": "text",
-      "table": "activity_segments",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 25,
-      "generated": ""
-    },
-    {
-      "name": "raw_sub_sport_integer",
-      "type": "integer",
-      "table": "activity_segments",
-      "default": "",
-      "notNull": false,
       "identity": "",
       "position": 26,
       "generated": ""
@@ -2773,56 +2809,6 @@
       "generated": ""
     },
     {
-      "name": "coach_id",
-      "type": "uuid",
-      "table": "coaches_athletes",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 1,
-      "generated": ""
-    },
-    {
-      "name": "athlete_id",
-      "type": "uuid",
-      "table": "coaches_athletes",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
-      "generated": ""
-    },
-    {
-      "name": "created_at",
-      "type": "timestamp with time zone",
-      "table": "coaches_athletes",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 3,
-      "generated": ""
-    },
-    {
-      "name": "revoked_at",
-      "type": "timestamp with time zone",
-      "table": "coaches_athletes",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 4,
-      "generated": ""
-    },
-    {
-      "name": "revision",
-      "type": "integer",
-      "table": "coaches_athletes",
-      "default": "1",
-      "notNull": true,
-      "identity": "",
-      "position": 5,
-      "generated": ""
-    },
-    {
       "name": "id",
       "type": "uuid",
       "table": "coaching_assignments",
@@ -2960,66 +2946,6 @@
       "notNull": true,
       "identity": "",
       "position": 7,
-      "generated": ""
-    },
-    {
-      "name": "id",
-      "type": "uuid",
-      "table": "coaching_invitations",
-      "default": "gen_random_uuid()",
-      "notNull": true,
-      "identity": "",
-      "position": 1,
-      "generated": ""
-    },
-    {
-      "name": "athlete_id",
-      "type": "uuid",
-      "table": "coaching_invitations",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
-      "generated": ""
-    },
-    {
-      "name": "coach_id",
-      "type": "uuid",
-      "table": "coaching_invitations",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 3,
-      "generated": ""
-    },
-    {
-      "name": "status",
-      "type": "text",
-      "table": "coaching_invitations",
-      "default": "'pending'::text",
-      "notNull": true,
-      "identity": "",
-      "position": 4,
-      "generated": ""
-    },
-    {
-      "name": "created_at",
-      "type": "timestamp with time zone",
-      "table": "coaching_invitations",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 5,
-      "generated": ""
-    },
-    {
-      "name": "updated_at",
-      "type": "timestamp with time zone",
-      "table": "coaching_invitations",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 6,
       "generated": ""
     },
     {
@@ -3913,13 +3839,23 @@
       "generated": ""
     },
     {
+      "name": "activity_plan_id",
+      "type": "uuid",
+      "table": "group_events",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 15,
+      "generated": ""
+    },
+    {
       "name": "cancelled_at",
       "type": "timestamp with time zone",
       "table": "group_events",
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 15,
+      "position": 16,
       "generated": ""
     },
     {
@@ -3929,7 +3865,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 16,
+      "position": 17,
       "generated": ""
     },
     {
@@ -3938,16 +3874,6 @@
       "table": "group_events",
       "default": "now()",
       "notNull": true,
-      "identity": "",
-      "position": 17,
-      "generated": ""
-    },
-    {
-      "name": "activity_plan_id",
-      "type": "uuid",
-      "table": "group_events",
-      "default": "",
-      "notNull": false,
       "identity": "",
       "position": 18,
       "generated": ""
@@ -4313,33 +4239,13 @@
       "generated": ""
     },
     {
-      "name": "created_at",
-      "type": "timestamp with time zone",
-      "table": "integration_credentials",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 6,
-      "generated": ""
-    },
-    {
-      "name": "updated_at",
-      "type": "timestamp with time zone",
-      "table": "integration_credentials",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 7,
-      "generated": ""
-    },
-    {
       "name": "generation",
       "type": "integer",
       "table": "integration_credentials",
       "default": "1",
       "notNull": true,
       "identity": "",
-      "position": 8,
+      "position": 6,
       "generated": ""
     },
     {
@@ -4348,6 +4254,26 @@
       "table": "integration_credentials",
       "default": "",
       "notNull": false,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "integration_credentials",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "integration_credentials",
+      "default": "now()",
+      "notNull": true,
       "identity": "",
       "position": 9,
       "generated": ""
@@ -4523,33 +4449,13 @@
       "generated": ""
     },
     {
-      "name": "created_at",
-      "type": "timestamp with time zone",
-      "table": "integrations",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 5,
-      "generated": ""
-    },
-    {
-      "name": "updated_at",
-      "type": "timestamp with time zone",
-      "table": "integrations",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 6,
-      "generated": ""
-    },
-    {
       "name": "lifecycle_status",
       "type": "text",
       "table": "integrations",
       "default": "'active'::text",
       "notNull": true,
       "identity": "",
-      "position": 7,
+      "position": 5,
       "generated": ""
     },
     {
@@ -4559,7 +4465,7 @@
       "default": "1",
       "notNull": true,
       "identity": "",
-      "position": 8,
+      "position": 6,
       "generated": ""
     },
     {
@@ -4569,7 +4475,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 9,
+      "position": 7,
       "generated": ""
     },
     {
@@ -4579,7 +4485,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 10,
+      "position": 8,
       "generated": ""
     },
     {
@@ -4588,6 +4494,26 @@
       "table": "integrations",
       "default": "",
       "notNull": false,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "integrations",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "integrations",
+      "default": "now()",
+      "notNull": true,
       "identity": "",
       "position": 11,
       "generated": ""
@@ -4833,33 +4759,13 @@
       "generated": ""
     },
     {
-      "name": "created_at",
-      "type": "timestamp with time zone",
-      "table": "oauth_states",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 6,
-      "generated": ""
-    },
-    {
-      "name": "expires_at",
-      "type": "timestamp with time zone",
-      "table": "oauth_states",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 7,
-      "generated": ""
-    },
-    {
       "name": "callback_uri",
       "type": "text",
       "table": "oauth_states",
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 8,
+      "position": 6,
       "generated": ""
     },
     {
@@ -4869,7 +4775,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 9,
+      "position": 7,
       "generated": ""
     },
     {
@@ -4878,6 +4784,26 @@
       "table": "oauth_states",
       "default": "",
       "notNull": false,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "oauth_states",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "expires_at",
+      "type": "timestamp with time zone",
+      "table": "oauth_states",
+      "default": "",
+      "notNull": true,
       "identity": "",
       "position": 10,
       "generated": ""
@@ -4983,17 +4909,17 @@
       "generated": ""
     },
     {
-      "name": "organization_id",
+      "name": "id",
       "type": "uuid",
       "table": "organization_membership_role_grants",
-      "default": "",
+      "default": "gen_random_uuid()",
       "notNull": true,
       "identity": "",
       "position": 1,
       "generated": ""
     },
     {
-      "name": "membership_id",
+      "name": "organization_id",
       "type": "uuid",
       "table": "organization_membership_role_grants",
       "default": "",
@@ -5003,53 +4929,13 @@
       "generated": ""
     },
     {
-      "name": "role_id",
+      "name": "membership_id",
       "type": "uuid",
       "table": "organization_membership_role_grants",
       "default": "",
-      "notNull": false,
+      "notNull": true,
       "identity": "",
       "position": 3,
-      "generated": ""
-    },
-    {
-      "name": "status",
-      "type": "text",
-      "table": "organization_membership_role_grants",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 4,
-      "generated": ""
-    },
-    {
-      "name": "created_at",
-      "type": "timestamp with time zone",
-      "table": "organization_membership_role_grants",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 5,
-      "generated": ""
-    },
-    {
-      "name": "updated_at",
-      "type": "timestamp with time zone",
-      "table": "organization_membership_role_grants",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 6,
-      "generated": ""
-    },
-    {
-      "name": "id",
-      "type": "uuid",
-      "table": "organization_membership_role_grants",
-      "default": "gen_random_uuid()",
-      "notNull": true,
-      "identity": "",
-      "position": 7,
       "generated": ""
     },
     {
@@ -5059,7 +4945,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 8,
+      "position": 4,
       "generated": ""
     },
     {
@@ -5069,7 +4955,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 9,
+      "position": 5,
       "generated": ""
     },
     {
@@ -5079,7 +4965,27 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 10,
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "organization_membership_role_grants",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "organization_membership_role_grants",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
       "generated": ""
     },
     {
@@ -5113,43 +5019,13 @@
       "generated": ""
     },
     {
-      "name": "status",
-      "type": "text",
-      "table": "organization_memberships",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 4,
-      "generated": ""
-    },
-    {
-      "name": "created_at",
-      "type": "timestamp with time zone",
-      "table": "organization_memberships",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 5,
-      "generated": ""
-    },
-    {
-      "name": "updated_at",
-      "type": "timestamp with time zone",
-      "table": "organization_memberships",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 6,
-      "generated": ""
-    },
-    {
       "name": "suspended_at",
       "type": "timestamp with time zone",
       "table": "organization_memberships",
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 7,
+      "position": 4,
       "generated": ""
     },
     {
@@ -5159,127 +5035,27 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 8,
-      "generated": ""
-    },
-    {
-      "name": "key",
-      "type": "text",
-      "table": "organization_permissions",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 1,
-      "generated": ""
-    },
-    {
-      "name": "description",
-      "type": "text",
-      "table": "organization_permissions",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
-      "generated": ""
-    },
-    {
-      "name": "created_at",
-      "type": "timestamp with time zone",
-      "table": "organization_permissions",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 3,
-      "generated": ""
-    },
-    {
-      "name": "role_id",
-      "type": "uuid",
-      "table": "organization_role_permission_grants",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 1,
-      "generated": ""
-    },
-    {
-      "name": "permission_key",
-      "type": "text",
-      "table": "organization_role_permission_grants",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
-      "generated": ""
-    },
-    {
-      "name": "created_at",
-      "type": "timestamp with time zone",
-      "table": "organization_role_permission_grants",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 3,
-      "generated": ""
-    },
-    {
-      "name": "id",
-      "type": "uuid",
-      "table": "organization_roles",
-      "default": "gen_random_uuid()",
-      "notNull": true,
-      "identity": "",
-      "position": 1,
-      "generated": ""
-    },
-    {
-      "name": "organization_id",
-      "type": "uuid",
-      "table": "organization_roles",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
-      "generated": ""
-    },
-    {
-      "name": "key",
-      "type": "text",
-      "table": "organization_roles",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 3,
-      "generated": ""
-    },
-    {
-      "name": "name",
-      "type": "text",
-      "table": "organization_roles",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 4,
-      "generated": ""
-    },
-    {
-      "name": "created_at",
-      "type": "timestamp with time zone",
-      "table": "organization_roles",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
       "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "organization_memberships",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
       "generated": ""
     },
     {
       "name": "updated_at",
       "type": "timestamp with time zone",
-      "table": "organization_roles",
+      "table": "organization_memberships",
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 6,
+      "position": 7,
       "generated": ""
     },
     {
@@ -5303,8 +5079,8 @@
       "generated": ""
     },
     {
-      "name": "name",
-      "type": "text",
+      "name": "root_owner_membership_id",
+      "type": "uuid",
       "table": "organizations",
       "default": "",
       "notNull": true,
@@ -5313,7 +5089,7 @@
       "generated": ""
     },
     {
-      "name": "slug",
+      "name": "name",
       "type": "text",
       "table": "organizations",
       "default": "",
@@ -5323,33 +5099,13 @@
       "generated": ""
     },
     {
-      "name": "created_at",
-      "type": "timestamp with time zone",
-      "table": "organizations",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 5,
-      "generated": ""
-    },
-    {
-      "name": "updated_at",
-      "type": "timestamp with time zone",
-      "table": "organizations",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 6,
-      "generated": ""
-    },
-    {
-      "name": "root_owner_membership_id",
-      "type": "uuid",
+      "name": "slug",
+      "type": "text",
       "table": "organizations",
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 7,
+      "position": 5,
       "generated": ""
     },
     {
@@ -5359,7 +5115,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 8,
+      "position": 6,
       "generated": ""
     },
     {
@@ -5369,7 +5125,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 9,
+      "position": 7,
       "generated": ""
     },
     {
@@ -5378,6 +5134,26 @@
       "table": "organizations",
       "default": "",
       "notNull": false,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "organizations",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "organizations",
+      "default": "now()",
+      "notNull": true,
       "identity": "",
       "position": 10,
       "generated": ""
@@ -5427,7 +5203,7 @@
       "type": "text",
       "table": "profile_goals",
       "default": "",
-      "notNull": false,
+      "notNull": true,
       "identity": "",
       "position": 5,
       "generated": ""
@@ -5437,7 +5213,7 @@
       "type": "date",
       "table": "profile_goals",
       "default": "",
-      "notNull": false,
+      "notNull": true,
       "identity": "",
       "position": 6,
       "generated": ""
@@ -5447,7 +5223,7 @@
       "type": "jsonb",
       "table": "profile_goals",
       "default": "",
-      "notNull": false,
+      "notNull": true,
       "identity": "",
       "position": 7,
       "generated": ""
@@ -5483,23 +5259,13 @@
       "generated": ""
     },
     {
-      "name": "idx",
-      "type": "integer",
-      "table": "profile_metrics",
-      "default": "nextval('profile_metrics_idx_seq'::regclass)",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
-      "generated": ""
-    },
-    {
       "name": "created_at",
       "type": "timestamp with time zone",
       "table": "profile_metrics",
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 3,
+      "position": 2,
       "generated": ""
     },
     {
@@ -5509,7 +5275,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 4,
+      "position": 3,
       "generated": ""
     },
     {
@@ -5519,7 +5285,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 5,
+      "position": 4,
       "generated": ""
     },
     {
@@ -5529,7 +5295,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 6,
+      "position": 5,
       "generated": ""
     },
     {
@@ -5539,7 +5305,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 7,
+      "position": 6,
       "generated": ""
     },
     {
@@ -5549,7 +5315,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 8,
+      "position": 7,
       "generated": ""
     },
     {
@@ -5559,7 +5325,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 9,
+      "position": 8,
       "generated": ""
     },
     {
@@ -5569,7 +5335,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 10,
+      "position": 9,
       "generated": ""
     },
     {
@@ -5579,7 +5345,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 11,
+      "position": 10,
       "generated": ""
     },
     {
@@ -5589,7 +5355,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 12,
+      "position": 11,
       "generated": ""
     },
     {
@@ -5599,7 +5365,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 13,
+      "position": 12,
       "generated": ""
     },
     {
@@ -5609,7 +5375,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 14,
+      "position": 13,
       "generated": ""
     },
     {
@@ -5619,7 +5385,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 15,
+      "position": 14,
       "generated": ""
     },
     {
@@ -5629,7 +5395,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 16,
+      "position": 15,
       "generated": ""
     },
     {
@@ -5783,7 +5549,7 @@
       "generated": ""
     },
     {
-      "name": "preferred_units",
+      "name": "planning_timezone",
       "type": "text",
       "table": "profiles",
       "default": "",
@@ -5793,8 +5559,8 @@
       "generated": ""
     },
     {
-      "name": "onboarded",
-      "type": "boolean",
+      "name": "preferred_units",
+      "type": "text",
       "table": "profiles",
       "default": "",
       "notNull": false,
@@ -5803,21 +5569,21 @@
       "generated": ""
     },
     {
-      "name": "is_public",
+      "name": "onboarded",
       "type": "boolean",
       "table": "profiles",
-      "default": "false",
-      "notNull": true,
+      "default": "",
+      "notNull": false,
       "identity": "",
       "position": 15,
       "generated": ""
     },
     {
-      "name": "planning_timezone",
-      "type": "text",
+      "name": "is_public",
+      "type": "boolean",
       "table": "profiles",
-      "default": "",
-      "notNull": false,
+      "default": "false",
+      "notNull": true,
       "identity": "",
       "position": 16,
       "generated": ""
@@ -5843,17 +5609,17 @@
       "generated": ""
     },
     {
-      "name": "created_at",
-      "type": "timestamp with time zone",
+      "name": "queue_sequence",
+      "type": "bigint",
       "table": "provider_sync_jobs",
-      "default": "now()",
+      "default": "",
       "notNull": true,
-      "identity": "",
+      "identity": "d",
       "position": 2,
       "generated": ""
     },
     {
-      "name": "updated_at",
+      "name": "created_at",
       "type": "timestamp with time zone",
       "table": "provider_sync_jobs",
       "default": "now()",
@@ -5863,17 +5629,17 @@
       "generated": ""
     },
     {
-      "name": "profile_id",
-      "type": "uuid",
+      "name": "updated_at",
+      "type": "timestamp with time zone",
       "table": "provider_sync_jobs",
-      "default": "",
+      "default": "now()",
       "notNull": true,
       "identity": "",
       "position": 4,
       "generated": ""
     },
     {
-      "name": "integration_id",
+      "name": "profile_id",
       "type": "uuid",
       "table": "provider_sync_jobs",
       "default": "",
@@ -5883,13 +5649,33 @@
       "generated": ""
     },
     {
+      "name": "integration_id",
+      "type": "uuid",
+      "table": "provider_sync_jobs",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
       "name": "provider",
       "type": "integration_provider",
       "table": "provider_sync_jobs",
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 6,
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "integration_generation",
+      "type": "integer",
+      "table": "provider_sync_jobs",
+      "default": "1",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
       "generated": ""
     },
     {
@@ -5899,7 +5685,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 7,
+      "position": 9,
       "generated": ""
     },
     {
@@ -5909,7 +5695,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 8,
+      "position": 10,
       "generated": ""
     },
     {
@@ -5919,7 +5705,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 9,
+      "position": 11,
       "generated": ""
     },
     {
@@ -5929,7 +5715,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 10,
+      "position": 12,
       "generated": ""
     },
     {
@@ -5939,7 +5725,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 11,
+      "position": 13,
       "generated": ""
     },
     {
@@ -5949,7 +5735,7 @@
       "default": "'queued'::text",
       "notNull": true,
       "identity": "",
-      "position": 12,
+      "position": 14,
       "generated": ""
     },
     {
@@ -5959,7 +5745,7 @@
       "default": "100",
       "notNull": true,
       "identity": "",
-      "position": 13,
+      "position": 15,
       "generated": ""
     },
     {
@@ -5969,7 +5755,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 14,
+      "position": 16,
       "generated": ""
     },
     {
@@ -5979,7 +5765,7 @@
       "default": "0",
       "notNull": true,
       "identity": "",
-      "position": 15,
+      "position": 17,
       "generated": ""
     },
     {
@@ -5989,7 +5775,7 @@
       "default": "8",
       "notNull": true,
       "identity": "",
-      "position": 16,
+      "position": 18,
       "generated": ""
     },
     {
@@ -5999,7 +5785,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 17,
+      "position": 19,
       "generated": ""
     },
     {
@@ -6009,7 +5795,7 @@
       "default": "'{}'::jsonb",
       "notNull": true,
       "identity": "",
-      "position": 18,
+      "position": 20,
       "generated": ""
     },
     {
@@ -6019,7 +5805,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 19,
+      "position": 21,
       "generated": ""
     },
     {
@@ -6029,7 +5815,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 20,
+      "position": 22,
       "generated": ""
     },
     {
@@ -6039,7 +5825,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 21,
+      "position": 23,
       "generated": ""
     },
     {
@@ -6049,7 +5835,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 22,
+      "position": 24,
       "generated": ""
     },
     {
@@ -6059,7 +5845,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 23,
+      "position": 25,
       "generated": ""
     },
     {
@@ -6068,26 +5854,6 @@
       "table": "provider_sync_jobs",
       "default": "",
       "notNull": false,
-      "identity": "",
-      "position": 24,
-      "generated": ""
-    },
-    {
-      "name": "queue_sequence",
-      "type": "bigint",
-      "table": "provider_sync_jobs",
-      "default": "",
-      "notNull": true,
-      "identity": "d",
-      "position": 25,
-      "generated": ""
-    },
-    {
-      "name": "integration_generation",
-      "type": "integer",
-      "table": "provider_sync_jobs",
-      "default": "1",
-      "notNull": true,
       "identity": "",
       "position": 26,
       "generated": ""
@@ -6323,8 +6089,8 @@
       "generated": ""
     },
     {
-      "name": "provider_account_id",
-      "type": "text",
+      "name": "integration_generation",
+      "type": "integer",
       "table": "provider_webhook_receipts",
       "default": "",
       "notNull": false,
@@ -6333,7 +6099,7 @@
       "generated": ""
     },
     {
-      "name": "provider_event_id",
+      "name": "provider_account_id",
       "type": "text",
       "table": "provider_webhook_receipts",
       "default": "",
@@ -6343,13 +6109,23 @@
       "generated": ""
     },
     {
+      "name": "provider_event_id",
+      "type": "text",
+      "table": "provider_webhook_receipts",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
       "name": "event_type",
       "type": "text",
       "table": "provider_webhook_receipts",
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 9,
+      "position": 10,
       "generated": ""
     },
     {
@@ -6359,7 +6135,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 10,
+      "position": 11,
       "generated": ""
     },
     {
@@ -6369,7 +6145,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 11,
+      "position": 12,
       "generated": ""
     },
     {
@@ -6379,7 +6155,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 12,
+      "position": 13,
       "generated": ""
     },
     {
@@ -6389,7 +6165,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 13,
+      "position": 14,
       "generated": ""
     },
     {
@@ -6399,7 +6175,7 @@
       "default": "'pending'::text",
       "notNull": true,
       "identity": "",
-      "position": 14,
+      "position": 15,
       "generated": ""
     },
     {
@@ -6409,22 +6185,12 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 15,
+      "position": 16,
       "generated": ""
     },
     {
       "name": "last_error",
       "type": "text",
-      "table": "provider_webhook_receipts",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 16,
-      "generated": ""
-    },
-    {
-      "name": "integration_generation",
-      "type": "integer",
       "table": "provider_webhook_receipts",
       "default": "",
       "notNull": false,
@@ -6623,43 +6389,23 @@
       "generated": ""
     },
     {
-      "name": "template_visibility",
+      "name": "structure_hash",
       "type": "text",
       "table": "training_plans",
-      "default": "'private'::text",
+      "default": "",
       "notNull": true,
       "identity": "",
       "position": 8,
       "generated": ""
     },
     {
-      "name": "is_system_template",
-      "type": "boolean",
+      "name": "template_visibility",
+      "type": "text",
       "table": "training_plans",
-      "default": "false",
+      "default": "'private'::text",
       "notNull": true,
       "identity": "",
       "position": 9,
-      "generated": ""
-    },
-    {
-      "name": "sessions_per_week_target",
-      "type": "integer",
-      "table": "training_plans",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 10,
-      "generated": ""
-    },
-    {
-      "name": "duration_hours",
-      "type": "numeric(12,2)",
-      "table": "training_plans",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 11,
       "generated": ""
     },
     {
@@ -6669,15 +6415,35 @@
       "default": "'private'::text",
       "notNull": true,
       "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "is_system_template",
+      "type": "boolean",
+      "table": "training_plans",
+      "default": "false",
+      "notNull": true,
+      "identity": "",
+      "position": 11,
+      "generated": ""
+    },
+    {
+      "name": "sessions_per_week_target",
+      "type": "integer",
+      "table": "training_plans",
+      "default": "",
+      "notNull": false,
+      "identity": "",
       "position": 12,
       "generated": ""
     },
     {
-      "name": "structure_hash",
-      "type": "text",
+      "name": "duration_hours",
+      "type": "numeric(12,2)",
       "table": "training_plans",
       "default": "",
-      "notNull": true,
+      "notNull": false,
       "identity": "",
       "position": 13,
       "generated": ""
@@ -6882,7 +6648,7 @@
     {
       "name": "activity_artifact_links_current_source_unique",
       "table": "activity_artifact_links",
-      "definition": "CREATE UNIQUE INDEX activity_artifact_links_current_source_unique ON public.activity_artifact_links USING btree (activity_id) WHERE ((role = 'source'::text) AND is_current)"
+      "definition": "CREATE UNIQUE INDEX activity_artifact_links_current_source_unique ON public.activity_artifact_links USING btree (activity_id) WHERE ((role = 'source'::text) AND (is_current = true))"
     },
     {
       "name": "activity_artifact_links_pkey",
@@ -6952,12 +6718,12 @@
     {
       "name": "idx_activity_file_ingestions_activity_id",
       "table": "activity_file_ingestions",
-      "definition": "CREATE INDEX idx_activity_file_ingestions_activity_id ON public.activity_file_ingestions USING btree (activity_id)"
+      "definition": "CREATE INDEX idx_activity_file_ingestions_activity_id ON public.activity_file_ingestions USING btree (activity_id) WHERE (activity_id IS NOT NULL)"
     },
     {
       "name": "idx_activity_file_ingestions_activity_profile",
       "table": "activity_file_ingestions",
-      "definition": "CREATE INDEX idx_activity_file_ingestions_activity_profile ON public.activity_file_ingestions USING btree (activity_id, profile_id)"
+      "definition": "CREATE INDEX idx_activity_file_ingestions_activity_profile ON public.activity_file_ingestions USING btree (activity_id, profile_id) WHERE (activity_id IS NOT NULL)"
     },
     {
       "name": "idx_activity_file_ingestions_artifact_id",
@@ -7015,6 +6781,16 @@
       "definition": "CREATE INDEX idx_activity_plans_visibility ON public.activity_plans USING btree (template_visibility)"
     },
     {
+      "name": "activity_route_deletion_receipts_pkey",
+      "table": "activity_route_deletion_receipts",
+      "definition": "CREATE UNIQUE INDEX activity_route_deletion_receipts_pkey ON public.activity_route_deletion_receipts USING btree (route_id)"
+    },
+    {
+      "name": "idx_activity_route_deletion_receipts_profile",
+      "table": "activity_route_deletion_receipts",
+      "definition": "CREATE INDEX idx_activity_route_deletion_receipts_profile ON public.activity_route_deletion_receipts USING btree (profile_id)"
+    },
+    {
       "name": "activity_routes_pkey",
       "table": "activity_routes",
       "definition": "CREATE UNIQUE INDEX activity_routes_pkey ON public.activity_routes USING btree (id)"
@@ -7040,9 +6816,9 @@
       "definition": "CREATE INDEX idx_routes_profile_id ON public.activity_routes USING btree (profile_id) WHERE (profile_id IS NOT NULL)"
     },
     {
-      "name": "activity_segments_activity_id_int8range_excl",
-      "table": "activity_segments",
-      "definition": "CREATE INDEX activity_segments_activity_id_int8range_excl ON public.activity_segments USING gist (activity_id, int8range(start_offset_ms, end_offset_ms, '[)'::text))"
+      "name": "idx_routes_profile_storage_state",
+      "table": "activity_routes",
+      "definition": "CREATE INDEX idx_routes_profile_storage_state ON public.activity_routes USING btree (profile_id, storage_state)"
     },
     {
       "name": "activity_segments_activity_ordinal_unique",
@@ -7085,6 +6861,11 @@
       "definition": "CREATE UNIQUE INDEX activity_session_rpe_evidence_one_replacement_per_evidence_uniq ON public.activity_session_rpe_evidence USING btree (correction_of_id) WHERE (correction_of_id IS NOT NULL)"
     },
     {
+      "name": "activity_session_rpe_evidence_one_root_per_activity_profile_uni",
+      "table": "activity_session_rpe_evidence",
+      "definition": "CREATE UNIQUE INDEX activity_session_rpe_evidence_one_root_per_activity_profile_uni ON public.activity_session_rpe_evidence USING btree (activity_id, profile_id) WHERE (correction_of_id IS NULL)"
+    },
+    {
       "name": "activity_session_rpe_evidence_pkey",
       "table": "activity_session_rpe_evidence",
       "definition": "CREATE UNIQUE INDEX activity_session_rpe_evidence_pkey ON public.activity_session_rpe_evidence USING btree (id)"
@@ -7100,9 +6881,9 @@
       "definition": "CREATE INDEX idx_activity_session_rpe_evidence_activity_recorded ON public.activity_session_rpe_evidence USING btree (activity_id, recorded_at, id) WHERE (correction_of_id IS NULL)"
     },
     {
-      "name": "api_rate_limit_windows_pkey",
+      "name": "api_rate_limit_windows_key_hash_window_started_at_pk",
       "table": "api_rate_limit_windows",
-      "definition": "CREATE UNIQUE INDEX api_rate_limit_windows_pkey ON public.api_rate_limit_windows USING btree (key_hash, window_started_at)"
+      "definition": "CREATE UNIQUE INDEX api_rate_limit_windows_key_hash_window_started_at_pk ON public.api_rate_limit_windows USING btree (key_hash, window_started_at)"
     },
     {
       "name": "idx_api_rate_limit_windows_expiry",
@@ -7120,6 +6901,11 @@
       "definition": "CREATE UNIQUE INDEX athlete_consent_policy_versions_pkey ON public.athlete_consent_policy_versions USING btree (id)"
     },
     {
+      "name": "athlete_consent_policy_versions_supersedes_scope_fkey_idx",
+      "table": "athlete_consent_policy_versions",
+      "definition": "CREATE INDEX athlete_consent_policy_versions_supersedes_scope_fkey_idx ON public.athlete_consent_policy_versions USING btree (supersedes_policy_version_id, scope_key)"
+    },
+    {
       "name": "athlete_data_sharing_consents_authority_identity_unique",
       "table": "athlete_data_sharing_consents",
       "definition": "CREATE UNIQUE INDEX athlete_data_sharing_consents_authority_identity_unique ON public.athlete_data_sharing_consents USING btree (organization_id, engagement_id, athlete_profile_id, scope_key, id)"
@@ -7128,6 +6914,11 @@
       "name": "athlete_data_sharing_consents_current_unique",
       "table": "athlete_data_sharing_consents",
       "definition": "CREATE UNIQUE INDEX athlete_data_sharing_consents_current_unique ON public.athlete_data_sharing_consents USING btree (organization_id, engagement_id, athlete_profile_id, scope_key) WHERE (ended_at IS NULL)"
+    },
+    {
+      "name": "athlete_data_sharing_consents_engagement_fkey_idx",
+      "table": "athlete_data_sharing_consents",
+      "definition": "CREATE INDEX athlete_data_sharing_consents_engagement_fkey_idx ON public.athlete_data_sharing_consents USING btree (organization_id, engagement_id, athlete_profile_id)"
     },
     {
       "name": "athlete_data_sharing_consents_pkey",
@@ -7140,6 +6931,11 @@
       "definition": "CREATE INDEX athlete_data_sharing_consents_policy_scope_idx ON public.athlete_data_sharing_consents USING btree (policy_version_id, scope_key)"
     },
     {
+      "name": "athlete_data_sharing_consents_successor_fkey_idx",
+      "table": "athlete_data_sharing_consents",
+      "definition": "CREATE INDEX athlete_data_sharing_consents_successor_fkey_idx ON public.athlete_data_sharing_consents USING btree (organization_id, engagement_id, athlete_profile_id, scope_key, superseded_by_consent_id)"
+    },
+    {
       "name": "athlete_data_sharing_consents_successor_idx",
       "table": "athlete_data_sharing_consents",
       "definition": "CREATE INDEX athlete_data_sharing_consents_successor_idx ON public.athlete_data_sharing_consents USING btree (superseded_by_consent_id) WHERE (superseded_by_consent_id IS NOT NULL)"
@@ -7148,26 +6944,6 @@
       "name": "canonical_activity_categories_pkey",
       "table": "canonical_activity_categories",
       "definition": "CREATE UNIQUE INDEX canonical_activity_categories_pkey ON public.canonical_activity_categories USING btree (code)"
-    },
-    {
-      "name": "coaches_athletes_coach_id_athlete_id_pk",
-      "table": "coaches_athletes",
-      "definition": "CREATE UNIQUE INDEX coaches_athletes_coach_id_athlete_id_pk ON public.coaches_athletes USING btree (coach_id, athlete_id)"
-    },
-    {
-      "name": "idx_coaches_athletes_active_lookup",
-      "table": "coaches_athletes",
-      "definition": "CREATE INDEX idx_coaches_athletes_active_lookup ON public.coaches_athletes USING btree (coach_id, athlete_id) WHERE (revoked_at IS NULL)"
-    },
-    {
-      "name": "idx_coaches_athletes_athlete_id",
-      "table": "coaches_athletes",
-      "definition": "CREATE INDEX idx_coaches_athletes_athlete_id ON public.coaches_athletes USING btree (athlete_id)"
-    },
-    {
-      "name": "idx_coaches_athletes_coach_id",
-      "table": "coaches_athletes",
-      "definition": "CREATE INDEX idx_coaches_athletes_coach_id ON public.coaches_athletes USING btree (coach_id)"
     },
     {
       "name": "coaching_assignments_active_coach_membership_idx",
@@ -7183,6 +6959,16 @@
       "name": "coaching_assignments_active_primary_unique",
       "table": "coaching_assignments",
       "definition": "CREATE UNIQUE INDEX coaching_assignments_active_primary_unique ON public.coaching_assignments USING btree (engagement_id) WHERE ((assignment_kind = 'primary'::text) AND (ended_at IS NULL))"
+    },
+    {
+      "name": "coaching_assignments_engagement_fkey_idx",
+      "table": "coaching_assignments",
+      "definition": "CREATE INDEX coaching_assignments_engagement_fkey_idx ON public.coaching_assignments USING btree (organization_id, engagement_id)"
+    },
+    {
+      "name": "coaching_assignments_membership_fkey_idx",
+      "table": "coaching_assignments",
+      "definition": "CREATE INDEX coaching_assignments_membership_fkey_idx ON public.coaching_assignments USING btree (organization_id, coach_membership_id)"
     },
     {
       "name": "coaching_assignments_pkey",
@@ -7213,26 +6999,6 @@
       "name": "coaching_engagements_pkey",
       "table": "coaching_engagements",
       "definition": "CREATE UNIQUE INDEX coaching_engagements_pkey ON public.coaching_engagements USING btree (id)"
-    },
-    {
-      "name": "coaching_invitations_athlete_coach_unique",
-      "table": "coaching_invitations",
-      "definition": "CREATE UNIQUE INDEX coaching_invitations_athlete_coach_unique ON public.coaching_invitations USING btree (athlete_id, coach_id)"
-    },
-    {
-      "name": "coaching_invitations_pkey",
-      "table": "coaching_invitations",
-      "definition": "CREATE UNIQUE INDEX coaching_invitations_pkey ON public.coaching_invitations USING btree (id)"
-    },
-    {
-      "name": "idx_coaching_invitations_athlete_id",
-      "table": "coaching_invitations",
-      "definition": "CREATE INDEX idx_coaching_invitations_athlete_id ON public.coaching_invitations USING btree (athlete_id)"
-    },
-    {
-      "name": "idx_coaching_invitations_coach_id",
-      "table": "coaching_invitations",
-      "definition": "CREATE INDEX idx_coaching_invitations_coach_id ON public.coaching_invitations USING btree (coach_id)"
     },
     {
       "name": "comments_pkey",
@@ -7650,6 +7416,16 @@
       "definition": "CREATE UNIQUE INDEX oauth_states_pkey ON public.oauth_states USING btree (id)"
     },
     {
+      "name": "organization_audit_events_actor_identity_fkey_idx",
+      "table": "organization_audit_events",
+      "definition": "CREATE INDEX organization_audit_events_actor_identity_fkey_idx ON public.organization_audit_events USING btree (organization_id, actor_membership_id, actor_profile_id)"
+    },
+    {
+      "name": "organization_audit_events_actor_membership_fkey_idx",
+      "table": "organization_audit_events",
+      "definition": "CREATE INDEX organization_audit_events_actor_membership_fkey_idx ON public.organization_audit_events USING btree (organization_id, actor_membership_id)"
+    },
+    {
       "name": "organization_audit_events_actor_membership_idx",
       "table": "organization_audit_events",
       "definition": "CREATE INDEX organization_audit_events_actor_membership_idx ON public.organization_audit_events USING btree (organization_id, actor_membership_id) WHERE (actor_membership_id IS NOT NULL)"
@@ -7673,6 +7449,11 @@
       "name": "organization_membership_role_grants_active_unique",
       "table": "organization_membership_role_grants",
       "definition": "CREATE UNIQUE INDEX organization_membership_role_grants_active_unique ON public.organization_membership_role_grants USING btree (organization_id, membership_id, role_key) WHERE (revoked_at IS NULL)"
+    },
+    {
+      "name": "organization_membership_role_grants_membership_fkey_idx",
+      "table": "organization_membership_role_grants",
+      "definition": "CREATE INDEX organization_membership_role_grants_membership_fkey_idx ON public.organization_membership_role_grants USING btree (organization_id, membership_id)"
     },
     {
       "name": "organization_membership_role_grants_pkey",
@@ -7708,36 +7489,6 @@
       "name": "organization_memberships_pkey",
       "table": "organization_memberships",
       "definition": "CREATE UNIQUE INDEX organization_memberships_pkey ON public.organization_memberships USING btree (id)"
-    },
-    {
-      "name": "organization_memberships_profile_status_idx",
-      "table": "organization_memberships",
-      "definition": "CREATE INDEX organization_memberships_profile_status_idx ON public.organization_memberships USING btree (profile_id, status)"
-    },
-    {
-      "name": "organization_permissions_pkey",
-      "table": "organization_permissions",
-      "definition": "CREATE UNIQUE INDEX organization_permissions_pkey ON public.organization_permissions USING btree (key)"
-    },
-    {
-      "name": "organization_role_permission_grants_pkey",
-      "table": "organization_role_permission_grants",
-      "definition": "CREATE UNIQUE INDEX organization_role_permission_grants_pkey ON public.organization_role_permission_grants USING btree (role_id, permission_key)"
-    },
-    {
-      "name": "organization_roles_id_organization_unique",
-      "table": "organization_roles",
-      "definition": "CREATE UNIQUE INDEX organization_roles_id_organization_unique ON public.organization_roles USING btree (id, organization_id)"
-    },
-    {
-      "name": "organization_roles_organization_key_unique",
-      "table": "organization_roles",
-      "definition": "CREATE UNIQUE INDEX organization_roles_organization_key_unique ON public.organization_roles USING btree (organization_id, key)"
-    },
-    {
-      "name": "organization_roles_pkey",
-      "table": "organization_roles",
-      "definition": "CREATE UNIQUE INDEX organization_roles_pkey ON public.organization_roles USING btree (id)"
     },
     {
       "name": "organizations_created_by_profile_id_idx",
@@ -7783,11 +7534,6 @@
       "name": "idx_profile_metrics_temporal_lookup",
       "table": "profile_metrics",
       "definition": "CREATE INDEX idx_profile_metrics_temporal_lookup ON public.profile_metrics USING btree (profile_id, metric_type, recorded_at)"
-    },
-    {
-      "name": "profile_metrics_idx_key",
-      "table": "profile_metrics",
-      "definition": "CREATE UNIQUE INDEX profile_metrics_idx_key ON public.profile_metrics USING btree (idx)"
     },
     {
       "name": "profile_metrics_pkey",
@@ -7910,9 +7656,9 @@
       "definition": "CREATE UNIQUE INDEX provider_webhook_receipts_pkey ON public.provider_webhook_receipts USING btree (id)"
     },
     {
-      "name": "rate_limits_key_key",
+      "name": "rate_limits_key_unique",
       "table": "rate_limits",
-      "definition": "CREATE UNIQUE INDEX rate_limits_key_key ON public.rate_limits USING btree (key)"
+      "definition": "CREATE UNIQUE INDEX rate_limits_key_unique ON public.rate_limits USING btree (key)"
     },
     {
       "name": "rate_limits_pkey",
@@ -8054,6 +7800,12 @@
       "definition": "CREATE CONSTRAINT TRIGGER athlete_data_sharing_consents_supersession_guard AFTER INSERT OR UPDATE ON athlete_data_sharing_consents DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_consent_supersession()"
     },
     {
+      "name": "coaching_assignments_assigned_at_not_future",
+      "table": "coaching_assignments",
+      "schema": "public",
+      "definition": "CREATE TRIGGER coaching_assignments_assigned_at_not_future BEFORE INSERT OR UPDATE OF assigned_at ON coaching_assignments FOR EACH ROW EXECUTE FUNCTION reject_future_coaching_assignment()"
+    },
+    {
       "name": "coaching_assignments_current_authority_guard",
       "table": "coaching_assignments",
       "schema": "public",
@@ -8070,6 +7822,30 @@
       "table": "coaching_engagements",
       "schema": "public",
       "definition": "CREATE TRIGGER coaching_engagements_retained BEFORE DELETE OR UPDATE ON coaching_engagements FOR EACH ROW EXECUTE FUNCTION prevent_coaching_engagement_mutation()"
+    },
+    {
+      "name": "comments_require_ready_route",
+      "table": "comments",
+      "schema": "public",
+      "definition": "CREATE TRIGGER comments_require_ready_route BEFORE INSERT OR UPDATE OF entity_id, entity_type ON comments FOR EACH ROW EXECUTE FUNCTION enforce_ready_route_social_reference()"
+    },
+    {
+      "name": "events_require_ready_route",
+      "table": "events",
+      "schema": "public",
+      "definition": "CREATE TRIGGER events_require_ready_route BEFORE INSERT OR UPDATE OF route_id ON events FOR EACH ROW EXECUTE FUNCTION enforce_ready_activity_route_reference()"
+    },
+    {
+      "name": "group_events_require_ready_route",
+      "table": "group_events",
+      "schema": "public",
+      "definition": "CREATE TRIGGER group_events_require_ready_route BEFORE INSERT OR UPDATE OF route_id ON group_events FOR EACH ROW EXECUTE FUNCTION enforce_ready_activity_route_reference()"
+    },
+    {
+      "name": "likes_require_ready_route",
+      "table": "likes",
+      "schema": "public",
+      "definition": "CREATE TRIGGER likes_require_ready_route BEFORE INSERT OR UPDATE OF entity_id, entity_type ON likes FOR EACH ROW EXECUTE FUNCTION enforce_ready_route_social_reference()"
     },
     {
       "name": "organization_audit_events_append_only",
@@ -8119,7 +7895,7 @@
       "securityDefiner": false
     },
     {
-      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "acl": "{postgres=X/postgres}",
       "config": ["search_path=\"\""],
       "identity": "activity_parent_segment_set_constraint_trigger()",
       "language": "plpgsql",
@@ -8128,7 +7904,7 @@
       "securityDefiner": true
     },
     {
-      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "acl": "",
       "config": ["search_path=pg_catalog"],
       "identity": "activity_plan_duration_is_canonical(jsonb,boolean)",
       "language": "sql",
@@ -8137,7 +7913,7 @@
       "securityDefiner": false
     },
     {
-      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "acl": "",
       "config": ["search_path=pg_catalog"],
       "identity": "activity_plan_jsonb_has_exact_keys(jsonb,text[],text[])",
       "language": "sql",
@@ -8146,7 +7922,7 @@
       "securityDefiner": false
     },
     {
-      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "acl": "",
       "config": ["search_path=pg_catalog"],
       "identity": "activity_plan_jsonb_is_integer_between(jsonb,numeric,numeric)",
       "language": "sql",
@@ -8155,7 +7931,7 @@
       "securityDefiner": false
     },
     {
-      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "acl": "",
       "config": ["search_path=pg_catalog"],
       "identity": "activity_plan_jsonb_is_string(jsonb,integer,integer)",
       "language": "sql",
@@ -8164,7 +7940,7 @@
       "securityDefiner": false
     },
     {
-      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "acl": "",
       "config": ["search_path=pg_catalog"],
       "identity": "activity_plan_jsonb_is_uuid(jsonb)",
       "language": "sql",
@@ -8173,7 +7949,7 @@
       "securityDefiner": false
     },
     {
-      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "acl": "",
       "config": ["search_path=pg_catalog"],
       "identity": "activity_plan_segment_is_canonical(jsonb)",
       "language": "sql",
@@ -8182,7 +7958,7 @@
       "securityDefiner": false
     },
     {
-      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "acl": "",
       "config": ["search_path=pg_catalog"],
       "identity": "activity_plan_structure_is_canonical(jsonb)",
       "language": "plpgsql",
@@ -8191,7 +7967,7 @@
       "securityDefiner": false
     },
     {
-      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "acl": "",
       "config": ["search_path=pg_catalog"],
       "identity": "activity_plan_target_is_canonical(jsonb,text)",
       "language": "sql",
@@ -8200,7 +7976,7 @@
       "securityDefiner": false
     },
     {
-      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "acl": "{postgres=X/postgres}",
       "config": ["search_path=\"\""],
       "identity": "activity_segment_set_constraint_trigger()",
       "language": "plpgsql",
@@ -8213,7 +7989,7 @@
       "config": ["search_path=\"\""],
       "identity": "block_activity_artifact_direct_delete()",
       "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.block_activity_artifact_direct_delete()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\nbegin\n  if old.availability<>'deleted'\n    or current_setting('gradientpeak.artifact_hard_delete_authorized',true) is distinct from 'on' then\n    raise exception 'activity artifact delete requires completed service lifecycle';\n  end if;\n  return old;\nend $function$\n",
+      "definition": "CREATE OR REPLACE FUNCTION public.block_activity_artifact_direct_delete()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\ndeclare lifecycle_owner name;\nbegin\n  select pg_catalog.pg_get_userbyid(procedure.proowner) into lifecycle_owner\n  from pg_catalog.pg_proc as procedure\n  where procedure.oid=pg_catalog.to_regprocedure('public.block_activity_artifact_direct_delete()');\n  if current_user is distinct from lifecycle_owner\n    or old.availability<>'deleted'\n    or current_setting('gradientpeak.artifact_hard_delete_authorized',true) is distinct from 'on' then\n    raise exception 'activity artifact delete requires completed service lifecycle';\n  end if;\n  return old;\nend $function$\n",
       "volatility": "v",
       "securityDefiner": false
     },
@@ -8258,9 +8034,27 @@
       "config": ["search_path=\"\""],
       "identity": "enforce_activity_artifact_immutable()",
       "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.enforce_activity_artifact_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\nbegin\n  if row(new.profile_id, new.digest_algorithm, new.digest, new.byte_size, new.bucket, new.path,\n         new.media_type, new.format, new.original_name, new.first_accepted_at)\n     is distinct from\n     row(old.profile_id, old.digest_algorithm, old.digest, old.byte_size, old.bucket, old.path,\n         old.media_type, old.format, old.original_name, old.first_accepted_at) then\n    raise exception 'accepted activity artifact byte identity is immutable';\n  end if;\n  if new.availability is distinct from old.availability then\n    if current_setting('gradientpeak.artifact_lifecycle_authorized',true) is distinct from 'on' then\n      raise exception 'activity artifact lifecycle requires authorized service workflow';\n    end if;\n    if not ((old.availability='accepted' and new.availability='deletion_pending')\n      or (old.availability='deletion_pending' and new.availability='deleted')) then\n      raise exception 'invalid activity artifact lifecycle transition';\n    end if;\n  end if;\n  return new;\nend $function$\n",
+      "definition": "CREATE OR REPLACE FUNCTION public.enforce_activity_artifact_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\ndeclare lifecycle_owner name;\nbegin\n  if row(new.profile_id, new.digest_algorithm, new.digest, new.byte_size, new.bucket, new.path,\n         new.media_type, new.format, new.original_name, new.first_accepted_at)\n     is distinct from\n     row(old.profile_id, old.digest_algorithm, old.digest, old.byte_size, old.bucket, old.path,\n         old.media_type, old.format, old.original_name, old.first_accepted_at) then\n    raise exception 'accepted activity artifact byte identity is immutable';\n  end if;\n  if new.availability is distinct from old.availability then\n    select pg_catalog.pg_get_userbyid(procedure.proowner) into lifecycle_owner\n    from pg_catalog.pg_proc as procedure\n    where procedure.oid=pg_catalog.to_regprocedure('public.enforce_activity_artifact_immutable()');\n    if current_user is distinct from lifecycle_owner\n      or current_setting('gradientpeak.artifact_lifecycle_authorized',true) is distinct from 'on' then\n      raise exception 'activity artifact lifecycle requires authorized service workflow';\n    end if;\n    if not ((old.availability='accepted' and new.availability='deletion_pending')\n      or (old.availability='deletion_pending' and new.availability='deleted')) then\n      raise exception 'invalid activity artifact lifecycle transition';\n    end if;\n  end if;\n  return new;\nend $function$\n",
       "volatility": "v",
       "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=\"\""],
+      "identity": "enforce_ready_activity_route_reference()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.enforce_ready_activity_route_reference()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\nbegin\n  if new.route_id is null then return new; end if;\n  perform 1 from public.activity_routes\n  where id=new.route_id and storage_state='ready'\n  for key share;\n  if not found then\n    raise exception 'event route must reference ready route storage';\n  end if;\n  return new;\nend $function$\n",
+      "volatility": "v",
+      "securityDefiner": true
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=\"\""],
+      "identity": "enforce_ready_route_social_reference()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.enforce_ready_route_social_reference()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\nbegin\n  if new.entity_type <> 'route' then return new; end if;\n  perform 1 from public.activity_routes\n  where id=new.entity_id and storage_state='ready'\n  for key share;\n  if not found then\n    raise exception 'route social content requires ready route storage';\n  end if;\n  return new;\nend $function$\n",
+      "volatility": "v",
+      "securityDefiner": true
     },
     {
       "acl": "{postgres=X/postgres,service_role=X/postgres}",
@@ -8272,7 +8066,7 @@
       "securityDefiner": true
     },
     {
-      "acl": "{postgres=X/postgres}",
+      "acl": "",
       "config": ["search_path=pg_catalog"],
       "identity": "guard_organization_root_owner_transfer()",
       "language": "plpgsql",
@@ -8281,7 +8075,7 @@
       "securityDefiner": false
     },
     {
-      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "acl": "{postgres=X/postgres}",
       "config": ["search_path=\"\""],
       "identity": "handle_new_user()",
       "language": "plpgsql",
@@ -8290,7 +8084,7 @@
       "securityDefiner": true
     },
     {
-      "acl": "{postgres=X/postgres}",
+      "acl": "",
       "config": ["search_path=pg_catalog"],
       "identity": "prevent_coaching_assignment_mutation()",
       "language": "plpgsql",
@@ -8299,7 +8093,7 @@
       "securityDefiner": false
     },
     {
-      "acl": "{postgres=X/postgres}",
+      "acl": "",
       "config": ["search_path=pg_catalog"],
       "identity": "prevent_coaching_engagement_mutation()",
       "language": "plpgsql",
@@ -8308,7 +8102,7 @@
       "securityDefiner": false
     },
     {
-      "acl": "{postgres=X/postgres}",
+      "acl": "",
       "config": ["search_path=pg_catalog"],
       "identity": "prevent_consent_mutation()",
       "language": "plpgsql",
@@ -8317,7 +8111,7 @@
       "securityDefiner": false
     },
     {
-      "acl": "{postgres=X/postgres}",
+      "acl": "",
       "config": ["search_path=pg_catalog"],
       "identity": "prevent_organization_audit_event_mutation()",
       "language": "plpgsql",
@@ -8326,7 +8120,7 @@
       "securityDefiner": false
     },
     {
-      "acl": "{postgres=X/postgres}",
+      "acl": "",
       "config": ["search_path=pg_catalog"],
       "identity": "prevent_policy_version_mutation()",
       "language": "plpgsql",
@@ -8335,11 +8129,11 @@
       "securityDefiner": false
     },
     {
-      "acl": "{postgres=X/postgres}",
+      "acl": "",
       "config": ["search_path=pg_catalog"],
       "identity": "prevent_role_grant_mutation()",
       "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.prevent_role_grant_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN\n  IF TG_OP = 'DELETE' THEN\n    RAISE EXCEPTION 'role grants are retained and may only be revoked';\n  END IF;\n  IF NEW.id IS DISTINCT FROM OLD.id\n     OR NEW.organization_id IS DISTINCT FROM OLD.organization_id\n     OR NEW.membership_id IS DISTINCT FROM OLD.membership_id\n     OR NEW.role_id IS DISTINCT FROM OLD.role_id\n     OR NEW.status IS DISTINCT FROM OLD.status\n     OR NEW.role_key IS DISTINCT FROM OLD.role_key\n     OR NEW.granted_at IS DISTINCT FROM OLD.granted_at\n     OR NEW.created_at IS DISTINCT FROM OLD.created_at\n     OR NEW.updated_at IS DISTINCT FROM OLD.updated_at\n     OR OLD.revoked_at IS NOT NULL\n     OR NEW.revoked_at IS NULL THEN\n    RAISE EXCEPTION 'role grants may only transition once from active to revoked';\n  END IF;\n  RETURN NEW;\nEND $function$\n",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_role_grant_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN\n  IF TG_OP = 'DELETE' THEN\n    RAISE EXCEPTION 'role grants are retained and may only be revoked';\n  END IF;\n  IF NEW.id IS DISTINCT FROM OLD.id\n     OR NEW.organization_id IS DISTINCT FROM OLD.organization_id\n     OR NEW.membership_id IS DISTINCT FROM OLD.membership_id\n     OR NEW.role_key IS DISTINCT FROM OLD.role_key\n     OR NEW.granted_at IS DISTINCT FROM OLD.granted_at\n     OR NEW.created_at IS DISTINCT FROM OLD.created_at\n     OR NEW.updated_at IS DISTINCT FROM OLD.updated_at\n     OR OLD.revoked_at IS NOT NULL\n     OR NEW.revoked_at IS NULL THEN\n    RAISE EXCEPTION 'role grants may only transition once from active to revoked';\n  END IF;\n  RETURN NEW;\nEND $function$\n",
       "volatility": "v",
       "securityDefiner": false
     },
@@ -8353,7 +8147,7 @@
       "securityDefiner": true
     },
     {
-      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "acl": "",
       "config": ["search_path=public"],
       "identity": "reject_activity_session_rpe_evidence_mutation()",
       "language": "plpgsql",
@@ -8362,11 +8156,20 @@
       "securityDefiner": false
     },
     {
+      "acl": "",
+      "config": ["search_path=pg_catalog"],
+      "identity": "reject_future_coaching_assignment()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.reject_future_coaching_assignment()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN\n  IF NEW.assigned_at > pg_catalog.transaction_timestamp() THEN\n    RAISE EXCEPTION 'coaching assignment assigned_at cannot be in the future';\n  END IF;\n  RETURN NEW;\nEND\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
       "acl": "{postgres=X/postgres,service_role=X/postgres}",
       "config": ["search_path=\"\""],
       "identity": "request_activity_artifact_deletion(uuid)",
       "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.request_activity_artifact_deletion(target_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\nbegin\n  perform 1 from public.activity_artifacts where id=target_id and availability='accepted' for update;\n  if not found then raise exception 'artifact is not accepted or does not exist'; end if;\n  update public.activity_segments set source_artifact_id=null,source_session_index=null,source_message_index=null\n    where source_artifact_id=target_id;\n  update public.activity_file_ingestions set artifact_id=null,status='failed',claim_token=null,lease_expires_at=null,\n    failed_at=coalesce(failed_at,now()),last_error_code='artifact_deletion_requested',\n    last_error_message='Accepted source artifact entered controlled deletion',updated_at=now()\n    where artifact_id=target_id;\n  delete from public.activity_artifact_links where artifact_id=target_id;\n  perform set_config('gradientpeak.artifact_lifecycle_authorized','on',true);\n  update public.activity_artifacts set availability='deletion_pending',deletion_requested_at=now()\n  where id=target_id and availability='accepted';\nend $function$\n",
+      "definition": "CREATE OR REPLACE FUNCTION public.request_activity_artifact_deletion(target_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\nbegin\n  perform 1 from public.activity_artifacts where id=target_id and availability='accepted' for update;\n  if not found then raise exception 'artifact is not accepted or does not exist'; end if;\n  update public.activity_segments set source_artifact_id=null,source_session_index=null,source_message_index=null\n    where source_artifact_id=target_id;\n  update public.activity_file_ingestions set artifact_id=null,status='failed',claim_token=null,lease_expires_at=null,\n    accepted_sha256=null,accepted_byte_size=null,accepted_bucket=null,accepted_path=null,\n    accepted_media_type=null,accepted_format=null,uploaded_at=null,\n    staging_cleanup_pending=false,staging_cleanup_error=null,\n    failed_at=coalesce(failed_at,now()),last_error_code='artifact_deletion_requested',\n    last_error_message='Accepted source artifact entered controlled deletion',updated_at=now()\n    where artifact_id=target_id;\n  delete from public.activity_artifact_links where artifact_id=target_id;\n  perform set_config('gradientpeak.artifact_lifecycle_authorized','on',true);\n  update public.activity_artifacts set availability='deletion_pending',deletion_requested_at=now()\n  where id=target_id and availability='accepted';\nend $function$\n",
       "volatility": "v",
       "securityDefiner": true
     },
@@ -8375,7 +8178,7 @@
       "config": ["search_path=\"\""],
       "identity": "switch_activity_source_artifact(uuid,uuid,uuid,text)",
       "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.switch_activity_source_artifact(target_activity_id uuid, target_artifact_id uuid, target_profile_id uuid, target_provider_revision text DEFAULT NULL::text)\n RETURNS activity_artifact_links\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare inserted public.activity_artifact_links;\nbegin\n  perform 1 from public.activities where id=target_activity_id and profile_id=target_profile_id for update;\n  if not found then raise exception 'activity/profile not found'; end if;\n  update public.activity_artifact_links set is_current=false\n    where activity_id=target_activity_id and role='source' and is_current;\n  insert into public.activity_artifact_links(activity_id,artifact_id,profile_id,role,ordinal,is_current,provider_revision)\n  values(target_activity_id,target_artifact_id,target_profile_id,'source',\n    coalesce((select max(ordinal)+1 from public.activity_artifact_links where activity_id=target_activity_id and role='source'),0),\n    true,target_provider_revision) returning * into inserted;\n  return inserted;\nend $function$\n",
+      "definition": "CREATE OR REPLACE FUNCTION public.switch_activity_source_artifact(target_activity_id uuid, target_artifact_id uuid, target_profile_id uuid, target_provider_revision text DEFAULT NULL::text)\n RETURNS activity_artifact_links\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare inserted public.activity_artifact_links;\nbegin\n  perform 1 from public.activity_artifacts\n  where id=target_artifact_id and profile_id=target_profile_id and availability='accepted'\n  for update;\n  if not found then raise exception 'accepted artifact/profile not found'; end if;\n  perform 1 from public.activities where id=target_activity_id and profile_id=target_profile_id for update;\n  if not found then raise exception 'activity/profile not found'; end if;\n  update public.activity_artifact_links set is_current=false\n    where activity_id=target_activity_id and role='source' and is_current;\n  insert into public.activity_artifact_links(activity_id,artifact_id,profile_id,role,ordinal,is_current,provider_revision)\n  values(target_activity_id,target_artifact_id,target_profile_id,'source',\n    coalesce((select max(ordinal)+1 from public.activity_artifact_links where activity_id=target_activity_id and role='source'),0),\n    true,target_provider_revision) returning * into inserted;\n  return inserted;\nend $function$\n",
       "volatility": "v",
       "securityDefiner": true
     },
@@ -8398,7 +8201,7 @@
       "securityDefiner": false
     },
     {
-      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "acl": "{postgres=X/postgres}",
       "config": ["search_path=\"\""],
       "identity": "validate_activity_segment_set(uuid)",
       "language": "plpgsql",
@@ -8407,7 +8210,7 @@
       "securityDefiner": true
     },
     {
-      "acl": "{postgres=X/postgres}",
+      "acl": "",
       "config": ["search_path=pg_catalog"],
       "identity": "validate_consent_supersession()",
       "language": "plpgsql",
@@ -8416,7 +8219,7 @@
       "securityDefiner": false
     },
     {
-      "acl": "{postgres=X/postgres}",
+      "acl": "",
       "config": ["search_path=pg_catalog"],
       "identity": "validate_current_coaching_assignment()",
       "language": "plpgsql",
@@ -8425,7 +8228,7 @@
       "securityDefiner": false
     },
     {
-      "acl": "{postgres=X/postgres}",
+      "acl": "",
       "config": ["search_path=pg_catalog"],
       "identity": "validate_organization_root_owner()",
       "language": "plpgsql",
@@ -8434,7 +8237,7 @@
       "securityDefiner": false
     },
     {
-      "acl": "{postgres=X/postgres}",
+      "acl": "",
       "config": ["search_path=pg_catalog"],
       "identity": "validate_policy_supersession()",
       "language": "plpgsql",
@@ -8625,7 +8428,7 @@
       "name": "activity_artifact_links_current_source_check",
       "table": "activity_artifact_links",
       "validated": true,
-      "definition": "CHECK (NOT is_current OR role = 'source'::text)"
+      "definition": "CHECK (is_current = false OR role = 'source'::text)"
     },
     {
       "kind": "c",
@@ -8640,20 +8443,6 @@
       "table": "activity_artifact_links",
       "validated": true,
       "definition": "PRIMARY KEY (id)"
-    },
-    {
-      "kind": "c",
-      "name": "activity_artifact_links_role_check",
-      "table": "activity_artifact_links",
-      "validated": true,
-      "definition": "CHECK (role = ANY (ARRAY['source'::text, 'supplemental'::text, 'export'::text]))"
-    },
-    {
-      "kind": "c",
-      "name": "activity_artifacts_availability_check",
-      "table": "activity_artifacts",
-      "validated": true,
-      "definition": "CHECK (availability = ANY (ARRAY['accepted'::text, 'deletion_pending'::text, 'deleted'::text]))"
     },
     {
       "kind": "u",
@@ -8713,7 +8502,7 @@
     },
     {
       "kind": "f",
-      "name": "activity_artifacts_profile_id_fkey",
+      "name": "activity_artifacts_profile_id_profiles_id_fk",
       "table": "activity_artifacts",
       "validated": true,
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE RESTRICT"
@@ -8727,7 +8516,7 @@
     },
     {
       "kind": "f",
-      "name": "activity_efforts_activity_category_fkey",
+      "name": "activity_efforts_activity_category_canonical_activity_categorie",
       "table": "activity_efforts",
       "validated": true,
       "definition": "FOREIGN KEY (activity_category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
@@ -8937,7 +8726,7 @@
     },
     {
       "kind": "f",
-      "name": "activity_file_ingestions_integration_id_fkey",
+      "name": "activity_file_ingestions_integration_id_integrations_id_fk",
       "table": "activity_file_ingestions",
       "validated": true,
       "definition": "FOREIGN KEY (integration_id) REFERENCES integrations(id) ON DELETE SET NULL"
@@ -9063,6 +8852,27 @@
     },
     {
       "kind": "p",
+      "name": "activity_route_deletion_receipts_pkey",
+      "table": "activity_route_deletion_receipts",
+      "validated": true,
+      "definition": "PRIMARY KEY (route_id)"
+    },
+    {
+      "kind": "f",
+      "name": "activity_route_deletion_receipts_profile_id_profiles_id_fk",
+      "table": "activity_route_deletion_receipts",
+      "validated": true,
+      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "activity_routes_file_sha256_check",
+      "table": "activity_routes",
+      "validated": true,
+      "definition": "CHECK (file_sha256 IS NULL OR file_sha256 ~ '^[0-9a-f]{64}$'::text)"
+    },
+    {
+      "kind": "p",
       "name": "activity_routes_pkey",
       "table": "activity_routes",
       "validated": true,
@@ -9074,6 +8884,13 @@
       "table": "activity_routes",
       "validated": true,
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "activity_routes_storage_state_check",
+      "table": "activity_routes",
+      "validated": true,
+      "definition": "CHECK (storage_state = ANY (ARRAY['upload_pending'::text, 'ready'::text, 'deletion_pending'::text]))"
     },
     {
       "kind": "c",
@@ -9111,11 +8928,11 @@
       "definition": "CHECK (total_distance >= 0)"
     },
     {
-      "kind": "x",
-      "name": "activity_segments_activity_id_int8range_excl",
+      "kind": "f",
+      "name": "activity_segments_activity_category_canonical_activity_categori",
       "table": "activity_segments",
       "validated": true,
-      "definition": "EXCLUDE USING gist (activity_id WITH =, int8range(start_offset_ms, end_offset_ms, '[)'::text) WITH &&) DEFERRABLE INITIALLY DEFERRED"
+      "definition": "FOREIGN KEY (activity_category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
     },
     {
       "kind": "u",
@@ -9130,13 +8947,6 @@
       "table": "activity_segments",
       "validated": true,
       "definition": "FOREIGN KEY (activity_id, profile_id) REFERENCES activities(id, profile_id) ON DELETE CASCADE"
-    },
-    {
-      "kind": "f",
-      "name": "activity_segments_category_fkey",
-      "table": "activity_segments",
-      "validated": true,
-      "definition": "FOREIGN KEY (activity_category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
     },
     {
       "kind": "u",
@@ -9196,24 +9006,10 @@
     },
     {
       "kind": "c",
-      "name": "activity_segments_revision_check",
-      "table": "activity_segments",
-      "validated": true,
-      "definition": "CHECK (segment_revision > 0)"
-    },
-    {
-      "kind": "c",
       "name": "activity_segments_role_category_check",
       "table": "activity_segments",
       "validated": true,
       "definition": "CHECK (role = 'activity'::text AND activity_category IS NOT NULL OR role <> 'activity'::text AND activity_category IS NULL)"
-    },
-    {
-      "kind": "c",
-      "name": "activity_segments_role_check",
-      "table": "activity_segments",
-      "validated": true,
-      "definition": "CHECK (role = ANY (ARRAY['activity'::text, 'transition'::text, 'rest'::text, 'unknown'::text]))"
     },
     {
       "kind": "c",
@@ -9245,13 +9041,6 @@
     },
     {
       "kind": "c",
-      "name": "activity_segments_timing_coverage_check",
-      "table": "activity_segments",
-      "validated": true,
-      "definition": "CHECK (timing_coverage = ANY (ARRAY['complete'::text, 'partial'::text, 'unavailable'::text]))"
-    },
-    {
-      "kind": "c",
       "name": "activity_segments_timing_coverage_values_check",
       "table": "activity_segments",
       "validated": true,
@@ -9266,7 +9055,7 @@
     },
     {
       "kind": "f",
-      "name": "activity_session_rpe_evidence_activity_id_fkey",
+      "name": "activity_session_rpe_evidence_activity_id_activities_id_fk",
       "table": "activity_session_rpe_evidence",
       "validated": true,
       "definition": "FOREIGN KEY (activity_id) REFERENCES activities(id) ON DELETE CASCADE"
@@ -9315,7 +9104,7 @@
     },
     {
       "kind": "f",
-      "name": "activity_session_rpe_evidence_profile_id_fkey",
+      "name": "activity_session_rpe_evidence_profile_id_profiles_id_fk",
       "table": "activity_session_rpe_evidence",
       "validated": true,
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
@@ -9357,7 +9146,7 @@
     },
     {
       "kind": "p",
-      "name": "api_rate_limit_windows_pkey",
+      "name": "api_rate_limit_windows_key_hash_window_started_at_pk",
       "table": "api_rate_limit_windows",
       "validated": true,
       "definition": "PRIMARY KEY (key_hash, window_started_at)"
@@ -9489,34 +9278,6 @@
       "definition": "PRIMARY KEY (code)"
     },
     {
-      "kind": "f",
-      "name": "coaches_athletes_athlete_id_profiles_id_fk",
-      "table": "coaches_athletes",
-      "validated": true,
-      "definition": "FOREIGN KEY (athlete_id) REFERENCES profiles(id) ON DELETE CASCADE"
-    },
-    {
-      "kind": "p",
-      "name": "coaches_athletes_coach_id_athlete_id_pk",
-      "table": "coaches_athletes",
-      "validated": true,
-      "definition": "PRIMARY KEY (coach_id, athlete_id)"
-    },
-    {
-      "kind": "f",
-      "name": "coaches_athletes_coach_id_profiles_id_fk",
-      "table": "coaches_athletes",
-      "validated": true,
-      "definition": "FOREIGN KEY (coach_id) REFERENCES profiles(id) ON DELETE CASCADE"
-    },
-    {
-      "kind": "c",
-      "name": "coaches_athletes_revision_positive",
-      "table": "coaches_athletes",
-      "validated": true,
-      "definition": "CHECK (revision > 0)"
-    },
-    {
       "kind": "c",
       "name": "coaching_assignments_chronology_check",
       "table": "coaching_assignments",
@@ -9553,7 +9314,7 @@
     },
     {
       "kind": "f",
-      "name": "coaching_engagements_athlete_profile_fkey",
+      "name": "coaching_engagements_athlete_profile_id_profiles_id_fk",
       "table": "coaching_engagements",
       "validated": true,
       "definition": "FOREIGN KEY (athlete_profile_id) REFERENCES profiles(id) ON DELETE RESTRICT"
@@ -9590,34 +9351,6 @@
       "kind": "p",
       "name": "coaching_engagements_pkey",
       "table": "coaching_engagements",
-      "validated": true,
-      "definition": "PRIMARY KEY (id)"
-    },
-    {
-      "kind": "u",
-      "name": "coaching_invitations_athlete_coach_unique",
-      "table": "coaching_invitations",
-      "validated": true,
-      "definition": "UNIQUE (athlete_id, coach_id)"
-    },
-    {
-      "kind": "f",
-      "name": "coaching_invitations_athlete_id_profiles_id_fk",
-      "table": "coaching_invitations",
-      "validated": true,
-      "definition": "FOREIGN KEY (athlete_id) REFERENCES profiles(id) ON DELETE CASCADE"
-    },
-    {
-      "kind": "f",
-      "name": "coaching_invitations_coach_id_profiles_id_fk",
-      "table": "coaching_invitations",
-      "validated": true,
-      "definition": "FOREIGN KEY (coach_id) REFERENCES profiles(id) ON DELETE CASCADE"
-    },
-    {
-      "kind": "p",
-      "name": "coaching_invitations_pkey",
-      "table": "coaching_invitations",
       "validated": true,
       "definition": "PRIMARY KEY (id)"
     },
@@ -9903,7 +9636,7 @@
     },
     {
       "kind": "f",
-      "name": "group_events_activity_plan_id_fkey",
+      "name": "group_events_activity_plan_id_activity_plans_id_fk",
       "table": "group_events",
       "validated": true,
       "definition": "FOREIGN KEY (activity_plan_id) REFERENCES activity_plans(id) ON DELETE SET NULL"
@@ -10123,7 +9856,7 @@
       "name": "groups_created_by_profile_id_profiles_id_fk",
       "table": "groups",
       "validated": true,
-      "definition": "FOREIGN KEY (created_by_profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+      "definition": "FOREIGN KEY (created_by_profile_id) REFERENCES profiles(id) ON DELETE RESTRICT"
     },
     {
       "kind": "c",
@@ -10155,10 +9888,10 @@
     },
     {
       "kind": "c",
-      "name": "integration_credentials_generation_positive",
+      "name": "integration_credentials_access_token_envelope_check",
       "table": "integration_credentials",
       "validated": true,
-      "definition": "CHECK (generation > 0)"
+      "definition": "CHECK (access_token ~~ 'enc:v1:%'::text)"
     },
     {
       "kind": "f",
@@ -10173,6 +9906,13 @@
       "table": "integration_credentials",
       "validated": true,
       "definition": "PRIMARY KEY (integration_id)"
+    },
+    {
+      "kind": "c",
+      "name": "integration_credentials_refresh_token_envelope_check",
+      "table": "integration_credentials",
+      "validated": true,
+      "definition": "CHECK (refresh_token IS NULL OR refresh_token ~~ 'enc:v1:%'::text)"
     },
     {
       "kind": "u",
@@ -10208,27 +9948,6 @@
       "table": "integration_resource_links",
       "validated": true,
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
-    },
-    {
-      "kind": "c",
-      "name": "integrations_disconnect_timestamps_check",
-      "table": "integrations",
-      "validated": true,
-      "definition": "CHECK (lifecycle_status = 'active'::text AND disconnect_requested_at IS NULL AND disconnected_at IS NULL OR lifecycle_status = 'disconnect_pending'::text AND disconnect_requested_at IS NOT NULL AND disconnected_at IS NULL OR lifecycle_status = 'disconnected'::text AND disconnect_requested_at IS NOT NULL AND disconnected_at IS NOT NULL)"
-    },
-    {
-      "kind": "c",
-      "name": "integrations_generation_positive_check",
-      "table": "integrations",
-      "validated": true,
-      "definition": "CHECK (generation > 0)"
-    },
-    {
-      "kind": "c",
-      "name": "integrations_lifecycle_status_check",
-      "table": "integrations",
-      "validated": true,
-      "definition": "CHECK (lifecycle_status = ANY (ARRAY['active'::text, 'disconnect_pending'::text, 'disconnected'::text]))"
     },
     {
       "kind": "p",
@@ -10358,7 +10077,7 @@
     },
     {
       "kind": "f",
-      "name": "organization_audit_events_actor_profile_fkey",
+      "name": "organization_audit_events_actor_profile_id_profiles_id_fk",
       "table": "organization_audit_events",
       "validated": true,
       "definition": "FOREIGN KEY (actor_profile_id) REFERENCES profiles(id) ON DELETE RESTRICT"
@@ -10371,8 +10090,15 @@
       "definition": "CHECK (jsonb_typeof(details) = 'object'::text)"
     },
     {
+      "kind": "c",
+      "name": "organization_audit_events_details_size_check",
+      "table": "organization_audit_events",
+      "validated": true,
+      "definition": "CHECK (pg_column_size(details) <= 4096)"
+    },
+    {
       "kind": "f",
-      "name": "organization_audit_events_organization_fkey",
+      "name": "organization_audit_events_organization_id_organizations_id_fk",
       "table": "organization_audit_events",
       "validated": true,
       "definition": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT"
@@ -10400,7 +10126,7 @@
     },
     {
       "kind": "f",
-      "name": "organization_membership_role_grants_organization_id_fkey",
+      "name": "organization_membership_role_grants_organization_id_organizatio",
       "table": "organization_membership_role_grants",
       "validated": true,
       "definition": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT"
@@ -10420,13 +10146,6 @@
       "definition": "CHECK (revoked_at IS NULL OR revoked_at >= granted_at)"
     },
     {
-      "kind": "f",
-      "name": "organization_membership_role_grants_role_fkey",
-      "table": "organization_membership_role_grants",
-      "validated": true,
-      "definition": "FOREIGN KEY (role_id, organization_id) REFERENCES organization_roles(id, organization_id) ON DELETE RESTRICT"
-    },
-    {
       "kind": "c",
       "name": "organization_membership_role_grants_role_key_check",
       "table": "organization_membership_role_grants",
@@ -10435,24 +10154,10 @@
     },
     {
       "kind": "c",
-      "name": "organization_membership_role_grants_status_check",
-      "table": "organization_membership_role_grants",
-      "validated": true,
-      "definition": "CHECK (status = ANY (ARRAY['active'::text, 'inactive'::text]))"
-    },
-    {
-      "kind": "c",
       "name": "organization_memberships_lifecycle_check",
       "table": "organization_memberships",
       "validated": true,
       "definition": "CHECK (ended_at IS NULL OR suspended_at IS NULL)"
-    },
-    {
-      "kind": "f",
-      "name": "organization_memberships_organization_id_fkey",
-      "table": "organization_memberships",
-      "validated": true,
-      "definition": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT"
     },
     {
       "kind": "u",
@@ -10467,6 +10172,13 @@
       "table": "organization_memberships",
       "validated": true,
       "definition": "UNIQUE (organization_id, id)"
+    },
+    {
+      "kind": "f",
+      "name": "organization_memberships_organization_id_organizations_id_fk",
+      "table": "organization_memberships",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT"
     },
     {
       "kind": "u",
@@ -10484,105 +10196,14 @@
     },
     {
       "kind": "f",
-      "name": "organization_memberships_profile_id_fkey",
+      "name": "organization_memberships_profile_id_profiles_id_fk",
       "table": "organization_memberships",
       "validated": true,
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE RESTRICT"
     },
     {
-      "kind": "c",
-      "name": "organization_memberships_status_check",
-      "table": "organization_memberships",
-      "validated": true,
-      "definition": "CHECK (status = ANY (ARRAY['active'::text, 'inactive'::text]))"
-    },
-    {
-      "kind": "c",
-      "name": "organization_permissions_description_non_empty",
-      "table": "organization_permissions",
-      "validated": true,
-      "definition": "CHECK (btrim(description) <> ''::text)"
-    },
-    {
-      "kind": "c",
-      "name": "organization_permissions_key_check",
-      "table": "organization_permissions",
-      "validated": true,
-      "definition": "CHECK (key = 'coaching.access'::text)"
-    },
-    {
-      "kind": "p",
-      "name": "organization_permissions_pkey",
-      "table": "organization_permissions",
-      "validated": true,
-      "definition": "PRIMARY KEY (key)"
-    },
-    {
       "kind": "f",
-      "name": "organization_role_permission_grants_permission_key_fkey",
-      "table": "organization_role_permission_grants",
-      "validated": true,
-      "definition": "FOREIGN KEY (permission_key) REFERENCES organization_permissions(key) ON DELETE RESTRICT"
-    },
-    {
-      "kind": "p",
-      "name": "organization_role_permission_grants_pkey",
-      "table": "organization_role_permission_grants",
-      "validated": true,
-      "definition": "PRIMARY KEY (role_id, permission_key)"
-    },
-    {
-      "kind": "f",
-      "name": "organization_role_permission_grants_role_id_fkey",
-      "table": "organization_role_permission_grants",
-      "validated": true,
-      "definition": "FOREIGN KEY (role_id) REFERENCES organization_roles(id) ON DELETE RESTRICT"
-    },
-    {
-      "kind": "u",
-      "name": "organization_roles_id_organization_unique",
-      "table": "organization_roles",
-      "validated": true,
-      "definition": "UNIQUE (id, organization_id)"
-    },
-    {
-      "kind": "c",
-      "name": "organization_roles_key_non_empty",
-      "table": "organization_roles",
-      "validated": true,
-      "definition": "CHECK (btrim(key) <> ''::text)"
-    },
-    {
-      "kind": "c",
-      "name": "organization_roles_name_non_empty",
-      "table": "organization_roles",
-      "validated": true,
-      "definition": "CHECK (btrim(name) <> ''::text)"
-    },
-    {
-      "kind": "f",
-      "name": "organization_roles_organization_id_fkey",
-      "table": "organization_roles",
-      "validated": true,
-      "definition": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT"
-    },
-    {
-      "kind": "u",
-      "name": "organization_roles_organization_key_unique",
-      "table": "organization_roles",
-      "validated": true,
-      "definition": "UNIQUE (organization_id, key)"
-    },
-    {
-      "kind": "p",
-      "name": "organization_roles_pkey",
-      "table": "organization_roles",
-      "validated": true,
-      "definition": "PRIMARY KEY (id)"
-    },
-    {
-      "kind": "f",
-      "name": "organizations_created_by_profile_id_fkey",
+      "name": "organizations_created_by_profile_id_profiles_id_fk",
       "table": "organizations",
       "validated": true,
       "definition": "FOREIGN KEY (created_by_profile_id) REFERENCES profiles(id) ON DELETE RESTRICT"
@@ -10630,6 +10251,34 @@
       "definition": "CHECK (btrim(timezone) <> ''::text)"
     },
     {
+      "kind": "c",
+      "name": "profile_goals_activity_category_check",
+      "table": "profile_goals",
+      "validated": true,
+      "definition": "CHECK (activity_category = ANY (ARRAY['run'::text, 'bike'::text, 'swim'::text, 'strength'::text, 'other'::text]))"
+    },
+    {
+      "kind": "c",
+      "name": "profile_goals_completion_payload_check",
+      "table": "profile_goals",
+      "validated": true,
+      "definition": "CHECK ((target_payload ->> 'type'::text) <> 'completion'::text OR (target_payload - ARRAY['type'::text, 'activity_category'::text, 'distance_m'::text, 'duration_s'::text]) = '{}'::jsonb AND (target_payload ? 'distance_m'::text OR target_payload ? 'duration_s'::text) AND (NOT target_payload ? 'distance_m'::text OR\nCASE\n    WHEN jsonb_typeof(target_payload -> 'distance_m'::text) = 'number'::text THEN ((target_payload ->> 'distance_m'::text)::numeric) > 0::numeric\n    ELSE false\nEND) AND (NOT target_payload ? 'duration_s'::text OR\nCASE\n    WHEN jsonb_typeof(target_payload -> 'duration_s'::text) = 'number'::text THEN ((target_payload ->> 'duration_s'::text)::numeric) > 0::numeric AND trunc((target_payload ->> 'duration_s'::text)::numeric) = ((target_payload ->> 'duration_s'::text)::numeric)\n    ELSE false\nEND))"
+    },
+    {
+      "kind": "c",
+      "name": "profile_goals_consistency_payload_check",
+      "table": "profile_goals",
+      "validated": true,
+      "definition": "CHECK ((target_payload ->> 'type'::text) <> 'consistency'::text OR (target_payload - ARRAY['type'::text, 'target_sessions_per_week'::text, 'target_weeks'::text]) = '{}'::jsonb AND (target_payload ? 'target_sessions_per_week'::text OR target_payload ? 'target_weeks'::text) AND (NOT target_payload ? 'target_sessions_per_week'::text OR\nCASE\n    WHEN jsonb_typeof(target_payload -> 'target_sessions_per_week'::text) = 'number'::text THEN ((target_payload ->> 'target_sessions_per_week'::text)::numeric) > 0::numeric AND trunc((target_payload ->> 'target_sessions_per_week'::text)::numeric) = ((target_payload ->> 'target_sessions_per_week'::text)::numeric)\n    ELSE false\nEND) AND (NOT target_payload ? 'target_weeks'::text OR\nCASE\n    WHEN jsonb_typeof(target_payload -> 'target_weeks'::text) = 'number'::text THEN ((target_payload ->> 'target_weeks'::text)::numeric) > 0::numeric AND trunc((target_payload ->> 'target_weeks'::text)::numeric) = ((target_payload ->> 'target_weeks'::text)::numeric)\n    ELSE false\nEND))"
+    },
+    {
+      "kind": "c",
+      "name": "profile_goals_event_performance_payload_check",
+      "table": "profile_goals",
+      "validated": true,
+      "definition": "CHECK ((target_payload ->> 'type'::text) <> 'event_performance'::text OR (target_payload - ARRAY['type'::text, 'activity_category'::text, 'distance_m'::text, 'target_time_s'::text, 'target_speed_mps'::text, 'environment'::text, 'tolerance_pct'::text]) = '{}'::jsonb AND target_payload ? 'activity_category'::text AND target_payload ? 'distance_m'::text AND\nCASE\n    WHEN jsonb_typeof(target_payload -> 'distance_m'::text) = 'number'::text THEN ((target_payload ->> 'distance_m'::text)::numeric) > 0::numeric\n    ELSE false\nEND AND (target_payload ? 'target_time_s'::text OR target_payload ? 'target_speed_mps'::text) AND (NOT target_payload ? 'target_time_s'::text OR\nCASE\n    WHEN jsonb_typeof(target_payload -> 'target_time_s'::text) = 'number'::text THEN ((target_payload ->> 'target_time_s'::text)::numeric) > 0::numeric AND trunc((target_payload ->> 'target_time_s'::text)::numeric) = ((target_payload ->> 'target_time_s'::text)::numeric)\n    ELSE false\nEND) AND (NOT target_payload ? 'target_speed_mps'::text OR\nCASE\n    WHEN jsonb_typeof(target_payload -> 'target_speed_mps'::text) = 'number'::text THEN ((target_payload ->> 'target_speed_mps'::text)::numeric) > 0::numeric\n    ELSE false\nEND) AND (NOT target_payload ? 'environment'::text OR jsonb_typeof(target_payload -> 'environment'::text) = 'string'::text AND char_length(btrim(target_payload ->> 'environment'::text)) >= 1 AND char_length(btrim(target_payload ->> 'environment'::text)) <= 80) AND (NOT target_payload ? 'tolerance_pct'::text OR\nCASE\n    WHEN jsonb_typeof(target_payload -> 'tolerance_pct'::text) = 'number'::text THEN ((target_payload ->> 'tolerance_pct'::text)::numeric) >= 0::numeric AND ((target_payload ->> 'tolerance_pct'::text)::numeric) <= 1::numeric\n    ELSE false\nEND))"
+    },
+    {
       "kind": "p",
       "name": "profile_goals_pkey",
       "table": "profile_goals",
@@ -10637,11 +10286,39 @@
       "definition": "PRIMARY KEY (id)"
     },
     {
+      "kind": "c",
+      "name": "profile_goals_priority_range",
+      "table": "profile_goals",
+      "validated": true,
+      "definition": "CHECK (priority >= 0 AND priority <= 10)"
+    },
+    {
       "kind": "f",
       "name": "profile_goals_profile_id_profiles_id_fk",
       "table": "profile_goals",
       "validated": true,
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id)"
+    },
+    {
+      "kind": "c",
+      "name": "profile_goals_target_payload_shape_check",
+      "table": "profile_goals",
+      "validated": true,
+      "definition": "CHECK (jsonb_typeof(target_payload) = 'object'::text AND target_payload ? 'type'::text AND jsonb_typeof(target_payload -> 'type'::text) = 'string'::text AND ((target_payload ->> 'type'::text) = ANY (ARRAY['event_performance'::text, 'threshold'::text, 'completion'::text, 'consistency'::text])) AND (NOT target_payload ? 'activity_category'::text OR jsonb_typeof(target_payload -> 'activity_category'::text) = 'string'::text AND (target_payload ->> 'activity_category'::text) = activity_category))"
+    },
+    {
+      "kind": "c",
+      "name": "profile_goals_threshold_payload_check",
+      "table": "profile_goals",
+      "validated": true,
+      "definition": "CHECK ((target_payload ->> 'type'::text) <> 'threshold'::text OR (target_payload - ARRAY['type'::text, 'metric'::text, 'activity_category'::text, 'value'::text, 'test_duration_s'::text, 'tolerance_pct'::text]) = '{}'::jsonb AND target_payload ? 'metric'::text AND jsonb_typeof(target_payload -> 'metric'::text) = 'string'::text AND ((target_payload ->> 'metric'::text) = ANY (ARRAY['pace'::text, 'power'::text, 'hr'::text])) AND target_payload ? 'value'::text AND\nCASE\n    WHEN jsonb_typeof(target_payload -> 'value'::text) = 'number'::text THEN ((target_payload ->> 'value'::text)::numeric) > 0::numeric\n    ELSE false\nEND AND (NOT target_payload ? 'test_duration_s'::text OR\nCASE\n    WHEN jsonb_typeof(target_payload -> 'test_duration_s'::text) = 'number'::text THEN ((target_payload ->> 'test_duration_s'::text)::numeric) > 0::numeric AND trunc((target_payload ->> 'test_duration_s'::text)::numeric) = ((target_payload ->> 'test_duration_s'::text)::numeric)\n    ELSE false\nEND) AND (NOT target_payload ? 'tolerance_pct'::text OR\nCASE\n    WHEN jsonb_typeof(target_payload -> 'tolerance_pct'::text) = 'number'::text THEN ((target_payload ->> 'tolerance_pct'::text)::numeric) >= 0::numeric AND ((target_payload ->> 'tolerance_pct'::text)::numeric) <= 1::numeric\n    ELSE false\nEND))"
+    },
+    {
+      "kind": "c",
+      "name": "profile_goals_title_length_check",
+      "table": "profile_goals",
+      "validated": true,
+      "definition": "CHECK (char_length(btrim(title)) >= 1 AND char_length(btrim(title)) <= 100)"
     },
     {
       "kind": "c",
@@ -10742,13 +10419,6 @@
       "definition": "CHECK (preferred_units IS NULL OR (preferred_units = ANY (ARRAY['metric'::text, 'imperial'::text])))"
     },
     {
-      "kind": "c",
-      "name": "provider_sync_jobs_integration_generation_positive_check",
-      "table": "provider_sync_jobs",
-      "validated": true,
-      "definition": "CHECK (integration_generation > 0)"
-    },
-    {
       "kind": "f",
       "name": "provider_sync_jobs_integration_id_integrations_id_fk",
       "table": "provider_sync_jobs",
@@ -10834,7 +10504,7 @@
     },
     {
       "kind": "u",
-      "name": "rate_limits_key_key",
+      "name": "rate_limits_key_unique",
       "table": "rate_limits",
       "validated": true,
       "definition": "UNIQUE (key)"
@@ -10992,14 +10662,6 @@
       "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
       "rls": false,
       "kind": "S",
-      "name": "profile_metrics_idx_seq",
-      "managed": false,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "rls": false,
-      "kind": "S",
       "name": "provider_sync_jobs_queue_sequence_seq",
       "managed": false,
       "forceRls": false
@@ -11064,6 +10726,14 @@
       "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
       "rls": true,
       "kind": "r",
+      "name": "activity_route_deletion_receipts",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
       "name": "activity_routes",
       "managed": true,
       "forceRls": false
@@ -11093,7 +10763,7 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "kind": "r",
       "name": "athlete_consent_policy_versions",
@@ -11101,7 +10771,7 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "kind": "r",
       "name": "athlete_data_sharing_consents",
@@ -11117,15 +10787,7 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
-      "rls": true,
-      "kind": "r",
-      "name": "coaches_athletes",
-      "managed": true,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "kind": "r",
       "name": "coaching_assignments",
@@ -11133,18 +10795,10 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "kind": "r",
       "name": "coaching_engagements",
-      "managed": true,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
-      "rls": true,
-      "kind": "r",
-      "name": "coaching_invitations",
       "managed": true,
       "forceRls": false
     },
@@ -11309,7 +10963,7 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "kind": "r",
       "name": "organization_audit_events",
@@ -11317,7 +10971,7 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "kind": "r",
       "name": "organization_membership_role_grants",
@@ -11325,7 +10979,7 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "kind": "r",
       "name": "organization_memberships",
@@ -11333,31 +10987,7 @@
       "forceRls": false
     },
     {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
-      "rls": true,
-      "kind": "r",
-      "name": "organization_permissions",
-      "managed": true,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
-      "rls": true,
-      "kind": "r",
-      "name": "organization_role_permission_grants",
-      "managed": true,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
-      "rls": true,
-      "kind": "r",
-      "name": "organization_roles",
-      "managed": true,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "kind": "r",
       "name": "organizations",
@@ -11464,11 +11094,6 @@
   "publicSequences": [
     {
       "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "name": "profile_metrics_idx_seq",
-      "definition": "public.profile_metrics_idx_seq"
-    },
-    {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
       "name": "provider_sync_jobs_queue_sequence_seq",
       "definition": "public.provider_sync_jobs_queue_sequence_seq"
     }
@@ -11491,14 +11116,6 @@
       "permissive": "PERMISSIVE"
     },
     {
-      "name": "Users can manage their own routes",
-      "check": "((bucket_id = 'gpx-routes'::text) AND ((auth.uid())::text = (storage.foldername(name))[1]))",
-      "roles": ["public"],
-      "using": "((bucket_id = 'gpx-routes'::text) AND ((auth.uid())::text = (storage.foldername(name))[1]))",
-      "command": "ALL",
-      "permissive": "PERMISSIVE"
-    },
-    {
       "name": "Users can read their own activity files",
       "check": "",
       "roles": ["public"],
@@ -11517,17 +11134,12 @@
   ],
   "defaultPrivileges": [
     {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
+      "acl": "{service_role=rwU/postgres}",
       "owner": "postgres",
       "objectType": "S"
     },
     {
-      "acl": "{postgres=X/postgres}",
-      "owner": "postgres",
-      "objectType": "f"
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "acl": "{service_role=arwdDxtm/postgres}",
       "owner": "postgres",
       "objectType": "r"
     }

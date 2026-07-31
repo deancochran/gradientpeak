@@ -1,6 +1,13 @@
 import { expect, test } from "../fixtures";
 import { openAppPage } from "../utils/navigation";
 
+async function waitForDashboardRequest(page: Parameters<typeof openAppPage>[0]) {
+  return page.waitForResponse(
+    (response) =>
+      response.url().includes("/api/trpc/") && response.url().includes("home.getDashboard"),
+  );
+}
+
 test("athlete can open migrated protected routes", async ({ athletePage }) => {
   await expect(athletePage.getByRole("heading", { name: /welcome back/i })).toBeVisible();
 
@@ -14,29 +21,82 @@ test("athlete can open migrated protected routes", async ({ athletePage }) => {
   await expect(athletePage.getByText(/select a conversation or start a new one/i)).toBeVisible();
 });
 
+test("dashboard presents an explicit error and recovers its server content", async ({
+  athletePage,
+}) => {
+  await openAppPage(athletePage, "/calendar");
+  await athletePage.route("**/api/trpc/**", async (route) => {
+    if (route.request().url().includes("home.getDashboard")) {
+      await route.abort("failed");
+      return;
+    }
+    await route.continue();
+  });
+
+  await openAppPage(athletePage, "/");
+  await expect(athletePage.getByRole("alert")).toContainText("Dashboard unavailable", {
+    timeout: 15_000,
+  });
+
+  await athletePage.unroute("**/api/trpc/**");
+  const recoveryResponse = waitForDashboardRequest(athletePage);
+  await athletePage.getByRole("button", { name: "Retry dashboard" }).click();
+  await expect((await recoveryResponse).ok()).toBeTruthy();
+  await expect(athletePage.getByRole("heading", { name: /welcome back/i })).toBeVisible();
+});
+
 test("mobile primary navigation opens, navigates, and closes", async ({ athletePage }) => {
-  test.skip((athletePage.viewportSize()?.width ?? 0) >= 768, "Mobile-width browser journey");
+  await athletePage.setViewportSize({ width: 390, height: 844 });
 
   await expect(
     athletePage.getByRole("navigation", { name: "Primary navigation", exact: true }),
   ).toBeHidden();
-  await athletePage.getByRole("button", { name: /open navigation/i }).click();
+  const openNavigation = athletePage.getByRole("button", { name: /open navigation/i });
+  await openNavigation.focus();
+  await athletePage.keyboard.press("Enter");
 
   const mobileNavigation = athletePage.getByRole("navigation", {
     name: "Mobile primary navigation",
     exact: true,
   });
   await expect(mobileNavigation).toBeVisible();
-  await mobileNavigation.getByRole("link", { name: /^calendar$/i }).click();
+  const calendarLink = mobileNavigation.getByRole("link", { name: /^calendar$/i });
+  await calendarLink.focus();
+  await athletePage.keyboard.press("Enter");
 
   await expect(athletePage).toHaveURL(/\/calendar(?:\?|$)/);
   await expect(athletePage.getByRole("heading", { name: /^calendar$/i })).toBeVisible();
   await expect(mobileNavigation).toBeHidden();
+  await expect(openNavigation).toBeFocused();
+  const overflow = await athletePage.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
+});
+
+test("desktop primary navigation exposes named destinations", async ({ athletePage }) => {
+  await athletePage.setViewportSize({ width: 1280, height: 900 });
+
+  const primaryNavigation = athletePage.getByRole("navigation", {
+    name: "Primary navigation",
+    exact: true,
+  });
+  await expect(primaryNavigation).toBeVisible();
+  const calendarLink = primaryNavigation.getByRole("link", { name: /^calendar$/i });
+  await calendarLink.focus();
+  await athletePage.keyboard.press("Enter");
+
+  await expect(athletePage).toHaveURL(/\/calendar(?:\?|$)/);
+  await expect(calendarLink).toHaveAttribute("aria-current", "page");
 });
 
 test("athlete can reach the migrated profile routes from the shell", async ({ athletePage }) => {
-  await athletePage.getByRole("button", { name: /open user menu/i }).click();
-  await athletePage.getByRole("menuitem", { name: /^profile$/i }).click();
+  const userMenu = athletePage.getByRole("button", { name: /open user menu/i });
+  await userMenu.focus();
+  await athletePage.keyboard.press("Enter");
+  const profileMenuItem = athletePage.getByRole("menuitem", { name: /^profile$/i });
+  await profileMenuItem.focus();
+  await athletePage.keyboard.press("Enter");
 
   await expect(athletePage).toHaveURL(/\/user\/.+$/);
   await expect(athletePage.getByRole("heading", { level: 1 })).toBeVisible();

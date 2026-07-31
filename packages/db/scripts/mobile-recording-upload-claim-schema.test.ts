@@ -55,7 +55,7 @@ const indexNames = new Set(config.indexes.map((index) => index.config.name));
 assert.ok(indexNames.has("activity_file_ingestions_profile_operation_unique"));
 
 const migration = readFileSync(
-  resolve(dbPackageRoot, "supabase/migrations/20260726005149_generation_2_baseline.sql"),
+  resolve(dbPackageRoot, "supabase/migrations/20260730000000_mvp_baseline.sql"),
   "utf8",
 );
 for (const mediaType of ["application/vnd.ant.fit", "application/vnd.garmin.tcx+xml"]) {

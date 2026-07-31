@@ -1,3 +1,4 @@
+import { CONTRACT_EPOCH_HEADER, CURRENT_CONTRACT_EPOCH } from "@repo/api/client";
 import {
   api,
   createApiBatchLink,
@@ -127,8 +128,9 @@ export const getApiUrl = () => {
   return url;
 };
 
-function createMobileHeaders() {
+export function createMobileHeaders() {
   const authHeaders = getSessionAuthHeaders();
+  authHeaders.set(CONTRACT_EPOCH_HEADER, String(CURRENT_CONTRACT_EPOCH));
   authHeaders.set("x-client-type", "mobile");
   authHeaders.set("x-api-source", "react-native");
   authHeaders.set("x-mobile-platform", Platform.OS);

@@ -95,7 +95,7 @@ const segmentTimingSchema = z.union([
   unavailableTimingSchema,
 ]);
 
-export const SEGMENT_SUMMARY_V1_LIMITS = {
+export const SEGMENT_SUMMARY_LIMITS = {
   maxCadenceRpm: 500,
   maxSpeedMetersPerSecond: 100,
   maxPoolLengthMeters: 200,
@@ -116,16 +116,14 @@ const heartRateDistributionSchema = z
             bpm: z
               .number()
               .int()
-              .min(SEGMENT_SUMMARY_V1_LIMITS.minHeartRateBpm)
-              .max(SEGMENT_SUMMARY_V1_LIMITS.maxHeartRateBpm),
+              .min(SEGMENT_SUMMARY_LIMITS.minHeartRateBpm)
+              .max(SEGMENT_SUMMARY_LIMITS.maxHeartRateBpm),
             seconds: z.number().int().positive(),
           })
           .strict(),
       )
       .min(1)
-      .max(
-        SEGMENT_SUMMARY_V1_LIMITS.maxHeartRateBpm - SEGMENT_SUMMARY_V1_LIMITS.minHeartRateBpm + 1,
-      ),
+      .max(SEGMENT_SUMMARY_LIMITS.maxHeartRateBpm - SEGMENT_SUMMARY_LIMITS.minHeartRateBpm + 1),
   })
   .strict()
   .superRefine((distribution, context) => {
@@ -147,33 +145,23 @@ const swimSegmentSummarySchema = z
     poolLengthMeters: z
       .number()
       .positive()
-      .max(SEGMENT_SUMMARY_V1_LIMITS.maxPoolLengthMeters)
+      .max(SEGMENT_SUMMARY_LIMITS.maxPoolLengthMeters)
       .optional(),
-    lengthCount: z
-      .number()
-      .int()
-      .nonnegative()
-      .max(SEGMENT_SUMMARY_V1_LIMITS.maxSwimCount)
-      .optional(),
-    strokeCount: z
-      .number()
-      .int()
-      .nonnegative()
-      .max(SEGMENT_SUMMARY_V1_LIMITS.maxSwimCount)
-      .optional(),
+    lengthCount: z.number().int().nonnegative().max(SEGMENT_SUMMARY_LIMITS.maxSwimCount).optional(),
+    strokeCount: z.number().int().nonnegative().max(SEGMENT_SUMMARY_LIMITS.maxSwimCount).optional(),
     averageStrokeRatePerMinute: z
       .number()
       .nonnegative()
-      .max(SEGMENT_SUMMARY_V1_LIMITS.maxStrokeRatePerMinute)
+      .max(SEGMENT_SUMMARY_LIMITS.maxStrokeRatePerMinute)
       .optional(),
-    averageSwolf: z.number().nonnegative().max(SEGMENT_SUMMARY_V1_LIMITS.maxSwolf).optional(),
+    averageSwolf: z.number().nonnegative().max(SEGMENT_SUMMARY_LIMITS.maxSwolf).optional(),
   })
   .strict()
   .refine((swim) => Object.values(swim).some((value) => value !== undefined), {
     message: "A swim summary must contain at least one supported metric.",
   });
 
-export const segmentSummarySchemaV1 = z
+export const segmentSummarySchema = z
   .object({
     version: z.literal(1),
     timing: segmentTimingSchema,
@@ -188,22 +176,22 @@ export const segmentSummarySchemaV1 = z
     averageCadenceRpm: z
       .number()
       .nonnegative()
-      .max(SEGMENT_SUMMARY_V1_LIMITS.maxCadenceRpm)
+      .max(SEGMENT_SUMMARY_LIMITS.maxCadenceRpm)
       .optional(),
     averageSpeedMetersPerSecond: z
       .number()
       .nonnegative()
-      .max(SEGMENT_SUMMARY_V1_LIMITS.maxSpeedMetersPerSecond)
+      .max(SEGMENT_SUMMARY_LIMITS.maxSpeedMetersPerSecond)
       .optional(),
     normalizedSpeedMetersPerSecond: z
       .number()
       .positive()
-      .max(SEGMENT_SUMMARY_V1_LIMITS.maxSpeedMetersPerSecond)
+      .max(SEGMENT_SUMMARY_LIMITS.maxSpeedMetersPerSecond)
       .optional(),
     normalizedGradedSpeedMetersPerSecond: z
       .number()
       .positive()
-      .max(SEGMENT_SUMMARY_V1_LIMITS.maxSpeedMetersPerSecond)
+      .max(SEGMENT_SUMMARY_LIMITS.maxSpeedMetersPerSecond)
       .optional(),
     swim: swimSegmentSummarySchema.optional(),
   })
@@ -225,17 +213,17 @@ export const segmentSummarySchemaV1 = z
     }
   });
 
-export type SegmentSummaryV1 = z.infer<typeof segmentSummarySchemaV1>;
+export type SegmentSummary = z.infer<typeof segmentSummarySchema>;
 
 const completedSegmentBase = {
   id: z.string().uuid(),
   ordinal: z.number().int().nonnegative(),
   startOffsetMs: z.number().int().nonnegative(),
   endOffsetMs: z.number().int().positive(),
-  summary: segmentSummarySchemaV1,
+  summary: segmentSummarySchema,
 };
 
-const completedActivitySegmentSchema = z
+const completedActivityRoleSegmentSchema = z
   .object({
     ...completedSegmentBase,
     role: z.literal("activity"),
@@ -261,21 +249,21 @@ const completedUnknownSegmentSchema = z
   })
   .strict();
 
-export const completedActivitySegmentSchemaV1 = z.discriminatedUnion("role", [
-  completedActivitySegmentSchema,
+export const completedActivitySegmentSchema = z.discriminatedUnion("role", [
+  completedActivityRoleSegmentSchema,
   completedBoundarySegmentSchema("transition"),
   completedBoundarySegmentSchema("rest"),
   completedUnknownSegmentSchema,
 ]);
 
-export type CompletedActivitySegmentV1 = z.infer<typeof completedActivitySegmentSchemaV1>;
+export type CompletedActivitySegment = z.infer<typeof completedActivitySegmentSchema>;
 
 /** Parent-relative segment set; elapsed gaps intentionally represent pauses/unclassified time. */
-export const completedActivitySegmentSetSchemaV1 = z
+export const completedActivitySegmentSetSchema = z
   .object({
     version: z.literal(1),
     elapsedMs: z.number().int().positive(),
-    segments: z.array(completedActivitySegmentSchemaV1).min(1).max(256),
+    segments: z.array(completedActivitySegmentSchema).min(1).max(256),
   })
   .strict()
   .superRefine((set, ctx) => {
@@ -341,4 +329,4 @@ export const completedActivitySegmentSetSchemaV1 = z
     }
   });
 
-export type CompletedActivitySegmentSetV1 = z.infer<typeof completedActivitySegmentSetSchemaV1>;
+export type CompletedActivitySegmentSet = z.infer<typeof completedActivitySegmentSetSchema>;

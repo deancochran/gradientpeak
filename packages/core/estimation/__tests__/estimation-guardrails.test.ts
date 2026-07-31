@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activityPlanStructureSchemaV3 } from "../../activity-plan";
+import { activityPlanStructureSchema } from "../../activity-plan";
 import {
   buildEstimationContext,
   estimateActivity,
@@ -9,7 +9,7 @@ import { estimateFromStructure } from "../strategies";
 
 describe("estimation guardrails", () => {
   it("uses segment activity category and preserves the single-bike golden", () => {
-    const structure = activityPlanStructureSchemaV3.parse({
+    const structure = activityPlanStructureSchema.parse({
       version: 3,
       segments: [
         {
@@ -70,7 +70,7 @@ describe("estimation guardrails", () => {
   });
 
   it("returns partial distance dose without inventing elapsed duration", () => {
-    const structure = activityPlanStructureSchemaV3.parse({
+    const structure = activityPlanStructureSchema.parse({
       version: 3,
       segments: [
         {

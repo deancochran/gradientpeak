@@ -12,10 +12,10 @@ const expectedBuckets = [
 const expectedPolicies = [
   "Service role can manage all activity files",
   "Users can manage their own avatar",
-  "Users can manage their own routes",
   "Users can read their own activity files",
   "Users can upload their own activity files",
 ];
+const forbiddenPolicies = ["Users can manage their own routes"];
 
 async function main() {
   const pool = new Pool({ connectionString: prepareDbEnv() });
@@ -43,13 +43,13 @@ async function main() {
         and policyname = any($1::text[])
       order by policyname
     `,
-      [expectedPolicies],
+      [[...expectedPolicies, ...forbiddenPolicies]],
     );
     const actualPolicies = policies.rows.map((row) => row.policyname);
     if (JSON.stringify(actualPolicies) !== JSON.stringify([...expectedPolicies].sort())) {
       throw new Error(`storage policy convergence failed: ${JSON.stringify(actualPolicies)}`);
     }
-    console.log("[db:storage:check] 3 buckets and 5 policies match owned configuration");
+    console.log("[db:storage:check] 3 buckets and 4 policies match owned configuration");
   } finally {
     await pool.end();
   }

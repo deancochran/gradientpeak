@@ -17,7 +17,6 @@ export interface CanonicalLoadActivity {
   activity_category?: string | null;
   trimp?: number | null;
   tss?: number | null;
-  training_stress_score?: number | null;
   tss_identity?: ActivityTssIdentity | null;
   load_method?: string | null;
   load_version?: string | null;
@@ -25,8 +24,6 @@ export interface CanonicalLoadActivity {
 }
 
 export interface CanonicalDailyLoads {
-  /** Compatibility field. Empty when more than one identity is present. */
-  dailyLoads: number[];
   coverageDays: number;
   source: LoadSource;
   series: LoadSeries[];
@@ -116,9 +113,8 @@ export function buildCanonicalDailyLoads(
     if (typeof activity.trimp === "number" && Number.isFinite(activity.trimp)) {
       add(activity, "trimp", Math.max(0, activity.trimp));
     }
-    const tss = activity.tss ?? activity.training_stress_score;
-    if (typeof tss === "number" && Number.isFinite(tss)) {
-      add(activity, "tss", Math.max(0, tss));
+    if (typeof activity.tss === "number" && Number.isFinite(activity.tss)) {
+      add(activity, "tss", Math.max(0, activity.tss));
     }
   }
 
@@ -135,11 +131,6 @@ export function buildCanonicalDailyLoads(
   const families = new Set(series.map(({ identity }) => identity.family));
 
   return {
-    dailyLoads: onlySeries?.observations.every(
-      ({ state }) => state === "observed" || state === "known_zero",
-    )
-      ? onlySeries.observations.map(({ value }) => (typeof value === "number" ? value : 0))
-      : [],
     coverageDays: onlySeries
       ? onlySeries.observations.filter(
           ({ state }) => state === "observed" || state === "known_zero",

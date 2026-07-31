@@ -36,9 +36,6 @@ import {
   organizationAuditEvents,
   organizationMembershipRoleGrants,
   organizationMemberships,
-  organizationPermissions,
-  organizationRolePermissionGrants,
-  organizationRoles,
   organizations,
   profileGoals,
   profileMetrics,
@@ -122,7 +119,6 @@ export const organizationsRelations = relations(organizations, ({ one, many }) =
   coachingEngagements: many(coachingEngagements),
   coachingAssignments: many(coachingAssignments),
   auditEvents: many(organizationAuditEvents),
-  roles: many(organizationRoles),
 }));
 
 export const organizationMembershipsRelations = relations(
@@ -138,33 +134,6 @@ export const organizationMembershipsRelations = relations(
     }),
     roleGrants: many(organizationMembershipRoleGrants),
     coachingAssignments: many(coachingAssignments),
-  }),
-);
-
-export const organizationRolesRelations = relations(organizationRoles, ({ one, many }) => ({
-  organization: one(organizations, {
-    fields: [organizationRoles.organization_id],
-    references: [organizations.id],
-  }),
-  permissionGrants: many(organizationRolePermissionGrants),
-  membershipGrants: many(organizationMembershipRoleGrants),
-}));
-
-export const organizationPermissionsRelations = relations(organizationPermissions, ({ many }) => ({
-  roleGrants: many(organizationRolePermissionGrants),
-}));
-
-export const organizationRolePermissionGrantsRelations = relations(
-  organizationRolePermissionGrants,
-  ({ one }) => ({
-    legacyRole: one(organizationRoles, {
-      fields: [organizationRolePermissionGrants.role_id],
-      references: [organizationRoles.id],
-    }),
-    permission: one(organizationPermissions, {
-      fields: [organizationRolePermissionGrants.permission_key],
-      references: [organizationPermissions.key],
-    }),
   }),
 );
 
@@ -236,10 +205,6 @@ export const organizationMembershipRoleGrantsRelations = relations(
     membership: one(organizationMemberships, {
       fields: [organizationMembershipRoleGrants.membership_id],
       references: [organizationMemberships.id],
-    }),
-    role: one(organizationRoles, {
-      fields: [organizationMembershipRoleGrants.role_id],
-      references: [organizationRoles.id],
     }),
   }),
 );
@@ -662,9 +627,6 @@ export const relationsSchema = {
   groupMembershipsRelations,
   organizationsRelations,
   organizationMembershipsRelations,
-  organizationRolesRelations,
-  organizationPermissionsRelations,
-  organizationRolePermissionGrantsRelations,
   organizationMembershipRoleGrantsRelations,
   coachingEngagementsRelations,
   coachingAssignmentsRelations,

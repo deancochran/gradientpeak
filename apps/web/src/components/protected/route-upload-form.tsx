@@ -11,15 +11,21 @@ import { LoadingButton } from "@repo/ui/components/loading";
 import { useZodForm } from "@repo/ui/hooks";
 import { Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import {
+  claimRouteUploadOperation,
+  clearRouteUploadOperation,
+} from "../../lib/route-upload-operation";
 
 export type RouteUploadPhase = "idle" | "reading" | "uploading" | "success";
 
 export type BrowserRouteUploadValues = RouteUploadFormValues & {
   file: File;
   fileContent: string;
+  idempotencyKey: string;
 };
 
 type RouteUploadFormProps<TResult> = {
+  idempotencyScope: string;
   onCancel: () => void;
   onSubmitError?: (error: unknown) => void;
   onSubmit: (values: BrowserRouteUploadValues) => Promise<TResult> | TResult;
@@ -42,6 +48,7 @@ function getBrowserFile(value: unknown): File | null {
 }
 
 export function RouteUploadForm<TResult = unknown>({
+  idempotencyScope,
   onCancel,
   onSubmit,
   onSubmitError,
@@ -120,7 +127,20 @@ export function RouteUploadForm<TResult = unknown>({
         setPhase("reading");
         const fileContent = await file.text();
         setPhase("uploading");
-        result = await onSubmit({ ...values, file, fileContent });
+        const operation = await claimRouteUploadOperation({
+          description: values.description,
+          fileContent,
+          fileName: file.name,
+          name: values.name,
+          profileId: idempotencyScope,
+        });
+        result = await onSubmit({
+          ...values,
+          file,
+          fileContent,
+          idempotencyKey: operation.idempotencyKey,
+        });
+        clearRouteUploadOperation(operation.storageKey);
       } catch (error) {
         setPhase("idle");
         submitGuard.current = false;
@@ -148,6 +168,7 @@ export function RouteUploadForm<TResult = unknown>({
     <Form {...form}>
       <form
         className="space-y-4"
+        data-testid="route-upload-form"
         onSubmit={(event) => {
           if (submitGuard.current) {
             event.preventDefault();
@@ -183,6 +204,7 @@ export function RouteUploadForm<TResult = unknown>({
           label="Description"
           name="description"
           placeholder="Add notes about this route"
+          testId="route-upload-description-input"
         />
         {phase !== "idle" ? (
           <p aria-live="polite" className="text-sm text-muted-foreground" role="status">
@@ -195,10 +217,17 @@ export function RouteUploadForm<TResult = unknown>({
           </p>
         ) : null}
         <div className="flex flex-wrap justify-end gap-3">
-          <Button disabled={disabled} onClick={onCancel} type="button" variant="outline">
+          <Button
+            data-testid="route-upload-cancel"
+            disabled={disabled}
+            onClick={onCancel}
+            type="button"
+            variant="outline"
+          >
             Cancel
           </Button>
           <LoadingButton
+            data-testid="route-upload-submit"
             disabled={disabled || files.length !== 1}
             loading={phase === "reading" || phase === "uploading"}
             loadingLabel={phaseLabels[phase]}

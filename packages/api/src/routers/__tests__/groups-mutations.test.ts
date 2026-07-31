@@ -142,6 +142,17 @@ describe("groupsRouter mutations", () => {
     } satisfies Partial<TRPCError>);
   });
 
+  it("rejects group archival from non-owner members", async () => {
+    const { db } = createDbMock({
+      select: [[{ id: VIEWER_ID }], [buildGroupRow()], [{ role: "member", status: "active" }]],
+    });
+
+    await expect(createCaller(db).delete({ groupId: GROUP_ID })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      message: "Group owner access required",
+    } satisfies Partial<TRPCError>);
+  });
+
   it("accepts an invite by activating membership and marking the invite accepted transactionally", async () => {
     const acceptedInvite = buildGroupInvitationRow({ status: "accepted" });
     const activeMembership = buildGroupMembershipRow({ role: "member" });

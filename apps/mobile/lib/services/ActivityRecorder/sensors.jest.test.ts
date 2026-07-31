@@ -7,22 +7,8 @@ jest.mock("@react-native-async-storage/async-storage", () => ({
   },
 }));
 
-jest.mock("@repo/core", () => ({
+jest.mock("@repo/core/bluetooth", () => ({
   __esModule: true,
-  BLE_SERVICE_UUIDS: {
-    HEART_RATE: "heart-rate",
-    CYCLING_SPEED_AND_CADENCE: "csc",
-    CYCLING_POWER: "cycling-power",
-    RUNNING_SPEED_AND_CADENCE: "running-speed-and-cadence",
-    FITNESS_MACHINE: "fitness-machine",
-  },
-  BLE_CHARACTERISTIC_UUIDS: {
-    HEART_RATE_MEASUREMENT: "00002a37-0000-1000-8000-00805f9b34fb",
-    CYCLING_POWER_MEASUREMENT: "00002a63-0000-1000-8000-00805f9b34fb",
-    CYCLING_SPEED_AND_CADENCE_MEASUREMENT: "00002a5b-0000-1000-8000-00805f9b34fb",
-    RUNNING_SPEED_AND_CADENCE_MEASUREMENT: "00002a53-0000-1000-8000-00805f9b34fb",
-    BATTERY_LEVEL: "00002a19-0000-1000-8000-00805f9b34fb",
-  },
   FTMS_CHARACTERISTICS: {
     FEATURE: "ftms-feature",
     STATUS: "ftms-status",
@@ -151,19 +137,39 @@ jest.mock("@repo/core", () => ({
   })),
 }));
 
+jest.mock("@repo/core/constants/ble", () => ({
+  __esModule: true,
+  BLE_SERVICE_UUIDS: {
+    HEART_RATE: "heart-rate",
+    CYCLING_SPEED_AND_CADENCE: "csc",
+    CYCLING_POWER: "cycling-power",
+    RUNNING_SPEED_AND_CADENCE: "running-speed-and-cadence",
+    FITNESS_MACHINE: "fitness-machine",
+  },
+  BLE_CHARACTERISTIC_UUIDS: {
+    HEART_RATE_MEASUREMENT: "00002a37-0000-1000-8000-00805f9b34fb",
+    CYCLING_POWER_MEASUREMENT: "00002a63-0000-1000-8000-00805f9b34fb",
+    CYCLING_SPEED_AND_CADENCE_MEASUREMENT: "00002a5b-0000-1000-8000-00805f9b34fb",
+    RUNNING_SPEED_AND_CADENCE_MEASUREMENT: "00002a53-0000-1000-8000-00805f9b34fb",
+    BATTERY_LEVEL: "00002a19-0000-1000-8000-00805f9b34fb",
+  },
+}));
+
 jest.mock("@deancochran/ftms", () => {
   const actual = jest.requireActual<typeof import("@deancochran/ftms")>("@deancochran/ftms");
-  const core = jest.requireMock("@repo/core") as {
+  const bleConstants = jest.requireMock("@repo/core/constants/ble") as {
     BLE_SERVICE_UUIDS: { FITNESS_MACHINE: string };
+  };
+  const bluetooth = jest.requireMock("@repo/core/bluetooth") as {
     FTMS_CHARACTERISTICS: typeof actual.FTMS_CHARACTERISTICS;
     listFtmsParserDefinitions: typeof actual.listFtmsParserDefinitions;
   };
 
   return {
     ...actual,
-    FTMS_SERVICE_UUIDS: { FITNESS_MACHINE: core.BLE_SERVICE_UUIDS.FITNESS_MACHINE },
-    FTMS_CHARACTERISTICS: core.FTMS_CHARACTERISTICS,
-    listFtmsParserDefinitions: core.listFtmsParserDefinitions,
+    FTMS_SERVICE_UUIDS: { FITNESS_MACHINE: bleConstants.BLE_SERVICE_UUIDS.FITNESS_MACHINE },
+    FTMS_CHARACTERISTICS: bluetooth.FTMS_CHARACTERISTICS,
+    listFtmsParserDefinitions: bluetooth.listFtmsParserDefinitions,
   };
 });
 
@@ -718,7 +724,7 @@ describe("SensorsManager QA regressions", () => {
   });
 
   it("tracks a matched standard profile from waiting to flowing", async () => {
-    const core = jest.requireMock("@repo/core") as {
+    const core = jest.requireMock("@repo/core/bluetooth") as {
       listStandardBleProfileDefinitions: jest.Mock;
       parseCyclingPowerMeasurementWithState: jest.Mock;
     };
@@ -805,7 +811,7 @@ describe("SensorsManager QA regressions", () => {
   });
 
   it("retires a failed monitor before retrying with a unique transaction", async () => {
-    const core = jest.requireMock("@repo/core") as {
+    const core = jest.requireMock("@repo/core/bluetooth") as {
       listStandardBleProfileDefinitions: jest.Mock;
       parseHeartRateMeasurement: jest.Mock;
     };

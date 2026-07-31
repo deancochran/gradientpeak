@@ -1,4 +1,4 @@
-import type { PlanningActivityCategory } from "../../../schemas/activity-category";
+import type { CanonicalActivityCategory } from "../../../schemas/activity-category";
 import {
   type EventDemand,
   type FeasibilityAssessment,
@@ -62,17 +62,17 @@ function clampDate(date: string, startDate: string, endDate: string): string {
   return date;
 }
 
-function resolvePlanningActivityCategory(demands: EventDemand[]): PlanningActivityCategory {
+function resolvePlanningActivityCategory(demands: EventDemand[]): CanonicalActivityCategory {
   if (demands.length === 0) {
-    return "mixed";
+    return "other";
   }
 
   const firstActivityCategory = demands[0]?.activity_category;
   if (demands.every((demand) => demand.activity_category === firstActivityCategory)) {
-    return firstActivityCategory ?? "mixed";
+    return firstActivityCategory ?? "other";
   }
 
-  return "mixed";
+  return "other";
 }
 
 function resolveGoalPeakCtl(
@@ -106,7 +106,7 @@ function pushEventPoint(
   points: ReferenceTrajectoryPoint[],
   eventDate: string,
   targetCtl: number,
-  activity_category: Exclude<PlanningActivityCategory, "mixed">,
+  activity_category: CanonicalActivityCategory,
   goalIds: string[],
   rationaleCodes: string[],
 ) {
@@ -161,7 +161,7 @@ function addRecoveryTail(
   currentDate: string,
   endDate: string,
   currentCtl: number,
-  activity_category: Exclude<PlanningActivityCategory, "mixed">,
+  activity_category: CanonicalActivityCategory,
 ) {
   if (currentDate > endDate) {
     return;
@@ -352,7 +352,7 @@ export function generateReferenceTrajectory(
         startCtl: input.currentCtl,
         endCtl: input.currentCtl,
         phase: "maintenance",
-        activity_category: activity_category === "mixed" ? "other" : activity_category,
+        activity_category,
         rationaleCodes: [...input.feasibility.rationale_codes, "no_goal_maintenance_baseline"],
       }),
       feasibility: input.feasibility,
@@ -380,13 +380,7 @@ export function generateReferenceTrajectory(
     cursorCtl = rendered.nextCtl;
   }
 
-  addRecoveryTail(
-    points,
-    cursorDate,
-    input.endDate,
-    cursorCtl,
-    activity_category === "mixed" ? "other" : activity_category,
-  );
+  addRecoveryTail(points, cursorDate, input.endDate, cursorCtl, activity_category);
 
   return referenceTrajectorySchema.parse({
     mode: input.mode,

@@ -4,7 +4,13 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ActivityCategoryBadges } from "../activity-category-presentation";
-import { ActivityListCard } from "./activity-route-primitives";
+import {
+  ActivityEffortListCard,
+  ActivityListCard,
+  EntityMapCard,
+  LikeToggleButton,
+  RouteListCard,
+} from "./activity-route-primitives";
 
 vi.mock("../../hooks/use-viewing-user-preferred-unit-system", () => ({
   useViewingUserPreferredUnitSystem: () => ({ unitSystem: "metric" }),
@@ -21,7 +27,6 @@ describe("ActivityListCard", () => {
     method: "heart_rate_zones",
     quality: null,
     thresholdEvidence: null,
-    sessionRpeEvidence: null,
     evidenceFingerprint: null,
     computedAsOf: "2026-07-21T12:00:00.000Z",
     contributingDurationSeconds: null,
@@ -78,6 +83,10 @@ describe("ActivityListCard", () => {
     expect(screen.getByText("Intensity")).toBeTruthy();
     expect(screen.getAllByText("Unavailable")).toHaveLength(2);
     expect(screen.getByText(/no current result was provided/i)).toBeTruthy();
+    expect(screen.getByTestId("activity-card-11111111-1111-4111-8111-111111111111")).toBeTruthy();
+    expect(
+      screen.getByTestId("activity-card-11111111-1111-4111-8111-111111111111-open"),
+    ).toBeTruthy();
   });
 
   it("renders the canonical activity-category-specific LTHR diagnostic", () => {
@@ -100,6 +109,72 @@ describe("ActivityListCard", () => {
       screen.getByText(/activity-category-specific LTHR is missing for this activity/),
     ).toBeTruthy();
     expect(screen.getByText(/Add a current activity-category-specific LTHR/)).toBeTruthy();
+  });
+});
+
+describe("resource card selectors", () => {
+  it("exposes route and effort identities plus their open actions", () => {
+    render(
+      <>
+        <RouteListCard
+          onOpen={() => undefined}
+          route={{
+            id: "route-1",
+            name: "Ridge loop",
+            created_at: "2026-07-17T10:00:00.000Z",
+          }}
+        />
+        <ActivityEffortListCard
+          effort={{
+            id: "effort-1",
+            activity_category: "run",
+            effort_type: "threshold",
+            recorded_at: "2026-07-17T10:00:00.000Z",
+            value: 300,
+            unit: "seconds",
+          }}
+          onOpen={() => undefined}
+        />
+      </>,
+    );
+
+    expect(screen.getByTestId("route-card-route-1")).toBeTruthy();
+    expect(screen.getByTestId("route-card-route-1-open")).toBeTruthy();
+    expect(screen.getByTestId("activity-effort-card-effort-1")).toBeTruthy();
+    expect(screen.getByTestId("activity-effort-card-effort-1-open")).toBeTruthy();
+  });
+});
+
+describe("EntityMapCard", () => {
+  it("exposes the route section and visualization with accessible semantics", () => {
+    render(
+      <EntityMapCard
+        coordinates={[
+          { latitude: 40.1, longitude: -74.1 },
+          { latitude: 40.2, longitude: -74.2 },
+        ]}
+        emptyMessage="No route"
+        title="Route preview"
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Route preview" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Route preview map" })).toBeTruthy();
+  });
+});
+
+describe("LikeToggleButton", () => {
+  it("surfaces an explicit retry action after a failed optimistic update", () => {
+    render(
+      <LikeToggleButton
+        count={0}
+        liked={false}
+        onClick={() => undefined}
+        retryLabel="Retry like"
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Retry like" })).toBeTruthy();
   });
 });
 

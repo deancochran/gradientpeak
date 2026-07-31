@@ -14,15 +14,15 @@ export type RouteCoordinate = {
 };
 
 type ActivityLikeRecord = {
-  positionLat?: number;
-  positionLong?: number;
-  latitude?: number;
-  longitude?: number;
-  altitude?: number;
-  heartRate?: number;
-  power?: number;
-  cadence?: number;
-  speed?: number;
+  positionLat?: number | undefined;
+  positionLong?: number | undefined;
+  latitude?: number | undefined;
+  longitude?: number | undefined;
+  altitude?: number | undefined;
+  heartRate?: number | undefined;
+  power?: number | undefined;
+  cadence?: number | undefined;
+  speed?: number | undefined;
 };
 
 export function formatDateTime(value: string | Date) {
@@ -146,7 +146,7 @@ export function getActivityBadgeLabel(activityCategory: string) {
 }
 
 type ActivityDisplaySegment = {
-  category?: string | null;
+  activity_category?: string | null;
   ordinal: number;
   role: string;
 };
@@ -154,11 +154,11 @@ type ActivityDisplaySegment = {
 export function deriveActivityCategoryDisplay(segments: readonly ActivityDisplaySegment[]) {
   const categories = segments
     .filter(
-      (segment): segment is ActivityDisplaySegment & { category: string } =>
-        segment.role === "activity" && segment.category != null,
+      (segment): segment is ActivityDisplaySegment & { activity_category: string } =>
+        segment.role === "activity" && segment.activity_category != null,
     )
     .sort((left, right) => left.ordinal - right.ordinal)
-    .map((segment) => segment.category);
+    .map((segment) => segment.activity_category);
 
   return {
     categories,

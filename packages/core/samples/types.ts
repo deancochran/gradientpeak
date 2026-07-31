@@ -1,4 +1,4 @@
-import type { ActivityPlanStructureV3 } from "../activity-plan";
+import type { ActivityPlanStructure } from "../activity-plan";
 import type { CanonicalActivityCategory } from "../schemas/activity-category";
 
 export interface SystemActivityPlanTemplate {
@@ -10,12 +10,12 @@ export interface SystemActivityPlanTemplate {
   is_system_template?: boolean;
   name: string;
   notes?: string | null;
-  structure: ActivityPlanStructureV3;
+  structure: ActivityPlanStructure;
 }
 
 /** Derives the sole activity_category from a validated canonical ActivityPlan structure. */
 export function deriveSystemActivityTemplateActivityCategory(
-  structure: ActivityPlanStructureV3,
+  structure: ActivityPlanStructure,
 ): CanonicalActivityCategory {
   const activitySegment = structure.segments.find((segment) => segment.role === "activity");
   if (!activitySegment) {

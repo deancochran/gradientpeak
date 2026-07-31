@@ -129,7 +129,7 @@ export interface DailyLoadRecommendationPoint {
   reasonCodes: string[];
 }
 
-export interface BuildDailyRecommendedLoadRecommendationInput {
+export interface BuildRecommendedLoadInput {
   mode: "recommended-load";
   startDate: string;
   endDate: string;
@@ -154,7 +154,7 @@ export interface BuildDailyLoadDistributionRecommendationInput {
 }
 
 export type BuildDailyLoadRecommendationInput =
-  | BuildDailyRecommendedLoadRecommendationInput
+  | BuildRecommendedLoadInput
   | BuildDailyLoadDistributionRecommendationInput;
 
 const MONDAY_WEEKDAY_TO_INDEX: Record<Exclude<DailyLoadRecommendationWeekday, number>, number> = {
@@ -936,7 +936,7 @@ function assignCategoryBudgets(input: {
 }
 
 function buildRecommendedLoadPoints(
-  input: BuildDailyRecommendedLoadRecommendationInput,
+  input: BuildRecommendedLoadInput,
 ): DailyLoadRecommendationPoint[] {
   const dayCount = diffDateOnlyUtcDays(input.startDate, input.endDate) + 1;
   if (dayCount <= 0) return [];

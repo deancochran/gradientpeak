@@ -189,11 +189,6 @@ jest.mock("@/lib/utils/plan/colors", () => ({
   }),
 }));
 
-jest.mock("@/lib/utils/plan/dateGrouping", () => ({
-  __esModule: true,
-  isActivityCompleted: (activity: CalendarEvent) => activity.completed === true,
-}));
-
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {

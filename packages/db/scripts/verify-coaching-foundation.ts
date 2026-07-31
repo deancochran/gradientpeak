@@ -14,11 +14,6 @@ import {
   withDisposableDatabase,
 } from "./_disposable-target";
 import { dbPackageRoot } from "./_helpers";
-import {
-  autocommitSettings,
-  type MigrationLedgerEntry,
-  type MigrationPolicy,
-} from "./_migration-plan";
 
 const ids = {
   owner: "10000000-0000-4000-8000-000000000101",
@@ -129,11 +124,11 @@ async function assertMigratedCheckConstraintValues(
 async function main() {
   const policy = JSON.parse(
     readFileSync(resolve(dbPackageRoot, "migration-policy.json"), "utf8"),
-  ) as MigrationPolicy;
+  ) as { authorityDirectory: string; activeLedgerFile: string };
   const ledger = JSON.parse(
     readFileSync(resolve(dbPackageRoot, policy.activeLedgerFile), "utf8"),
   ) as {
-    entries: MigrationLedgerEntry[];
+    entries: Array<{ version: string; name: string }>;
   };
   await withDisposableDatabase(
     process.argv.slice(2),
@@ -148,8 +143,6 @@ async function main() {
             policy.authorityDirectory,
             `${migration.version}_${migration.name}.sql`,
           ),
-          migration.executionMode,
-          autocommitSettings(policy, migration),
         );
       }
       await assertMigratedCheckConstraintValues(db, {

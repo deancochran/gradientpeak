@@ -39,13 +39,20 @@ const WAHOO_PUBLISH_EVENT_JOB = "wahoo.publish_event";
 const WAHOO_UNSYNC_EVENT_JOB = "wahoo.unsync_event";
 
 type WahooDisconnectPayload = { expectedGeneration: number };
-type WahooJobPayload = {
+type WahooPublishJobPayload = {
   eventId: string;
-  operation: "publish" | "unsync";
+  operation: "publish";
   projectionHash?: string;
-  startsAt?: string;
+  startsAt: string;
+};
+
+type WahooUnsyncJobPayload = {
+  eventId: string;
+  operation: "unsync";
   unsyncTarget?: { externalId: string; resourceLinkId: string };
 };
+
+type WahooJobPayload = WahooPublishJobPayload | WahooUnsyncJobPayload;
 
 function isWahooJobPayload(value: unknown): value is WahooJobPayload {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -60,8 +67,8 @@ function isWahooJobPayload(value: unknown): value is WahooJobPayload {
     return false;
   if (payload.operation === "publish") {
     return (
-      (payload.startsAt === undefined ||
-        (typeof payload.startsAt === "string" && !Number.isNaN(Date.parse(payload.startsAt)))) &&
+      typeof payload.startsAt === "string" &&
+      !Number.isNaN(Date.parse(payload.startsAt)) &&
       payload.unsyncTarget === undefined
     );
   }
@@ -302,23 +309,22 @@ export class WahooSyncJobService {
               return finalized ? "completed" : "failed";
             }
             try {
+              const payload = job.payload;
               const result =
-                job.jobType === WAHOO_PUBLISH_EVENT_JOB
-                  ? await this.deps.syncService.syncEvent(job.payload.eventId, job.profileId, {
-                      ...(job.payload.projectionHash !== undefined
-                        ? { expectedProjectionHash: job.payload.projectionHash }
+                payload.operation === "publish"
+                  ? await this.deps.syncService.syncEvent(payload.eventId, job.profileId, {
+                      ...(payload.projectionHash !== undefined
+                        ? { expectedProjectionHash: payload.projectionHash }
                         : {}),
-                      ...(job.payload.startsAt !== undefined
-                        ? { expectedStartsAt: job.payload.startsAt }
-                        : {}),
+                      expectedStartsAt: payload.startsAt,
                       expectedIntegrationGeneration: generation,
                       integrationId: job.integrationId,
                       signal: context.signal,
                     })
                   : await this.deps.syncService.unsyncEvent(
-                      job.payload.eventId,
+                      payload.eventId,
                       job.profileId,
-                      job.payload.unsyncTarget,
+                      payload.unsyncTarget,
                       {
                         expectedIntegrationGeneration: generation,
                         integrationId: job.integrationId,

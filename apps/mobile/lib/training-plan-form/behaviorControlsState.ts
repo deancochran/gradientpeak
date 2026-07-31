@@ -1,8 +1,8 @@
-import type { CreationBehaviorControlsV1 } from "@repo/core";
+import type { CreationBehaviorControls } from "@repo/core";
 
 export const hasBehaviorControlsChanged = (
-  previous: CreationBehaviorControlsV1,
-  next: CreationBehaviorControlsV1,
+  previous: CreationBehaviorControls,
+  next: CreationBehaviorControls,
 ): boolean => JSON.stringify(previous) !== JSON.stringify(next);
 
 export const shouldApplyBehaviorControlSuggestions = (params: {

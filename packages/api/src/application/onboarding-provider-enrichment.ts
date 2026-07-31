@@ -246,7 +246,7 @@ export class OnboardingProviderEnrichmentService {
           eq(schema.profileMetrics.metric_type, "weight_kg"),
         ),
       )
-      .orderBy(desc(schema.profileMetrics.recorded_at))
+      .orderBy(desc(schema.profileMetrics.recorded_at), desc(schema.profileMetrics.id))
       .limit(1);
 
     if (latestWeight && !isClearedProfileOverride(latestWeight))
@@ -559,7 +559,7 @@ export class OnboardingProviderEnrichmentService {
             eq(schema.profileMetrics.metric_type, "weight_kg"),
           ),
         )
-        .orderBy(desc(schema.profileMetrics.recorded_at))
+        .orderBy(desc(schema.profileMetrics.recorded_at), desc(schema.profileMetrics.id))
         .limit(1);
 
       if (latestWeight?.value === weightImport.value && latestWeight.notes === notes) return;
@@ -677,7 +677,7 @@ export class OnboardingProviderEnrichmentService {
           eq(schema.profileMetrics.metric_type, metricType),
         ),
       )
-      .orderBy(desc(schema.profileMetrics.recorded_at))
+      .orderBy(desc(schema.profileMetrics.recorded_at), desc(schema.profileMetrics.id))
       .limit(1);
 
     if (latestMetric?.value === value && latestMetric.notes === notes) {

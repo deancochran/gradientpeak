@@ -1,4 +1,4 @@
-import { ACTIVITY_CATEGORY_CONFIG } from "@repo/core";
+import { ACTIVITY_CATEGORY_CONFIG } from "@repo/core/constants/activity";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import * as Haptics from "expo-haptics";

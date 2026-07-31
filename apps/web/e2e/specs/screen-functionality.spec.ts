@@ -5,7 +5,7 @@ import { openAppPage } from "../utils/navigation";
 
 const topLevelScreens = [
   { path: "/", name: /welcome back/i },
-  { path: "/search", name: /discover people and web sections/i },
+  { path: "/search", name: /discover training and community/i },
   { path: "/activity-plans", name: /^activity plans$/i },
   { path: "/training-plans", name: /^training plans$/i },
   { path: "/training-preferences", name: /^training preferences$/i },
@@ -46,27 +46,25 @@ test("primary empty-state and navigation actions remain usable", async ({ athlet
   test.setTimeout(90_000);
 
   await openAppPage(athletePage, "/search");
-  const search = athletePage.getByRole("searchbox");
-  await search.fill("playwright_profile");
-  await expect(athletePage.getByText("@playwright_profile")).toBeVisible();
-  await search.clear();
+  await athletePage.getByRole("tab", { name: "Profiles" }).click();
+  const search = athletePage.getByRole("textbox", { name: /search profiles/i });
+  await search.fill("zzzz-no-screen-match-7f19");
+  await athletePage.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(athletePage.getByText("No profiles match your search and filters.")).toBeVisible();
+  await athletePage.getByRole("button", { name: /clear search and filters/i }).click();
+  await expect(search).toHaveValue("");
 
   await openAppPage(athletePage, "/activities");
-  await athletePage.getByRole("button", { name: /import fit/i }).click();
+  await athletePage.getByRole("button", { name: /import activity/i }).click();
   await expect(athletePage).toHaveURL(/\/activities\/import$/);
   await expect(
     athletePage.getByRole("heading", { name: /import activity history/i }),
   ).toBeVisible();
 
   await openAppPage(athletePage, "/routes");
-  await athletePage.getByRole("button", { name: /upload gpx/i }).click();
+  await athletePage.getByRole("button", { name: /upload route/i }).click();
   await expect(athletePage).toHaveURL(/\/routes\/upload$/);
   await expect(athletePage.getByRole("heading", { name: /upload route/i })).toBeVisible();
-
-  await openAppPage(athletePage, "/activity-efforts");
-  await athletePage.getByRole("button", { name: /add effort/i }).click();
-  await expect(athletePage).toHaveURL(/\/activity-efforts\/new$/);
-  await expect(athletePage.getByRole("heading", { name: /create activity effort/i })).toBeVisible();
 
   await openAppPage(athletePage, "/notifications");
   await athletePage.getByRole("link", { name: /^unread$/i }).click();
@@ -74,6 +72,7 @@ test("primary empty-state and navigation actions remain usable", async ({ athlet
   await expect(athletePage.getByText(/no unread notifications/i)).toBeVisible();
 
   await openAppPage(athletePage, "/profile-metrics");
+  await athletePage.getByRole("button", { name: /^Weight/ }).click();
   await athletePage.getByRole("button", { name: /add measurement/i }).click();
   await expect(athletePage.getByRole("dialog")).toBeVisible();
 });

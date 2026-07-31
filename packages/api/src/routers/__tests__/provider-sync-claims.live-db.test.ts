@@ -627,7 +627,7 @@ describe("provider sync PostgreSQL claims", () => {
     ).toHaveLength(0);
   });
 
-  it("persists bounded sync failure categories and never exposes legacy provider diagnostics", async () => {
+  it("persists bounded sync failure categories and ignores pre-category diagnostics", async () => {
     const owner = await seedOwner();
     const repository = createProviderSyncRepository({ db });
     const workerId = `worker:${randomUUID()}`;
@@ -667,15 +667,16 @@ describe("provider sync PostgreSQL claims", () => {
         .where(eq(providerSyncState.integration_id, owner.integrationId)),
     ).toEqual([{ lastError: "provider_sync_failed" }]);
 
-    // Simulate a row written before bounded failure categories existed.
+    // Simulate a persisted diagnostic from before bounded categories were enforced.
     await db
       .update(providerSyncState)
       .set({ last_error: canary })
       .where(eq(providerSyncState.integration_id, owner.integrationId));
     const overview = await getProviderSyncOverview({ db, profileId: owner.profileId });
     const publicJson = JSON.stringify(overview);
-    expect(publicJson).toContain("Provider sync failed");
+    expect(publicJson).not.toContain("Provider sync failed");
     expect(publicJson).not.toContain(canary);
+    expect(publicJson).not.toContain("wahoo-id-9182");
     expect(publicJson).not.toContain("token=canary");
     expect(publicJson).not.toContain("provider.test");
     expect(publicJson).not.toContain("secret-name");
@@ -1134,7 +1135,7 @@ describe("provider sync PostgreSQL claims", () => {
     ]);
   });
 
-  it("keeps mixed-version concurrent inserts in identical idx and queue_sequence order", async () => {
+  it("orders concurrent inserts by the canonical queue_sequence", async () => {
     const owner = await seedOwner();
     const repository = createProviderSyncRepository({ db });
     const oldJobId = randomUUID();
@@ -1162,13 +1163,15 @@ describe("provider sync PostgreSQL claims", () => {
       ]),
     ]);
 
-    const ordered = await pool.query<{ id: string; idx: number; queue_sequence: string }>(
-      `select id, idx, queue_sequence::text
-       from public.provider_sync_jobs where id = any($1::uuid[]) order by idx`,
+    const ordered = await pool.query<{ id: string; queue_sequence: string }>(
+      `select id, queue_sequence::text
+       from public.provider_sync_jobs where id = any($1::uuid[]) order by queue_sequence`,
       [[oldJobId, newJobId]],
     );
     expect(ordered.rows).toHaveLength(2);
-    expect(ordered.rows.every((row) => String(row.idx) === row.queue_sequence)).toBe(true);
+    expect(Number(ordered.rows[0]?.queue_sequence)).toBeLessThan(
+      Number(ordered.rows[1]?.queue_sequence),
+    );
 
     const claimed = await repository.claimDueJobs({
       limit: 2,

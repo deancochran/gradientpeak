@@ -484,7 +484,7 @@ export const TrainingBaselineStep = ({ data, fieldSources, updateData }: StepPro
     maxHr: fieldSources?.max_hr,
     restingHr: fieldSources?.resting_hr,
     ftp: fieldSources?.ftp,
-    thresholdPaceSecondsPerKm: fieldSources?.threshold_pace,
+    thresholdPaceSecondsPerKm: fieldSources?.threshold_pace_seconds_per_km,
     cssSecondsPer100m: fieldSources?.css,
   };
 
@@ -519,7 +519,7 @@ export const TrainingBaselineStep = ({ data, fieldSources, updateData }: StepPro
         updateData({ ftp: change.value }, options);
         break;
       case "thresholdPaceSecondsPerKm":
-        updateData({ threshold_pace: change.value }, options);
+        updateData({ threshold_pace_seconds_per_km: change.value }, options);
         break;
       case "cssSecondsPer100m":
         updateData({ css: change.value }, options);
@@ -543,7 +543,7 @@ export const TrainingBaselineStep = ({ data, fieldSources, updateData }: StepPro
           maxHr: data.max_hr,
           restingHr: data.resting_hr,
           ftp: data.ftp,
-          thresholdPaceSecondsPerKm: data.threshold_pace,
+          thresholdPaceSecondsPerKm: data.threshold_pace_seconds_per_km,
           cssSecondsPer100m: data.css,
         }}
         onChange={handleBaselineChange}
@@ -723,7 +723,9 @@ export const SummaryStep = ({ data }: { data: OnboardingData }) => {
     { label: "FTP", value: data.ftp ? `${data.ftp} W` : null },
     {
       label: "Threshold Pace",
-      value: data.threshold_pace ? `${formatDuration(data.threshold_pace)} /km` : null,
+      value: data.threshold_pace_seconds_per_km
+        ? `${formatDuration(data.threshold_pace_seconds_per_km)} /km`
+        : null,
     },
     { label: "CSS", value: data.css ? `${formatDuration(data.css)} /100m` : null },
     {

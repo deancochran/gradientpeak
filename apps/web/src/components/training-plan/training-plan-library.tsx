@@ -56,7 +56,7 @@ function PlanGrid({ plans, onOpen }: { plans: LibraryPlan[]; onOpen: (id: string
       {plans.map((plan) => {
         const summary = summarizeTrainingPlan(plan.structure);
         return (
-          <Card key={plan.id}>
+          <Card data-testid={`training-plan-card-${plan.id}`} key={plan.id}>
             <CardHeader>
               <div className="flex items-start justify-between gap-3">
                 <CardTitle>{plan.name}</CardTitle>
@@ -74,7 +74,12 @@ function PlanGrid({ plans, onOpen }: { plans: LibraryPlan[]; onOpen: (id: string
                   ? `${summary.sessionCount} activities · ${summary.weekCount} weeks`
                   : `${plan.sessions_per_week_target ?? "Flexible"} sessions/week · ${plan.duration_hours ?? "Flexible"} hours`}
               </p>
-              <Button onClick={() => onOpen(plan.id)} type="button" variant="outline">
+              <Button
+                data-testid={`training-plan-card-${plan.id}-open`}
+                onClick={() => onOpen(plan.id)}
+                type="button"
+                variant="outline"
+              >
                 View plan
               </Button>
             </CardContent>
@@ -111,7 +116,7 @@ export function TrainingPlanLibrary({ onCreate, onOpen }: TrainingPlanLibraryPro
           <p className="text-sm font-medium text-muted-foreground">Plan library</p>
           <h1 className="text-3xl font-semibold tracking-tight">Training plans</h1>
         </div>
-        <Button onClick={onCreate} type="button">
+        <Button data-testid="training-plan-create" onClick={onCreate} type="button">
           Create training plan
         </Button>
       </div>

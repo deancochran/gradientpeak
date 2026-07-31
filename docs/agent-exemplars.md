@@ -12,7 +12,7 @@ This catalog maps recurring task shapes to current production patterns. It is no
 | API transport procedure and DTO | Keep transport request/response DTOs and validation in API, keep the router thin, then invoke application orchestration. | [Athlete intelligence router](../packages/api/src/routers/athlete-intelligence.ts) |
 | Transactional multi-write | Compose writes in one application-owned transaction and test commit behavior. | [Submit activity use case](../packages/api/src/application/activities/submit-activity.ts) |
 | Separated API read orchestration | Keep persistence behind a repository contract and assemble the result in application code. | [Feed read use case](../packages/api/src/application/feed/readFeed.ts) |
-| DB migration safety | Use the guarded, immutable migration workflow rather than manual ledger/artifact changes. | [Migration workflow](../packages/db/scripts/migration-workflow.ts) |
+| DB fresh-baseline safety | Use the guarded, immutable fresh-baseline workflow rather than manual ledger/artifact changes. | [Baseline workflow](../packages/db/scripts/baseline-workflow.ts) |
 
 ## Mobile
 

@@ -116,10 +116,14 @@ export function GroupEventCard({
 
   return (
     <TouchableOpacity
+      accessibilityLabel={
+        onPress ? `Open group event ${event.title || "Untitled event"}` : undefined
+      }
+      accessibilityRole={onPress ? "button" : undefined}
       activeOpacity={0.85}
       disabled={!onPress}
       onPress={() => onPress?.(event)}
-      testID={testID}
+      testID={testID ?? `group-event-card-${event.id}`}
     >
       <View
         className={

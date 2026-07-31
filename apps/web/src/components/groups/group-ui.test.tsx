@@ -34,6 +34,8 @@ describe("group web presentation", () => {
     expect(screen.getByText("Members only")).toBeTruthy();
     expect(screen.getByText("Invite only")).toBeTruthy();
     expect(screen.getByText("owner")).toBeTruthy();
+    expect(screen.getByTestId(`group-card-${group.id}`)).toBeTruthy();
+    expect(screen.getByTestId(`group-card-${group.id}-open`)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "View group" }));
     expect(onOpen).toHaveBeenCalledOnce();
   });
@@ -64,6 +66,8 @@ describe("group web presentation", () => {
     expect(screen.getByText("Cancelled")).toBeTruthy();
     expect(screen.getByText("4 going")).toBeTruthy();
     expect(screen.getByText("Clubhouse")).toBeTruthy();
+    expect(screen.getByTestId(`group-event-card-${event.id}`)).toBeTruthy();
+    expect(screen.getByTestId(`group-event-card-${event.id}-open`)).toBeTruthy();
   });
 
   it("does not collapse query errors into empty content", () => {

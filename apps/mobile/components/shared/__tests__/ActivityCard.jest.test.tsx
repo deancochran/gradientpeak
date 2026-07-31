@@ -1,4 +1,5 @@
 import { decodePolyline } from "@repo/core";
+import { formatDurationSec } from "@repo/core/utils/dates";
 import { fireEvent } from "@testing-library/react-native";
 import type { ReactTestInstance } from "react-test-renderer";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
@@ -42,6 +43,10 @@ jest.mock("@repo/core", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/core"),
   decodePolyline: jest.fn(() => []),
+}));
+
+jest.mock("@repo/core/utils/dates", () => ({
+  __esModule: true,
   formatDurationSec: jest.fn(() => "60 min"),
 }));
 
@@ -279,6 +284,39 @@ describe("ActivityCard", () => {
     expect(screen.queryByText("Avg HR")).toBeNull();
   });
 
+  it("uses elapsed time before active time for the Elapsed metric", () => {
+    renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-elapsed",
+          name: "Paused Ride",
+          elapsed_ms: 3_600_000,
+          active_ms: 3_000_000,
+        }}
+      />,
+    );
+
+    expect(jest.mocked(formatDurationSec)).toHaveBeenCalledWith(3600);
+    expect(screen.getByText("Elapsed")).toBeTruthy();
+    expect(screen.queryByText("Active")).toBeNull();
+  });
+
+  it("labels active-only timing as Active", () => {
+    renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-active-only",
+          name: "Indoor Ride",
+          active_ms: 3_000_000,
+        }}
+      />,
+    );
+
+    expect(jest.mocked(formatDurationSec)).toHaveBeenCalledWith(3000);
+    expect(screen.getByText("Active")).toBeTruthy();
+    expect(screen.queryByText("Elapsed")).toBeNull();
+  });
+
   it("marks partial common Load and Intensity incomplete", () => {
     renderNative(
       <ActivityCard
@@ -332,7 +370,6 @@ describe("ActivityCard", () => {
                   calculationVersion: "threshold-v1",
                   sourceFingerprint: "threshold-hr",
                 },
-                sessionRpeEvidence: null,
                 evidenceFingerprint: "activity-hr",
                 computedAsOf: "2026-07-21T12:00:00.000Z",
                 contributingDurationSeconds: 1_200,

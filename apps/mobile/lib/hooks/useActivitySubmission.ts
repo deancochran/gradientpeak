@@ -8,7 +8,7 @@
  * ```tsx
  * // In your submit screen:
  * function SubmitScreen() {
- *   const service = useSharedActivityRecorder();
+ *   const { service } = useActivityRecorderService();
  *   const submission = useActivitySubmission(service);
  *
  *   if (submission.isLoading) return <Spinner />;

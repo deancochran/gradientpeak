@@ -257,6 +257,13 @@ const SESSION_EXTENSION_FIELDS = [
   "trigger",
 ] as const;
 
+function fitPoolLengthMeters(extensions: DecodedArtifactExtensions | undefined): number | undefined {
+  const value = extensionNumber(extensions, "poolLength");
+  if (value === undefined) return undefined;
+  const unit = profileLabel("displayMeasure", rawValue(extensions?.["fit.poolLengthUnit"]));
+  return unit === "metric" ? value : unit === "statute" ? value * 0.9144 : undefined;
+}
+
 const LAP_EXTENSION_FIELDS = [
   "totalElapsedTime",
   "totalTimerTime",
@@ -712,6 +719,9 @@ export function parseFitFileWithSDK(buffer: Buffer | Uint8Array): StandardActivi
         totalTimerTime: finiteNumber(length.totalTimerTime),
         totalStrokes: finiteNumber(length.totalStrokes),
         avgSpeed: finiteNumber(length.avgSpeed),
+        lengthType:
+          profileLabel("lengthType", rawValue(length.lengthType)) ??
+          rawValue(length.lengthType)?.toString(),
         swimStroke:
           profileLabel("swimStroke", rawValue(length.swimStroke)) ??
           rawValue(length.swimStroke)?.toString(),
@@ -739,6 +749,11 @@ export function parseFitFileWithSDK(buffer: Buffer | Uint8Array): StandardActivi
       totalMovingTime:
         semanticSegment.movingMs === undefined ? undefined : semanticSegment.movingMs / 1000,
       totalDistance: extensionNumber(session.extensions, "totalDistance"),
+      avgSpeed: extensionNumber(session.extensions, "avgSpeed"),
+      poolLengthMeters: fitPoolLengthMeters(session.extensions),
+      numLengths: extensionNumber(session.extensions, "numLengths"),
+      numActiveLengths: extensionNumber(session.extensions, "numActiveLengths"),
+      totalStrokes: extensionNumber(session.extensions, "totalStrokes"),
       laps: allLaps.filter((lap) => lap.sessionMessageIndex === session.messageIndex),
       records: allRecords.filter((record) => record.sessionMessageIndex === session.messageIndex),
     };
@@ -800,15 +815,7 @@ export function parseFitFileWithSDK(buffer: Buffer | Uint8Array): StandardActivi
       totalAscent: sessions.reduce((sum, session) => sum + (extensionNumber(artifact.sessions.find((item) => item.messageIndex === session.messageIndex)?.extensions, "totalAscent") ?? 0), 0),
       totalDescent: sessions.reduce((sum, session) => sum + (extensionNumber(artifact.sessions.find((item) => item.messageIndex === session.messageIndex)?.extensions, "totalDescent") ?? 0), 0),
       calories: sessions.reduce((sum, session) => sum + (extensionNumber(artifact.sessions.find((item) => item.messageIndex === session.messageIndex)?.extensions, "totalCalories") ?? 0), 0),
-      poolLength: extensionNumber(firstArtifactSession.extensions, "poolLength"),
-      poolLengthUnit:
-        profileLabel(
-          "displayMeasure",
-          rawValue(firstArtifactSession.extensions?.["fit.poolLengthUnit"]),
-        ) ??
-        (firstArtifactSession.extensions?.["fit.poolLengthUnit"] === undefined
-          ? undefined
-          : String(firstArtifactSession.extensions["fit.poolLengthUnit"])),
+      poolLengthMeters: fitPoolLengthMeters(firstArtifactSession.extensions),
       totalStrokes: extensionNumber(firstArtifactSession.extensions, "totalStrokes"),
       avgStrokeDistance: extensionNumber(firstArtifactSession.extensions, "avgStrokeDistance"),
     },

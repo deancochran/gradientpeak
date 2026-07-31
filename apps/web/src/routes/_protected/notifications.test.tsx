@@ -58,7 +58,6 @@ describe("follow-request notifications", () => {
         entity_id: null,
         read_at: null,
         created_at: "2026-07-20T10:00:00.000Z",
-        is_read: false,
       },
     ];
     const NotificationsPage = (Route as unknown as { component: React.ComponentType }).component;
@@ -84,7 +83,6 @@ describe("follow-request notifications", () => {
         entity_id: null,
         read_at: null,
         created_at: "2026-07-20T10:00:00.000Z",
-        is_read: false,
       },
     ];
     const NotificationsPage = (Route as unknown as { component: React.ComponentType }).component;

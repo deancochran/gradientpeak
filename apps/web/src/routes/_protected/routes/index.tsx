@@ -1,3 +1,4 @@
+import { MAX_ROUTE_LIST_OFFSET } from "@repo/core/route-files";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { createFileRoute } from "@tanstack/react-router";
@@ -20,6 +21,7 @@ const ownerScopes: RouteOwnerScope[] = ["own", "public", "system", "all"];
 
 export function validateRouteLibrarySearch(search: Record<string, unknown>) {
   const page = Number(search.page);
+  const maxPage = Math.floor(MAX_ROUTE_LIST_OFFSET / PAGE_SIZE) + 1;
   return {
     search: typeof search.search === "string" ? search.search : "",
     ownerScope: ownerScopes.includes(search.ownerScope as RouteOwnerScope)
@@ -32,7 +34,7 @@ export function validateRouteLibrarySearch(search: Record<string, unknown>) {
     maxDistanceKm: parseOptionalNonnegativeNumber(search.maxDistanceKm),
     minAscentM: parseOptionalNonnegativeNumber(search.minAscentM),
     maxAscentM: parseOptionalNonnegativeNumber(search.maxAscentM),
-    page: Number.isInteger(page) && page > 0 ? page : 1,
+    page: Number.isInteger(page) && page > 0 && page <= maxPage ? page : 1,
   };
 }
 
@@ -88,7 +90,9 @@ function RoutesLibraryPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Find a route</CardTitle>
+          <CardTitle aria-level={2} role="heading">
+            Find a route
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <RouteLibraryControls
@@ -111,7 +115,9 @@ function RoutesLibraryPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Page {routeSearch.page}</CardTitle>
+          <CardTitle aria-level={2} role="heading">
+            Page {routeSearch.page}
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {routesQuery.isLoading ? (

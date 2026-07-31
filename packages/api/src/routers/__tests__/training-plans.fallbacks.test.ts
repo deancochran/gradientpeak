@@ -57,7 +57,7 @@ describe("training plan projection repository fixtures", () => {
       },
     });
 
-    expect(result.timeline.map((point) => point.ideal_tss)).toEqual([20, 20, 20]);
+    expect(result.timeline.map((point) => point.recommended_load_tss)).toEqual([20, 20, 20]);
     expect(result.load_guidance.weekly_cap_tss).toBe(140);
   });
 
@@ -83,6 +83,7 @@ describe("training plan projection repository fixtures", () => {
       },
     });
 
-    expect(result.timeline.map((point) => point.scheduled_tss)).toEqual([0, 42, 0]);
+    expect(result.timeline.map((point) => point.scheduled_load_tss)).toEqual([0, 42, 0]);
+    expect(result.timeline.map((point) => point.tentative_scheduled_load_tss)).toEqual([0, 0, 0]);
   });
 });

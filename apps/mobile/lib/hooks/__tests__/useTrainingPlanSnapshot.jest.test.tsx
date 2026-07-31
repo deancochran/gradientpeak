@@ -105,7 +105,7 @@ jest.mock("../useProfileSettings", () => ({
   useProfileSettings: () => ({
     settings: {
       availability_config: { days: [] },
-      behavior_controls_v1: { aggressiveness: 0.5, recovery_priority: 0.5, variability: 0.5 },
+      behavior_controls: { aggressiveness: 0.5, recovery_priority: 0.5, variability: 0.5 },
       constraints: { hard_rest_days: [] },
       locks: { volume_by_day: false, intensity_distribution: false },
       post_goal_recovery_days: 5,

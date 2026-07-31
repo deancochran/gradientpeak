@@ -1274,7 +1274,7 @@ describe("ActivityRecorderService lifecycle", () => {
     expect(sessions.some((session: { role: string }) => session.role === "rest")).toBe(false);
   });
 
-  it("finalizes a valid V3 activity-to-rest plan without emitting a rest FIT activity_category session", async () => {
+  it("finalizes a valid activity-to-rest plan without emitting a rest FIT activity_category session", async () => {
     const { service, mutable } = createService();
     configureDistancePlan(mutable, true);
     mutable.getMovingTime = jest.fn(() => 10_000);

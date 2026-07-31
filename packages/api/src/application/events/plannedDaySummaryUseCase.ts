@@ -1,5 +1,5 @@
 import {
-  activityPlanStructureSchemaV3,
+  activityPlanStructureSchema,
   type PlannedDaySummaryEvent,
   summarizePlannedDay,
 } from "@repo/core";
@@ -59,7 +59,7 @@ export async function plannedDaySummaryUseCase(input: {
     return {
       event,
       plan,
-      parsed: plan ? activityPlanStructureSchemaV3.safeParse(plan.structure) : null,
+      parsed: plan ? activityPlanStructureSchema.safeParse(plan.structure) : null,
     };
   });
   const availablePlans = classifiedEvents.flatMap(({ parsed, plan }) =>

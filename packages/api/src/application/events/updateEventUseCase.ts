@@ -1,5 +1,5 @@
 import {
-  activityPlanStructureSchemaV3,
+  activityPlanStructureSchema,
   type EventLifecycle,
   type EventRecurrence,
   getScheduledDateKey,
@@ -163,7 +163,7 @@ export async function updateEventUseCase<
   }
 
   if (scope !== "single") {
-    if (!existingEvent.series_id) {
+    if (!existingEvent.series_id && !existingEvent.recurrence_rule) {
       throw new TRPCError({
         code: "BAD_REQUEST",
         message: `Mutation scope "${scope}" requires an event series`,
@@ -215,7 +215,7 @@ export async function updateEventUseCase<
         message: "Activity plan not found or not accessible",
       });
     }
-    if (!activityPlanStructureSchemaV3.safeParse(activityPlan.structure).success) {
+    if (!activityPlanStructureSchema.safeParse(activityPlan.structure).success) {
       throw new TRPCError({
         code: "BAD_REQUEST",
         message: "Only executable single-category activity plans can be scheduled",
@@ -302,11 +302,16 @@ export async function updateEventUseCase<
     ...(patch.training_plan_id !== undefined ? { training_plan_id: patch.training_plan_id } : {}),
     ...(patch.starts_at !== undefined ? { starts_at: patch.starts_at } : {}),
     ...(patch.ends_at !== undefined ? { ends_at: patch.ends_at } : {}),
-    scheduled_date:
-      scheduledDate ??
-      (patch.starts_at !== undefined
-        ? getScheduledDateKey(patch.starts_at, patch.timezone ?? existingEvent.timezone)
-        : existingEvent.scheduled_date),
+    ...(scheduledDate !== undefined
+      ? { scheduled_date: scheduledDate }
+      : patch.starts_at !== undefined
+        ? {
+            scheduled_date: getScheduledDateKey(
+              patch.starts_at,
+              patch.timezone ?? existingEvent.timezone,
+            ),
+          }
+        : {}),
     ...(patch.recurrence !== undefined
       ? {
           recurrence_rule: patch.recurrence?.rule ?? null,
@@ -486,7 +491,6 @@ export async function updateEventUseCase<
   return {
     ...event,
     plannedActivitySync: plannedActivitySyncResult,
-    wahooSync: plannedActivitySyncResult,
     mutation_scope: scope,
     affected_count: updatedRows.length,
     affected_event_ids: updatedRows.map((row) => row.id),

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CanonicalActivityCategory } from "../../schemas/activity-category";
 import { type AthleteMetricType, athleteMetricRoleByType } from "../evidence-contracts";
-import type { AthleteIntelligenceModelInput } from "../model-input-contracts";
+import type { ParsedAthleteIntelligenceModelInput } from "../model-input-contracts";
 import {
   evaluatePhysiologyMetrics,
   PHYSIOLOGY_METRIC_TYPES,
@@ -38,8 +38,8 @@ type Observation = {
 
 function model(
   observations: Partial<Record<AthleteMetricType, Observation[]>>,
-): AthleteIntelligenceModelInput {
-  const evidenceRegistry: AthleteIntelligenceModelInput["evidenceRegistry"] = {};
+): ParsedAthleteIntelligenceModelInput {
+  const evidenceRegistry: ParsedAthleteIntelligenceModelInput["evidenceRegistry"] = {};
   let id = 0;
   const evidence = (
     value: number | null,
@@ -113,6 +113,12 @@ function model(
     },
     metricEvidence,
     activityWindow: { from: "2026-06-01T00:00:00.000Z", through: AS_OF },
+    readCoverage: {
+      metrics: { state: "complete", reason: null },
+      activities: { state: "complete", reason: null },
+      efforts: { state: "complete", reason: null },
+      schedules: { state: "complete", reason: null },
+    },
     activities: [],
     efforts: [],
     goals: [],

@@ -89,7 +89,7 @@ function relationshipLabel(group: WebGroupSummary) {
 export function GroupCard({ group, onOpen }: { group: WebGroupSummary; onOpen: () => void }) {
   const relationship = relationshipLabel(group);
   return (
-    <Card>
+    <Card data-testid={`group-card-${group.id}`}>
       {group.cover_url ? (
         <img
           alt={`${group.name} cover`}
@@ -128,7 +128,12 @@ export function GroupCard({ group, onOpen }: { group: WebGroupSummary; onOpen: (
                 : "Invite only"}
           </Badge>
         </div>
-        <Button onClick={onOpen} type="button" variant="outline">
+        <Button
+          data-testid={`group-card-${group.id}-open`}
+          onClick={onOpen}
+          type="button"
+          variant="outline"
+        >
           View group
         </Button>
       </CardContent>
@@ -145,7 +150,7 @@ export function GroupEventCard({
 }) {
   const startsAt = new Date(event.starts_at);
   return (
-    <Card>
+    <Card data-testid={`group-event-card-${event.id}`}>
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -165,7 +170,12 @@ export function GroupEventCard({
           <p className="text-sm text-muted-foreground">{event.location_name}</p>
         ) : null}
         <p className="text-sm text-muted-foreground">{event.acceptedRsvpCount} going</p>
-        <Button onClick={onOpen} type="button" variant="outline">
+        <Button
+          data-testid={`group-event-card-${event.id}-open`}
+          onClick={onOpen}
+          type="button"
+          variant="outline"
+        >
           View event
         </Button>
       </CardContent>

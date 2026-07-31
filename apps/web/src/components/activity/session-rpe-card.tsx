@@ -103,7 +103,9 @@ export function SessionRpeCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Session RPE</CardTitle>
+        <CardTitle aria-level={2} role="heading">
+          Session RPE
+        </CardTitle>
         <CardDescription>
           Rate how hard this activity felt on a 1–10 Borg CR10 scale.
         </CardDescription>

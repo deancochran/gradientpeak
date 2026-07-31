@@ -89,7 +89,6 @@ function availableLoad(
     intensity: Math.sqrt(load / (100 * (duration / 3600))),
     contributingDurationSeconds: duration,
     quality,
-    sessionRpeEvidence: null,
     thresholdEvidence: {
       ...thresholdEvidence,
       source: "manual",
@@ -127,7 +126,6 @@ function unavailableLoad(): CommonLoadResult {
     method: "power_threshold",
     quality: null,
     thresholdEvidence: null,
-    sessionRpeEvidence: null,
     evidenceFingerprint: null,
     computedAsOf: "2026-07-20T12:00:00.000Z",
     contributingDurationSeconds: 3600,

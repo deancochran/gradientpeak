@@ -33,11 +33,25 @@ describe("profile metric presentation", () => {
     expect(
       formatProfileMetricDisplayValue({ metric_type: "css_seconds_per_100m", value: 95 }),
     ).toBe("1:35 /100m");
+    expect(
+      formatProfileMetricDisplayValue({
+        metric_type: "threshold_pace_seconds_per_km",
+        preferredUnitSystem: "imperial",
+        value: 270,
+      }),
+    ).toBe("7:15 /mi");
+    expect(
+      formatProfileMetricDisplayValue({
+        metric_type: "weight_kg",
+        preferredUnitSystem: "imperial",
+        value: 70,
+      }),
+    ).toBe("154.3 lb");
   });
 
-  it("does not present legacy unknown provenance as manual evidence", () => {
+  it("does not present unknown provenance as manual evidence", () => {
     expect(isManualProfileMetric(null)).toBe(false);
-    expect(formatObservationSource(null)).toBe("Legacy / unknown");
+    expect(formatObservationSource(null)).toBe("Unknown source");
     expect(isManualProfileMetric("manual")).toBe(true);
   });
 });

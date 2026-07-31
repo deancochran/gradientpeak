@@ -28,10 +28,14 @@ describe("training timeline", () => {
     });
   });
 
-  it("builds day summaries from load timeline aliases and item fallbacks", () => {
+  it("builds day summaries from canonical load points and item fallbacks", () => {
     const day = buildTrainingDaySummary({
       date: "2026-07-09",
-      loadPoint: { date: "2026-07-09", ideal_tss: 90, actual_tss: 30 },
+      loadPoint: {
+        date: "2026-07-09",
+        recommended_load_tss: 90,
+        completed_load_tss: 30,
+      },
       scheduledItems: [
         {
           id: "scheduled-1",
@@ -76,6 +80,7 @@ describe("training timeline", () => {
           date: "2026-07-09",
           recommended_load_tss: 100,
           scheduled_load_tss: 80,
+          tentative_scheduled_load_tss: 0,
           completed_load_tss: 20,
         },
       ],

@@ -71,13 +71,20 @@ function runtimeSupportFor(id: string): RuntimeSupport {
       support: ["../lane-support/groups/journeys.ts"],
     };
   }
+  if (domain === "goals") {
+    return {
+      runtimeBlocker:
+        "The implemented goal behavior is runtime-unverified because its persisted athlete fixture requires a local Supabase service-role credential.",
+      spec: "goals.spec.ts",
+      support: ["../utils/testData.ts"],
+    };
+  }
   if (
     domain === "planning" ||
     domain === "calendar" ||
     domain === "agenda" ||
     domain === "events" ||
-    domain === "scheduled-activities" ||
-    domain === "goals"
+    domain === "scheduled-activities"
   ) {
     return {
       runtimeBlocker:
@@ -178,16 +185,16 @@ function testTitleFor(id: string): string {
     return "athlete searches every API-backed discovery scope and can page results";
   }
   if (id === "social.followers") {
-    return "social graph pages provide failure-safe pagination controls";
+    return "social graph pages expose data, empty, error recovery, and bounded controls";
   }
   if (id.startsWith("profiles.") || id.startsWith("social.")) {
-    return "social profile launches follow and direct-message actions";
+    return "private profiles protect details while a follow request persists and is restored";
   }
   if (id.startsWith("groups.") || id.startsWith("group-events.")) {
     return "owner creates, edits, RSVPs to, cancels an event, and archives its group";
   }
   if (id === "planning.training-path" || id === "calendar.navigation") {
-    return "planning.training-path and calendar.navigation expose daily, weekly, month, and day paths";
+    return "planning.training-path and calendar.navigation expose server-composed firm and tentative paths";
   }
   if (id === "agenda.create" || id === "events.recurrence") {
     return "agenda.create and events.recurrence persist a bounded series and honor delete scope";
@@ -196,7 +203,7 @@ function testTitleFor(id: string): string {
     return "scheduled-activities.library and scheduled-activities.detail expose filters and persisted controls";
   }
   if (id.startsWith("goals.")) {
-    return "goals.lifecycle and goals.intelligence create, edit, evaluate, and delete";
+    return "goals.lifecycle and goals.intelligence persist exact owned goals";
   }
   if (id === "activity-plans.library-detail" || id === "activity-plans.search-filter-page") {
     return "athlete can discover and open the activity plan library";
@@ -208,13 +215,16 @@ function testTitleFor(id: string): string {
     return "athlete can author, edit, schedule, comment on, and dependency-delete a plan";
   }
   if (id === "training-plans.library") {
-    return "athlete can browse owned and template training-plan libraries";
+    return "athlete can browse persisted owned and template training-plan libraries";
   }
   if (id === "training-preferences") {
-    return "athlete preferences hydrate, validate, persist, and survive reload";
+    return "athlete preferences hydrate, validate, persist, reload, and restore";
+  }
+  if (id === "training-plans.reorder") {
+    return "athlete atomically reorders persisted scheduled activities";
   }
   if (id.startsWith("training-plans.")) {
-    return "training-plan create and reorder journeys expose durable controls and states";
+    return "athlete creates, reloads, edits, and cleans a persisted training plan";
   }
   if (id === "activities.import") {
     return "keeps the selected file recoverable after a failed parse and retries with valid GPX";
@@ -226,10 +236,10 @@ function testTitleFor(id: string): string {
     return "athlete can retry an XML upload and use the persisted route journey";
   }
   if (id.startsWith("metrics.")) {
-    return "athlete can manage dated profile history and record an atomic CSS test";
+    return "athlete can manage metric history and inspect read-only effort and trend evidence";
   }
   if (id.startsWith("efforts.") || id.startsWith("trends.")) {
-    return "athlete can inspect effort evidence and full real trends analytics";
+    return "athlete can manage metric history and inspect read-only effort and trend evidence";
   }
   if (id.startsWith("profile.")) {
     return "profile hub and settings expose owned profile journeys";
@@ -655,6 +665,12 @@ export const mobileWebJourneyDomains: MobileWebJourneyDomain[] = [
         "Geometry, map, elevation and social detail",
         "needs-seed",
         "route geometry and social seed",
+      ),
+      blocked(
+        "routes.edit",
+        "Edit owned route name and description",
+        "needs-seed",
+        "owned route metadata fixture",
       ),
       blocked(
         "routes.upload",

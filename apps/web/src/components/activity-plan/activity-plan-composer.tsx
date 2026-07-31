@@ -1,11 +1,11 @@
 import type {
   ActivityPlanDuration,
   ActivityPlanIntervalStep,
-  ActivityPlanSegmentV3,
+  ActivityPlanSegment,
   CanonicalActivityCategory,
   EditableActivityPlanStructure,
 } from "@repo/core";
-import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import {
   type ActivityTargetType,
   activityTargetDefinitionByType,
@@ -53,7 +53,7 @@ export type ActivityPlanAuthoringValues = {
   gps_recording_enabled: boolean;
   name: string;
   notes: string | null;
-  structure: ReturnType<typeof activityPlanStructureSchemaV3.parse>;
+  structure: ReturnType<typeof activityPlanStructureSchema.parse>;
   template_visibility: (typeof visibilityOptions)[number];
 };
 
@@ -73,7 +73,7 @@ type ActivityPlanComposerProps = {
 };
 
 function editableStructure(value: unknown): EditableActivityPlanStructure {
-  const parsed = activityPlanStructureSchemaV3.safeParse(value);
+  const parsed = activityPlanStructureSchema.safeParse(value);
   return parsed.success
     ? { version: 3, segments: [...parsed.data.segments] }
     : createActivityPlanStructure();
@@ -139,7 +139,7 @@ export function ActivityPlanComposer({
     useState<CanonicalActivityCategory | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const saveButtonRef = useRef<HTMLButtonElement>(null);
-  const parsed = useMemo(() => activityPlanStructureSchemaV3.safeParse(structure), [structure]);
+  const parsed = useMemo(() => activityPlanStructureSchema.safeParse(structure), [structure]);
   const firstIssue = parsed.success ? null : parsed.error.issues[0]?.message;
 
   const removeSegment = (segmentId: string) => {
@@ -174,7 +174,7 @@ export function ActivityPlanComposer({
 
   const save = async () => {
     setSaveError(null);
-    const validStructure = activityPlanStructureSchemaV3.safeParse(structure);
+    const validStructure = activityPlanStructureSchema.safeParse(structure);
     if (!name.trim() || !validStructure.success) {
       setSaveError("Enter a plan name and correct the activity structure before saving.");
       saveButtonRef.current?.focus();
@@ -298,8 +298,8 @@ export function ActivityPlanComposer({
         <div>
           <h2 className="text-xl font-semibold">Activity structure</h2>
           <p className="text-sm text-muted-foreground">
-            Build a single-activity-category V3 activity with activity and rest segments in
-            execution order.
+            Build a single-activity-category activity with activity and rest segments in execution
+            order.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -414,12 +414,12 @@ export function ActivityPlanComposer({
 
 type SegmentEditorProps = {
   index: number;
-  onChange: (update: (segment: ActivityPlanSegmentV3) => ActivityPlanSegmentV3) => void;
+  onChange: (update: (segment: ActivityPlanSegment) => ActivityPlanSegment) => void;
   onMove: (offset: -1 | 1) => void;
   onRemove: () => void;
   onRemoveInterval: (intervalId: string) => void;
   onRemoveStep: (intervalId: string, stepId: string) => void;
-  segment: ActivityPlanSegmentV3;
+  segment: ActivityPlanSegment;
   setStructure: React.Dispatch<React.SetStateAction<EditableActivityPlanStructure>>;
   structure: EditableActivityPlanStructure;
 };

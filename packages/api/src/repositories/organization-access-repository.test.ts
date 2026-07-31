@@ -113,9 +113,7 @@ describe("organization access repository", () => {
         "revoked_at",
       ]),
     );
-    expect(metadata.columns).not.toEqual(
-      expect.arrayContaining(["role_id", "permission_key", "status"]),
-    );
+    expect(metadata.columns).not.toEqual(expect.arrayContaining(["role_id", "permission_key"]));
     expect(metadata.params).toEqual(expect.arrayContaining([PROFILE_ID, ORGANIZATION_ID]));
   });
 
@@ -134,7 +132,6 @@ describe("organization access repository", () => {
     expect(metadata.params).toEqual(
       expect.arrayContaining([PROFILE_ID, "Peak Coaching", "peak-coaching", ORGANIZATION_ID]),
     );
-    expect(metadata.columns).not.toContain("status");
     expect(query.getLimit()).toHaveBeenCalledWith(21);
   });
 

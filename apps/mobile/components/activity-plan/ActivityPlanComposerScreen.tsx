@@ -2,12 +2,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   type ActivityPlanInterval,
   type ActivityPlanIntervalStep,
-  type ActivityPlanSegmentV3,
+  type ActivityPlanSegment,
   type ActivityPlanTargetAnchors,
   type ActivityTargetCategory,
-  activityPlanStructureSchemaV3,
+  activityPlanStructureSchema,
   calculateActivityPlanStats,
-  compileActivityPlanV3,
+  compileActivityPlan,
 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
@@ -99,7 +99,6 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     isSubmitting,
     isLoading,
     isEditBlocked,
-    editStatus,
   } = useActivityPlanForm({
     planId: isEditMode ? props.planId : undefined,
     onSuccess: (planId) => {
@@ -198,11 +197,11 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   }, [editingIntervalId, editingStepId, intervals]);
 
   const structureStats = useMemo(() => {
-    const parsed = activityPlanStructureSchemaV3.safeParse(form.structure);
+    const parsed = activityPlanStructureSchema.safeParse(form.structure);
     if (!parsed.success) {
       return { durationMs: 0, stepCount: 0, estimatedTSS: 0, distanceMeters: 0 };
     }
-    const stats = calculateActivityPlanStats(compileActivityPlanV3(parsed.data), {
+    const stats = calculateActivityPlanStats(compileActivityPlan(parsed.data), {
       cyclingFtpWatts: profile?.ftp ?? undefined,
     });
 
@@ -280,9 +279,9 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     );
   };
 
-  const handleAddSegment = (role: ActivityPlanSegmentV3["role"]) => {
+  const handleAddSegment = (role: ActivityPlanSegment["role"]) => {
     const id = randomUUID();
-    const segment: ActivityPlanSegmentV3 =
+    const segment: ActivityPlanSegment =
       role === "activity"
         ? {
             id,
@@ -378,16 +377,13 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   }
 
   if (isEditBlocked) {
-    const legacy = editStatus === "legacy_read_only";
     return (
       <View className="flex-1 items-center justify-center gap-3 bg-background p-6">
         <Text accessibilityRole="header" className="text-lg font-semibold text-foreground">
-          {legacy ? "Legacy plan is read-only" : "Plan unavailable"}
+          Plan unavailable
         </Text>
         <Text className="text-center text-sm text-muted-foreground">
-          {legacy
-            ? "This multisport plan can be viewed but cannot be structurally edited on mobile."
-            : "This plan cannot be safely edited on mobile."}
+          This plan cannot be safely edited on mobile.
         </Text>
         <Button onPress={() => router.back()}>
           <Text>Back to plans</Text>

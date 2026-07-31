@@ -127,11 +127,27 @@ export async function toggleContentLikeRecord(
 export async function addContentCommentRecord(
   db: DbClient,
   viewerId: string,
-  input: { entity_id: string; entity_type: SocialCommentEntityType; content: string },
+  input: {
+    comment_id?: string;
+    entity_id: string;
+    entity_type: SocialCommentEntityType;
+    content: string;
+  },
 ) {
+  const commentId = input.comment_id ?? randomUUID();
+  const now = new Date();
+  const content = input.content.trim();
   const insertResult = await db.execute(sql`
-    insert into comments (profile_id, entity_id, entity_type, content)
-    values (${viewerId}::uuid, ${input.entity_id}::uuid, ${input.entity_type}, ${input.content.trim()})
+    insert into comments (id, profile_id, entity_id, entity_type, content, created_at, updated_at)
+    values (
+      ${commentId}::uuid, ${viewerId}::uuid, ${input.entity_id}::uuid, ${input.entity_type},
+      ${content}, ${now}, ${now}
+    )
+    on conflict (id) do update set id = excluded.id
+    where comments.profile_id = excluded.profile_id
+      and comments.entity_id = excluded.entity_id
+      and comments.entity_type = excluded.entity_type
+      and comments.content = excluded.content
     returning id, profile_id, entity_id, entity_type, content, created_at
   `);
   const insertedComment = commentInsertRowSchema.parse(insertResult.rows[0]);

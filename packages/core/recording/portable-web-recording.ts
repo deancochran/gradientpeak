@@ -32,9 +32,7 @@ export const portableWebRecordingArtifactSchema = z
     fileText: z.string().min(1).max(1_000_000),
     sha256: sha256Schema,
     review: portableWebRecordingReviewSchema,
-    // v1 artifacts written before Session RPE submission existed omitted this
-    // field. Default it while parsing so IndexedDB recovery remains compatible.
-    sessionRpeOperationId: z.string().uuid().nullable().default(null),
+    sessionRpeOperationId: z.string().uuid().nullable(),
   })
   .strict()
   .superRefine((artifact, context) => {

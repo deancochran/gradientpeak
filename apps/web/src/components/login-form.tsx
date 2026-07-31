@@ -17,6 +17,7 @@ import { useForm } from "react-hook-form";
 import { getLoginFormError } from "../lib/auth/form-errors";
 import { type LoginFormValues, loginFormSchema } from "../lib/auth/form-schemas";
 import { signInWithEmailAction } from "../lib/auth/server-actions";
+import { contractEpochFormInputProps } from "../lib/contract-epoch";
 import { AuthCardShell } from "./auth-card-shell";
 
 type LoginFormProps = React.ComponentPropsWithoutRef<"div"> & {
@@ -55,6 +56,7 @@ export function LoginForm({ className, redirectTo, ...props }: LoginFormProps) {
       <AuthCardShell title="Login" description="Enter your email below to login to your account">
         <Form {...form}>
           <form action={signInWithEmailAction.url} method="post" onSubmit={handleLogin}>
+            <input {...contractEpochFormInputProps} />
             <input type="hidden" name="redirect" value={redirectTo ?? ""} />
             <div className="flex flex-col gap-6">
               <FormTextField

@@ -1,6 +1,6 @@
 import type {
   ActivityPlanDuration,
-  ActivityPlanStructureV3,
+  ActivityPlanStructure,
   ActivityPlanTarget,
 } from "../activity-plan";
 import { deterministicUuidFromSeed } from "../plan/normalizeGoalInput";
@@ -21,7 +21,7 @@ type DraftInterval = {
   notes?: string;
 };
 
-/** Template-only builder that authors strict V3 documents with stable nested IDs. */
+/** Template-only builder that authors strict documents with stable nested IDs. */
 export class SystemActivityPlanBuilder {
   private readonly intervals: DraftInterval[] = [];
 
@@ -67,7 +67,7 @@ export class SystemActivityPlanBuilder {
     });
   }
 
-  build(): ActivityPlanStructureV3 {
+  build(): ActivityPlanStructure {
     if (this.intervals.length === 0) throw new Error("Plan must have at least one interval");
 
     const segmentSeed = `system-template:${this.activity_category}:${this.identity}`;
@@ -96,7 +96,7 @@ export class SystemActivityPlanBuilder {
           })),
         },
       ],
-    } as ActivityPlanStructureV3;
+    } as ActivityPlanStructure;
   }
 }
 

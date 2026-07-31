@@ -30,6 +30,10 @@ export function EntityCommentsCard({
   testId,
 }: EntityCommentsCardProps) {
   const [newComment, setNewComment] = useState("");
+  const [failedComment, setFailedComment] = useState<{
+    commentId: string;
+    content: string;
+  } | null>(null);
   const enabled = isUuid(entityId);
   const commentsQuery = api.social.getComments.useInfiniteQuery(
     {
@@ -43,18 +47,39 @@ export function EntityCommentsCard({
     },
   );
   const addCommentMutation = api.social.addComment.useMutation({
+    retry: false,
     onSuccess: async () => {
       setNewComment("");
+      setFailedComment(null);
       await commentsQuery.refetch();
+    },
+    onError: (_error, variables) => {
+      setFailedComment({
+        commentId: variables.comment_id ?? crypto.randomUUID(),
+        content: variables.content,
+      });
     },
   });
   const comments = commentsQuery.data?.pages.flatMap((page) => page.comments) ?? [];
   const total = commentsQuery.data?.pages[0]?.total ?? 0;
+  const submitComment = (value: string, commentId: string = crypto.randomUUID()) => {
+    const content = value.trim();
+    if (!enabled || !entityId || !content || addCommentMutation.isPending) return;
+    setFailedComment(null);
+    addCommentMutation.mutate({
+      comment_id: commentId,
+      content,
+      entity_id: entityId,
+      entity_type: entityType,
+    });
+  };
 
   return (
     <Card data-testid={testId}>
       <CardHeader>
-        <CardTitle>Comments</CardTitle>
+        <CardTitle aria-level={2} role="heading">
+          Comments
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">{helperText}</p>
@@ -102,28 +127,45 @@ export function EntityCommentsCard({
         ) : null}
         <div className="space-y-2">
           <Textarea
-            onChange={(event) => setNewComment(event.currentTarget.value)}
+            accessibilityLabel="Add a comment"
+            onChange={(event) => {
+              const nextComment = event.currentTarget.value;
+              setNewComment(nextComment);
+              if (failedComment && nextComment.trim() !== failedComment.content) {
+                setFailedComment(null);
+              }
+            }}
             placeholder="Add a comment"
             rows={4}
             testId={`${testId}-input`}
             value={newComment}
           />
+          {failedComment ? (
+            <div className="flex flex-wrap items-center justify-between gap-2" role="alert">
+              <p className="text-sm text-destructive">
+                Comment was not posted. Your text is preserved.
+              </p>
+              <Button
+                disabled={addCommentMutation.isPending}
+                onClick={() => submitComment(failedComment.content, failedComment.commentId)}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Retry comment
+              </Button>
+            </div>
+          ) : null}
           <div className="flex justify-end">
             <LoadingButton
               disabled={!enabled || !newComment.trim() || addCommentMutation.isPending}
               loading={addCommentMutation.isPending}
               loadingLabel="Posting..."
-              onClick={() => {
-                if (!enabled || !entityId || !newComment.trim()) {
-                  return;
-                }
-
-                addCommentMutation.mutate({
-                  content: newComment.trim(),
-                  entity_id: entityId,
-                  entity_type: entityType,
-                });
-              }}
+              onClick={() =>
+                failedComment
+                  ? submitComment(failedComment.content, failedComment.commentId)
+                  : submitComment(newComment)
+              }
               type="button"
             >
               Post comment

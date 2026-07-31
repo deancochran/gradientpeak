@@ -67,8 +67,16 @@ afterEach(cleanup);
 
 describe("ActivityStreamAnalysisCard", () => {
   it("shows LTHR-normalized stream HR load separately from summary load", () => {
-    render(<ActivityStreamAnalysisCard analysis={analysis} artifactState="ready" />);
+    render(
+      <ActivityStreamAnalysisCard
+        analysis={analysis}
+        artifactState="ready"
+        scopeDescription="Showing the first run segment."
+      />,
+    );
 
+    expect(screen.getByRole("heading", { name: "Stream analysis" })).toBeTruthy();
+    expect(screen.getByText("Showing the first run segment.")).toBeTruthy();
     expect(screen.getByText("Stream HR Load")).toBeTruthy();
     expect(screen.getByText("74")).toBeTruthy();
     expect(screen.getByText(/LTHR-normalized from accepted stream intervals/)).toBeTruthy();

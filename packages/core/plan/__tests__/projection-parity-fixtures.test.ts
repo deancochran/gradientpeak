@@ -551,7 +551,7 @@ describe("projection parity fixtures", () => {
           normalized_creation_config: {
             optimization_profile: "sustainable",
             post_goal_recovery_days: 7,
-            behavior_controls_v1: {
+            behavior_controls: {
               aggressiveness: 0.2,
               variability: 0.25,
               spike_frequency: 0.15,
@@ -592,7 +592,7 @@ describe("projection parity fixtures", () => {
           normalized_creation_config: {
             optimization_profile: "balanced",
             post_goal_recovery_days: 5,
-            behavior_controls_v1: {
+            behavior_controls: {
               aggressiveness: 0.45,
               variability: 0.45,
               spike_frequency: 0.35,
@@ -633,7 +633,7 @@ describe("projection parity fixtures", () => {
           normalized_creation_config: {
             optimization_profile: "outcome_first",
             post_goal_recovery_days: 3,
-            behavior_controls_v1: {
+            behavior_controls: {
               aggressiveness: 0.8,
               variability: 0.75,
               spike_frequency: 0.75,
@@ -691,7 +691,7 @@ describe("projection parity fixtures", () => {
           normalized_creation_config: {
             optimization_profile: "balanced",
             post_goal_recovery_days: 5,
-            behavior_controls_v1: {
+            behavior_controls: {
               aggressiveness: 0.45,
               variability: 0.45,
               spike_frequency: 0.35,

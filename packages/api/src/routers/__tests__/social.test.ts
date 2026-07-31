@@ -171,13 +171,13 @@ describe("socialRouter", () => {
     expect(calls.executes).toHaveLength(2);
   });
 
-  it("unfollowUser deletes the relationship and returns success", async () => {
-    const { caller, calls } = createCaller({ execute: [[]] });
+  it("unfollowUser deletes the relationship and its pending-request notification", async () => {
+    const { caller, calls } = createCaller({ execute: [[], []] });
 
     const result = await caller.unfollowUser({ target_user_id: TARGET_USER_ID });
 
     expect(result).toEqual({ success: true });
-    expect(calls.executes).toHaveLength(1);
+    expect(calls.executes).toHaveLength(2);
   });
 
   it("acceptFollowRequest accepts a pending request and notifies the follower", async () => {
@@ -502,7 +502,7 @@ describe("socialRouter", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
-  it("addComment stores trimmed content and serializes the timestamp", async () => {
+  it("addComment stores trimmed content and idempotently reuses a client comment id", async () => {
     const createdAt = new Date("2026-04-03T12:30:00.000Z");
     const { caller } = createCaller({
       execute: [
@@ -516,13 +516,27 @@ describe("socialRouter", () => {
             created_at: createdAt,
           },
         ],
+        [
+          {
+            id: COMMENT_ID,
+            profile_id: SESSION_USER_ID,
+            entity_id: ACTIVITY_ID,
+            entity_type: "activity",
+            content: "nice work",
+            created_at: createdAt,
+          },
+        ],
       ],
       query: {
-        activities: [{ profile_id: TARGET_USER_ID, content_visibility: "public" }],
+        activities: [
+          { profile_id: TARGET_USER_ID, content_visibility: "public" },
+          { profile_id: TARGET_USER_ID, content_visibility: "public" },
+        ],
       },
     });
 
     const result = await caller.addComment({
+      comment_id: COMMENT_ID,
       entity_id: ACTIVITY_ID,
       entity_type: "activity",
       content: "  nice work  ",
@@ -536,6 +550,14 @@ describe("socialRouter", () => {
       content: "nice work",
       created_at: createdAt.toISOString(),
     });
+    await expect(
+      caller.addComment({
+        comment_id: COMMENT_ID,
+        entity_id: ACTIVITY_ID,
+        entity_type: "activity",
+        content: "  nice work  ",
+      }),
+    ).resolves.toEqual(result);
   });
 
   it("getComments returns serialized comments with nested profile data", async () => {

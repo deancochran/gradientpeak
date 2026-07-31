@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  type ActivityPlanStructureV3,
+  type ActivityPlanStructure,
   type ActivityTarget,
   activityPlanCreateSchema,
-  activityPlanStructureSchemaV3,
+  activityPlanStructureSchema,
   activityPlanUpdateSchema,
   activityTargetCapabilityConfig,
   getActivityTargetCompatibilityIssues,
@@ -14,8 +14,8 @@ import {
 function createStructure(
   targets: ActivityTarget[],
   activity_category: "run" | "bike" | "swim" = "run",
-): ActivityPlanStructureV3 {
-  return activityPlanStructureSchemaV3.parse({
+): ActivityPlanStructure {
+  return activityPlanStructureSchema.parse({
     version: 3,
     segments: [
       {
@@ -58,7 +58,7 @@ describe("activity target capabilities", () => {
     expect(getPermissibleTargetTypes("strength")).toEqual(["RPE"]);
   });
 
-  it("accepts a strictly validated V3 structure without duplicate compatibility issues", () => {
+  it("accepts a strictly validated structure without duplicate compatibility issues", () => {
     const issues = getActivityTargetCompatibilityIssues({
       pathPrefix: ["structure"],
       structure: createStructure([{ type: "%MaxHR", intensity: 80 }]),

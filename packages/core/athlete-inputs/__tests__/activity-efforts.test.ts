@@ -214,8 +214,25 @@ describe("activity effort plausibility policy", () => {
         ...base,
         source: "derived",
         method: "onboarding_modeled_curve",
+        provenance: { seed_source: "onboarding" },
       }),
     ).toBe("modeled");
+    expect(
+      getActivityEffortObservationStatus({
+        ...base,
+        source: null,
+        method: "onboarding_modeled_curve",
+        provenance: { observation_type: "modeled" },
+      }),
+    ).toBe("review");
+    expect(
+      getActivityEffortObservationStatus({
+        ...base,
+        value: 0,
+        source: null,
+        method: "onboarding_modeled_curve",
+      }),
+    ).toBe("invalid");
     expect(
       getActivityEffortObservationStatus({
         ...base,

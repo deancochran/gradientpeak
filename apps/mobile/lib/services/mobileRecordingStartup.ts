@@ -1,7 +1,5 @@
 import {
-  type ActivityRecorderCheckpoint,
   clearRecordingCheckpoint,
-  hasQuarantinedRecordingEvidence,
   inspectRecordingCheckpoint,
   type RecordingCheckpointRecovery,
 } from "./ActivityRecorder/checkpointStorage";
@@ -10,8 +8,8 @@ import {
   garbageCollectDueDiscardedRecordingEvidence,
 } from "./ActivityRecorder/finalizedArtifactStorage";
 import {
-  blockFinalizedArtifactRebuild,
   garbageCollectExpiredRecordingEvidence,
+  hasQuarantinedRecordingEvidence,
   inspectFinalizedArtifactReferences,
   inspectRecordingEvidenceSession,
   loadFinalizedArtifactHandoffs,
@@ -33,48 +31,6 @@ export type MobileRecordingStartupState = {
 };
 
 const preparations = new Map<string, Promise<MobileRecordingStartupState>>();
-type FinalizationRecoveryOwner = (
-  checkpoint: ActivityRecorderCheckpoint | import("@repo/core").RecordingCheckpoint,
-) => Promise<void>;
-const finalizationRecoveryOwners = new Map<string, FinalizationRecoveryOwner>();
-const finalizationRebuilds = new Map<string, Promise<void>>();
-
-/** Registered by the single recorder instance for this profile. */
-export function registerFinalizationRecoveryOwner(
-  profileId: string,
-  owner: FinalizationRecoveryOwner,
-): () => void {
-  finalizationRecoveryOwners.set(profileId, owner);
-  return () => {
-    if (finalizationRecoveryOwners.get(profileId) === owner)
-      finalizationRecoveryOwners.delete(profileId);
-  };
-}
-
-async function scheduleFinalizationRebuild(
-  profileId: string,
-  checkpoint: ActivityRecorderCheckpoint | import("@repo/core").RecordingCheckpoint,
-): Promise<void> {
-  const key = `${profileId}:${checkpoint.sessionId}`;
-  const active = finalizationRebuilds.get(key);
-  if (active) return active;
-  const owner = finalizationRecoveryOwners.get(profileId);
-  if (!owner) {
-    await blockFinalizedArtifactRebuild(
-      checkpoint.sessionId,
-      "finalization-recovery-owner-unavailable",
-    );
-    return;
-  }
-  const rebuild = owner(checkpoint).catch(async (error) => {
-    await blockFinalizedArtifactRebuild(
-      checkpoint.sessionId,
-      error instanceof Error ? error.message : "finalization-rebuild-failed",
-    );
-  });
-  finalizationRebuilds.set(key, rebuild);
-  return rebuild;
-}
 
 /** Single startup fence shared by orphan cleanup, recorder recovery, and queue drain. */
 export function prepareMobileRecordingStartup(
@@ -123,17 +79,6 @@ export function prepareMobileRecordingStartup(
     const evidence = evidenceSessionId
       ? await inspectRecordingEvidenceSession(evidenceSessionId, profileId)
       : undefined;
-    for (const candidate of finalizedArtifactRecovery) {
-      if (candidate.status !== "rebuild-pending") continue;
-      if (
-        checkpoint.status !== "recovered" ||
-        checkpoint.checkpoint.sessionId !== candidate.sessionId
-      ) {
-        await blockFinalizedArtifactRebuild(candidate.sessionId, "required-checkpoint-unavailable");
-        continue;
-      }
-      await scheduleFinalizationRebuild(profileId, checkpoint.checkpoint);
-    }
     return {
       checkpoint,
       queueJobs,
@@ -151,6 +96,4 @@ export function prepareMobileRecordingStartup(
 
 export function resetMobileRecordingStartupForTests(): void {
   preparations.clear();
-  finalizationRecoveryOwners.clear();
-  finalizationRebuilds.clear();
 }

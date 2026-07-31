@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { canonicalActivityCategorySchema } from "../schemas/activity-category";
-
-export const planningActivityCategorySchema = canonicalActivityCategorySchema;
+import {
+  type CanonicalActivityCategory,
+  canonicalActivityCategorySchema,
+} from "../schemas/activity-category";
 
 export const planningPrimaryFocusSchema = z.enum([
   "rest",
@@ -80,7 +81,7 @@ export const plannedTrainingSessionSchema = z
     estimatedStrengthSets: z.number().nonnegative().nullable().optional(),
     intentType: z.string().nullable().optional(),
     primaryFocus: planningPrimaryFocusSchema.nullable().optional(),
-    activityCategory: planningActivityCategorySchema.nullable().optional(),
+    activityCategory: canonicalActivityCategorySchema.nullable().optional(),
     source: z.enum(["generated", "scheduled", "user_adjusted", "imported"]).optional(),
   })
   .strict()
@@ -116,7 +117,7 @@ export type PlanningEngineInput = z.infer<typeof planningEngineInputSchema>;
 
 export const dailyPrescriptionSessionSchema = z
   .object({
-    activity_category: planningActivityCategorySchema,
+    activity_category: canonicalActivityCategorySchema,
     primary_focus: planningPrimaryFocusSchema,
     target_load_tss: z.number().nonnegative(),
     target_duration_minutes: z.number().nonnegative(),
@@ -162,7 +163,7 @@ type DailyPrescriptionSourcePoint = {
   recommendedFatigueCost: number;
   recommendedStrengthSets: number;
   primaryFocus: z.infer<typeof planningPrimaryFocusSchema>;
-  activityCategory: z.infer<typeof planningActivityCategorySchema>;
+  activityCategory: CanonicalActivityCategory;
   confidence_score?: number;
   reasonCodes: string[];
 };

@@ -13,6 +13,7 @@ import { fireEvent, renderNative, screen, waitFor } from "../../../../test/rende
 const replaceMock = jest.fn();
 const completeOnboardingMock = jest.fn(async () => undefined);
 const secureStoreMock = SecureStore as typeof SecureStore & { __store: Map<string, string> };
+const RECOVERY_KEY = `onboarding-recovery.v${ONBOARDING_RECOVERY_VERSION}.raw.user-1`;
 const mockFlowAuthState = {
   isAuthenticated: true,
   isFullyLoaded: true,
@@ -633,9 +634,7 @@ const flushUsernameDebounce = async () => {
 
 const waitForGateOwnedCompletion = async () => {
   await waitFor(() => expect(completeOnboardingMock).toHaveBeenCalledTimes(1));
-  await waitFor(() =>
-    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("onboarding-recovery.v2.raw.user-1"),
-  );
+  await waitFor(() => expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith(RECOVERY_KEY));
   expect(replaceMock).not.toHaveBeenCalled();
 };
 
@@ -1287,7 +1286,7 @@ describe("onboarding screen", () => {
     expect(screen.getByText("Discard recovery")).toBeTruthy();
     fireEvent.press(screen.getByTestId("onboarding-status-dismiss"));
     await waitFor(() => expect(screen.queryByTestId("onboarding-status-modal")).toBeNull());
-    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("onboarding-recovery.v2.raw.user-1");
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith(RECOVERY_KEY);
     expect(screen.getByTestId("onboarding-full-name-input")).toBeTruthy();
   });
 
@@ -2125,18 +2124,15 @@ describe("onboarding screen", () => {
     await waitFor(() => {
       expect(completeLifecycleSetupMutationMock).toHaveBeenCalledWith({
         profile: {
-          css_seconds_per_hundred_meters: undefined,
+          baseline_field_sources: {},
           dob: undefined,
           experience_level: "skip",
-          ftp: undefined,
           full_name: "Riley Chen",
           gender: undefined,
           intents: [],
           max_hr: undefined,
           planning_timezone: "America/New_York",
           resting_hr: undefined,
-          lthr: undefined,
-          threshold_pace_seconds_per_km: undefined,
           username: "riley_runs",
           vo2max: undefined,
           weight_kg: undefined,

@@ -75,7 +75,6 @@ const activityData = {
           calculationVersion: "threshold-v1",
           sourceFingerprint: "run-threshold",
         },
-        sessionRpeEvidence: null,
         evidenceFingerprint: "run-activity",
         computedAsOf: "2026-03-23T09:00:00.000Z",
       },
@@ -114,7 +113,6 @@ const unavailableHeartRateSegment = {
   method: "heart_rate_zones",
   quality: null,
   thresholdEvidence: null,
-  sessionRpeEvidence: null,
   evidenceFingerprint: null,
   computedAsOf: "2026-03-23T09:00:00.000Z",
   contributingDurationSeconds: null,
@@ -442,6 +440,10 @@ jest.mock("@repo/core", () => ({
     { latitude: 40.0, longitude: -75.0 },
     { latitude: 40.1, longitude: -75.1 },
   ],
+}));
+
+jest.mock("@repo/core/utils/dates", () => ({
+  __esModule: true,
   formatDurationSec: (seconds: number) => {
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;

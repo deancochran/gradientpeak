@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Context } from "./context";
+import { createApiContext } from "./context";
 
 const { captureApiProcedureMetric } = vi.hoisted(() => ({ captureApiProcedureMetric: vi.fn() }));
 
@@ -59,11 +59,11 @@ describe("tRPC telemetry normalization", () => {
         }),
       }),
     });
-    const caller = router.createCaller({
-      headers: new Headers(),
-      session: null,
-      trpcSource: "vitest",
-    } as Context);
+    const caller = router.createCaller(
+      await createApiContext({
+        headers: new Headers(),
+      }),
+    );
 
     await expect(caller.activities.complete()).resolves.toEqual({
       privateOutput: "never captured",

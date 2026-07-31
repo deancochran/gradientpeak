@@ -1,4 +1,4 @@
-import { getFormStatus } from "../load/form";
+import { getLoadBalanceStatus } from "../load/form";
 import { calculateATL, calculateCTL, calculateTSB } from "../load/progression";
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "../load/replay";
 import { addDays } from "../utils/dates";
@@ -60,10 +60,7 @@ export function predictFatigue(
     currentCTL: currentState.ctl,
   });
 
-  // Form assessment
-  const calculatedFormStatus = getFormStatus(newTSB);
-  const formStatus: FatiguePrediction["afterActivity"]["form"] =
-    calculatedFormStatus === "overreaching" ? "tired" : calculatedFormStatus;
+  const loadBalanceStatus = getLoadBalanceStatus(newTSB);
   const _formChange = getFormChange(currentState.tsb, newTSB);
 
   // Generate warnings
@@ -97,21 +94,15 @@ export function predictFatigue(
       ctl: Math.round(newCTL * 10) / 10,
       atl: Math.round(newATL * 10) / 10,
       tsb: Math.round(newTSB * 10) / 10,
-      form: formStatus,
+      loadBalanceStatus,
     },
     weeklyProjection: {
       totalTSS: Math.round(totalWeeklyTSS),
       averageDailyTSS: Math.round((totalWeeklyTSS / 7) * 10) / 10,
       rampRate: Math.round(rampRate * 10) / 10,
-      isSafe: null,
       loadChangeState,
       reasons,
       recommendation,
-    },
-    recoveryPlan: {
-      daysToRecover: null,
-      nextHardActivityDate: null,
-      suggestedRestDays: null,
     },
     warnings,
   };
@@ -247,7 +238,6 @@ export function estimateWeeklyLoad(
   dailyBreakdown: Array<{ date: Date; tss: number; count: number }>;
   projectedCTL: number;
   rampRate: number;
-  isSafe: boolean | null;
   loadChangeState: LoadChangeState;
   reasons: PlanningReasonCode[];
 } {
@@ -316,7 +306,6 @@ export function estimateWeeklyLoad(
     dailyBreakdown,
     projectedCTL: Math.round(projectedCTL * 10) / 10,
     rampRate: Math.round(rampRate * 10) / 10,
-    isSafe: null,
     loadChangeState,
     reasons,
   };

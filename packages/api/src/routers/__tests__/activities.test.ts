@@ -239,7 +239,7 @@ function buildActivityRow(overrides: Record<string, unknown> = {}) {
     avg_swolf: null,
     efficiency_factor: null,
     aerobic_decoupling: null,
-    pool_length: null,
+    pool_length_meters: null,
     total_strokes: null,
     device_manufacturer: null,
     device_product: null,
@@ -335,7 +335,7 @@ function buildActivitySummaryRow(overrides: Record<string, unknown> = {}) {
     avg_swolf: null,
     efficiency_factor: null,
     aerobic_decoupling: null,
-    pool_length: null,
+    pool_length_meters: null,
     total_strokes: null,
     created_at: new Date("2026-01-01T00:00:00.000Z"),
     updated_at: new Date("2026-01-01T00:00:00.000Z"),
@@ -1545,7 +1545,7 @@ describe("activitiesRouter", () => {
       profile_id: OWNER_ID,
       activity_category: "swim",
       avg_temperature: 21.5,
-      pool_length: 25,
+      pool_length_meters: 25,
     });
     const db = createDbMock({
       executeRows: [{ id: ACTIVITY_ID }],
@@ -1560,12 +1560,12 @@ describe("activitiesRouter", () => {
       finishedAt: "2026-01-15T10:00:00.000Z",
       segmentSet: singleSegmentSet("swim"),
       acceptedArtifact: ACCEPTED_ARTIFACT,
-      summary: { distanceMeters: 2000, avgTemperature: 21.5, poolLength: 25 },
+      summary: { distanceMeters: 2000, avgTemperature: 21.5, poolLengthMeters: 25 },
     });
 
     expect(findInsertedValue(db, "activities")).toMatchObject({
       avg_temperature: 21.5,
-      pool_length: 25,
+      pool_length_meters: 25,
     });
   });
 
@@ -1982,7 +1982,7 @@ describe("activitiesRouter", () => {
     );
   });
 
-  it("returns the latest effective session RPE evidence only to the activity owner", async () => {
+  it("returns the unique effective session RPE evidence only to the activity owner", async () => {
     const activity = buildActivityRow({ profile_id: OWNER_ID });
     const firstEvidenceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const effectiveEvidenceId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -1990,21 +1990,6 @@ describe("activitiesRouter", () => {
       queryActivitiesFindFirst: [{ profile_id: OWNER_ID, content_visibility: "public" }],
       joinedRows: [{ activity, activityPlan: null }],
       sessionRpeEvidenceRows: [
-        {
-          id: firstEvidenceId,
-          profileId: OWNER_ID,
-          activityId: ACTIVITY_ID,
-          recordedAt: new Date("2026-01-10T08:46:00.000Z"),
-          correctedAt: null,
-          rpe: 6,
-          scale: "borg_cr10",
-          scaleVersion: "1",
-          source: "user",
-          operationId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-          correctionOfId: null,
-          provenance: { observation_type: "completed_session_rpe", entered_by: "athlete" },
-          createdAt: new Date("2026-01-10T08:46:00.000Z"),
-        },
         {
           id: effectiveEvidenceId,
           profileId: OWNER_ID,

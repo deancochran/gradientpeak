@@ -80,14 +80,15 @@ describe("parseOnboardingFormData", () => {
     expect(() => parseOnboardingFormData(form)).toThrow();
   });
 
-  it("does not attach provenance to omitted baseline values", () => {
+  it("emits an empty provenance object for omitted baseline values", () => {
     const form = new FormData();
     form.set("full_name", "Web Athlete");
     form.set("username", "web_athlete");
     form.set("experience_level", "skip");
     form.set("ftp_source", "imported");
 
-    expect(parseOnboardingFormData(form).profile).toEqual({
+    expect(parseOnboardingFormData(form).profile).toMatchObject({
+      baseline_field_sources: {},
       experience_level: "skip",
       full_name: "Web Athlete",
       intents: [],

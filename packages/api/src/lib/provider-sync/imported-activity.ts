@@ -24,7 +24,8 @@ export type ImportedActivityCreateInput = {
   integrationId: string;
   integrationGeneration: number;
   contentVisibility: ContentVisibility;
-  movingSeconds: number;
+  /** Provider-reported active duration; this is not inferred moving time. */
+  providerActiveDurationSeconds: number | null;
   name: string;
   normalizedPower: number | null;
   polyline: string | null;
@@ -51,7 +52,7 @@ export type BuildImportedActivityInput = {
     distanceMeters?: number | string | null;
     durationSeconds?: number | string | null;
     elevationGainMeters?: number | string | null;
-    movingSeconds?: number | string | null;
+    providerActiveDurationSeconds?: number | string | null;
     normalizedPower?: number | string | null;
     providerUpdatedAt?: string | null;
     startedAt: string;
@@ -101,8 +102,8 @@ export function buildImportedActivityCreateInput(
     integrationId: input.integrationId,
     integrationGeneration: input.integrationGeneration,
     contentVisibility: "private",
-    movingSeconds: toInteger(
-      input.parsedActivity?.summary.totalTime ?? input.fallback.movingSeconds,
+    providerActiveDurationSeconds: toPositiveFiniteNumber(
+      input.fallback.providerActiveDurationSeconds,
     ),
     name: input.title,
     normalizedPower: toNullableNumber(input.fallback.normalizedPower),
@@ -164,4 +165,9 @@ function toInteger(value: number | string | null | undefined): number {
 function toNullableInteger(value: number | string | null | undefined): number | null {
   const parsed = toNullableNumber(value);
   return parsed === null ? null : Math.round(parsed);
+}
+
+function toPositiveFiniteNumber(value: number | string | null | undefined): number | null {
+  const parsed = toNullableNumber(value);
+  return parsed !== null && parsed > 0 ? parsed : null;
 }

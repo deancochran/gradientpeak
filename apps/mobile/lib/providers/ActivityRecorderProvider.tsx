@@ -75,7 +75,7 @@ async function cleanupRecorderService(service: ActivityRecorderService): Promise
  * </ActivityRecorderProvider>
  *
  * // In child components:
- * const service = useSharedActivityRecorder();
+ * const { service } = useActivityRecorderService();
  * const commands = useRecordingCommands(service);
  * ```
  */
@@ -348,7 +348,11 @@ export function ActivityRecorderProvider({
           releaseRecordingCheckpointClaim(claimed.checkpoint.sessionId);
           claimedRecoveryRef.current = null;
           if (isCurrentRecoveryOwner()) {
-            await quarantineActiveRecordingCheckpoint(reason, claimed.checkpoint.profileId);
+            await quarantineActiveRecordingCheckpoint(
+              reason,
+              claimed.checkpoint.profileId,
+              claimed.checkpoint.sessionId,
+            );
             if (isCurrentRecoveryOwner()) {
               Alert.alert("Recording recovery unavailable", reason);
             }
@@ -536,22 +540,8 @@ export function useActivityRecorderService(): ActivityRecorderContextValue {
   return context;
 }
 
-/**
- * Convenience hook that returns just the service instance.
- * Useful for backward compatibility with existing code.
- *
- * @example
- * ```tsx
- * const service = useSharedActivityRecorder();
- * const commands = useRecordingCommands(service);
- * ```
- */
-export function useSharedActivityRecorder(): ActivityRecorderService | null {
-  const { service } = useActivityRecorderService();
-  return service;
-}
-
-export function useOptionalSharedActivityRecorder(): ActivityRecorderService | null {
+/** Returns the recorder service when an optional provider boundary is present. */
+export function useOptionalActivityRecorderService(): ActivityRecorderService | null {
   const context = useContext(ActivityRecorderContext);
   return context?.service ?? null;
 }

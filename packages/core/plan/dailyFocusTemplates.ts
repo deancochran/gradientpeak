@@ -1,4 +1,4 @@
-import type { DailyRecommendedLoadPrimaryFocus } from "./dailyRecommendedLoad";
+import type { DailyLoadRecommendationPrimaryFocus } from "./dailyLoadRecommendation";
 
 export interface DailyFocusTemplateDay {
   date: string;
@@ -19,7 +19,7 @@ export interface ResolveDailyFocusTemplateInput {
 
 type DailyFocusTemplatePhase = "build" | "deload" | "recovery" | "taper" | "event";
 
-const BUILD_TEMPLATES: Record<number, DailyRecommendedLoadPrimaryFocus[]> = {
+const BUILD_TEMPLATES: Record<number, DailyLoadRecommendationPrimaryFocus[]> = {
   1: ["endurance"],
   2: ["tempo", "long_endurance"],
   3: ["endurance", "threshold", "long_endurance"],
@@ -29,7 +29,7 @@ const BUILD_TEMPLATES: Record<number, DailyRecommendedLoadPrimaryFocus[]> = {
   7: ["endurance", "tempo", "recovery", "endurance", "threshold", "recovery", "long_endurance"],
 };
 
-const DELOAD_TEMPLATES: Record<number, DailyRecommendedLoadPrimaryFocus[]> = {
+const DELOAD_TEMPLATES: Record<number, DailyLoadRecommendationPrimaryFocus[]> = {
   1: ["recovery"],
   2: ["recovery", "endurance"],
   3: ["recovery", "endurance", "mobility"],
@@ -39,7 +39,7 @@ const DELOAD_TEMPLATES: Record<number, DailyRecommendedLoadPrimaryFocus[]> = {
   7: ["recovery", "endurance", "mobility", "recovery", "endurance", "mobility", "recovery"],
 };
 
-const TAPER_TEMPLATES: Record<number, DailyRecommendedLoadPrimaryFocus[]> = {
+const TAPER_TEMPLATES: Record<number, DailyLoadRecommendationPrimaryFocus[]> = {
   1: ["tempo"],
   2: ["tempo", "recovery"],
   3: ["tempo", "endurance", "recovery"],
@@ -49,7 +49,7 @@ const TAPER_TEMPLATES: Record<number, DailyRecommendedLoadPrimaryFocus[]> = {
   7: ["tempo", "recovery", "endurance", "mobility", "endurance", "mobility", "recovery"],
 };
 
-const HARD_FOCUSES = new Set<DailyRecommendedLoadPrimaryFocus>([
+const HARD_FOCUSES = new Set<DailyLoadRecommendationPrimaryFocus>([
   "tempo",
   "threshold",
   "vo2",
@@ -73,18 +73,20 @@ function normalizeTemplatePhase(phase: string | null | undefined): DailyFocusTem
 function baseTemplateForPhase(
   phase: DailyFocusTemplatePhase,
   selectedCount: number,
-): DailyRecommendedLoadPrimaryFocus[] {
+): DailyLoadRecommendationPrimaryFocus[] {
   const count = clampSessionCount(selectedCount);
   if (phase === "deload" || phase === "recovery") return DELOAD_TEMPLATES[count] ?? ["recovery"];
   if (phase === "taper" || phase === "event") return TAPER_TEMPLATES[count] ?? ["tempo"];
   return BUILD_TEMPLATES[count] ?? ["endurance"];
 }
 
-function isHardFocus(focus: DailyRecommendedLoadPrimaryFocus): boolean {
+function isHardFocus(focus: DailyLoadRecommendationPrimaryFocus): boolean {
   return HARD_FOCUSES.has(focus);
 }
 
-function degradedFocus(focus: DailyRecommendedLoadPrimaryFocus): DailyRecommendedLoadPrimaryFocus {
+function degradedFocus(
+  focus: DailyLoadRecommendationPrimaryFocus,
+): DailyLoadRecommendationPrimaryFocus {
   if (
     focus === "race_specific" ||
     focus === "threshold" ||
@@ -103,7 +105,7 @@ function isInRecoveryRange(date: string, ranges: DailyFocusRecoveryRange[] | nul
 
 function applyEventAndRecoveryOverrides(input: {
   days: DailyFocusTemplateDay[];
-  focuses: DailyRecommendedLoadPrimaryFocus[];
+  focuses: DailyLoadRecommendationPrimaryFocus[];
   eventDate?: string | null;
   recoveryRanges?: DailyFocusRecoveryRange[] | null;
 }) {
@@ -123,7 +125,7 @@ function applyEventAndRecoveryOverrides(input: {
 
 function applyHardSpacing(input: {
   days: DailyFocusTemplateDay[];
-  focuses: DailyRecommendedLoadPrimaryFocus[];
+  focuses: DailyLoadRecommendationPrimaryFocus[];
   protectedHardDates: Set<string>;
 }) {
   const resolved = [...input.focuses];
@@ -158,7 +160,7 @@ function applyHardSpacing(input: {
 
 export function resolveDailyFocusTemplate(
   input: ResolveDailyFocusTemplateInput,
-): DailyRecommendedLoadPrimaryFocus[] {
+): DailyLoadRecommendationPrimaryFocus[] {
   if (input.selectedDays.length === 0) return [];
 
   const phase = normalizeTemplatePhase(input.phase);

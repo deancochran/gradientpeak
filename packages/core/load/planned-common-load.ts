@@ -51,7 +51,6 @@ function unavailable(
     method: completeProvenance ? dose.method : reason === "threshold_missing" ? dose.method : null,
     quality: completeProvenance ? dose.quality : null,
     thresholdEvidence: completeProvenance ? dose.thresholdEvidence : null,
-    sessionRpeEvidence: null,
     evidenceFingerprint: completeProvenance ? dose.evidenceFingerprint : null,
     computedAsOf,
     contributingDurationSeconds:

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { canonicalActivityCategorySchema } from "../activity-category";
+import { dateOnlySchema } from "../date-only";
 
-const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const uuidSchema = z.string().uuid();
 const positiveNumberSchema = z.number().positive().finite();
 const positiveIntegerSchema = z.number().int().positive();

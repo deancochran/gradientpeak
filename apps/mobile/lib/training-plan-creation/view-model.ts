@@ -1,6 +1,6 @@
 import {
   addDaysDateOnlyUtc,
-  buildDailyRecommendedLoad,
+  buildDailyLoadRecommendation,
   buildDailyTssByDateSeries,
   replayTrainingLoadByDate,
   type TrainingPlanCreationPreview,
@@ -510,7 +510,8 @@ function buildRecommendedTssByDate({
   const activityCategory = selectBuilderGoalBlueprints(state).find(
     (goal) => goal.activityCategory !== null,
   )?.activityCategory;
-  const points = buildDailyRecommendedLoad({
+  const points = buildDailyLoadRecommendation({
+    mode: "recommended-load",
     startDate: state.scheduling.startDate,
     endDate: addDaysDateOnlyUtc(state.scheduling.startDate, durationDays - 1),
     preferredWeekdays,

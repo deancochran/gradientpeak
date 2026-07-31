@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { activityPlanStructureSchemaV3 } from "@repo/core";
+import { activityPlanStructureSchema } from "@repo/core";
 import { type DrizzleDbClient, schema } from "@repo/db";
 import { and, asc, eq, gte, inArray, or } from "drizzle-orm";
 import type { EventDeleteScope, EventWriteRepository } from "../../repositories";
@@ -407,7 +407,7 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
           if (
             currentPlanIds.some((planId) => {
               const plan = plansById.get(planId);
-              return !plan || !activityPlanStructureSchemaV3.safeParse(plan.structure).success;
+              return !plan || !activityPlanStructureSchema.safeParse(plan.structure).success;
             })
           ) {
             throw new EventCurrentPlanUpdateConflict();

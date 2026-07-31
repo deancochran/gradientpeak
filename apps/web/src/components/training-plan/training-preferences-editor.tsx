@@ -48,7 +48,9 @@ function writePath(settings: AthleteTrainingSettings, path: string, value: unkno
   }
   const finalKey = keys.at(-1);
   if (finalKey) target[finalKey] = value;
-  return hydrateTrainingPreferences(copy);
+  // Draft state deliberately permits cross-field-invalid values so submit can report
+  // an accessible validation error without discarding what the athlete entered.
+  return copy as AthleteTrainingSettings;
 }
 
 function ComplexJsonField({
@@ -93,12 +95,13 @@ function PreferenceField({
   settings,
 }: {
   field: TrainingPreferenceField;
-  onChange: (settings: AthleteTrainingSettings) => void;
+  onChange: (path: string, value: unknown) => void;
   settings: AthleteTrainingSettings;
 }) {
-  if (!field.globalPath) return null;
-  const value = readPath(settings, field.globalPath);
-  const update = (next: unknown) => onChange(writePath(settings, field.globalPath as string, next));
+  const globalPath = field.globalPath;
+  if (!globalPath) return null;
+  const value = readPath(settings, globalPath);
+  const update = (next: unknown) => onChange(globalPath, next);
 
   if (
     field.control === "availability-windows" ||
@@ -191,6 +194,7 @@ export function TrainingPreferencesEditor() {
     setSaveFailed(false);
     const parsed = validateTrainingPreferences(draft);
     if (!parsed.success) {
+      setSaveFailed(true);
       setMessage(parsed.message);
       return;
     }
@@ -302,8 +306,8 @@ export function TrainingPreferencesEditor() {
             <PreferenceField
               field={field}
               key={field.id}
-              onChange={(settings) => {
-                setDraft(settings);
+              onChange={(path, value) => {
+                setDraft((current) => writePath(current, path, value));
                 setDirty(true);
                 setMessage(null);
                 setSaveFailed(false);

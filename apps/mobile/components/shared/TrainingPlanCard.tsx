@@ -35,6 +35,7 @@ export interface TrainingPlanCardPlan {
   created_at?: string | Date | null;
   updated_at?: string | Date | null;
   owner?: EntityOwner | null;
+  structure?: unknown;
 }
 
 type TrainingPlanCardProps = {
@@ -42,6 +43,7 @@ type TrainingPlanCardProps = {
   onPress?: () => void;
   headerAccessory?: ResourceCardAccessory;
   showAttribution?: boolean;
+  testID?: string;
   variant?: "default" | "compact" | "list";
 };
 
@@ -50,15 +52,13 @@ export function TrainingPlanCard({
   onPress,
   headerAccessory,
   showAttribution = true,
+  testID,
   variant = "default",
 }: TrainingPlanCardProps) {
   const isList = variant === "list";
   const isCompact = variant === "compact";
   const summaryMetrics = useMemo(() => deriveTrainingPlanSummaryMetrics(plan), [plan]);
-  const visualModel = useMemo(
-    () => deriveTrainingPlanVisual(plan, { compact: isCompact }),
-    [isCompact, plan],
-  );
+  const visualModel = useMemo(() => deriveTrainingPlanVisual(plan), [plan]);
   const {
     isLiked,
     isPending: isLikePending,
@@ -101,6 +101,7 @@ export function TrainingPlanCard({
       }
       compact={isCompact || isList}
       onPress={onPress}
+      testID={testID ?? `training-plan-card-${plan.id}`}
     >
       {isList ? (
         <>
@@ -143,10 +144,12 @@ export function TrainingPlanCard({
             ]}
           />
 
-          <View className="gap-2">
-            <Text className="text-sm font-medium text-foreground">Plan snapshot</Text>
-            <TrainingPlanPeriodizationPreview compact={isCompact} model={visualModel} />
-          </View>
+          {visualModel ? (
+            <View className="gap-2">
+              <Text className="text-sm font-medium text-foreground">Plan snapshot</Text>
+              <TrainingPlanPeriodizationPreview compact={isCompact} model={visualModel} />
+            </View>
+          ) : null}
         </>
       )}
     </ResourceCardShell>

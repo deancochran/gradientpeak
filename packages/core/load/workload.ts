@@ -23,8 +23,6 @@ export interface ComputeTrimpInput {
   sex?: "male" | "female";
   hrSampleCount?: number | null;
   hrCoverageRatio?: number | null;
-  /** @deprecated Power is not a TRIMP input. Use computeExternalWorkKj. */
-  avgPowerWatts?: number | null;
 }
 
 export interface ComputeExternalWorkKjInput {
@@ -102,26 +100,11 @@ export function computeExternalWorkKj(input: ComputeExternalWorkKjInput): Worklo
   return { ...envelope, value: (avgPowerWatts * durationSeconds) / 1000, source: "power" };
 }
 
-function unavailableLegacy(requiredDays: number): WorkloadEnvelope {
-  return {
-    ...createEnvelope(0, requiredDays),
-    value: null,
-    reasonCode: "identity_required",
-  };
-}
-
-export function computeAcwr(series: LoadSeries): WorkloadEnvelope;
-/** @deprecated Numeric arrays have no load identity and are unavailable. */
-export function computeAcwr(dailyLoads: number[], coverageDays: number): WorkloadEnvelope;
-export function computeAcwr(
-  seriesOrLoads: LoadSeries | number[],
-  _coverageDays?: number,
-): WorkloadEnvelope {
-  if (Array.isArray(seriesOrLoads)) return unavailableLegacy(28);
-  const eligibility = evaluateLoadSeries(seriesOrLoads, 28);
+export function computeAcwr(series: LoadSeries): WorkloadEnvelope {
+  const eligibility = evaluateLoadSeries(series, 28);
   const envelope = {
     ...createEnvelope(eligibility.coverage.compatibleDays, 28),
-    identity: seriesOrLoads.identity,
+    identity: series.identity,
     coverage: eligibility.coverage,
   };
   if (!eligibility.eligible) {
@@ -133,18 +116,11 @@ export function computeAcwr(
   return { ...envelope, value: acuteLoad / chronicLoad };
 }
 
-export function computeMonotony(series: LoadSeries): WorkloadEnvelope;
-/** @deprecated Numeric arrays have no load identity and are unavailable. */
-export function computeMonotony(dailyLoads: number[], coverageDays: number): WorkloadEnvelope;
-export function computeMonotony(
-  seriesOrLoads: LoadSeries | number[],
-  _coverageDays?: number,
-): WorkloadEnvelope {
-  if (Array.isArray(seriesOrLoads)) return unavailableLegacy(7);
-  const eligibility = evaluateLoadSeries(seriesOrLoads, 7);
+export function computeMonotony(series: LoadSeries): WorkloadEnvelope {
+  const eligibility = evaluateLoadSeries(series, 7);
   const envelope = {
     ...createEnvelope(eligibility.coverage.compatibleDays, 7),
-    identity: seriesOrLoads.identity,
+    identity: series.identity,
     coverage: eligibility.coverage,
   };
   if (!eligibility.eligible) {

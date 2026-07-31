@@ -1,4 +1,4 @@
-import { compileActivityPlanV3, SYSTEM_TEMPLATES } from "@repo/core";
+import { compileActivityPlan, SYSTEM_TEMPLATES } from "@repo/core";
 import { describe, expect, it, vi } from "vitest";
 import {
   buildScheduleGapActivityPlanMatches,
@@ -7,8 +7,7 @@ import {
 
 function structureForActivityCategory(activity_category: "run" | "bike") {
   const template = SYSTEM_TEMPLATES.find(
-    (candidate) =>
-      compileActivityPlanV3(candidate.structure).activity_category === activity_category,
+    (candidate) => compileActivityPlan(candidate.structure).activity_category === activity_category,
   );
   if (!template) throw new Error(`Missing ${activity_category} system template`);
   return template.structure;

@@ -3,8 +3,8 @@
 // ================================
 
 import {
-  type ActivityPlanStructureV3,
-  compileActivityPlanV3,
+  type ActivityPlanStructure,
+  compileActivityPlan,
   extractActivityProfile,
 } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
@@ -26,7 +26,7 @@ const ActiveActivityMode = memo<{
   currentMetrics: CurrentMetrics;
   onNextStep?: () => void;
   isAdvancing: boolean;
-  structure: ActivityPlanStructureV3;
+  structure: ActivityPlanStructure;
 }>(function ActiveActivityMode({ planProgress, structure }) {
   if (!planProgress) {
     return (
@@ -44,7 +44,7 @@ const ActiveActivityMode = memo<{
     );
   }
 
-  const profileData = extractActivityProfile(compileActivityPlanV3(structure));
+  const profileData = extractActivityProfile(compileActivityPlan(structure));
   const _upcomingSteps = profileData.slice(
     planProgress.currentStepIndex + 1,
     planProgress.currentStepIndex + 4,

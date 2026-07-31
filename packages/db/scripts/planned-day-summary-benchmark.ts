@@ -6,11 +6,6 @@ import {
   withDisposableDatabase,
 } from "./_disposable-target";
 import { dbPackageRoot } from "./_helpers";
-import {
-  autocommitSettings,
-  type MigrationLedgerEntry,
-  type MigrationPolicy,
-} from "./_migration-plan";
 
 const ownerId = "00000000-0000-4000-8000-000000000001";
 const otherId = "00000000-0000-4000-8000-000000000002";
@@ -71,10 +66,10 @@ function assertBoundedIndexedPlan(name: string, explain: Explain) {
 
 const policy = JSON.parse(
   readFileSync(resolve(dbPackageRoot, "migration-policy.json"), "utf8"),
-) as MigrationPolicy;
+) as { authorityDirectory: string; activeLedgerFile: string };
 const ledger = JSON.parse(
   readFileSync(resolve(dbPackageRoot, policy.activeLedgerFile), "utf8"),
-) as { entries: MigrationLedgerEntry[] };
+) as { entries: Array<{ version: string; name: string }> };
 
 await withDisposableDatabase(process.argv.slice(2), "planned_day_summary_benchmark", async (db) => {
   await bootstrapSupabaseSchemas(db);
@@ -82,8 +77,6 @@ await withDisposableDatabase(process.argv.slice(2), "planned_day_summary_benchma
     await applySqlFile(
       db,
       resolve(dbPackageRoot, policy.authorityDirectory, `${entry.version}_${entry.name}.sql`),
-      entry.executionMode,
-      autocommitSettings(policy, entry),
     );
   }
   await db.query(

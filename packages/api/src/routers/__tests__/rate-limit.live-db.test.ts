@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { db, pool } from "@repo/db/client";
 import { sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import type { Context } from "../../context";
+import { type Context, createApiContext } from "../../context";
 import {
   checkApiRateLimit,
   PostgresApiRateLimitStore,
@@ -18,14 +18,11 @@ function identity(label: string): RateLimitIdentity {
   return { key, limit: 100, type: "authenticated-user" };
 }
 
-function context(): Context {
-  return {
+async function context(): Promise<Context> {
+  return createApiContext({
     db,
     headers: new Headers(),
-    session: null,
-    clientType: "server",
-    trpcSource: "vitest-live-db",
-  } as Context;
+  });
 }
 
 async function durableWindowCount() {
@@ -50,7 +47,7 @@ describe("Postgres API rate-limit store", () => {
   it("atomically increments one current-window key and persists only its hash", async () => {
     const value = identity("same-key");
     const now = Date.now();
-    const store = new PostgresApiRateLimitStore(context(), { windowMs: 1_000 });
+    const store = new PostgresApiRateLimitStore(await context(), { windowMs: 1_000 });
 
     const buckets = await Promise.all(
       Array.from({ length: 16 }, () => store.increment(value, now)),
@@ -70,7 +67,7 @@ describe("Postgres API rate-limit store", () => {
   });
 
   it("admits distinct new keys only through the configured finite durable cap", async () => {
-    const store = new PostgresApiRateLimitStore(context(), {
+    const store = new PostgresApiRateLimitStore(await context(), {
       windowMs: 1_000,
       maxDurableWindows: (await durableWindowCount()) + 2,
     });
@@ -87,7 +84,7 @@ describe("Postgres API rate-limit store", () => {
 
   it("cleans expired windows before admitting a new window", async () => {
     const baseCount = await durableWindowCount();
-    const store = new PostgresApiRateLimitStore(context(), {
+    const store = new PostgresApiRateLimitStore(await context(), {
       windowMs: 1_000,
       maxDurableWindows: baseCount + 1,
     });
@@ -105,10 +102,10 @@ describe("Postgres API rate-limit store", () => {
   });
 
   it("fails closed when its durable database authority is unavailable", async () => {
-    const unavailableContext = {
-      ...context(),
+    const unavailableContext: Context = {
+      ...(await context()),
       db: undefined,
-    } as Context;
+    };
 
     await expect(
       checkApiRateLimit(

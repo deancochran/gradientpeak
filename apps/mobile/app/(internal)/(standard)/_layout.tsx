@@ -131,6 +131,12 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
+        name="route-edit"
+        options={{
+          title: "Edit Route",
+        }}
+      />
+      <Stack.Screen
         name="route-upload"
         options={{
           title: "Upload Route",

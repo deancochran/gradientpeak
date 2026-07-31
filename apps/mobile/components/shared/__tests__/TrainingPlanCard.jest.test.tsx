@@ -4,6 +4,16 @@ import { renderNative, screen } from "../../../test/render-native";
 import { TrainingPlanCard } from "../TrainingPlanCard";
 
 const toggleLikeMutateMock = jest.fn();
+const canonicalStructure = {
+  version: 1,
+  activity_category: ["run"],
+  durationWeeks: { recommended: 10 },
+  experienceLevel: ["intermediate"],
+  sessions: [
+    { offset_days: 0, activity_plan_id: "11111111-1111-4111-8111-111111111111" },
+    { offset_days: 63, activity_plan_id: "11111111-1111-4111-8111-111111111111" },
+  ],
+};
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -58,10 +68,7 @@ describe("TrainingPlanCard", () => {
           id: "training-plan-1",
           name: "Half Marathon Build",
           description: "Ten weeks of progressive threshold and long-run work.",
-          sessions_per_week_target: 4,
-          durationWeeks: { recommended: 10 },
-          activity_category: ["run"],
-          experienceLevel: ["intermediate"],
+          structure: canonicalStructure,
           updated_at: "2026-03-21T08:00:00.000",
           owner: null,
         }}
@@ -72,10 +79,10 @@ describe("TrainingPlanCard", () => {
     expect(screen.getByText("Half Marathon Build")).toBeTruthy();
     expect(screen.getByText("Plan snapshot")).toBeTruthy();
     expect(screen.getByText("10 weeks")).toBeTruthy();
-    expect(screen.getByText("4/week")).toBeTruthy();
+    expect(screen.getByText("0.2/week")).toBeTruthy();
     expect(screen.getByTestId("training-plan-periodization-preview")).toBeTruthy();
     expect(screen.getByTestId("training-plan-visual-segment-9")).toBeTruthy();
-    expect(screen.getByTestId("training-plan-visual-recovery-9")).toBeTruthy();
+    expect(screen.queryByTestId("training-plan-visual-recovery-9")).toBeNull();
     expect(screen.queryByTestId("training-plan-visual-segment-10")).toBeNull();
     expect(screen.getByText("GradientPeak")).toBeTruthy();
     expect(screen.getByText("Mar 21, 2026 • 8:00 AM")).toBeTruthy();
@@ -113,10 +120,7 @@ describe("TrainingPlanCard", () => {
           id: "training-plan-1",
           name: "Half Marathon Build",
           description: "Ten weeks of progressive threshold and long-run work.",
-          sessions_per_week_target: 4,
-          durationWeeks: { recommended: 10 },
-          activity_category: ["run"],
-          experienceLevel: ["intermediate"],
+          structure: canonicalStructure,
           likes_count: 3,
           updated_at: "2026-03-21T08:00:00.000",
           owner: { id: "owner-1", username: "Coach Kim", avatar_url: null },
@@ -127,7 +131,7 @@ describe("TrainingPlanCard", () => {
 
     expect(screen.getByText("Half Marathon Build")).toBeTruthy();
     expect(screen.getByText("10 weeks")).toBeTruthy();
-    expect(screen.getByText("4/week")).toBeTruthy();
+    expect(screen.getByText("0.2/week")).toBeTruthy();
     expect(screen.getByText("run")).toBeTruthy();
     expect(screen.queryByText("Level")).toBeNull();
     expect(screen.queryByTestId("training-plan-card-like-button-training-plan-1")).toBeNull();
@@ -135,6 +139,7 @@ describe("TrainingPlanCard", () => {
     expect(screen.queryByText("Mar 21, 2026 • 8:00 AM")).toBeNull();
     expect(screen.queryByText("Plan snapshot")).toBeNull();
     expect(screen.queryByTestId("training-plan-periodization-preview")).toBeNull();
+    expect(screen.getByTestId("training-plan-card-training-plan-1")).toBeTruthy();
 
     fireEvent.press(screen.getByText("Half Marathon Build"));
 

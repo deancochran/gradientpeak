@@ -26,6 +26,7 @@ export const ROUTE_FILE_NATIVE_MIME_TYPES = [
 export const MAX_ROUTE_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 export const MAX_ROUTE_POINT_COUNT = 100_000;
 export const MAX_ROUTE_FILE_POINT_COUNT = MAX_ROUTE_POINT_COUNT;
+export const MAX_ROUTE_LIST_OFFSET = 10_000;
 export const GPX_ROUTE_FILE_MIME_TYPE = ROUTE_FILE_MIME_TYPES.gpx;
 export const TCX_ROUTE_FILE_MIME_TYPE = ROUTE_FILE_MIME_TYPES.tcx;
 export const XML_ROUTE_FILE_MIME_TYPE = ROUTE_FILE_MIME_TYPES.xml;
@@ -85,15 +86,20 @@ export const routeDescriptionSchema = z
   .optional()
   .transform((description) => (description ? description : null));
 
-export const routeUploadFormSchema = z
+export const routeEditFormSchema = z
   .object({
-    files: z.array(portableRouteFileMetadataSchema).length(1, "Select exactly one route file"),
     name: routeNameSchema,
     description: routeDescriptionSchema,
   })
   .strict();
 
+export const routeUploadFormSchema = routeEditFormSchema.extend({
+  files: z.array(portableRouteFileMetadataSchema).length(1, "Select exactly one route file"),
+});
+
 export type PortableRouteFileMetadataInput = z.input<typeof portableRouteFileMetadataSchema>;
 export type PortableRouteFileMetadata = z.output<typeof portableRouteFileMetadataSchema>;
+export type RouteEditFormInput = z.input<typeof routeEditFormSchema>;
+export type RouteEditForm = z.output<typeof routeEditFormSchema>;
 export type RouteUploadFormInput = z.input<typeof routeUploadFormSchema>;
 export type RouteUploadForm = z.output<typeof routeUploadFormSchema>;

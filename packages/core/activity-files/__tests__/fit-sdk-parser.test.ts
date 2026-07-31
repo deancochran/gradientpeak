@@ -28,6 +28,7 @@ describe("standards-first FIT decoding", () => {
       maxPower: 410,
     });
     expect(activity.sessions).toHaveLength(1);
+    expect(activity.sessions?.[0]?.avgSpeed).toBe(3.25);
     expect(activity.laps).toHaveLength(1);
     expect(activity.records).toHaveLength(2);
     expect(activity.records.every((record) => record.sessionMessageIndex === 0)).toBe(true);
@@ -42,19 +43,27 @@ describe("standards-first FIT decoding", () => {
     const activity = parseFitFileWithSDK(fitFixtures.swim());
 
     expect(activity.metadata.type).toBe("swimming");
-    expect(activity.summary.poolLength).toBe(25);
-    expect(activity.summary.poolLengthUnit).toBe("metric");
+    expect(activity.summary.poolLengthMeters).toBe(25);
+    expect(activity.summary.avgSpeed).toBe(1);
+    expect(activity.sessions?.[0]?.avgSpeed).toBe(1);
+    expect(activity.sessions?.[0]).toMatchObject({
+      poolLengthMeters: 25,
+      numLengths: 1,
+      numActiveLengths: 1,
+    });
     expect(activity.lengths).toHaveLength(1);
     expect(activity.lengths?.[0]).toMatchObject({
       messageIndex: 0,
       sessionMessageIndex: 0,
       lapMessageIndex: 0,
       totalStrokes: 20,
+      lengthType: "active",
       swimStroke: "freestyle",
       event: "length",
       eventType: "stop",
     });
     expect(activity.records).toHaveLength(2);
+    expect(activity.records.map((record) => record.speed)).toEqual([1.2, 1.4]);
   });
 
   it("keeps triathlon transitions and all message ownership in source order", () => {

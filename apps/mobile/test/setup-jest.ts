@@ -193,7 +193,12 @@ jest.mock("@better-auth/expo", () => ({
 
 jest.mock("@better-auth/expo/client", () => ({
   __esModule: true,
-  expoClient: jest.fn(() => ({})),
+  expoClient: jest.fn(() => ({
+    id: "expo",
+    version: "test",
+    getActions: jest.fn(() => ({ getCookie: jest.fn(() => "") })),
+    fetchPlugins: [],
+  })),
 }));
 
 jest.mock("better-auth/react", () => ({

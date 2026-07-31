@@ -1,15 +1,18 @@
 import * as SecureStore from "expo-secure-store";
 import {
+  clearAllOnboardingRecoveryForContractEpoch,
   clearOnboardingRecovery,
   createCompletedOnboardingRecovery,
   hasPendingOnboardingRecovery,
   loadOnboardingRecovery,
   ONBOARDING_RECOVERY_MAX_BYTES,
+  ONBOARDING_RECOVERY_REGISTRY_KEY,
   ONBOARDING_RECOVERY_VERSION,
   OnboardingRecoveryPayloadTooLargeError,
   onboardingRecoveryExpiry,
   type PendingOnboardingRecoveryRecord,
   saveOnboardingRecovery,
+  subscribeToOnboardingRecovery,
 } from "./onboarding-recovery";
 
 const USER_ID = "user-1";
@@ -61,7 +64,7 @@ describe("onboarding recovery secure storage", () => {
       "max_hr",
       "resting_hr",
       "ftp",
-      "threshold_pace",
+      "threshold_pace_seconds_per_km",
       "css",
       "training_settings",
       "provider",
@@ -149,7 +152,10 @@ describe("onboarding recovery secure storage", () => {
 
     for (const record of records) await saveOnboardingRecovery(record);
 
-    const keys = jest.mocked(SecureStore.setItemAsync).mock.calls.map(([key]) => key);
+    const keys = jest
+      .mocked(SecureStore.setItemAsync)
+      .mock.calls.map(([key]) => key)
+      .filter((key) => key !== ONBOARDING_RECOVERY_REGISTRY_KEY);
     expect(keys).toHaveLength(records.length);
     expect(new Set(keys).size).toBe(records.length);
     expect(keys[0]).toContain(".raw.");
@@ -184,6 +190,57 @@ describe("onboarding recovery secure storage", () => {
 
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith(STORAGE_KEY);
     expect(secureStoreMock.__store.has(STORAGE_KEY)).toBe(false);
+    expect(secureStoreMock.__store.has(ONBOARDING_RECOVERY_REGISTRY_KEY)).toBe(false);
+  });
+
+  it("clears every registered user recovery and cannot restore it after reauthentication", async () => {
+    const first = recoveryRecord({ userId: "user-1" });
+    const second = recoveryRecord({ userId: "user-2" });
+    const firstListener = jest.fn();
+    const secondListener = jest.fn();
+    subscribeToOnboardingRecovery(first.userId, firstListener);
+    subscribeToOnboardingRecovery(second.userId, secondListener);
+    await saveOnboardingRecovery(first);
+    await saveOnboardingRecovery(second);
+
+    await clearAllOnboardingRecoveryForContractEpoch();
+
+    await expect(loadOnboardingRecovery(first.userId)).resolves.toBeNull();
+    await expect(loadOnboardingRecovery(second.userId)).resolves.toBeNull();
+    expect(secureStoreMock.__store.has(ONBOARDING_RECOVERY_REGISTRY_KEY)).toBe(false);
+    expect(firstListener).toHaveBeenLastCalledWith(null);
+    expect(secondListener).toHaveBeenLastCalledWith(null);
+  });
+
+  it("never reads or manages unregistered v3 recovery records", async () => {
+    const legacyV3Key = `onboarding-recovery.v3.raw.${USER_ID}`;
+    const legacyV3Record = { ...recoveryRecord(), version: 3 };
+    secureStoreMock.__store.set(legacyV3Key, JSON.stringify(legacyV3Record));
+
+    await expect(loadOnboardingRecovery(USER_ID)).resolves.toBeNull();
+    await clearAllOnboardingRecoveryForContractEpoch();
+
+    expect(secureStoreMock.__store.get(legacyV3Key)).toBe(JSON.stringify(legacyV3Record));
+    await expect(loadOnboardingRecovery(USER_ID)).resolves.toBeNull();
+  });
+
+  it("fails closed when the dynamic-key registry is malformed", async () => {
+    secureStoreMock.__store.set(ONBOARDING_RECOVERY_REGISTRY_KEY, "not-json");
+    secureStoreMock.__store.set(STORAGE_KEY, JSON.stringify(recoveryRecord()));
+
+    await expect(clearAllOnboardingRecoveryForContractEpoch()).rejects.toThrow(
+      "Onboarding recovery registry is invalid",
+    );
+    expect(secureStoreMock.__store.has(STORAGE_KEY)).toBe(true);
+  });
+
+  it("leaves the registry intact after a deletion failure so epoch cleanup retries", async () => {
+    await saveOnboardingRecovery(recoveryRecord());
+    jest.mocked(SecureStore.deleteItemAsync).mockRejectedValueOnce(new Error("locked"));
+
+    await expect(clearAllOnboardingRecoveryForContractEpoch()).rejects.toThrow("locked");
+    expect(secureStoreMock.__store.has(ONBOARDING_RECOVERY_REGISTRY_KEY)).toBe(true);
+    await expect(clearAllOnboardingRecoveryForContractEpoch()).resolves.toBeUndefined();
   });
 
   it("rejects an oversized UTF-8 payload before writing to SecureStore", async () => {

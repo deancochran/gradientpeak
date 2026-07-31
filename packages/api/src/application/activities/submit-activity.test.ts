@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { getRequiredDb } from "../../db";
 import {
   type ActivitySubmission,
+  MATERIALIZER_VERSION,
   manualImportActivityId,
   providerActivityId,
   providerProjectionDecision,
@@ -53,7 +54,7 @@ describe("providerProjectionDecision", () => {
   const versions = {
     existingParserVersion: "canonical-submission-v1",
     existingDecodedVersion: "decoded-activity-artifact-v1",
-    existingMaterializerVersion: "activity-segments-v1",
+    existingMaterializerVersion: MATERIALIZER_VERSION,
   };
 
   it("makes exact redelivery a no-op and rejects out-of-order provider payloads", () => {
@@ -97,6 +98,36 @@ describe("providerProjectionDecision", () => {
         incomingDigest: "a".repeat(64),
       }),
     ).toBe("apply");
+  });
+
+  it.each([
+    ["parser", { existingParserVersion: "canonical-submission-v0" }],
+    ["decoded contract", { existingDecodedVersion: "decoded-activity-artifact-v0" }],
+    ["materializer", { existingMaterializerVersion: "activity-segments-v1" }],
+  ])("rejects a stale %s marker before exact redelivery", (_marker, staleVersion) => {
+    const revision = new Date("2026-07-17T12:00:00Z");
+    expect(
+      providerProjectionDecision({
+        ...versions,
+        ...staleVersion,
+        existingProviderUpdatedAt: revision,
+        incomingProviderUpdatedAt: revision,
+        existingDigest: "a".repeat(64),
+        incomingDigest: "a".repeat(64),
+      }),
+    ).toBe("unsupported-persisted-version");
+  });
+
+  it("keeps current identical redelivery idempotent", () => {
+    expect(
+      providerProjectionDecision({
+        ...versions,
+        existingProviderUpdatedAt: new Date("2026-07-17T12:00:00Z"),
+        incomingProviderUpdatedAt: new Date("2026-07-17T12:00:00Z"),
+        existingDigest: "a".repeat(64),
+        incomingDigest: "a".repeat(64),
+      }),
+    ).toBe("exact-redelivery");
   });
 });
 

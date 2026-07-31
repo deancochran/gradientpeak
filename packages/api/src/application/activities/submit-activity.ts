@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { activityLapRecordListSchema, type ContentVisibility } from "@repo/core";
 import {
-  type CompletedActivitySegmentSetV1,
-  completedActivitySegmentSetSchemaV1,
+  type CompletedActivitySegmentSet,
+  completedActivitySegmentSetSchema,
 } from "@repo/core/activity-segments";
 import type { ActivityFileType } from "@repo/core/server/activity-files";
 import {
@@ -24,7 +24,7 @@ type DbClient = ReturnType<typeof getRequiredDb>;
 export type ActivitySubmissionTransaction = Parameters<Parameters<DbClient["transaction"]>[0]>[0];
 
 export const DECODED_CONTRACT_VERSION = "decoded-activity-artifact-v1";
-export const MATERIALIZER_VERSION = "activity-segments-v1";
+export const MATERIALIZER_VERSION = "activity-segments-v2";
 export const SUBMISSION_PARSER_VERSION = "canonical-submission-v1";
 
 /** A lifecycle repair owns the bytes; retry after it converges rather than reviving it. */
@@ -32,6 +32,13 @@ export class ActivityArtifactLifecycleRetryableError extends Error {
   constructor() {
     super("Activity artifact lifecycle is pending repair");
     this.name = "ActivityArtifactLifecycleRetryableError";
+  }
+}
+
+export class UnsupportedPersistedActivityVersionError extends Error {
+  constructor() {
+    super("Provider activity has non-current persisted versions");
+    this.name = "UnsupportedPersistedActivityVersionError";
   }
 }
 
@@ -43,28 +50,21 @@ export function providerProjectionDecision(input: {
   existingParserVersion: string | null;
   existingDecodedVersion: string | null;
   existingMaterializerVersion: string | null;
-}): "apply" | "conflict" | "exact-redelivery" | "stale" {
-  const versionMismatch =
-    input.existingParserVersion !== SUBMISSION_PARSER_VERSION ||
-    input.existingDecodedVersion !== DECODED_CONTRACT_VERSION ||
-    input.existingMaterializerVersion !== MATERIALIZER_VERSION;
+}): "apply" | "conflict" | "exact-redelivery" | "stale" | "unsupported-persisted-version" {
+  if (
+    input.existingDigest !== null &&
+    (input.existingParserVersion !== SUBMISSION_PARSER_VERSION ||
+      input.existingDecodedVersion !== DECODED_CONTRACT_VERSION ||
+      input.existingMaterializerVersion !== MATERIALIZER_VERSION)
+  ) {
+    return "unsupported-persisted-version";
+  }
   if (
     input.existingProviderUpdatedAt &&
     (!input.incomingProviderUpdatedAt ||
       input.incomingProviderUpdatedAt < input.existingProviderUpdatedAt)
   ) {
     return "stale";
-  }
-  if (
-    versionMismatch &&
-    input.existingProviderUpdatedAt &&
-    (!input.incomingProviderUpdatedAt ||
-      input.incomingProviderUpdatedAt <= input.existingProviderUpdatedAt)
-  ) {
-    return "stale";
-  }
-  if (!versionMismatch && input.existingDigest === input.incomingDigest) {
-    return "exact-redelivery";
   }
   if (input.existingDigest !== null && input.existingDigest !== input.incomingDigest) {
     return input.incomingProviderUpdatedAt &&
@@ -73,6 +73,7 @@ export function providerProjectionDecision(input: {
       ? "apply"
       : "conflict";
   }
+  if (input.existingDigest === input.incomingDigest) return "exact-redelivery";
   return "apply";
 }
 
@@ -144,7 +145,7 @@ function ingestionOperationKey(ingestion: ReadyIngestionSubmission, activityId: 
 
 function assignEffortSegments(
   efforts: Array<typeof activityEfforts.$inferInsert>,
-  segmentSet: CompletedActivitySegmentSetV1,
+  segmentSet: CompletedActivitySegmentSet,
 ) {
   return efforts.map((effort) => {
     const startMs = (effort.start_offset ?? 0) * 1000;
@@ -195,7 +196,9 @@ export interface ActivitySubmission {
   efficiencyFactor: number | null;
   aerobicDecoupling: number | null;
   avgTemperature: number | null;
-  poolLength?: number | null;
+  poolLengthMeters?: number | null;
+  totalStrokes?: number | null;
+  avgSwolf?: number | null;
   deviceManufacturer: unknown;
   deviceProduct: unknown;
   laps: unknown[] | null;
@@ -208,7 +211,7 @@ export interface ActivitySubmission {
     integrationGeneration?: number;
     providerUpdatedAt: string | null;
   };
-  segmentSet?: CompletedActivitySegmentSetV1;
+  segmentSet?: CompletedActivitySegmentSet;
   analysis?: {
     efforts: Array<typeof activityEfforts.$inferInsert>;
     detectedLTHR: number | null;
@@ -231,7 +234,7 @@ export interface ExistingActivityEnrichmentSubmission {
     activity_id?: string;
     profile_id?: string;
   };
-  segmentSet?: CompletedActivitySegmentSetV1;
+  segmentSet?: CompletedActivitySegmentSet;
   efforts: Array<typeof activityEfforts.$inferInsert>;
   detectedLTHR: number | null;
   activityCompletedAt: Date;
@@ -381,13 +384,13 @@ async function replaceSegments(
     activityId: string;
     profileId: string;
     artifactId?: string;
-    segmentSet: CompletedActivitySegmentSetV1;
+    segmentSet: CompletedActivitySegmentSet;
     revision: number;
     parserVersion: string;
     now: Date;
   },
 ) {
-  const segmentSet = completedActivitySegmentSetSchemaV1.parse(input.segmentSet);
+  const segmentSet = completedActivitySegmentSetSchema.parse(input.segmentSet);
   await tx.delete(activitySegments).where(eq(activitySegments.activity_id, input.activityId));
   await tx.insert(activitySegments).values(
     segmentSet.segments.map((segment) => {
@@ -678,6 +681,9 @@ export async function submitActivity(
         if (decision === "conflict") {
           throw new Error("Provider payload digest conflicts with the current provider revision");
         }
+        if (decision === "unsupported-persisted-version") {
+          throw new UnsupportedPersistedActivityVersionError();
+        }
         if (decision === "exact-redelivery") {
           if (
             resource &&
@@ -720,7 +726,7 @@ export async function submitActivity(
         : (input.movingMs ?? null);
     if (!input.segmentSet)
       throw new Error("Activity submission requires an ordered segment manifest");
-    const segmentSet = completedActivitySegmentSetSchemaV1.parse(input.segmentSet);
+    const segmentSet = completedActivitySegmentSetSchema.parse(input.segmentSet);
     const revision = (existing?.segments_revision ?? 0) + 1;
     const parserVersion = SUBMISSION_PARSER_VERSION;
     const laps =
@@ -769,6 +775,13 @@ export async function submitActivity(
         .set({
           ...safeSummaryValues,
           ...baseValues,
+          ...(input.kind === "enrich"
+            ? {}
+            : {
+                pool_length_meters: input.poolLengthMeters ?? null,
+                total_strokes: input.totalStrokes ?? null,
+                avg_swolf: input.avgSwolf ?? null,
+              }),
           device_manufacturer: stringOrNull(input.deviceManufacturer),
           device_product: stringOrNull(input.deviceProduct),
           ...(input.mapBounds === undefined ? {} : { map_bounds: input.mapBounds }),
@@ -808,7 +821,9 @@ export async function submitActivity(
         efficiency_factor: input.efficiencyFactor,
         aerobic_decoupling: input.aerobicDecoupling,
         avg_temperature: input.avgTemperature,
-        pool_length: input.poolLength ?? null,
+        pool_length_meters: input.poolLengthMeters ?? null,
+        total_strokes: input.totalStrokes ?? null,
+        avg_swolf: input.avgSwolf ?? null,
         device_manufacturer: stringOrNull(input.deviceManufacturer),
         device_product: stringOrNull(input.deviceProduct),
         map_bounds: input.mapBounds,

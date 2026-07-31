@@ -18,7 +18,7 @@ const createPlan = createSystemActivityPlanBuilderFactory("bike", [
  * Estimated TSS: ~45
  */
 export const EASY_ENDURANCE_RIDE: RecordingServiceActivityPlan = {
-  id: "8c1d2e3f-4a5b-6c7d-8e9f-0a1b2c3d4e5f",
+  id: "8c1d2e3f-4a5b-4c7d-8e9f-0a1b2c3d4e5f",
   name: "Easy Endurance Ride",
   description: "Comfortable outdoor ride focusing on aerobic base building",
   gps_recording_enabled: true,
@@ -38,7 +38,7 @@ export const EASY_ENDURANCE_RIDE: RecordingServiceActivityPlan = {
  * Estimated TSS: ~85
  */
 export const SWEET_SPOT_OUTDOOR_RIDE: RecordingServiceActivityPlan = {
-  id: "9d2e3f4a-5b6c-7d8e-9f0a-1b2c3d4e5f6a",
+  id: "9d2e3f4a-5b6c-4d8e-9f0a-1b2c3d4e5f6a",
   name: "Sweet Spot Intervals",
   description: "Outdoor ride with sweet spot power intervals",
   gps_recording_enabled: true,
@@ -81,7 +81,7 @@ export const SWEET_SPOT_OUTDOOR_RIDE: RecordingServiceActivityPlan = {
  * Estimated TSS: ~90
  */
 export const TEMPO_INTERVALS_RIDE: RecordingServiceActivityPlan = {
-  id: "0e3f4a5b-6c7d-8e9f-0a1b-2c3d4e5f6a7b",
+  id: "0e3f4a5b-6c7d-4e9f-8a1b-2c3d4e5f6a7b",
   name: "Tempo Intervals",
   description: "Outdoor ride with sustained tempo efforts",
   gps_recording_enabled: true,
@@ -125,7 +125,7 @@ export const TEMPO_INTERVALS_RIDE: RecordingServiceActivityPlan = {
  * Estimated TSS: ~95
  */
 export const CLIMBING_INTERVALS_RIDE: RecordingServiceActivityPlan = {
-  id: "1f4a5b6c-7d8e-9f0a-1b2c-3d4e5f6a7b8c",
+  id: "1f4a5b6c-7d8e-4f0a-9b2c-3d4e5f6a7b8c",
   name: "Climbing Intervals",
   description: "High-intensity climbing intervals for outdoor terrain",
   gps_recording_enabled: true,
@@ -168,7 +168,7 @@ export const CLIMBING_INTERVALS_RIDE: RecordingServiceActivityPlan = {
  * Estimated TSS: ~80
  */
 export const GROUP_RIDE_SIMULATION: RecordingServiceActivityPlan = {
-  id: "2a5b6c7d-8e9f-0a1b-2c3d-4e5f6a7b8c9d",
+  id: "2a5b6c7d-8e9f-4a1b-ac3d-4e5f6a7b8c9d",
   name: "Group Ride Simulation",
   description: "Variable intensity ride simulating group ride dynamics",
   gps_recording_enabled: true,
@@ -218,7 +218,7 @@ export const GROUP_RIDE_SIMULATION: RecordingServiceActivityPlan = {
 };
 
 export const SYSTEM_LONG_ENDURANCE_RIDE: RecordingServiceActivityPlan = {
-  id: "a5f1b4c3-8e2b-7a6d-1c0f-2e9d5b4a3c1e",
+  id: "a5f1b4c3-8e2b-4a6d-9c0f-2e9d5b4a3c1e",
   name: "Long Endurance Ride",
   description: "2 hour Zone 2 endurance ride at 70% FTP - Build aerobic base",
   gps_recording_enabled: true,

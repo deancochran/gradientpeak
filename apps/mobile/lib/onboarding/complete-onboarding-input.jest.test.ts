@@ -2,7 +2,7 @@ import { INITIAL_ONBOARDING_DATA } from "@/components/onboarding/onboarding-data
 import { buildCompleteOnboardingInput } from "./complete-onboarding-input";
 
 describe("buildCompleteOnboardingInput", () => {
-  it("omits metadata for legacy callers", () => {
+  it("emits an empty metadata object when no baseline sources are selected", () => {
     const result = buildCompleteOnboardingInput({
       ...INITIAL_ONBOARDING_DATA,
       full_name: "Legacy Athlete",
@@ -10,7 +10,7 @@ describe("buildCompleteOnboardingInput", () => {
     });
 
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.input.baseline_field_sources).toBeUndefined();
+    if (result.ok) expect(result.input.baseline_field_sources).toEqual({});
   });
 
   it("maps explicit baseline field state into canonical transport metadata", () => {

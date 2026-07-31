@@ -4,14 +4,14 @@ import {
   ACTIVITY_READINESS_POLICY_VERSION,
   type ActivityEvidenceInput,
   type ActivityHistoryObservation,
-  calculateActivityReadinessV1,
+  calculateActivityReadiness,
 } from "../policies/activity-readiness";
 
 const assessmentAt = "2026-07-10T12:00:00.000Z";
 const runLoadIdentity = {
   activity_category: "run",
   family: "trimp" as const,
-  method: "heart_rate_reserve",
+  method: "heart_rate_threshold",
   version: "1",
   sourceDefinition: "first_party:activity-summary",
 };
@@ -61,12 +61,12 @@ function eligibilityFor(
 describe("activity readiness v1", () => {
   it("returns separate continuous results and responds to added recent training", () => {
     const history = [activity(3), activity(8), activity(17), activity(24)];
-    const before = calculateActivityReadinessV1({
+    const before = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "run",
       activities: history,
     });
-    const after = calculateActivityReadinessV1({
+    const after = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "run",
       activities: [
@@ -85,12 +85,12 @@ describe("activity readiness v1", () => {
 
   it("excludes future observations and preserves already contract-safe history", () => {
     const valid = [activity(2), activity(7), activity(16), activity(22)];
-    const baseline = calculateActivityReadinessV1({
+    const baseline = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "run",
       activities: valid,
     });
-    const withFuture = calculateActivityReadinessV1({
+    const withFuture = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "run",
       activities: [activity(-1, { durationSeconds: 100_000, trainingLoad: 10_000 }), ...valid],
@@ -104,7 +104,7 @@ describe("activity readiness v1", () => {
       const observation = activity(day);
       return { ...observation, eligibility: eligibilityFor(observation) };
     });
-    const baseline = calculateActivityReadinessV1({
+    const baseline = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "run",
       activities: accepted,
@@ -127,7 +127,7 @@ describe("activity readiness v1", () => {
               : {},
       ),
     }));
-    const mixed = calculateActivityReadinessV1({
+    const mixed = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "run",
       activities: [...accepted, ...rejected],
@@ -147,12 +147,12 @@ describe("activity readiness v1", () => {
   });
 
   it("returns unknown or insufficient results when history cannot support a calculation", () => {
-    const empty = calculateActivityReadinessV1({
+    const empty = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "bike",
       activities: [],
     });
-    const sparse = calculateActivityReadinessV1({
+    const sparse = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "bike",
       activities: [activity(2, { averagePowerWatts: null, averageHeartRateBpm: null })],
@@ -166,12 +166,12 @@ describe("activity readiness v1", () => {
 
   it("uses a robust durability baseline rather than allowing one outlier to dominate", () => {
     const normal = [activity(2), activity(6), activity(10), activity(15), activity(20)];
-    const baseline = calculateActivityReadinessV1({
+    const baseline = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "run",
       activities: normal,
     });
-    const outlier = calculateActivityReadinessV1({
+    const outlier = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "run",
       activities: [...normal, activity(25, { efficiencyFactor: 500 })],
@@ -182,12 +182,12 @@ describe("activity readiness v1", () => {
   });
 
   it("calculates activity_category specificity as recency-weighted target-activity_category duration share", () => {
-    const mostlyRun = calculateActivityReadinessV1({
+    const mostlyRun = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "run",
       activities: [activity(1), activity(4), activity(7, { activity_category: "bike" })],
     });
-    const mostlyBike = calculateActivityReadinessV1({
+    const mostlyBike = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "run",
       activities: [
@@ -211,7 +211,7 @@ describe("activity readiness v1", () => {
       metric: "sleep_hours" as const,
       value: index === 0 ? 20 : 7,
     }));
-    const result = calculateActivityReadinessV1({
+    const result = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "run",
       activities: [],
@@ -234,7 +234,7 @@ describe("activity readiness v1", () => {
       metric: "sleep_hours" as const,
       value: day === 1 ? 8 : 7,
     }));
-    const baseline = calculateActivityReadinessV1({
+    const baseline = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "run",
       activities,
@@ -248,7 +248,7 @@ describe("activity readiness v1", () => {
     const duplicateContext = { ...firstContext, sourceId: "metric:duplicate" };
 
     expect(
-      calculateActivityReadinessV1({
+      calculateActivityReadiness({
         assessmentAt,
         targetActivityCategory: "run",
         activities: [...activities, duplicateActivity],
@@ -259,12 +259,12 @@ describe("activity readiness v1", () => {
 
   it("excludes cross-category work from endurance and durability but retains it for specificity", () => {
     const runOnly = [activity(2), activity(6), activity(16), activity(20)];
-    const baseline = calculateActivityReadinessV1({
+    const baseline = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "run",
       activities: runOnly,
     });
-    const withBike = calculateActivityReadinessV1({
+    const withBike = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "run",
       activities: [
@@ -287,7 +287,7 @@ describe("activity readiness v1", () => {
   });
 
   it("derives power/heart-rate efficiency only for bike activities", () => {
-    const result = calculateActivityReadinessV1({
+    const result = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "run",
       activities: [2, 6, 10, 15].map((day) => activity(day, { efficiencyFactor: null })),
@@ -307,12 +307,12 @@ describe("activity readiness v1", () => {
       activity(24, { trainingLoad: 63 }),
       activity(26, { trainingLoad: 59 }),
     ];
-    const baseline = calculateActivityReadinessV1({
+    const baseline = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "run",
       activities: normal,
     });
-    const withOutliers = calculateActivityReadinessV1({
+    const withOutliers = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "run",
       activities: [
@@ -348,7 +348,7 @@ describe("activity readiness v1", () => {
   ])("abstains from load trend for %s rather than substituting duration", (_name, override) => {
     const activities = [2, 5, 9, 11, 16, 20, 24, 26].map((day) => activity(day));
     activities[0] = activity(2, override);
-    const result = calculateActivityReadinessV1({
+    const result = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "run",
       activities,
@@ -364,7 +364,7 @@ describe("activity readiness v1", () => {
       activity_category: "bike",
       trainingLoadIdentity: { ...runLoadIdentity, activity_category: "bike" },
     });
-    const result = calculateActivityReadinessV1({
+    const result = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "run",
       activities,
@@ -382,7 +382,7 @@ describe("activity readiness v1", () => {
       metric: "wellness_score" as const,
       value: day === 1 ? 1_000 : day === 2 ? 7.1 : 7 + (day % 3) * 0.1,
     }));
-    const result = calculateActivityReadinessV1({
+    const result = calculateActivityReadiness({
       assessmentAt,
       targetActivityCategory: "run",
       activities: [],

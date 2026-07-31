@@ -11,13 +11,14 @@ import { RouteCard } from "@/components/shared/RouteCard";
 import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
 import { api } from "@/lib/api";
+import { ROUTES } from "@/lib/constants/routes";
 import { useSessionView } from "@/lib/hooks/useActivityRecorder";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
 import { returnToRecordScreen } from "@/lib/navigation/recordingNavigation";
-import { useOptionalSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { useOptionalActivityRecorderService } from "@/lib/providers/ActivityRecorderProvider";
 import {
   handleRecordingObjectAction,
   type RecordingObjectActionCandidate,
@@ -95,7 +96,7 @@ export default function RouteDetailScreen() {
   const router = useRouter();
   const utils = api.useUtils();
   const { user } = useAuth();
-  const recorderService = useOptionalSharedActivityRecorder();
+  const recorderService = useOptionalActivityRecorderService();
   const sessionView = useSessionView(recorderService);
   const recordingLifecycle = recorderService?.recordingLifecycle ?? (sessionView ? "idle" : "idle");
   const [shouldLoadGeometry, setShouldLoadGeometry] = useState(false);
@@ -106,12 +107,14 @@ export default function RouteDetailScreen() {
   );
   const { data: routeFull, isFetching: isFetchingRouteFull } = api.routes.loadFull.useQuery(
     { id: routeId },
-    { enabled: routeId.length > 0 && shouldLoadGeometry },
+    {
+      enabled: routeId.length > 0 && route?.storage_state === "ready" && shouldLoadGeometry,
+    },
   );
 
   useEffect(() => {
     setShouldLoadGeometry(false);
-    if (!routeId) {
+    if (!routeId || route?.storage_state !== "ready") {
       return;
     }
 
@@ -120,15 +123,20 @@ export default function RouteDetailScreen() {
     });
 
     return () => task.cancel();
-  }, [routeId]);
+  }, [route?.storage_state, routeId]);
+
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const deleteMutation = useReliableMutation(api.routes.delete, {
     invalidate: [utils.routes],
     success: "Route deleted successfully",
     onSuccess: () => router.back(),
+    onError: async () => {
+      setShowDeleteConfirm(false);
+      await utils.routes.invalidate();
+    },
   });
 
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const comments = useEntityCommentsController({ entityId: route?.id, entityType: "route" });
   const routeLike = useResourceLike({
     entityId: route?.id ?? "",
@@ -149,6 +157,7 @@ export default function RouteDetailScreen() {
   };
 
   const isOwner = !!user?.id && user.id === route?.profile_id;
+  const isDeletionPending = route?.storage_state === "deletion_pending";
 
   const elevationStreams = useMemo(
     () => buildRouteStreams(routeFull?.coordinates),
@@ -156,7 +165,7 @@ export default function RouteDetailScreen() {
   );
 
   const recordingCandidate = useMemo<RecordingObjectActionCandidate | null>(() => {
-    if (!route?.id) return null;
+    if (!route?.id || route.storage_state !== "ready") return null;
     return {
       objectKind: "route",
       objectId: route.id,
@@ -191,6 +200,22 @@ export default function RouteDetailScreen() {
   };
 
   const renderOptionsMenu = () => {
+    if (isDeletionPending) {
+      return isOwner ? (
+        <DetailOverflowMenu
+          actions={[
+            {
+              label: "Retry Route Deletion",
+              onPress: handleDelete,
+              testID: "route-detail-options-delete",
+              variant: "destructive" as const,
+            },
+          ]}
+          testID="route-detail-options-trigger"
+        />
+      ) : null;
+    }
+
     return (
       <DetailOverflowMenu
         actions={[
@@ -202,6 +227,11 @@ export default function RouteDetailScreen() {
           },
           ...(isOwner
             ? [
+                {
+                  label: "Edit Route",
+                  onPress: () => router.navigate(ROUTES.ROUTES.EDIT(route.id) as never),
+                  testID: "route-detail-options-edit",
+                },
                 {
                   label: "Delete Route",
                   onPress: handleDelete,
@@ -254,15 +284,24 @@ export default function RouteDetailScreen() {
     >
       <RouteCard
         route={route}
-        routeFull={routeFull}
+        routeFull={isDeletionPending ? undefined : routeFull}
         isLiked={routeLike.isLiked}
         likeCount={routeLike.likeCount}
         likePending={routeLike.isPending}
         onLikePress={handleToggleLike}
-        variant="detail"
+        showLike={!isDeletionPending}
+        variant={isDeletionPending ? "list" : "detail"}
       />
 
-      {elevationStreams ? (
+      {isDeletionPending ? (
+        <EmptyState
+          actionLabel="Retry deletion"
+          description="The route file could not be removed yet. Retry deletion to finish removing this route."
+          onAction={handleDelete}
+          testID="route-detail-deletion-pending"
+          title="Route deletion pending"
+        />
+      ) : elevationStreams ? (
         <ElevationProfileChart
           elevationStream={elevationStreams.elevationStream}
           distanceStream={elevationStreams.distanceStream}
@@ -279,18 +318,20 @@ export default function RouteDetailScreen() {
         />
       )}
 
-      <EntityCommentsSection
-        addCommentPending={comments.addCommentPending}
-        commentCount={comments.commentCount}
-        comments={comments.comments}
-        hasMoreComments={comments.hasMoreComments}
-        isLoadingMoreComments={comments.isLoadingMoreComments}
-        newComment={comments.newComment}
-        onAddComment={comments.handleAddComment}
-        onChangeNewComment={comments.setNewComment}
-        onLoadMoreComments={comments.loadMoreComments}
-        testIDPrefix="route-detail"
-      />
+      {!isDeletionPending ? (
+        <EntityCommentsSection
+          addCommentPending={comments.addCommentPending}
+          commentCount={comments.commentCount}
+          comments={comments.comments}
+          hasMoreComments={comments.hasMoreComments}
+          isLoadingMoreComments={comments.isLoadingMoreComments}
+          newComment={comments.newComment}
+          onAddComment={comments.handleAddComment}
+          onChangeNewComment={comments.setNewComment}
+          onLoadMoreComments={comments.loadMoreComments}
+          testIDPrefix="route-detail"
+        />
+      ) : null}
     </DetailScaffold>
   );
 }

@@ -8,8 +8,6 @@ const upcomingImpact = [
     scheduled_at: "2026-07-16T12:00:00.000Z",
     activity_category: "bike" as const,
     estimated_load: 65,
-    short_term_readiness_delta: null,
-    fitness_contribution: null,
     confidence: "medium" as const,
     explanation: "Upcoming session impact.",
   },

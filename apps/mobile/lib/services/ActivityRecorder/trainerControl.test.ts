@@ -1,4 +1,4 @@
-import { BLE_SERVICE_UUIDS } from "@repo/core";
+import { BLE_SERVICE_UUIDS } from "@repo/core/constants/ble";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ConnectedSensor } from "./sensors";

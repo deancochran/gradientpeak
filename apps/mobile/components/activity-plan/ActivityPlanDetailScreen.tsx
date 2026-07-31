@@ -27,7 +27,7 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
 import { returnToRecordScreen } from "@/lib/navigation/recordingNavigation";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
-import { useOptionalSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { useOptionalActivityRecorderService } from "@/lib/providers/ActivityRecorderProvider";
 import {
   handleRecordingObjectAction,
   type RecordingObjectActionCandidate,
@@ -60,7 +60,7 @@ export function ActivityPlanDetailScreen({
   const { profile } = useAuth();
   const router = require("expo-router").useRouter();
   const navigateTo = useAppNavigate();
-  const recorderService = useOptionalSharedActivityRecorder();
+  const recorderService = useOptionalActivityRecorderService();
   const sessionView = useSessionView(recorderService);
   const recordingLifecycle = recorderService?.recordingLifecycle ?? (sessionView ? "idle" : "idle");
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);

@@ -25,6 +25,7 @@ export function handleOAuthCallback({ db, ...input }: HandleOAuthCallbackRequest
   });
 }
 export { createApiContext } from "./context";
+export { CONTRACT_EPOCH_HEADER, CURRENT_CONTRACT_EPOCH } from "./contract-epoch";
 export { getDefaultMobileOAuthRedirect } from "./lib/integrations/oauth-redirect";
 export type { AppRouter } from "./routers";
 export { appRouter } from "./routers";

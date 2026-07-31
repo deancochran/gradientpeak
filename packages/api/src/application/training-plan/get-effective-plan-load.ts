@@ -126,7 +126,6 @@ function unavailableActivityLoad(asOf: string): CommonLoadResult {
     method: null,
     quality: null,
     thresholdEvidence: null,
-    sessionRpeEvidence: null,
     evidenceFingerprint: null,
     computedAsOf: asOf,
     contributingDurationSeconds: null,

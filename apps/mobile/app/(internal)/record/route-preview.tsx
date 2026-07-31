@@ -11,13 +11,13 @@ import { api } from "@/lib/api";
 import { formatDistanceMeters } from "@/lib/display/formatters";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { useRecordingConfig } from "@/lib/hooks/useRecordingConfig";
-import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { useActivityRecorderService } from "@/lib/providers/ActivityRecorderProvider";
 
 export default function RoutePreviewScreen() {
   const { routeId } = useLocalSearchParams<{ routeId?: string }>();
   const router = useRouter();
   const preferredUnitSystem = usePreferredUnitSystem();
-  const service = useSharedActivityRecorder();
+  const { service } = useActivityRecorderService();
   const { attachRoute, attachedRouteId, sessionContract } = useRecordingConfig(service);
   const canEditRoute = sessionContract?.editing.canEditRoute ?? true;
 

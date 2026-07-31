@@ -1,6 +1,5 @@
 import {
   aggregateTrainingLoadTimelineByWeek,
-  type LegacyTrainingLoadTimelinePoint,
   type TrainingLoadTimelinePoint,
 } from "@repo/core/plan/trainingLoadTimeline";
 import { Text } from "@repo/ui/components/text";
@@ -24,13 +23,9 @@ export interface FitnessDataPoint {
   tsb?: number;
 }
 
-export type LoadChartTimelinePoint = TrainingLoadTimelinePoint | LegacyTrainingLoadTimelinePoint;
+export type LoadChartTimelinePoint = TrainingLoadTimelinePoint;
 
-export interface InsightTimelinePoint extends LegacyTrainingLoadTimelinePoint {
-  recommended_load_tss?: number;
-  scheduled_load_tss?: number;
-  completed_load_tss?: number;
-}
+export type InsightTimelinePoint = TrainingLoadTimelinePoint;
 
 export interface PlanVsActualChartProps {
   timeline?: InsightTimelinePoint[];

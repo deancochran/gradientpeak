@@ -93,4 +93,18 @@ describe("TrainingPlanActivityReorder", () => {
     });
     expect(await screen.findByText("Activity schedule saved.")).toBeTruthy();
   });
+
+  it("retains the edited schedule after a failed save so it can be retried", async () => {
+    mocks.reorderActivities.mockRejectedValue(new Error("Network unavailable"));
+    render(<TrainingPlanActivityReorder />);
+
+    const [firstNextButton] = screen.getAllByRole("button", { name: "Next day" });
+    if (!firstNextButton) throw new Error("Expected an activity control");
+    fireEvent.click(firstNextButton);
+    fireEvent.click(screen.getByRole("button", { name: "Save order" }));
+
+    await screen.findByText(/Network unavailable.*still ready to retry/i);
+    expect(screen.getByRole("button", { name: "Retry save" }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getAllByText("2026-08-02")).toHaveLength(2);
+  });
 });

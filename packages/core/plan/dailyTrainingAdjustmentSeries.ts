@@ -1,7 +1,7 @@
 import { z } from "zod";
+import { dateOnlySchema } from "../schemas/date-only";
 import { addDaysDateOnlyUtc, diffDateOnlyUtcDays } from "./dateOnlyUtc";
 
-const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const finiteNumberSchema = z.number().finite();
 
 export const trainingAdjustmentAnnotationSchema = z

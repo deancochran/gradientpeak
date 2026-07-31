@@ -15,7 +15,7 @@ describe("buildImportedActivityCreateInput", () => {
         distanceMeters: 20_000,
         durationSeconds: 3600,
         elevationGainMeters: 100,
-        movingSeconds: 3500,
+        providerActiveDurationSeconds: "3500.4",
         normalizedPower: 210,
         providerUpdatedAt: "2026-04-03T11:00:00.000Z",
         startedAt: "2026-04-03T10:00:00.000Z",
@@ -67,7 +67,7 @@ describe("buildImportedActivityCreateInput", () => {
       integrationGeneration: 1,
       integrationId: "integration-1",
       contentVisibility: "private",
-      movingSeconds: 3300,
+      providerActiveDurationSeconds: 3500.4,
       name: "Ride",
       normalizedPower: 210,
       profileId: "profile-1",
@@ -93,7 +93,7 @@ describe("buildImportedActivityCreateInput", () => {
         distanceMeters: 20_000.6,
         durationSeconds: 3600,
         elevationGainMeters: 100.4,
-        movingSeconds: 3500.4,
+        providerActiveDurationSeconds: 3500.4,
         normalizedPower: 210.5,
         startedAt: "2026-04-03T10:00:00.000Z",
       },
@@ -117,9 +117,33 @@ describe("buildImportedActivityCreateInput", () => {
       elevationGainMeters: 100,
       finishedAt: "2026-04-03T11:00:00.000Z",
       contentVisibility: "private",
-      movingSeconds: 3500,
+      providerActiveDurationSeconds: 3500.4,
       normalizedPower: 210.5,
       polyline: null,
     });
+  });
+
+  it("preserves valid provider active duration separately and rejects invalid values", () => {
+    const build = (providerActiveDurationSeconds: number | string | null) =>
+      buildImportedActivityCreateInput({
+        activityFile: { path: "activities/profile-1/provider/source.fit", size: 42 },
+        activityPlanId: null,
+        externalId: "external-1",
+        fallback: {
+          durationSeconds: 3600,
+          providerActiveDurationSeconds,
+          startedAt: "2026-04-03T10:00:00.000Z",
+        },
+        integrationGeneration: 1,
+        integrationId: "integration-1",
+        parsedActivity: null,
+        profileId: "profile-1",
+        provider: "wahoo",
+        title: "Ride",
+        type: "bike",
+      });
+
+    expect(build("3500.25").providerActiveDurationSeconds).toBe(3500.25);
+    expect(build("not-a-duration").providerActiveDurationSeconds).toBeNull();
   });
 });

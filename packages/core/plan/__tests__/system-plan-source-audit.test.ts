@@ -1,27 +1,18 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { ALL_SAMPLE_PLANS } from "../../samples";
+import { ALL_SAMPLE_PLANS, SYSTEM_TEMPLATES } from "../../samples";
 import {
+  assertSystemTrainingPlanTemplateLinksResolved,
   buildAllSystemTrainingPlanAudits,
-  extractSeededSystemTrainingPlanIds,
-  migrationSeedsLinkedActivityPlanIds,
 } from "../verification/systemPlanAudit";
 
-const TRAINING_PLAN_MIGRATION_PATH = resolve(
-  __dirname,
-  "../../../db/supabase/migrations-archive/20260308173500_remake_system_training_plan_templates.sql",
-);
-
 describe("system plan source audit", () => {
-  it("code registry and curated SQL migration - stay aligned on system training-plan ids while exposing linkage drift", () => {
-    const migrationSql = readFileSync(TRAINING_PLAN_MIGRATION_PATH, "utf8");
-
-    expect(extractSeededSystemTrainingPlanIds(migrationSql)).toEqual(
-      ALL_SAMPLE_PLANS.map((plan) => plan.id),
+  it("current registry plans link only to current activity templates", () => {
+    const audits = ALL_SAMPLE_PLANS.map((plan) =>
+      assertSystemTrainingPlanTemplateLinksResolved(plan),
     );
-    expect(migrationSeedsLinkedActivityPlanIds(migrationSql)).toBe(false);
+    expect(audits.every((audit) => audit.missingTemplateIds.length === 0)).toBe(true);
+    expect(SYSTEM_TEMPLATES).not.toHaveLength(0);
   });
 
   it("first-wave exact plans - now materialize their advertised week spans", () => {

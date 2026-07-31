@@ -114,7 +114,7 @@ export const LOWER_BODY_STRENGTH: RecordingServiceActivityPlan = {
  * Estimated TSS: ~65
  */
 export const FULL_BODY_CIRCUIT: RecordingServiceActivityPlan = {
-  id: "aaaa1111-2222-3333-4444-555555555555",
+  id: "aaaa1111-2222-4333-8444-555555555555",
   name: "Full Body Circuit",
   description: "High-intensity full body circuit training",
   gps_recording_enabled: false,
@@ -157,7 +157,7 @@ export const FULL_BODY_CIRCUIT: RecordingServiceActivityPlan = {
  * Estimated TSS: ~35
  */
 export const CORE_STABILITY: RecordingServiceActivityPlan = {
-  id: "aaaa2222-3333-4444-5555-666666666666",
+  id: "aaaa2222-3333-4444-9555-666666666666",
   name: "Core and Stability",
   description: "Focused core strength and stability training",
   gps_recording_enabled: false,
@@ -206,7 +206,7 @@ export const CORE_STABILITY: RecordingServiceActivityPlan = {
  * Estimated TSS: ~45
  */
 export const FUNCTIONAL_MOVEMENT: RecordingServiceActivityPlan = {
-  id: "aaaa3333-4444-5555-6666-777777777777",
+  id: "aaaa3333-4444-4555-a666-777777777777",
   name: "Functional Movement",
   description: "Movement patterns for daily life and activity_category performance",
   gps_recording_enabled: false,
@@ -256,7 +256,7 @@ export const FUNCTIONAL_MOVEMENT: RecordingServiceActivityPlan = {
 };
 
 export const SYSTEM_UPPER_BODY_STRENGTH: RecordingServiceActivityPlan = {
-  id: "e9f5a8b7-2c6d-1e0f-5a4b-6c3d9e8f7a0b",
+  id: "e9f5a8b7-2c6d-4e0f-9a4b-6c3d9e8f7a0b",
   name: "Upper Body Strength",
   description: "Bench press, rows, and overhead press - Complete upper body activity",
   gps_recording_enabled: false,
@@ -324,7 +324,7 @@ export const SYSTEM_UPPER_BODY_STRENGTH: RecordingServiceActivityPlan = {
 };
 
 export const SYSTEM_LOWER_BODY_STRENGTH: RecordingServiceActivityPlan = {
-  id: "f0a6b9c8-3d7e-2f1a-6b5c-7d4e0f9a8b1c",
+  id: "f0a6b9c8-3d7e-4f1a-ab5c-7d4e0f9a8b1c",
   name: "Lower Body Strength",
   description: "Squats, deadlifts, and lunges - Complete lower body activity",
   gps_recording_enabled: false,

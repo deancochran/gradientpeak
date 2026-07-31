@@ -10,8 +10,6 @@ export interface CriticalPowerResult {
   cp: number;
   wPrime: number;
   rSquared: number;
-  /** @deprecated Use rSquared. Retained as a compatibility alias. */
-  error: number;
   rmseWatts: number;
   maxAbsoluteResidualWatts: number;
   fitMinDurationSeconds: number;
@@ -321,7 +319,6 @@ export function evaluateCriticalPower(
       cp: roundedCp,
       wPrime: roundedWPrime,
       rSquared: fit.rSquared,
-      error: fit.rSquared,
       rmseWatts: fit.rmseWatts,
       maxAbsoluteResidualWatts: Math.max(...fit.residuals.map(Math.abs)),
       fitMinDurationSeconds: firstEffort.duration_seconds,
@@ -338,15 +335,6 @@ export function evaluateCriticalPower(
       stability,
     },
   };
-}
-
-/** Compatibility wrapper for callers that use null as the abstention signal. */
-export function calculateCriticalPower(
-  seasonBestCurve: ObservedCriticalPowerEffort[],
-  options: CriticalPowerFitOptions = {},
-): CriticalPowerResult | null {
-  const evaluation = evaluateCriticalPower(seasonBestCurve, options);
-  return evaluation.status === "accepted" ? evaluation.model : null;
 }
 
 function fitLinearModel(efforts: ObservedCriticalPowerEffort[]): LinearFit | null {

@@ -29,6 +29,20 @@ export type ActivitySessionRpeEvidenceProjection = z.infer<
   typeof activitySessionRpeEvidenceProjectionSchema
 >;
 
+export class SessionRpeEvidenceIntegrityError extends Error {
+  constructor() {
+    super("Multiple effective Session-RPE observations violate the correction-chain invariant");
+    this.name = "SessionRpeEvidenceIntegrityError";
+  }
+}
+
+export function uniqueEffectiveSessionRpeEvidence(
+  rows: readonly ActivitySessionRpeEvidenceProjection[],
+): ActivitySessionRpeEvidenceProjection | null {
+  if (rows.length > 1) throw new SessionRpeEvidenceIntegrityError();
+  return rows[0] ?? null;
+}
+
 const projection = {
   id: activitySessionRpeEvidence.id,
   profileId: activitySessionRpeEvidence.profile_id,
@@ -175,7 +189,12 @@ export async function listOwnedEffectiveSessionRpeEvidence(
           tx
             .select({ id: replacement.id })
             .from(replacement)
-            .where(eq(replacement.correction_of_id, activitySessionRpeEvidence.id)),
+            .where(
+              and(
+                eq(replacement.correction_of_id, activitySessionRpeEvidence.id),
+                eq(replacement.profile_id, input.profileId),
+              ),
+            ),
         ),
       ),
     )
@@ -183,11 +202,7 @@ export async function listOwnedEffectiveSessionRpeEvidence(
   return rows.map(parseProjection);
 }
 
-/**
- * The one effective RPE observation admitted to an owned activity detail.
- * Legacy data can contain multiple non-superseded rows; the latest recorded
- * observation is the same deterministic choice used by the analysis adapter.
- */
+/** The unique effective RPE observation admitted to an owned activity detail. */
 export async function findOwnedEffectiveSessionRpeEvidence(
   db: DrizzleQueryExecutor,
   input: { activityId: string; profileId: string },
@@ -196,7 +211,7 @@ export async function findOwnedEffectiveSessionRpeEvidence(
     activityIds: [input.activityId],
     profileId: input.profileId,
   });
-  return rows.at(-1) ?? null;
+  return uniqueEffectiveSessionRpeEvidence(rows);
 }
 
 export async function lockSessionRpeActivity(

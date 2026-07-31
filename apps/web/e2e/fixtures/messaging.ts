@@ -1,5 +1,6 @@
 import { type BrowserContext, test as base, expect, type Page } from "@playwright/test";
 import { Pool } from "pg";
+import { currentContractEpochHeaders } from "../utils/contractEpoch";
 
 const actors = {
   a: {
@@ -45,19 +46,29 @@ async function provision(context: BrowserContext, key: ActorKey, pool: Pool): Pr
   const actor = actors[key];
   let response = await context.request.post("/api/auth/sign-in/email", {
     data: { email: actor.email, password },
+    headers: currentContractEpochHeaders,
   });
   if (!response.ok()) {
-    await context.request.post("/api/auth/sign-up/email", {
+    const signUpResponse = await context.request.post("/api/auth/sign-up/email", {
       data: { email: actor.email, name: actor.name, password },
+      headers: currentContractEpochHeaders,
     });
+    if (![200, 201, 409, 422].includes(signUpResponse.status())) {
+      throw new Error(
+        `Unable to provision messaging actor ${key} (HTTP ${signUpResponse.status()}).`,
+      );
+    }
     await pool.query('update "users" set "email_verified" = true where "email" = $1', [
       actor.email,
     ]);
     response = await context.request.post("/api/auth/sign-in/email", {
       data: { email: actor.email, password },
+      headers: currentContractEpochHeaders,
     });
   }
-  if (!response.ok()) throw new Error(`Unable to authenticate messaging actor ${key}.`);
+  if (!response.ok()) {
+    throw new Error(`Unable to authenticate messaging actor ${key} (HTTP ${response.status()}).`);
+  }
   const user = await pool.query<{ id: string }>('select "id" from "users" where "email" = $1', [
     actor.email,
   ]);
@@ -76,7 +87,10 @@ async function provision(context: BrowserContext, key: ActorKey, pool: Pool): Pr
 }
 
 export const test = base.extend<{ messaging: MessagingHarness }>({
-  messaging: async ({ browser }, use) => {
+  messaging: async ({ baseURL, browser }, use) => {
+    if (!baseURL) {
+      throw new Error("Messaging E2E support requires Playwright use.baseURL.");
+    }
     const pool = new Pool({ connectionString: databaseUrl(), max: 1 });
     const lock = "gradientpeak-web-e2e:shared-actor-state";
     let lockAcquired = false;
@@ -88,9 +102,10 @@ export const test = base.extend<{ messaging: MessagingHarness }>({
       await pool.query("select pg_advisory_lock(hashtext($1))", [lock]);
       lockAcquired = true;
       await pool.query('delete from "rate_limits"');
+      await pool.query('delete from "api_rate_limit_windows"');
       const entries = await Promise.all(
         (Object.keys(actors) as ActorKey[]).map(async (key) => {
-          const context = await browser.newContext();
+          const context = await browser.newContext({ baseURL });
           contexts.push(context);
           return [key, await provision(context, key, pool)] as const;
         }),

@@ -18,20 +18,51 @@ pnpm install
 Run the web app:
 
 ```bash
+pnpm --filter web dev
 pnpm --filter web dev:local
 pnpm --filter web dev:tunnel
 pnpm --filter web dev:e2e
 ```
 
+The default `dev` command includes the reserved ngrok tunnel so the workspace-level
+`turbo run dev` task brings the public callback endpoint online. Use `dev:local` to run without
+the tunnel.
+
 The E2E server verifies the local database migration ledger before binding to `PORT` (default
 `3000`). It fails rather than moving to another port when that port is occupied.
 
-Run the main checks:
+## Local E2E
+
+Playwright runs against the local Supabase database and starts the E2E Vite server on port `3000`.
+Local Supabase prerequisites must be available; the harness invokes `@repo/db dev:setup` to ensure
+the local service is started and its migration ledger is current. Keep port `3000` available. The
+harness provisions and resets only local E2E actors; it refuses remote databases.
+
+Run the full suite from the workspace root:
+
+```bash
+pnpm --filter web test:e2e
+```
+
+Target one spec or one project through the harness. Do not insert a literal `--` before the
+Playwright arguments:
+
+```bash
+pnpm --filter web test:e2e e2e/specs/smoke.spec.ts --project="Desktop Chrome" --workers=1
+```
+
+On Linux hosts that expose NVIDIA device nodes and have `bwrap` available, the harness runs
+Playwright with a private `/dev` and `/dev/shm`. This avoids new browser processes contending for
+the host GPU devices; it cannot recover GPU processes already stuck in the kernel. All other hosts
+run ordinary Playwright. `PLAYWRIGHT_E2E_DEVICE_ISOLATION=off` disables isolation; `auto` (the
+default) requires NVIDIA device exposure; `on` enables isolation on a Linux host whenever `bwrap`
+is runnable.
+
+Run the main non-E2E checks:
 
 ```bash
 pnpm --filter web check-types
 pnpm --filter web build
-pnpm --filter web test:e2e
 ```
 
 ## Required Environment

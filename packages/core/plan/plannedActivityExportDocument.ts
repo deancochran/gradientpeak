@@ -1,10 +1,10 @@
 import { z } from "zod";
 import type {
   ActivityPlanDuration,
-  ActivityPlanStructureV3,
+  ActivityPlanStructure,
   ActivityPlanTarget,
-} from "../activity-plan/v3-schema";
-import { ACTIVITY_PLAN_V3_LIMITS } from "../activity-plan/v3-validation";
+} from "../activity-plan/structure-schema";
+import { ACTIVITY_PLAN_LIMITS } from "../activity-plan/structure-validation";
 import { canonicalActivityCategorySchema } from "../schemas/activity-category";
 import type { ActivityPlanTargetAnchors } from "./activityPlanProviderReadiness";
 
@@ -67,11 +67,11 @@ export const plannedActivityExportRepeatSchema = z.object({
   sourceIntervalId: z.string().uuid(),
   name: z.string().min(1).max(100),
   notes: z.string().max(1000).optional(),
-  count: z.number().int().min(1).max(ACTIVITY_PLAN_V3_LIMITS.maxIntervalRepetitions),
+  count: z.number().int().min(1).max(ACTIVITY_PLAN_LIMITS.maxIntervalRepetitions),
   steps: z
     .array(plannedActivityExportStepSchema)
     .min(1)
-    .max(ACTIVITY_PLAN_V3_LIMITS.maxStepsPerInterval),
+    .max(ACTIVITY_PLAN_LIMITS.maxStepsPerInterval),
 });
 
 const exportActivitySegmentSchema = z.object({
@@ -232,7 +232,7 @@ function mapTarget(
 export function mapActivityPlanToPlannedActivityExportDocument(input: {
   anchors?: ActivityPlanTargetAnchors;
   event: PlannedActivityExportEventMetadata;
-  structure: ActivityPlanStructureV3;
+  structure: ActivityPlanStructure;
 }): PlannedActivityExportDocument {
   const anchors = input.anchors ?? {};
   const blocks: z.infer<typeof plannedActivityExportRepeatSchema>[] = [];

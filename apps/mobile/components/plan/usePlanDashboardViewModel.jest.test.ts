@@ -8,8 +8,6 @@ describe("plan dashboard training-model safety", () => {
       scheduled_at: "2026-07-14T08:00:00.000Z",
       activity_category: "bike",
       estimated_load: 72,
-      short_term_readiness_delta: -8,
-      fitness_contribution: 4,
       confidence: "high",
       explanation: "Physiological claim from the API",
     });
@@ -28,8 +26,6 @@ describe("plan dashboard training-model safety", () => {
       scheduled_at: "2026-07-14T08:00:00.000Z",
       activity_category: "bike",
       estimated_load: null,
-      short_term_readiness_delta: null,
-      fitness_contribution: null,
       confidence: "low",
       explanation: "",
     });

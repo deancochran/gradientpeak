@@ -10,7 +10,7 @@
  */
 
 import { z } from "zod";
-import { activityPlanStructureSchemaV3 } from "../activity-plan";
+import { activityPlanStructureSchema } from "../activity-plan";
 import { canonicalActivityCategorySchema } from "./activity-category";
 import { contentVisibilitySchema } from "./content_visibility";
 import {
@@ -142,7 +142,7 @@ const activityPlanInsertShapeSchema = z
     description: z.string().nullable().optional(),
     name: z.string(),
     notes: z.string().nullable().optional(),
-    structure: activityPlanStructureSchemaV3,
+    structure: activityPlanStructureSchema,
   })
   .strict();
 
@@ -336,7 +336,7 @@ export const activityCategorySchema = canonicalActivityCategorySchema;
  * - name: required string (enhanced: 1-100 chars)
  * - description: optional nullable string (enhanced: max 1000 chars)
  * - notes: optional nullable string (enhanced: max 2000 chars)
- * - structure: required V3 structure
+ * - structure: required current structure
  */
 const activityPlanFormFieldsBaseSchema = activityPlanInsertShapeSchema
   .pick({
@@ -353,7 +353,7 @@ const activityPlanFormFieldsBaseSchema = activityPlanInsertShapeSchema
       z.string().max(1000, "Description must be less than 1000 characters").nullable().optional(),
     ),
     notes: activityPlanNotesSchema,
-    structure: activityPlanStructureSchemaV3,
+    structure: activityPlanStructureSchema,
   })
   .strict();
 

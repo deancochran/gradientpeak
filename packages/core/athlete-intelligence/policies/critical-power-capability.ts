@@ -10,8 +10,8 @@ import {
 } from "../calculation-result-contracts";
 import { resolveEvidenceEligibility } from "../evidence-contracts";
 import type {
-  AthleteIntelligenceModelInput,
   EffortObservationInput,
+  ParsedAthleteIntelligenceModelInput,
 } from "../model-input-contracts";
 
 export const CRITICAL_POWER_CAPABILITY_POLICY_VERSION = "critical-power-capability-v1" as const;
@@ -41,7 +41,7 @@ const unavailable = (
   });
 
 function observedPowerEffort(
-  model: Pick<AthleteIntelligenceModelInput, "assessmentAsOf" | "evidenceRegistry">,
+  model: Pick<ParsedAthleteIntelligenceModelInput, "assessmentAsOf" | "evidenceRegistry">,
   effort: EffortObservationInput,
 ): { effort: ObservedCriticalPowerEffort; sourceIds: string[] } | null {
   if (effort.activity_category !== "bike" || effort.kind !== "power") return null;
@@ -117,7 +117,7 @@ function selectCanonicalPowerEfforts(efforts: readonly AdaptedPowerEffort[]): Ad
 /** Adapts already-materialized, observed effort evidence into guarded CP/W′ capability outputs. */
 export function calculateCriticalPowerCapability(input: {
   model: Pick<
-    AthleteIntelligenceModelInput,
+    ParsedAthleteIntelligenceModelInput,
     "assessmentAsOf" | "efforts" | "evidenceRegistry" | "readCoverage"
   >;
   targetActivityCategory?: CanonicalActivityCategory | null;

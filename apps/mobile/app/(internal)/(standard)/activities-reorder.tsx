@@ -1,3 +1,4 @@
+import { normalizeDate } from "@repo/core";
 import { THEME } from "@repo/tailwindcss/native";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
@@ -15,7 +16,6 @@ import { api } from "@/lib/api";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useTheme } from "@/lib/stores/theme-store";
-import { normalizeDate } from "@/lib/utils/plan/dateGrouping";
 
 export default function ActivitiesReorder() {
   const { resolvedTheme } = useTheme();

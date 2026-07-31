@@ -18,7 +18,13 @@ export interface SmartSuggestion {
 interface UseSmartSuggestionsParams {
   plan?: { created_at: string; structure: SmartPlanStructure };
   status?: { longTermLoad?: number | null; loadBalance?: number | null };
-  weeklySummaries?: Array<{ activityPercentage?: number | null }>;
+  weeklySummaries?: Array<{
+    planAlignment: {
+      status: "available" | "unavailable";
+      completedSessions: number;
+      totalSessions: number;
+    };
+  }>;
 }
 
 type SmartPlanStructure = Partial<QuickAdjustmentPlanStructure> & {
@@ -59,24 +65,32 @@ export function deriveSmartSuggestion({
 
   const structure = plan.structure;
 
-  // Check 1: Low Adherence (< 60% for 2+ weeks)
+  // Check 1: Low Adherence (< 60% for 2+ assessable weeks)
   if (weeklySummaries && weeklySummaries.length >= 2) {
     const recentWeeks = weeklySummaries.slice(-2);
-    const avgAdherence =
-      recentWeeks.reduce((sum, week) => sum + (week.activityPercentage || 0), 0) /
-      recentWeeks.length;
+    const adherencePercentages = recentWeeks.map((week) => {
+      const { completedSessions, status: alignmentStatus, totalSessions } = week.planAlignment;
+      return alignmentStatus === "available" && totalSessions > 0
+        ? (completedSessions / totalSessions) * 100
+        : null;
+    });
 
-    if (avgAdherence < 60) {
-      const adjustedStructure = isQuickAdjustmentPlanStructure(structure)
-        ? reduceIntensity(structure)
-        : undefined;
-      return {
-        reason: "low_adherence",
-        title: "Low Training Adherence Detected",
-        description: `Your adherence is ${Math.round(avgAdherence)}%. Consider reducing weekly targets to stay consistent.`,
-        ...(adjustedStructure === undefined ? {} : { adjustedStructure }),
-        severity: "warning",
-      };
+    if (adherencePercentages.every((percentage) => percentage !== null)) {
+      const avgAdherence =
+        adherencePercentages.reduce((sum, percentage) => sum + (percentage ?? 0), 0) /
+        adherencePercentages.length;
+      if (avgAdherence < 60) {
+        const adjustedStructure = isQuickAdjustmentPlanStructure(structure)
+          ? reduceIntensity(structure)
+          : undefined;
+        return {
+          reason: "low_adherence",
+          title: "Low Training Adherence Detected",
+          description: `Your adherence is ${Math.round(avgAdherence)}%. Consider reducing weekly targets to stay consistent.`,
+          ...(adjustedStructure === undefined ? {} : { adjustedStructure }),
+          severity: "warning",
+        };
+      }
     }
   }
 

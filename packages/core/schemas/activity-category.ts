@@ -23,12 +23,6 @@ export const activityEffortCategorySchema = canonicalActivityCategorySchema.extr
   "swim",
 ]);
 
-export const planningActivityCategorySchema = z.union([
-  canonicalActivityCategorySchema,
-  z.literal("mixed"),
-]);
-
 export type CanonicalActivityCategory = z.infer<typeof canonicalActivityCategorySchema>;
 export type GoalTargetActivityCategory = z.infer<typeof goalTargetActivityCategorySchema>;
 export type ActivityEffortCategoryValue = z.infer<typeof activityEffortCategorySchema>;
-export type PlanningActivityCategory = z.infer<typeof planningActivityCategorySchema>;

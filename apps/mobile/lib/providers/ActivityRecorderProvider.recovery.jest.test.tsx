@@ -182,6 +182,7 @@ describe("ActivityRecorderProvider recovery prompt", () => {
       expect(checkpointMocks.quarantineActiveRecordingCheckpoint).toHaveBeenCalledWith(
         "Corrupt stream chunk",
         "profile-1",
+        checkpoint.sessionId,
       ),
     );
     expect(alertMock).toHaveBeenCalledWith(

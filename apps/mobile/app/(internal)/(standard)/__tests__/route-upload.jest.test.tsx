@@ -1,12 +1,20 @@
 import type React from "react";
 import { act } from "react";
 
+import {
+  claimRouteUploadOperation,
+  clearRouteUploadOperation,
+} from "@/lib/route-files/route-upload-operation";
+
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 
 const backMock = jest.fn();
 const getDocumentAsyncMock = jest.fn();
 const invalidateRoutesMock = jest.fn();
 const uploadRouteMock = jest.fn();
+const digestStringAsyncMock = jest.fn();
+const randomUuidMock = jest.fn();
+const mockRouteOperationStorage = new Map<string, string>();
 
 const MAX_ROUTE_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
@@ -31,6 +39,30 @@ jest.mock("expo-document-picker", () => ({
   getDocumentAsync: (...args: unknown[]) => getDocumentAsyncMock(...args),
 }));
 
+jest.mock("expo-crypto", () => ({
+  __esModule: true,
+  CryptoDigestAlgorithm: { SHA256: "SHA-256" },
+  digestStringAsync: (...args: unknown[]) => digestStringAsyncMock(...args),
+  randomUUID: () => randomUuidMock(),
+}));
+
+jest.mock("@react-native-async-storage/async-storage", () => ({
+  __esModule: true,
+  default: {
+    getItem: (key: string) => Promise.resolve(mockRouteOperationStorage.get(key) ?? null),
+    removeItem: (key: string) => Promise.resolve(void mockRouteOperationStorage.delete(key)),
+    setItem: (key: string, value: string) => {
+      mockRouteOperationStorage.set(key, value);
+      return Promise.resolve();
+    },
+  },
+}));
+
+jest.mock("@/lib/hooks/useAuth", () => ({
+  __esModule: true,
+  useAuth: () => ({ user: { id: "11111111-1111-4111-8111-111111111111" } }),
+}));
+
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
@@ -49,6 +81,9 @@ describe("route upload screen", () => {
     getDocumentAsyncMock.mockReset();
     invalidateRoutesMock.mockReset().mockResolvedValue(undefined);
     uploadRouteMock.mockReset().mockResolvedValue({ id: "route-1" });
+    digestStringAsyncMock.mockReset().mockResolvedValue("route-file-digest");
+    randomUuidMock.mockReset().mockReturnValue("55555555-5555-4555-8555-555555555555");
+    mockRouteOperationStorage.clear();
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       text: jest.fn().mockResolvedValue("<TrainingCenterDatabase />"),
@@ -68,6 +103,26 @@ describe("route upload screen", () => {
       fireEvent.press(screen.getByTestId("route-upload-file-input"));
     });
   }
+
+  it("persists an operation id until the successful claim is cleared", async () => {
+    const input = {
+      description: null,
+      fileContent: "<TrainingCenterDatabase />",
+      fileName: routeFile.name,
+      name: "Ridge Loop",
+      profileId: "11111111-1111-4111-8111-111111111111",
+    };
+
+    const first = await claimRouteUploadOperation(input);
+    randomUuidMock.mockReturnValue("66666666-6666-4666-8666-666666666666");
+    const resumed = await claimRouteUploadOperation(input);
+
+    expect(resumed).toEqual(first);
+    await clearRouteUploadOperation(first.storageKey);
+    await expect(claimRouteUploadOperation(input)).resolves.toMatchObject({
+      idempotencyKey: "66666666-6666-4666-8666-666666666666",
+    });
+  });
 
   it("stores portable metadata, auto-names, reads only on submit, and uploads the expected payload", async () => {
     await renderScreen();
@@ -98,6 +153,7 @@ describe("route upload screen", () => {
       description: undefined,
       fileContent: "<TrainingCenterDatabase />",
       fileName: "ridge-loop.tcx",
+      idempotencyKey: "55555555-5555-4555-8555-555555555555",
     });
     expect(invalidateRoutesMock).toHaveBeenCalledTimes(1);
     expect(backMock).toHaveBeenCalledTimes(1);
@@ -171,6 +227,26 @@ describe("route upload screen", () => {
     });
     await waitFor(() => expect(uploadRouteMock).toHaveBeenCalledTimes(1));
     expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("reuses the same operation id after an ambiguous upload failure", async () => {
+    uploadRouteMock
+      .mockRejectedValueOnce(new Error("response lost"))
+      .mockResolvedValueOnce({ id: "route-1" });
+    await renderScreen();
+    await pickFile();
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("route-upload-submit-button"));
+    });
+    expect(await screen.findByText(/response lost/i)).toBeTruthy();
+    const firstId = uploadRouteMock.mock.calls[0]?.[0].idempotencyKey;
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("route-upload-submit-button"));
+    });
+    await waitFor(() => expect(uploadRouteMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(backMock).toHaveBeenCalledTimes(1));
+    expect(uploadRouteMock.mock.calls[1]?.[0].idempotencyKey).toBe(firstId);
   });
 
   it("enters a terminal success boundary when post-upload navigation and invalidation fail", async () => {

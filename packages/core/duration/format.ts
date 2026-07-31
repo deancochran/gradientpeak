@@ -1,4 +1,4 @@
-import type { ActivityPlanDuration } from "../activity-plan/v3-schema";
+import type { ActivityPlanDuration } from "../activity-plan/structure-schema";
 
 export function formatDuration(duration: ActivityPlanDuration): string {
   switch (duration.type) {

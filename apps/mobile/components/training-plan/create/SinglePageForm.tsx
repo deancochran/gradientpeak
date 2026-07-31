@@ -3,7 +3,7 @@ import type {
   CanonicalActivityCategory,
   CompositeWeightLocks,
   CreationAvailabilityConfig,
-  CreationBehaviorControlsV1,
+  CreationBehaviorControls,
   CreationConfigLocks,
   CreationConstraints,
   CreationContextSummary,
@@ -90,7 +90,7 @@ export interface TrainingPlanConfigFormData {
   constraints: CreationConstraints;
   optimizationProfile: "outcome_first" | "balanced" | "sustainable";
   postGoalRecoveryDays: number;
-  behaviorControlsV1: CreationBehaviorControlsV1;
+  behaviorControls: CreationBehaviorControls;
   startingCtlAssumption?: number;
   startingFatigueState?: "fresh" | "normal" | "fatigued";
   calibration: TrainingPlanCalibrationConfig;
@@ -1071,11 +1071,11 @@ export function SinglePageForm({
 
             {activeTab === "calibration" && (
               <BehaviorControlsConfigSection
-                behaviorControls={configData.behaviorControlsV1}
-                onChange={(behaviorControlsV1) => {
+                behaviorControls={configData.behaviorControls}
+                onChange={(behaviorControls) => {
                   onConfigChange({
                     ...configData,
-                    behaviorControlsV1,
+                    behaviorControls,
                   });
                 }}
                 onReset={onResetBehaviorControls}

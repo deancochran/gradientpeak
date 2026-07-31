@@ -16,6 +16,7 @@ export * from "./activity_streams";
 export * from "./activity_target_capabilities";
 export * from "./activity-category";
 export * from "./content_visibility";
+export * from "./date-only";
 // Export from form-schemas
 export * from "./form-schemas";
 // Export profile goals/settings (Phase 1 additive domain schemas)

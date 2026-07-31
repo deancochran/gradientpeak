@@ -75,7 +75,9 @@ export function DiscoveryExplorer({ initialQuery = "" }: { initialQuery?: string
   const trainingPlans = api.trainingPlans.listTemplates.useInfiniteQuery(
     {
       search: search || undefined,
-      activity_category: trainingPlanCategory || undefined,
+      activity_category: trainingPlanCategory
+        ? (trainingPlanCategory as "bike" | "run" | "other" | "swim" | "strength")
+        : undefined,
       experience_level: experience
         ? (experience as "beginner" | "intermediate" | "advanced")
         : undefined,

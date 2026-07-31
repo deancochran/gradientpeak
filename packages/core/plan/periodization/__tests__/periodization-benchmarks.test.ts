@@ -1,7 +1,7 @@
 import { performance } from "node:perf_hooks";
 import { describe, expect, it } from "vitest";
 import { defaultAthletePreferenceProfile } from "../../../schemas/settings/profile_settings";
-import { buildDeterministicProjectionPayload } from "../../projectionCalculations";
+import { buildDeterministicProjectionPayload } from "../../projection/engine";
 import { fromProfileGoals } from "../adapters/fromProfileGoals";
 import { periodizationScenarioFixtures } from "../fixtures/scenarios";
 import {

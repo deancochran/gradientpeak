@@ -1,7 +1,7 @@
 import {
-  type ActivityPlanStructureV3,
-  activityPlanStructureSchemaV3,
-  compileValidatedActivityPlanV3,
+  type ActivityPlanStructure,
+  activityPlanStructureSchema,
+  compileValidatedActivityPlan,
 } from "../../activity-plan";
 import { summarizeActivityPlanDuration } from "../../duration";
 import {
@@ -34,15 +34,15 @@ function diffDays(startDate: string, endDate: string): number {
  */
 export function calculateSystemTemplateDurationSeconds(template: SystemTemplate): number | null {
   return summarizeActivityPlanDuration(
-    compileValidatedActivityPlanV3(validateSystemTemplateActivityPlanV3(template)),
+    compileValidatedActivityPlan(validateSystemTemplateActivityPlan(template)),
   ).exactElapsedSeconds;
 }
 
 /** Strictly validates an authored system-template V3 document. */
-export function validateSystemTemplateActivityPlanV3(
+export function validateSystemTemplateActivityPlan(
   template: SystemTemplate,
-): ActivityPlanStructureV3 {
-  return activityPlanStructureSchemaV3.parse(template.structure);
+): ActivityPlanStructure {
+  return activityPlanStructureSchema.parse(template.structure);
 }
 
 /**
@@ -195,23 +195,4 @@ export function assertSystemTrainingPlanTemplateLinksResolved(
 export function buildAllSystemTrainingPlanAudits(): SystemTrainingPlanAudit[] {
   const templateIndex = buildSystemTemplateIndex();
   return ALL_SAMPLE_PLANS.map((plan) => buildSystemTrainingPlanAudit(plan, templateIndex));
-}
-
-/**
- * Extracts seeded system training-plan IDs from the curated SQL migration.
- */
-export function extractSeededSystemTrainingPlanIds(migrationSql: string): string[] {
-  return Array.from(
-    migrationSql.matchAll(
-      /'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})'\s*,\s*null\s*,\s*true/gi,
-    ),
-    (match) => match[1] ?? "",
-  );
-}
-
-/**
- * Indicates whether the curated SQL migration currently seeds session linkage IDs.
- */
-export function migrationSeedsLinkedActivityPlanIds(migrationSql: string): boolean {
-  return /activity_plan_id/i.test(migrationSql);
 }

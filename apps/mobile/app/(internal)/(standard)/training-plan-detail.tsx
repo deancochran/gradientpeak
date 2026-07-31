@@ -1,5 +1,8 @@
 import { invalidateTrainingPlanQueries } from "@repo/api/react";
-import { persistedTrainingPlanStructureSchema } from "@repo/core";
+import {
+  canonicalTrainingPlanStructureSchema,
+  persistedTrainingPlanStructureSchema,
+} from "@repo/core";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -105,10 +108,6 @@ function readNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function readText(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
-}
-
 function readFiniteNumber(value: unknown): number {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -182,79 +181,23 @@ function formatDateLabel(value: string | undefined): string | null {
 }
 
 function extractSessionRows(structure: unknown): StructureSessionRow[] {
-  if (!structure || typeof structure !== "object") {
+  const parsed = canonicalTrainingPlanStructureSchema.safeParse(structure);
+  if (!parsed.success) {
     return [];
   }
 
-  const rows: StructureSessionRow[] = [];
-  const root = structure as Record<string, unknown>;
-
-  const pushSession = (
-    session: Record<string, unknown>,
-    index: number,
-    sourcePath: Array<string | number>,
-    inheritedTitle?: string,
-    inheritedOffsetDays = 0,
-  ) => {
-    const sessionOffset = readNumber(session.offset_days) ?? readNumber(session.day_offset);
-    if (sessionOffset === undefined) {
-      return;
-    }
-
-    const dayOffset = inheritedOffsetDays + sessionOffset;
-    const activityPlanId = readText(session.activity_plan_id) ?? null;
-    const overrideTitle = readText(session.event_title_override);
-    const legacyTitle = readText(session.title) ?? readText(session.name);
-    const title =
-      activityPlanId === null
-        ? (overrideTitle ?? legacyTitle ?? inheritedTitle ?? `Session ${index + 1}`)
-        : (overrideTitle ?? inheritedTitle ?? legacyTitle ?? `Session ${index + 1}`);
-
-    rows.push({
-      key: `${dayOffset}-${title}-${index}`,
-      title,
-      activityPlanId,
-      dayOffset,
-      sourcePath,
-    });
-  };
-
-  const traverse = (
-    node: Record<string, unknown>,
-    basePath: Array<string | number>,
-    inheritedTitle?: string,
-    inheritedOffsetDays = 0,
-  ) => {
-    const sessions = Array.isArray(node.sessions)
-      ? (node.sessions as Record<string, unknown>[])
-      : [];
-    sessions.forEach((session, sessionIndex) => {
-      pushSession(
-        session,
-        sessionIndex,
-        [...basePath, "sessions", sessionIndex],
-        inheritedTitle,
-        inheritedOffsetDays,
-      );
-    });
-
-    const blocks = Array.isArray(node.blocks) ? (node.blocks as Record<string, unknown>[]) : [];
-
-    blocks.forEach((block, blockIndex) => {
-      const blockOffset = readNumber(block.offset_days) ?? readNumber(block.day_offset) ?? 0;
-      const blockTitle = readText(block.name) ?? inheritedTitle;
-      traverse(
-        block,
-        [...basePath, "blocks", blockIndex],
-        blockTitle,
-        inheritedOffsetDays + blockOffset,
-      );
-    });
-  };
-
-  traverse(root, []);
-
-  return rows.sort((a, b) => a.dayOffset - b.dayOffset);
+  return parsed.data.sessions
+    .map((session, index) => {
+      const title = session.event_overrides?.title ?? `Session ${index + 1}`;
+      return {
+        key: `${session.offset_days}-${title}-${index}`,
+        title,
+        activityPlanId: session.activity_plan_id,
+        dayOffset: session.offset_days,
+        sourcePath: ["sessions", index],
+      };
+    })
+    .sort((a, b) => a.dayOffset - b.dayOffset);
 }
 
 function cloneStructure(structure: unknown): Record<string, unknown> | null {
@@ -717,11 +660,7 @@ export default function TrainingPlanOverview() {
   );
 
   const commitSessionActivityPlan = useCallback(
-    async (
-      sessionRow: StructureSessionRow,
-      nextActivityPlanId: string | null,
-      fallbackSessionTitle?: string,
-    ) => {
+    async (sessionRow: StructureSessionRow, nextActivityPlanId: string | null) => {
       if (!plan?.id || !plan?.structure) {
         setStatusModal({
           title: "Update failed",
@@ -748,30 +687,19 @@ export default function TrainingPlanOverview() {
         return;
       }
 
-      targetSession.activity_plan_id = nextActivityPlanId;
-      if (nextActivityPlanId) {
-        delete targetSession.event_title_override;
-        delete targetSession.title;
-        delete targetSession.name;
-      } else if (!readText(targetSession.title) && fallbackSessionTitle) {
-        targetSession.title = fallbackSessionTitle;
+      if (!nextActivityPlanId) {
+        const sessions = nextStructure.sessions;
+        if (!Array.isArray(sessions) || sessions.length <= 1) {
+          setStatusModal({
+            title: "Update failed",
+            description: "A training plan must include at least one session.",
+          });
+          return;
+        }
+        sessions.splice(sessionRow.sourcePath.at(-1) as number, 1);
+      } else {
+        targetSession.activity_plan_id = nextActivityPlanId;
       }
-
-      if (
-        typeof targetSession.day_offset === "number" &&
-        typeof targetSession.offset_days !== "number"
-      ) {
-        targetSession.offset_days = targetSession.day_offset;
-      }
-      delete targetSession.day_offset;
-
-      if (
-        typeof targetSession.week_offset === "number" &&
-        typeof targetSession.offset_weeks !== "number"
-      ) {
-        targetSession.offset_weeks = targetSession.week_offset;
-      }
-      delete targetSession.week_offset;
 
       if (!plan.structure_hash) throw new Error("Refresh the training plan before editing it.");
       await updatePlanStructureMutation.mutateAsync({
@@ -794,7 +722,7 @@ export default function TrainingPlanOverview() {
         return;
       }
 
-      await commitSessionActivityPlan(selectedSessionRow, activityPlan.id, activityPlan.name);
+      await commitSessionActivityPlan(selectedSessionRow, activityPlan.id);
     },
     [commitSessionActivityPlan, selectedSessionRow],
   );
@@ -1195,11 +1123,7 @@ export default function TrainingPlanOverview() {
           primaryAction={{
             label: updatePlanStructureMutation.isPending ? "Removing..." : "Remove Linked Activity",
             onPress: () => {
-              void commitSessionActivityPlan(
-                pendingActivityRemovalSession,
-                null,
-                pendingActivityRemovalSession.title,
-              );
+              void commitSessionActivityPlan(pendingActivityRemovalSession, null);
               setPendingActivityRemovalSession(null);
             },
             testID: "training-plan-remove-linked-activity-confirm",

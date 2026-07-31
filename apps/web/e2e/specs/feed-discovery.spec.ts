@@ -1,11 +1,6 @@
 import { expect, test } from "../fixtures";
 import { DISCOVERY_SCOPES, waitForProcedure } from "../lane-support/feed/discovery";
 
-test.skip(
-  !process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY,
-  "feed/discovery E2E requires the local persisted-data seed credential",
-);
-
 test("athlete refreshes and pages the persisted social activity feed", async ({ athletePage }) => {
   await expect(athletePage.getByRole("heading", { name: "Activity feed" })).toBeVisible();
 
@@ -19,6 +14,29 @@ test("athlete refreshes and pages the persisted social activity feed", async ({ 
     await loadMore.click();
     await expect((await nextPageResponse).ok()).toBeTruthy();
   }
+});
+
+test("athlete retries the feed after a refresh failure", async ({ athletePage }) => {
+  await expect(athletePage.getByRole("heading", { name: "Activity feed" })).toBeVisible();
+
+  await athletePage.route("**/api/trpc/**", async (route) => {
+    if (route.request().url().includes("feed.getFeed")) {
+      await route.abort("failed");
+      return;
+    }
+    await route.continue();
+  });
+  await athletePage.getByRole("button", { name: "Refresh" }).click();
+  await expect(athletePage.getByRole("alert")).toContainText(
+    /could not load your activity feed|more activities could not be loaded/i,
+    { timeout: 15_000 },
+  );
+
+  await athletePage.unroute("**/api/trpc/**");
+  const recoveryResponse = waitForProcedure(athletePage, "feed.getFeed");
+  await athletePage.getByRole("button", { name: /^retry(?: feed)?$/i }).click();
+  await expect((await recoveryResponse).ok()).toBeTruthy();
+  await expect(athletePage.getByRole("alert")).toHaveCount(0);
 });
 
 test("athlete searches every API-backed discovery scope and can page results", async ({
@@ -59,25 +77,41 @@ test("athlete searches every API-backed discovery scope and can page results", a
     }
 
     await searchbox.fill("");
-    const resetResponse = waitForProcedure(athletePage, scope.procedure);
     await athletePage.getByRole("button", { name: "Search", exact: true }).click();
-    await expect((await resetResponse).ok()).toBeTruthy();
+    await expect(searchbox).toHaveValue("");
+    await expect(athletePage.getByRole("alert")).toHaveCount(0);
   }
 });
 
-test("athlete can retry discovery after an API failure", async ({ athletePage }) => {
-  let rejected = false;
+test("athlete can retry discovery after an explicit client search failure", async ({
+  athletePage,
+}) => {
+  await athletePage.goto("/search");
   await athletePage.route("**/api/trpc/**", async (route) => {
-    if (!rejected && route.request().url().includes("activityPlans.list")) {
-      rejected = true;
-      await route.abort("failed");
+    if (route.request().url().includes("activityPlans.list")) {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: {
+            json: {
+              code: -32603,
+              data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 503 },
+              message: "Injected discovery search failure",
+            },
+          },
+        }),
+      });
       return;
     }
     await route.continue();
   });
 
-  await athletePage.goto("/search");
-  await expect(athletePage.getByRole("alert")).toContainText("We could not load activity plans.");
+  await athletePage.getByRole("textbox", { name: /search activity plans/i }).fill("retry-boundary");
+  await athletePage.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(athletePage.getByRole("alert")).toContainText("We could not load activity plans.", {
+    timeout: 15_000,
+  });
   await athletePage.unroute("**/api/trpc/**");
 
   const recoveryResponse = waitForProcedure(athletePage, "activityPlans.list");

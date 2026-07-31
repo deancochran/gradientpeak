@@ -4,8 +4,10 @@ import {
   buildObservedDurationCurve,
   buildStatusDurationCurve,
   filterEffortsByRange,
+  formatActivityEffortCurveDisplayValue,
   formatActivityEffortDisplayValue,
   getActivityEffortCurveValue,
+  getActivityEffortDisplayUnitLabel,
   getEffortHistoryForDuration,
 } from "./activity-effort-presentation";
 
@@ -128,6 +130,32 @@ describe("activity effort presentation", () => {
     expect(getActivityEffortCurveValue("run", "speed", 4)).toBe(250);
     expect(getActivityEffortCurveValue("swim", "speed", 1.25)).toBe(80);
     expect(getActivityEffortCurveValue("bike", "power", 320)).toBe(320);
+  });
+
+  it("converts running and swim pace rows and chart values for imperial viewers", () => {
+    expect(
+      formatActivityEffortDisplayValue(
+        effort({ activity_category: "run", effort_type: "speed", value: 4 }),
+        "imperial",
+      ),
+    ).toBe("6:42 /mi");
+    expect(
+      formatActivityEffortDisplayValue(
+        effort({ activity_category: "swim", effort_type: "speed", value: 1.25 }),
+        "imperial",
+      ),
+    ).toBe("1:13 /100yd");
+    const imperialRunCurveValue = getActivityEffortCurveValue("run", "speed", 4, "imperial");
+    expect(imperialRunCurveValue).toBeCloseTo(402.34, 2);
+    expect(
+      formatActivityEffortCurveDisplayValue({
+        activityCategory: "run",
+        effortType: "speed",
+        unitSystem: "imperial",
+        value: imperialRunCurveValue,
+      }),
+    ).toBe("6:42 /mi");
+    expect(getActivityEffortDisplayUnitLabel("swim", "speed", "imperial")).toBe("/100yd");
   });
 
   it("formats heart-rate effort values in bpm", () => {

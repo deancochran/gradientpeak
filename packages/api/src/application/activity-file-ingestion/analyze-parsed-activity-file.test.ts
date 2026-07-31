@@ -367,6 +367,219 @@ describe("analyzeParsedActivityFile", () => {
     });
   });
 
+  it("uses bounded provider active duration for a single segment only when FIT active timing is absent", async () => {
+    const startedAt = new Date("2026-01-01T10:00:00Z");
+    const result = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
+      activityId: "activity-1",
+      profileId: "profile-1",
+      refreshWeather: false,
+      providerActiveDurationSeconds: 55,
+      parsedData: {
+        metadata: { startTime: startedAt, type: "cycling" },
+        summary: { totalTime: 60, totalDistance: 500 },
+        records: [],
+        segments: explicitBikeSegment(startedAt, 60),
+      },
+    });
+
+    expect(result.segmentSet.segments[0]?.summary.timing).toEqual({
+      timingCoverage: "partial",
+      activeMs: 55_000,
+    });
+    expect(result.summaryValues).toMatchObject({
+      active_ms: null,
+      moving_ms: null,
+      timing_coverage: "partial",
+    });
+  });
+
+  it("preserves FIT swim session average speed over sparse per-length record averages", async () => {
+    const startedAt = new Date("2026-01-01T10:00:00Z");
+    const result = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
+      activityId: "activity-1",
+      profileId: "profile-1",
+      refreshWeather: false,
+      providerActiveDurationSeconds: 50,
+      parsedData: {
+        metadata: { startTime: startedAt, type: "swimming" },
+        summary: { totalTime: 60, totalDistance: 50, avgSpeed: 9 },
+        records: [
+          { sessionMessageIndex: 0, timestamp: startedAt, speed: 1.2 },
+          {
+            sessionMessageIndex: 0,
+            timestamp: new Date(startedAt.getTime() + 30_000),
+            speed: 1.4,
+          },
+        ],
+        segments: [
+          {
+            sessionMessageIndex: 0,
+            role: "activity",
+            activity_category: "swim",
+            rawSport: "swimming",
+            startTime: startedAt,
+            endTime: new Date(startedAt.getTime() + 60_000),
+          },
+        ],
+        sessions: [
+          {
+            messageIndex: 0,
+            rawSport: "swimming",
+            startTime: startedAt,
+            endTime: new Date(startedAt.getTime() + 60_000),
+            totalElapsedTime: 60,
+            totalDistance: 50,
+            avgSpeed: 1,
+            laps: [],
+            records: [],
+          },
+        ],
+      },
+    });
+
+    expect(result.segmentSet.segments[0]?.summary).toMatchObject({
+      timing: { timingCoverage: "partial", activeMs: 50_000 },
+      distanceMeters: 50,
+      averageSpeedMetersPerSecond: 1,
+    });
+    expect(result.segmentSet.segments[0]?.summary.normalizedSpeedMetersPerSecond).toBeCloseTo(
+      50 / 60,
+    );
+    expect(result.summaryValues.avg_speed_mps).toBe(1);
+  });
+
+  it("falls back to swim record speed when FIT session average speed is not positive", async () => {
+    const startedAt = new Date("2026-01-01T10:00:00Z");
+    const result = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
+      activityId: "activity-1",
+      profileId: "profile-1",
+      refreshWeather: false,
+      parsedData: {
+        metadata: { startTime: startedAt, type: "swimming" },
+        summary: { totalTime: 60, totalDistance: 50 },
+        records: [
+          { sessionMessageIndex: 0, timestamp: startedAt, speed: 1.2 },
+          {
+            sessionMessageIndex: 0,
+            timestamp: new Date(startedAt.getTime() + 30_000),
+            speed: 1.4,
+          },
+        ],
+        segments: [
+          {
+            sessionMessageIndex: 0,
+            role: "activity",
+            activity_category: "swim",
+            rawSport: "swimming",
+            startTime: startedAt,
+            endTime: new Date(startedAt.getTime() + 60_000),
+          },
+        ],
+        sessions: [
+          {
+            messageIndex: 0,
+            rawSport: "swimming",
+            startTime: startedAt,
+            endTime: new Date(startedAt.getTime() + 60_000),
+            totalElapsedTime: 60,
+            totalTimerTime: 60,
+            totalMovingTime: 60,
+            totalDistance: 50,
+            avgSpeed: 0,
+            laps: [],
+            records: [],
+          },
+        ],
+      },
+    });
+
+    expect(result.segmentSet.segments[0]?.summary.averageSpeedMetersPerSecond).toBeCloseTo(1.3);
+  });
+
+  it("does not allocate provider active duration across multisport segments", async () => {
+    const startedAt = new Date("2026-01-01T10:00:00Z");
+    const result = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
+      activityId: "activity-1",
+      profileId: "profile-1",
+      refreshWeather: false,
+      providerActiveDurationSeconds: 180,
+      parsedData: {
+        metadata: { startTime: startedAt, type: "multisport" },
+        summary: { totalTime: 120, totalDistance: 500 },
+        records: [],
+        segments: [
+          ...explicitBikeSegment(startedAt, 60),
+          {
+            sessionMessageIndex: 1,
+            role: "activity" as const,
+            activity_category: "run" as const,
+            rawSport: "running",
+            startTime: new Date(startedAt.getTime() + 60_000),
+            endTime: new Date(startedAt.getTime() + 120_000),
+          },
+        ],
+      },
+    });
+
+    expect(result.segmentSet.segments.map((segment) => segment.summary.timing)).toEqual([
+      { timingCoverage: "unavailable" },
+      { timingCoverage: "unavailable" },
+    ]);
+  });
+
+  it("rejects provider active duration beyond a single segment's elapsed bounds", async () => {
+    const startedAt = new Date("2026-01-01T10:00:00Z");
+    const result = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
+      activityId: "activity-1",
+      profileId: "profile-1",
+      refreshWeather: false,
+      providerActiveDurationSeconds: 60.5,
+      parsedData: {
+        metadata: { startTime: startedAt, type: "cycling" },
+        summary: { totalTime: 60, totalDistance: 500 },
+        records: [],
+        segments: explicitBikeSegment(startedAt, 60),
+      },
+    });
+
+    expect(result.segmentSet.segments[0]?.summary.timing).toEqual({
+      timingCoverage: "unavailable",
+    });
+  });
+
+  it("keeps parsed moving-only timing without provider active fallback", async () => {
+    const startedAt = new Date("2026-01-01T10:00:00Z");
+    const result = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
+      activityId: "activity-1",
+      profileId: "profile-1",
+      refreshWeather: false,
+      providerActiveDurationSeconds: 55,
+      parsedData: {
+        metadata: { startTime: startedAt, type: "cycling" },
+        summary: { totalTime: 60, totalDistance: 500 },
+        records: [],
+        segments: explicitBikeSegment(startedAt, 60),
+        sessions: [
+          {
+            messageIndex: 0,
+            rawSport: "cycling",
+            startTime: startedAt,
+            endTime: new Date(startedAt.getTime() + 60_000),
+            totalElapsedTime: 60,
+            totalMovingTime: 60,
+            laps: [],
+            records: [],
+          },
+        ],
+      },
+    });
+
+    expect(result.segmentSet.segments[0]?.summary.timing).toEqual({
+      timingCoverage: "partial",
+      movingMs: 60_000,
+    });
+  });
+
   it("collects every available per-activity effort without profile metrics or prior records", async () => {
     const startedAt = new Date("2026-01-01T10:00:00Z");
     const records = Array.from({ length: 61 }, (_, second) => ({
@@ -510,6 +723,124 @@ describe("analyzeParsedActivityFile", () => {
     );
 
     expect(result.detectedLTHR).toBe(162);
+  });
+
+  it("projects only complete owned pool-length evidence and single-swim parent fields", async () => {
+    const startedAt = new Date("2026-01-01T10:00:00Z");
+    const result = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
+      activityId: "swim-activity",
+      profileId: "profile-1",
+      refreshWeather: false,
+      parsedData: {
+        metadata: { startTime: startedAt, type: "swimming" },
+        summary: { totalTime: 60, totalDistance: 50 },
+        records: [],
+        segments: [
+          {
+            sessionMessageIndex: 4,
+            role: "activity",
+            activity_category: "swim",
+            rawSport: "swimming",
+            startTime: startedAt,
+            endTime: new Date(startedAt.getTime() + 60_000),
+          },
+        ],
+        sessions: [
+          {
+            messageIndex: 4,
+            rawSport: "swimming",
+            startTime: startedAt,
+            endTime: new Date(startedAt.getTime() + 60_000),
+            totalElapsedTime: 60,
+            poolLengthMeters: 22.86,
+            numActiveLengths: 2,
+            totalStrokes: 40,
+            laps: [],
+            records: [],
+          },
+        ],
+        lengths: [
+          { sessionMessageIndex: 4, lengthType: "active", totalTimerTime: 25, totalStrokes: 20 },
+          { sessionMessageIndex: 4, lengthType: "active", totalElapsedTime: 30, totalStrokes: 20 },
+          { sessionMessageIndex: 4, lengthType: "idle", totalElapsedTime: 10, totalStrokes: 0 },
+        ],
+      },
+    });
+
+    expect(result.segmentSet.segments[0]?.summary.swim).toEqual({
+      poolLengthMeters: 22.86,
+      lengthCount: 2,
+      strokeCount: 40,
+      averageSwolf: 47.5,
+    });
+    expect(result.summaryValues).toMatchObject({
+      pool_length_meters: 22.86,
+      total_strokes: 40,
+      avg_swolf: 47.5,
+    });
+  });
+
+  it("omits partial swim length metrics and leaves multisport parent swim fields null", async () => {
+    const startedAt = new Date("2026-01-01T10:00:00Z");
+    const result = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
+      activityId: "multi-activity",
+      profileId: "profile-1",
+      refreshWeather: false,
+      parsedData: {
+        metadata: { startTime: startedAt, type: "multisport" },
+        summary: { totalTime: 120, totalDistance: 1_000 },
+        records: [],
+        segments: [
+          {
+            sessionMessageIndex: 1,
+            role: "activity",
+            activity_category: "swim",
+            rawSport: "swimming",
+            startTime: startedAt,
+            endTime: new Date(startedAt.getTime() + 60_000),
+          },
+          {
+            sessionMessageIndex: 2,
+            role: "activity",
+            activity_category: "bike",
+            rawSport: "cycling",
+            startTime: new Date(startedAt.getTime() + 60_000),
+            endTime: new Date(startedAt.getTime() + 120_000),
+          },
+        ],
+        sessions: [
+          {
+            messageIndex: 1,
+            rawSport: "swimming",
+            startTime: startedAt,
+            endTime: new Date(startedAt.getTime() + 60_000),
+            totalElapsedTime: 60,
+            numActiveLengths: 2,
+            laps: [],
+            records: [],
+          },
+          {
+            messageIndex: 2,
+            rawSport: "cycling",
+            startTime: new Date(startedAt.getTime() + 60_000),
+            endTime: new Date(startedAt.getTime() + 120_000),
+            totalElapsedTime: 60,
+            laps: [],
+            records: [],
+          },
+        ],
+        lengths: [
+          { sessionMessageIndex: 1, lengthType: "active", totalTimerTime: 25, totalStrokes: 20 },
+        ],
+      },
+    });
+
+    expect(result.segmentSet.segments[0]?.summary.swim).toEqual({ lengthCount: 2 });
+    expect(result.summaryValues).toMatchObject({
+      pool_length_meters: null,
+      total_strokes: null,
+      avg_swolf: null,
+    });
   });
 
   it("does not let an activity suppress its own equal LTHR during reanalysis", async () => {

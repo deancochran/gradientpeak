@@ -1,6 +1,6 @@
 import {
   type ActivityPlanMetricsLike,
-  activityPlanStructureSchemaV3,
+  activityPlanStructureSchema,
   getAuthoritativeActivityPlanMetrics,
 } from "@repo/core/activity-plan";
 import {
@@ -97,7 +97,7 @@ function clampDateOnOrAfter(value: string, minimum: string) {
 function readCanonicalPlanActivityCategory(
   plan: ActivityPlanLike,
 ): CanonicalActivityCategory | null {
-  const parsed = activityPlanStructureSchemaV3.safeParse(plan.structure);
+  const parsed = activityPlanStructureSchema.safeParse(plan.structure);
   if (!parsed.success) return null;
   return (
     parsed.data.segments.find((segment) => segment.role === "activity")?.activity_category ?? null

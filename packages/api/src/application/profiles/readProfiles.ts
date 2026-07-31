@@ -196,7 +196,7 @@ export async function getProfilePerformanceSnapshot(db: DbClient, profileId: str
             eq(profileMetrics.metric_type, "weight_kg"),
           ),
         )
-        .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.idx))
+        .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.id))
         .limit(1)
         .then((rows) => rows[0] ?? null),
       db
@@ -209,7 +209,7 @@ export async function getProfilePerformanceSnapshot(db: DbClient, profileId: str
         .where(
           and(eq(profileMetrics.profile_id, profileId), eq(profileMetrics.metric_type, "lthr")),
         )
-        .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.idx))
+        .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.id))
         .limit(1)
         .then((rows) => rows[0] ?? null),
       db
@@ -222,7 +222,7 @@ export async function getProfilePerformanceSnapshot(db: DbClient, profileId: str
         })
         .from(profileMetrics)
         .where(and(eq(profileMetrics.profile_id, profileId), eq(profileMetrics.metric_type, "ftp")))
-        .orderBy(desc(profileMetrics.recorded_at)),
+        .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.id)),
       db
         .select({
           value: activityEfforts.value,

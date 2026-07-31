@@ -31,7 +31,7 @@ const recordingSummarySchema = z
     calories: z.number().int().nonnegative().nullable().optional(),
     elevationGainMeters: z.number().nonnegative().nullable().optional(),
     avgTemperature: z.number().finite().nullable().optional(),
-    poolLength: z.number().positive().nullable().optional(),
+    poolLengthMeters: z.number().positive().nullable().optional(),
   })
   .strict()
   .default({ distanceMeters: 0 });

@@ -66,7 +66,7 @@ export function GroupCard({
       contentClassName={variant === "compact" ? "px-3" : "gap-3 px-4"}
       disabled={isDisabled}
       {...(handlePress ? { onPress: handlePress } : {})}
-      {...(testID !== undefined ? { testID } : {})}
+      testID={testID ?? `group-card-${group.id}`}
     >
       {variant === "compact" ? (
         <View className="min-h-11 flex-row items-center gap-3">

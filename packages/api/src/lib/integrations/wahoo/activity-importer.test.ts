@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MATERIALIZER_VERSION } from "../../../application/activities/submit-activity";
 import { createActivityImporter } from "./activity-importer";
 import type { WahooWorkoutSummary } from "./client";
 
@@ -182,6 +183,7 @@ describe("activity-importer", () => {
       activityFilePath: "activities/profile-1/providers/wahoo/123.fit",
       activityFileSize: 15,
       analysisReady: true,
+      materializerVersion: MATERIALIZER_VERSION,
     });
     const activityFileStorage = { uploadActivityFile: vi.fn() };
     const importer = createTestImporter({
@@ -215,6 +217,7 @@ describe("activity-importer", () => {
       activityFilePath: "activities/profile-1/providers/wahoo/123.fit",
       activityFileSize: 15,
       analysisReady: true,
+      materializerVersion: MATERIALIZER_VERSION,
     });
     const activityFileStorage = { uploadActivityFile: vi.fn() };
     const importer = createTestImporter({
@@ -253,6 +256,7 @@ describe("activity-importer", () => {
       activityFilePath: "activities/profile-1/providers/wahoo/123.fit",
       activityFileSize: 15,
       analysisReady: false,
+      materializerVersion: MATERIALIZER_VERSION,
     });
     const enrichActivity = vi.fn().mockResolvedValue({ id: "existing-activity" });
     const storedBytes = new TextEncoder().encode("fit-binary-data");
@@ -285,6 +289,62 @@ describe("activity-importer", () => {
     );
     expect(activityFileStorage.uploadActivityFile).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a persisted v1 materializer row without reading or replaying its bytes", async () => {
+    const repository = createRepositoryMock();
+    repository.findImportedActivityLinkByExternalId.mockResolvedValueOnce({
+      activityId: "existing-activity",
+      linkId: "link-1",
+      profileId: "profile-1",
+      activityFilePath: "activities/profile-1/providers/wahoo/123.fit",
+      activityFileSize: 15,
+      artifactId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      analysisReady: true,
+      materializerVersion: "activity-segments-v1",
+      segmentsRevision: 3,
+      timingCoverage: "unavailable",
+      hasSwimSegment: false,
+    });
+    const activityFileStorage = { readActivityFile: vi.fn(), uploadActivityFile: vi.fn() };
+    const importer = createTestImporter({
+      activityFileStorage,
+      repository,
+      submitActivity: repository.submitActivity,
+    });
+
+    await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
+      success: false,
+      error: "Wahoo activity has a non-current materializer version",
+      failureReason: "unsupported_persisted_version",
+    });
+    expect(activityFileStorage.readActivityFile).not.toHaveBeenCalled();
+    expect(repository.submitActivity).not.toHaveBeenCalled();
+    expect(repository.createImportedActivityResourceLink).not.toHaveBeenCalled();
+  });
+
+  it("does not retry timing fallback after the v2 materializer has already run", async () => {
+    const repository = createRepositoryMock();
+    repository.findImportedActivityLinkByExternalId.mockResolvedValueOnce({
+      activityId: "existing-activity",
+      linkId: "link-1",
+      profileId: "profile-1",
+      activityFilePath: "activities/profile-1/providers/wahoo/123.fit",
+      activityFileSize: 15,
+      analysisReady: true,
+      materializerVersion: MATERIALIZER_VERSION,
+      timingCoverage: "unavailable",
+    });
+    const importer = createTestImporter({
+      activityFileStorage: { uploadActivityFile: vi.fn() },
+      repository,
+      submitActivity: repository.submitActivity,
+    });
+
+    await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toMatchObject({
+      skipped: true,
+    });
+    expect(repository.submitActivity).not.toHaveBeenCalled();
   });
 
   it("fails closed when the required FIT artifact cannot be parsed", async () => {
@@ -455,7 +515,7 @@ describe("activity-importer", () => {
         name: "bike Activity",
         distanceMeters: 40235,
         durationSeconds: 3600,
-        movingSeconds: 3600,
+        providerActiveDurationSeconds: 3501.2,
         elevationGainMeters: 789,
         calories: 654,
         avgPower: 212.3,
@@ -729,7 +789,7 @@ describe("activity-importer", () => {
         name: "bike Activity",
         distanceMeters: 38999,
         durationSeconds: 3300,
-        movingSeconds: 3300,
+        providerActiveDurationSeconds: 3501.2,
         elevationGainMeters: 456,
         calories: 600,
         avgPower: 199.6,
@@ -803,6 +863,7 @@ describe("activity-importer", () => {
         activityFilePath: "activities/profile-1/providers/wahoo/123.fit",
         activityFileSize: 15,
         analysisReady: true,
+        materializerVersion: MATERIALIZER_VERSION,
       });
     const activityFileStorage = { uploadActivityFile: vi.fn().mockResolvedValue(undefined) };
     const importer = createTestImporter({
@@ -847,6 +908,7 @@ describe("activity-importer", () => {
         activityFilePath: "activities/profile-1/providers/wahoo/123.fit",
         activityFileSize: 15,
         analysisReady: false,
+        materializerVersion: MATERIALIZER_VERSION,
       });
     const enrichActivity = vi.fn().mockResolvedValue({ id: "concurrent-activity" });
     const importer = createTestImporter({

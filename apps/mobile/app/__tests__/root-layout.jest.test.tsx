@@ -19,6 +19,8 @@ type QueueFileReference = {
   status: string;
 };
 const loadActivitySubmissionQueueJobsMock = jest.fn(async (): Promise<QueueFileReference[]> => []);
+const initializeContractEpochMock = jest.fn(async () => "current");
+const initializeAuthMock = jest.fn(async () => undefined);
 
 const authState = {
   authState: "authenticated-verified",
@@ -129,6 +131,11 @@ jest.mock("@/lib/providers/QueryProvider", () => ({
   QueryProvider: ({ children }: React.PropsWithChildren) => children,
 }));
 
+jest.mock("@/lib/contract-epoch/contractEpoch", () => ({
+  __esModule: true,
+  initializeContractEpoch: initializeContractEpochMock,
+}));
+
 jest.mock("@/lib/server-config", () => ({
   __esModule: true,
   initializeServerConfig: jest.fn(async () => undefined),
@@ -191,7 +198,7 @@ jest.mock("@/lib/stores/auth-store", () => ({
   useAuthStore: <T,>(selector: (state: AuthStoreState) => T) =>
     selector({
       clearSession: jest.fn(async () => undefined),
-      initialize: jest.fn(async () => undefined),
+      initialize: initializeAuthMock,
       ready: true,
       profile: { id: "profile-1" },
     }),
@@ -220,37 +227,44 @@ describe("root layout auth guard", () => {
     });
     themeState.isLoaded = true;
     segmentsValue = ["(internal)", "(tabs)"];
+    initializeContractEpochMock.mockResolvedValue("current");
   });
 
-  it("redirects unauthenticated users to sign in", () => {
+  it("redirects unauthenticated users to sign in", async () => {
     authState.authState = "anonymous";
     authState.isAuthenticated = false;
     segmentsValue = ["(internal)", "(tabs)"];
 
     renderNative(<RootLayout />);
 
-    expect(screen.getByTestId("redirect-target").props.children).toContain("sign-in");
+    await waitFor(() =>
+      expect(screen.getByTestId("redirect-target").props.children).toContain("sign-in"),
+    );
   });
 
-  it("redirects unverified users to verify with their email", () => {
+  it("redirects unverified users to verify with their email", async () => {
     authState.authState = "authenticated-unverified";
     authState.userStatus = "pending";
     segmentsValue = ["(internal)", "(tabs)"];
 
     renderNative(<RootLayout />);
 
-    expect(screen.getByTestId("redirect-target").props.children).toContain("verify");
+    await waitFor(() =>
+      expect(screen.getByTestId("redirect-target").props.children).toContain("verify"),
+    );
     expect(screen.getByTestId("redirect-target").props.children).toContain("athlete@example.com");
   });
 
-  it("redirects signed-in users away from sign-up and into verify until confirmed", () => {
+  it("redirects signed-in users away from sign-up and into verify until confirmed", async () => {
     authState.authState = "authenticated-unverified";
     authState.userStatus = "unverified";
     segmentsValue = ["(external)", "sign-up"];
 
     renderNative(<RootLayout />);
 
-    expect(screen.getByTestId("redirect-target").props.children).toContain("verify");
+    await waitFor(() =>
+      expect(screen.getByTestId("redirect-target").props.children).toContain("verify"),
+    );
     expect(screen.getByTestId("redirect-target").props.children).toContain("athlete@example.com");
   });
 
@@ -269,6 +283,33 @@ describe("root layout auth guard", () => {
     renderNative(<RootLayout />);
 
     await waitFor(() => expect(screen.getByText("Internal app content")).toBeTruthy());
+  });
+
+  it("blocks rendering and auth initialization until the contract epoch is ready", async () => {
+    let resolveEpoch!: (value: "current") => void;
+    initializeContractEpochMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveEpoch = resolve;
+        }),
+    );
+
+    renderNative(<RootLayout />);
+
+    expect(screen.getByTestId("contract-epoch-loading")).toBeTruthy();
+    expect(screen.queryByText("Internal app content")).toBeNull();
+    expect(initializeAuthMock).not.toHaveBeenCalled();
+    resolveEpoch("current");
+    await waitFor(() => expect(screen.getByText("Internal app content")).toBeTruthy());
+  });
+
+  it("shows a blocking retry UI when the contract reset fails", async () => {
+    initializeContractEpochMock.mockRejectedValueOnce(new Error("disk busy"));
+
+    renderNative(<RootLayout />);
+
+    await waitFor(() => expect(screen.getByTestId("contract-epoch-retry")).toBeTruthy());
+    expect(screen.queryByText("Internal app content")).toBeNull();
   });
 
   it("exposes an accessible shared loading state while the theme initializes", async () => {

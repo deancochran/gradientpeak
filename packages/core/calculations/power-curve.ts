@@ -59,64 +59,6 @@ export function derivePowerCurveFromFTP(ftp: number): DerivedEffort[] {
 }
 
 /**
- * Estimates W' (anaerobic work capacity) based on athlete profile.
- *
- * @deprecated Demographic estimates are not observed evidence and must not be
- * used for recommendations or CP/W' models. Retained only for API compatibility.
- *
- * W' represents the finite amount of work that can be performed above CP (Critical Power).
- * It varies based on athlete characteristics and training status.
- *
- * Baseline values:
- * - Recreational male: 15,000 - 20,000 J
- * - Recreational female: 12,000 - 16,000 J
- * - Trained athletes: +20-30% higher
- * - Elite athletes: +50-100% higher
- *
- * @param weightKg - Athlete weight in kg
- * @param gender - Athlete gender
- * @param trainingLevel - Training status: 'recreational' | 'trained' | 'elite'
- * @returns Estimated W' in joules
- *
- * @example
- * const wPrime = estimateWPrime(70, 'male', 'recreational');
- * // Returns: ~17,500 J (scaled to 70kg)
- */
-export function estimateWPrime(
-  weightKg: number,
-  gender: "male" | "female" | "other",
-  trainingLevel: "recreational" | "trained" | "elite" = "recreational",
-): number {
-  if (weightKg <= 0) {
-    throw new Error("Weight must be greater than 0");
-  }
-
-  // Base W' values per kg for 70kg reference athlete
-  const baseWPrimePerKg = {
-    recreational: {
-      male: 250, // ~17,500 J for 70kg
-      female: 200, // ~14,000 J for 70kg
-      other: 225, // Average
-    },
-    trained: {
-      male: 312, // +25% (~21,840 J for 70kg)
-      female: 250, // +25% (~17,500 J for 70kg)
-      other: 281,
-    },
-    elite: {
-      male: 400, // +60% (~28,000 J for 70kg)
-      female: 320, // +60% (~22,400 J for 70kg)
-      other: 360,
-    },
-  };
-
-  const wPrimePerKg = baseWPrimePerKg[trainingLevel][gender];
-  const estimatedWPrime = weightKg * wPrimePerKg;
-
-  return Math.round(estimatedWPrime);
-}
-
-/**
  * Predicts only within the duration span of an observed CP/W' fit. Requiring
  * fit metadata prevents an FTP estimate from being passed as if it were CP and
  * prevents silent extrapolation beyond the evidence domain.

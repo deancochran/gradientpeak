@@ -1,4 +1,4 @@
-import { compileActivityPlanV3 } from "@repo/core/activity-plan";
+import { compileActivityPlan } from "@repo/core/activity-plan";
 import { Badge } from "@repo/ui/components/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { createFileRoute, notFound } from "@tanstack/react-router";
@@ -41,7 +41,7 @@ function PublicActivityPlanPage() {
   const { activityPlan } = Route.useLoaderData();
   const ownerName =
     activityPlan.owner.name ?? activityPlan.owner.username ?? "GradientPeak athlete";
-  const compiledActivityPlan = compileActivityPlanV3(activityPlan.structure);
+  const compiledActivityPlan = compileActivityPlan(activityPlan.structure);
 
   return (
     <main className="mx-auto w-full max-w-3xl space-y-6 py-8">

@@ -2,9 +2,9 @@ import { addDaysDateOnlyUtc, formatDateOnlyUtc, parseDateOnlyUtc } from "@repo/c
 
 type TimelineLoadPoint = {
   date: string;
-  actual_tss: number;
-  scheduled_tss: number;
-  ideal_tss: number;
+  completed_load_tss: number;
+  scheduled_load_tss: number;
+  recommended_load_tss: number;
 };
 
 type GoalWithTargetDate = {
@@ -63,9 +63,9 @@ export function buildWeeklyLoadComparison(input: {
   for (const point of input.timeline) {
     const weekStart = getWeekStartDateOnly(point.date);
     const bucket = buckets.get(weekStart) ?? { actual: 0, scheduled: 0, recommended: 0, dates: [] };
-    bucket.actual += point.actual_tss || 0;
-    bucket.scheduled += point.scheduled_tss || 0;
-    bucket.recommended += point.ideal_tss || 0;
+    bucket.actual += point.completed_load_tss || 0;
+    bucket.scheduled += point.scheduled_load_tss || 0;
+    bucket.recommended += point.recommended_load_tss || 0;
     bucket.dates.push(point.date);
     buckets.set(weekStart, bucket);
   }

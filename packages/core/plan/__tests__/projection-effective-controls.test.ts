@@ -21,14 +21,14 @@ describe("projection effective controls mapping", () => {
     const lowAggressiveness = resolveEffectiveProjectionControls({
       normalized_config: normalizedConfig,
       calibration,
-      behavior_controls_v1: {
+      behavior_controls: {
         aggressiveness: 0,
       },
     });
     const highAggressiveness = resolveEffectiveProjectionControls({
       normalized_config: normalizedConfig,
       calibration,
-      behavior_controls_v1: {
+      behavior_controls: {
         aggressiveness: 1,
       },
     });
@@ -62,14 +62,14 @@ describe("projection effective controls mapping", () => {
     const lowVariability = resolveEffectiveProjectionControls({
       normalized_config: normalizedConfig,
       calibration,
-      behavior_controls_v1: {
+      behavior_controls: {
         variability: 0,
       },
     });
     const highVariability = resolveEffectiveProjectionControls({
       normalized_config: normalizedConfig,
       calibration,
-      behavior_controls_v1: {
+      behavior_controls: {
         variability: 1,
       },
     });
@@ -105,7 +105,7 @@ describe("projection effective controls mapping", () => {
           candidate_steps: 15,
         },
       }),
-      behavior_controls_v1: {
+      behavior_controls: {
         aggressiveness: 1,
         variability: 1,
         spike_frequency: 1,
@@ -138,7 +138,7 @@ describe("projection effective controls mapping", () => {
         max_ctl_ramp_per_week: 3,
       }),
       calibration,
-      behavior_controls_v1: {
+      behavior_controls: {
         aggressiveness: 0.72,
         variability: 0.28,
         spike_frequency: 0.44,
@@ -162,7 +162,7 @@ describe("projection effective controls mapping", () => {
         max_ctl_ramp_per_week: 12,
       }),
       calibration,
-      behavior_controls_v1: {
+      behavior_controls: {
         aggressiveness: 1,
         variability: 1,
         spike_frequency: 1,
@@ -185,7 +185,7 @@ describe("curvature controls", () => {
         max_ctl_ramp_per_week: 3,
       }),
       calibration,
-      behavior_controls_v1: {
+      behavior_controls: {
         shape_target: -0.55,
         shape_strength: 0.7,
       },

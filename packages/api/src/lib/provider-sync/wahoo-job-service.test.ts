@@ -400,32 +400,39 @@ describe("WahooSyncJobService planned activities", () => {
     );
   });
 
-  it("drains a legacy publish payload without a scheduled-time fence", async () => {
-    const job = plannedJob({
-      payload: {
+  it.each([
+    ["missing", { eventId: "event-1", operation: "publish", projectionHash: "projection-1" }],
+    [
+      "malformed",
+      {
         eventId: "event-1",
         operation: "publish",
         projectionHash: "projection-1",
+        startsAt: "not-a-timestamp",
       },
-    });
+    ],
+  ])("dead-letters a %s publish startsAt fence before provider work", async (_label, payload) => {
+    const job = plannedJob({ payload });
     const repository = plannedRepository(job);
-    const syncEvent = vi.fn().mockResolvedValue({ action: "created", success: true });
+    const syncEvent = vi.fn();
     const service = new WahooSyncJobService({
       providerSyncRepository: repository as never,
       syncService: { syncEvent } as never,
       wahooRepository: {} as never,
     });
 
-    await expect(service.processDueJobs({ workerId: "planned-test" })).resolves.toMatchObject({
-      completed: 1,
+    await expect(service.processDueJobs({ workerId: "planned-test" })).resolves.toEqual({
+      completed: 0,
+      failed: 1,
       processed: 1,
     });
-    expect(syncEvent).toHaveBeenCalledWith(
-      "event-1",
-      "profile-1",
-      expect.objectContaining({ expectedProjectionHash: "projection-1" }),
+    expect(repository.markJobFailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lastError: "invalid_wahoo_planned_activity_payload",
+        status: "dead_lettered",
+      }),
     );
-    expect(syncEvent.mock.calls[0]?.[2]).not.toHaveProperty("expectedStartsAt");
+    expect(syncEvent).not.toHaveBeenCalled();
   });
 
   it("does not claim planned jobs when the planned sync runtime is absent", async () => {

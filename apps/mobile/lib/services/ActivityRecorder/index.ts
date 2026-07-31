@@ -16,9 +16,9 @@
 import type { FTMSFeatures, FtmsMachineType } from "@deancochran/ftms";
 import {
   ACTIVITY_PLAN_COMPILER_VERSION,
-  activityPlanStructureSchemaV3,
+  activityPlanStructureSchema,
   type CurrentMetricValue,
-  compileActivityPlanV3,
+  compileActivityPlan,
   type FtmsControlMode,
   GLOBAL_DEFAULTS,
   type MetricFamily,
@@ -50,7 +50,6 @@ import {
   GarminFitEncoder,
   validateFinalizedFitFile,
 } from "../fit/GarminFitEncoder";
-import { registerFinalizationRecoveryOwner } from "../mobileRecordingStartup";
 import {
   type AllPermissionsStatus,
   areAllPermissionsGranted,
@@ -79,7 +78,7 @@ import {
   type CompiledRecordingPlan,
   compileRecordingPlan,
   createFreeRecordingExecutionPlan,
-  type RecordingActivityPlanV3Input,
+  type RecordingActivityPlanInput,
   type RecordingPlanOccurrence,
 } from "./plan";
 import { PlanExecution } from "./planExecution";
@@ -407,7 +406,7 @@ export interface ServiceEvents {
   sensorsChanged: (sensors: ConnectedSensor[]) => void;
 
   // Plan events
-  planSelected: (data: { plan: RecordingActivityPlanV3Input; eventId?: string }) => void;
+  planSelected: (data: { plan: RecordingActivityPlanInput; eventId?: string }) => void;
   stepChanged: (info: StepInfo) => void;
   planCleared: () => void;
   planCompleted: () => void;
@@ -458,7 +457,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private checkpointRevision = 0;
   private planHash: string | null = null;
   /** In-memory-only execution contract for the active free recording. */
-  private freeRecordingExecutionPlan: RecordingActivityPlanV3Input | undefined;
+  private freeRecordingExecutionPlan: RecordingActivityPlanInput | undefined;
   private freeRecordingCompiledPlan: CompiledRecordingPlan | null = null;
   private occurrenceStartedAt: number | null = null;
   private occurrenceStartStats = { movingSeconds: 0, distanceMeters: 0 };
@@ -478,7 +477,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   };
 
   // === Plan State (minimal tracking) ===
-  private _plan: RecordingActivityPlanV3Input | undefined;
+  private _plan: RecordingActivityPlanInput | undefined;
   private _eventId?: string;
 
   // === GPS Availability Cache ===
@@ -513,7 +512,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   /** Closes foreground producer scheduling before the durable SQLite fence. */
   private producerFenceClosed = false;
   private evidenceFenced = false;
-  private unregisterFinalizationRecoveryOwner: (() => void) | undefined;
 
   // === Lap Tracking ===
   private laps: number[] = []; // Array of lap times (moving time in seconds)
@@ -547,11 +545,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     // Note: expo-modules-core EventEmitter doesn't have setMaxListeners
     // If you need more listeners, consider using Node.js EventEmitter instead
     this.profile = profile;
-    this.unregisterFinalizationRecoveryOwner = registerFinalizationRecoveryOwner(
-      profile.id,
-      (checkpoint) => this.rebuildFinalizedArtifactFromCheckpoint(checkpoint),
-    );
-
     // Initialize base values from passed metrics or defaults
     this._baseFtp = metrics?.ftp ?? GLOBAL_DEFAULTS.ftp;
     this._baseThresholdHr = metrics?.thresholdHr ?? GLOBAL_DEFAULTS.thresholdHr;
@@ -1403,7 +1396,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       name: this._plan?.name,
       description: this._plan?.description,
       activityCategory: this._plan
-        ? compileActivityPlanV3(this._plan.structure).occurrences.find(
+        ? compileActivityPlan(this._plan.structure).occurrences.find(
             (occurrence) => occurrence.role === "activity",
           )?.activity_category
         : undefined,
@@ -1812,7 +1805,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this._plan !== undefined;
   }
 
-  get plan(): RecordingActivityPlanV3Input | undefined {
+  get plan(): RecordingActivityPlanInput | undefined {
     return this._plan;
   }
 
@@ -1960,7 +1953,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // Plan Actions
   // ================================
 
-  selectPlan(plan: RecordingActivityPlanV3Input, eventId?: string): void {
+  selectPlan(plan: RecordingActivityPlanInput, eventId?: string): void {
     if (this.recoveredCheckpoint !== null) {
       throw new Error("Resume or discard the recovered recording before selecting a new plan.");
     }
@@ -2274,7 +2267,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   private async persistCurrentCheckpoint() {
     const snapshot = this.getSessionSnapshot();
-    const structureResult = activityPlanStructureSchemaV3.safeParse(this._plan?.structure);
+    const structureResult = activityPlanStructureSchema.safeParse(this._plan?.structure);
     if (!snapshot) return;
     this.checkpointRevision += 1;
     if (!structureResult.success || !this.planHash) {
@@ -3116,11 +3109,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     if ((await hashRecordingPlan(checkpoint.planSnapshot)) !== checkpoint.planHash) {
       throw new Error("Checkpoint plan hash mismatch");
     }
-    const parsedPlanSnapshot = activityPlanStructureSchemaV3.safeParse(checkpoint.planSnapshot);
+    const parsedPlanSnapshot = activityPlanStructureSchema.safeParse(checkpoint.planSnapshot);
     if (!parsedPlanSnapshot.success) {
       throw new Error("Checkpoint plan structure is invalid");
     }
-    const compiled = compileActivityPlanV3(parsedPlanSnapshot.data);
+    const compiled = compileActivityPlan(parsedPlanSnapshot.data);
     const compiledIds = compiled.occurrences.map((occurrence) => occurrence.occurrenceId);
     const completedIds = checkpoint.completedOccurrences.map(
       (occurrence) => occurrence.occurrenceId,
@@ -3143,7 +3136,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       streamReplay,
       await recoverHeadlessGpsLocations(checkpoint.sessionId, this.profile.id),
     );
-    const plan: RecordingActivityPlanV3Input = {
+    const plan: RecordingActivityPlanInput = {
       name: "Recovered activity plan",
       gps_recording_enabled: checkpoint.policy.activityGpsMode === "on",
       structure: parsedPlanSnapshot.data,
@@ -3297,38 +3290,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       await this.syncAutomaticTrainerControl("reconnect_recovery");
       this.emit("stateChanged", this.state);
       this.publishSessionUpdate();
-    });
-  }
-
-  /** Reuses the recorder's fenced finalization owner without reopening hardware producers. */
-  public async rebuildFinalizedArtifactFromCheckpoint(
-    checkpoint: ActivityRecorderCheckpoint | RecordingCheckpoint,
-  ): Promise<void> {
-    return this.runLifecycleTransition(async () => {
-      await this.stageRecoveredCheckpoint(checkpoint);
-      if (!this.recoveredReplay || !this.recordingMetadata?.startedAt) {
-        throw new Error("Required checkpoint replay is unavailable");
-      }
-      const encoder = new GarminFitEncoder(`${Date.now()}`, this.profile.id);
-      await encoder.initialize(
-        this.sensorsManager.getConnectedSensors(),
-        new Date(this.recordingMetadata.startedAt),
-      );
-      const records = rebaseRetainedFitRecordDistances(
-        this.recoveredReplay.fitRecords.filter(
-          (record) => !this.isRestEvidenceTimestamp(record.timestamp),
-        ),
-        this.rewindJournal,
-      );
-      if (!records.length) throw new Error("Required checkpoint FIT evidence is unavailable");
-      await encoder.addRecords(records);
-      this.lastFitDistanceMeters = records.at(-1)?.distance ?? 0;
-      this.fitEncoder = encoder;
-      this.recoveredCheckpoint = null;
-      this.recoveredReplay = null;
-      this.fitFinalized = false;
-      this.evidenceFenced = true;
-      await this.finishRecordingTransition();
     });
   }
 
@@ -3893,7 +3854,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       if (this.recoveredCheckpoint !== null) {
         throw new Error("Resume or discard the recovered recording before selecting a new plan.");
       }
-      const plan: RecordingActivityPlanV3Input | null = payload.plan
+      const plan: RecordingActivityPlanInput | null = payload.plan
         ? {
             name: payload.plan.name,
             description: payload.plan.description || "",
@@ -4386,8 +4347,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.publishSessionUpdate();
 
     if (dispose) {
-      this.unregisterFinalizationRecoveryOwner?.();
-      this.unregisterFinalizationRecoveryOwner = undefined;
       const disposalResults = await Promise.allSettled([
         this.liveMetricsManager.cleanup(),
         this.locationManager.cleanup(),

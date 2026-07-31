@@ -1,7 +1,7 @@
 import {
-  activityPlanStructureSchemaV3,
+  activityPlanStructureSchema,
   buildSystemActivityTemplateCatalog,
-  compileActivityPlanV3,
+  compileActivityPlan,
   deriveSystemActivityTemplateActivityCategory,
   normalizeActivityTemplateStructureForAudit,
   SYSTEM_TEMPLATES,
@@ -36,7 +36,7 @@ function rows(result: unknown): Array<{
 const catalogSignatures = new Map(
   buildSystemActivityTemplateCatalog().flatMap((candidate) => {
     const source = SYSTEM_TEMPLATES.find((template) => template.id === candidate.template_id);
-    const parsed = activityPlanStructureSchemaV3.safeParse(source?.structure);
+    const parsed = activityPlanStructureSchema.safeParse(source?.structure);
     return parsed.success
       ? [
           [
@@ -57,7 +57,7 @@ const sourceMetadata = new Map(
   ]),
 );
 
-function isMatchingV3SystemTemplate(row: {
+function isMatchingSystemTemplate(row: {
   gps_recording_enabled: boolean;
   id: string;
   structure: unknown;
@@ -72,10 +72,10 @@ function isMatchingV3SystemTemplate(row: {
   ) {
     return false;
   }
-  const parsed = activityPlanStructureSchemaV3.safeParse(row.structure);
+  const parsed = activityPlanStructureSchema.safeParse(row.structure);
   if (!parsed.success) return false;
   if (activityPlanStructureHash(parsed.data) !== row.structure_hash) return false;
-  if (compileActivityPlanV3(parsed.data).activity_category !== expectedMetadata.activityCategory) {
+  if (compileActivityPlan(parsed.data).activity_category !== expectedMetadata.activityCategory) {
     return false;
   }
   return (
@@ -98,7 +98,7 @@ export function createPlanningTemplateRepository(db: DrizzleDbClient): PlanningT
       order by id asc
     `);
     return rows(result)
-      .filter(isMatchingV3SystemTemplate)
+      .filter(isMatchingSystemTemplate)
       .map((row) => row.id)
       .sort((left, right) => left.localeCompare(right));
   };
@@ -136,10 +136,10 @@ export function createPlanningTemplateRepository(db: DrizzleDbClient): PlanningT
         `);
         const sourceRows = rows(result);
         const lockedRows: LockedPlanningTemplateRow[] = sourceRows.map((row) => {
-          const parsed = activityPlanStructureSchemaV3.safeParse(row.structure);
+          const parsed = activityPlanStructureSchema.safeParse(row.structure);
           const activityCategory =
             parsed.success && activityPlanStructureHash(parsed.data) === row.structure_hash
-              ? compileActivityPlanV3(parsed.data).activity_category
+              ? compileActivityPlan(parsed.data).activity_category
               : "other";
           return {
             activityCategory,
@@ -153,7 +153,7 @@ export function createPlanningTemplateRepository(db: DrizzleDbClient): PlanningT
         const availableIds = new Set(
           sourceRows
             .filter((row) => {
-              const parsed = activityPlanStructureSchemaV3.safeParse(row.structure);
+              const parsed = activityPlanStructureSchema.safeParse(row.structure);
               if (
                 typeof row.gps_recording_enabled !== "boolean" ||
                 !parsed.success ||
@@ -162,7 +162,7 @@ export function createPlanningTemplateRepository(db: DrizzleDbClient): PlanningT
                 return false;
               }
               return row.is_system_template
-                ? isMatchingV3SystemTemplate({
+                ? isMatchingSystemTemplate({
                     gps_recording_enabled: row.gps_recording_enabled,
                     id: row.id,
                     structure: parsed.data,

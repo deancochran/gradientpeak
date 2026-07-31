@@ -1,10 +1,10 @@
 import { TRPCError } from "@trpc/server";
 import type { getRequiredDb } from "../../db";
 import {
+  cancelFollowRelationship,
   createFollowNotification,
   createFollowRelationshipIfAbsent,
   deleteFollowRequestNotification,
-  removeFollowRelationship,
   transitionFollowRequest,
 } from "../../repositories/social-follow-repository";
 
@@ -42,7 +42,7 @@ export async function followUser({
 }
 
 export async function unfollowUser(db: DbClient, viewerId: string, targetUserId: string) {
-  await removeFollowRelationship(db, viewerId, targetUserId);
+  await cancelFollowRelationship(db, viewerId, targetUserId);
   return { success: true };
 }
 

@@ -121,7 +121,7 @@ export function mergeCompletedCommonLoadObservations(input: {
     });
     const existing = timelineByDate.get(date);
     if (existing) {
-      timelineByDate.set(date, { ...existing, actual_tss: null, completed_load_tss: 0 });
+      timelineByDate.set(date, { ...existing, completed_load_tss: 0 });
     }
   }
 
@@ -137,7 +137,7 @@ export function mergeCompletedCommonLoadObservations(input: {
       });
       const existing = timelineByDate.get(date);
       if (existing) {
-        timelineByDate.set(date, { ...existing, actual_tss: null, completed_load_tss: 0 });
+        timelineByDate.set(date, { ...existing, completed_load_tss: 0 });
       }
     }
 
@@ -167,7 +167,6 @@ export function mergeCompletedCommonLoadObservations(input: {
             : 0;
       timelineByDate.set(observation.date, {
         ...existing,
-        actual_tss: null,
         completed_load_tss: completedLoad,
       });
       completedObservationsByDate.set(observation.date, {

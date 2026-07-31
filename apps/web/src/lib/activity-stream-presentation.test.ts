@@ -36,12 +36,11 @@ describe("activity stream presentation", () => {
     ]);
     expect(
       summarizeSwimDetails({
-        summary: { poolLength: 25, poolLengthUnit: "meters", totalStrokes: 40 },
+        summary: { poolLengthMeters: 25, totalStrokes: 40 },
         lengths: [{ lengthType: 1 }, { lengthType: 0 }],
       }),
     ).toEqual({
-      poolLength: 25,
-      poolLengthUnit: "meters",
+      poolLengthMeters: 25,
       totalStrokes: 40,
       averageStrokeDistance: null,
       lengths: 2,

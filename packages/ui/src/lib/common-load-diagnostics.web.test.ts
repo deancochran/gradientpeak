@@ -70,7 +70,6 @@ function unavailable(
     method: null,
     quality: null,
     thresholdEvidence: null,
-    sessionRpeEvidence: null,
     evidenceFingerprint: null,
     computedAsOf: "2026-07-24T12:00:00.000Z",
     contributingDurationSeconds: null,
@@ -144,6 +143,13 @@ describe("getCommonLoadDiagnostic", () => {
     expect(getCommonLoadDiagnostic(unavailable({ reason }))).toMatchObject({
       summary: expect.any(String),
       action: expect.any(String),
+    });
+  });
+
+  it("explains that elapsed time cannot replace active duration", () => {
+    expect(getCommonLoadDiagnostic(unavailable({ reason: "duration_missing" }))).toMatchObject({
+      summary: expect.stringContaining("Active duration needed for Load is missing"),
+      action: expect.stringContaining("Re-sync or re-import"),
     });
   });
 

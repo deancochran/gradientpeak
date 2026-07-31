@@ -134,6 +134,7 @@ describe("RouteCard", () => {
     expect(screen.queryByText("12")).toBeNull();
     expect(screen.queryByTestId("route-card-like-button-route-2")).toBeNull();
     expect(screen.queryByTestId("route-card-map-preview-route-2")).toBeNull();
+    expect(screen.getByTestId("route-card-route-2")).toBeTruthy();
   });
 
   it("formats route distance and elevation in the viewer's imperial units", () => {

@@ -1,4 +1,4 @@
-import { activityPlanStructureSchemaV3 } from "../activity-plan";
+import { activityPlanStructureSchema } from "../activity-plan";
 import type { CanonicalActivityCategory } from "../schemas/activity-category";
 import type { SystemActivityPlanTemplate } from "./types";
 
@@ -30,7 +30,7 @@ function componentPlan({
     name,
     description,
     gps_recording_enabled: activity_category === "run" || activity_category === "bike",
-    structure: activityPlanStructureSchemaV3.parse({
+    structure: activityPlanStructureSchema.parse({
       version: 3,
       segments: [
         {

@@ -1,5 +1,4 @@
 import type { TrainingPlan } from "../schemas";
-import { normalizeLinkedActivityPlanId } from "./template-ids";
 
 export type SystemTrainingPlanTemplate = {
   id: string;
@@ -50,20 +49,20 @@ function buildModernCompatibleTemplateStructure(input: {
   };
 }
 
-const RUN_EASY_ID = "1b4c5d6e-7f8a-9b0c-1d2e-3f4a5b6c7d8e";
-const RUN_AEROBIC_ID = "3b6c7d8e-9f0a-1b2c-3d4e-5f6a7b8c9d0e";
-const RUN_TEMPO_ID = "b6c2d5e4-9f3a-8b7c-2d1e-3f0a6b5c4d2f";
-const RUN_THRESHOLD_ID = "c7d3e6f5-0a4b-9c8d-3e2f-4a1b7c6d5e3a";
-const RUN_LONG_ID = "d8e4f7a6-1b5c-0d9e-4f3a-5b2c8d7e6f4b";
+const RUN_EASY_ID = "1b4c5d6e-7f8a-4b0c-9d2e-3f4a5b6c7d8e";
+const RUN_AEROBIC_ID = "3b6c7d8e-9f0a-4b2c-bd4e-5f6a7b8c9d0e";
+const RUN_TEMPO_ID = "b6c2d5e4-9f3a-4b7c-ad1e-3f0a6b5c4d2f";
+const RUN_THRESHOLD_ID = "c7d3e6f5-0a4b-4c8d-be2f-4a1b7c6d5e3a";
+const RUN_LONG_ID = "d8e4f7a6-1b5c-4d9e-8f3a-5b2c8d7e6f4b";
 const RUN_RACE_PACE_LONG_ID = "7e5f8a9b-1c4d-4e6f-8a2b-9c1d3e5f7a9b";
-const RUN_SPEED_ID = "0a3b4c5d-6e7f-8a9b-0c1d-2e3f4a5b6c7d";
-const RUN_5K_PACE_ID = "4c7d8e9f-0a1b-2c3d-4e5f-6a7b8c9d0e1f";
+const RUN_SPEED_ID = "0a3b4c5d-6e7f-4a9b-8c1d-2e3f4a5b6c7d";
+const RUN_5K_PACE_ID = "4c7d8e9f-0a1b-4c3d-8e5f-6a7b8c9d0e1f";
 
-const BIKE_ENDURANCE_ID = "8c1d2e3f-4a5b-6c7d-8e9f-0a1b2c3d4e5f";
-const BIKE_SWEET_SPOT_ID = "9d2e3f4a-5b6c-7d8e-9f0a-1b2c3d4e5f6a";
-const BIKE_RECOVERY_ID = "9b2c3d4e-5f6a-7b8c-9d0e-1f2a3b4c5d6e";
-const BIKE_CLIMBING_ID = "1f4a5b6c-7d8e-9f0a-1b2c-3d4e5f6a7b8c";
-const BIKE_LONG_ID = "a5f1b4c3-8e2b-7a6d-1c0f-2e9d5b4a3c1e";
+const BIKE_ENDURANCE_ID = "8c1d2e3f-4a5b-4c7d-8e9f-0a1b2c3d4e5f";
+const BIKE_SWEET_SPOT_ID = "9d2e3f4a-5b6c-4d8e-9f0a-1b2c3d4e5f6a";
+const BIKE_RECOVERY_ID = "9b2c3d4e-5f6a-4b8c-9d0e-1f2a3b4c5d6e";
+const BIKE_CLIMBING_ID = "1f4a5b6c-7d8e-4f0a-9b2c-3d4e5f6a7b8c";
+const BIKE_LONG_ID = "a5f1b4c3-8e2b-4a6d-9c0f-2e9d5b4a3c1e";
 const BIKE_PROGRESSIVE_LONG_ID = "6f2a4c8e-1b3d-4f6a-8c9e-2d4b6f8a1c3e";
 const SPRINT_TRIATHLON_SWIM_COMPONENT_ID = "73d53dd1-f8b8-4d7f-9ba7-dfa4de116201";
 const SPRINT_TRIATHLON_BIKE_COMPONENT_ID = "73d53dd1-f8b8-4d7f-9ba7-dfa4de116202";
@@ -71,9 +70,9 @@ const SPRINT_TRIATHLON_RUN_COMPONENT_ID = "73d53dd1-f8b8-4d7f-9ba7-dfa4de116203"
 const DUATHLON_OPENING_RUN_COMPONENT_ID = "73d53dd1-f8b8-4d7f-9ba7-dfa4de116204";
 const DUATHLON_BIKE_COMPONENT_ID = "73d53dd1-f8b8-4d7f-9ba7-dfa4de116205";
 const DUATHLON_CLOSING_RUN_COMPONENT_ID = "73d53dd1-f8b8-4d7f-9ba7-dfa4de116206";
-const SWIM_TECHNIQUE_ID = "6c9d0e1f-2a3b-4c5d-6e7f-8a9b0c1d2e3f";
-const SWIM_ENDURANCE_ID = "7d0e1f2a-3b4c-5d6e-7f8a-9b0c1d2e3f4a";
-const STRENGTH_CIRCUIT_ID = "aaaa1111-2222-3333-4444-555555555555";
+const SWIM_TECHNIQUE_ID = "6c9d0e1f-2a3b-4c5d-ae7f-8a9b0c1d2e3f";
+const SWIM_ENDURANCE_ID = "7d0e1f2a-3b4c-4d6e-bf8a-9b0c1d2e3f4a";
+const STRENGTH_CIRCUIT_ID = "aaaa1111-2222-4333-8444-555555555555";
 
 const MARATHON_FOUNDATION_WEEKS = [
   [
@@ -546,6 +545,39 @@ const CYCLING_ENDURANCE_BUILDER_WEEKS = [
   ],
 ] as const;
 
+const GENERAL_FITNESS_MAINTENANCE_WEEKS = [
+  [
+    { day: 1, title: "Aerobic Maintenance", activity_plan_id: BIKE_ENDURANCE_ID },
+    { day: 3, title: "Full Body Strength", activity_plan_id: STRENGTH_CIRCUIT_ID },
+    { day: 5, title: "Long Easy Session", activity_plan_id: RUN_LONG_ID },
+  ],
+  [
+    { day: 1, title: "Aerobic Maintenance", activity_plan_id: RUN_AEROBIC_ID },
+    { day: 3, title: "Full Body Strength", activity_plan_id: STRENGTH_CIRCUIT_ID },
+    { day: 5, title: "Long Easy Session", activity_plan_id: RUN_LONG_ID },
+  ],
+  [
+    { day: 1, title: "Aerobic Maintenance", activity_plan_id: BIKE_ENDURANCE_ID },
+    { day: 3, title: "Full Body Strength", activity_plan_id: STRENGTH_CIRCUIT_ID },
+    { day: 5, title: "Long Easy Session", activity_plan_id: RUN_LONG_ID },
+  ],
+  [
+    { day: 1, title: "Aerobic Maintenance", activity_plan_id: RUN_AEROBIC_ID },
+    { day: 3, title: "Full Body Strength", activity_plan_id: STRENGTH_CIRCUIT_ID },
+    { day: 5, title: "Long Easy Session", activity_plan_id: RUN_LONG_ID },
+  ],
+  [
+    { day: 1, title: "Aerobic Maintenance", activity_plan_id: BIKE_ENDURANCE_ID },
+    { day: 3, title: "Full Body Strength", activity_plan_id: STRENGTH_CIRCUIT_ID },
+    { day: 5, title: "Recovery Aerobic", activity_plan_id: RUN_EASY_ID },
+  ],
+  [
+    { day: 1, title: "Aerobic Maintenance", activity_plan_id: RUN_AEROBIC_ID },
+    { day: 3, title: "Full Body Strength", activity_plan_id: STRENGTH_CIRCUIT_ID },
+    { day: 5, title: "Recovery Aerobic", activity_plan_id: RUN_EASY_ID },
+  ],
+] as const;
+
 const RAW_SAMPLE_PLANS: Array<
   Omit<SystemTrainingPlanTemplate, "structure"> & {
     structure: Record<string, unknown>;
@@ -722,59 +754,15 @@ const RAW_SAMPLE_PLANS: Array<
       sessionsPerWeekTarget: 3,
       minRestDaysPerWeek: 2,
       maxConsecutiveDays: 2,
-      sessions: Array.from({ length: 6 }, (_, weekIndex) => [
-        {
-          offset_days: weekIndex * 7 + 1,
-          activity_plan_id: weekIndex % 2 === 0 ? BIKE_ENDURANCE_ID : RUN_AEROBIC_ID,
-          event_overrides: { title: "Aerobic Maintenance" },
-        },
-        {
-          offset_days: weekIndex * 7 + 3,
-          activity_plan_id: STRENGTH_CIRCUIT_ID,
-          event_overrides: { title: "Full Body Strength" },
-        },
-        {
-          offset_days: weekIndex * 7 + 5,
-          activity_plan_id: weekIndex < 4 ? RUN_LONG_ID : RUN_EASY_ID,
-          event_overrides: { title: weekIndex < 4 ? "Long Easy Session" : "Recovery Aerobic" },
-        },
-      ]).flat(),
+      sessions: buildWeeklySessions(GENERAL_FITNESS_MAINTENANCE_WEEKS),
     }),
   },
 ];
 
-function normalizeStructureActivityPlanIds(value: unknown): Record<string, unknown> {
-  const rewrite = (node: unknown): unknown => {
-    if (Array.isArray(node)) {
-      return node.map((item) => rewrite(item));
-    }
-
-    if (!node || typeof node !== "object") {
-      return node;
-    }
-
-    const record = node as Record<string, unknown>;
-    const output: Record<string, unknown> = {};
-
-    for (const [key, rawValue] of Object.entries(record)) {
-      if (key === "activity_plan_id" && typeof rawValue === "string") {
-        output[key] = normalizeLinkedActivityPlanId(rawValue);
-        continue;
-      }
-
-      output[key] = rewrite(rawValue);
-    }
-
-    return output;
-  };
-
-  return rewrite(value) as Record<string, unknown>;
-}
-
 export const ALL_SAMPLE_PLANS: SystemTrainingPlanTemplate[] = RAW_SAMPLE_PLANS.map((plan) => ({
   ...plan,
   structure: {
-    ...normalizeStructureActivityPlanIds(plan.structure),
+    ...plan.structure,
     id: plan.id,
   } as TrainingPlan,
 }));

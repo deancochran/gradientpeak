@@ -4,6 +4,7 @@ import { MessageSquare } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { contractEpochFormInputProps } from "../../lib/contract-epoch";
 import { startDirectMessageAction } from "../../lib/social/server-actions";
 
 export function MessageActionForm({
@@ -31,6 +32,7 @@ export function MessageActionForm({
 
   return (
     <form action={startDirectMessageAction.url} method="post" onSubmit={handleSubmit}>
+      <input {...contractEpochFormInputProps} />
       <input type="hidden" name="target_user_id" value={targetUserId} />
       <input type="hidden" name="redirectTo" value={redirectTo} />
       <LoadingButton

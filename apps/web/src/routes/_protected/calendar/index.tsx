@@ -64,8 +64,11 @@ export const Route = createFileRoute("/_protected/calendar/")({
 
 function CalendarIndexPage() {
   const navigate = Route.useNavigate();
-  const { date: requestedDate, flash, flashType, month, view } = Route.useSearch();
-  const date = requestedDate ?? getTodayDateKey();
+  const search = Route.useSearch();
+  const { flash, flashType } = search;
+  const month = isValidMonthKey(search.month) ? search.month : getMonthKey(new Date());
+  const date = search.date && isValidDateKey(search.date) ? search.date : getTodayDateKey();
+  const view = search.view === "agenda" || search.view === "week" ? search.view : "month";
   const monthWindow = useMemo(() => getMonthWindow(month), [month]);
   const weekWindow = useMemo(() => getWeekWindow(date), [date]);
   const { startKey, endKey } = view === "week" ? weekWindow : monthWindow;
@@ -127,7 +130,7 @@ function CalendarIndexPage() {
             Your monthly schedule and agenda, backed by real events and goals.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
           <Button asChild>
             <a href={`/calendar/new?date=${date}&type=custom`}>
               <Plus className="mr-2 h-4 w-4" />
@@ -135,6 +138,7 @@ function CalendarIndexPage() {
             </a>
           </Button>
           <Button
+            aria-label="Previous calendar period"
             variant="outline"
             size="icon"
             onClick={() =>
@@ -153,12 +157,16 @@ function CalendarIndexPage() {
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <div className="min-w-40 text-center text-sm font-medium">
+          <div
+            aria-live="polite"
+            className="min-w-0 flex-1 text-center text-sm font-medium sm:min-w-40"
+          >
             {view === "week"
               ? `${weekWindow.startKey} – ${weekWindow.endKey}`
               : formatMonthLabel(month)}
           </div>
           <Button
+            aria-label="Next calendar period"
             variant="outline"
             size="icon"
             onClick={() =>
@@ -227,7 +235,7 @@ function CalendarIndexPage() {
             search: {
               date,
               month,
-              view: nextView === "agenda" ? "agenda" : "month",
+              view: nextView === "agenda" || nextView === "week" ? nextView : "month",
             },
           })
         }
@@ -250,7 +258,7 @@ function CalendarIndexPage() {
         <TabsContent value="month">
           <Card>
             <CardHeader>
-              <CardTitle>Month view</CardTitle>
+              <h2 className="leading-none font-semibold">Month view</h2>
               <CardDescription>Open a day to inspect its agenda and goal anchors.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -272,6 +280,7 @@ function CalendarIndexPage() {
                       to="/calendar/day/$date"
                       params={{ date: dateKey }}
                       search={{ month, view }}
+                      aria-label={`Open calendar day ${dateKey}`}
                       className={cn(
                         "rounded-xl border p-2 transition-colors hover:border-primary hover:bg-accent/40",
                         !isCurrentMonth && "bg-muted/30 text-muted-foreground",
@@ -308,7 +317,7 @@ function CalendarIndexPage() {
         <TabsContent value="week">
           <Card>
             <CardHeader>
-              <CardTitle>Week view</CardTitle>
+              <h2 className="leading-none font-semibold">Week view</h2>
               <CardDescription>Open a day or create work in this seven-day window.</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-7">
@@ -353,7 +362,7 @@ function CalendarIndexPage() {
         <TabsContent value="agenda">
           <Card>
             <CardHeader>
-              <CardTitle>Month agenda</CardTitle>
+              <h2 className="leading-none font-semibold">Month agenda</h2>
               <CardDescription>
                 Every scheduled event for {formatMonthLabel(month)}.
               </CardDescription>

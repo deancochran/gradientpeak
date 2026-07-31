@@ -17,7 +17,12 @@ const RUNTIME_KINDS = new Set(["live-db", "playwright", "maestro"]);
 const IGNORED_DIRECTORIES = new Set([".git", ".turbo", "coverage", "dist", "node_modules"]);
 const ROOT_VERIFICATION_CAPSULES = {
   "biome.json": ["tooling/architecture", "tooling/testing"],
-  "package.json": ["tooling/architecture", "tooling/multisport", "tooling/testing", "tests/parity"],
+  "package.json": [
+    "tooling/architecture",
+    "tooling/current-contract",
+    "tooling/testing",
+    "tests/parity",
+  ],
   "pnpm-workspace.yaml": ["tooling/architecture", "tooling/testing", "tests/parity"],
   "turbo.json": ["tooling/architecture", "tooling/testing"],
   "vitest.parity.config.ts": ["tests/parity"],

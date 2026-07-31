@@ -149,7 +149,7 @@ describe("submitImportedActivityArtifact", () => {
         integrationId: "integration-1",
         integrationGeneration: 1,
         contentVisibility: "private",
-        movingSeconds: 3500,
+        providerActiveDurationSeconds: 3500,
         name: "bike Activity",
         normalizedPower: null,
         polyline: null,
@@ -165,7 +165,10 @@ describe("submitImportedActivityArtifact", () => {
 
     expect(mocks.analyzeParsedActivityFile).toHaveBeenCalledWith(
       db,
-      expect.objectContaining({ artifactId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }),
+      expect.objectContaining({
+        artifactId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        providerActiveDurationSeconds: 3500,
+      }),
     );
 
     expect(mocks.submitActivity).toHaveBeenCalledWith(

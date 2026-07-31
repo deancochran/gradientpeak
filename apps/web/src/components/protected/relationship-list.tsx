@@ -53,7 +53,9 @@ export function RelationshipList({
     return (
       <Card>
         <CardContent className="flex min-h-52 flex-col items-center justify-center gap-4 text-center">
-          <p className="font-medium">{errorMessage}</p>
+          <div role="alert">
+            <p className="font-medium">{errorMessage}</p>
+          </div>
           <p className="text-sm text-muted-foreground">
             Check your connection or profile access and try again.
           </p>
@@ -72,6 +74,17 @@ export function RelationshipList({
       <CardContent className="pt-6">
         <div className="mb-4 flex items-center justify-between">
           <h1 className="text-xl font-bold">{title.replace("{count}", String(total))}</h1>
+          {onRetry ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              aria-label={`Refresh ${title.replace("{count} ", "")}`}
+              onClick={onRetry}
+            >
+              Refresh
+            </Button>
+          ) : null}
         </div>
 
         {users.length === 0 ? (
@@ -109,6 +122,17 @@ export function RelationshipList({
             ))}
           </div>
         )}
+
+        {errorMessage && users.length > 0 ? (
+          <div role="alert" className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="font-medium">{errorMessage}</p>
+            {onRetry ? (
+              <Button type="button" variant="outline" onClick={onRetry}>
+                Try again
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
 
         {hasMore && loadMoreLink ? <div className="mt-4 text-center">{loadMoreLink}</div> : null}
       </CardContent>

@@ -677,7 +677,10 @@ export function usePlanTrainingPathData() {
         endDate:
           completedObservationMerge.timeline[completedObservationMerge.timeline.length - 1]?.date ??
           scheduledWindowEnd,
-        timeline: completedObservationMerge.timeline,
+        timeline: completedObservationMerge.timeline.map((point) => ({
+          ...point,
+          tentative_scheduled_load_tss: point.tentative_scheduled_load_tss ?? 0,
+        })),
       }),
     [completedObservationMerge.timeline, scheduledWindowEnd, scheduledWindowStart, todayKey],
   );
@@ -691,7 +694,6 @@ export function usePlanTrainingPathData() {
     goalMarkers: planningTodayKey ? dashboard.goalMarkers : [],
     selectedWeekStart,
     range: "season",
-    allowLegacyTssProjection: false,
     weekWindow: trainingPathWindow.resolvedWeekWindow,
     todayKey,
   });
@@ -817,7 +819,6 @@ export function usePlanTrainingPathData() {
     goalMarkers: planningTodayKey ? dashboard.goalMarkers : [],
     selectedWeekStart,
     range: "season",
-    allowLegacyTssProjection: false,
     weekWindow: trainingPathWindow.resolvedWeekWindow,
     todayKey,
   });

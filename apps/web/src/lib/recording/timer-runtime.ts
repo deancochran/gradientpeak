@@ -210,10 +210,7 @@ export function createTimerOnlyRecordingDraft(
   });
 }
 
-export function recoverTimerOnlyRecording(
-  untrustedDraft: unknown,
-  nowMs: number,
-): TimerOnlyRecordingTransition {
+export function recoverTimerOnlyRecording(untrustedDraft: unknown): TimerOnlyRecordingTransition {
   const parsedDraft = portableTimerRecordingDraftSchema.safeParse(untrustedDraft);
   if (!parsedDraft.success) {
     return {
@@ -241,7 +238,7 @@ export function recoverTimerOnlyRecording(
         ...(activity.routeId ? { routeId: activity.routeId } : {}),
       },
       timer: {
-        startedAtMs: nowMs - draft.timing.elapsedMs,
+        startedAtMs: Date.parse(draft.timing.startedAt),
         activeStartedAtMs: null,
         accumulatedMovingMs: draft.timing.movingMs,
         endedAtMs: null,

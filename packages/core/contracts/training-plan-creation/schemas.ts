@@ -1,7 +1,7 @@
 import { z } from "zod";
 import {
   creationAvailabilityConfigSchema,
-  creationBehaviorControlsV1Schema,
+  creationBehaviorControlsSchema,
   creationCalibrationCompositeLocksSchema,
   creationConfigLocksSchema,
   creationConstraintsSchema,
@@ -21,7 +21,7 @@ const creationConfigCoreFields = {
   constraints: creationConstraintsSchema,
   optimization_profile: creationOptimizationProfileEnum,
   post_goal_recovery_days: z.number().int().min(0).max(28),
-  behavior_controls_v1: creationBehaviorControlsV1Schema,
+  behavior_controls: creationBehaviorControlsSchema,
   calibration_composite_locks: creationCalibrationCompositeLocksSchema.default({
     target_attainment_weight: false,
     envelope_weight: false,
@@ -99,26 +99,8 @@ export const previewCreationConfigInputSchema = z
   })
   .strict();
 
-const projectionChartDiagnosticsCompatSchema = z
-  .object({
-    inferred_current_state: z.unknown().optional(),
-    prediction_uncertainty: z.record(z.string(), z.unknown()).optional(),
-    goal_target_distributions: z.array(z.record(z.string(), z.unknown())).optional(),
-    optimization_tradeoff_summary: z.record(z.string(), z.unknown()).optional(),
-  })
-  .passthrough();
-
-export const previewCreationConfigResponseCompatSchema = z
-  .object({
-    projection_chart: projectionChartDiagnosticsCompatSchema,
-  })
-  .passthrough();
-
 export type CreationConfigValue = z.infer<typeof creationConfigValueSchema>;
 export type CreationNormalizationInput = z.infer<typeof creationNormalizationInputSchema>;
 export type PostCreateBehavior = z.infer<typeof postCreateBehaviorSchema>;
 export type OverridePolicy = z.infer<typeof overridePolicySchema>;
 export type PreviewCreationConfigInput = z.infer<typeof previewCreationConfigInputSchema>;
-export type PreviewCreationConfigResponseCompat = z.infer<
-  typeof previewCreationConfigResponseCompatSchema
->;

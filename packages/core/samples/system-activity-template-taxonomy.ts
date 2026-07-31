@@ -17,6 +17,7 @@ import {
 import { SAMPLE_MULTISPORT_COMPONENT_ACTIVITIES } from "./multisport";
 import {
   OTHER_LONG_ENDURANCE_ELLIPTICAL,
+  OTHER_RACE_SIMULATION,
   OTHER_THRESHOLD_ROW,
   SAMPLE_OTHER_ACTIVITIES,
 } from "./other-activity";
@@ -111,8 +112,14 @@ export type SystemActivityTemplateTaxonomyOverride = Partial<
 export const SYSTEM_ACTIVITY_TEMPLATE_TAXONOMY_STRATEGY = "hybrid-derived-plus-sidecar" as const;
 
 function toNormalizedTemplateId(template: RecordingServiceActivityPlan): string {
+  if (!template.id) {
+    throw new Error(
+      `System activity template ${template.name ?? "template"} must declare an RFC 4122 UUID`,
+    );
+  }
+
   return normalizeSystemActivityTemplateId({
-    id: template.id ?? undefined,
+    id: template.id,
     activityCategory: deriveSystemActivityTemplateActivityCategory(template.structure),
     name: template.name ?? "template",
   });
@@ -470,6 +477,13 @@ export const SYSTEM_ACTIVITY_TEMPLATE_TAXONOMY_OVERRIDES: Readonly<
   },
   [toNormalizedTemplateId(SYSTEM_MARATHON_PACE_LONG_RUN)]: {
     session_archetype: "long_endurance",
+    training_intent: "race_specific",
+    intensity_family: "race_specific",
+    progression_level: "race_specific",
+    recovery_cost_band: "high",
+  },
+  [toNormalizedTemplateId(OTHER_RACE_SIMULATION)]: {
+    session_archetype: "race_pace",
     training_intent: "race_specific",
     intensity_family: "race_specific",
     progression_level: "race_specific",

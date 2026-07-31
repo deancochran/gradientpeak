@@ -7,8 +7,8 @@ import { activityPlanStructureHash } from "../../activity-plans/structure-hash";
 import { createTrainingPlanUseCase, updateTrainingPlanUseCase } from "../mutationUseCases";
 
 describe("canonical training plan mutations", () => {
-  const strictV3Structure = SYSTEM_TEMPLATES[0]?.structure;
-  if (!strictV3Structure) throw new Error("Expected a strict V3 system template fixture");
+  const strictStructure = SYSTEM_TEMPLATES[0]?.structure;
+  if (!strictStructure) throw new Error("Expected a strict system template fixture");
   it("batch-rejects the whole create when any linked activity plan is not published", async () => {
     const publishedId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const unpublishedId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -19,8 +19,8 @@ describe("canonical training plan mutations", () => {
             id: publishedId,
             is_system_template: false,
             gps_recording_enabled: true,
-            structure: strictV3Structure,
-            structure_hash: activityPlanStructureHash(strictV3Structure),
+            structure: strictStructure,
+            structure_hash: activityPlanStructureHash(strictStructure),
           },
         ],
         error: null,
@@ -127,7 +127,7 @@ describe("canonical training plan mutations", () => {
     expect(callLog).toHaveLength(0);
   });
 
-  it("rejects an ID-only published activity plan whose stored structure is not strict V3", async () => {
+  it("rejects an ID-only published activity plan whose stored structure is not strict", async () => {
     const linkedId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const { db, callLog } = createQueryMapDbMock({
       activity_plans: {
@@ -166,7 +166,7 @@ describe("canonical training plan mutations", () => {
     expect(callLog.some((call) => call.table === "training_plans")).toBe(false);
   });
 
-  it("rejects a system template ID whose stored V3 semantics do not match the catalog", async () => {
+  it("rejects a system template ID whose stored semantics do not match the catalog", async () => {
     const expected = SYSTEM_TEMPLATES[0];
     const mismatched = SYSTEM_TEMPLATES[1];
     if (!expected?.id || !mismatched) throw new Error("Expected two system template fixtures");
@@ -207,7 +207,7 @@ describe("canonical training plan mutations", () => {
     expect(callLog.some((call) => call.table === "training_plans")).toBe(false);
   });
 
-  it("rejects a strict V3 linked plan when its persisted structure hash is stale", async () => {
+  it("rejects a strict linked plan when its persisted structure hash is stale", async () => {
     const linkedId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const { db, callLog } = createQueryMapDbMock({
       activity_plans: {
@@ -216,7 +216,7 @@ describe("canonical training plan mutations", () => {
             id: linkedId,
             is_system_template: false,
             gps_recording_enabled: true,
-            structure: strictV3Structure,
+            structure: strictStructure,
             structure_hash: activityPlanStructureHash({ version: 3, segments: [] }),
           },
         ],
@@ -254,8 +254,8 @@ describe("canonical training plan mutations", () => {
             id: linkedId,
             is_system_template: false,
             gps_recording_enabled: true,
-            structure: strictV3Structure,
-            structure_hash: activityPlanStructureHash(strictV3Structure),
+            structure: strictStructure,
+            structure_hash: activityPlanStructureHash(strictStructure),
           },
         ],
         error: null,

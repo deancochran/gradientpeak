@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { dbPackageRoot } from "./_helpers";
 import {
   assertRouteBucketContract,
+  assertRouteStorageUploadSucceeded,
   ROUTE_BUCKET_ALLOWED_MIME_TYPES,
 } from "./storage-assets-contract";
 
@@ -22,6 +23,11 @@ assert.throws(() =>
     ...valid,
     allowed_mime_types: ["application/gpx+xml", "application/xml"],
   }),
+);
+assert.doesNotThrow(() => assertRouteStorageUploadSucceeded(null, "route-1"));
+assert.throws(
+  () => assertRouteStorageUploadSucceeded({ message: "private storage detail" }, "route-1"),
+  /Failed to store system route source for route-1/,
 );
 assert.throws(() =>
   assertRouteBucketContract({

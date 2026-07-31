@@ -113,6 +113,7 @@ jest.mock("@repo/core", () => ({
   formatGoalTypeLabel: () => "Race Day",
   getTrainingIntensityZone: jest.requireActual("@repo/core/load").getTrainingIntensityZone,
   getGoalObjectiveSummary: () => "Run your A race",
+  isActivityCompleted: (activity: { completed?: boolean }) => activity.completed === true,
 }));
 
 jest.mock("@tanstack/react-query", () => ({
@@ -311,11 +312,6 @@ jest.mock("@/lib/utils/plan/colors", () => ({
     text: "text-orange-600",
     iconBg: "bg-orange-500",
   }),
-}));
-
-jest.mock("@/lib/utils/plan/dateGrouping", () => ({
-  __esModule: true,
-  isActivityCompleted: (activity: { completed?: boolean }) => activity.completed === true,
 }));
 
 jest.mock("@/lib/navigation/useNavigationActionGuard", () => ({

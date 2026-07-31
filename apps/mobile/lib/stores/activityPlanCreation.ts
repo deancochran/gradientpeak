@@ -2,7 +2,7 @@ import type {
   ActivityPlanActivitySegment,
   ActivityPlanInterval,
   ActivityPlanIntervalStep,
-  ActivityPlanSegmentV3,
+  ActivityPlanSegment,
   CanonicalActivityCategory,
   EditableActivityPlanStructure,
 } from "@repo/core";
@@ -22,12 +22,12 @@ interface ActivityPlanCreationState {
   setDescription: (description: string) => void;
   setActivityCategory: (activity_category: CanonicalActivityCategory) => void;
   setStructure: (structure: EditableActivityPlanStructure) => void;
-  setSegments: (segments: ActivityPlanSegmentV3[]) => void;
+  setSegments: (segments: ActivityPlanSegment[]) => void;
   setNotes: (notes: string) => void;
-  addSegment: (segment: ActivityPlanSegmentV3) => void;
-  updateSegment: (segmentId: string, segment: ActivityPlanSegmentV3) => void;
+  addSegment: (segment: ActivityPlanSegment) => void;
+  updateSegment: (segmentId: string, segment: ActivityPlanSegment) => void;
   removeSegment: (segmentId: string) => void;
-  reorderSegments: (segments: ActivityPlanSegmentV3[]) => void;
+  reorderSegments: (segments: ActivityPlanSegment[]) => void;
   addInterval: (interval: ActivityPlanInterval, segmentId?: string) => void;
   updateInterval: (intervalId: string, interval: ActivityPlanInterval) => void;
   removeInterval: (intervalId: string) => void;
@@ -101,7 +101,7 @@ function mapActivitySegments(
 }
 
 function canUsePlanSegments(
-  segments: ActivityPlanSegmentV3[],
+  segments: ActivityPlanSegment[],
   activity_category: CanonicalActivityCategory,
 ): boolean {
   return segments.every(
@@ -113,7 +113,7 @@ const initialState = {
   name: generateDefaultActivityName(),
   description: "",
   activityCategory: "run" as CanonicalActivityCategory,
-  structure: { version: 3 as const, segments: [] as ActivityPlanSegmentV3[] },
+  structure: { version: 3 as const, segments: [] as ActivityPlanSegment[] },
   notes: "",
 };
 

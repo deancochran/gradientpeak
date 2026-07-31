@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compileActivityPlanV3 } from "./activity-plan";
+import { compileActivityPlan } from "./activity-plan";
 import {
   calculateActivityPlanStats,
   extractActivityProfile,
@@ -8,7 +8,7 @@ import {
 
 describe("activity plan calculations", () => {
   it("preserves the single-segment timed cycling golden", () => {
-    const plan = compileActivityPlanV3({
+    const plan = compileActivityPlan({
       version: 3,
       segments: [
         {
@@ -106,11 +106,11 @@ describe("activity plan calculations", () => {
         },
       ],
     };
-    expect(() => compileActivityPlanV3(structure)).toThrow();
+    expect(() => compileActivityPlan(structure)).toThrow();
   });
 
   it("sums variable-intensity cycling stress per occurrence instead of squaring mean IF", () => {
-    const plan = compileActivityPlanV3({
+    const plan = compileActivityPlan({
       version: 3,
       segments: [
         {
@@ -154,7 +154,7 @@ describe("activity plan calculations", () => {
   });
 
   it("marks cycling load partial when timed bike dose lacks power evidence", () => {
-    const plan = compileActivityPlanV3({
+    const plan = compileActivityPlan({
       version: 3,
       segments: [
         {

@@ -78,7 +78,7 @@ const structure = {
   ],
 };
 
-describe("PlanExecution V3", () => {
+describe("PlanExecution", () => {
   it("creates a stable, single-segment execution structure for a free recording", () => {
     const freeRun = createFreeRecordingExecutionPlan("run");
     const freeRunAgain = createFreeRecordingExecutionPlan("run");

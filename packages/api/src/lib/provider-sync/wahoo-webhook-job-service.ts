@@ -328,6 +328,17 @@ export class WahooWebhookJobService {
               },
             );
             if (!result.success) {
+              if (result.failureReason === "unsupported_persisted_version") {
+                const finalized = await this.deps.providerSyncRepository.finalizeWebhookReceiptJob({
+                  jobId: job.id,
+                  jobStatus: "dead_lettered",
+                  lastError: "unsupported_persisted_version",
+                  receiptId: receipt.id,
+                  receiptStatus: "failed",
+                  workerId,
+                });
+                return finalized === false ? "failed" : "dead_lettered";
+              }
               throw new Error("webhook_import_failed");
             }
 

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { compileActivityPlanV3 } from "../../activity-plan";
+import { compileActivityPlan } from "../../activity-plan";
 import { resolveActivityOccurrenceTrainerIntents } from "../recording-plan-target-resolver";
 
 function occurrence(
   activity_category: "run" | "bike",
   targets: Array<{ type: "%FTP" | "watts" | "speed" | "cadence"; intensity: number }>,
 ) {
-  const compiled = compileActivityPlanV3({
+  const compiled = compileActivityPlan({
     version: 3,
     segments: [
       {

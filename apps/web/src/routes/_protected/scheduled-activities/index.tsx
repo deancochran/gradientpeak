@@ -9,7 +9,22 @@ import {
   getEventTitle,
   getTodayDateKey,
   type PlanningEvent,
+  shiftDateKey,
 } from "../../../lib/planning";
+
+export function buildScheduledActivitiesListInput(
+  search: { activity_category?: string; range: "all" | "past" | "upcoming" },
+  today: string,
+) {
+  return {
+    event_types: ["planned"] as "planned"[],
+    ...(search.activity_category ? { activity_category: search.activity_category } : {}),
+    ...(search.range === "upcoming" ? { date_from: today } : {}),
+    ...(search.range === "past" ? { date_to: shiftDateKey(today, -1) } : {}),
+    include_adhoc: true,
+    limit: 500,
+  };
+}
 
 export const Route = createFileRoute("/_protected/scheduled-activities/")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -26,14 +41,7 @@ function ScheduledActivitiesPage() {
     range: "all" | "past" | "upcoming";
   };
   const today = getTodayDateKey();
-  const eventsQuery = api.events.list.useQuery({
-    event_types: ["planned"],
-    ...(search.activity_category ? { activity_category: search.activity_category } : {}),
-    ...(search.range === "upcoming" ? { date_from: today } : {}),
-    ...(search.range === "past" ? { date_to: today } : {}),
-    include_adhoc: true,
-    limit: 500,
-  });
+  const eventsQuery = api.events.list.useQuery(buildScheduledActivitiesListInput(search, today));
   const events = (eventsQuery.data?.items ?? []) as PlanningEvent[];
   return (
     <div className="space-y-6">

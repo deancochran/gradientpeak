@@ -17,7 +17,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("ActivityPlanComposer", () => {
-  it("authors a single-activity-category V3 structure and exposes one plan-level activity category selector", async () => {
+  it("authors a single-activity-category structure and exposes one plan-level activity category selector", async () => {
     const onSave = vi.fn();
     render(<ActivityPlanComposer mode="create" onCancel={vi.fn()} onSave={onSave} />);
 

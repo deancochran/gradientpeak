@@ -1,8 +1,17 @@
 import type { Page } from "@playwright/test";
+import {
+  TIMER_DRAFT_DATABASE_NAME,
+  TIMER_DRAFT_DATABASE_VERSION,
+} from "../../src/lib/recording/draft-storage";
+
+const recordingDatabase = {
+  name: TIMER_DRAFT_DATABASE_NAME,
+  version: TIMER_DRAFT_DATABASE_VERSION,
+} as const;
 
 export async function waitForActiveRecordingDraft(page: Page): Promise<void> {
-  await page.waitForFunction(async () => {
-    const request = indexedDB.open("gradientpeak-web-recording", 2);
+  await page.waitForFunction(async ({ name, version }) => {
+    const request = indexedDB.open(name, version);
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -19,12 +28,12 @@ export async function waitForActiveRecordingDraft(page: Page): Promise<void> {
     } finally {
       database.close();
     }
-  });
+  }, recordingDatabase);
 }
 
 export async function recordingSubmissionJobCount(page: Page): Promise<number> {
-  return page.evaluate(async () => {
-    const request = indexedDB.open("gradientpeak-web-recording", 2);
+  return page.evaluate(async ({ name, version }) => {
+    const request = indexedDB.open(name, version);
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -40,5 +49,5 @@ export async function recordingSubmissionJobCount(page: Page): Promise<number> {
     } finally {
       database.close();
     }
-  });
+  }, recordingDatabase);
 }

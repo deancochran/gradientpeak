@@ -30,9 +30,9 @@ describe("deriveCreationSuggestions behavior control heuristics", () => {
       }),
     });
 
-    expect(suggestions.behavior_controls_v1.aggressiveness).toBeLessThan(0.4);
-    expect(suggestions.behavior_controls_v1.spike_frequency).toBeLessThan(0.5);
-    expect(suggestions.behavior_controls_v1.recovery_priority).toBeGreaterThan(0.55);
+    expect(suggestions.behavior_controls.aggressiveness).toBeLessThan(0.4);
+    expect(suggestions.behavior_controls.spike_frequency).toBeLessThan(0.5);
+    expect(suggestions.behavior_controls.recovery_priority).toBeGreaterThan(0.55);
   });
 
   it("infers higher aggressiveness for rich-history, high-signal contexts", () => {
@@ -58,14 +58,14 @@ describe("deriveCreationSuggestions behavior control heuristics", () => {
       }),
     });
 
-    expect(aggressive.behavior_controls_v1.aggressiveness).toBeGreaterThan(
-      conservative.behavior_controls_v1.aggressiveness,
+    expect(aggressive.behavior_controls.aggressiveness).toBeGreaterThan(
+      conservative.behavior_controls.aggressiveness,
     );
-    expect(aggressive.behavior_controls_v1.spike_frequency).toBeGreaterThan(
-      conservative.behavior_controls_v1.spike_frequency,
+    expect(aggressive.behavior_controls.spike_frequency).toBeGreaterThan(
+      conservative.behavior_controls.spike_frequency,
     );
-    expect(aggressive.behavior_controls_v1.starting_fitness_confidence).toBeGreaterThan(
-      conservative.behavior_controls_v1.starting_fitness_confidence,
+    expect(aggressive.behavior_controls.starting_fitness_confidence).toBeGreaterThan(
+      conservative.behavior_controls.starting_fitness_confidence,
     );
   });
 
@@ -82,7 +82,7 @@ describe("deriveCreationSuggestions behavior control heuristics", () => {
     const suggestions = deriveCreationSuggestions({
       context,
       existing_values: {
-        behavior_controls_v1: {
+        behavior_controls: {
           aggressiveness: 0,
           variability: 0,
           spike_frequency: 0,
@@ -93,12 +93,12 @@ describe("deriveCreationSuggestions behavior control heuristics", () => {
         },
       },
       locks: {
-        behavior_controls_v1: { locked: true, locked_by: "user" },
+        behavior_controls: { locked: true, locked_by: "user" },
       },
     });
 
     expect(suggestions.locked_conflicts).toContain(
-      "behavior_controls_v1_locked_differs_from_suggestion",
+      "behavior_controls_locked_differs_from_suggestion",
     );
   });
 
@@ -191,13 +191,13 @@ describe("deriveCreationSuggestions behavior control heuristics", () => {
 
       if ("aggressivenessMin" in fixture.expected) {
         expect(
-          suggestions.behavior_controls_v1.aggressiveness,
+          suggestions.behavior_controls.aggressiveness,
           `${fixture.name} aggressiveness`,
         ).toBeGreaterThanOrEqual(fixture.expected.aggressivenessMin);
       }
       if ("aggressivenessMax" in fixture.expected) {
         expect(
-          suggestions.behavior_controls_v1.aggressiveness,
+          suggestions.behavior_controls.aggressiveness,
           `${fixture.name} aggressiveness`,
         ).toBeLessThanOrEqual(fixture.expected.aggressivenessMax);
       }

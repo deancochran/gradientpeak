@@ -1,7 +1,6 @@
 import {
-  authCallbackIntentSchema,
+  authCallbackQuerySchema,
   buildMobileCallbackUrl,
-  isAllowedMobileCallbackUrl,
   sanitizeWebCallbackPath,
 } from "@repo/auth/callbacks";
 import { createFileRoute } from "@tanstack/react-router";
@@ -24,73 +23,48 @@ function getPreferredMobileScheme() {
   return getAllowedDeepLinkPrefixes()[0]?.replace(/:\/\/$/, "");
 }
 
-function getDefaultDeepLinkTarget() {
-  const configuredTarget = process.env.AUTH_MOBILE_CALLBACK_URL;
-  const allowedPrefixes = getAllowedDeepLinkPrefixes();
-
-  if (
-    configuredTarget &&
-    isAllowedMobileCallbackUrl(configuredTarget, {
-      allowedSchemePrefixes: allowedPrefixes,
-      callbackPath: "callback",
-    })
-  ) {
-    return configuredTarget;
-  }
-
-  const scheme = getPreferredMobileScheme();
-  return scheme ? `${scheme}://callback?intent=post-sign-in` : undefined;
-}
-
 function getDefaultWebFallback(request: Request) {
   return new URL("/auth/login", getPublicWebAppUrl(request)).toString();
 }
 
-function getSafeRedirectTarget(nextParam: string | null) {
-  if (
-    nextParam &&
-    isAllowedMobileCallbackUrl(nextParam, {
-      allowedSchemePrefixes: getAllowedDeepLinkPrefixes(),
-      callbackPath: "callback",
-    })
-  ) {
-    return nextParam;
-  }
-
-  return getDefaultDeepLinkTarget();
-}
-
-function getSafeFallbackTarget(request: Request, fallbackParam: string | null) {
+function getSafeFallbackTarget(request: Request, fallbackParam: string) {
   const defaultFallback = getDefaultWebFallback(request);
   const appUrl = getPublicWebAppUrl(request);
-  const safeTarget = sanitizeWebCallbackPath(fallbackParam ?? undefined, appUrl, defaultFallback);
+  const safeTarget = sanitizeWebCallbackPath(fallbackParam, appUrl, defaultFallback);
   return new URL(safeTarget, appUrl).toString();
+}
+
+function getAuthErrorRedirect(request: Request, error: string) {
+  const errorUrl = new URL("/auth/error", getPublicWebAppUrl(request));
+  errorUrl.searchParams.set("error", error);
+  return Response.redirect(errorUrl, 302);
+}
+
+function parseAuthCallbackQuery(searchParams: URLSearchParams) {
+  const keys = [...searchParams.keys()];
+  if (new Set(keys).size !== keys.length) {
+    return undefined;
+  }
+
+  const parsed = authCallbackQuerySchema.safeParse(Object.fromEntries(searchParams));
+  return parsed.success ? parsed.data : undefined;
 }
 
 export async function handleAuthConfirmRequest(request: Request) {
   const { searchParams } = new URL(request.url);
-  const error = searchParams.get("error");
-  const intent = searchParams.get("intent");
-  const parsedIntent = authCallbackIntentSchema.safeParse(intent);
-  const target = searchParams.get("target");
-  const token = searchParams.get("token") ?? undefined;
-  const code = searchParams.get("code") ?? undefined;
-  const next = getSafeRedirectTarget(searchParams.get("next"));
-  const fallback = getSafeFallbackTarget(request, searchParams.get("fallback"));
+  const callback = parseAuthCallbackQuery(searchParams);
 
-  if (error) {
-    const errorUrl = new URL("/auth/error", getPublicWebAppUrl(request));
-    errorUrl.searchParams.set("error", error);
-    return Response.redirect(errorUrl, 302);
+  if (!callback) {
+    return getAuthErrorRedirect(request, "Invalid auth callback parameters");
   }
 
-  if (intent && !parsedIntent.success) {
-    const errorUrl = new URL("/auth/error", getPublicWebAppUrl(request));
-    errorUrl.searchParams.set("error", "Invalid auth callback intent");
-    return Response.redirect(errorUrl, 302);
+  if (callback.error) {
+    return getAuthErrorRedirect(request, callback.error);
   }
 
-  if (target === "mobile" && parsedIntent.success) {
+  const fallback = getSafeFallbackTarget(request, callback.fallback);
+
+  if (callback.target === "mobile") {
     const mobileScheme = getPreferredMobileScheme();
     if (!mobileScheme) {
       return Response.redirect(fallback, 302);
@@ -98,9 +72,9 @@ export async function handleAuthConfirmRequest(request: Request) {
 
     const mobileTarget = buildMobileCallbackUrl(
       {
-        intent: parsedIntent.data,
-        ...(token ? { token } : {}),
-        ...(code ? { code } : {}),
+        intent: callback.intent,
+        ...(callback.token ? { token: callback.token } : {}),
+        ...(callback.code ? { code: callback.code } : {}),
       },
       {
         mobileScheme,
@@ -110,22 +84,14 @@ export async function handleAuthConfirmRequest(request: Request) {
     return createMobileCallbackTrampolineResponse(mobileTarget, fallback);
   }
 
-  if (target === "web") {
+  if (callback.target === "web") {
     return Response.redirect(
-      getSafeFallbackTarget(request, searchParams.get("next") ?? searchParams.get("fallback")),
+      getSafeFallbackTarget(request, callback.next ?? callback.fallback),
       302,
     );
   }
 
-  if (searchParams.get("token") || searchParams.get("intent")) {
-    return next
-      ? createMobileCallbackTrampolineResponse(next, fallback)
-      : Response.redirect(fallback, 302);
-  }
-
-  const errorUrl = new URL("/auth/error", getPublicWebAppUrl(request));
-  errorUrl.searchParams.set("error", "Missing auth callback parameters");
-  return Response.redirect(errorUrl, 302);
+  return getAuthErrorRedirect(request, "Invalid auth callback parameters");
 }
 
 export const Route = createFileRoute("/auth/confirm")({

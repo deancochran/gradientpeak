@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { activityPlanStructureSchemaV3 } from "../activity-plan";
+import { activityPlanStructureSchema } from "../activity-plan";
 import { estimateActivityPlanForTrainingContext } from "./activity-plan-planning-estimate";
 
 const id = (value: number) => `20000000-0000-4000-8000-${String(value).padStart(12, "0")}`;
-const singleBike = activityPlanStructureSchemaV3.parse({
+const singleBike = activityPlanStructureSchema.parse({
   version: 3,
   segments: [
     {
@@ -78,7 +78,7 @@ describe("estimateActivityPlanForTrainingContext", () => {
   });
 
   it("does not report complete high-confidence load from partial cycling-power evidence", () => {
-    const structure = activityPlanStructureSchemaV3.parse({
+    const structure = activityPlanStructureSchema.parse({
       version: 3,
       segments: [
         {

@@ -11,7 +11,9 @@ describe("notification helpers", () => {
   it("normalizes notification records used by app screens", () => {
     const notification = normalizeNotificationListItem({
       id: "n-1",
+      user_id: "recipient-1",
       actor_id: "u-1",
+      entity_id: null,
       created_at: "2026-03-21T00:00:00.000Z",
       read_at: null,
       type: "follow_request",
@@ -25,7 +27,9 @@ describe("notification helpers", () => {
   it("builds deterministic list item copy", () => {
     const notification = normalizeNotificationListItem({
       id: "n-2",
+      user_id: "recipient-1",
       actor_id: "u-2",
+      entity_id: null,
       created_at: "2026-03-21T00:00:00.000Z",
       read_at: null,
       type: "new_message",
@@ -42,7 +46,9 @@ describe("notification helpers", () => {
   it("builds cancellation copy for group event notifications", () => {
     const notification = normalizeNotificationListItem({
       id: "n-group-cancelled",
+      user_id: "recipient-1",
       actor_id: "u-admin",
+      entity_id: null,
       created_at: "2026-03-21T00:00:00.000Z",
       read_at: null,
       type: "group_event_cancelled",
@@ -56,23 +62,34 @@ describe("notification helpers", () => {
     });
   });
 
-  it("collects unread notification ids across read_at and is_read shapes", () => {
+  it("collects unread notification ids from required read_at values", () => {
     const notifications = [
       normalizeNotificationListItem({
         id: "n-1",
+        user_id: "recipient-1",
+        actor_id: null,
+        entity_id: null,
         created_at: "2026-03-21T00:00:00.000Z",
         read_at: null,
         type: "follow_request",
       }),
       normalizeNotificationListItem({
         id: "n-2",
+        user_id: "recipient-1",
+        actor_id: null,
+        entity_id: null,
         created_at: "2026-03-21T00:00:00.000Z",
-        is_read: true,
+        read_at: "2026-03-21T01:00:00.000Z",
+        type: "new_message",
       }),
       normalizeNotificationListItem({
         id: "n-3",
+        user_id: "recipient-1",
+        actor_id: null,
+        entity_id: null,
         created_at: "2026-03-21T00:00:00.000Z",
-        is_read: false,
+        read_at: null,
+        type: "new_message",
       }),
     ].filter((value): value is NonNullable<typeof value> => value !== null);
 
@@ -82,7 +99,11 @@ describe("notification helpers", () => {
   it("keeps unknown notification types instead of dropping them", () => {
     const notification = normalizeNotificationListItem({
       id: "n-4",
+      user_id: "recipient-1",
+      actor_id: null,
+      entity_id: null,
       created_at: "2026-03-21T00:00:00.000Z",
+      read_at: null,
       type: "future_backend_type",
     });
 
@@ -92,5 +113,22 @@ describe("notification helpers", () => {
       description: "Tap to view details.",
       type: "future_backend_type",
     });
+  });
+
+  it("rejects omitted read_at, legacy is_read-only, and unknown fields", () => {
+    const current = {
+      id: "n-5",
+      user_id: "recipient-1",
+      actor_id: null,
+      entity_id: null,
+      created_at: "2026-03-21T00:00:00.000Z",
+      read_at: null,
+      type: "new_message",
+    };
+
+    const { read_at: _readAt, ...withoutReadAt } = current;
+    expect(normalizeNotificationListItem(withoutReadAt)).toBeNull();
+    expect(normalizeNotificationListItem({ ...withoutReadAt, is_read: false })).toBeNull();
+    expect(normalizeNotificationListItem({ ...current, extra: true })).toBeNull();
   });
 });

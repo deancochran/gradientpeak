@@ -8,7 +8,6 @@ import {
   loadActivitySubmissionQueueJobs,
   removeActivitySubmissionQueueJob,
   renewClaimedActivitySubmissionQueueJob,
-  saveActivitySubmissionQueueJobs,
   setActivitySubmissionQueueJobsForTests,
   transitionClaimedActivitySubmissionQueueJob,
   upsertActivitySubmissionQueueJob,
@@ -69,14 +68,14 @@ describe("activity submission queue storage", () => {
   });
 
   it("persists and loads queue jobs", async () => {
-    await saveActivitySubmissionQueueJobs([baseJob]);
+    await upsertActivitySubmissionQueueJob(baseJob);
 
     await expect(loadActivitySubmissionQueueJobs()).resolves.toEqual([baseJob]);
     expect(AsyncStorage.setItem).not.toHaveBeenCalled();
   });
 
   it("upserts jobs by local id", async () => {
-    await saveActivitySubmissionQueueJobs([baseJob]);
+    await upsertActivitySubmissionQueueJob(baseJob);
 
     const updated = { ...baseJob, status: "uploading" as const, attempts: 1 };
     await upsertActivitySubmissionQueueJob(updated);
@@ -96,7 +95,7 @@ describe("activity submission queue storage", () => {
   });
 
   it("loads an existing job by artifact or session identity", async () => {
-    await saveActivitySubmissionQueueJobs([baseJob]);
+    await upsertActivitySubmissionQueueJob(baseJob);
 
     await expect(loadActivitySubmissionQueueJobByArtifactId("artifact-1")).resolves.toEqual(
       baseJob,
@@ -112,7 +111,8 @@ describe("activity submission queue storage", () => {
       sessionId: "session-2",
       draft: { ...baseJob.draft, profileId: "profile-2" },
     };
-    await saveActivitySubmissionQueueJobs([baseJob, otherProfile]);
+    await upsertActivitySubmissionQueueJob(baseJob);
+    await upsertActivitySubmissionQueueJob(otherProfile);
 
     await expect(loadActivitySubmissionQueueJobs("profile-1")).resolves.toEqual([baseJob]);
     await expect(
@@ -250,10 +250,8 @@ describe("activity submission queue storage", () => {
   });
 
   it("removes and clears queue jobs", async () => {
-    await saveActivitySubmissionQueueJobs([
-      baseJob,
-      { ...baseJob, id: "job-2", artifactId: "artifact-2" },
-    ]);
+    await upsertActivitySubmissionQueueJob(baseJob);
+    await upsertActivitySubmissionQueueJob({ ...baseJob, id: "job-2", artifactId: "artifact-2" });
 
     await removeActivitySubmissionQueueJob("job-1");
     await expect(loadActivitySubmissionQueueJobs()).resolves.toEqual([

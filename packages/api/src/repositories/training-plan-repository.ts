@@ -1,4 +1,8 @@
-import type { ContentVisibility, InferredStateSnapshot } from "@repo/core";
+import type {
+  CanonicalActivityCategory,
+  ContentVisibility,
+  InferredStateSnapshot,
+} from "@repo/core";
 import type { TrainingPlanInsert, TrainingPlanRow } from "@repo/db";
 
 export type TrainingPlanOwnerScope = "own" | "system" | "public" | "all";
@@ -17,7 +21,7 @@ export type TrainingPlanTemplateListFilters = {
     | "duration_asc"
     | "sessions_desc"
     | "sessions_asc";
-  activity_category?: string;
+  activity_category?: CanonicalActivityCategory;
 };
 
 export interface ActiveTrainingPlanLookup {

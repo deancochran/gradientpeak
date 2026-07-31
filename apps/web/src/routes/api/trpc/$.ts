@@ -22,6 +22,7 @@ function handleTrpcRequest(request: Request) {
     createContext: async () =>
       createApiContext({
         headers: new Headers(request.headers),
+        trpcSource: "http",
         auth: {
           resolveSession: resolveAuthSession,
         },

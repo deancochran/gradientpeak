@@ -1,3 +1,4 @@
+import { Button } from "@repo/ui/components/button";
 import {
   Card,
   CardContent,
@@ -21,6 +22,17 @@ export const Route = createFileRoute("/_protected/goals/new")({
 function NewGoalPage() {
   const search = Route.useSearch() as { date?: string };
   const profileQuery = api.profiles.get.useQuery();
+  if (profileQuery.isLoading) return <p>Loading profile...</p>;
+  if (profileQuery.isError || !profileQuery.data) {
+    return (
+      <div className="space-y-3" role="alert">
+        <p>Profile could not be loaded.</p>
+        <Button type="button" variant="outline" onClick={() => void profileQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
   return (
     <div className="space-y-4">
       <a className="text-sm text-primary hover:underline" href="/goals">
@@ -34,7 +46,7 @@ function NewGoalPage() {
         <CardContent>
           <PlanGoalForm
             {...(search.date !== undefined ? { initialDate: search.date } : {})}
-            {...(profileQuery.data?.id !== undefined ? { profileId: profileQuery.data.id } : {})}
+            profileId={profileQuery.data.id}
             redirectTo="/goals"
           />
         </CardContent>

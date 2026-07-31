@@ -5,7 +5,7 @@ import {
   COMMON_RELATIVE_LOAD_MODEL,
   COMMON_RELATIVE_LOAD_VERSION,
   commonLoadResultSchema,
-  segmentSummarySchemaV1,
+  segmentSummarySchema,
 } from "@repo/core";
 import { type ActivityRow, type ActivitySegmentRow, activitySegments } from "@repo/db";
 import { asc, inArray } from "drizzle-orm";
@@ -229,9 +229,13 @@ export async function buildActivitySegmentDerivedSummaries(input: {
     });
     const context = resolvedContext;
     for (const segment of orderedActivitySegments(activity.segments)) {
-      const summary = segmentSummarySchemaV1.parse(segment.summary);
+      const summary = segmentSummarySchema.parse(segment.summary);
       const timing = summary.timing;
       const startedAt = new Date(activity.started_at.getTime() + segment.start_offset_ms);
+      const commonUnavailableReason =
+        segment.activity_category === "strength" || segment.activity_category === "other"
+          ? ("unsupported_modality" as const)
+          : ("duration_missing" as const);
       if (timing.timingCoverage === "unavailable") {
         output.push({
           activity_id: activity.id,
@@ -251,11 +255,10 @@ export async function buildActivitySegmentDerivedSummaries(input: {
             method: null,
             quality: null,
             thresholdEvidence: null,
-            sessionRpeEvidence: null,
             evidenceFingerprint: null,
             computedAsOf,
             contributingDurationSeconds: null,
-            reason: "duration_missing",
+            reason: commonUnavailableReason,
           }),
           computed_as_of: computedAsOf,
           dedupe_key: `activity-segment:${activity.id}:${segment.id}:load:v1`,
@@ -285,11 +288,10 @@ export async function buildActivitySegmentDerivedSummaries(input: {
             method: null,
             quality: null,
             thresholdEvidence: null,
-            sessionRpeEvidence: null,
             evidenceFingerprint: null,
             computedAsOf,
             contributingDurationSeconds: null,
-            reason: "duration_missing",
+            reason: commonUnavailableReason,
           }),
           computed_as_of: computedAsOf,
           dedupe_key: `activity-segment:${activity.id}:${segment.id}:load:v1`,

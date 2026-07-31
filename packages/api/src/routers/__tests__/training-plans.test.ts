@@ -331,12 +331,12 @@ const FRONTIER_BEHAVIOR_CONTROLS = {
 
 function assertSaneProjectionDiagnostics(diagnostics: any) {
   expect(diagnostics).toBeDefined();
-  expect(["full_mpc", "degraded_bounded_mpc", "legacy_optimizer", "cap_only_baseline"]).toContain(
+  expect(["full_mpc", "degraded_bounded_mpc", "cap_only_baseline"]).toContain(
     diagnostics.selected_path,
   );
   expect(typeof diagnostics.candidate_counts.full_mpc).toBe("number");
   expect(typeof diagnostics.candidate_counts.degraded_bounded_mpc).toBe("number");
-  expect(typeof diagnostics.candidate_counts.legacy_optimizer).toBe("number");
+  expect(Object.keys(diagnostics.candidate_counts)).toEqual(["full_mpc", "degraded_bounded_mpc"]);
   expect(typeof diagnostics.prune_counts.full_mpc).toBe("number");
   expect(typeof diagnostics.prune_counts.degraded_bounded_mpc).toBe("number");
   expect(Array.isArray(diagnostics.active_constraints)).toBe(true);
@@ -383,7 +383,6 @@ function assertSaneProjectionDiagnostics(diagnostics: any) {
 
   expect(diagnostics.candidate_counts.full_mpc).toBeGreaterThanOrEqual(0);
   expect(diagnostics.candidate_counts.degraded_bounded_mpc).toBeGreaterThanOrEqual(0);
-  expect(diagnostics.candidate_counts.legacy_optimizer).toBeGreaterThanOrEqual(0);
 
   if (diagnostics.selected_path === "full_mpc") {
     expect(diagnostics.candidate_counts.full_mpc).toBeGreaterThan(0);
@@ -391,10 +390,6 @@ function assertSaneProjectionDiagnostics(diagnostics: any) {
   if (diagnostics.selected_path === "degraded_bounded_mpc") {
     expect(diagnostics.candidate_counts.degraded_bounded_mpc).toBeGreaterThan(0);
   }
-  if (diagnostics.selected_path === "legacy_optimizer") {
-    expect(diagnostics.candidate_counts.legacy_optimizer).toBeGreaterThan(0);
-  }
-
   const fallbackReason = diagnostics.fallback_reason;
   expect(fallbackReason === null || typeof fallbackReason === "string").toBe(true);
 }
@@ -602,7 +597,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       "tuesday",
       "wednesday",
     ]);
-    expect(result.normalized_creation_config.behavior_controls_v1).toMatchObject({
+    expect(result.normalized_creation_config.behavior_controls).toMatchObject({
       aggressiveness: 0.092,
       variability: 0.348,
       recovery_priority: 0.718,
@@ -670,7 +665,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       },
       creation_input: {
         user_values: {
-          behavior_controls_v1: CONSERVATIVE_BEHAVIOR_CONTROLS,
+          behavior_controls: CONSERVATIVE_BEHAVIOR_CONTROLS,
         },
       },
     });
@@ -754,7 +749,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       },
       creation_input: {
         user_values: {
-          behavior_controls_v1: AGGRESSIVE_BEHAVIOR_CONTROLS,
+          behavior_controls: AGGRESSIVE_BEHAVIOR_CONTROLS,
         },
       },
       starting_ctl_override: 70,
@@ -794,7 +789,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       },
       creation_input: {
         user_values: {
-          behavior_controls_v1: {
+          behavior_controls: {
             ...AGGRESSIVE_BEHAVIOR_CONTROLS,
             aggressiveness: Math.min(1, Number((tssRequestedMax / 20).toFixed(2))),
             spike_frequency: Math.min(1, Number((ctlRequestedMax / 8).toFixed(2))),
@@ -877,7 +872,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       creation_input: {
         user_values: {
           optimization_profile: "balanced" as const,
-          behavior_controls_v1: BALANCED_BEHAVIOR_CONTROLS,
+          behavior_controls: BALANCED_BEHAVIOR_CONTROLS,
         },
       },
     };
@@ -949,9 +944,8 @@ describe("trainingPlansRouter plan_start_date support", () => {
     });
 
     const points = result.projection_chart.points;
-    const displayPoints = result.projection_chart.display_points;
     expect(points.length).toBeGreaterThan(1);
-    expect(displayPoints).toEqual(points);
+    expect(Object.keys(result.projection_chart)).toContain("points");
 
     const last = points.at(-1)!;
     expect(last.predicted_load_tss).toBeGreaterThan(0);
@@ -1180,14 +1174,14 @@ describe("trainingPlansRouter plan_start_date support", () => {
         user_values: {
           optimization_profile: "sustainable",
           post_goal_recovery_days: 6,
-          behavior_controls_v1: CONSERVATIVE_BEHAVIOR_CONTROLS,
+          behavior_controls: CONSERVATIVE_BEHAVIOR_CONTROLS,
         },
       },
     });
 
     expect(result.normalized_creation_config.optimization_profile).toBe("sustainable");
     expect(result.normalized_creation_config.post_goal_recovery_days).toBe(6);
-    expect(result.normalized_creation_config.behavior_controls_v1).toEqual(
+    expect(result.normalized_creation_config.behavior_controls).toEqual(
       CONSERVATIVE_BEHAVIOR_CONTROLS,
     );
 
@@ -1236,7 +1230,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       creation_input: {
         user_values: {
           optimization_profile: "outcome_first",
-          behavior_controls_v1: AGGRESSIVE_BEHAVIOR_CONTROLS,
+          behavior_controls: AGGRESSIVE_BEHAVIOR_CONTROLS,
         },
       },
       starting_ctl_override: 70,
@@ -1264,15 +1258,13 @@ describe("trainingPlansRouter plan_start_date support", () => {
       creation_input: {
         user_values: {
           optimization_profile: "outcome_first",
-          behavior_controls_v1: FRONTIER_BEHAVIOR_CONTROLS,
+          behavior_controls: FRONTIER_BEHAVIOR_CONTROLS,
         },
       },
       starting_ctl_override: 70,
     });
 
-    expect(result.normalized_creation_config.behavior_controls_v1).toEqual(
-      FRONTIER_BEHAVIOR_CONTROLS,
-    );
+    expect(result.normalized_creation_config.behavior_controls).toEqual(FRONTIER_BEHAVIOR_CONTROLS);
     const practicalCaps =
       practical.projection_chart.projection_diagnostics?.effective_optimizer_config.caps;
     const diagnostics = result.projection_chart.projection_diagnostics;
@@ -1333,7 +1325,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       creation_input: {
         user_values: {
           optimization_profile: "outcome_first",
-          behavior_controls_v1: FRONTIER_BEHAVIOR_CONTROLS,
+          behavior_controls: FRONTIER_BEHAVIOR_CONTROLS,
         },
       },
       starting_ctl_override: 220,
@@ -1729,8 +1721,6 @@ describe("trainingPlansRouter analytics endpoints", () => {
     expect(scheduledWeek).toMatchObject({
       completedActivities: 1,
       completedTSS: null,
-      tssPercentage: null,
-      activityPercentage: null,
       status: "warning",
       planAlignment: {
         status: "unavailable",
@@ -1740,6 +1730,8 @@ describe("trainingPlansRouter analytics endpoints", () => {
         unverifiedSessions: 2,
       },
     });
+    expect(scheduledWeek).not.toHaveProperty("tssPercentage");
+    expect(scheduledWeek).not.toHaveProperty("activityPercentage");
   });
 
   it("fails closed for a linked activity duplicated across prior-week buckets", async () => {
@@ -1972,7 +1964,7 @@ describe("trainingPlansRouter analytics endpoints", () => {
         reasons: expect.any(Array),
       },
       capability: {
-        activity_category: expect.any(String),
+        activity_category: null,
         confidence: expect.any(Number),
       },
       projection: {

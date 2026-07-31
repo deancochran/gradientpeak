@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { activityPlanStructureSchemaV3 } from "../activity-plan";
+import { activityPlanStructureSchema } from "../activity-plan";
 import { canonicalActivityCategorySchema } from "./activity-category";
 import { recordingCapabilitiesSchema } from "./recording_config";
 
@@ -349,7 +349,7 @@ export const recordingCheckpointSchema = z
     sessionId: z.string().min(1),
     profileId: z.string().min(1),
     lifecycle: z.enum(["recording", "paused", "finishing"]),
-    planSnapshot: activityPlanStructureSchemaV3,
+    planSnapshot: activityPlanStructureSchema,
     planHash: sha256Schema,
     currentOccurrenceId: z.string().min(1).nullable(),
     occurrenceProgress: z

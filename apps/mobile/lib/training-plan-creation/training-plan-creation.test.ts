@@ -1052,7 +1052,7 @@ describe("training plan creation domain", () => {
     ).builderViewModel.dailyTrainingPathChart;
     const backendPreview = normalizeBackendPlanningPreview({
       projection_chart: {
-        display_points: [
+        points: [
           {
             date: "2026-01-05",
             predicted_load_tss: 40,
@@ -1106,7 +1106,7 @@ describe("training plan creation domain", () => {
       createTrainingPlanBuilderFixtures().readyState,
     ).builderViewModel.dailyTrainingPathChart;
     const backendPreview = normalizeBackendPlanningPreview({
-      projection_chart: { display_points: [{ date: "2026-01-05" }] },
+      projection_chart: { points: [{ date: "2026-01-05" }] },
       preview_snapshot: { token: "token" },
     });
     if (!backendPreview) throw new Error("Expected backend preview");
@@ -1145,7 +1145,7 @@ describe("training plan creation domain", () => {
     const backendProjection = normalizeBackendPlanningPreview({
       projection_chart: {
         readiness_score: 80,
-        display_points: [
+        points: [
           {
             date: "2026-01-05",
             predicted_load_tss: 40,

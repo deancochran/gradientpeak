@@ -1,11 +1,11 @@
 import {
-  type CreationBehaviorControlsV1,
+  type CreationBehaviorControls,
   type CreationConfigLocks,
   type CreationContextSummary,
   type CreationProvenance,
   type CreationRecentInfluence,
   creationAvailabilityConfigSchema,
-  creationBehaviorControlsV1Schema,
+  creationBehaviorControlsSchema,
   creationConstraintsSchema,
   creationProvenanceSchema,
   creationRecentInfluenceActionEnum,
@@ -34,7 +34,7 @@ export interface DeriveCreationSuggestionsInput {
       max_single_session_duration_minutes: number;
       goal_difficulty_preference: "conservative" | "balanced" | "stretch";
     }>;
-    behavior_controls_v1?: Partial<CreationBehaviorControlsV1>;
+    behavior_controls?: Partial<CreationBehaviorControls>;
   };
   locks?: Partial<CreationConfigLocks>;
   now_iso?: string;
@@ -47,7 +47,7 @@ export interface CreationSuggestions {
   recent_influence_action: "accepted" | "edited" | "disabled";
   recent_influence_provenance: CreationProvenance;
   constraints: ReturnType<typeof creationConstraintsSchema.parse>;
-  behavior_controls_v1: CreationBehaviorControlsV1;
+  behavior_controls: CreationBehaviorControls;
   locked_conflicts: string[];
 }
 
@@ -61,6 +61,7 @@ function buildProvenance(
   rationaleCodes: string[],
 ): CreationProvenance {
   return creationProvenanceSchema.parse({
+    method_version: "creation-suggestions-v1",
     source: "suggested",
     confidence: Number(clamp(confidence, 0, 1).toFixed(3)),
     rationale: rationaleCodes.slice(0, 8),
@@ -123,7 +124,7 @@ function markerToScore(marker: "low" | "moderate" | "high"): number {
 function deriveBehaviorControlSuggestions(input: {
   context: CreationContextSummary;
   profileMode: "no_data" | "rich_data" | "mixed";
-}): CreationBehaviorControlsV1 {
+}): CreationBehaviorControls {
   const { context, profileMode } = input;
   const sessionsRange = context.recommended_sessions_per_week_range;
   const sessionsMidpoint = (sessionsRange.min + sessionsRange.max) / 2;
@@ -163,7 +164,7 @@ function deriveBehaviorControlSuggestions(input: {
   );
   const stabilitySignal = clamp(1 - aggressiveSignal * 0.75, 0, 1);
 
-  return creationBehaviorControlsV1Schema.parse({
+  return creationBehaviorControlsSchema.parse({
     aggressiveness: Number(aggressiveSignal.toFixed(3)),
     variability: Number((1 - stabilitySignal * 0.7).toFixed(3)),
     spike_frequency: Number((0.15 + aggressiveSignal * 0.7).toFixed(3)),
@@ -339,13 +340,13 @@ export function deriveCreationSuggestions(
     }
   }
 
-  if (locks?.behavior_controls_v1?.locked) {
-    const existingBehavior = input.existing_values?.behavior_controls_v1;
+  if (locks?.behavior_controls?.locked) {
+    const existingBehavior = input.existing_values?.behavior_controls;
     if (
       existingBehavior !== undefined &&
       JSON.stringify(existingBehavior) !== JSON.stringify(behaviorControlSuggestions)
     ) {
-      conflicts.push("behavior_controls_v1_locked_differs_from_suggestion");
+      conflicts.push("behavior_controls_locked_differs_from_suggestion");
     }
   }
 
@@ -367,7 +368,7 @@ export function deriveCreationSuggestions(
       context.rationale_codes,
     ),
     constraints: normalizedConstraintsSuggestion,
-    behavior_controls_v1: behaviorControlSuggestions,
+    behavior_controls: behaviorControlSuggestions,
     locked_conflicts: conflicts,
   };
 }

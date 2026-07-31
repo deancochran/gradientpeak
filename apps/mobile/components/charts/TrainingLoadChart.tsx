@@ -30,8 +30,8 @@ export function TrainingLoadChart({ data, timeline, height = 250 }: TrainingLoad
     () =>
       useTimeline
         ? (timeline ?? []).map((point) => {
-            const completedLoad = point.completed_load_tss ?? point.actual_tss ?? 0;
-            const scheduledLoad = point.scheduled_load_tss ?? point.scheduled_tss ?? 0;
+            const completedLoad = point.completed_load_tss;
+            const scheduledLoad = point.scheduled_load_tss;
             return {
               date: point.date,
               ctl: completedLoad,

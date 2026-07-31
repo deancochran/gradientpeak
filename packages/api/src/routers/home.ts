@@ -1,10 +1,12 @@
 import {
-  activityPlanStructureSchemaV3,
-  activityTssIdentityMethodValues,
+  activityPlanStructureSchema,
   addDaysDateOnlyUtc,
   calculateRollingTrainingQuality,
   canonicalActivityCategorySchema,
+  canonicalTrainingPlanStructureSchema,
   getLoadBalanceStatus,
+  loadCoverageSchema,
+  loadSeriesIdentitySchema,
 } from "@repo/core";
 import {
   type ActivityPlanMetricsLike,
@@ -54,7 +56,7 @@ function readCommonLoadEnvelope(value: unknown) {
 }
 
 export function getPlanCategoryComposition(structure: unknown) {
-  const parsed = activityPlanStructureSchemaV3.safeParse(structure);
+  const parsed = activityPlanStructureSchema.safeParse(structure);
   return parsed.success
     ? parsed.data.segments.flatMap((segment) =>
         segment.role === "activity" ? [segment.activity_category] : [],
@@ -98,71 +100,16 @@ const profileRowSchema = z
   })
   .strict();
 
-const planStructureSchema = z
-  .object({
-    periodization: z
-      .object({
-        currentPhase: z.string().nullable().optional(),
-      })
-      .partial()
-      .optional(),
-    periodization_template: z
-      .object({
-        starting_ctl: z.number().nullable().optional(),
-        target_ctl: z.number().nullable().optional(),
-        ramp_rate: z.number().nullable().optional(),
-        target_date: z.string().nullable().optional(),
-      })
-      .partial()
-      .optional(),
-    goals: z
-      .array(
-        z
-          .object({
-            targets: z
-              .array(
-                z
-                  .object({
-                    target_type: z.string().nullable().optional(),
-                  })
-                  .passthrough(),
-              )
-              .optional(),
-          })
-          .passthrough(),
-      )
-      .optional(),
-    goal: z
-      .object({
-        targetCTL: z.number().nullable().optional(),
-        targetDate: z.string().nullable().optional(),
-        description: z.string().nullable().optional(),
-      })
-      .passthrough()
-      .optional(),
-  })
-  .passthrough();
-
 const workloadEnvelopeSchema = z
   .object({
-    value: z.number().nullable().optional(),
-    source: z.string().optional(),
-    status: z.string().optional(),
-    coverageDays: z.number().optional(),
-    requiredDays: z.number().optional(),
+    value: z.number().nullable(),
+    status: z.enum(["insufficient_history", "provisional", "stable"]),
+    coverageDays: z.number().int().nonnegative(),
+    requiredDays: z.number().int().positive(),
+    source: z.enum(["trimp", "tss", "mixed", "none"]),
     reasonCode: z.string().optional(),
-    current: z.number().optional(),
-    previous: z.number().optional(),
-    identity: z
-      .object({
-        activity_category: canonicalActivityCategorySchema,
-        method: z.enum(activityTssIdentityMethodValues),
-        source: z.literal("activity_analysis"),
-        version: z.literal("1"),
-      })
-      .strict()
-      .nullable()
-      .optional(),
+    identity: loadSeriesIdentitySchema.optional(),
+    coverage: loadCoverageSchema.optional(),
     coverageComplete: z.boolean().optional(),
   })
   .strict();
@@ -189,8 +136,6 @@ const dashboardResponseSchema = z
       .object({
         id: z.string(),
         name: z.string(),
-        phase: z.string().nullable(),
-        targetType: z.string().nullable().optional(),
       })
       .strict()
       .nullable(),
@@ -203,15 +148,6 @@ const dashboardResponseSchema = z
         loadBalanceStatus: z.string(),
         maturity: z.enum(["establishing_baseline", "provisional", "mature"]),
         coverageStatus: z.enum(["complete", "partial"]),
-      })
-      .strict()
-      .nullable(),
-    currentStatus: z
-      .object({
-        ctl: z.number(),
-        atl: z.number(),
-        tsb: z.number(),
-        loadBalanceStatus: z.string(),
       })
       .strict()
       .nullable(),
@@ -266,9 +202,9 @@ const dashboardResponseSchema = z
       z
         .object({
           date: isoDateSchema,
-          ctl: z.number(),
-          atl: z.number(),
-          tsb: z.number(),
+          longTermLoad: z.number(),
+          recentLoad: z.number(),
+          loadBalance: z.number(),
         })
         .strict(),
     ),
@@ -276,30 +212,14 @@ const dashboardResponseSchema = z
       z
         .object({
           date: isoDateSchema,
-          ctl: z.number(),
-          atl: z.number(),
-          tsb: z.number(),
+          longTermLoad: z.number(),
+          recentLoad: z.number(),
+          loadBalance: z.number(),
           plannedLoad: z.number(),
           status: z.enum(["complete", "partial"]),
         })
         .strict(),
     ),
-    idealFitnessCurve: z.array(
-      z
-        .object({
-          date: isoDateSchema,
-          ctl: z.number(),
-        })
-        .strict(),
-    ),
-    goalMetrics: z
-      .object({
-        targetCTL: z.number().nullable(),
-        targetDate: z.string().nullable(),
-        description: z.string().nullable(),
-      })
-      .strict()
-      .nullable(),
     todaysActivity: scheduleItemSchema.nullable(),
     personalizationTelemetry: z
       .object({
@@ -349,9 +269,9 @@ export function projectCommonLoad(input: {
     recentLoad += (plannedLoad - recentLoad) / 7;
     return {
       date,
-      ctl: Math.round(longTermLoad * 10) / 10,
-      atl: Math.round(recentLoad * 10) / 10,
-      tsb: Math.round((longTermLoad - recentLoad) * 10) / 10,
+      longTermLoad: Math.round(longTermLoad * 10) / 10,
+      recentLoad: Math.round(recentLoad * 10) / 10,
+      loadBalance: Math.round((longTermLoad - recentLoad) * 10) / 10,
       plannedLoad: Math.round(plannedLoad * 10) / 10,
       status: complete ? ("complete" as const) : ("partial" as const),
     };
@@ -550,10 +470,9 @@ export const homeRouter = createTRPCRouter({
         });
       }
 
-      const planStructure = plan?.structure ? planStructureSchema.parse(plan.structure) : null;
-
-      // Extract phase from structure if available
-      const planPhase = planStructure?.periodization?.currentPhase ?? null;
+      if (plan?.structure) {
+        canonicalTrainingPlanStructureSchema.parse(plan.structure);
+      }
 
       // --- 2. Calculate Dates ---
       // For trends: Need 42 days of history + 42 days buffer for CTL seeding
@@ -569,16 +488,9 @@ export const homeRouter = createTRPCRouter({
 
       // For schedule: Next N days, bounded by profile-local calendar dates.
       const scheduleEndDate = addDaysDateOnlyUtc(todayDate, upcomingDays);
-      const scheduleEnd = getPlanningDateRange({
-        startDate: scheduleEndDate,
-        endDate: scheduleEndDate,
-        timezone: planningTimezone,
-      }).startInstant;
 
       // For weekly summary: Current Week (Sun-Sat)
       const currentWeek = getCurrentPlanningWeek(now, planningTimezone);
-      const startOfWeek = currentWeek.startInstant;
-      const endOfWeek = new Date(currentWeek.endExclusiveInstant.getTime() - 1);
 
       // --- 3. Fetch Activities (Actual) ---
       // Fetching enough history for trends and current week stats
@@ -632,20 +544,10 @@ export const homeRouter = createTRPCRouter({
         .filter((point) => point.date >= chartStartDate)
         .map((point) => ({
           date: point.date,
-          ctl: Math.round(point.longTermLoad * 10) / 10,
-          atl: Math.round(point.recentLoad * 10) / 10,
-          tsb: Math.round(point.loadBalance * 10) / 10,
+          longTermLoad: Math.round(point.longTermLoad * 10) / 10,
+          recentLoad: Math.round(point.recentLoad * 10) / 10,
+          loadBalance: Math.round(point.loadBalance * 10) / 10,
         }));
-      const currentCTL = latestCommonLoadPoint?.longTermLoad ?? 0;
-      const currentATL = latestCommonLoadPoint?.recentLoad ?? 0;
-      const todayStatus = latestCommonLoadPoint
-        ? {
-            ctl: Math.round(latestCommonLoadPoint.longTermLoad * 10) / 10,
-            atl: Math.round(latestCommonLoadPoint.recentLoad * 10) / 10,
-            tsb: Math.round(latestCommonLoadPoint.loadBalance * 10) / 10,
-            loadBalanceStatus: getLoadBalanceStatus(latestCommonLoadPoint.loadBalance),
-          }
-        : null;
 
       // --- 7. Calculate Consistency (Streak) ---
       // Iterate backwards from yesterday
@@ -739,7 +641,7 @@ export const homeRouter = createTRPCRouter({
         activities.map((activity) => ({
           started_at: activity.started_at.toISOString(),
           tss: derivedActivityMap.get(activity.id)?.tss ?? null,
-          tss_identity: (derivedActivityMap.get(activity.id) as any)?.tss_identity ?? null,
+          tss_identity: derivedActivityMap.get(activity.id)?.tss_identity ?? null,
         })),
         workloadWindowStart,
         today,
@@ -849,81 +751,7 @@ export const homeRouter = createTRPCRouter({
             }) ?? [])
           : [];
 
-      // --- 12. Calculate Ideal CTL Curve from Training Plan ---
-      // This creates the "where you should be" line based on periodization
-      const idealFitnessCurve = [];
-      let goalMetrics = null;
-
-      if (planStructure) {
-        const structure = planStructure;
-        const periodization = structure.periodization_template;
-
-        if (periodization) {
-          // Extract periodization parameters
-          const startingCTL = periodization.starting_ctl || currentCTL;
-          const targetCTL = periodization.target_ctl;
-          const rampRate = periodization.ramp_rate || 0.05; // Default 5% weekly increase
-          const targetDateStr = periodization.target_date;
-
-          if (targetCTL && targetDateStr) {
-            const targetDate = new Date(targetDateStr);
-            const targetDateKey = targetDateStr.slice(0, 10);
-
-            // Set goal metrics for display
-            goalMetrics = {
-              targetCTL,
-              targetDate: targetDateStr,
-              description: `Target ${targetCTL} CTL by ${targetDate.toLocaleDateString()}`,
-            };
-
-            // Calculate the ideal curve from chart start to target date
-            // This shows where user should be at each point in time
-            const curveStart = chartStartDate < todayDate ? chartStartDate : todayDate;
-            const daysToTarget = Math.floor(
-              (new Date(`${targetDateKey}T00:00:00.000Z`).getTime() -
-                new Date(`${curveStart}T00:00:00.000Z`).getTime()) /
-                (1000 * 60 * 60 * 24),
-            );
-
-            if (daysToTarget > 0) {
-              let idealCTL = startingCTL;
-
-              for (let i = 0; i <= daysToTarget && i <= trendDays + projectionDays; i++) {
-                const dateStr = addDaysDateOnlyUtc(curveStart, i);
-
-                // Calculate ideal CTL progression using exponential growth
-                // CTL should increase by rampRate per week
-                const weeksPassed = i / 7;
-                idealCTL = startingCTL * (1 + rampRate) ** weeksPassed;
-
-                // Cap at target CTL
-                if (idealCTL > targetCTL) {
-                  idealCTL = targetCTL;
-                }
-
-                // Only add points that are in our display range
-                if (dateStr >= chartStartDate) {
-                  idealFitnessCurve.push({
-                    date: dateStr,
-                    ctl: Math.round(idealCTL * 10) / 10,
-                  });
-                }
-              }
-            }
-          }
-        }
-
-        // Check for legacy goal structure
-        if (!goalMetrics && structure.goal) {
-          goalMetrics = {
-            targetCTL: structure.goal.targetCTL || null,
-            targetDate: structure.goal.targetDate || null,
-            description: structure.goal.description || null,
-          };
-        }
-      }
-
-      // --- 13. Calculate Plan Adherence ---
+      // --- 12. Calculate Plan Adherence ---
       const adherence =
         weeklyActualStats.tssComplete && weeklyPlannedStats.tss > 0
           ? Math.round((weeklyActualStats.tss / weeklyPlannedStats.tss) * 100)
@@ -969,18 +797,11 @@ export const homeRouter = createTRPCRouter({
         }),
       );
 
-      let firstTargetType;
-      if (planStructure?.goals?.[0]?.targets?.[0]) {
-        firstTargetType = planStructure.goals[0].targets[0].target_type;
-      }
-
       return dashboardResponseSchema.parse({
         activePlan: plan
           ? {
               id: plan.id,
               name: plan.name || "Active Plan",
-              phase: planPhase,
-              targetType: firstTargetType,
             }
           : null,
         commonLoadHistory: commonLoadHistory.result,
@@ -995,7 +816,6 @@ export const homeRouter = createTRPCRouter({
                 maturity: availableCommonLoadHistory.maturity.status,
                 coverageStatus: availableCommonLoadHistory.coverageStatus,
               },
-        currentStatus: todayStatus,
         trainingLoadState: {
           status: hasCompleteTssSeries && seriesIdentity ? "available" : "unavailable",
           reason:
@@ -1018,10 +838,8 @@ export const homeRouter = createTRPCRouter({
           adherence, // Percentage
         },
         schedule, // List of upcoming (including today)
-        trends: fitnessTrends, // Historical actual CTL/ATL/TSB
+        trends: fitnessTrends,
         projectedLoad,
-        idealFitnessCurve, // Ideal CTL progression from training plan periodization
-        goalMetrics, // User's fitness goal
         todaysActivity, // Convenience field
         personalizationTelemetry: {
           flags: {

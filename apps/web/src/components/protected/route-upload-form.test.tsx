@@ -5,7 +5,11 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RouteUploadForm } from "./route-upload-form";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+  sessionStorage.clear();
+});
 
 function routeFile(
   name: string,
@@ -37,7 +41,12 @@ function deferred<T>() {
 function renderForm(props: Partial<React.ComponentProps<typeof RouteUploadForm>> = {}) {
   const onSubmit = props.onSubmit ?? vi.fn();
   const result = render(
-    <RouteUploadForm onCancel={() => undefined} onSubmit={onSubmit} {...props} />,
+    <RouteUploadForm
+      idempotencyScope="11111111-1111-4111-8111-111111111111"
+      onCancel={() => undefined}
+      onSubmit={onSubmit}
+      {...props}
+    />,
   );
   const fileInput = () => screen.getByLabelText("GPX or TCX file") as HTMLInputElement;
   const form = () => fileInput().closest("form") as HTMLFormElement;
@@ -65,6 +74,7 @@ describe("RouteUploadForm", () => {
       description: null,
       file,
       fileContent: "<gpx>secret</gpx>",
+      idempotencyKey: expect.any(String),
       name: "ridge-loop",
     });
     expect(values.files).toHaveLength(1);
@@ -191,6 +201,28 @@ describe("RouteUploadForm", () => {
 
     submit();
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2));
+    expect(onSubmit.mock.calls[1]?.[0].idempotencyKey).toBe(
+      onSubmit.mock.calls[0]?.[0].idempotencyKey,
+    );
+  });
+
+  it("restores the same operation id after a browser-session restart", async () => {
+    const firstSubmit = vi.fn().mockRejectedValue(new Error("Response lost"));
+    const firstRender = renderForm({ onSubmit: firstSubmit });
+    firstRender.selectFile(routeFile("durable.gpx").file);
+    firstRender.submit();
+    await waitFor(() => expect(firstSubmit).toHaveBeenCalledOnce());
+    const firstId = firstSubmit.mock.calls[0]?.[0].idempotencyKey;
+    firstRender.unmount();
+    sessionStorage.clear();
+
+    const secondSubmit = vi.fn().mockResolvedValue({ id: "route-1" });
+    const secondRender = renderForm({ onSubmit: secondSubmit });
+    secondRender.selectFile(routeFile("durable.gpx").file);
+    secondRender.submit();
+    await waitFor(() => expect(secondSubmit).toHaveBeenCalledOnce());
+
+    expect(secondSubmit.mock.calls[0]?.[0].idempotencyKey).toBe(firstId);
   });
 
   it("preserves file and metadata for retry after a read error", async () => {

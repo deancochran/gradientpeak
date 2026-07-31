@@ -1,6 +1,6 @@
 import {
   type ActivityPlanInterval,
-  type ActivityPlanSegmentV3,
+  type ActivityPlanSegment,
   deriveActivityPlanPresentation,
 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
@@ -21,7 +21,7 @@ interface StructureStats {
 }
 
 interface StructureBuilderCardProps {
-  structure: { version: 3; segments: ActivityPlanSegmentV3[] };
+  structure: { version: 3; segments: ActivityPlanSegment[] };
   intervals: ActivityPlanInterval[];
   structureStats: StructureStats;
   validationErrors: Record<string, string | undefined>;

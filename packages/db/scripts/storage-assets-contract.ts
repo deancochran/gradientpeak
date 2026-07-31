@@ -13,6 +13,10 @@ export interface RouteBucketContractRow {
   allowed_mime_types: string[] | null;
 }
 
+export function assertRouteStorageUploadSucceeded(error: unknown, routeId: string): void {
+  if (error) throw new Error(`Failed to store system route source for ${routeId}`);
+}
+
 export function assertRouteBucketContract(row: RouteBucketContractRow | undefined): void {
   if (
     !row ||

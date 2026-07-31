@@ -949,12 +949,20 @@ describe("activityFilesRouter", () => {
         {
           messageIndex: 0,
           lapMessageIndex: 0,
+          sessionMessageIndex: 0,
           timestamp: new Date("2026-03-01T10:00:00.000Z"),
           distance: 0,
           power: 240,
           heartRate: 160,
         },
-        { timestamp: new Date("2026-03-01T10:00:10.000Z"), power: 300, heartRate: 180 },
+        { timestamp: new Date("2026-03-01T10:00:05.000Z"), sessionMessageIndex: 1 },
+        {
+          timestamp: new Date("2026-03-01T10:00:10.000Z"),
+          sessionMessageIndex: 0,
+          power: 300,
+          heartRate: 180,
+        },
+        { timestamp: new Date("2026-03-01T10:00:20.000Z"), sessionMessageIndex: 0 },
       ],
       laps: [{ startTime: new Date("2026-03-01T10:00:00.000Z") }],
       lengths: [],
@@ -962,8 +970,7 @@ describe("activityFilesRouter", () => {
         totalTime: 1800,
         totalDistance: 20000,
         totalDescent: 125,
-        poolLength: 25,
-        poolLengthUnit: "metric",
+        poolLengthMeters: 25,
         totalStrokes: 40,
         avgStrokeDistance: 1.25,
       },
@@ -1001,12 +1008,19 @@ describe("activityFilesRouter", () => {
         {
           messageIndex: 0,
           lapMessageIndex: 0,
+          sessionMessageIndex: 0,
           timestamp: new Date("2026-03-01T10:00:00.000Z"),
           distance: 0,
           power: 240,
           heartRate: 160,
         },
-        { timestamp: new Date("2026-03-01T10:00:10.000Z"), power: 300, heartRate: 180 },
+        {
+          timestamp: new Date("2026-03-01T10:00:10.000Z"),
+          sessionMessageIndex: 0,
+          power: 300,
+          heartRate: 180,
+        },
+        { timestamp: new Date("2026-03-01T10:00:20.000Z"), sessionMessageIndex: 0 },
       ],
       laps: [{ startTime: new Date("2026-03-01T10:00:00.000Z") }],
       lengths: [],
@@ -1014,8 +1028,7 @@ describe("activityFilesRouter", () => {
         totalTime: 1800,
         totalDistance: 20000,
         totalDescent: 125,
-        poolLength: 25,
-        poolLengthUnit: "metric",
+        poolLengthMeters: 25,
         totalStrokes: 40,
         avgStrokeDistance: 1.25,
       },
@@ -1025,8 +1038,8 @@ describe("activityFilesRouter", () => {
         distributions: {
           heart_rate: {
             threshold: 180,
-            time_weighted_average: 160,
-            quality: { status: "sufficient", integrated_seconds: 10, coverage_ratio: 1 },
+            time_weighted_average: 170,
+            quality: { status: "sufficient", integrated_seconds: 20, coverage_ratio: 1 },
           },
           power: {
             threshold: 300,
@@ -1038,12 +1051,12 @@ describe("activityFilesRouter", () => {
               estimate: false,
               calculation_version: null,
             },
-            time_weighted_average: 240,
-            quality: { status: "sufficient", integrated_seconds: 10, coverage_ratio: 1 },
+            time_weighted_average: 270,
+            quality: { status: "sufficient", integrated_seconds: 20, coverage_ratio: 1 },
           },
         },
         heart_rate_load: {
-          value: 0.219,
+          value: 0.497,
           reason: null,
           lthr_bpm: 180,
           calculation_version: "lthr_normalized_squared_v1",
@@ -1077,6 +1090,19 @@ describe("activityFilesRouter", () => {
             sourceSessionIndex: 1,
           },
         ],
+        [
+          {
+            activityFilePath:
+              "activities/11111111-1111-4111-8111-111111111111/uploads/multisport.fit",
+            activityFileType: "fit",
+            profile_id: "11111111-1111-4111-8111-111111111111",
+            activityCategory: "run",
+            parentStartedAt: new Date("2026-03-01T10:00:00.000Z"),
+            startOffsetMs: 600_000,
+            endOffsetMs: 1_200_000,
+            sourceSessionIndex: 1,
+          },
+        ],
       ],
     });
     mocks.parseActivityFile.mockReturnValue({
@@ -1085,8 +1111,34 @@ describe("activityFilesRouter", () => {
         { timestamp: new Date("2026-03-01T10:01:00.000Z"), sessionMessageIndex: 0, power: 250 },
         { timestamp: new Date("2026-03-01T10:11:00.000Z"), sessionMessageIndex: 1, heartRate: 165 },
       ],
-      laps: [],
-      lengths: [],
+      laps: [
+        { messageIndex: 0, sessionMessageIndex: 0 },
+        { messageIndex: 1, sessionMessageIndex: 1 },
+      ],
+      lengths: [
+        { messageIndex: 0, sessionMessageIndex: 0 },
+        { messageIndex: 1, sessionMessageIndex: 1 },
+      ],
+      sessions: [
+        {
+          messageIndex: 0,
+          startTime: new Date("2026-03-01T10:00:00.000Z"),
+          endTime: new Date("2026-03-01T10:10:00.000Z"),
+          totalElapsedTime: 600,
+          totalDistance: 1000,
+          laps: [],
+          records: [],
+        },
+        {
+          messageIndex: 1,
+          startTime: new Date("2026-03-01T10:10:00.000Z"),
+          endTime: new Date("2026-03-01T10:20:00.000Z"),
+          totalElapsedTime: 600,
+          totalDistance: 4000,
+          laps: [],
+          records: [],
+        },
+      ],
       summary: { totalTime: 1200, totalDistance: 5000 },
     });
 
@@ -1099,6 +1151,17 @@ describe("activityFilesRouter", () => {
       expect.objectContaining({ sessionMessageIndex: 1, heartRate: 165 }),
     ]);
     expect(result.analysis.activity_category).toBe("run");
+
+    const segmentResult = await createCaller({ db }).getStreams({
+      activityId,
+      scope: { type: "segment", segmentId: "99999999-9999-4999-8999-999999999999" },
+    });
+    expect(segmentResult).toMatchObject({
+      records: [expect.objectContaining({ sessionMessageIndex: 1, heartRate: 165 })],
+      laps: [expect.objectContaining({ messageIndex: 1, sessionMessageIndex: 1 })],
+      lengths: [expect.objectContaining({ messageIndex: 1, sessionMessageIndex: 1 })],
+      summary: { totalTime: 600, totalDistance: 4000 },
+    });
   });
 
   it("does not expose parser validation details when stream decoding fails", async () => {

@@ -1,9 +1,14 @@
 import {
-  PROFILE_METRIC_RANGES,
-  PROFILE_METRIC_UNITS,
+  getCanonicalProfileMetricValueFromDisplay,
+  getProfileMetricDisplayUnit,
+  getProfileMetricDisplayValue,
+  isProfileMetricValueWithinRange,
+} from "@repo/core/athlete-inputs";
+import {
   type ProfileMetricType,
   profileMetricDefinitions,
 } from "@repo/core/schemas/profile-metrics";
+import type { PreferredUnitSystem } from "@repo/core/units";
 import { Button } from "@repo/ui/components/button";
 import { DialogFooter } from "@repo/ui/components/dialog";
 import {
@@ -35,6 +40,7 @@ type ProfileMetricFormProps = {
   onCancel: () => void;
   onSubmit: (values: ProfileMetricFormValues) => Promise<unknown> | unknown;
   pending?: boolean;
+  unitSystem?: PreferredUnitSystem;
   values?: ProfileMetricFormInput;
 };
 
@@ -60,16 +66,50 @@ export function ProfileMetricForm({
   onCancel,
   onSubmit,
   pending = false,
+  unitSystem = "metric",
   values,
 }: ProfileMetricFormProps) {
+  const definition = profileMetricDefinitions[metricType];
+  const decimals = definition.decimals;
+  const precision = 10 ** decimals;
+  const canonicalValues = values ?? getProfileMetricFormValues(metricType);
+  const canonicalInitialValue = Number(canonicalValues.value);
+  const roundDisplayValue = (value: number) => Number(value.toFixed(decimals));
+  const initialDisplayValue = roundDisplayValue(
+    getProfileMetricDisplayValue(metricType, canonicalInitialValue, unitSystem),
+  );
+  const displayValues = {
+    ...canonicalValues,
+    value: initialDisplayValue,
+  };
+  const displayUnit = getProfileMetricDisplayUnit(metricType, unitSystem);
+  const displayMin = roundDisplayValue(
+    Math.round(getProfileMetricDisplayValue(metricType, definition.min, unitSystem) * precision) /
+      precision,
+  );
+  const displayMax = roundDisplayValue(
+    Math.round(getProfileMetricDisplayValue(metricType, definition.max, unitSystem) * precision) /
+      precision,
+  );
   const form = useZodForm<ProfileMetricFormInput, undefined, ProfileMetricFormValues>({
     schema: profileMetricFormSchema,
-    values: values ?? getProfileMetricFormValues(metricType),
+    values: displayValues,
   });
   const submit = useZodFormSubmit<ProfileMetricFormValues>({
     form,
     onSubmit: async (formValues) => {
-      await onSubmit(formValues);
+      const canonicalValue =
+        formValues.value === initialDisplayValue
+          ? canonicalInitialValue
+          : formValues.value === displayMin
+            ? definition.min
+            : formValues.value === displayMax
+              ? definition.max
+              : getCanonicalProfileMetricValueFromDisplay(metricType, formValues.value, unitSystem);
+      if (canonicalValue == null || !isProfileMetricValueWithinRange(metricType, canonicalValue)) {
+        throw new Error(`Enter a value between ${displayMin} and ${displayMax} ${displayUnit}.`);
+      }
+      await onSubmit({ ...formValues, value: canonicalValue });
     },
     shouldRethrow: false,
     submittingLabel: "Saving...",
@@ -81,11 +121,9 @@ export function ProfileMetricForm({
     submittingLabel: "Saving...",
   });
   const paceUnit =
-    metricType === "threshold_pace_seconds_per_km"
-      ? "/km"
-      : metricType === "css_seconds_per_100m"
-        ? "/100m"
-        : null;
+    metricType === "threshold_pace_seconds_per_km" || metricType === "css_seconds_per_100m"
+      ? displayUnit
+      : null;
 
   return (
     <Form {...form}>
@@ -116,12 +154,12 @@ export function ProfileMetricForm({
         ) : (
           <FormBoundedNumberField
             control={form.control}
-            decimals={profileMetricDefinitions[metricType].decimals}
-            label={`Value (${PROFILE_METRIC_UNITS[metricType]})`}
-            max={PROFILE_METRIC_RANGES[metricType].max}
-            min={PROFILE_METRIC_RANGES[metricType].min}
+            decimals={decimals}
+            label={`Value (${displayUnit})`}
+            max={displayMax}
+            min={displayMin}
             name="value"
-            unitLabel={PROFILE_METRIC_UNITS[metricType]}
+            unitLabel={displayUnit}
           />
         )}
         <FormDateTimeField control={form.control} label="Recorded at" name="recorded_at" />

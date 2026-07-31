@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { isReviewFrozen, submissionRecoveryLabel } from "./session";
+import {
+  assertOnlineRecordingSubmission,
+  isReviewFrozen,
+  submissionRecoveryLabel,
+} from "./session";
 
 describe("recording submission recovery copy", () => {
   it("states that the activity is saved while Session RPE can be retried", () => {
@@ -20,5 +24,10 @@ describe("recording submission recovery copy", () => {
         activityId: "activity-1",
       }),
     ).toBe(true);
+  });
+
+  it("fails fast while offline so the durable queue can schedule a retry", () => {
+    expect(() => assertOnlineRecordingSubmission(false)).toThrow(TypeError);
+    expect(() => assertOnlineRecordingSubmission(true)).not.toThrow();
   });
 });

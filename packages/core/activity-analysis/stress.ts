@@ -692,7 +692,6 @@ function completeCommonProvenance(input: {
       : input.calibration.type === "lthr_bpm"
         ? "beats_per_minute"
         : "meters_per_second";
-  if (input.calibration.type === "heart_rate_reserve_bpm") return null;
 
   const thresholdEvidenceResult: CommonThresholdEvidence = commonThresholdEvidenceSchema.parse({
     ...input.calibration,

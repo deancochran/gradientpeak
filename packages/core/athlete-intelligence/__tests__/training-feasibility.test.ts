@@ -37,7 +37,7 @@ function input(overrides: Partial<TrainingFeasibilityInput> = {}): TrainingFeasi
   return {
     sourceId: policySource,
     assessmentAsOf: "2026-07-01T00:00:00Z",
-    timezone: "Europe/London",
+    planningTimezone: "Europe/London",
     planningStart: "2026-07-06T00:00:00Z",
     goalDate: "2026-07-12",
     availabilityWindows: [
@@ -96,12 +96,12 @@ describe("calculateTrainingFeasibility", () => {
     );
     const utc = calculateTrainingFeasibility(
       input({
-        timezone: "UTC",
+        planningTimezone: "UTC",
         planningStart: "2026-07-05T22:00:00Z",
         plannedSchedule: [lateSundayUtc],
       }),
     );
-    const missing = calculateTrainingFeasibility(input({ timezone: null }));
+    const missing = calculateTrainingFeasibility(input({ planningTimezone: null }));
     expect(london.constraints.hardRestConflicts.estimate).toBe(0);
     expect(utc.constraints.hardRestConflicts.estimate).toBe(1);
     expect(missing.timeCoverage.state).toBe("unsupported");
@@ -131,7 +131,7 @@ describe("calculateTrainingFeasibility", () => {
       }),
     );
     const missing = calculateTrainingFeasibility(
-      input({ timezone: null, planningTimezone: null, plannedSchedule: [lateSundayUtc] }),
+      input({ planningTimezone: null, plannedSchedule: [lateSundayUtc] }),
     );
     const invalid = calculateTrainingFeasibility(
       input({ planningTimezone: "Not/AZone", plannedSchedule: [lateSundayUtc] }),
@@ -180,7 +180,7 @@ describe("calculateTrainingFeasibility", () => {
   it("matches cross-midnight sessions against each local day's availability", () => {
     const result = calculateTrainingFeasibility(
       input({
-        timezone: "UTC",
+        planningTimezone: "UTC",
         requiredWeeklyMinutes: 60,
         availabilityWindows: [
           { day: "monday", startMinuteLocal: 1410, endMinuteLocal: 1440 },
@@ -205,7 +205,7 @@ describe("calculateTrainingFeasibility", () => {
     );
     const utc = calculateTrainingFeasibility(
       input({
-        timezone: "UTC",
+        planningTimezone: "UTC",
         requiredWeeklyMinutes: 420,
         availabilityWindows: [{ day: "monday", startMinuteLocal: 540, endMinuteLocal: 600 }],
         plannedSchedule: schedule,
@@ -231,10 +231,12 @@ describe("calculateTrainingFeasibility", () => {
   });
 
   it("requires a target activity_category when required session coverage is configured", () => {
-    const { targetGoalActivityCategory: _targetGoalActivityCategory, ...unscopedInput } = input({
-      plannedSchedule: [event("unscoped", "2026-07-06T08:00:00Z", "2026-07-06T09:00:00Z")],
-    });
-    const result = calculateTrainingFeasibility(unscopedInput);
+    const result = calculateTrainingFeasibility(
+      input({
+        targetGoalActivityCategory: null,
+        plannedSchedule: [event("unscoped", "2026-07-06T08:00:00Z", "2026-07-06T09:00:00Z")],
+      }),
+    );
 
     expect(result.requiredSessionCoverage.state).toBe("unsupported");
     expect(result.requiredSessionCoverage.reasonCodes).toContain(
@@ -376,7 +378,6 @@ describe("calculateTrainingFeasibility", () => {
   it("expands recurrence in its own timezone before applying planning-zone availability", () => {
     const result = calculateTrainingFeasibility(
       input({
-        timezone: "UTC",
         planningTimezone: "UTC",
         planningStart: "2026-03-01T00:00:00Z",
         goalDate: "2026-03-15",
@@ -407,7 +408,6 @@ describe("calculateTrainingFeasibility", () => {
   it("segments overnight sessions at planning-local midnights for rest, day, and week constraints", () => {
     const result = calculateTrainingFeasibility(
       input({
-        timezone: "UTC",
         planningTimezone: "UTC",
         planningStart: "2026-07-05T00:00:00Z",
         goalDate: "2026-07-06",
@@ -426,7 +426,6 @@ describe("calculateTrainingFeasibility", () => {
   it("counts an overnight event once per week for global and activity_category session caps", () => {
     const overnight = event("overnight", "2026-07-07T23:00:00Z", "2026-07-08T01:00:00Z");
     const overrides = {
-      timezone: "UTC",
       planningTimezone: "UTC",
       planningStart: "2026-07-06T00:00:00Z",
       goalDate: "2026-07-12",
@@ -464,7 +463,6 @@ describe("calculateTrainingFeasibility", () => {
   it("splits sessions at DST planning-local midnights", () => {
     const result = calculateTrainingFeasibility(
       input({
-        timezone: "America/Los_Angeles",
         planningTimezone: "America/Los_Angeles",
         planningStart: "2026-03-07T00:00:00Z",
         goalDate: "2026-03-08",

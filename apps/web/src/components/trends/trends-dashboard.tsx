@@ -1,3 +1,4 @@
+import { displayUnitLabel, type PreferredUnitSystem, toDisplayUnitValue } from "@repo/core/units";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -8,7 +9,8 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { Loader2, RefreshCw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useViewingUserPreferredUnitSystem } from "../../hooks/use-viewing-user-preferred-unit-system";
 import { formatDate } from "../../lib/activity-route-helpers";
 import { api } from "../../lib/api/client";
 import {
@@ -63,16 +65,16 @@ export function CommonLoadUnavailable({
 }) {
   const description =
     reason === "insufficient_history"
-      ? "A complete 84-day history is required before Long-term can be shown."
+      ? "A complete 84-day history is required before Long-term Load can be shown."
       : reason === "incomplete_observation"
-        ? "Some activity history is incomplete, so common Load history is intentionally unavailable."
+        ? "Some activity history is incomplete, so Common Load history is intentionally unavailable."
         : reason === "invalid_input"
           ? "Set a valid profile planning timezone to calculate Load history."
           : "Load history could not be calculated from the available evidence.";
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Long-term unavailable</CardTitle>
+        <CardTitle>Long-term Load unavailable</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>
@@ -105,7 +107,30 @@ function number(value: number, digits = 1) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: digits }).format(value);
 }
 
+export function getTrendDistanceDisplay(meters: number, unitSystem: PreferredUnitSystem) {
+  const display = toDisplayUnitValue(
+    { dimension: "distance", value: meters, unit: "meters" },
+    unitSystem,
+  );
+  return { label: displayUnitLabel(display.unit), value: display.value };
+}
+
+export function getTrendSpeedDisplay(metersPerSecond: number, unitSystem: PreferredUnitSystem) {
+  const display = toDisplayUnitValue(
+    { dimension: "speed", value: metersPerSecond, unit: "meters_per_second" },
+    unitSystem,
+  );
+  return { label: displayUnitLabel(display.unit), value: display.value };
+}
+
+export function flattenProfileMetricPages<T>(
+  pages: ReadonlyArray<{ items: readonly T[] }> | undefined,
+): T[] {
+  return pages?.flatMap((page) => [...page.items]) ?? [];
+}
+
 export function TrendsDashboard() {
+  const { unitSystem } = useViewingUserPreferredUnitSystem();
   const [rangeDays, setRangeDays] = useState<(typeof RANGE_OPTIONS)[number]["days"]>(365);
   const [selectedMetric, setSelectedMetric] =
     useState<(typeof profileMetricOptions)[number]["type"]>("ftp");
@@ -116,11 +141,30 @@ export function TrendsDashboard() {
     return { end, endDate: toIsoDate(end), start, startDate: toIsoDate(start) };
   }, [rangeDays]);
 
-  const profileMetrics = api.profileMetrics.list.useQuery({
-    start_date: range.start,
-    end_date: range.end,
-    limit: 100,
-  });
+  const profileMetrics = api.profileMetrics.list.useInfiniteQuery(
+    {
+      start_date: range.start,
+      end_date: range.end,
+      limit: 50,
+    },
+    { getNextPageParam: (lastPage) => lastPage.nextCursor },
+  );
+  const profileMetricPages = profileMetrics.data?.pages;
+  const nextProfileMetricCursor = profileMetricPages?.at(-1)?.nextCursor;
+  useEffect(() => {
+    if (
+      nextProfileMetricCursor &&
+      !profileMetrics.isFetchingNextPage &&
+      !profileMetrics.isFetchNextPageError
+    ) {
+      void profileMetrics.fetchNextPage();
+    }
+  }, [
+    nextProfileMetricCursor,
+    profileMetrics.fetchNextPage,
+    profileMetrics.isFetchNextPageError,
+    profileMetrics.isFetchingNextPage,
+  ]);
   const dashboard = api.trends.getDashboard.useQuery({
     start_date: range.startDate,
     end_date: range.endDate,
@@ -147,7 +191,7 @@ export function TrendsDashboard() {
     await retryFailedTrendQueries([profileMetrics, dashboard, load, peakPower]);
   };
 
-  const metricRows = (profileMetrics.data?.items ?? []).filter(
+  const metricRows = flattenProfileMetricPages(profileMetricPages).filter(
     (row) => row.metric_type === selectedMetric,
   );
   const selectedMetricDefinition = profileMetricOptions.find(
@@ -166,6 +210,10 @@ export function TrendsDashboard() {
   const zoneEntries = latestZones ? Object.entries(latestZones.zones) : [];
   const performanceUsesPower =
     dashboard.data?.performance.dataPoints.some((point) => point.avgPower != null) ?? false;
+  const totalDistance = dashboard.data?.volume.totals
+    ? getTrendDistanceDisplay(dashboard.data.volume.totals.totalDistance, unitSystem)
+    : null;
+  const speedDisplay = getTrendSpeedDisplay(0, unitSystem);
 
   if (isInitialLoading) {
     return (
@@ -209,8 +257,8 @@ export function TrendsDashboard() {
         {load.data?.status === "available" ? (
           <SimpleTrendChart
             axisLabels={{ x: "Date", y: "Load" }}
-            description="Long-term common Load from complete versioned history."
-            emptyMessage="Complete activity history is required to build common Load trends."
+            description="Long-term Common Load from complete versioned history."
+            emptyMessage="Complete activity history is required to build Common Load trends."
             formatValue={(value) => number(value)}
             points={commonLoadPoints.map((point) => ({
               id: point.date,
@@ -218,7 +266,7 @@ export function TrendsDashboard() {
               value: point.longTermLoad,
               x: new Date(point.date).getTime(),
             }))}
-            title="Long-term"
+            title="Long-term Load"
           />
         ) : load.data?.status === "unavailable" ? (
           <CommonLoadUnavailable
@@ -235,8 +283,8 @@ export function TrendsDashboard() {
         ) : (
           <Card>
             <CardHeader>
-              <CardTitle>Long-term</CardTitle>
-              <CardDescription>Loading complete common Load history…</CardDescription>
+              <CardTitle>Long-term Load</CardTitle>
+              <CardDescription>Loading complete Common Load history…</CardDescription>
             </CardHeader>
           </Card>
         )}
@@ -245,7 +293,7 @@ export function TrendsDashboard() {
             axisLabels={{ x: "Week", y: "Hours" }}
             description={
               dashboard.data.volume.totals
-                ? `${dashboard.data.volume.totals.totalActivities} activities · ${number(dashboard.data.volume.totals.totalDistance / 1000)} km total`
+                ? `${dashboard.data.volume.totals.totalActivities} activities · ${number(totalDistance?.value ?? 0)} ${totalDistance?.label} total`
                 : "Weekly activity volume in this range."
             }
             emptyMessage="Complete activities to build weekly volume."
@@ -263,15 +311,19 @@ export function TrendsDashboard() {
           <SimpleTrendChart
             axisLabels={{
               x: "Activity",
-              y: performanceUsesPower ? "Average power (W)" : "Average speed (km/h)",
+              y: performanceUsesPower
+                ? "Average power (W)"
+                : `Average speed (${speedDisplay.label})`,
             }}
             description={
               performanceUsesPower
                 ? "Observed average activity power; speed-only activities are omitted to preserve one chart unit."
-                : "Observed average activity speed in kilometres per hour."
+                : `Observed average activity speed in ${unitSystem === "imperial" ? "miles" : "kilometres"} per hour.`
             }
             emptyMessage={`No activities with ${performanceUsesPower ? "power" : "speed"} are available.`}
-            formatValue={(value) => `${number(value)} ${performanceUsesPower ? "W" : "km/h"}`}
+            formatValue={(value) =>
+              `${number(value)} ${performanceUsesPower ? "W" : speedDisplay.label}`
+            }
             points={dashboard.data.performance.dataPoints.map((point) => ({
               id: point.activityId,
               label: `${formatDate(point.date)} · ${point.activityName}`,
@@ -279,7 +331,7 @@ export function TrendsDashboard() {
                 ? point.avgPower
                 : point.avgSpeed == null
                   ? null
-                  : point.avgSpeed * 3.6,
+                  : getTrendSpeedDisplay(point.avgSpeed, unitSystem).value,
               x: new Date(point.date).getTime(),
             }))}
             title={`Activity ${performanceUsesPower ? "power" : "speed"}`}
@@ -306,7 +358,11 @@ export function TrendsDashboard() {
               description="Dated profile observations with their original source preserved in profile history."
               emptyMessage={`No ${selectedMetricDefinition.label.toLowerCase()} observations in this range.`}
               formatValue={(value) =>
-                formatProfileMetricDisplayValue({ metric_type: selectedMetric, value })
+                formatProfileMetricDisplayValue({
+                  metric_type: selectedMetric,
+                  preferredUnitSystem: unitSystem,
+                  value,
+                })
               }
               points={[...metricRows].reverse().map((row) => ({
                 id: row.id,
@@ -352,15 +408,15 @@ export function TrendsDashboard() {
                 {availableLoadHistory.maturity.status} baseline ·{" "}
                 {availableLoadHistory.coverageStatus} coverage
                 <span className="block">
-                  Long-term / Recent / Balance use CTL / ATL / TSB only as advanced aliases.
+                  Current Common Load metrics from complete versioned history.
                 </span>
               </CardDescription>
             </CardHeader>
             <CardContent className="grid grid-cols-2 gap-3 text-sm">
-              <Metric label="Long-term" value={number(latestLoad.longTermLoad)} />
-              <Metric label="Recent (ATL alias)" value={number(latestLoad.recentLoad)} />
-              <Metric label="Balance (TSB alias)" value={number(latestLoad.loadBalance)} />
-              <Metric label="Daily" value={number(latestLoad.dailyLoad)} />
+              <Metric label="Long-term Load" value={number(latestLoad.longTermLoad)} />
+              <Metric label="Recent Load" value={number(latestLoad.recentLoad)} />
+              <Metric label="Load Balance" value={number(latestLoad.loadBalance)} />
+              <Metric label="Daily Load" value={number(latestLoad.dailyLoad)} />
             </CardContent>
           </Card>
         ) : null}

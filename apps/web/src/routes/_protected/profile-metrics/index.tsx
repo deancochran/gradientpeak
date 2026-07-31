@@ -1,5 +1,6 @@
 import { isActivityDerivedThresholdMetricType } from "@repo/core/athlete-inputs";
 import type { ProfileMetricType } from "@repo/core/schemas/profile-metrics";
+import type { PreferredUnitSystem } from "@repo/core/units";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,6 +47,7 @@ import {
   type ProfileMetricFormValues,
 } from "../../../components/protected/profile-metric-form";
 import { useAuth } from "../../../components/providers/auth-provider";
+import { useViewingUserPreferredUnitSystem } from "../../../hooks/use-viewing-user-preferred-unit-system";
 import { formatDate, formatDateTime } from "../../../lib/activity-route-helpers";
 import { api } from "../../../lib/api/client";
 import {
@@ -77,7 +79,7 @@ function formatMetricType(type: ProfileMetricType) {
   );
 }
 
-function buildTrendSummary(rows: ProfileMetricRow[]) {
+function buildTrendSummary(rows: ProfileMetricRow[], unitSystem: PreferredUnitSystem) {
   if (rows.length === 0) return "No records yet";
   if (rows.length === 1) return "One record saved";
 
@@ -86,7 +88,11 @@ function buildTrendSummary(rows: ProfileMetricRow[]) {
   if (!oldest || !newest) return "No records yet";
   const delta = newest.value - oldest.value;
   const direction = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
-  return `${direction} ${Math.abs(delta).toFixed(1)} ${newest.unit}`;
+  return `${direction} ${formatProfileMetricDisplayValue({
+    metric_type: newest.metric_type,
+    preferredUnitSystem: unitSystem,
+    value: Math.abs(delta),
+  })}`;
 }
 
 export const Route = createFileRoute("/_protected/profile-metrics/")({
@@ -95,6 +101,7 @@ export const Route = createFileRoute("/_protected/profile-metrics/")({
 
 function ProfileMetricsPage() {
   const { user } = useAuth();
+  const { unitSystem } = useViewingUserPreferredUnitSystem();
   const utils = api.useUtils();
   const [selectedMetricType, setSelectedMetricType] = useState<ProfileMetricType>("ftp");
   const [editorTarget, setEditorTarget] = useState<MetricEditorTarget | null>(null);
@@ -219,12 +226,17 @@ function ProfileMetricsPage() {
                           <div className="rounded-xl bg-muted/40 px-3 py-2">
                             <p className="text-xs uppercase text-muted-foreground">Latest</p>
                             <p className="font-medium">
-                              {latest ? formatProfileMetricDisplayValue(latest) : "-"}
+                              {latest
+                                ? formatProfileMetricDisplayValue({
+                                    ...latest,
+                                    preferredUnitSystem: unitSystem,
+                                  })
+                                : "-"}
                             </p>
                           </div>
                           <div className="rounded-xl bg-muted/40 px-3 py-2">
                             <p className="text-xs uppercase text-muted-foreground">Trend</p>
-                            <p className="font-medium">{buildTrendSummary(rows)}</p>
+                            <p className="font-medium">{buildTrendSummary(rows, unitSystem)}</p>
                           </div>
                         </div>
                       </button>
@@ -240,7 +252,11 @@ function ProfileMetricsPage() {
               description={selectedOption.description}
               emptyMessage="Add measurements to build this trend."
               formatValue={(value) =>
-                formatProfileMetricDisplayValue({ metric_type: selectedOption.type, value })
+                formatProfileMetricDisplayValue({
+                  metric_type: selectedOption.type,
+                  preferredUnitSystem: unitSystem,
+                  value,
+                })
               }
               points={[...selectedRows].reverse().map((row) => ({
                 id: row.id,
@@ -277,6 +293,7 @@ function ProfileMetricsPage() {
                   onOverride={(metric) => setEditorTarget({ metric, mode: "override" })}
                   readOnly={selectedIsThreshold}
                   rows={selectedRows}
+                  unitSystem={unitSystem}
                 />
               </CardContent>
             </Card>
@@ -310,6 +327,7 @@ function ProfileMetricsPage() {
           });
         }}
         pending={createMutation.isPending || updateMutation.isPending}
+        unitSystem={unitSystem}
       />
 
       <AlertDialog open={!!deleteMetric} onOpenChange={(open) => !open && setDeleteMetric(null)}>
@@ -343,6 +361,7 @@ function MetricRowsTable({
   onOverride,
   readOnly,
   rows,
+  unitSystem,
 }: {
   emptyMessage: string;
   onDelete: (row: ProfileMetricRow) => void;
@@ -350,6 +369,7 @@ function MetricRowsTable({
   onOverride: (row: ProfileMetricRow) => void;
   readOnly?: boolean;
   rows: ProfileMetricRow[];
+  unitSystem: PreferredUnitSystem;
 }) {
   if (rows.length === 0) {
     return (
@@ -382,7 +402,10 @@ function MetricRowsTable({
               >
                 <TableCell>{formatDateTime(row.recorded_at)}</TableCell>
                 <TableCell className="whitespace-nowrap font-medium">
-                  {formatProfileMetricDisplayValue(row)}
+                  {formatProfileMetricDisplayValue({
+                    ...row,
+                    preferredUnitSystem: unitSystem,
+                  })}
                 </TableCell>
                 <TableCell>
                   <Badge variant={manual ? "secondary" : "outline"}>
@@ -434,12 +457,14 @@ function MetricEditDialog({
   onSubmit,
   pending,
   target,
+  unitSystem,
 }: {
   metricType: ProfileMetricType;
   onClose: () => void;
   onSubmit: (values: ProfileMetricFormValues) => Promise<unknown> | unknown;
   pending: boolean;
   target: MetricEditorTarget | null;
+  unitSystem: PreferredUnitSystem;
 }) {
   const activeType = target?.metric.metric_type ?? metricType;
   const titlePrefix =
@@ -463,6 +488,7 @@ function MetricEditDialog({
           onCancel={onClose}
           onSubmit={onSubmit}
           pending={pending}
+          unitSystem={unitSystem}
           values={getProfileMetricFormValues(
             activeType,
             target?.mode === "edit" || target?.mode === "override" ? target.metric : undefined,

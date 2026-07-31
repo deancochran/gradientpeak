@@ -1,4 +1,4 @@
-import { segmentSummarySchemaV1 } from "@repo/core";
+import { segmentSummarySchema } from "@repo/core";
 import { activitySegments } from "@repo/db";
 import { and, eq, type SQL, type SQLWrapper, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -87,7 +87,7 @@ export function summarizeMatchedCategory(input: {
       segment.role === "activity" && segment.activity_category === input.activity_category,
   );
   const distanceMeters = matching.map((segment) => {
-    const parsed = segmentSummarySchemaV1.safeParse(segment.summary);
+    const parsed = segmentSummarySchema.safeParse(segment.summary);
     return parsed.success ? (parsed.data.distanceMeters ?? null) : null;
   });
   const activeMs = matching.map((segment) =>

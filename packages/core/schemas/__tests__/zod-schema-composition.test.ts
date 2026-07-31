@@ -114,7 +114,7 @@ describe("activity plan schema composition", () => {
 });
 
 describe("activity plan form schema composition", () => {
-  it("uses the same strict V3 structure contract", () => {
+  it("uses the same strict structure contract", () => {
     expect(
       activityPlanCreateFormSchema.safeParse({
         name: "Evening run",

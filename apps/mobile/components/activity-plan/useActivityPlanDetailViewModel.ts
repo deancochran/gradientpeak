@@ -1,7 +1,7 @@
 import {
   type ActivityPlanIntervalStep,
-  activityPlanStructureSchemaV3,
-  compileActivityPlanV3,
+  activityPlanStructureSchema,
+  compileActivityPlan,
 } from "@repo/core";
 import { useMemo } from "react";
 import type { ActivityCategoryLoadMeasurement } from "@/components/shared/ActivityCategoryLoadBreakdown";
@@ -69,7 +69,7 @@ export function useActivityPlanDetailViewModel({
   }, [activityPlanParam, fetchedPlan, plannedActivity, template]);
 
   const structure = useMemo(() => {
-    const parsed = activityPlanStructureSchemaV3.safeParse(activityPlan?.structure);
+    const parsed = activityPlanStructureSchema.safeParse(activityPlan?.structure);
     return parsed.success ? parsed.data : null;
   }, [activityPlan?.structure]);
   const steps: ActivityPlanIntervalStep[] = useMemo(() => {
@@ -83,10 +83,7 @@ export function useActivityPlanDetailViewModel({
     return flatSteps;
   }, [structure]);
 
-  const compiled = useMemo(
-    () => (structure ? compileActivityPlanV3(structure) : null),
-    [structure],
-  );
+  const compiled = useMemo(() => (structure ? compileActivityPlan(structure) : null), [structure]);
 
   const authoritativeMetrics = getAuthoritativeActivityPlanMetrics(activityPlan);
   const estimatedDurationSeconds = authoritativeMetrics.estimated_duration ?? null;

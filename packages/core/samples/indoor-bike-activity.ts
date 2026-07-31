@@ -26,7 +26,7 @@ const createPlan = createSystemActivityPlanBuilderFactory("bike", [
  * Estimated TSS: ~95
  */
 export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
-  id: "8a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d",
+  id: "8a1b2c3d-4e5f-4a7b-8c9d-0e1f2a3b4c5d",
   name: "VO2 Max Development",
   description: "75-minute activity with challenging VO2 max intervals",
   gps_recording_enabled: false,
@@ -92,7 +92,7 @@ export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
  * Estimated TSS: ~25
  */
 export const SAMPLE_RECOVERY_WORKOUT: RecordingServiceActivityPlan = {
-  id: "9b2c3d4e-5f6a-7b8c-9d0e-1f2a3b4c5d6e",
+  id: "9b2c3d4e-5f6a-4b8c-9d0e-1f2a3b4c5d6e",
   name: "Active Recovery Ride",
   description: "45-minute easy recovery ride to promote blood flow",
   gps_recording_enabled: false,
@@ -124,7 +124,7 @@ export const SAMPLE_RECOVERY_WORKOUT: RecordingServiceActivityPlan = {
  * Estimated TSS: ~55
  */
 export const SAMPLE_SPRINT_WORKOUT: RecordingServiceActivityPlan = {
-  id: "0c3d4e5f-6a7b-8c9d-0e1f-2a3b4c5d6e7f",
+  id: "0c3d4e5f-6a7b-4c9d-8e1f-2a3b4c5d6e7f",
   name: "Sprint Power Development",
   description: "Short activity focusing on neuromuscular power and sprint development",
   gps_recording_enabled: false,
@@ -179,7 +179,7 @@ export const SAMPLE_SPRINT_WORKOUT: RecordingServiceActivityPlan = {
 };
 
 export const SAMPLE_THRESHOLD_HR_WORKOUT: RecordingServiceActivityPlan = {
-  id: "1d4e5f6a-7b8c-9d0e-1f2a-3b4c5d6e7f8a",
+  id: "1d4e5f6a-7b8c-4d0e-9f2a-3b4c5d6e7f8a",
   name: "Threshold Heart Rate Intervals",
   description:
     "45-minute indoor trainer activity focused on threshold heart rate intervals. Maintain steady cadence of 85-95 RPM and target threshold HR zones during main intervals.",
@@ -224,7 +224,7 @@ export const SAMPLE_THRESHOLD_HR_WORKOUT: RecordingServiceActivityPlan = {
 };
 
 export const SAMPLE_TESTING_WORKOUT: RecordingServiceActivityPlan = {
-  id: "2e5f6a7b-8c9d-0e1f-2a3b-4c5d6e7f8a9b",
+  id: "2e5f6a7b-8c9d-4e1f-aa3b-4c5d6e7f8a9b",
   name: "Comprehensive 1-Minute Schema Test",
   description:
     "A short test activity containing every major step type and target style to validate parsing, UI rendering, and compliance scoring.",
@@ -360,7 +360,7 @@ export const SYSTEM_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
 };
 
 export const SYSTEM_FTP_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
-  id: "f4e0b3c2-7d1a-6a5c-0b9f-1e8d6c4a3b2f",
+  id: "f4e0b3c2-7d1a-4a5c-8b9f-1e8d6c4a3b2f",
   name: "FTP Intervals",
   description: "4x8min at 95% FTP (threshold) - Build sustainable power at threshold",
   gps_recording_enabled: false,

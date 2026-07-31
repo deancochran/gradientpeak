@@ -72,7 +72,6 @@ import { Route as CoachingOrganizationsOrganizationIdDashboardRouteImport } from
 import { Route as ProtectedActivitiesActivityIdIndexRouteImport } from './routes/_protected/activities/$activityId/index'
 import { Route as ProtectedActivityEffortsEffortIdIndexRouteImport } from './routes/_protected/activity-efforts/$effortId/index'
 import { Route as ProtectedCalendarDayDateRouteImport } from './routes/_protected/calendar/day/$date'
-import { Route as ProtectedCalendarEventsEventIdRouteImport } from './routes/_protected/calendar/events/$eventId'
 import { Route as ProtectedGoalsGoalIdIndexRouteImport } from './routes/_protected/goals/$goalId/index'
 import { Route as ProtectedGoalsGoalIdEditRouteImport } from './routes/_protected/goals/$goalId/edit'
 import { Route as ProtectedGroupsGroupIdIndexRouteImport } from './routes/_protected/groups/$groupId/index'
@@ -88,6 +87,7 @@ import { Route as ProtectedUserUserIdIndexRouteImport } from './routes/_protecte
 import { Route as ProtectedUserUserIdFollowersRouteImport } from './routes/_protected/user/$userId/followers'
 import { Route as ProtectedUserUserIdFollowingRouteImport } from './routes/_protected/user/$userId/following'
 import { Route as ApiIntegrationsCallbackProviderRouteImport } from './routes/api/integrations/callback/$provider'
+import { Route as ProtectedCalendarEventsEventIdIndexRouteImport } from './routes/_protected/calendar/events/$eventId/index'
 import { Route as ProtectedCalendarEventsEventIdEditRouteImport } from './routes/_protected/calendar/events/$eventId/edit'
 import { Route as ProtectedGroupsGroupIdEventsNewRouteImport } from './routes/_protected/groups/$groupId/events/new'
 import { Route as ProtectedGroupsEventsGroupEventIdIndexRouteImport } from './routes/_protected/groups/events/$groupEventId/index'
@@ -433,12 +433,6 @@ const ProtectedCalendarDayDateRoute =
     path: '/day/$date',
     getParentRoute: () => ProtectedCalendarRoute,
   } as any)
-const ProtectedCalendarEventsEventIdRoute =
-  ProtectedCalendarEventsEventIdRouteImport.update({
-    id: '/events/$eventId',
-    path: '/events/$eventId',
-    getParentRoute: () => ProtectedCalendarRoute,
-  } as any)
 const ProtectedGoalsGoalIdIndexRoute =
   ProtectedGoalsGoalIdIndexRouteImport.update({
     id: '/$goalId/',
@@ -529,11 +523,17 @@ const ApiIntegrationsCallbackProviderRoute =
     path: '/api/integrations/callback/$provider',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ProtectedCalendarEventsEventIdIndexRoute =
+  ProtectedCalendarEventsEventIdIndexRouteImport.update({
+    id: '/events/$eventId/',
+    path: '/events/$eventId/',
+    getParentRoute: () => ProtectedCalendarRoute,
+  } as any)
 const ProtectedCalendarEventsEventIdEditRoute =
   ProtectedCalendarEventsEventIdEditRouteImport.update({
-    id: '/edit',
-    path: '/edit',
-    getParentRoute: () => ProtectedCalendarEventsEventIdRoute,
+    id: '/events/$eventId/edit',
+    path: '/events/$eventId/edit',
+    getParentRoute: () => ProtectedCalendarRoute,
   } as any)
 const ProtectedGroupsGroupIdEventsNewRoute =
   ProtectedGroupsGroupIdEventsNewRouteImport.update({
@@ -631,7 +631,6 @@ export interface FileRoutesByFullPath {
   '/training-plans/': typeof ProtectedTrainingPlansIndexRoute
   '/organizations/$organizationId/dashboard': typeof CoachingOrganizationsOrganizationIdDashboardRoute
   '/calendar/day/$date': typeof ProtectedCalendarDayDateRoute
-  '/calendar/events/$eventId': typeof ProtectedCalendarEventsEventIdRouteWithChildren
   '/goals/$goalId/edit': typeof ProtectedGoalsGoalIdEditRoute
   '/groups/$groupId/edit': typeof ProtectedGroupsGroupIdEditRoute
   '/groups/$groupId/members': typeof ProtectedGroupsGroupIdMembersRoute
@@ -656,6 +655,7 @@ export interface FileRoutesByFullPath {
   '/api/internal/provider-sync/wahoo/drain': typeof ApiInternalProviderSyncWahooDrainRoute
   '/api/internal/provider-sync/wahoo/retry': typeof ApiInternalProviderSyncWahooRetryRoute
   '/api/internal/provider-sync/wahoo/status': typeof ApiInternalProviderSyncWahooStatusRoute
+  '/calendar/events/$eventId/': typeof ProtectedCalendarEventsEventIdIndexRoute
   '/groups/events/$groupEventId/': typeof ProtectedGroupsEventsGroupEventIdIndexRoute
 }
 export interface FileRoutesByTo {
@@ -712,7 +712,6 @@ export interface FileRoutesByTo {
   '/training-plans': typeof ProtectedTrainingPlansIndexRoute
   '/organizations/$organizationId/dashboard': typeof CoachingOrganizationsOrganizationIdDashboardRoute
   '/calendar/day/$date': typeof ProtectedCalendarDayDateRoute
-  '/calendar/events/$eventId': typeof ProtectedCalendarEventsEventIdRouteWithChildren
   '/goals/$goalId/edit': typeof ProtectedGoalsGoalIdEditRoute
   '/groups/$groupId/edit': typeof ProtectedGroupsGroupIdEditRoute
   '/groups/$groupId/members': typeof ProtectedGroupsGroupIdMembersRoute
@@ -737,6 +736,7 @@ export interface FileRoutesByTo {
   '/api/internal/provider-sync/wahoo/drain': typeof ApiInternalProviderSyncWahooDrainRoute
   '/api/internal/provider-sync/wahoo/retry': typeof ApiInternalProviderSyncWahooRetryRoute
   '/api/internal/provider-sync/wahoo/status': typeof ApiInternalProviderSyncWahooStatusRoute
+  '/calendar/events/$eventId': typeof ProtectedCalendarEventsEventIdIndexRoute
   '/groups/events/$groupEventId': typeof ProtectedGroupsEventsGroupEventIdIndexRoute
 }
 export interface FileRoutesById {
@@ -801,7 +801,6 @@ export interface FileRoutesById {
   '/_protected/training-plans/': typeof ProtectedTrainingPlansIndexRoute
   '/_coaching/organizations/$organizationId/dashboard': typeof CoachingOrganizationsOrganizationIdDashboardRoute
   '/_protected/calendar/day/$date': typeof ProtectedCalendarDayDateRoute
-  '/_protected/calendar/events/$eventId': typeof ProtectedCalendarEventsEventIdRouteWithChildren
   '/_protected/goals/$goalId/edit': typeof ProtectedGoalsGoalIdEditRoute
   '/_protected/groups/$groupId/edit': typeof ProtectedGroupsGroupIdEditRoute
   '/_protected/groups/$groupId/members': typeof ProtectedGroupsGroupIdMembersRoute
@@ -826,6 +825,7 @@ export interface FileRoutesById {
   '/api/internal/provider-sync/wahoo/drain': typeof ApiInternalProviderSyncWahooDrainRoute
   '/api/internal/provider-sync/wahoo/retry': typeof ApiInternalProviderSyncWahooRetryRoute
   '/api/internal/provider-sync/wahoo/status': typeof ApiInternalProviderSyncWahooStatusRoute
+  '/_protected/calendar/events/$eventId/': typeof ProtectedCalendarEventsEventIdIndexRoute
   '/_protected/groups/events/$groupEventId/': typeof ProtectedGroupsEventsGroupEventIdIndexRoute
 }
 export interface FileRouteTypes {
@@ -889,7 +889,6 @@ export interface FileRouteTypes {
     | '/training-plans/'
     | '/organizations/$organizationId/dashboard'
     | '/calendar/day/$date'
-    | '/calendar/events/$eventId'
     | '/goals/$goalId/edit'
     | '/groups/$groupId/edit'
     | '/groups/$groupId/members'
@@ -914,6 +913,7 @@ export interface FileRouteTypes {
     | '/api/internal/provider-sync/wahoo/drain'
     | '/api/internal/provider-sync/wahoo/retry'
     | '/api/internal/provider-sync/wahoo/status'
+    | '/calendar/events/$eventId/'
     | '/groups/events/$groupEventId/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -970,7 +970,6 @@ export interface FileRouteTypes {
     | '/training-plans'
     | '/organizations/$organizationId/dashboard'
     | '/calendar/day/$date'
-    | '/calendar/events/$eventId'
     | '/goals/$goalId/edit'
     | '/groups/$groupId/edit'
     | '/groups/$groupId/members'
@@ -995,6 +994,7 @@ export interface FileRouteTypes {
     | '/api/internal/provider-sync/wahoo/drain'
     | '/api/internal/provider-sync/wahoo/retry'
     | '/api/internal/provider-sync/wahoo/status'
+    | '/calendar/events/$eventId'
     | '/groups/events/$groupEventId'
   id:
     | '__root__'
@@ -1058,7 +1058,6 @@ export interface FileRouteTypes {
     | '/_protected/training-plans/'
     | '/_coaching/organizations/$organizationId/dashboard'
     | '/_protected/calendar/day/$date'
-    | '/_protected/calendar/events/$eventId'
     | '/_protected/goals/$goalId/edit'
     | '/_protected/groups/$groupId/edit'
     | '/_protected/groups/$groupId/members'
@@ -1083,6 +1082,7 @@ export interface FileRouteTypes {
     | '/api/internal/provider-sync/wahoo/drain'
     | '/api/internal/provider-sync/wahoo/retry'
     | '/api/internal/provider-sync/wahoo/status'
+    | '/_protected/calendar/events/$eventId/'
     | '/_protected/groups/events/$groupEventId/'
   fileRoutesById: FileRoutesById
 }
@@ -1556,13 +1556,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedCalendarDayDateRouteImport
       parentRoute: typeof ProtectedCalendarRoute
     }
-    '/_protected/calendar/events/$eventId': {
-      id: '/_protected/calendar/events/$eventId'
-      path: '/events/$eventId'
-      fullPath: '/calendar/events/$eventId'
-      preLoaderRoute: typeof ProtectedCalendarEventsEventIdRouteImport
-      parentRoute: typeof ProtectedCalendarRoute
-    }
     '/_protected/goals/$goalId/': {
       id: '/_protected/goals/$goalId/'
       path: '/$goalId'
@@ -1668,12 +1661,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiIntegrationsCallbackProviderRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_protected/calendar/events/$eventId/': {
+      id: '/_protected/calendar/events/$eventId/'
+      path: '/events/$eventId'
+      fullPath: '/calendar/events/$eventId/'
+      preLoaderRoute: typeof ProtectedCalendarEventsEventIdIndexRouteImport
+      parentRoute: typeof ProtectedCalendarRoute
+    }
     '/_protected/calendar/events/$eventId/edit': {
       id: '/_protected/calendar/events/$eventId/edit'
-      path: '/edit'
+      path: '/events/$eventId/edit'
       fullPath: '/calendar/events/$eventId/edit'
       preLoaderRoute: typeof ProtectedCalendarEventsEventIdEditRouteImport
-      parentRoute: typeof ProtectedCalendarEventsEventIdRoute
+      parentRoute: typeof ProtectedCalendarRoute
     }
     '/_protected/groups/$groupId/events/new': {
       id: '/_protected/groups/$groupId/events/new'
@@ -1753,34 +1753,22 @@ const CoachingRouteWithChildren = CoachingRoute._addFileChildren(
   CoachingRouteChildren,
 )
 
-interface ProtectedCalendarEventsEventIdRouteChildren {
-  ProtectedCalendarEventsEventIdEditRoute: typeof ProtectedCalendarEventsEventIdEditRoute
-}
-
-const ProtectedCalendarEventsEventIdRouteChildren: ProtectedCalendarEventsEventIdRouteChildren =
-  {
-    ProtectedCalendarEventsEventIdEditRoute:
-      ProtectedCalendarEventsEventIdEditRoute,
-  }
-
-const ProtectedCalendarEventsEventIdRouteWithChildren =
-  ProtectedCalendarEventsEventIdRoute._addFileChildren(
-    ProtectedCalendarEventsEventIdRouteChildren,
-  )
-
 interface ProtectedCalendarRouteChildren {
   ProtectedCalendarNewRoute: typeof ProtectedCalendarNewRoute
   ProtectedCalendarIndexRoute: typeof ProtectedCalendarIndexRoute
   ProtectedCalendarDayDateRoute: typeof ProtectedCalendarDayDateRoute
-  ProtectedCalendarEventsEventIdRoute: typeof ProtectedCalendarEventsEventIdRouteWithChildren
+  ProtectedCalendarEventsEventIdEditRoute: typeof ProtectedCalendarEventsEventIdEditRoute
+  ProtectedCalendarEventsEventIdIndexRoute: typeof ProtectedCalendarEventsEventIdIndexRoute
 }
 
 const ProtectedCalendarRouteChildren: ProtectedCalendarRouteChildren = {
   ProtectedCalendarNewRoute: ProtectedCalendarNewRoute,
   ProtectedCalendarIndexRoute: ProtectedCalendarIndexRoute,
   ProtectedCalendarDayDateRoute: ProtectedCalendarDayDateRoute,
-  ProtectedCalendarEventsEventIdRoute:
-    ProtectedCalendarEventsEventIdRouteWithChildren,
+  ProtectedCalendarEventsEventIdEditRoute:
+    ProtectedCalendarEventsEventIdEditRoute,
+  ProtectedCalendarEventsEventIdIndexRoute:
+    ProtectedCalendarEventsEventIdIndexRoute,
 }
 
 const ProtectedCalendarRouteWithChildren =

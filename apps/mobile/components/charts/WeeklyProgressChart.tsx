@@ -10,8 +10,14 @@ export interface WeeklyData {
   weekStart: string;
   weekEnd: string;
   plannedTSS: number;
-  completedTSS: number;
-  tssPercentage: number;
+  completedTSS: number | null;
+  plannedActivities: number;
+  completedActivities: number;
+  planAlignment: {
+    status: "available" | "unavailable";
+    completedSessions: number;
+    totalSessions: number;
+  };
   status: "good" | "warning" | "poor";
 }
 
@@ -34,7 +40,7 @@ export function WeeklyProgressChart({ data, height = 280 }: WeeklyProgressChartP
     () =>
       recentData.map((week, index) => ({
         index,
-        completedTSS: week.completedTSS,
+        completedTSS: week.completedTSS ?? 0,
         label: `W${recentData.length - index}`,
         status: week.status,
         weekStart: week.weekStart,
@@ -44,6 +50,13 @@ export function WeeklyProgressChart({ data, height = 280 }: WeeklyProgressChartP
   const maxCompletedTss = useMemo(
     () => Math.max(1, ...chartData.map((week) => week.completedTSS)),
     [chartData],
+  );
+  const completionRates = useMemo(
+    () => recentData.map(deriveTssCompletionPercentage),
+    [recentData],
+  );
+  const availableCompletionRates = completionRates.filter(
+    (percentage): percentage is number => percentage !== null,
   );
 
   if (!data || data.length === 0) {
@@ -111,32 +124,33 @@ export function WeeklyProgressChart({ data, height = 280 }: WeeklyProgressChartP
           <Text className="text-sm font-medium text-foreground">Weekly Completion Rates</Text>
         </View>
         <View className="space-y-1">
-          {recentData.slice(-3).map((week, index) => (
-            <View key={week.weekStart} className="flex-row items-center justify-between">
-              <Text className="text-xs text-muted-foreground">
-                Week {recentData.length - index}
-              </Text>
-              <View className="flex-row items-center">
-                <View className="w-16 bg-background rounded-full h-2 mr-2">
-                  <View
-                    className={`h-2 rounded-full ${
-                      week.status === "good"
-                        ? "bg-green-500"
-                        : week.status === "warning"
-                          ? "bg-yellow-500"
-                          : "bg-red-500"
-                    }`}
-                    style={{
-                      width: `${Math.min(100, week.tssPercentage)}%`,
-                    }}
-                  />
-                </View>
-                <Text className="text-xs font-medium text-foreground w-8">
-                  {week.tssPercentage}%
+          {recentData.slice(-3).map((week, index) => {
+            const completionRate = deriveTssCompletionPercentage(week);
+            return (
+              <View key={week.weekStart} className="flex-row items-center justify-between">
+                <Text className="text-xs text-muted-foreground">
+                  Week {recentData.length - index}
                 </Text>
+                <View className="flex-row items-center">
+                  <View className="w-16 bg-background rounded-full h-2 mr-2">
+                    <View
+                      className={`h-2 rounded-full ${
+                        week.status === "good"
+                          ? "bg-green-500"
+                          : week.status === "warning"
+                            ? "bg-yellow-500"
+                            : "bg-red-500"
+                      }`}
+                      style={{ width: `${Math.min(100, completionRate ?? 0)}%` }}
+                    />
+                  </View>
+                  <Text className="text-xs font-medium text-foreground w-8">
+                    {completionRate === null ? "—" : `${Math.round(completionRate)}%`}
+                  </Text>
+                </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       </View>
 
@@ -145,23 +159,27 @@ export function WeeklyProgressChart({ data, height = 280 }: WeeklyProgressChartP
         <View className="items-center">
           <Text className="text-xs text-muted-foreground">Avg Completion</Text>
           <Text className="text-sm font-semibold text-foreground">
-            {Math.round(
-              recentData.reduce((sum, d) => sum + d.tssPercentage, 0) / recentData.length,
-            )}
-            %
+            {availableCompletionRates.length === 0
+              ? "—"
+              : `${Math.round(
+                  availableCompletionRates.reduce((sum, rate) => sum + rate, 0) /
+                    availableCompletionRates.length,
+                )}%`}
           </Text>
         </View>
         <View className="items-center">
           <Text className="text-xs text-muted-foreground">Best Week</Text>
           <Text className="text-sm font-semibold text-green-600">
-            {Math.max(...recentData.map((d) => d.tssPercentage))}%
+            {availableCompletionRates.length === 0
+              ? "—"
+              : `${Math.round(Math.max(...availableCompletionRates))}%`}
           </Text>
         </View>
         <View className="items-center">
           <Text className="text-xs text-muted-foreground">Total TSS</Text>
           <Text className="text-sm font-semibold text-foreground">
             {formatEstimatedTss(
-              recentData.reduce((sum, d) => sum + d.completedTSS, 0),
+              recentData.reduce((sum, d) => sum + (d.completedTSS ?? 0), 0),
               { includeUnit: false },
             )}
           </Text>
@@ -169,6 +187,14 @@ export function WeeklyProgressChart({ data, height = 280 }: WeeklyProgressChartP
       </View>
     </View>
   );
+}
+
+function deriveTssCompletionPercentage(week: WeeklyData): number | null {
+  return week.planAlignment.status === "available" &&
+    week.completedTSS !== null &&
+    week.plannedTSS > 0
+    ? (week.completedTSS / week.plannedTSS) * 100
+    : null;
 }
 
 function weeklyStatusColor(status: WeeklyData["status"]) {

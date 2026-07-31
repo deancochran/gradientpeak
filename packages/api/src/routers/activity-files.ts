@@ -127,8 +127,7 @@ const activityFileParserSummarySchema = z
     calories: z.number().finite().optional(),
     totalAscent: z.number().finite().optional(),
     totalDescent: z.number().finite().optional(),
-    poolLength: z.number().finite().optional(),
-    poolLengthUnit: z.string().optional(),
+    poolLengthMeters: z.number().finite().optional(),
     totalStrokes: z.number().finite().optional(),
     avgStrokeDistance: z.number().finite().optional(),
     avgHeartRate: z.number().finite().optional(),
@@ -382,6 +381,12 @@ function scopeParsedRecords(
   if (scope.type === "session") {
     return records.filter((record) => record.sessionMessageIndex === scope.sessionMessageIndex);
   }
+  if (access.sourceSessionIndex !== null) {
+    const sessionRecords = records.filter(
+      (record) => record.sessionMessageIndex === access.sourceSessionIndex,
+    );
+    if (sessionRecords.length > 0) return sessionRecords;
+  }
   const startMs = access.parentStartedAt.getTime() + access.startOffsetMs;
   const endMs = access.parentStartedAt.getTime() + access.endOffsetMs;
   return records.filter((record) => {
@@ -408,6 +413,59 @@ function getActivityFileTypeFromPath(filePath: string): ActivityFileType {
 }
 
 type ParsedActivityFile = z.infer<typeof parsedActivityFileSchema>;
+
+function effectiveSessionMessageIndex(
+  access: Awaited<ReturnType<typeof canAccessActivityStreams>>,
+  scope: { type: "segment"; segmentId: string } | { type: "session"; sessionMessageIndex: number },
+) {
+  return scope.type === "session" ? scope.sessionMessageIndex : access.sourceSessionIndex;
+}
+
+function sessionMessageIndex(value: unknown) {
+  if (!value || typeof value !== "object" || !("sessionMessageIndex" in value)) return null;
+  return typeof value.sessionMessageIndex === "number" ? value.sessionMessageIndex : null;
+}
+
+function scopeSessionEntries(
+  values: unknown[],
+  requestedSessionMessageIndex: number | null,
+  hasMultipleSessions: boolean,
+) {
+  if (requestedSessionMessageIndex === null) return values;
+  const hasSessionOwnership = values.some((value) => sessionMessageIndex(value) !== null);
+  return hasSessionOwnership
+    ? values.filter((value) => sessionMessageIndex(value) === requestedSessionMessageIndex)
+    : hasMultipleSessions
+      ? []
+      : values;
+}
+
+function scopeParsedSummary(
+  parsedData: ParsedActivityFile,
+  requestedSessionMessageIndex: number | null,
+): ParsedActivityFile["summary"] {
+  if (requestedSessionMessageIndex === null || (parsedData.sessions?.length ?? 0) <= 1) {
+    return parsedData.summary;
+  }
+  const session = parsedData.sessions?.find(
+    (candidate) => candidate.messageIndex === requestedSessionMessageIndex,
+  );
+  if (!session) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Activity session data is unavailable for this segment",
+    });
+  }
+
+  return {
+    totalTime: session.totalElapsedTime,
+    totalDistance: session.totalDistance ?? 0,
+    ...(session.avgSpeed === undefined ? {} : { avgSpeed: session.avgSpeed }),
+    ...(session.poolLengthMeters === undefined
+      ? {}
+      : { poolLengthMeters: session.poolLengthMeters }),
+  };
+}
 
 function toParsedActivityFileForAnalysis(
   parsedData: ParsedActivityFile,
@@ -1011,31 +1069,21 @@ export const activityFilesRouter = createTRPCRouter({
 
         // Extract streams in a format suitable for frontend charting
         // We return the raw records, the frontend can map them to arrays
-        const requestedSessionMessageIndex =
-          input.scope.type === "session" ? input.scope.sessionMessageIndex : null;
+        const requestedSessionMessageIndex = effectiveSessionMessageIndex(access, input.scope);
+        const hasMultipleSessions = (parsedData.sessions?.length ?? 0) > 1;
         return {
           records: scopedRecords,
-          laps:
-            input.scope.type === "session"
-              ? parsedData.laps.filter(
-                  (lap) =>
-                    typeof lap === "object" &&
-                    lap !== null &&
-                    "sessionMessageIndex" in lap &&
-                    lap.sessionMessageIndex === requestedSessionMessageIndex,
-                )
-              : parsedData.laps,
-          lengths:
-            input.scope.type === "session"
-              ? parsedData.lengths.filter(
-                  (length) =>
-                    typeof length === "object" &&
-                    length !== null &&
-                    "sessionMessageIndex" in length &&
-                    length.sessionMessageIndex === requestedSessionMessageIndex,
-                )
-              : parsedData.lengths,
-          summary: parsedData.summary,
+          laps: scopeSessionEntries(
+            parsedData.laps,
+            requestedSessionMessageIndex,
+            hasMultipleSessions,
+          ),
+          lengths: scopeSessionEntries(
+            parsedData.lengths,
+            requestedSessionMessageIndex,
+            hasMultipleSessions,
+          ),
+          summary: scopeParsedSummary(parsedData, requestedSessionMessageIndex),
           analysis,
         };
       } catch (error) {

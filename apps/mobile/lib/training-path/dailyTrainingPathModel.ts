@@ -58,9 +58,6 @@ export type TrainingPathDailyLoadInput = {
   scheduled_load_tss?: number | null;
   tentative_scheduled_load_tss?: number | null;
   recommended_load_tss?: number | null;
-  ideal_tss?: number | null;
-  actual_tss?: number | null;
-  scheduled_tss?: number | null;
 };
 
 export type TrainingPathDailyFitnessInput = {
@@ -183,10 +180,10 @@ export function buildDailyTrainingAdjustmentPointsFromTrainingPathData(input: {
       const fitness = fitnessByDate.get(date);
       const targetFitness = targetFitnessByDate.get(date);
       const scheduledFitness = scheduledFitnessByDate.get(date);
-      const plannedLoadTss = normalizeNumber(load?.scheduled_load_tss ?? load?.scheduled_tss);
+      const plannedLoadTss = normalizeNumber(load?.scheduled_load_tss);
       const tentativePlannedLoadTss = normalizeNumber(load?.tentative_scheduled_load_tss);
-      const completedLoadTss = normalizeNumber(load?.completed_load_tss ?? load?.actual_tss);
-      const targetLoadTss = normalizeNumber(load?.recommended_load_tss ?? load?.ideal_tss);
+      const completedLoadTss = normalizeNumber(load?.completed_load_tss);
+      const targetLoadTss = normalizeNumber(load?.recommended_load_tss);
 
       return {
         date,

@@ -1,5 +1,16 @@
 const mockGetSession = jest.fn<Promise<{ data: unknown }>, []>();
 const mockAtomListen = jest.fn<() => void, [() => void]>();
+const mockSessionGet = jest.fn(() => ({ data: { bearerToken: "old-token" }, isPending: true }));
+const mockSessionSet = jest.fn();
+const mockCreateAuthClient = jest.fn(() => ({
+  getSession: mockGetSession,
+  $store: {
+    atoms: {
+      $sessionSignal: { listen: mockAtomListen },
+      session: { get: mockSessionGet, set: mockSessionSet },
+    },
+  },
+}));
 let mockServerConfigListener: (() => void) | undefined;
 
 jest.mock("@repo/auth/client", () => ({
@@ -7,10 +18,11 @@ jest.mock("@repo/auth/client", () => ({
   resolveGradientPeakAuthBaseUrl: jest.fn(() => "https://api.example.test"),
 }));
 jest.mock("@repo/auth/client/expo", () => ({
-  createGradientPeakExpoAuthClient: jest.fn(() => ({
-    getSession: mockGetSession,
-    $store: { atoms: { $sessionSignal: { listen: mockAtomListen } } },
-  })),
+  createGradientPeakExpoAuthClient: mockCreateAuthClient,
+}));
+jest.mock("@repo/api/contract-epoch", () => ({
+  CONTRACT_EPOCH_HEADER: "x-gradientpeak-contract-epoch",
+  CURRENT_CONTRACT_EPOCH: 1,
 }));
 jest.mock("@/lib/hooks/useAppScheme", () => ({ getAppScheme: jest.fn(() => "gradientpeak") }));
 jest.mock("@/lib/server-config", () => ({
@@ -27,6 +39,7 @@ jest.mock("@/lib/storage/safe-secure-store", () => ({
 let getEmailVerificationCallbackUrl: typeof import("./client").getEmailVerificationCallbackUrl;
 let getPasswordResetCallbackUrl: typeof import("./client").getPasswordResetCallbackUrl;
 let subscribeToMobileAuthSession: typeof import("./client").subscribeToMobileAuthSession;
+let clearMobileAuthSessionCacheForContractEpoch: typeof import("./client").clearMobileAuthSessionCacheForContractEpoch;
 
 describe("mobile auth session emission", () => {
   beforeAll(async () => {
@@ -34,12 +47,15 @@ describe("mobile auth session emission", () => {
       getEmailVerificationCallbackUrl,
       getPasswordResetCallbackUrl,
       subscribeToMobileAuthSession,
+      clearMobileAuthSessionCacheForContractEpoch,
     } = await import("./client"));
   });
 
   beforeEach(() => {
     mockGetSession.mockReset();
     mockAtomListen.mockReset();
+    mockSessionGet.mockClear();
+    mockSessionSet.mockClear();
   });
 
   it("reports a detached session lookup rejection without an unhandled promise", async () => {
@@ -104,5 +120,23 @@ describe("mobile auth session emission", () => {
     expect(consoleError).toHaveBeenCalledWith("[MobileAuthClient] Session listener failed", error);
     expect(laterListener).toHaveBeenCalledWith({ bearerToken: "token" });
     consoleError.mockRestore();
+  });
+
+  it("uses the current Expo storage keys and sends the contract epoch on auth requests", () => {
+    mockGetSession.mockResolvedValue({ data: null });
+    mockServerConfigListener?.();
+
+    expect(mockCreateAuthClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        storagePrefix: "gradientpeak",
+        fixedHeaders: { "x-gradientpeak-contract-epoch": "1" },
+      }),
+    );
+  });
+
+  it("clears Better Auth's in-memory session atom before a contract-epoch reset", () => {
+    clearMobileAuthSessionCacheForContractEpoch();
+
+    expect(mockSessionSet).toHaveBeenCalledWith({ data: null, error: null, isPending: false });
   });
 });

@@ -1,7 +1,7 @@
-import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import {
-  type CompletedActivitySegmentSetV1,
-  completedActivitySegmentSetSchemaV1,
+  type CompletedActivitySegmentSet,
+  completedActivitySegmentSetSchema,
 } from "@repo/core/activity-segments";
 import { activities, activityFileIngestions, activityPlans, profiles } from "@repo/db";
 import { and, eq } from "drizzle-orm";
@@ -49,7 +49,7 @@ export class MobileRecordingSubmissionError extends Error {
   }
 }
 
-function aggregateSegmentTiming(segmentSet: CompletedActivitySegmentSetV1) {
+function aggregateSegmentTiming(segmentSet: CompletedActivitySegmentSet) {
   const timings = segmentSet.segments.map((segment) => segment.summary.timing);
   const complete = timings.every((timing) => timing.timingCoverage === "complete");
   return {
@@ -107,7 +107,7 @@ function segmentSetFromExecutionManifest(input: MobileRecordingSubmissionInput) 
     }
     return { ...base, role: first.role };
   });
-  return completedActivitySegmentSetSchemaV1.parse({ version: 1, elapsedMs, segments });
+  return completedActivitySegmentSetSchema.parse({ version: 1, elapsedMs, segments });
 }
 
 async function loadDefaultContentVisibility(db: DbClient, profileId: string) {
@@ -160,7 +160,7 @@ async function resolveRecordingActivityPlanId(
     );
   }
 
-  if (!activityPlanStructureSchemaV3.safeParse(plan.structure).success) {
+  if (!activityPlanStructureSchema.safeParse(plan.structure).success) {
     throw new MobileRecordingSubmissionError(
       "forbidden",
       "Activity plan is not available for mobile recording",
@@ -294,7 +294,7 @@ export async function submitMobileRecording(
     activityPlanId: submission.activityPlanId,
     profileId: submission.profileId,
   });
-  let segmentSet: CompletedActivitySegmentSetV1;
+  let segmentSet: CompletedActivitySegmentSet;
   try {
     segmentSet = segmentSetFromExecutionManifest(submission);
   } catch (error) {
@@ -377,7 +377,7 @@ export async function submitMobileRecording(
       efficiencyFactor: null,
       aerobicDecoupling: null,
       avgTemperature: submission.summary.avgTemperature ?? null,
-      poolLength: submission.summary.poolLength ?? null,
+      poolLengthMeters: submission.summary.poolLengthMeters ?? null,
       deviceManufacturer: null,
       deviceProduct: null,
       laps: null,

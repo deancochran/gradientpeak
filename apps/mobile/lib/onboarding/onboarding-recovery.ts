@@ -8,7 +8,9 @@ import {
 import { z } from "zod";
 import { safeSecureStore } from "@/lib/storage/safe-secure-store";
 
-export const ONBOARDING_RECOVERY_VERSION = 2 as const;
+// v4 is a hard cut: v3 dynamic keys predate the registry and are intentionally
+// unreadable/unmanaged rather than migrated into the current namespace.
+export const ONBOARDING_RECOVERY_VERSION = 4 as const;
 export const ONBOARDING_RECOVERY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const ONBOARDING_RECOVERY_MAX_BYTES = 8 * 1024;
 export const ONBOARDING_SOCIAL_SELECTION_LIMIT = 8;
@@ -176,6 +178,27 @@ const recoveryRecordSchema = z.discriminatedUnion("status", [
   pendingRecoverySchema,
   completedRecoverySchema,
 ]);
+const onboardingRecoveryRegistryEntrySchema = z
+  .object({
+    key: z.string().regex(/^onboarding-recovery\.v4\.(raw|hex)\.[A-Za-z0-9._-]+$/),
+    userId: recoveryUserIdSchema,
+  })
+  .strict();
+const onboardingRecoveryRegistrySchema = z
+  .array(onboardingRecoveryRegistryEntrySchema)
+  .superRefine((entries, context) => {
+    const keys = new Set<string>();
+    for (const [index, entry] of entries.entries()) {
+      if (keys.has(entry.key)) {
+        context.addIssue({
+          code: "custom",
+          path: [index, "key"],
+          message: "Duplicate recovery key",
+        });
+      }
+      keys.add(entry.key);
+    }
+  });
 
 export type OnboardingRecoverySectionStatus = z.infer<typeof sectionStatusSchema>;
 export type OnboardingRecoverySection = z.infer<typeof recoverySectionSchema>;
@@ -188,6 +211,7 @@ export type OnboardingRecoverySettingsPatch = z.infer<typeof settingsPatchSchema
 type RecoveryListener = (record: OnboardingRecoveryRecord | null) => void;
 const listeners = new Map<string, Set<RecoveryListener>>();
 let storageMutation: Promise<void> = Promise.resolve();
+export const ONBOARDING_RECOVERY_REGISTRY_KEY = `onboarding-recovery.v${ONBOARDING_RECOVERY_VERSION}.registry`;
 
 function encodeSecureStoreKeySegment(value: string): string {
   if (/^[A-Za-z0-9._-]+$/.test(value)) return `raw.${value}`;
@@ -203,6 +227,44 @@ function encodeSecureStoreKeySegment(value: string): string {
 function storageKey(userId: string): string {
   const validatedUserId = recoveryUserIdSchema.parse(userId);
   return `onboarding-recovery.v${ONBOARDING_RECOVERY_VERSION}.${encodeSecureStoreKeySegment(validatedUserId)}`;
+}
+
+type OnboardingRecoveryRegistryEntry = z.infer<typeof onboardingRecoveryRegistryEntrySchema>;
+
+async function readOnboardingRecoveryRegistry(): Promise<OnboardingRecoveryRegistryEntry[]> {
+  const raw = await safeSecureStore.getItemAsyncOrThrow(ONBOARDING_RECOVERY_REGISTRY_KEY);
+  if (!raw) return [];
+
+  try {
+    const entries = onboardingRecoveryRegistrySchema.parse(JSON.parse(raw));
+    for (const entry of entries) {
+      if (entry.key !== storageKey(entry.userId))
+        throw new Error("Mismatched onboarding recovery key");
+    }
+    return entries;
+  } catch {
+    // Do not guess dynamic keys: leave the epoch marker absent so startup fails
+    // closed and can retry after SecureStore is available again.
+    throw new Error("Onboarding recovery registry is invalid");
+  }
+}
+
+async function writeOnboardingRecoveryRegistry(
+  entries: readonly OnboardingRecoveryRegistryEntry[],
+): Promise<void> {
+  if (entries.length === 0) {
+    await safeSecureStore.deleteItemAsyncOrThrow(ONBOARDING_RECOVERY_REGISTRY_KEY);
+    return;
+  }
+  await safeSecureStore.setItemAsyncOrThrow(
+    ONBOARDING_RECOVERY_REGISTRY_KEY,
+    JSON.stringify(entries),
+  );
+}
+
+async function removeOnboardingRecoveryRegistryEntry(key: string): Promise<void> {
+  const entries = await readOnboardingRecoveryRegistry();
+  await writeOnboardingRecoveryRegistry(entries.filter((entry) => entry.key !== key));
 }
 
 function serializeStorageMutation<T>(mutation: () => Promise<T>): Promise<T> {
@@ -274,6 +336,7 @@ export async function loadOnboardingRecovery(
 
   try {
     await safeSecureStore.deleteItemAsyncOrThrow(key);
+    await removeOnboardingRecoveryRegistryEntry(key);
     notify(userId, null);
   } catch {
     // Corrupt state remains ignored if secure storage cannot remove it.
@@ -291,15 +354,42 @@ export async function saveOnboardingRecovery(record: OnboardingRecoveryRecord): 
   }
 
   return serializeStorageMutation(async () => {
-    await safeSecureStore.setItemAsyncOrThrow(storageKey(validated.userId), encoded);
+    const key = storageKey(validated.userId);
+    const entries = await readOnboardingRecoveryRegistry();
+    const nextEntries = [
+      ...entries.filter((entry) => entry.key !== key),
+      { key, userId: validated.userId },
+    ];
+    // Register before writing the payload so an interrupted write is harmless
+    // and the epoch reset can always discover every current recovery key.
+    await writeOnboardingRecoveryRegistry(nextEntries);
+    await safeSecureStore.setItemAsyncOrThrow(key, encoded);
     notify(validated.userId, validated);
   });
 }
 
 export async function clearOnboardingRecovery(userId: string): Promise<void> {
   return serializeStorageMutation(async () => {
-    await safeSecureStore.deleteItemAsyncOrThrow(storageKey(userId));
+    const key = storageKey(userId);
+    await safeSecureStore.deleteItemAsyncOrThrow(key);
+    await removeOnboardingRecoveryRegistryEntry(key);
     notify(userId, null);
+  });
+}
+
+/**
+ * Removes every registered current recovery record. A malformed registry is a
+ * fail-closed startup error because SecureStore cannot enumerate dynamic keys.
+ */
+export async function clearAllOnboardingRecoveryForContractEpoch(): Promise<void> {
+  return serializeStorageMutation(async () => {
+    const entries = await readOnboardingRecoveryRegistry();
+    for (const entry of entries) {
+      await safeSecureStore.deleteItemAsyncOrThrow(entry.key);
+    }
+    await safeSecureStore.deleteItemAsyncOrThrow(ONBOARDING_RECOVERY_REGISTRY_KEY);
+    for (const entry of entries) notify(entry.userId, null);
+    listeners.clear();
   });
 }
 

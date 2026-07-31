@@ -10,7 +10,7 @@ type ProjectionRelevantCreationDefaults = Pick<
   | "availability_config"
   | "constraints"
   | "post_goal_recovery_days"
-  | "behavior_controls_v1"
+  | "behavior_controls"
   | "recent_influence"
   | "recent_influence_action"
   | "calibration"
@@ -86,8 +86,8 @@ export function mapAthletePreferencesToCreationDefaults(
       influence_score: round3((recencyAdaptation - 0.5) * 2),
     },
     recent_influence_action: recencyAdaptation <= 0.02 ? "disabled" : "accepted",
-    behavior_controls_v1: {
-      ...baseline.behavior_controls_v1,
+    behavior_controls: {
+      ...baseline.behavior_controls,
       aggressiveness: round3(
         clamp01(progressionPace * 0.7 + systemicFatigueTolerance * 0.2 + (1 - taperStyle) * 0.1),
       ),

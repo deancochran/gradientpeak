@@ -148,7 +148,6 @@ export async function previewCreationConfigUseCase<
     }>;
     readiness_score?: number;
     readiness_confidence?: unknown;
-    display_points?: unknown;
     capacity_envelope?: unknown;
     risk_flags?: unknown;
     caps_applied?: unknown;

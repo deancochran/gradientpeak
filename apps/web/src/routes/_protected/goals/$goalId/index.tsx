@@ -1,6 +1,5 @@
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -13,6 +12,8 @@ import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { createFileRoute } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+import { useRef, useState } from "react";
 
 import { GoalIntelligenceCard } from "../../../../components/planning/goal-intelligence-card";
 import { RouteFlashToast, type RouteFlashType } from "../../../../components/route-flash-toast";
@@ -31,12 +32,15 @@ export const Route = createFileRoute("/_protected/goals/$goalId/")({
 function GoalDetailPage() {
   const { goalId } = Route.useParams();
   const search = Route.useSearch() as { flash?: string; flashType?: RouteFlashType };
-  const goalQuery = api.goals.getById.useQuery({ id: goalId }, { enabled: Boolean(goalId) });
-  const intelligenceQuery = api.athleteIntelligence.evaluate.useQuery(
-    { goalId },
-    { enabled: Boolean(goalId) },
+  const goalQuery = api.goals.getById.useQuery(
+    { id: goalId },
+    { enabled: Boolean(goalId), retry: false },
   );
   const goal = goalQuery.data;
+  const intelligenceQuery = api.athleteIntelligence.evaluate.useQuery(
+    { goalId },
+    { enabled: Boolean(goal) },
+  );
   if (goalQuery.isLoading) return <p>Loading goal...</p>;
   if (goalQuery.isError)
     return (
@@ -62,11 +66,15 @@ function GoalDetailPage() {
         </div>
         <div className="flex gap-2">
           <Button asChild>
-            <a href={`/goals/${goal.id}/edit`}>Edit</a>
+            <a data-testid={`goal-edit-${goal.id}`} href={`/goals/${goal.id}/edit`}>
+              Edit
+            </a>
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="destructive">Delete</Button>
+              <Button data-testid={`goal-delete-${goal.id}`} variant="destructive">
+                Delete
+              </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
@@ -75,11 +83,7 @@ function GoalDetailPage() {
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <form action={deletePlanGoalAction.url} method="post">
-                  <input type="hidden" name="goal_id" value={goal.id} />
-                  <input type="hidden" name="redirectTo" value="/goals" />
-                  <AlertDialogAction type="submit">Delete goal</AlertDialogAction>
-                </form>
+                <GoalDeleteForm goalId={goal.id} />
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
@@ -95,9 +99,7 @@ function GoalDetailPage() {
             <Badge variant="outline">Priority {goal.priority}/10</Badge>
           </div>
           <p>Target: {formatDayLabel(goal.target_date)}</p>
-          <pre className="overflow-auto rounded-xl bg-muted p-3 text-xs">
-            {JSON.stringify(goal.target_payload, null, 2)}
-          </pre>
+          <GoalTargetDetails target={goal.target_payload} />
         </CardContent>
       </Card>
       <GoalIntelligenceCard
@@ -107,5 +109,80 @@ function GoalDetailPage() {
         onRetry={() => void intelligenceQuery.refetch()}
       />
     </div>
+  );
+}
+
+function GoalTargetDetails({ target }: { target: unknown }) {
+  if (!target || typeof target !== "object") {
+    return <p className="text-sm text-muted-foreground">No target details are available.</p>;
+  }
+  const payload = target as {
+    target_sessions_per_week?: unknown;
+    target_weeks?: unknown;
+    type?: unknown;
+  };
+  if (payload.type === "consistency") {
+    return (
+      <p className="text-sm">
+        Consistency target: {String(payload.target_sessions_per_week ?? "unspecified")} sessions per
+        week for {String(payload.target_weeks ?? "unspecified")} weeks.
+      </p>
+    );
+  }
+  return (
+    <p className="text-sm text-muted-foreground">
+      Target type: {String(payload.type ?? "unknown")}.
+    </p>
+  );
+}
+
+function GoalDeleteForm({ goalId }: { goalId: string }) {
+  const deletePlanGoal = useServerFn(deletePlanGoalAction);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const submittingRef = useRef(false);
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (submittingRef.current) return;
+
+    submittingRef.current = true;
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      const result = await deletePlanGoal({ data: new FormData(event.currentTarget) as never });
+      if (result.status === "error") {
+        setSubmitError(result.message);
+        return;
+      }
+      // This is a full-page navigation, so the destination creates a fresh query cache. Waiting
+      // for detail-query invalidation here would refetch the just-deleted goal and delay redirect.
+      window.location.assign(result.redirectTo);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Unable to delete goal. Try again.");
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input type="hidden" name="goal_id" value={goalId} />
+      <input type="hidden" name="redirectTo" value="/goals" />
+      {submitError ? (
+        <p role="alert" aria-live="polite" className="mb-3 text-sm text-destructive">
+          {submitError}
+        </p>
+      ) : null}
+      <Button
+        data-testid={`goal-delete-${goalId}-confirm`}
+        type="submit"
+        variant="destructive"
+        disabled={isSubmitting}
+      >
+        {isSubmitting ? "Deleting..." : "Delete goal"}
+      </Button>
+    </form>
   );
 }

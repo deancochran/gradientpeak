@@ -3,9 +3,12 @@ import { Card, CardContent, CardDescription, CardHeader } from "@repo/ui/compone
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
 import { createFileRoute, redirect } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+import { useState } from "react";
 
 import { RouteFlashToast, type RouteFlashType } from "../components/route-flash-toast";
 import { authSessionMiddleware, resolveRouteAuthSession } from "../lib/auth/route-guards";
+import { contractEpochFormInputProps } from "../lib/contract-epoch";
 import {
   completeOnboardingIdentityAction,
   loadOnboardingOptions,
@@ -138,6 +141,9 @@ function CheckboxChoice({
 function OnboardingPage() {
   const data = Route.useLoaderData() as Awaited<ReturnType<typeof loadOnboardingOptions>>;
   const navigate = Route.useNavigate();
+  const completeOnboarding = useServerFn(completeOnboardingIdentityAction);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
   const {
     flash,
     flashType,
@@ -150,6 +156,19 @@ function OnboardingPage() {
   const ftpSource = importedSource("ftp");
   const genderSource = importedSource("gender");
   const weightSource = importedSource("weight_kg");
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (isSubmitting) return;
+    setSubmissionError(null);
+    setIsSubmitting(true);
+    try {
+      const result = await completeOnboarding({ data: new FormData(event.currentTarget) });
+      if (result.status === "error") setSubmissionError(result.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 lg:py-12">
@@ -174,6 +193,14 @@ function OnboardingPage() {
               } as never)
             }
           />
+          {submissionError ? (
+            <p
+              className="mb-6 rounded-md border border-destructive/40 p-3 text-sm text-destructive"
+              role="alert"
+            >
+              {submissionError}
+            </p>
+          ) : null}
 
           <section aria-labelledby="providers-heading" className="mb-8 space-y-4 border-b pb-8">
             <div>
@@ -227,7 +254,13 @@ function OnboardingPage() {
             </div>
           </section>
 
-          <form action={completeOnboardingIdentityAction.url} className="space-y-10" method="post">
+          <form
+            action={completeOnboardingIdentityAction.url}
+            className="space-y-10"
+            method="post"
+            onSubmit={handleSubmit}
+          >
+            <input {...contractEpochFormInputProps} />
             <input name="redirect" type="hidden" value={redirectTo ?? "/"} />
             <section aria-labelledby="identity-heading" className="space-y-5">
               <div>
@@ -555,8 +588,13 @@ function OnboardingPage() {
               </div>
             </section>
 
-            <Button className="w-full sm:w-auto sm:min-w-48" type="submit">
-              Finish setup
+            <Button
+              aria-busy={isSubmitting}
+              className="w-full sm:w-auto sm:min-w-48"
+              disabled={isSubmitting}
+              type="submit"
+            >
+              {isSubmitting ? "Finishing setup…" : "Finish setup"}
             </Button>
           </form>
         </CardContent>

@@ -7,6 +7,7 @@ import {
   clearMessagingNotifications,
   seedMessagingNotifications,
 } from "../seeds/messaging-notifications";
+import { currentContractEpochHeaders } from "./contractEpoch";
 
 export { TEST_ACTIVITY_PLAN_ID };
 
@@ -323,6 +324,7 @@ async function signIn(request: APIRequestContext, role: TestUserRole) {
   const actor = TEST_USERS[role];
   return request.post("/api/auth/sign-in/email", {
     data: { email: actor.email, password: actor.password },
+    headers: currentContractEpochHeaders,
   });
 }
 
@@ -335,6 +337,7 @@ async function provisionActor(request: APIRequestContext, role: TestUserRole) {
       name: `${actor.firstName} ${actor.lastName}`,
       password: actor.password,
     },
+    headers: currentContractEpochHeaders,
   });
 
   if (![200, 201, 409, 422].includes(signUpResponse.status())) {
@@ -422,6 +425,7 @@ export async function resetLocalAuthRateLimits() {
   const pool = new Pool({ connectionString: getLocalDatabaseUrl() });
   try {
     await pool.query('delete from "rate_limits"');
+    await pool.query('delete from "api_rate_limit_windows"');
   } finally {
     await pool.end();
   }

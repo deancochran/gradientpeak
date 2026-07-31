@@ -15,7 +15,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { uploadFileToSignedUrl } from "../../../lib/activity-route-upload";
 import { api } from "../../../lib/api/client";
-import { buildCreateFromRecordingSummaryInput } from "../../../lib/recording/finalized-artifact";
+import { buildUploadedRecordingSummaryInput } from "../../../lib/recording/finalized-artifact";
 import { useTimerOnlyRecording } from "../../../lib/recording/provider";
 import { submitWebRecordingArtifact } from "../../../lib/recording/submission-queue";
 
@@ -27,7 +27,7 @@ export function RecordSessionPage() {
   const recording = useTimerOnlyRecording();
   const { lifecycle, snapshot } = recording.state.reducer;
   const configuration = recording.state.configuration;
-  const getSignedUrl = api.activityFiles.getSignedUploadUrl.useMutation();
+  const beginRecordingUpload = api.activityFiles.beginMobileRecordingUpload.useMutation();
   const createActivity = api.activities.createFromRecordingSummary.useMutation();
   const recordSessionRpe = api.activities.recordSessionRpe.useMutation();
   const [name, setName] = useState("");
@@ -48,23 +48,29 @@ export function RecordSessionPage() {
 
   const submit = useCallback(
     async (artifact: NonNullable<typeof recording.artifact>) => {
+      assertOnlineRecordingSubmission(navigator.onLine);
       const file = new File([artifact.fileText], artifact.fileName, {
         type: "application/vnd.garmin.tcx+xml",
       });
-      const signed = await getSignedUrl.mutateAsync({
-        fileName: file.name,
-        fileSize: file.size,
+      const uploadClaim = await beginRecordingUpload.mutateAsync({
+        recordingSessionId: artifact.recordingSessionId,
+        byteSize: file.size,
+        sha256: artifact.sha256,
+        format: "tcx",
       });
-      await uploadFileToSignedUrl(file, signed.signedUrl);
+      if (uploadClaim.status === "upload") {
+        await uploadFileToSignedUrl(file, uploadClaim.signedUrl);
+      }
       return submitWebRecordingArtifact({
         artifact,
         createActivity: () =>
-          createActivity.mutateAsync(
-            buildCreateFromRecordingSummaryInput(artifact, {
-              bucket: "activity-files",
-              path: signed.filePath,
-            }),
-          ),
+          uploadClaim.status === "ready"
+            ? Promise.resolve({ id: uploadClaim.activityId })
+            : createActivity.mutateAsync(
+                buildUploadedRecordingSummaryInput(artifact, {
+                  ingestionId: uploadClaim.ingestionId,
+                }),
+              ),
         recordSessionRpe: ({ activityId, operationId, rpe }) =>
           recordSessionRpe.mutateAsync({
             activity_id: activityId,
@@ -76,7 +82,7 @@ export function RecordSessionPage() {
           }),
       });
     },
-    [createActivity, getSignedUrl, recordSessionRpe],
+    [beginRecordingUpload, createActivity, recordSessionRpe],
   );
 
   useEffect(() => {
@@ -456,4 +462,8 @@ export function isReviewFrozen(
   > | null,
 ): boolean {
   return Boolean(job?.activityId);
+}
+
+export function assertOnlineRecordingSubmission(isOnline: boolean): void {
+  if (!isOnline) throw new TypeError("Network unavailable");
 }

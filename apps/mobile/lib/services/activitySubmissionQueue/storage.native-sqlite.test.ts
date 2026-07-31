@@ -180,13 +180,6 @@ describe("activity submission queue native SQLite storage", () => {
         "orphan",
       ),
     ).rejects.toThrow();
-    await expect(
-      current.executor.runAsync(
-        "INSERT INTO recording_finalization_recovery (session_id, status, reason, updated_at) VALUES (?, 'pending', 'test', ?)",
-        "orphan",
-        baseTime,
-      ),
-    ).rejects.toThrow();
 
     await current.executor.runAsync(
       "INSERT INTO recording_evidence_sessions (session_id, profile_id, state, created_at) VALUES (?, ?, 'active', ?)",

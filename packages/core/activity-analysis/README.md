@@ -13,7 +13,7 @@
 
 Power, pace, swim pace, and heart-rate calculations retain different method identities. They must not be silently combined into one historical load series when their activity category, method, version, or calibration differs.
 
-Current heart-rate stress uses average heart rate relative to activity-category-compatible LTHR. `lthr_by_activity_category` takes precedence over generic `lthr`; historical heart-rate-reserve identities remain parseable but are not selectable by the active policy. Available stress results always carry a current `method`, while unavailable results carry exactly one `unavailable_reason`.
+Current heart-rate stress uses average heart rate relative to activity-category-compatible LTHR. `lthr_by_activity_category` takes precedence over generic `lthr`. Available stress results always carry a current `method`, while unavailable results carry exactly one `unavailable_reason`.
 
 ## Stream heart-rate load
 

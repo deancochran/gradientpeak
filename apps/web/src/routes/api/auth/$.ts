@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
+import { runWithAuthorizedAuthRouteContractEpoch } from "../../../lib/auth/contract-epoch-route";
 import { logServerEvent } from "../../../lib/server-log";
 
 let authRoutePool: Pool | null = null;
@@ -95,27 +96,31 @@ export const Route = createFileRoute("/api/auth/$")({
   server: {
     handlers: {
       GET: ({ request }) => {
-        logServerEvent(
-          "auth.route.request",
-          {
-            routeType: "better-auth",
-          },
-          { request },
-        );
+        return runWithAuthorizedAuthRouteContractEpoch(request, () => {
+          logServerEvent(
+            "auth.route.request",
+            {
+              routeType: "better-auth",
+            },
+            { request },
+          );
 
-        return forwardAuthRequest(request);
+          return forwardAuthRequest(request);
+        });
       },
       POST: async ({ request }) => {
-        logServerEvent(
-          "auth.route.request",
-          {
-            routeType: "better-auth",
-          },
-          { request },
-        );
-        const { response } = await guardAuthPostRequest(request);
+        return runWithAuthorizedAuthRouteContractEpoch(request, async () => {
+          logServerEvent(
+            "auth.route.request",
+            {
+              routeType: "better-auth",
+            },
+            { request },
+          );
+          const { response } = await guardAuthPostRequest(request);
 
-        return response ?? forwardAuthRequest(request);
+          return response ?? forwardAuthRequest(request);
+        });
       },
     },
   },

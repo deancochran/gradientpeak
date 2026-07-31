@@ -16,7 +16,6 @@ const notificationRowSchema = z.object({
   entity_id: publicNotificationsRowSchema.shape.entity_id,
   read_at: notificationTimestampSchema.nullable(),
   created_at: notificationTimestampSchema,
-  is_read: z.boolean(),
 });
 
 type NotificationRow = z.infer<typeof notificationRowSchema>;
@@ -68,8 +67,7 @@ export function createNotificationOperations(db: Database) {
             "type",
             "entity_id",
             "read_at",
-            "created_at",
-            ("read_at" is not null) as "is_read"
+            "created_at"
           from "notifications"
           where "user_id" = ${input.recipientProfileId}::uuid
           order by "created_at" desc

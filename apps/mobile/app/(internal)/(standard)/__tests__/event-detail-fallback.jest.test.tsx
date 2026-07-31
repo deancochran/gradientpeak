@@ -182,6 +182,7 @@ jest.mock("@react-native-community/datetimepicker", () => ({
 jest.mock("@repo/core", () => ({
   __esModule: true,
   formatDurationSec: jest.fn(() => "60 min"),
+  isActivityCompleted: () => false,
 }));
 
 jest.mock("@/lib/stores/activitySelectionStore", () => ({
@@ -199,11 +200,6 @@ jest.mock("@/lib/utils/plan/colors", () => ({
   __esModule: true,
   getActivityBgClass: () => "bg-primary",
   getActivityColor: (activityCategory: string) => getActivityColorMock(activityCategory),
-}));
-
-jest.mock("@/lib/utils/plan/dateGrouping", () => ({
-  __esModule: true,
-  isActivityCompleted: () => false,
 }));
 
 jest.mock("lucide-react-native", () => ({

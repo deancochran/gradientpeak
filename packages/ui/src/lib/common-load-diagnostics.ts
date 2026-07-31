@@ -110,8 +110,9 @@ export function getCommonLoadDiagnostic(
       };
     case "duration_missing":
       return {
-        summary: "Eligible activity duration is missing.",
-        action: "Import activity data with a valid duration.",
+        summary:
+          "Active duration needed for Load is missing; displayed elapsed time cannot substitute.",
+        action: "Re-sync or re-import with active-time evidence.",
         coveragePercent: null,
       };
     case "invalid_data":

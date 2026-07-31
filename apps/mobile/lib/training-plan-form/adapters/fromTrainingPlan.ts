@@ -65,6 +65,7 @@ const createProvenance = (
   source: CreationValueSource,
   rationale: string[],
 ): CreationProvenance => ({
+  method_version: "mobile-training-plan-adapter-v1",
   source,
   confidence: source === "user" ? 1 : 0,
   rationale,
@@ -100,7 +101,7 @@ const createDefaultConfigState = (): TrainingPlanConfigFormData => ({
   },
   optimizationProfile: "balanced",
   postGoalRecoveryDays: 5,
-  behaviorControlsV1: {
+  behaviorControls: {
     aggressiveness: 0.5,
     variability: 0.5,
     spike_frequency: 0.35,
@@ -129,7 +130,7 @@ const createDefaultConfigState = (): TrainingPlanConfigFormData => ({
     goal_difficulty_preference: { locked: false },
     optimization_profile: { locked: false },
     post_goal_recovery_days: { locked: false },
-    behavior_controls_v1: { locked: false },
+    behavior_controls: { locked: false },
   },
 });
 
@@ -323,10 +324,10 @@ export function toTrainingPlanConfigFormDataFromStructure(input: {
         | undefined) ?? defaults.optimizationProfile,
     postGoalRecoveryDays:
       asNumber(creationConfigSnapshot?.post_goal_recovery_days) ?? defaults.postGoalRecoveryDays,
-    behaviorControlsV1:
-      (creationConfigSnapshot?.behavior_controls_v1 as
-        | TrainingPlanConfigFormData["behaviorControlsV1"]
-        | undefined) ?? defaults.behaviorControlsV1,
+    behaviorControls:
+      (creationConfigSnapshot?.behavior_controls as
+        | TrainingPlanConfigFormData["behaviorControls"]
+        | undefined) ?? defaults.behaviorControls,
     calibrationCompositeLocks:
       (creationConfigSnapshot?.calibration_composite_locks as
         | TrainingPlanConfigFormData["calibrationCompositeLocks"]

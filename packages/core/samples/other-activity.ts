@@ -10,6 +10,7 @@ const createPlan = createSystemActivityPlanBuilderFactory("other", [
   "Easy Start:1:Easy Start|Steady Walk:1:Steady Walk|Easy Finish:1:Easy Finish",
   "Warmup:1:Warmup|Threshold Repeats:4:Threshold Row:Easy Row|Cooldown:1:Cooldown",
   "Warmup:1:Warmup|Steady Endurance:1:Steady Endurance|Cooldown:1:Cooldown",
+  "Warmup:1:Warmup|Race Simulation:1:Race Simulation|Finishing Effort:1:Finishing Effort|Cooldown:1:Cooldown",
 ]);
 
 /**
@@ -18,7 +19,7 @@ const createPlan = createSystemActivityPlanBuilderFactory("other", [
  * Estimated TSS: ~30
  */
 export const YOGA_FLOW: RecordingServiceActivityPlan = {
-  id: "3d6e7f8a-9b0c-1d2e-3f4a-5b6c7d8e9f0a",
+  id: "3d6e7f8a-9b0c-4d2e-bf4a-5b6c7d8e9f0a",
   name: "Yoga Flow",
   description: "Gentle yoga flow for flexibility and mindfulness",
   gps_recording_enabled: true,
@@ -62,7 +63,7 @@ export const YOGA_FLOW: RecordingServiceActivityPlan = {
  * Estimated TSS: ~70
  */
 export const ROCK_CLIMBING_SESSION: RecordingServiceActivityPlan = {
-  id: "4e7f8a9b-0c1d-2e3f-4a5b-6c7d8e9f0a1b",
+  id: "4e7f8a9b-0c1d-4e3f-8a5b-6c7d8e9f0a1b",
   name: "Rock Climbing Session",
   description: "Indoor/outdoor rock climbing session with warm-up and cool-down",
   gps_recording_enabled: true,
@@ -117,7 +118,7 @@ export const ROCK_CLIMBING_SESSION: RecordingServiceActivityPlan = {
  * Estimated TSS: ~60
  */
 export const HIKING_ADVENTURE: RecordingServiceActivityPlan = {
-  id: "5f8a9b0c-1d2e-3f4a-5b6c-7d8e9f0a1b2c",
+  id: "5f8a9b0c-1d2e-4f4a-9b6c-7d8e9f0a1b2c",
   name: "Hiking Adventure",
   description: "Moderate-intensity hiking with varied terrain",
   gps_recording_enabled: true,
@@ -155,7 +156,7 @@ export const HIKING_ADVENTURE: RecordingServiceActivityPlan = {
  * Estimated TSS: ~80
  */
 export const CROSSFIT_WOD: RecordingServiceActivityPlan = {
-  id: "6a9b0c1d-2e3f-4a5b-6c7d-8e9f0a1b2c3d",
+  id: "6a9b0c1d-2e3f-4a5b-ac7d-8e9f0a1b2c3d",
   name: "CrossFit WOD",
   description: "High-intensity CrossFit activity of the day",
   gps_recording_enabled: true,
@@ -193,7 +194,7 @@ export const CROSSFIT_WOD: RecordingServiceActivityPlan = {
  * Estimated TSS: ~20
  */
 export const WALKING_RECOVERY: RecordingServiceActivityPlan = {
-  id: "7b0c1d2e-3f4a-5b6c-7d8e-9f0a1b2c3d4e",
+  id: "7b0c1d2e-3f4a-4b6c-bd8e-9f0a1b2c3d4e",
   name: "Recovery Walk",
   description: "Gentle walking session for active recovery",
   gps_recording_enabled: true,
@@ -257,6 +258,31 @@ export const OTHER_LONG_ENDURANCE_ELLIPTICAL: RecordingServiceActivityPlan = {
     .build(),
 };
 
+/** Race-specific mixed-modality simulation for the canonical `other` category. */
+export const OTHER_RACE_SIMULATION: RecordingServiceActivityPlan = {
+  id: "1f6ea8cb-5df9-42cb-9f04-3ca5a8a6d6d1",
+  name: "Other Race Simulation",
+  description:
+    "Race-specific mixed-modality simulation with sustained work, controlled transitions, and a finishing effort.",
+  gps_recording_enabled: false,
+  structure: createPlan()
+    .warmup({ duration: Duration.minutes(12), targets: [Target.rpe(3)] })
+    .step({
+      name: "Race Simulation",
+      duration: Duration.minutes(36),
+      targets: [Target.rpe(7)],
+      notes: "Sustain event-specific pacing and practice planned transitions or fueling.",
+    })
+    .step({
+      name: "Finishing Effort",
+      duration: Duration.minutes(8),
+      targets: [Target.rpe(8)],
+      notes: "Finish strongly while preserving movement quality.",
+    })
+    .cooldown({ duration: Duration.minutes(8), targets: [Target.rpe(2)] })
+    .build(),
+};
+
 export const SAMPLE_OTHER_ACTIVITIES: Array<RecordingServiceActivityPlan> = [
   YOGA_FLOW,
   ROCK_CLIMBING_SESSION,
@@ -265,4 +291,5 @@ export const SAMPLE_OTHER_ACTIVITIES: Array<RecordingServiceActivityPlan> = [
   WALKING_RECOVERY,
   OTHER_THRESHOLD_ROW,
   OTHER_LONG_ENDURANCE_ELLIPTICAL,
+  OTHER_RACE_SIMULATION,
 ];

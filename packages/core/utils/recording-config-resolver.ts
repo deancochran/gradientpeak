@@ -9,7 +9,7 @@
  */
 
 import type { CompiledActivityStepOccurrence } from "../activity-plan";
-import { compileActivityPlanV3 } from "../activity-plan";
+import { compileActivityPlan } from "../activity-plan";
 import {
   isContinuousActivity,
   isStepBasedActivity,
@@ -298,7 +298,7 @@ export class RecordingConfigResolver {
   private static hasTrainerControllablePlanTargets(structure: unknown): boolean {
     if (!structure) return false;
     try {
-      return compileActivityPlanV3(structure).occurrences.some(
+      return compileActivityPlan(structure).occurrences.some(
         (occurrence) =>
           occurrence.role === "activity" &&
           occurrence.targets.some(

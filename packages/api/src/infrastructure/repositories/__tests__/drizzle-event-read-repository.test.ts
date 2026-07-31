@@ -22,7 +22,7 @@ function createEventRow(overrides: Record<string, unknown> = {}) {
     recurrence_timezone: null,
     series_id: null,
     source_provider: null,
-    occurrence_key: null,
+    occurrence_key: "",
     original_starts_at: new Date("2026-04-15T06:45:00.000Z"),
     notes: "Bring bottles",
     status: "scheduled",
@@ -143,6 +143,7 @@ function createSelectCaptureDb(rowsByTable: Record<string, unknown[]>) {
     leftJoinArgs: unknown[][];
     limitArg: number | undefined;
     orderByArgs: unknown[];
+    selection: Record<string, unknown> | undefined;
     table: string;
     whereArg: unknown;
   }> = [];
@@ -156,13 +157,14 @@ function createSelectCaptureDb(rowsByTable: Record<string, unknown[]>) {
       }),
     }),
     with: () => db,
-    select: () => {
+    select: (selection?: Record<string, unknown>) => {
       const captured = {
         table: "unknown",
         leftJoinArgs: [] as unknown[][],
         orderByArgs: [] as unknown[],
         limitArg: undefined as number | undefined,
         whereArg: undefined as unknown,
+        selection,
       };
       selects.push(captured);
 
@@ -244,6 +246,35 @@ describe("drizzle-event-read-repository", () => {
     );
     expect(activityQuery.params).toContain("2026-07-18T07:00:00.000Z");
     expect(activityQuery.params).toContain("2026-07-27T07:00:00.000Z");
+  });
+
+  it("projects only ActivityWithSegments fields for effective-plan load inputs", async () => {
+    const { db, selects } = createSelectCaptureDb({
+      profiles: [{ planningTimezone: "UTC" }],
+      events: [],
+      activities: [],
+    });
+
+    await createEventReadRepository(db).getEffectivePlanLoadInputs({
+      asOf: new Date("2026-07-20T01:00:00.000Z"),
+      profileId: "profile-1",
+    });
+
+    expect(
+      Object.keys(selects.find((select) => select.table === "activities")?.selection ?? {}),
+    ).toEqual([
+      "id",
+      "profile_id",
+      "started_at",
+      "finished_at",
+      "elapsed_ms",
+      "active_ms",
+      "moving_ms",
+      "timing_coverage",
+      "distance_meters",
+      "avg_heart_rate",
+      "max_heart_rate",
+    ]);
   });
 
   it("reads effective-plan events by their persisted scheduled date even when starts_at is outside the UTC envelope", async () => {
@@ -599,7 +630,7 @@ describe("drizzle-event-read-repository", () => {
     expect(callLog.map((entry) => entry.table)).toEqual(["events", "activities"]);
   });
 
-  it("serializes owned events to ISO strings while preserving nullables", async () => {
+  it("serializes current owned events to ISO strings while preserving nullable fields", async () => {
     const repository = createEventReadRepository(
       createQueryMapDbMock({
         events: {
@@ -607,12 +638,8 @@ describe("drizzle-event-read-repository", () => {
             createEventRow({
               ends_at: null,
               original_starts_at: null,
-              title: null,
               description: null,
-              all_day: null,
-              timezone: null,
               notes: null,
-              status: null,
             }),
           ],
           error: null,
@@ -631,12 +658,8 @@ describe("drizzle-event-read-repository", () => {
         ...createEventRow({
           ends_at: null,
           original_starts_at: null,
-          title: null,
           description: null,
-          all_day: null,
-          timezone: null,
           notes: null,
-          status: null,
         }),
         created_at: "2026-04-01T10:00:00.000Z",
         starts_at: "2026-04-15T07:00:00.000Z",
@@ -645,13 +668,34 @@ describe("drizzle-event-read-repository", () => {
         updated_at: "2026-04-02T11:00:00.000Z",
         activity_plan: null,
         route: null,
-        all_day: false,
         occurrence_key: "",
-        status: "scheduled",
-        timezone: "UTC",
-        title: "",
       },
     ]);
+  });
+
+  it.each([
+    "all_day",
+    "occurrence_key",
+    "status",
+    "timezone",
+    "title",
+  ] as const)("rejects event rows missing the current required %s field", async (field) => {
+    const repository = createEventReadRepository(
+      createQueryMapDbMock({
+        events: {
+          data: [createEventRow({ [field]: null })],
+          error: null,
+        },
+      }).db,
+    );
+
+    await expect(
+      repository.listOwnedEvents({
+        profileId: "profile-1",
+        limit: 10,
+        includeAdhoc: true,
+      }),
+    ).rejects.toThrow(`Invalid event row: ${field} is required`);
   });
 
   it("hydrates joined activity plans for owned events and detail reads", async () => {
@@ -687,7 +731,6 @@ describe("drizzle-event-read-repository", () => {
     ).resolves.toEqual([
       {
         ...createEventRow(),
-        occurrence_key: "",
         created_at: "2026-04-01T10:00:00.000Z",
         starts_at: "2026-04-15T07:00:00.000Z",
         ends_at: "2026-04-15T08:15:00.000Z",
@@ -710,7 +753,6 @@ describe("drizzle-event-read-repository", () => {
       }),
     ).resolves.toEqual({
       ...createEventRow(),
-      occurrence_key: "",
       created_at: "2026-04-01T10:00:00.000Z",
       starts_at: "2026-04-15T07:00:00.000Z",
       ends_at: "2026-04-15T08:15:00.000Z",
@@ -726,7 +768,7 @@ describe("drizzle-event-read-repository", () => {
     });
   });
 
-  it("keeps repeated same-category plans and omits mixed plans in repository-backed events", async () => {
+  it("keeps repeated same-category plans and rejects mixed plans in repository-backed events", async () => {
     const baseStructure = createActivityPlanRow().structure;
     const baseSegment = baseStructure.segments[0]!;
     const repeatedBike = createActivityPlanRow({
@@ -750,8 +792,8 @@ describe("drizzle-event-read-repository", () => {
         ],
       },
     });
-    const legacyMixed = createActivityPlanRow({
-      id: "legacy-mixed",
+    const mixedPlan = createActivityPlanRow({
+      id: "mixed-plan",
       structure: {
         ...baseStructure,
         segments: [
@@ -783,8 +825,8 @@ describe("drizzle-event-read-repository", () => {
               activity_route: null,
             },
             {
-              ...createEventRow({ id: "legacy" }),
-              activity_plan: legacyMixed,
+              ...createEventRow({ id: "mixed" }),
+              activity_plan: mixedPlan,
               activity_route: null,
             },
           ],
@@ -795,21 +837,10 @@ describe("drizzle-event-read-repository", () => {
 
     await expect(
       repository.listOwnedEvents({ profileId: "profile-1", limit: 10, includeAdhoc: true }),
-    ).resolves.toMatchObject([
-      {
-        id: "repeated",
-        activity_plan: {
-          activity_category: "bike",
-        },
-      },
-      {
-        id: "legacy",
-        activity_plan: null,
-      },
-    ]);
+    ).rejects.toThrow("Stored activity plan is not valid");
   });
 
-  it("keeps collection events when a nested activity plan is invalid", async () => {
+  it("rejects collection reads when a nested activity plan is invalid", async () => {
     const repository = createEventReadRepository(
       createQueryMapDbMock({
         events: {
@@ -827,13 +858,7 @@ describe("drizzle-event-read-repository", () => {
 
     await expect(
       repository.listOwnedEvents({ profileId: "profile-1", limit: 10, includeAdhoc: true }),
-    ).resolves.toMatchObject([
-      {
-        id: "event-1",
-        activity_plan_id: "activity-plan-1",
-        activity_plan: null,
-      },
-    ]);
+    ).rejects.toThrow("Stored activity plan is not valid");
   });
 
   it("preserves persisted schedule dates", async () => {
