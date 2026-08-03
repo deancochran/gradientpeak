@@ -1,7 +1,7 @@
 import type {
   AthletePlanningContext,
+  AthletePlanningContextEditableFieldKey,
   AthletePlanningContextEffortInput,
-  AthletePlanningContextFieldKey,
   AthletePlanningContextFieldOverride,
 } from "@repo/core";
 import type { z } from "zod";
@@ -51,7 +51,7 @@ export type TrainingPlanBuilderAction =
   | { type: "anchorDate.update"; anchorDate: string }
   | { type: "athleteContext.replace"; athleteContext: AthletePlanningContext }
   | { type: "athleteContext.fieldOverride"; override: AthletePlanningContextFieldOverride }
-  | { type: "athleteContext.fieldRemove"; fieldKey: AthletePlanningContextFieldKey }
+  | { type: "athleteContext.fieldRemove"; fieldKey: AthletePlanningContextEditableFieldKey }
   | { type: "athleteContext.effortAdd"; effort: AthletePlanningContextEffortInput }
   | { type: "athleteContext.effortRemove"; effortIndex: number }
   | { type: "planPreferences.update"; patch: Partial<TrainingPlanBuilderPlanPreferences> }

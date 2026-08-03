@@ -1,9 +1,5 @@
 import type { ActivityAnalysisContext } from "@repo/core";
 import type { ActivityAnalysisContextSnapshot, ActivityAnalysisStore } from "../../repositories";
-import {
-  filterSupersededProfileOverrides,
-  resolveLatestObservationsByKey,
-} from "../../utils/profile-override-observations";
 
 type ResolveActivityContextAsOfInput = {
   store: ActivityAnalysisStore;
@@ -83,12 +79,13 @@ export function resolveActivityContextFromEvidence(input: {
         (!input.activityId || metric.reference_activity_id !== input.activityId),
     )
     .sort(compareRecordedAtDesc);
-  const latestMetrics = resolveLatestObservationsByKey(
-    metricRows.filter((metric) => metric.metric_type !== "lthr"),
-    (metric) => metric.metric_type,
-  );
+  const latestMetrics = new Map<string, (typeof metricRows)[number]>();
+  for (const metric of metricRows) {
+    if (metric.metric_type === "lthr" || latestMetrics.has(metric.metric_type)) continue;
+    latestMetrics.set(metric.metric_type, metric);
+  }
   const profileMetrics: ActivityAnalysisContext["profileMetrics"] = {};
-  for (const metric of [...latestMetrics.values()].filter((metric) => metric !== null)) {
+  for (const metric of latestMetrics.values()) {
     const value = toNumber(metric.value);
     if (value === null) continue;
     if (metric.metric_type === "weight_kg" && profileMetrics.weight_kg == null) {
@@ -97,22 +94,17 @@ export function resolveActivityContextFromEvidence(input: {
       profileMetrics.resting_hr = value;
     }
   }
-  if (latestMetrics.get("weight_kg") === null) profileMetrics.weight_kg = null;
 
-  const recentEfforts = filterSupersededProfileOverrides(
-    input.evidence.recentEfforts
-      .filter((effort) => {
-        const observedAt = new Date(effort.recorded_at).getTime();
-        return (
-          Number.isFinite(observedAt) &&
-          observedAt <= cutoff &&
-          (!input.activityId || effort.activity_id !== input.activityId)
-        );
-      })
-      .sort(compareRecordedAtDesc),
-    (effort) =>
-      `${effort.activity_category}:${effort.effort_type}:${effort.duration_seconds}:${effort.unit}`,
-  );
+  const recentEfforts = input.evidence.recentEfforts
+    .filter((effort) => {
+      const observedAt = new Date(effort.recorded_at).getTime();
+      return (
+        Number.isFinite(observedAt) &&
+        observedAt <= cutoff &&
+        (!input.activityId || effort.activity_id !== input.activityId)
+      );
+    })
+    .sort(compareRecordedAtDesc);
 
   return {
     profileMetrics,

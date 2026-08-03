@@ -11,11 +11,7 @@ import {
 } from "../../application/profiles/updateProfile";
 import { createApiContext } from "../../context";
 import { createActivityAnalysisStore } from "../../infrastructure/repositories";
-import {
-  resolveActivityContextAsOf,
-  resolveActivityContextFromEvidence,
-} from "../../lib/activity-analysis";
-import { isClearedProfileOverride } from "../../utils/profile-override-observations";
+import { resolveActivityContextFromEvidence } from "../../lib/activity-analysis";
 import { profilesRouter } from "../profiles";
 
 const seededUserIds: string[] = [];
@@ -128,15 +124,24 @@ describe("atomic profile update against PostgreSQL", () => {
     expect(await getSerializedProfile(db, profileId)).toMatchObject({
       weight_kg: 70.5,
     });
+    expect(await manualMetrics(profileId, "weight_kg")).toEqual([
+      expect.objectContaining({
+        value: 70.5,
+        method: "profile_weight_setting",
+        provenance: {
+          input: "profile_update",
+          observation_type: "observed",
+          trusted: true,
+          entered_by: "athlete",
+        },
+      }),
+    ]);
 
     await caller.update({ weight_kg: "" });
     expect(await getSerializedProfile(db, profileId)).toMatchObject({
       weight_kg: null,
     });
-    const weightHistory = await manualMetrics(profileId, "weight_kg");
-    expect(weightHistory).toHaveLength(2);
-    expect(weightHistory.some((row) => row.value === 70.5)).toBe(true);
-    expect(weightHistory.some(isClearedProfileOverride)).toBe(true);
+    expect(await manualMetrics(profileId, "weight_kg")).toEqual([]);
 
     for (const input of [
       { threshold_hr: "180" },
@@ -157,7 +162,7 @@ describe("atomic profile update against PostgreSQL", () => {
     ).toEqual([]);
   });
 
-  it("strictly bounds zero effort tombstones despite nullable evidence metadata", async () => {
+  it("rejects zero and non-finite activity effort values", async () => {
     const profileId = await seedProfile(`effort-check-${randomUUID().slice(0, 8)}`);
     const insertEffort = (input: {
       value: number | string;
@@ -182,57 +187,15 @@ describe("atomic profile update against PostgreSQL", () => {
       );
 
     await expect(
-      insertEffort({
-        value: 0,
-        source: "manual",
-        method: "profile_update_override",
-        provenance: { override_state: "cleared" },
-      }),
-    ).resolves.toBeDefined();
-    await expect(
       insertEffort({ value: 250, source: null, method: null, provenance: null }),
     ).resolves.toBeDefined();
 
-    const invalidZeroCases = [
-      {
-        value: 0,
-        source: null,
-        method: "profile_update_override",
-        provenance: { override_state: "cleared" },
-      },
-      {
-        value: 0,
-        source: "manual",
-        method: null,
-        provenance: { override_state: "cleared" },
-      },
-      { value: 0, source: "manual", method: "profile_update_override", provenance: null },
-      { value: 0, source: "manual", method: "profile_update_override", provenance: {} },
-      {
-        value: 0,
-        source: "manual",
-        method: "profile_update_override",
-        provenance: { override_state: null },
-      },
-      {
-        value: 0,
-        source: "manual",
-        method: "profile_update_override",
-        provenance: { override_state: "active" },
-      },
-      {
-        value: 0,
-        source: "manual",
-        method: "manual_activity_effort_entry",
-        provenance: { override_state: "cleared" },
-      },
-    ] as const;
-    for (const invalid of invalidZeroCases) {
-      await expect(insertEffort(invalid)).rejects.toMatchObject({
-        code: "23514",
-        constraint: "activity_efforts_value_finite_positive_check",
-      });
-    }
+    await expect(
+      insertEffort({ value: 0, source: "manual", method: null, provenance: null }),
+    ).rejects.toMatchObject({
+      code: "23514",
+      constraint: "activity_efforts_value_finite_positive_check",
+    });
     for (const value of ["NaN", "Infinity", "-Infinity"] as const) {
       await expect(
         insertEffort({ value, source: null, method: null, provenance: null }),
@@ -240,7 +203,7 @@ describe("atomic profile update against PostgreSQL", () => {
     }
   });
 
-  it("keeps append-only weight history and agrees across profile and as-of activity analysis", async () => {
+  it("synchronizes profile weight settings without sentinel history", async () => {
     const profileId = await seedProfile(`profile-${randomUUID().slice(0, 8)}`);
     const request = {
       profileId,
@@ -268,82 +231,45 @@ describe("atomic profile update against PostgreSQL", () => {
       68.2, 69,
     ]);
     const analysisStore = createActivityAnalysisStore(db);
+    const beforeClear = new Date(Date.now() + 1_000);
+    const resolveStoredContext = async (activityTimestamp: Date) =>
+      resolveActivityContextFromEvidence({
+        activityTimestamp,
+        evidence: await analysisStore.getContextSnapshot({
+          asOf: activityTimestamp,
+          effortLookbackAsOf: activityTimestamp,
+          profileId,
+        }),
+      });
+    await expect(resolveStoredContext(beforeClear)).resolves.toMatchObject({
+      profileMetrics: { weight_kg: 69 },
+    });
 
     await updateProfile(db, { profileId, weight_kg: null });
-    const weightHistory = await manualMetrics(profileId, "weight_kg");
-    expect(weightHistory).toHaveLength(3);
-    expect(weightHistory.some((row) => row.value === 68.2)).toBe(true);
-    const clear = weightHistory.find(isClearedProfileOverride);
-    expect(clear).toBeDefined();
-    if (!clear) throw new Error("Expected weight tombstone");
-    const beforeClear = new Date(clear.recorded_at.getTime() - 1);
-    const afterClear = new Date(clear.recorded_at.getTime() + 1);
+    expect(await manualMetrics(profileId, "weight_kg")).toEqual([]);
+    expect(await getSerializedProfile(db, profileId)).toMatchObject({ weight_kg: null });
+    const afterClear = new Date(Date.now() + 1_000);
+    const afterClearContext = await resolveStoredContext(afterClear);
+    expect(afterClearContext.profileMetrics).not.toHaveProperty("weight_kg");
 
     await updateProfile(db, { profileId, weight_kg: null });
-    expect(await manualMetrics(profileId, "weight_kg")).toHaveLength(3);
+    expect(await manualMetrics(profileId, "weight_kg")).toEqual([]);
 
     await updateProfile(db, { profileId, weight_kg: 71 });
     const reactivatedHistory = await manualMetrics(profileId, "weight_kg");
-    expect(reactivatedHistory).toHaveLength(4);
+    expect(reactivatedHistory).toHaveLength(1);
     const reactivation = reactivatedHistory.find((row) => row.value === 71);
     expect(reactivation).toBeDefined();
     if (!reactivation) throw new Error("Expected reactivated weight observation");
     const afterReactivation = new Date(reactivation.recorded_at.getTime() + 1);
-
-    const batchEvidence = await analysisStore.loadContextEvidence?.({
-      requests: [
-        { profileId, asOf: beforeClear },
-        { profileId, asOf: afterClear },
-        { profileId, asOf: afterReactivation },
-      ],
-    });
-    const sharedEvidence = batchEvidence?.get(profileId);
-    expect(sharedEvidence).toBeDefined();
-    if (!sharedEvidence) throw new Error("Expected batched profile evidence");
     const serializedProfile = await getSerializedProfile(db, profileId);
     expect(serializedProfile).toMatchObject({ weight_kg: 71 });
     expect(serializedProfile).not.toHaveProperty("threshold_hr");
     expect(serializedProfile).not.toHaveProperty("ftp");
-    const afterClearContext = await resolveActivityContextAsOf({
-      store: analysisStore,
-      profileId,
-      activityTimestamp: afterClear,
-    });
-    expect(afterClearContext).toMatchObject({ profileMetrics: { weight_kg: null } });
-    expect(afterClearContext.profileMetrics).not.toHaveProperty("ftp");
-    await expect(
-      resolveActivityContextAsOf({
-        store: analysisStore,
-        profileId,
-        activityTimestamp: beforeClear,
-      }),
-    ).resolves.toMatchObject({ profileMetrics: { weight_kg: 69 } });
-    expect(
-      resolveActivityContextFromEvidence({
-        evidence: sharedEvidence,
-        activityTimestamp: beforeClear,
-      }).profileMetrics,
-    ).toMatchObject({ weight_kg: 69 });
-    expect(
-      resolveActivityContextFromEvidence({
-        evidence: sharedEvidence,
-        activityTimestamp: afterClear,
-      }).profileMetrics,
-    ).toMatchObject({ weight_kg: null });
 
-    await expect(
-      resolveActivityContextAsOf({
-        store: analysisStore,
-        profileId,
-        activityTimestamp: afterReactivation,
-      }),
-    ).resolves.toMatchObject({ profileMetrics: { weight_kg: 71 } });
-    expect(
-      resolveActivityContextFromEvidence({
-        evidence: sharedEvidence,
-        activityTimestamp: afterReactivation,
-      }).profileMetrics,
-    ).toMatchObject({ weight_kg: 71 });
+    await expect(resolveStoredContext(afterReactivation)).resolves.toMatchObject({
+      profileMetrics: { weight_kg: 71 },
+    });
 
     expect(await manualMetrics(profileId, "weight_kg")).toEqual(reactivatedHistory);
     expect(await manualMetrics(profileId, "lthr")).toEqual([]);

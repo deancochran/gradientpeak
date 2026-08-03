@@ -1,7 +1,6 @@
 import { activityEfforts, publicActivityEffortsRowSchema } from "@repo/db";
 import { desc, eq } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
-import { isClearedProfileOverride } from "../../utils/profile-override-observations";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
@@ -13,14 +12,5 @@ export async function listOwnedActivityEfforts(db: DbClient, profileId: string) 
     .where(eq(activityEfforts.profile_id, profileId))
     .orderBy(desc(activityEfforts.recorded_at));
 
-  return publicActivityEffortsRowSchema
-    .array()
-    .parse(rows)
-    .filter(
-      (row) =>
-        !(
-          row.source === "manual" &&
-          isClearedProfileOverride({ method: row.method, provenance: row.provenance })
-        ),
-    );
+  return publicActivityEffortsRowSchema.array().parse(rows);
 }

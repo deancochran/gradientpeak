@@ -1321,7 +1321,7 @@ describe("training plan creation domain", () => {
     expect(fields.find((field) => field.key === "planningThresholdPowerWatts")).toMatchObject({
       visible: true,
       required: true,
-      canOverride: true,
+      canOverride: false,
       canRemove: false,
       value: { value: null, source: "unknown", unit: "watts" },
     });

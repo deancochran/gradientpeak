@@ -146,7 +146,6 @@ export async function getProfileWeightKgAsOf(
     .select({
       value: profileMetrics.value,
       unit: profileMetrics.unit,
-      provenance: profileMetrics.provenance,
     })
     .from(profileMetrics)
     .where(
@@ -158,15 +157,7 @@ export async function getProfileWeightKgAsOf(
     )
     .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.id))
     .limit(1);
-  const cleared =
-    row?.provenance !== null &&
-    typeof row?.provenance === "object" &&
-    !Array.isArray(row.provenance) &&
-    "override_state" in row.provenance &&
-    row.provenance.override_state === "cleared";
-  return row && !cleared && row.unit === "kg" && Number.isFinite(row.value) && row.value > 0
-    ? row.value
-    : null;
+  return row && row.unit === "kg" && Number.isFinite(row.value) && row.value > 0 ? row.value : null;
 }
 
 export async function getSerializedProfile(db: DbClient, profileId: string) {

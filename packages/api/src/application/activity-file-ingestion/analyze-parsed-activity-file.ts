@@ -22,7 +22,6 @@ import { profileMetrics } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, lte } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
-import { isClearedProfileOverride } from "../../utils/profile-override-observations";
 import { fetchActivityTemperature } from "../../utils/weather";
 import type { GeneratedActivityLthrEvidence } from "../activities/reconcile-activity-evidence";
 import { calculateActivityFileHeartRateEvidence } from "./heart-rate-evidence";
@@ -263,8 +262,6 @@ export async function getLatestProfileMetricValue(
   const row = await db
     .select({
       value: profileMetrics.value,
-      method: profileMetrics.method,
-      provenance: profileMetrics.provenance,
     })
     .from(profileMetrics)
     .where(
@@ -278,7 +275,7 @@ export async function getLatestProfileMetricValue(
     .limit(1)
     .then((rows) => rows[0] ?? null);
 
-  return row && !isClearedProfileOverride(row) ? toNumberOrNull(row.value) : null;
+  return row ? toNumberOrNull(row.value) : null;
 }
 
 function deterministicSegmentId(

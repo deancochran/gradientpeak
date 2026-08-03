@@ -50,6 +50,36 @@ async function assertCanonicalActivityCategories(target: {
   `);
 }
 
+async function assertStrictlyPositiveActivityEfforts(target: {
+  query: <Row extends Record<string, unknown>>(
+    text: string,
+    values?: unknown[],
+  ) => Promise<{ rows: Row[] }>;
+}) {
+  try {
+    await target.query(`
+      insert into public.activity_efforts (
+        id, created_at, profile_id, recorded_at, activity_category,
+        effort_type, duration_seconds, unit, value, source
+      ) values (
+        '44444444-4444-4444-8444-444444444440', now(),
+        '11111111-1111-4111-8111-111111111111', now(), 'bike',
+        'power', 1200, 'watts', 0, 'manual'
+      )
+    `);
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error ? error.code : null;
+    const constraint =
+      error && typeof error === "object" && "constraint" in error ? error.constraint : null;
+    if (code === "23514" && constraint === "activity_efforts_value_finite_positive_check") {
+      console.log("[db:activity-efforts] zero values are rejected");
+      return;
+    }
+    throw error;
+  }
+  throw new Error("activity_efforts accepted a zero value");
+}
+
 type ProfileGoalConstraintInput = {
   activityCategory: string | null;
   priority: number;
@@ -434,6 +464,7 @@ async function main() {
     const baseline = requireFreshBaseline();
     await applySqlFile(target, baseline.sourcePath);
     await assertCanonicalActivityCategories(target);
+    await assertStrictlyPositiveActivityEfforts(target);
     await assertProfileGoalConstraints(target);
     await assertArtifactLifecycleFunctionPrivileges(target);
     await assertRouteStorageLifecycle(target);

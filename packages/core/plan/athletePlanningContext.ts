@@ -81,7 +81,7 @@ export const athleteContextActivityEffortSourceSchema = z
     activity_category: activityCategorySchema,
     effort_type: effortTypeSchema,
     duration_seconds: z.number().int().positive(),
-    value: z.number().finite(),
+    value: z.number().finite().positive(),
     unit: z.string().min(1),
     recorded_at: z.union([z.string(), z.date()]),
     activity_id: z.string().uuid().nullable().optional(),
@@ -140,8 +140,6 @@ export const effectiveAthleteSnapshotSchema = athleteContextSourceSnapshotSchema
         futureActivityEfforts: z.number().int().min(0),
         invalidProfileMetrics: z.number().int().min(0),
         invalidActivityEfforts: z.number().int().min(0),
-        clearedProfileMetrics: z.number().int().min(0),
-        clearedActivityEfforts: z.number().int().min(0),
       })
       .strict(),
   })
@@ -195,7 +193,7 @@ export const athletePlanningContextSchema = z
           activityCategory: activityCategorySchema,
           effortType: effortTypeSchema,
           durationSeconds: z.number().int().positive(),
-          value: z.number().finite(),
+          value: z.number().finite().positive(),
           unit: z.string().min(1),
           recordedAt: z.string(),
           source: z.literal("activity_effort"),
@@ -246,6 +244,28 @@ export type AthletePlanningContextFieldKey =
   | "sorenessLevel"
   | "wellnessScore";
 
+const CANONICAL_PERFORMANCE_TARGET_FIELD_KEYS = [
+  "planningThresholdPowerWatts",
+  "planningThresholdPaceSecondsPerKm",
+  "swimmingCssSecondsPer100m",
+  "thresholdHeartRateBpm",
+] as const satisfies readonly AthletePlanningContextFieldKey[];
+
+type CanonicalPerformanceTargetFieldKey = (typeof CANONICAL_PERFORMANCE_TARGET_FIELD_KEYS)[number];
+
+export type AthletePlanningContextEditableFieldKey = Exclude<
+  AthletePlanningContextFieldKey,
+  CanonicalPerformanceTargetFieldKey
+>;
+
+export function isAthletePlanningContextEditableFieldKey(
+  key: AthletePlanningContextFieldKey,
+): key is AthletePlanningContextEditableFieldKey {
+  return !(
+    CANONICAL_PERFORMANCE_TARGET_FIELD_KEYS as readonly AthletePlanningContextFieldKey[]
+  ).includes(key);
+}
+
 export type AthletePlanningContextRequirements = Partial<
   Record<AthletePlanningContextFieldKey, { reason: string }>
 >;
@@ -265,7 +285,7 @@ export interface AthletePlanningContextFieldDescriptor {
 }
 
 export interface AthletePlanningContextFieldOverride {
-  key: AthletePlanningContextFieldKey;
+  key: AthletePlanningContextEditableFieldKey;
   value: number | null;
   unit?: string | null;
 }
@@ -357,7 +377,7 @@ export const ATHLETE_CONTEXT_FIELD_REGISTRY: Record<
   thresholdHeartRateBpm: {
     label: "Threshold heart rate",
     category: "physiology",
-    inputKind: "number",
+    inputKind: "derived",
     defaultUnit: "bpm",
   },
   hrvRmssdMs: {
@@ -535,46 +555,6 @@ function manualEvidenceValueForField({
   };
 }
 
-function isClearedObservation(input: {
-  source?: string | null | undefined;
-  method?: string | null | undefined;
-  provenance?: Record<string, unknown> | null | undefined;
-}) {
-  return (
-    input.source === "manual" &&
-    input.method === "profile_update_override" &&
-    input.provenance?.override_state === "cleared"
-  );
-}
-
-function effectiveObservationsAfterClears<T>(
-  observations: readonly T[],
-  keyFor: (observation: T) => string,
-  recordedAtFor: (observation: T) => string | Date,
-  isCleared: (observation: T) => boolean,
-) {
-  const effective = new Map<string, T[]>();
-  let clearedCount = 0;
-  const sorted = [...observations].sort((left, right) => {
-    const timeDifference =
-      new Date(recordedAtFor(left)).getTime() - new Date(recordedAtFor(right)).getTime();
-    if (timeDifference !== 0) return timeDifference;
-    return Number(isCleared(left)) - Number(isCleared(right));
-  });
-
-  for (const observation of sorted) {
-    const key = keyFor(observation);
-    if (isCleared(observation)) {
-      clearedCount += 1;
-      effective.set(key, []);
-      continue;
-    }
-    effective.set(key, [...(effective.get(key) ?? []), observation]);
-  }
-
-  return { observations: [...effective.values()].flat(), clearedCount };
-}
-
 /** Normalizes raw profile evidence into one deterministic, effective projection at a point in time. */
 export function createEffectiveAthleteSnapshot(
   input: z.input<typeof athleteContextSourceSnapshotSchema>,
@@ -611,19 +591,6 @@ export function createEffectiveAthleteSnapshot(
   const activityEffortsAtDate = activityEffortsWithValidDate.filter(
     (effort) => new Date(effort.recorded_at).getTime() <= asOfTime,
   );
-  const effectiveMetrics = effectiveObservationsAfterClears(
-    profileMetricsAtDate,
-    (metric) => metric.metric_type,
-    (metric) => metric.recorded_at,
-    (metric) => isClearedObservation(metric),
-  );
-  const effectiveEfforts = effectiveObservationsAfterClears(
-    activityEffortsAtDate,
-    (effort) =>
-      `${effort.activity_category}:${effort.effort_type}:${effort.duration_seconds}:${effort.unit}`,
-    (effort) => effort.recorded_at,
-    (effort) => isClearedObservation(effort),
-  );
   const currentFitnessRecordedAt = source.currentFitness?.recorded_at
     ? new Date(source.currentFitness.recorded_at).getTime()
     : null;
@@ -632,8 +599,8 @@ export function createEffectiveAthleteSnapshot(
 
   return effectiveAthleteSnapshotSchema.parse({
     profile: source.profile,
-    profileMetrics: effectiveMetrics.observations,
-    activityEfforts: effectiveEfforts.observations,
+    profileMetrics: profileMetricsAtDate,
+    activityEfforts: activityEffortsAtDate,
     currentFitness:
       hasInvalidCurrentFitnessDate ||
       (currentFitnessRecordedAt !== null && currentFitnessRecordedAt > asOfTime)
@@ -651,8 +618,6 @@ export function createEffectiveAthleteSnapshot(
       futureActivityEfforts: activityEffortsWithValidDate.length - activityEffortsAtDate.length,
       invalidProfileMetrics: source.profileMetrics.length - profileMetricsWithValidDate.length,
       invalidActivityEfforts: source.activityEfforts.length - activityEffortsWithValidDate.length,
-      clearedProfileMetrics: effectiveMetrics.clearedCount,
-      clearedActivityEfforts: effectiveEfforts.clearedCount,
     },
   });
 }
@@ -890,27 +855,10 @@ export function overrideAthletePlanningContextField(
         return { ...context, body: { ...context.body, bmi: value } };
       case "bodyFatPercentage":
         return { ...context, body: { ...context.body, bodyFatPercentage: value } };
-      case "planningThresholdPowerWatts":
-        return {
-          ...context,
-          physiology: { ...context.physiology, planningThresholdPowerWatts: value },
-        };
-      case "planningThresholdPaceSecondsPerKm":
-        return {
-          ...context,
-          physiology: { ...context.physiology, planningThresholdPaceSecondsPerKm: value },
-        };
-      case "swimmingCssSecondsPer100m":
-        return {
-          ...context,
-          physiology: { ...context.physiology, swimmingCssSecondsPer100m: value },
-        };
       case "restingHeartRateBpm":
         return { ...context, physiology: { ...context.physiology, restingHeartRateBpm: value } };
       case "maxHeartRateBpm":
         return { ...context, physiology: { ...context.physiology, maxHeartRateBpm: value } };
-      case "thresholdHeartRateBpm":
-        return { ...context, physiology: { ...context.physiology, thresholdHeartRateBpm: value } };
       case "hrvRmssdMs":
         return { ...context, physiology: { ...context.physiology, hrvRmssdMs: value } };
       case "vo2Max":
@@ -945,7 +893,7 @@ export function overrideAthletePlanningContextField(
 
 export function removeAthletePlanningContextField(
   context: AthletePlanningContext,
-  key: AthletePlanningContextFieldKey,
+  key: AthletePlanningContextEditableFieldKey,
 ): AthletePlanningContext {
   return overrideAthletePlanningContextField(context, { key, value: null });
 }
@@ -1054,6 +1002,7 @@ export function selectAthletePlanningContextFields(
         originalValue.value === null && required ? defaultEvidenceValue(key) : null;
       const value = fallbackValue ?? originalValue;
       const hasValue = value.value !== null;
+      const isEditable = isAthletePlanningContextEditableFieldKey(key);
 
       return {
         key,
@@ -1065,8 +1014,8 @@ export function selectAthletePlanningContextFields(
         visible: hasValue || required,
         required,
         reason: requiredReason,
-        canOverride: hasValue || required,
-        canRemove: !required && originalValue.value !== null,
+        canOverride: isEditable && (hasValue || required),
+        canRemove: isEditable && !required && originalValue.value !== null,
       };
     },
   );

@@ -121,91 +121,13 @@ begin
   exception when others then
     if sqlerrm='above-bound effort distance was accepted' then raise; end if;
   end;
-  if (
-    select count(*) from public.activity_efforts
-    where id in (
-      '12222222-2222-4222-8222-222222222222',
-      '12333333-3333-4333-8333-333333333333'
-    ) and value = 0 and source = 'manual' and method = 'profile_update_override'
-      and provenance ->> 'override_state' = 'cleared'
-  ) <> 2 then
-    raise exception 'pre-cut cleared zero tombstones were not preserved: %', (
-      select coalesce(jsonb_agg(jsonb_build_object(
-        'id', id, 'value', value, 'source', source, 'method', method, 'provenance', provenance
-      ) order by id), '[]'::jsonb)
-      from public.activity_efforts
-      where id in (
-        '12222222-2222-4222-8222-222222222222',
-        '12333333-3333-4333-8333-333333333333'
-      )
-    );
-  end if;
-  insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
-    effort_type,duration_seconds,unit,value,source,method,provenance)
-  values(gen_random_uuid(),now(),profile,now(),'bike','power',1200,'watts',0,
-    'manual','profile_update_override','{"override_state":"cleared"}'::jsonb);
   begin
     insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
-      effort_type,duration_seconds,unit,value,source,method,provenance)
-    values(gen_random_uuid(),now(),profile,now(),'bike','power',1200,'watts',0,
-      null,'profile_update_override','{"override_state":"cleared"}'::jsonb);
-    raise exception 'zero effort with null source was accepted';
+      effort_type,duration_seconds,unit,value)
+    values(gen_random_uuid(),now(),profile,now(),'bike','power',1200,'watts',0);
+    raise exception 'zero effort was accepted';
   exception when others then
-    if sqlerrm='zero effort with null source was accepted' then raise; end if;
-  end;
-  begin
-    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
-      effort_type,duration_seconds,unit,value,source,method,provenance)
-    values(gen_random_uuid(),now(),profile,now(),'bike','power',1200,'watts',0,
-      'manual',null,'{"override_state":"cleared"}'::jsonb);
-    raise exception 'zero effort with null method was accepted';
-  exception when others then
-    if sqlerrm='zero effort with null method was accepted' then raise; end if;
-  end;
-  begin
-    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
-      effort_type,duration_seconds,unit,value,source,method,provenance)
-    values(gen_random_uuid(),now(),profile,now(),'bike','power',1200,'watts',0,
-      'manual','profile_update_override',null);
-    raise exception 'zero effort with null provenance was accepted';
-  exception when others then
-    if sqlerrm='zero effort with null provenance was accepted' then raise; end if;
-  end;
-  begin
-    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
-      effort_type,duration_seconds,unit,value,source,method,provenance)
-    values(gen_random_uuid(),now(),profile,now(),'bike','power',1200,'watts',0,
-      'manual','profile_update_override','{}'::jsonb);
-    raise exception 'zero effort without override state was accepted';
-  exception when others then
-    if sqlerrm='zero effort without override state was accepted' then raise; end if;
-  end;
-  begin
-    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
-      effort_type,duration_seconds,unit,value,source,method,provenance)
-    values(gen_random_uuid(),now(),profile,now(),'bike','power',1200,'watts',0,
-      'manual','profile_update_override','{"override_state":null}'::jsonb);
-    raise exception 'zero effort with null override state was accepted';
-  exception when others then
-    if sqlerrm='zero effort with null override state was accepted' then raise; end if;
-  end;
-  begin
-    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
-      effort_type,duration_seconds,unit,value,source,method,provenance)
-    values(gen_random_uuid(),now(),profile,now(),'bike','power',1200,'watts',0,
-      'manual','manual_activity_effort_entry','{"override_state":"cleared"}'::jsonb);
-    raise exception 'generic zero effort was accepted';
-  exception when others then
-    if sqlerrm='generic zero effort was accepted' then raise; end if;
-  end;
-  begin
-    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
-      effort_type,duration_seconds,unit,value,source,method,provenance)
-    values(gen_random_uuid(),now(),profile,now(),'bike','power',1200,'watts',0,
-      'manual','profile_update_override','{"override_state":"active"}'::jsonb);
-    raise exception 'active zero override was accepted';
-  exception when others then
-    if sqlerrm='active zero override was accepted' then raise; end if;
+    if sqlerrm='zero effort was accepted' then raise; end if;
   end;
   begin
     insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,

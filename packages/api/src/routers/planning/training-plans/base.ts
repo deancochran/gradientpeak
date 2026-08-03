@@ -151,10 +151,6 @@ import { createAthletePerformanceModelRepository } from "../../../repositories/a
 import { createTRPCRouter, protectedProcedure } from "../../../trpc";
 import { getActivityPlansDerivedMetrics } from "../../../utils/activity-plan-derived-metrics";
 import { indexCursorSchema } from "../../../utils/index-cursor";
-import {
-  filterObservationsAfterLatestTombstone,
-  filterSupersededProfileOverrides,
-} from "../../../utils/profile-override-observations";
 
 const feasibilityStateSchema = z.enum(["feasible", "aggressive", "unsafe"]);
 const safetyStateSchema = z.enum(["safe", "caution", "exceeded"]);
@@ -2591,11 +2587,7 @@ export async function deriveProfileAwareCreationContext(input: {
   const primaryCategory =
     Object.entries(activityCounts).sort((a: any, b: any) => b[1] - a[1])[0]?.[0] ?? undefined;
 
-  const efforts = filterSupersededProfileOverrides(
-    effortsResult.data ?? [],
-    (effort: any) =>
-      `${effort.activity_category}:${effort.effort_type}:${effort.duration_seconds}:${effort.unit}`,
-  ).map((effort: any) => ({
+  const efforts = (effortsResult.data ?? []).map((effort: any) => ({
     ...effort,
     recorded_at: effort.recorded_at,
     effort_type: effort.effort_type,
@@ -2604,10 +2596,7 @@ export async function deriveProfileAwareCreationContext(input: {
     activity_category: effort.activity_category,
   }));
 
-  const profileMetricsRows = filterObservationsAfterLatestTombstone(
-    profileMetricsResult.data ?? [],
-    (metric: any) => metric.metric_type,
-  );
+  const profileMetricsRows = profileMetricsResult.data ?? [];
   // Planning context uses the same cross-category common Load history as Trends,
   // rather than a nullable legacy TSS fitness snapshot.
   const commonLoadHistory = await readCurrentProfileCommonLoadHistory({

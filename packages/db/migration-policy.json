@@ -4,7 +4,7 @@
   "baseline": {
     "version": "20260730000000",
     "name": "mvp_baseline",
-    "sha256": "cd642058a5f4806b815aec5046a1ee07d4440eaed789d93d58f7bccee4c8e17a"
+    "sha256": "03b3bb9ff50438278f81568f80536a78023e9bcac0d5ca9a14f2cfe4567ef8da"
   },
   "activeLedgerFile": "migration-ledger.json",
   "ownedExtensions": [{ "name": "btree_gist", "schema": "extensions" }],

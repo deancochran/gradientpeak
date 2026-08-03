@@ -24,7 +24,6 @@ import {
 import { toActivityPlanExecutionDto } from "../../dto/activity-plan";
 import type { EventReadRepository } from "../../repositories";
 import { createAthletePerformanceModelRepository } from "../../repositories/athlete-performance-model-repository";
-import { isClearedProfileOverride } from "../../utils/profile-override-observations";
 
 type EventReadDb = {
   execute: unknown;
@@ -517,8 +516,6 @@ export function createEventReadRepository(
         db
           .select({
             value: schema.profileMetrics.value,
-            method: schema.profileMetrics.method,
-            provenance: schema.profileMetrics.provenance,
           })
           .from(schema.profileMetrics)
           .where(
@@ -540,12 +537,7 @@ export function createEventReadRepository(
               dob: profile.dob ? profile.dob.toISOString() : null,
             }
           : null,
-        weightMetric:
-          weightMetric && !isClearedProfileOverride(weightMetric)
-            ? {
-                value: weightMetric.value,
-              }
-            : null,
+        weightMetric: weightMetric ? { value: weightMetric.value } : null,
       };
     },
 

@@ -14,7 +14,6 @@ import {
   type WahooUser,
 } from "../lib/integrations/wahoo/client";
 import { decryptNullableProviderToken, decryptProviderToken } from "../lib/provider-token-crypto";
-import { isClearedProfileOverride } from "../utils/profile-override-observations";
 
 const ONBOARDING_ENRICHMENT_RESOURCE = "onboarding_enrichment";
 const ONBOARDING_SYNC_MODE = "onboarding_enrichment";
@@ -229,8 +228,6 @@ export class OnboardingProviderEnrichmentService {
       .select({
         value: schema.profileMetrics.value,
         recorded_at: schema.profileMetrics.recorded_at,
-        method: schema.profileMetrics.method,
-        provenance: schema.profileMetrics.provenance,
       })
       .from(schema.profileMetrics)
       .where(
@@ -242,8 +239,7 @@ export class OnboardingProviderEnrichmentService {
       .orderBy(desc(schema.profileMetrics.recorded_at), desc(schema.profileMetrics.id))
       .limit(1);
 
-    if (latestWeight && !isClearedProfileOverride(latestWeight))
-      values.weight_kg = latestWeight.value;
+    if (latestWeight) values.weight_kg = latestWeight.value;
 
     const sourceHints = await this.getImportedFieldSources(profileId);
 

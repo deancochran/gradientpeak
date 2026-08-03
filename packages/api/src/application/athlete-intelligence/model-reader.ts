@@ -42,11 +42,6 @@ import {
   projectCanonicalCompletedObservationLoads,
 } from "../../lib/activity-analysis";
 import {
-  filterSupersededProfileOverrides,
-  isClearedProfileOverride,
-  resolveLatestObservationsByKey,
-} from "../../utils/profile-override-observations";
-import {
   parseProfileTrainingSettings,
   readParsedProfileTrainingSettings,
 } from "../profile-settings/profileTrainingSettings";
@@ -910,7 +905,6 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       : null;
   };
   for (const row of boundedMetrics) {
-    if (isClearedProfileOverride(row)) continue;
     const parsedType = athleteMetricTypeSchema.safeParse(row.type);
     const canonical = parsedType.success
       ? canonicalMetricValue(parsedType.data, row.value, row.unit)
@@ -932,12 +926,13 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       !parsedType.success ? "unsupported" : canonical === null ? "incompatible_unit" : "compatible",
     );
   }
-  const resolvedLatestMetrics = resolveLatestObservationsByKey(boundedMetrics, (row) =>
-    row.type === "lthr" ? `lthr:${metricActivityCategory(row) ?? "generic"}` : row.type,
-  );
+  const resolvedLatestMetrics = new Map<string, AthleteIntelligenceRows["metrics"][number]>();
+  for (const row of boundedMetrics) {
+    const key = row.type === "lthr" ? `lthr:${metricActivityCategory(row) ?? "generic"}` : row.type;
+    if (!resolvedLatestMetrics.has(key)) resolvedLatestMetrics.set(key, row);
+  }
   const latest = new Map<AthleteMetricType, AthleteIntelligenceRows["metrics"][number]>();
   for (const row of resolvedLatestMetrics.values()) {
-    if (!row) continue;
     const parsedType = athleteMetricTypeSchema.safeParse(row.type);
     if (parsedType.success) latest.set(parsedType.data, row);
   }
@@ -1232,10 +1227,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
   const boundedEfforts = boundedLoadEfforts.filter(
     (r) => !r.activityId || includedActivities.has(sourceId("activity", r.activityId, "record")),
   );
-  const efforts = filterSupersededProfileOverrides(
-    boundedEfforts,
-    (row) => `${row.activity_category}:${row.kind}:${row.durationSeconds}:${row.unit}`,
-  ).flatMap((row) => {
+  const efforts = boundedEfforts.flatMap((row) => {
     const activity_category = normalizeActivityCategory(row.activity_category);
     const effortLineage = row.activityId ?? `effort-${row.id}`;
     const canonical = canonicalEffortValue({ kind: row.kind, value: row.value, unit: row.unit });

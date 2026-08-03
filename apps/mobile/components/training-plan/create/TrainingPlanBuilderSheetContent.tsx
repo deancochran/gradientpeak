@@ -1,5 +1,8 @@
 import type { ActivityPlanPlanningEstimate, TrainingPreferenceValidationIssue } from "@repo/core";
-import { validatePlanningPreferencesConsistency } from "@repo/core";
+import {
+  isAthletePlanningContextEditableFieldKey,
+  validatePlanningPreferencesConsistency,
+} from "@repo/core";
 import { Form, FormTextareaField, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
@@ -527,13 +530,18 @@ export function TrainingPlanBuilderSheetContent({
     return (
       <BuilderAthleteContextForm
         fields={athleteContextFields}
-        onAddField={(fieldKey) =>
-          builder.actions.overrideAthleteContextField({ key: fieldKey, value: 0 })
-        }
-        onChangeField={(fieldKey, value) =>
-          builder.actions.overrideAthleteContextField({ key: fieldKey, value })
-        }
-        onRemoveField={builder.actions.removeAthleteContextField}
+        onAddField={(fieldKey) => {
+          if (isAthletePlanningContextEditableFieldKey(fieldKey))
+            builder.actions.overrideAthleteContextField({ key: fieldKey, value: 0 });
+        }}
+        onChangeField={(fieldKey, value) => {
+          if (isAthletePlanningContextEditableFieldKey(fieldKey))
+            builder.actions.overrideAthleteContextField({ key: fieldKey, value });
+        }}
+        onRemoveField={(fieldKey) => {
+          if (isAthletePlanningContextEditableFieldKey(fieldKey))
+            builder.actions.removeAthleteContextField(fieldKey);
+        }}
       />
     );
   }

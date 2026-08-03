@@ -2,15 +2,17 @@ import { randomUUID } from "node:crypto";
 import { profileMetrics, profiles } from "@repo/db";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../db";
-import {
-  isClearedProfileOverride,
-  PROFILE_UPDATE_OVERRIDE_METHOD,
-  PROFILE_UPDATE_OVERRIDE_VERSION,
-  profileOverrideProvenance,
-} from "../utils/profile-override-observations";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 export type ProfileUpdateTransaction = Parameters<Parameters<DbClient["transaction"]>[0]>[0];
+
+const PROFILE_WEIGHT_SETTING_METHOD = "profile_weight_setting";
+const PROFILE_WEIGHT_SETTING_PROVENANCE = {
+  input: "profile_update",
+  observation_type: "observed",
+  trusted: true,
+  entered_by: "athlete",
+} as const;
 
 export type ProfileFields = Partial<
   Pick<
@@ -66,48 +68,42 @@ export async function updateOwnedProfileFields(
   return Boolean(updated);
 }
 
-/** Append changed observations and explicit clear markers without destroying metric history. */
-export async function syncAppendOnlyProfileMetric(
+/** Synchronize the profile form's weight observations without sentinel measurements. */
+export async function syncProfileWeightSetting(
   tx: ProfileUpdateTransaction,
   input: {
     profileId: string;
-    metricType: "lthr" | "weight_kg";
     value: number | null | undefined;
     now: Date;
   },
 ) {
   if (input.value === undefined) return;
 
-  const overrideScope = and(
+  const settingScope = and(
     eq(profileMetrics.profile_id, input.profileId),
-    eq(profileMetrics.metric_type, input.metricType),
+    eq(profileMetrics.metric_type, "weight_kg"),
     isNull(profileMetrics.reference_activity_id),
     eq(profileMetrics.source, "manual"),
-    eq(profileMetrics.method, PROFILE_UPDATE_OVERRIDE_METHOD),
+    eq(profileMetrics.method, PROFILE_WEIGHT_SETTING_METHOD),
   );
+
+  if (input.value === null) {
+    await tx.delete(profileMetrics).where(settingScope);
+    return;
+  }
 
   const [latest] = await tx
     .select({
       value: profileMetrics.value,
       recorded_at: profileMetrics.recorded_at,
-      method: profileMetrics.method,
-      provenance: profileMetrics.provenance,
     })
     .from(profileMetrics)
-    .where(overrideScope)
+    .where(settingScope)
     .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.id))
     .limit(1);
 
-  if (input.value === null && latest && isClearedProfileOverride(latest)) return;
-  if (
-    input.value !== null &&
-    latest &&
-    !isClearedProfileOverride(latest) &&
-    Number(latest.value) === input.value
-  )
-    return;
+  if (latest && Number(latest.value) === input.value) return;
 
-  const state = input.value === null ? "cleared" : "active";
   const recordedAt =
     latest && latest.recorded_at >= input.now
       ? new Date(latest.recorded_at.getTime() + 1)
@@ -118,15 +114,15 @@ export async function syncAppendOnlyProfileMetric(
     created_at: input.now,
     updated_at: input.now,
     profile_id: input.profileId,
-    metric_type: input.metricType,
+    metric_type: "weight_kg",
     recorded_at: recordedAt,
-    unit: input.metricType === "weight_kg" ? "kg" : "bpm",
+    unit: "kg",
     notes: null,
     reference_activity_id: null,
-    value: input.value ?? 0,
+    value: input.value,
     source: "manual",
-    method: PROFILE_UPDATE_OVERRIDE_METHOD,
-    calculation_version: PROFILE_UPDATE_OVERRIDE_VERSION,
-    provenance: profileOverrideProvenance(state),
+    method: PROFILE_WEIGHT_SETTING_METHOD,
+    calculation_version: null,
+    provenance: PROFILE_WEIGHT_SETTING_PROVENANCE,
   });
 }

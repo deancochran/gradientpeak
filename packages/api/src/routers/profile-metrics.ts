@@ -24,7 +24,6 @@ import { listProfileMetricHistory } from "../application/profile-metrics/listPro
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { indexCursorSchema } from "../utils/index-cursor";
-import { isClearedProfileOverride } from "../utils/profile-override-observations";
 
 const createProfileMetricInputSchema = profileMetricCreatePayloadSchema
   .extend({ profile_id: z.string().uuid("Invalid profile ID") })

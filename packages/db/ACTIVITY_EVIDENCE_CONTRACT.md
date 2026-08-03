@@ -33,7 +33,6 @@ Every consumer must preserve these dimensions:
 - **Units:** new database and API writes use canonical metric units. Presentation preference is an app-boundary concern. Core's central evidence adapter temporarily accepts documented legacy aliases for existing rows; feature code must not add new alias branches.
 - **Provenance:** `source`, `method`, `calculation_version`, and `provenance` travel together through repository, DTO, and Core snapshot boundaries. Dropping them changes trust semantics.
 - **Quality:** absence of a quality score means unknown, not perfect quality. Eligibility policy belongs in Core and may use provenance even when quality is unknown.
-- **Tombstones:** a cleared override is state-transition evidence, not a zero measurement. Public/effective projections must filter or interpret it explicitly.
 - **Reproducibility:** generated evidence names its calculation version and source identity. Equal values are not sufficient for deduplication; use a durable operation or source identity.
 
 ## Write policy
@@ -48,7 +47,7 @@ Every consumer must preserve these dimensions:
 Canonical writers include:
 
 - profile metric CRUD in `packages/api/src/routers/profile-metrics.ts`;
-- profile-setting override synchronization in `packages/api/src/repositories/profile-update-repository.ts`;
+- profile-setting weight observation synchronization in `packages/api/src/repositories/profile-update-repository.ts`;
 - activity-file evidence reconciliation in `packages/api/src/application/activities/reconcile-activity-evidence.ts`;
 - onboarding/provider adapters for non-threshold profile observations, which must preserve source observation time and provenance.
 
@@ -56,8 +55,8 @@ Canonical writers include:
 
 Use an explicit projection instead of returning “some rows”:
 
-- **Raw history:** audit/debug view; includes superseded and cleared evidence.
-- **Effective history:** athlete-facing history; interprets overrides and excludes tombstones as measurements.
+- **Raw history:** audit/debug view; includes superseded evidence.
+- **Effective history:** athlete-facing history after the owning correction and deletion policy is applied.
 - **Latest effective as-of:** calculations and current settings; deterministic order is `recorded_at DESC` plus a stable tie-break.
 - **Eligible effort curve:** analytics/planning; requires current accepted artifact ownership and accepted segment revision before filtering through the Core activity-effort evidence policy.
 
@@ -82,7 +81,7 @@ Any change that reads or writes either table must answer in code review:
 6. Is replay idempotent, and what stable identity enforces it?
 7. What happens on correction, clearing, activity deletion, and profile deletion?
 8. Is ordering deterministic and work bounded? Does the index match the predicate and order?
-9. Which focused test proves ownership, temporal, unit, provenance, and tombstone behavior?
+9. Which focused test proves ownership, temporal, unit, provenance, and correction behavior?
 10. Does the change need DB verification, API/Core tests, and client contract/parity coverage?
 
 ## Verification expectations

@@ -1076,7 +1076,7 @@ describe("analyzeParsedActivityFile", () => {
             referenceActivityId: "manual-threshold",
             value: 190,
             source: "manual",
-            method: "profile_update_override",
+            method: "manual_entry",
             provenance: null,
           },
         ],

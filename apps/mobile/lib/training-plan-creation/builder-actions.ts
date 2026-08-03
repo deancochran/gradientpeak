@@ -1,5 +1,5 @@
 import type {
-  AthletePlanningContextFieldKey,
+  AthletePlanningContextEditableFieldKey,
   AthletePlanningContextFieldOverride,
   CanonicalActivityCategory,
 } from "@repo/core";
@@ -119,7 +119,7 @@ export function createTrainingPlanBuilderActions(input: {
     getSessionById: (sessionId: string) => selectSessionById(state, sessionId),
     overrideAthleteContextField: (override: AthletePlanningContextFieldOverride) =>
       dispatch({ type: "athleteContext.fieldOverride", override }),
-    removeAthleteContextField: (fieldKey: AthletePlanningContextFieldKey) =>
+    removeAthleteContextField: (fieldKey: AthletePlanningContextEditableFieldKey) =>
       dispatch({ type: "athleteContext.fieldRemove", fieldKey }),
     addPlanningConstraint: (fieldKey: TrainingPlanPreferenceFieldKey) =>
       dispatch({

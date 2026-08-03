@@ -6,6 +6,7 @@ import {
 import {
   createAthletePlanningContextFromSnapshot,
   createEffectiveAthleteSnapshot,
+  selectAthletePlanningContextFields,
 } from "./athletePlanningContext";
 import { planningContextSchema } from "./planningContext";
 import { mapPlanningPreferencesToCreationConstraints } from "./planningPreferences";
@@ -149,6 +150,11 @@ describe("planningContext", () => {
     expect(explicit.physiology.planningThresholdPowerWatts.recordedAt).toBe(
       "2026-05-30T00:00:00.000Z",
     );
+    expect(
+      selectAthletePlanningContextFields(explicit).find(
+        (field) => field.key === "planningThresholdPowerWatts",
+      ),
+    ).toMatchObject({ canOverride: false, canRemove: false, inputKind: "derived" });
   });
 
   it("does not manufacture FTP from canonical-unit raw efforts", () => {
@@ -181,6 +187,26 @@ describe("planningContext", () => {
     });
   });
 
+  it("rejects zero-valued activity effort observations", () => {
+    expect(() =>
+      createEffectiveAthleteSnapshot({
+        asOf: "2026-06-01T00:00:00.000Z",
+        profileMetrics: [],
+        activityEfforts: [
+          {
+            activity_category: "bike",
+            effort_type: "power",
+            duration_seconds: 1200,
+            value: 0,
+            unit: "watts",
+            recorded_at: "2026-05-30T00:00:00.000Z",
+            source: "manual",
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
   it("builds an as-of-safe effective snapshot and reports excluded evidence", () => {
     const snapshot = createEffectiveAthleteSnapshot({
       asOf: "2026-06-01T00:00:00.000Z",
@@ -189,15 +215,6 @@ describe("planningContext", () => {
         activityEfforts: "possibly_truncated",
       },
       profileMetrics: [
-        {
-          metric_type: "weight_kg",
-          value: 0,
-          unit: "kg",
-          recorded_at: "2026-05-01T00:00:00.000Z",
-          source: "manual",
-          method: "profile_update_override",
-          provenance: { override_state: "cleared" },
-        },
         {
           metric_type: "weight_kg",
           value: 72,
@@ -226,7 +243,9 @@ describe("planningContext", () => {
       ],
     });
 
-    expect(snapshot.profileMetrics).toEqual([]);
+    expect(snapshot.profileMetrics).toEqual([
+      expect.objectContaining({ metric_type: "weight_kg", value: 72 }),
+    ]);
     expect(snapshot.activityEfforts).toEqual([]);
     expect(snapshot.coverage).toEqual({
       profileMetrics: "complete",
@@ -237,8 +256,6 @@ describe("planningContext", () => {
       futureActivityEfforts: 1,
       invalidProfileMetrics: 0,
       invalidActivityEfforts: 0,
-      clearedProfileMetrics: 1,
-      clearedActivityEfforts: 0,
     });
 
     const context = createAthletePlanningContextFromSnapshot({
@@ -316,72 +333,6 @@ describe("planningContext", () => {
       invalidProfileMetrics: 1,
       invalidActivityEfforts: 1,
     });
-  });
-
-  it("applies repeated clear and re-add operations in observation-time order", () => {
-    const snapshot = createEffectiveAthleteSnapshot({
-      asOf: "2026-06-04T00:00:00.000Z",
-      profileMetrics: [
-        { metric_type: "weight_kg", value: 70, unit: "kg", recorded_at: "2026-06-01" },
-        {
-          metric_type: "weight_kg",
-          value: 0,
-          unit: "kg",
-          recorded_at: "2026-06-02",
-          source: "manual",
-          method: "profile_update_override",
-          provenance: { override_state: "cleared" },
-        },
-        { metric_type: "weight_kg", value: 72, unit: "kg", recorded_at: "2026-06-03" },
-      ],
-      activityEfforts: [],
-    });
-
-    expect(snapshot.profileMetrics).toEqual([
-      expect.objectContaining({ metric_type: "weight_kg", value: 72 }),
-    ]);
-    expect(snapshot.exclusions.clearedProfileMetrics).toBe(1);
-  });
-
-  it("applies activity-effort tombstones without deleting later re-added evidence", () => {
-    const snapshot = createEffectiveAthleteSnapshot({
-      asOf: "2026-06-04T00:00:00.000Z",
-      profileMetrics: [],
-      activityEfforts: [
-        {
-          activity_category: "bike",
-          effort_type: "power",
-          duration_seconds: 1200,
-          value: 280,
-          unit: "watts",
-          recorded_at: "2026-06-01",
-        },
-        {
-          activity_category: "bike",
-          effort_type: "power",
-          duration_seconds: 1200,
-          value: 0,
-          unit: "watts",
-          recorded_at: "2026-06-02",
-          source: "manual",
-          method: "profile_update_override",
-          provenance: { override_state: "cleared" },
-        },
-        {
-          activity_category: "bike",
-          effort_type: "power",
-          duration_seconds: 1200,
-          value: 300,
-          unit: "watts",
-          recorded_at: "2026-06-03",
-        },
-      ],
-    });
-
-    expect(snapshot.activityEfforts).toEqual([
-      expect.objectContaining({ effort_type: "power", value: 300 }),
-    ]);
-    expect(snapshot.exclusions.clearedActivityEfforts).toBe(1);
   });
 
   it.each([

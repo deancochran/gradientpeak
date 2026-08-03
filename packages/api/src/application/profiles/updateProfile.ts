@@ -1,7 +1,7 @@
 import type { getRequiredDb } from "../../db";
 import {
   type ProfileFields,
-  syncAppendOnlyProfileMetric,
+  syncProfileWeightSetting,
   updateOwnedProfileFields,
 } from "../../repositories/profile-update-repository";
 
@@ -41,7 +41,7 @@ function isUsernameConflict(error: unknown): boolean {
   return false;
 }
 
-/** Atomically updates owned profile fields and their synchronized manual metrics. */
+/** Atomically updates owned profile fields and the profile form's weight setting. */
 export async function updateProfile(db: DbClient, input: UpdateProfileInput): Promise<void> {
   const { profileId, weight_kg, ...fields } = input;
 
@@ -51,9 +51,8 @@ export async function updateProfile(db: DbClient, input: UpdateProfileInput): Pr
       const updated = await updateOwnedProfileFields(tx, { profileId, fields, now });
       if (!updated) throw new ProfileUpdateNotFoundError();
 
-      await syncAppendOnlyProfileMetric(tx, {
+      await syncProfileWeightSetting(tx, {
         profileId,
-        metricType: "weight_kg",
         value: weight_kg,
         now,
       });
