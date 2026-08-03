@@ -838,6 +838,7 @@ function freezeEvidenceSnapshot(input: {
 /** Owner-scoped, as-of, self-excluding, bounded reads for the canonical model service. */
 export function createAthletePerformanceModelRepository(
   db: DbClient,
+  readExecutor?: EvidenceReadClient,
 ): AthletePerformanceModelRepository {
   const effortRows = async (
     executor: EvidenceReadClient,
@@ -1238,30 +1239,29 @@ export function createAthletePerformanceModelRepository(
 
   return {
     async readAthletePerformanceEvidenceSnapshot(input) {
-      return db.transaction(
-        async (tx) => {
-          const bike = await effortRows(tx, input, "bike");
-          const run = await effortRows(tx, input, "run");
-          const swim = await effortRows(tx, input, "swim");
-          const swimmingCssProtocolRead = await swimmingCssProtocolRows(tx, input);
-          const bikeLthr = await heartRateRows(tx, input, "lthr", "bike");
-          const bikeMaxHr = await heartRateRows(tx, input, "max_hr", "bike");
-          const runLthr = await heartRateRows(tx, input, "lthr", "run");
-          const runMaxHr = await heartRateRows(tx, input, "max_hr", "run");
-          const swimLthr = await heartRateRows(tx, input, "lthr", "swim");
-          const swimMaxHr = await heartRateRows(tx, input, "max_hr", "swim");
-          return freezeEvidenceSnapshot({
-            effortReads: { bike, run, swim },
-            swimmingCssProtocolRead,
-            heartRateReads: {
-              bike: { lthr: bikeLthr, maxHr: bikeMaxHr },
-              run: { lthr: runLthr, maxHr: runMaxHr },
-              swim: { lthr: swimLthr, maxHr: swimMaxHr },
-            },
-          });
-        },
-        { accessMode: "read only", isolationLevel: "repeatable read" },
-      );
+      const read = async (tx: EvidenceReadClient) => {
+        const bike = await effortRows(tx, input, "bike");
+        const run = await effortRows(tx, input, "run");
+        const swim = await effortRows(tx, input, "swim");
+        const swimmingCssProtocolRead = await swimmingCssProtocolRows(tx, input);
+        const bikeLthr = await heartRateRows(tx, input, "lthr", "bike");
+        const bikeMaxHr = await heartRateRows(tx, input, "max_hr", "bike");
+        const runLthr = await heartRateRows(tx, input, "lthr", "run");
+        const runMaxHr = await heartRateRows(tx, input, "max_hr", "run");
+        const swimLthr = await heartRateRows(tx, input, "lthr", "swim");
+        const swimMaxHr = await heartRateRows(tx, input, "max_hr", "swim");
+        return freezeEvidenceSnapshot({
+          effortReads: { bike, run, swim },
+          swimmingCssProtocolRead,
+          heartRateReads: {
+            bike: { lthr: bikeLthr, maxHr: bikeMaxHr },
+            run: { lthr: runLthr, maxHr: runMaxHr },
+            swim: { lthr: swimLthr, maxHr: swimMaxHr },
+          },
+        });
+      };
+      if (readExecutor) return read(readExecutor);
+      return db.transaction(read, { accessMode: "read only", isolationLevel: "repeatable read" });
     },
     async readEvidenceBatch(inputs) {
       if (inputs.length === 0) return [];
@@ -1344,26 +1344,98 @@ export function createAthletePerformanceModelRepository(
                 matches.length >= ATHLETE_PERFORMANCE_CSS_PROTOCOL_QUERY_LIMIT,
             };
           };
+          const resolveLaneReader = async <T extends object>(
+            batchTruncated: boolean,
+            readBatch: (input: AthletePerformanceModelReadInput) => T,
+            readDirect: (input: AthletePerformanceModelReadInput) => Promise<T>,
+          ): Promise<(input: AthletePerformanceModelReadInput) => T> => {
+            if (!batchTruncated) return readBatch;
+
+            // A global newest-first cap cannot establish completeness for an
+            // earlier cutoff or quieter athlete. Re-read only the capped lane
+            // inside this same repeatable-read transaction.
+            const directReads = new Map<AthletePerformanceModelReadInput, T>();
+            for (const input of inputs) {
+              directReads.set(input, await readDirect(input));
+            }
+            return (input) => {
+              const read = directReads.get(input);
+              if (read === undefined) {
+                throw new Error("Performance-model direct batch fallback omitted a result");
+              }
+              return read;
+            };
+          };
+          const readBikeEfforts = await resolveLaneReader(
+            bikeEfforts.truncated,
+            (input) => effortRead(input, bikeEfforts),
+            (input) => effortRows(tx, input, "bike"),
+          );
+          const readRunEfforts = await resolveLaneReader(
+            runEfforts.truncated,
+            (input) => effortRead(input, runEfforts),
+            (input) => effortRows(tx, input, "run"),
+          );
+          const readSwimEfforts = await resolveLaneReader(
+            swimEfforts.truncated,
+            (input) => effortRead(input, swimEfforts),
+            (input) => effortRows(tx, input, "swim"),
+          );
+          const readSwimmingCssProtocols = await resolveLaneReader(
+            swimmingCssProtocols.truncated,
+            swimmingCssProtocolRead,
+            (input) => swimmingCssProtocolRows(tx, input),
+          );
+          const readBikeLthr = await resolveLaneReader(
+            bikeLthr.truncated,
+            (input) => heartRateRead(input, bikeLthr),
+            (input) => heartRateRows(tx, input, "lthr", "bike"),
+          );
+          const readBikeMaxHr = await resolveLaneReader(
+            bikeMaxHr.truncated,
+            (input) => heartRateRead(input, bikeMaxHr),
+            (input) => heartRateRows(tx, input, "max_hr", "bike"),
+          );
+          const readRunLthr = await resolveLaneReader(
+            runLthr.truncated,
+            (input) => heartRateRead(input, runLthr),
+            (input) => heartRateRows(tx, input, "lthr", "run"),
+          );
+          const readRunMaxHr = await resolveLaneReader(
+            runMaxHr.truncated,
+            (input) => heartRateRead(input, runMaxHr),
+            (input) => heartRateRows(tx, input, "max_hr", "run"),
+          );
+          const readSwimLthr = await resolveLaneReader(
+            swimLthr.truncated,
+            (input) => heartRateRead(input, swimLthr),
+            (input) => heartRateRows(tx, input, "lthr", "swim"),
+          );
+          const readSwimMaxHr = await resolveLaneReader(
+            swimMaxHr.truncated,
+            (input) => heartRateRead(input, swimMaxHr),
+            (input) => heartRateRows(tx, input, "max_hr", "swim"),
+          );
           return inputs.map((input) =>
             freezeEvidenceSnapshot({
               effortReads: {
-                bike: effortRead(input, bikeEfforts),
-                run: effortRead(input, runEfforts),
-                swim: effortRead(input, swimEfforts),
+                bike: readBikeEfforts(input),
+                run: readRunEfforts(input),
+                swim: readSwimEfforts(input),
               },
-              swimmingCssProtocolRead: swimmingCssProtocolRead(input),
+              swimmingCssProtocolRead: readSwimmingCssProtocols(input),
               heartRateReads: {
                 bike: {
-                  lthr: heartRateRead(input, bikeLthr),
-                  maxHr: heartRateRead(input, bikeMaxHr),
+                  lthr: readBikeLthr(input),
+                  maxHr: readBikeMaxHr(input),
                 },
                 run: {
-                  lthr: heartRateRead(input, runLthr),
-                  maxHr: heartRateRead(input, runMaxHr),
+                  lthr: readRunLthr(input),
+                  maxHr: readRunMaxHr(input),
                 },
                 swim: {
-                  lthr: heartRateRead(input, swimLthr),
-                  maxHr: heartRateRead(input, swimMaxHr),
+                  lthr: readSwimLthr(input),
+                  maxHr: readSwimMaxHr(input),
                 },
               },
             }),

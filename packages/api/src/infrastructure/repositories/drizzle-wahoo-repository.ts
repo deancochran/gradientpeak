@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { schema } from "@repo/db";
-import { and, asc, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, isNull, lte, ne, or, sql } from "drizzle-orm";
 import {
   decryptNullableProviderToken,
   decryptProviderToken,
@@ -979,6 +979,83 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         provider: row.provider,
         syncedAt: toIsoString(row.syncedAt),
         updatedAt: toIsoString(row.updatedAt),
+      }));
+    },
+
+    async listUpcomingWahooSyncedPlannedEvents({
+      after,
+      limit,
+      profileId,
+      startsAtGte,
+      startsAtLte,
+    }) {
+      const startsAtLowerBound = new Date(startsAtGte);
+      const startsAtUpperBound = new Date(startsAtLte);
+      const afterStartsAt = after ? new Date(after.startsAt) : null;
+      const rows = await db
+        .select({
+          eventId: schema.events.id,
+          startsAt: schema.events.starts_at,
+          activityPlan: {
+            description: schema.activityPlans.description,
+            id: schema.activityPlans.id,
+            name: schema.activityPlans.name,
+            structure: schema.activityPlans.structure,
+          },
+        })
+        .from(schema.events)
+        .innerJoin(
+          schema.activityPlans,
+          eq(schema.activityPlans.id, schema.events.activity_plan_id),
+        )
+        .where(
+          and(
+            eq(schema.events.profile_id, profileId),
+            eq(schema.events.event_type, "planned"),
+            eq(schema.events.status, "scheduled"),
+            isNull(schema.events.route_id),
+            gte(schema.events.starts_at, startsAtLowerBound),
+            lte(schema.events.starts_at, startsAtUpperBound),
+            after && afterStartsAt
+              ? or(
+                  gt(schema.events.starts_at, afterStartsAt),
+                  and(
+                    eq(schema.events.starts_at, afterStartsAt),
+                    gt(schema.events.id, after.eventId),
+                  ),
+                )
+              : undefined,
+            sql`(
+              exists (
+                select 1
+                from integration_resource_links target_refresh_link
+                where target_refresh_link.profile_id = ${profileId}
+                  and target_refresh_link.provider = 'wahoo'
+                  and target_refresh_link.resource_kind = 'event'
+                  and target_refresh_link.internal_resource_id = ${schema.events.id}
+              )
+              or exists (
+                select 1
+                from provider_sync_jobs target_refresh_job
+                where target_refresh_job.profile_id = ${profileId}
+                  and target_refresh_job.provider = 'wahoo'
+                  and target_refresh_job.resource_kind = 'event'
+                  and target_refresh_job.internal_resource_id = ${schema.events.id}
+                  and target_refresh_job.job_type = 'wahoo.publish_event'
+                  and target_refresh_job.operation = 'publish'
+                  and target_refresh_job.status in ('queued', 'running', 'failed')
+              )
+            )`,
+          ),
+        )
+        .orderBy(asc(schema.events.starts_at), asc(schema.events.id))
+        .limit(Math.min(Math.max(1, limit), 100))
+        .for("share");
+
+      return rows.map((row) => ({
+        activityPlan: row.activityPlan,
+        eventId: row.eventId,
+        startsAt: row.startsAt.toISOString(),
       }));
     },
 

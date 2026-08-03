@@ -223,6 +223,24 @@ export interface WahooRepository {
       updatedAt: string | null;
     }>
   >;
+  listUpcomingWahooSyncedPlannedEvents(input: {
+    after?: { eventId: string; startsAt: string };
+    limit: number;
+    profileId: string;
+    startsAtGte: string;
+    startsAtLte: string;
+  }): Promise<
+    Array<{
+      activityPlan: {
+        description: string | null;
+        id: string;
+        name: string;
+        structure: unknown;
+      };
+      eventId: string;
+      startsAt: string;
+    }>
+  >;
   listOwnedRoutesForMirror(input: {
     afterId?: string;
     limit: number;

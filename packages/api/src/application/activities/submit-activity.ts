@@ -1,5 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
-import { activityLapRecordListSchema, type ContentVisibility } from "@repo/core";
+import {
+  type AthletePerformanceTargetFacts,
+  activityLapRecordListSchema,
+  type ContentVisibility,
+} from "@repo/core";
 import {
   type CompletedActivitySegmentSet,
   completedActivitySegmentSetSchema,
@@ -22,10 +26,14 @@ import {
 } from "@repo/db";
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
+import { hasWahooPlannedActivityScopes } from "../../lib/integrations/wahoo/planned-activity-scopes";
+import { enqueueWahooRelativeTargetRefreshes } from "../../lib/provider-sync/planned-activities/refresh-wahoo-relative-target-activities";
 import { ActivityFileIngestionClaimLostError } from "../activity-file-ingestion/ingestion-state";
 import {
+  acquireActivityEvidenceProfileLock,
   type GeneratedActivityLthrEvidence,
   reconcileGeneratedActivityEvidence,
+  reconcileGeneratedActivityEvidenceWithProfileLockHeld,
 } from "./reconcile-activity-evidence";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
@@ -605,8 +613,16 @@ export async function submitActivity(
     input.kind === "enrich" ? input.activityId : (input.requestedActivityId ?? randomUUID());
   let compositionResult: unknown;
   let noOp = false;
+  const evidence = input.kind === "enrich" ? input : input.analysis;
   await db.transaction(async (tx) => {
     const now = new Date();
+    let targetRefreshContext: {
+      beforeTargetFacts: AthletePerformanceTargetFacts;
+      readTargetFacts: (input: {
+        actorProfileId: string;
+        asOf: Date;
+      }) => Promise<AthletePerformanceTargetFacts>;
+    } | null = null;
     const provenance = input.kind === "enrich" ? undefined : input.providerProvenance;
     const ingestion = input.kind === "enrich" ? input.ingestion : input.analysis?.ingestion;
     // Lock and verify the lifecycle fence in this same transaction as every
@@ -625,7 +641,7 @@ export async function submitActivity(
           ),
         )
         .limit(1)
-        .for("share");
+        .for(evidence ? "update" : "share");
       if (!activeIntegration) throw new Error("integration_generation_inactive");
     }
     if (ingestion?.claimToken) {
@@ -744,6 +760,46 @@ export async function submitActivity(
           noOp = true;
           return;
         }
+      }
+    }
+
+    if (evidence) {
+      // Planned-activity mutation paths lock integration authority before the queue lane.
+      // Match that order before taking the profile evidence lock to avoid lock inversion.
+      const wahooIntegration = await tx.execute(sql<{ id: string; scope: string | null }>`
+        select integration.id, credentials.scope
+        from integrations integration
+        join integration_credentials credentials on credentials.integration_id = integration.id
+        where integration.profile_id = ${input.profileId}
+          and integration.provider = 'wahoo'
+          and integration.lifecycle_status = 'active'
+        limit 1
+        for update of integration
+      `);
+      const integration = wahooIntegration.rows[0];
+      if (
+        integration &&
+        (typeof integration.scope === "string" || integration.scope === null) &&
+        hasWahooPlannedActivityScopes(integration.scope)
+      ) {
+        await acquireActivityEvidenceProfileLock(tx, input.profileId);
+        const [
+          { createAthletePerformanceModelRepository },
+          { createAthletePerformanceTargetFactsReader },
+        ] = await Promise.all([
+          import("../../repositories/athlete-performance-model-repository"),
+          import("../performance-model/get-athlete-performance-model-as-of"),
+        ]);
+        const readTargetFacts = createAthletePerformanceTargetFactsReader(
+          createAthletePerformanceModelRepository(db, tx),
+        );
+        targetRefreshContext = {
+          beforeTargetFacts: await readTargetFacts({
+            actorProfileId: input.profileId,
+            asOf: now,
+          }),
+          readTargetFacts,
+        };
       }
     }
 
@@ -932,15 +988,30 @@ export async function submitActivity(
         );
     }
 
-    const evidence = input.kind === "enrich" ? input : input.analysis;
     if (evidence) {
-      await reconcileGeneratedActivityEvidence(tx, {
+      const reconcile = targetRefreshContext
+        ? reconcileGeneratedActivityEvidenceWithProfileLockHeld
+        : reconcileGeneratedActivityEvidence;
+      await reconcile(tx, {
         activityId,
         profileId: input.profileId,
         efforts: assignEffortSegments(evidence.efforts, segmentSet),
         detectedLTHR: evidence.detectedLTHR,
         now,
       });
+      if (targetRefreshContext) {
+        await enqueueWahooRelativeTargetRefreshes({
+          afterTargetFacts: await targetRefreshContext.readTargetFacts({
+            actorProfileId: input.profileId,
+            asOf: now,
+          }),
+          beforeTargetFacts: targetRefreshContext.beforeTargetFacts,
+          db,
+          now,
+          profileId: input.profileId,
+          transaction: tx,
+        });
+      }
     }
     if (input.kind !== "enrich" && input.composition) {
       compositionResult = await input.composition.persist(tx, { activityId, now });

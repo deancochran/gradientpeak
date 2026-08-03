@@ -42,6 +42,11 @@ export function isWahooSupported(activityType: WahooActivityType): boolean {
   return supportedTypes.includes(activityType);
 }
 
+/** Keeps Wahoo's raw converter option inside the provider protocol boundary. */
+export function getWahooProjectionCategoryOption(activityType: WahooActivityType) {
+  return { activityType };
+}
+
 /**
  * Map an activity category to Wahoo's workout_type_family and workout_type_location
  */

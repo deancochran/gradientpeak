@@ -6,6 +6,7 @@ import {
 } from "@repo/core";
 import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { wahooPlannedActivityRequiredScopes } from "../../integrations/wahoo/planned-activity-scopes";
 import { WahooPlannedActivityProvider } from "./wahoo-planned-workout-provider";
 
 const operationTime = new Date("2026-07-28T12:00:00.000Z");
@@ -58,7 +59,7 @@ function providerFixture(
     findWahooIntegrationByProfileId: vi.fn().mockResolvedValue({
       id: "integration-1",
       integrationGeneration: 4,
-      scope: overrides.scope ?? "plans_read plans_write workouts_read workouts_write offline_data",
+      scope: overrides.scope ?? [...wahooPlannedActivityRequiredScopes, "offline_data"].join(" "),
     }),
     getPlannedEventForSync: vi.fn().mockResolvedValue({
       activityPlan: {
@@ -189,7 +190,7 @@ describe("WahooPlannedActivityProvider", () => {
     );
   });
 
-  it("immediately queues an eligible workout whose start time already passed", async () => {
+  it("immediately queues an eligible planned activity whose start time already passed", async () => {
     const now = new Date("2026-07-29T22:00:00.000Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
@@ -229,7 +230,7 @@ describe("WahooPlannedActivityProvider", () => {
   });
 
   it("requires planned-activity OAuth grants before enqueue", async () => {
-    const { enqueueJob, provider } = providerFixture({ scope: "workouts_read offline_data" });
+    const { enqueueJob, provider } = providerFixture({ scope: "offline_data" });
 
     await expect(
       provider.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" }),

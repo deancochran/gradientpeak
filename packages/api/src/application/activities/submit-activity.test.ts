@@ -199,11 +199,7 @@ function detectedLthr(valueBpm: number): GeneratedActivityLthrEvidence {
 interface MockTx {
   execute(query: unknown): Promise<unknown>;
   select(): {
-    from(table: unknown): {
-      where(condition: unknown): PromiseLike<unknown[]> & {
-        limit(count: number): Promise<unknown[]>;
-      };
-    };
+    from(table: unknown): MockSelectBuilder;
   };
   insert(table: unknown): {
     values(values: unknown): {
@@ -219,6 +215,15 @@ interface MockTx {
     };
   };
   delete(table: unknown): { where(condition: unknown): Promise<void> };
+}
+
+interface MockSelectBuilder extends PromiseLike<unknown[]> {
+  for(mode: "share" | "update"): MockSelectBuilder;
+  innerJoin(table: unknown, condition: unknown): MockSelectBuilder;
+  leftJoin(table: unknown, condition: unknown): MockSelectBuilder;
+  limit(count: number): MockSelectBuilder;
+  orderBy(...order: unknown[]): MockSelectBuilder;
+  where(condition: unknown): MockSelectBuilder;
 }
 
 function createDb(
@@ -244,17 +249,23 @@ function createDb(
   const updatedValues: Array<{ table: unknown; values: unknown }> = [];
   const transaction = vi.fn(async (callback: (tx: MockTx) => Promise<void>) => {
     const staged: unknown[] = [];
+    const selectBuilder = (rows: unknown[]) => {
+      let builder: MockSelectBuilder;
+      builder = Object.assign(Promise.resolve(rows), {
+        for: vi.fn(() => builder),
+        innerJoin: vi.fn(() => builder),
+        leftJoin: vi.fn(() => builder),
+        limit: vi.fn(() => builder),
+        orderBy: vi.fn(() => builder),
+        where: vi.fn(() => builder),
+      });
+      return builder;
+    };
     const tx = {
       select: vi.fn(() => ({
-        from: vi.fn((table: unknown) => ({
-          where: vi.fn(() => {
-            const rows = table === activities && existingActivity ? [existingActivity] : [];
-            return Object.assign(Promise.resolve(rows), {
-              limit: vi.fn().mockResolvedValue(rows),
-              orderBy: vi.fn(() => ({ limit: vi.fn().mockResolvedValue(rows) })),
-            });
-          }),
-        })),
+        from: vi.fn((table: unknown) =>
+          selectBuilder(table === activities && existingActivity ? [existingActivity] : []),
+        ),
       })),
       execute: vi.fn().mockResolvedValue({ rows: [] }),
       insert: vi.fn((table: unknown) => ({
